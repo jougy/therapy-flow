@@ -89,7 +89,7 @@ const Pacientes = () => {
           <h1 className="text-2xl font-bold tracking-tight">Pacientes</h1>
           <p className="text-muted-foreground text-sm mt-1">{mockPatients.length} pacientes cadastrados</p>
         </div>
-        <Button>
+        <Button onClick={() => navigate("/pacientes/novo")}>
           <Plus className="h-4 w-4 mr-2" />
           <span>Novo Paciente</span>
         </Button>
