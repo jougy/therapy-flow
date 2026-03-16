@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import Pacientes from "./pages/Pacientes";
 import PacienteDetalhe from "./pages/PacienteDetalhe";
 import SessaoDetalhe from "./pages/SessaoDetalhe";
+import NovoPaciente from "./pages/NovoPaciente";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
