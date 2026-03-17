@@ -14,7 +14,140 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      patient_groups: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+          patient_id: string
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+          patient_id: string
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+          patient_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_groups_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patients: {
+        Row: {
+          age: number | null
+          cpf: string | null
+          created_at: string
+          id: string
+          name: string
+          phone: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          age?: number | null
+          cpf?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          phone?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          age?: number | null
+          cpf?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          phone?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      sessions: {
+        Row: {
+          anamnesis: Json | null
+          complexity_score: number | null
+          created_at: string
+          group_id: string | null
+          id: string
+          notes: string | null
+          pain_score: number | null
+          patient_id: string
+          session_date: string
+          status: string
+          treatment: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          anamnesis?: Json | null
+          complexity_score?: number | null
+          created_at?: string
+          group_id?: string | null
+          id?: string
+          notes?: string | null
+          pain_score?: number | null
+          patient_id: string
+          session_date?: string
+          status?: string
+          treatment?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          anamnesis?: Json | null
+          complexity_score?: number | null
+          created_at?: string
+          group_id?: string | null
+          id?: string
+          notes?: string | null
+          pain_score?: number | null
+          patient_id?: string
+          session_date?: string
+          status?: string
+          treatment?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "patient_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessions_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
