@@ -268,11 +268,24 @@ export type Database = {
     }
     Functions: {
       get_user_clinic_id: { Args: { _user_id: string }; Returns: string }
+      handle_signup: {
+        Args: {
+          _cnpj: string
+          _email: string
+          _full_name?: string
+          _user_id: string
+        }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      validate_user_clinic: {
+        Args: { _cnpj: string; _user_id: string }
         Returns: boolean
       }
     }
