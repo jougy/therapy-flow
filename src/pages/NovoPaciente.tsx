@@ -97,8 +97,22 @@ const NovoPaciente = () => {
       exame_fisico: { massa, altura, pa, fcc, fr, observacoes },
     };
 
+    // Get clinic_id from profile
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("clinic_id")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.clinic_id) {
+      toast({ title: "Erro", description: "Perfil não encontrado.", variant: "destructive" });
+      setSubmitting(false);
+      return;
+    }
+
     const { error } = await supabase.from("patients").insert({
       user_id: user.id,
+      clinic_id: profile.clinic_id,
       name: nome,
       age: calculateAge(dataNascimento),
       phone: telefone || null,
