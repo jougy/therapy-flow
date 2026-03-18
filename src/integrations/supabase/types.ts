@@ -14,8 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      clinics: {
+        Row: {
+          cnpj: string
+          created_at: string
+          custom_fields: Json | null
+          id: string
+          logo_url: string | null
+          name: string
+          theme: Json | null
+          updated_at: string
+        }
+        Insert: {
+          cnpj: string
+          created_at?: string
+          custom_fields?: Json | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          theme?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          cnpj?: string
+          created_at?: string
+          custom_fields?: Json | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          theme?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       patient_groups: {
         Row: {
+          clinic_id: string | null
           color: string
           created_at: string
           id: string
@@ -24,6 +58,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          clinic_id?: string | null
           color?: string
           created_at?: string
           id?: string
@@ -32,6 +67,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          clinic_id?: string | null
           color?: string
           created_at?: string
           id?: string
@@ -40,6 +76,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "patient_groups_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "patient_groups_patient_id_fkey"
             columns: ["patient_id"]
@@ -52,6 +95,7 @@ export type Database = {
       patients: {
         Row: {
           age: number | null
+          clinic_id: string | null
           cpf: string | null
           created_at: string
           id: string
@@ -63,6 +107,7 @@ export type Database = {
         }
         Insert: {
           age?: number | null
+          clinic_id?: string | null
           cpf?: string | null
           created_at?: string
           id?: string
@@ -74,6 +119,7 @@ export type Database = {
         }
         Update: {
           age?: number | null
+          clinic_id?: string | null
           cpf?: string | null
           created_at?: string
           id?: string
@@ -83,11 +129,52 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "patients_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          clinic_id: string
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+        }
+        Insert: {
+          clinic_id: string
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+        }
+        Update: {
+          clinic_id?: string
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sessions: {
         Row: {
           anamnesis: Json | null
+          clinic_id: string | null
           complexity_score: number | null
           created_at: string
           group_id: string | null
@@ -103,6 +190,7 @@ export type Database = {
         }
         Insert: {
           anamnesis?: Json | null
+          clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
           group_id?: string | null
@@ -118,6 +206,7 @@ export type Database = {
         }
         Update: {
           anamnesis?: Json | null
+          clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
           group_id?: string | null
@@ -132,6 +221,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "sessions_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "sessions_group_id_fkey"
             columns: ["group_id"]
@@ -148,15 +244,40 @@ export type Database = {
           },
         ]
       }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_clinic_id: { Args: { _user_id: string }; Returns: string }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "super_admin" | "clinic_admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -283,6 +404,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["super_admin", "clinic_admin", "user"],
+    },
   },
 } as const
