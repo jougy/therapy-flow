@@ -173,10 +173,16 @@ const PacienteDetalhe = () => {
             {patient.phone && <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" /> {patient.phone}</span>}
           </div>
         </div>
-        <Button onClick={() => navigate(`/pacientes/${id}/sessao/novo`)}>
-          <Plus className="h-4 w-4 mr-2" />
-          <span>Novo Atendimento</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/cadastro`)}>
+            <ClipboardEdit className="h-4 w-4 mr-2" />
+            <span className="hidden sm:inline">Cadastro Completo</span>
+          </Button>
+          <Button onClick={() => navigate(`/pacientes/${id}/sessao/novo`)}>
+            <Plus className="h-4 w-4 mr-2" />
+            <span>Novo Atendimento</span>
+          </Button>
+        </div>
       </div>
 
       {/* Expandable patient info */}
