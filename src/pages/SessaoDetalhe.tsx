@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Printer, Share2, Copy, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Copy, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { buildSessionPayload, isCompletedSessionLocked, type SessionFormValues } from "@/lib/session-payload";
 
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 
@@ -45,8 +46,10 @@ const SessaoDetalhe = () => {
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+  const [startingFromThis, setStartingFromThis] = useState(false);
   const [patientName, setPatientName] = useState("");
   const [groups, setGroups] = useState<PatientGroup[]>([]);
+  const [locked, setLocked] = useState(false);
 
   // Form state
   const [queixa, setQueixa] = useState("");
@@ -97,39 +100,45 @@ const SessaoDetalhe = () => {
           setNotes(data.notes || "");
           setGroupId(data.group_id);
           setSessionDate(new Date(data.session_date).toLocaleDateString("pt-BR"));
+          setLocked(isCompletedSessionLocked(false, data.status));
         }
+      } else {
+        setLocked(false);
       }
       setLoading(false);
     };
     fetchData();
   }, [patientId, sessionId, isNew]);
 
+  const formValues: SessionFormValues = {
+    complexityScore: complexityScore[0],
+    descricaoTratamento,
+    groupId,
+    notes,
+    observacoes,
+    orientacoes,
+    painScore: painScore[0],
+    queixa,
+    selectedTechniques,
+    sintomas,
+    status,
+  };
+
+  const buildCurrentSessionPayload = (clinicId: string | null, statusOverride?: string) =>
+    buildSessionPayload({
+      clinicId,
+      patientId: patientId!,
+      userId: user!.id,
+      values: formValues,
+      statusOverride,
+    });
+
   const handleSave = async () => {
-    if (!patientId || !user) return;
+    if (!patientId || !user || locked) return;
     setSaving(true);
 
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
-
-    const sessionData = {
-      patient_id: patientId,
-      user_id: user.id,
-      clinic_id: clinicRes.data,
-      pain_score: painScore[0],
-      complexity_score: complexityScore[0],
-      status,
-      notes: notes || null,
-      group_id: groupId || null,
-      anamnesis: {
-        queixa,
-        sintomas,
-        observacoes,
-      },
-      treatment: {
-        techniques: selectedTechniques,
-        descricao: descricaoTratamento,
-        orientacoes,
-      },
-    };
+    const sessionData = buildCurrentSessionPayload(clinicRes.data);
 
     if (isNew) {
       const { data, error } = await supabase
@@ -153,10 +162,40 @@ const SessaoDetalhe = () => {
       if (error) {
         toast({ title: "Erro ao salvar atendimento", variant: "destructive" });
       } else {
-        toast({ title: "Atendimento salvo" });
+        setLocked(isCompletedSessionLocked(false, status));
+        toast({
+          title: status === "concluído" ? "Atendimento concluído" : "Atendimento salvo",
+          description:
+            status === "concluído"
+              ? "Este atendimento foi bloqueado para edição. Use a duplicação para iniciar o próximo."
+              : undefined,
+        });
       }
     }
     setSaving(false);
+  };
+
+  const handleStartFromThis = async () => {
+    if (!patientId || !user || isNew) return;
+    setStartingFromThis(true);
+
+    const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
+    const sessionData = buildCurrentSessionPayload(clinicRes.data, "rascunho");
+
+    const { data, error } = await supabase
+      .from("sessions")
+      .insert(sessionData)
+      .select("id")
+      .single();
+
+    if (error) {
+      toast({ title: "Erro ao iniciar novo atendimento", variant: "destructive" });
+    } else {
+      toast({ title: "Novo atendimento iniciado", description: "Os dados foram copiados para um novo rascunho editável." });
+      navigate(`/pacientes/${patientId}/sessao/${data.id}`);
+    }
+
+    setStartingFromThis(false);
   };
 
   const toggleTechnique = (tech: string) => {
@@ -214,11 +253,19 @@ const SessaoDetalhe = () => {
 
       {/* Action Bar */}
       <div className="flex gap-2 flex-wrap items-center">
-        <Button size="sm" onClick={handleSave} disabled={saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-          <span>Salvar</span>
-        </Button>
-        <Select value={status} onValueChange={setStatus}>
+        {!locked && (
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            <span>Salvar</span>
+          </Button>
+        )}
+        {!isNew && (
+          <Button size="sm" variant="outline" onClick={handleStartFromThis} disabled={startingFromThis}>
+            {startingFromThis ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+            <span>Iniciar Novo Atendimento a Partir Deste</span>
+          </Button>
+        )}
+        <Select value={status} onValueChange={setStatus} disabled={locked}>
           <SelectTrigger className="w-[140px] h-9 text-sm">
             <SelectValue />
           </SelectTrigger>
@@ -229,7 +276,7 @@ const SessaoDetalhe = () => {
           </SelectContent>
         </Select>
         {groups.length > 0 && (
-          <Select value={groupId || "none"} onValueChange={(v) => setGroupId(v === "none" ? null : v)}>
+          <Select value={groupId || "none"} onValueChange={(v) => setGroupId(v === "none" ? null : v)} disabled={locked}>
             <SelectTrigger className="w-[180px] h-9 text-sm">
               <SelectValue placeholder="Sem grupo" />
             </SelectTrigger>
@@ -243,6 +290,13 @@ const SessaoDetalhe = () => {
         )}
       </div>
 
+      {locked && (
+        <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+          Este atendimento já foi concluído e não pode mais ser editado. Use "Iniciar novo atendimento a partir deste"
+          para abrir um novo rascunho com todos os campos já preenchidos.
+        </div>
+      )}
+
       {/* Notes */}
       <div>
         <Label htmlFor="notes" className="text-sm font-medium">Anotações rápidas</Label>
@@ -253,6 +307,7 @@ const SessaoDetalhe = () => {
           placeholder="Observações gerais sobre o atendimento..."
           className="mt-1.5"
           rows={2}
+          disabled={locked}
         />
       </div>
 
@@ -275,6 +330,7 @@ const SessaoDetalhe = () => {
                   placeholder="Descreva a queixa principal do paciente..."
                   className="mt-1.5"
                   rows={3}
+                  disabled={locked}
                 />
               </div>
 
@@ -287,6 +343,7 @@ const SessaoDetalhe = () => {
                   placeholder="Liste os sintomas relatados..."
                   className="mt-1.5"
                   rows={2}
+                  disabled={locked}
                 />
               </div>
 
@@ -301,6 +358,7 @@ const SessaoDetalhe = () => {
                     max={10}
                     step={1}
                     className="mt-3"
+                    disabled={locked}
                   />
                 </div>
                 <div>
@@ -313,6 +371,7 @@ const SessaoDetalhe = () => {
                     max={10}
                     step={1}
                     className="mt-3"
+                    disabled={locked}
                   />
                 </div>
               </div>
@@ -326,6 +385,7 @@ const SessaoDetalhe = () => {
                   placeholder="Observações adicionais sobre a anamnese..."
                   className="mt-1.5"
                   rows={4}
+                  disabled={locked}
                 />
               </div>
             </CardContent>
@@ -341,15 +401,16 @@ const SessaoDetalhe = () => {
                   {TECHNIQUES.map((tech) => (
                     <label
                       key={tech}
-                      className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer hover:bg-accent/50 transition-colors text-sm ${
+                      className={`flex items-center gap-2 p-2 rounded-md border transition-colors text-sm ${
                         selectedTechniques.includes(tech) ? "bg-accent border-primary" : ""
-                      }`}
+                      } ${locked ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-accent/50"}`}
                     >
                       <input
                         type="checkbox"
                         checked={selectedTechniques.includes(tech)}
                         onChange={() => toggleTechnique(tech)}
                         className="rounded border-input"
+                        disabled={locked}
                       />
                       <span>{tech}</span>
                     </label>
@@ -366,6 +427,7 @@ const SessaoDetalhe = () => {
                   placeholder="Descreva o tratamento realizado..."
                   className="mt-1.5"
                   rows={4}
+                  disabled={locked}
                 />
               </div>
 
@@ -378,6 +440,7 @@ const SessaoDetalhe = () => {
                   placeholder="Orientações e exercícios para casa..."
                   className="mt-1.5"
                   rows={3}
+                  disabled={locked}
                 />
               </div>
             </CardContent>
