@@ -23,7 +23,7 @@ const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-
+  const [showPassword, setShowPassword] = useState(false);
   const cnpjDigits = cnpj.replace(/\D/g, "");
   const isCnpjValid = cnpjDigits.length === 14;
 
