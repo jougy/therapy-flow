@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import PacienteDetalhe from "./pages/PacienteDetalhe";
 import SessaoDetalhe from "./pages/SessaoDetalhe";
 import NovoPaciente from "./pages/NovoPaciente";
+import CadastroCompleto from "./pages/CadastroCompleto";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
