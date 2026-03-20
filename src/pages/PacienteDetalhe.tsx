@@ -55,7 +55,7 @@ const PainIndicator = ({ score }: { score: number }) => {
       <span className="text-xs font-medium text-muted-foreground">{score}/10</span>
     </div>
   );
-
+};
 const InfoField = ({ label, value, capitalize: cap }: { label: string; value?: string | null; capitalize?: boolean }) => (
   <div>
     <span className="text-xs text-muted-foreground">{label}</span>
