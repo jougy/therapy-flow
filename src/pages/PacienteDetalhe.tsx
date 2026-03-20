@@ -56,6 +56,12 @@ const PainIndicator = ({ score }: { score: number }) => {
     </div>
   );
 };
+const InfoField = ({ label, value, capitalize: cap }: { label: string; value?: string | null; capitalize?: boolean }) => (
+  <div>
+    <span className="text-xs text-muted-foreground">{label}</span>
+    <p className={`text-sm font-medium ${cap ? "capitalize" : ""}`}>{value || "—"}</p>
+  </div>
+);
 
 const PacienteDetalhe = () => {
   const { id } = useParams();
@@ -203,30 +209,66 @@ const PacienteDetalhe = () => {
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <CardContent className="pt-0 pb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <CardContent className="pt-0 pb-4 space-y-5">
+                {/* Dados básicos */}
                 <div>
-                  <Label className="text-xs text-muted-foreground">Nome completo</Label>
-                  <p className="text-sm font-medium">{patient.name}</p>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Dados Básicos</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <InfoField label="Nome completo" value={patient.name} />
+                    <InfoField label="Data de nascimento" value={(patient as any).date_of_birth ? new Date((patient as any).date_of_birth + "T12:00:00").toLocaleDateString("pt-BR") : null} />
+                    <InfoField label="Idade" value={patient.age ? `${patient.age} anos` : null} />
+                    <InfoField label="CPF" value={patient.cpf} />
+                    <InfoField label="Telefone" value={patient.phone} />
+                    <InfoField label="E-mail" value={(patient as any).email} />
+                    <InfoField label="Status" value={patient.status} capitalize />
+                    <InfoField label="Cadastrado em" value={new Date(patient.created_at).toLocaleDateString("pt-BR")} />
+                  </div>
                 </div>
+
+                {/* Dados pessoais */}
                 <div>
-                  <Label className="text-xs text-muted-foreground">CPF</Label>
-                  <p className="text-sm font-medium">{patient.cpf || "—"}</p>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Dados Pessoais</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <InfoField label="Gênero" value={(patient as any).gender} capitalize />
+                    <InfoField label="Pronome" value={(patient as any).pronoun} />
+                    <InfoField label="RG" value={(patient as any).rg} />
+                    <InfoField label="Tipo sanguíneo" value={(patient as any).blood_type} />
+                    <InfoField label="Profissão" value={(patient as any).profession} />
+                  </div>
                 </div>
+
+                {/* Endereço */}
                 <div>
-                  <Label className="text-xs text-muted-foreground">Idade</Label>
-                  <p className="text-sm font-medium">{patient.age ? `${patient.age} anos` : "—"}</p>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Endereço</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <InfoField label="CEP" value={(patient as any).cep} />
+                    <InfoField label="Rua" value={(patient as any).street} />
+                    <InfoField label="Número" value={(patient as any).address_number} />
+                    <InfoField label="Complemento" value={(patient as any).address_complement} />
+                    <InfoField label="Bairro" value={(patient as any).neighborhood} />
+                    <InfoField label="Cidade" value={(patient as any).city} />
+                    <InfoField label="Estado" value={(patient as any).state} />
+                    <InfoField label="País" value={(patient as any).country} />
+                  </div>
                 </div>
+
+                {/* Histórico clínico */}
                 <div>
-                  <Label className="text-xs text-muted-foreground">Telefone</Label>
-                  <p className="text-sm font-medium">{patient.phone || "—"}</p>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Histórico Clínico</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <InfoField label="Problemas crônicos" value={(patient as any).chronic_conditions} />
+                    <InfoField label="Cirurgias" value={(patient as any).surgeries} />
+                    <InfoField label="Medicamentos contínuos" value={(patient as any).continuous_medications} />
+                    <InfoField label="Alergias" value={(patient as any).allergies} />
+                    <InfoField label="Observações clínicas" value={(patient as any).clinical_notes} />
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Status</Label>
-                  <p className="text-sm font-medium capitalize">{patient.status}</p>
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Cadastrado em</Label>
-                  <p className="text-sm font-medium">{new Date(patient.created_at).toLocaleDateString("pt-BR")}</p>
+
+                <div className="pt-2">
+                  <Button variant="outline" size="sm" onClick={() => navigate(`/pacientes/${id}/cadastro`)}>
+                    <Pencil className="h-3.5 w-3.5 mr-2" />
+                    Editar dados cadastrais
+                  </Button>
                 </div>
               </CardContent>
             </motion.div>
