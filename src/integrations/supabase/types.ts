@@ -94,38 +94,101 @@ export type Database = {
       }
       patients: {
         Row: {
+          address_complement: string | null
+          address_number: string | null
           age: number | null
+          allergies: string | null
+          blood_type: string | null
+          cep: string | null
+          chronic_conditions: string | null
+          city: string | null
           clinic_id: string | null
+          clinical_notes: string | null
+          continuous_medications: string | null
+          country: string | null
           cpf: string | null
           created_at: string
+          date_of_birth: string | null
+          email: string | null
+          gender: string | null
           id: string
           name: string
+          neighborhood: string | null
           phone: string | null
+          profession: string | null
+          pronoun: string | null
+          registration_complete: boolean
+          rg: string | null
+          state: string | null
           status: string
+          street: string | null
+          surgeries: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          address_complement?: string | null
+          address_number?: string | null
           age?: number | null
+          allergies?: string | null
+          blood_type?: string | null
+          cep?: string | null
+          chronic_conditions?: string | null
+          city?: string | null
           clinic_id?: string | null
+          clinical_notes?: string | null
+          continuous_medications?: string | null
+          country?: string | null
           cpf?: string | null
           created_at?: string
+          date_of_birth?: string | null
+          email?: string | null
+          gender?: string | null
           id?: string
           name: string
+          neighborhood?: string | null
           phone?: string | null
+          profession?: string | null
+          pronoun?: string | null
+          registration_complete?: boolean
+          rg?: string | null
+          state?: string | null
           status?: string
+          street?: string | null
+          surgeries?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          address_complement?: string | null
+          address_number?: string | null
           age?: number | null
+          allergies?: string | null
+          blood_type?: string | null
+          cep?: string | null
+          chronic_conditions?: string | null
+          city?: string | null
           clinic_id?: string | null
+          clinical_notes?: string | null
+          continuous_medications?: string | null
+          country?: string | null
           cpf?: string | null
           created_at?: string
+          date_of_birth?: string | null
+          email?: string | null
+          gender?: string | null
           id?: string
           name?: string
+          neighborhood?: string | null
           phone?: string | null
+          profession?: string | null
+          pronoun?: string | null
+          registration_complete?: boolean
+          rg?: string | null
+          state?: string | null
           status?: string
+          street?: string | null
+          surgeries?: string | null
           updated_at?: string
           user_id?: string
         }

@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import PacienteDetalhe from "./pages/PacienteDetalhe";
 import SessaoDetalhe from "./pages/SessaoDetalhe";
 import NovoPaciente from "./pages/NovoPaciente";
+import CadastroCompleto from "./pages/CadastroCompleto";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
@@ -59,6 +60,7 @@ const App = () => (
                       <Route path="/" element={<Index />} />
                       <Route path="/pacientes/novo" element={<NovoPaciente />} />
                       <Route path="/pacientes/:id" element={<PacienteDetalhe />} />
+                      <Route path="/pacientes/:id/cadastro" element={<CadastroCompleto />} />
                       <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
