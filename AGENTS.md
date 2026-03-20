@@ -107,16 +107,6 @@ git add <files>
 git commit -m "<clear message>"
 ```
 
-## Known Repository Caveat
-
-At the time this guide was written, `npm install` / `npm ci` may fail because `lovable-tagger@1.1.13` requires `vite < 8`, while the project declares `vite ^8.0.0`. The lockfile may also be out of sync with `package.json`.
-
-Because of that:
-
-- prefer reporting dependency-resolution failures clearly;
-- do not silently use `--force`;
-- only use temporary install workarounds when necessary for validation, and mention that explicitly in the final report.
-
 ## Final Reporting
 
 When finishing a task, always report:

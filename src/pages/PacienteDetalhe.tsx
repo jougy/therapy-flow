@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -13,8 +13,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+
+type Patient = Database["public"]["Tables"]["patients"]["Row"];
+type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
+type Session = Database["public"]["Tables"]["sessions"]["Row"];
 
 const GROUP_COLORS = [
   { value: "lavender", label: "Lavanda" },
@@ -56,34 +61,38 @@ const PacienteDetalhe = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [patient, setPatient] = useState<any>(null);
-  const [groups, setGroups] = useState<any[]>([]);
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [patient, setPatient] = useState<Patient | null>(null);
+  const [groups, setGroups] = useState<PatientGroup[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
 
   // Group dialog state
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<any>(null);
+  const [editingGroup, setEditingGroup] = useState<PatientGroup | null>(null);
   const [groupName, setGroupName] = useState("");
   const [groupColor, setGroupColor] = useState("lavender");
   const [savingGroup, setSavingGroup] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!id) return;
+
     const [pRes, gRes, sRes] = await Promise.all([
       supabase.from("patients").select("*").eq("id", id).single(),
       supabase.from("patient_groups").select("*").eq("patient_id", id),
       supabase.from("sessions").select("*").eq("patient_id", id).order("session_date", { ascending: false }),
     ]);
+
     setPatient(pRes.data);
     setGroups(gRes.data ?? []);
     setSessions(sRes.data ?? []);
     setLoading(false);
-  };
+  }, [id]);
 
-  useEffect(() => { fetchData(); }, [id]);
+  useEffect(() => {
+    void fetchData();
+  }, [fetchData]);
 
   const openNewGroup = () => {
     setEditingGroup(null);
@@ -92,7 +101,7 @@ const PacienteDetalhe = () => {
     setGroupDialogOpen(true);
   };
 
-  const openEditGroup = (g: any) => {
+  const openEditGroup = (g: PatientGroup) => {
     setEditingGroup(g);
     setGroupName(g.name);
     setGroupColor(g.color);
@@ -123,7 +132,7 @@ const PacienteDetalhe = () => {
 
     setSavingGroup(false);
     setGroupDialogOpen(false);
-    fetchData();
+    void fetchData();
   };
 
   const handleDeleteGroup = async (groupId: string) => {
@@ -133,7 +142,7 @@ const PacienteDetalhe = () => {
     if (error) { toast({ title: "Erro ao excluir grupo", variant: "destructive" }); }
     else { toast({ title: "Grupo excluído" }); }
     setDeleteConfirmId(null);
-    fetchData();
+    void fetchData();
   };
 
   if (loading) {
@@ -248,7 +257,7 @@ const PacienteDetalhe = () => {
             </div>
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
-            {group.sessions.map((session: any) => (
+            {group.sessions.map((session) => (
               <Card
                 key={session.id}
                 className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${groupBorderColors[group.color] || ""}`}

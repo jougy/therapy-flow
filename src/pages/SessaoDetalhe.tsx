@@ -11,8 +11,19 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+
+type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
+
+const isJsonObject = (value: Json | null): value is Record<string, Json | undefined> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readJsonString = (value: Json | undefined) => (typeof value === "string" ? value : "");
+
+const readJsonStringArray = (value: Json | undefined): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 
 const TECHNIQUES = [
   "Mobilização articular",
@@ -35,7 +46,7 @@ const SessaoDetalhe = () => {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [patientName, setPatientName] = useState("");
-  const [groups, setGroups] = useState<any[]>([]);
+  const [groups, setGroups] = useState<PatientGroup[]>([]);
 
   // Form state
   const [queixa, setQueixa] = useState("");
@@ -72,16 +83,16 @@ const SessaoDetalhe = () => {
           .maybeSingle();
 
         if (data) {
-          const anamnesis = (data.anamnesis as any) || {};
-          const treatment = (data.treatment as any) || {};
-          setQueixa(anamnesis.queixa || "");
-          setSintomas(anamnesis.sintomas || "");
-          setObservacoes(anamnesis.observacoes || "");
+          const anamnesis = isJsonObject(data.anamnesis) ? data.anamnesis : {};
+          const treatment = isJsonObject(data.treatment) ? data.treatment : {};
+          setQueixa(readJsonString(anamnesis.queixa));
+          setSintomas(readJsonString(anamnesis.sintomas));
+          setObservacoes(readJsonString(anamnesis.observacoes));
           setPainScore([data.pain_score || 0]);
           setComplexityScore([data.complexity_score || 0]);
-          setSelectedTechniques(treatment.techniques || []);
-          setDescricaoTratamento(treatment.descricao || "");
-          setOrientacoes(treatment.orientacoes || "");
+          setSelectedTechniques(readJsonStringArray(treatment.techniques));
+          setDescricaoTratamento(readJsonString(treatment.descricao));
+          setOrientacoes(readJsonString(treatment.orientacoes));
           setStatus(data.status);
           setNotes(data.notes || "");
           setGroupId(data.group_id);
