@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Check, Loader2, User, MapPin, HeartPulse } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import type { Database } from "@/integrations/supabase/types";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+type Patient = Database["public"]["Tables"]["patients"]["Row"];
 
 interface AddressData {
   cep: string;
+  erro?: boolean;
   logradouro: string;
   bairro: string;
   localidade: string;
@@ -70,25 +73,27 @@ const CadastroCompleto = () => {
       return;
     }
 
-    setPatientName(data.name);
-    setGender((data as any).gender ?? "");
-    setRg((data as any).rg ?? "");
-    setBloodType((data as any).blood_type ?? "");
-    setPronoun((data as any).pronoun ?? "");
-    setProfession((data as any).profession ?? "");
-    setCep((data as any).cep ?? "");
-    setCountry((data as any).country ?? "Brasil");
-    setState((data as any).state ?? "");
-    setCity((data as any).city ?? "");
-    setNeighborhood((data as any).neighborhood ?? "");
-    setStreet((data as any).street ?? "");
-    setAddressNumber((data as any).address_number ?? "");
-    setAddressComplement((data as any).address_complement ?? "");
-    setChronicConditions((data as any).chronic_conditions ?? "");
-    setSurgeries((data as any).surgeries ?? "");
-    setContinuousMedications((data as any).continuous_medications ?? "");
-    setAllergies((data as any).allergies ?? "");
-    setClinicalNotes((data as any).clinical_notes ?? "");
+    const patient: Patient = data;
+
+    setPatientName(patient.name);
+    setGender(patient.gender ?? "");
+    setRg(patient.rg ?? "");
+    setBloodType(patient.blood_type ?? "");
+    setPronoun(patient.pronoun ?? "");
+    setProfession(patient.profession ?? "");
+    setCep(patient.cep ?? "");
+    setCountry(patient.country ?? "Brasil");
+    setState(patient.state ?? "");
+    setCity(patient.city ?? "");
+    setNeighborhood(patient.neighborhood ?? "");
+    setStreet(patient.street ?? "");
+    setAddressNumber(patient.address_number ?? "");
+    setAddressComplement(patient.address_complement ?? "");
+    setChronicConditions(patient.chronic_conditions ?? "");
+    setSurgeries(patient.surgeries ?? "");
+    setContinuousMedications(patient.continuous_medications ?? "");
+    setAllergies(patient.allergies ?? "");
+    setClinicalNotes(patient.clinical_notes ?? "");
     setLoading(false);
   }, [id, navigate]);
 
@@ -104,7 +109,7 @@ const CadastroCompleto = () => {
       try {
         const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
         const data: AddressData = await res.json();
-        if (!(data as any).erro) {
+        if (!data.erro) {
           setStreet(data.logradouro || "");
           setNeighborhood(data.bairro || "");
           setCity(data.localidade || "");
@@ -144,7 +149,7 @@ const CadastroCompleto = () => {
         allergies: allergies || null,
         clinical_notes: clinicalNotes || null,
         registration_complete: true,
-      } as any)
+      })
       .eq("id", id);
 
     if (error) {
