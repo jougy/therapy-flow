@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp,
-  Pencil, Trash2, Palette, FolderPlus, ClipboardEdit
+  Pencil, Trash2, Palette, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,13 +13,19 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
+type ShareLinkResponse = {
+  completed: boolean;
+  password_prefix: string;
+  token: string;
+};
 
 const GROUP_COLORS = [
   { value: "lavender", label: "Lavanda" },
@@ -63,9 +69,23 @@ const InfoField = ({ label, value, capitalize: cap }: { label: string; value?: s
   </div>
 );
 
+const isShareLinkResponse = (value: Json): value is ShareLinkResponse => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const data = value as Record<string, Json | undefined>;
+  return (
+    typeof data.completed === "boolean" &&
+    typeof data.password_prefix === "string" &&
+    typeof data.token === "string"
+  );
+};
+
 const PacienteDetalhe = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
@@ -80,6 +100,11 @@ const PacienteDetalhe = () => {
   const [groupColor, setGroupColor] = useState("lavender");
   const [savingGroup, setSavingGroup] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [generatingShareLink, setGeneratingShareLink] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [sharePassword, setSharePassword] = useState("");
+  const [shareCompleted, setShareCompleted] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -99,6 +124,40 @@ const PacienteDetalhe = () => {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  const handleOpenShareDialog = useCallback(async () => {
+    if (!id || !patient) return;
+    setGeneratingShareLink(true);
+
+    const { data, error } = await supabase.rpc("create_patient_registration_link", {
+      _patient_id: id,
+    });
+
+    if (error || !data || !isShareLinkResponse(data)) {
+      toast({
+        title: "Não foi possível gerar o link",
+        description: error?.message ?? "Tente novamente em alguns instantes.",
+        variant: "destructive",
+      });
+      setGeneratingShareLink(false);
+      return;
+    }
+
+    setShareLink(buildPatientRegistrationUrl(window.location.origin, data.token));
+    setSharePassword(data.password_prefix);
+    setShareCompleted(data.completed);
+    setShareDialogOpen(true);
+    setGeneratingShareLink(false);
+  }, [id, patient]);
+
+  useEffect(() => {
+    const shouldOpenShareDialog = (location.state as { openShareDialog?: boolean } | null)?.openShareDialog;
+
+    if (!shouldOpenShareDialog || !patient) return;
+
+    void handleOpenShareDialog();
+    navigate(location.pathname, { replace: true, state: null });
+  }, [handleOpenShareDialog, location.pathname, location.state, navigate, patient]);
 
   const openNewGroup = () => {
     setEditingGroup(null);
@@ -159,6 +218,7 @@ const PacienteDetalhe = () => {
     return <div className="text-center py-24 text-muted-foreground">Paciente não encontrado.</div>;
   }
 
+  const sharePasswordAvailable = !!getPatientRegistrationPassword(patient.cpf);
   const groupedSessions = groups.map((g) => ({
     ...g,
     sessions: sessions.filter((s) => s.group_id === g.id),
@@ -215,11 +275,14 @@ const PacienteDetalhe = () => {
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Dados Básicos</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     <InfoField label="Nome completo" value={patient.name} />
-                    <InfoField label="Data de nascimento" value={(patient as any).date_of_birth ? new Date((patient as any).date_of_birth + "T12:00:00").toLocaleDateString("pt-BR") : null} />
+                    <InfoField
+                      label="Data de nascimento"
+                      value={patient.date_of_birth ? new Date(`${patient.date_of_birth}T12:00:00`).toLocaleDateString("pt-BR") : null}
+                    />
                     <InfoField label="Idade" value={patient.age ? `${patient.age} anos` : null} />
                     <InfoField label="CPF" value={patient.cpf} />
                     <InfoField label="Telefone" value={patient.phone} />
-                    <InfoField label="E-mail" value={(patient as any).email} />
+                    <InfoField label="E-mail" value={patient.email} />
                     <InfoField label="Status" value={patient.status} capitalize />
                     <InfoField label="Cadastrado em" value={new Date(patient.created_at).toLocaleDateString("pt-BR")} />
                   </div>
@@ -229,11 +292,11 @@ const PacienteDetalhe = () => {
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Dados Pessoais</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    <InfoField label="Gênero" value={(patient as any).gender} capitalize />
-                    <InfoField label="Pronome" value={(patient as any).pronoun} />
-                    <InfoField label="RG" value={(patient as any).rg} />
-                    <InfoField label="Tipo sanguíneo" value={(patient as any).blood_type} />
-                    <InfoField label="Profissão" value={(patient as any).profession} />
+                    <InfoField label="Gênero" value={patient.gender} capitalize />
+                    <InfoField label="Pronome" value={patient.pronoun} />
+                    <InfoField label="RG" value={patient.rg} />
+                    <InfoField label="Tipo sanguíneo" value={patient.blood_type} />
+                    <InfoField label="Profissão" value={patient.profession} />
                   </div>
                 </div>
 
@@ -241,14 +304,14 @@ const PacienteDetalhe = () => {
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Endereço</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    <InfoField label="CEP" value={(patient as any).cep} />
-                    <InfoField label="Rua" value={(patient as any).street} />
-                    <InfoField label="Número" value={(patient as any).address_number} />
-                    <InfoField label="Complemento" value={(patient as any).address_complement} />
-                    <InfoField label="Bairro" value={(patient as any).neighborhood} />
-                    <InfoField label="Cidade" value={(patient as any).city} />
-                    <InfoField label="Estado" value={(patient as any).state} />
-                    <InfoField label="País" value={(patient as any).country} />
+                    <InfoField label="CEP" value={patient.cep} />
+                    <InfoField label="Rua" value={patient.street} />
+                    <InfoField label="Número" value={patient.address_number} />
+                    <InfoField label="Complemento" value={patient.address_complement} />
+                    <InfoField label="Bairro" value={patient.neighborhood} />
+                    <InfoField label="Cidade" value={patient.city} />
+                    <InfoField label="Estado" value={patient.state} />
+                    <InfoField label="País" value={patient.country} />
                   </div>
                 </div>
 
@@ -256,19 +319,34 @@ const PacienteDetalhe = () => {
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Histórico Clínico</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <InfoField label="Problemas crônicos" value={(patient as any).chronic_conditions} />
-                    <InfoField label="Cirurgias" value={(patient as any).surgeries} />
-                    <InfoField label="Medicamentos contínuos" value={(patient as any).continuous_medications} />
-                    <InfoField label="Alergias" value={(patient as any).allergies} />
-                    <InfoField label="Observações clínicas" value={(patient as any).clinical_notes} />
+                    <InfoField label="Problemas crônicos" value={patient.chronic_conditions} />
+                    <InfoField label="Cirurgias" value={patient.surgeries} />
+                    <InfoField label="Medicamentos contínuos" value={patient.continuous_medications} />
+                    <InfoField label="Alergias" value={patient.allergies} />
+                    <InfoField label="Observações clínicas" value={patient.clinical_notes} />
                   </div>
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-2 flex flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => navigate(`/pacientes/${id}/cadastro`)}>
                     <Pencil className="h-3.5 w-3.5 mr-2" />
                     Editar dados cadastrais
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleOpenShareDialog()}
+                    disabled={generatingShareLink || !sharePasswordAvailable || patient.registration_complete}
+                  >
+                    {generatingShareLink ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Share2 className="h-3.5 w-3.5 mr-2" />}
+                    Compartilhar com o paciente
+                  </Button>
+                  {patient.registration_complete && (
+                    <Badge variant="outline" className="text-success border-success/30 bg-success/10">
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                      Cadastro concluído
+                    </Badge>
+                  )}
                 </div>
               </CardContent>
             </motion.div>
@@ -429,6 +507,53 @@ const PacienteDetalhe = () => {
             <Button variant="destructive" onClick={() => deleteConfirmId && handleDeleteGroup(deleteConfirmId)}>
               Excluir
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Compartilhar com o paciente</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {shareCompleted ? (
+              <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+                Cadastro concluído! Caso precise atualizar alguma informação, informe o profissional que está te atendendo.
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Link do cadastro</Label>
+                  <div className="flex gap-2">
+                    <Input value={shareLink} readOnly />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(shareLink);
+                        toast({ title: "Link copiado" });
+                      }}
+                    >
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copiar
+                    </Button>
+                  </div>
+                </div>
+                <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+                  <p className="font-medium">Senha de acesso</p>
+                  <p className="text-muted-foreground mt-1">
+                    Oriente o paciente a usar os 6 primeiros dígitos do CPF para abrir o formulário.
+                  </p>
+                  <p className="mt-2 font-mono text-base">{sharePassword}</p>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Fechar</Button>
+            </DialogClose>
           </DialogFooter>
         </DialogContent>
       </Dialog>

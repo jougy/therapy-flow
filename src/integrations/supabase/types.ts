@@ -92,6 +92,64 @@ export type Database = {
           },
         ]
       }
+      patient_registration_links: {
+        Row: {
+          clinic_id: string | null
+          completed_at: string | null
+          created_at: string
+          created_by: string
+          id: string
+          password_prefix: string
+          patient_id: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          clinic_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          password_prefix: string
+          patient_id: string
+          token?: string
+          updated_at?: string
+        }
+        Update: {
+          clinic_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          password_prefix?: string
+          patient_id?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_registration_links_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_registration_links_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_registration_links_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: true
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           address_complement: string | null
@@ -330,7 +388,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_patient_registration_link: {
+        Args: { _patient_id: string }
+        Returns: Json
+      }
       get_user_clinic_id: { Args: { _user_id: string }; Returns: string }
+      get_patient_registration_form: {
+        Args: { _password: string; _token: string }
+        Returns: Json
+      }
       handle_signup: {
         Args: {
           _cnpj: string
@@ -346,6 +412,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      submit_patient_registration_form: {
+        Args: { _password: string; _payload: Json; _token: string }
+        Returns: Json
       }
       validate_user_clinic: {
         Args: { _cnpj: string; _user_id: string }
