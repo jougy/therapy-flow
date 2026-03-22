@@ -4,7 +4,7 @@ CREATE TABLE public.patient_registration_links (
   clinic_id uuid REFERENCES public.clinics(id) ON DELETE CASCADE,
   token text NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(16), 'hex'),
   password_prefix text NOT NULL,
-  created_by uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_by uuid NOT NULL,
   completed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()

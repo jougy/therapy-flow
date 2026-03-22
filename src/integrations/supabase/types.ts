@@ -135,13 +135,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "patient_registration_links_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "patient_registration_links_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: true
@@ -392,11 +385,11 @@ export type Database = {
         Args: { _patient_id: string }
         Returns: Json
       }
-      get_user_clinic_id: { Args: { _user_id: string }; Returns: string }
       get_patient_registration_form: {
         Args: { _password: string; _token: string }
         Returns: Json
       }
+      get_user_clinic_id: { Args: { _user_id: string }; Returns: string }
       handle_signup: {
         Args: {
           _cnpj: string

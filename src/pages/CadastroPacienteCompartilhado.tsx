@@ -60,7 +60,7 @@ interface SharedPatientResponse {
   patient: SharedPatientFormData;
 }
 
-const isSharedPatientResponse = (value: Json): value is SharedPatientResponse => {
+const isSharedPatientResponse = (value: unknown): value is SharedPatientResponse => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
