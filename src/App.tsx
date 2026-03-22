@@ -10,6 +10,7 @@ import PacienteDetalhe from "./pages/PacienteDetalhe";
 import SessaoDetalhe from "./pages/SessaoDetalhe";
 import NovoPaciente from "./pages/NovoPaciente";
 import CadastroCompleto from "./pages/CadastroCompleto";
+import CadastroPacienteCompartilhado from "./pages/CadastroPacienteCompartilhado";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
@@ -51,6 +52,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
+            <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
             <Route
               path="/*"
               element={

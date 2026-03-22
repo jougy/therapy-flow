@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, Loader2 } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { getPatientRegistrationPassword } from "@/lib/patient-registration";
 
 const NovoPaciente = () => {
   const navigate = useNavigate();
@@ -46,9 +47,10 @@ const NovoPaciente = () => {
     return age;
   };
 
+  const sharePassword = getPatientRegistrationPassword(cpf);
   const canSubmit = nome.trim().length > 0;
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (shareWithPatient = false) => {
     if (!user || !canSubmit) return;
     setSubmitting(true);
 
@@ -80,8 +82,15 @@ const NovoPaciente = () => {
     if (error) {
       toast({ title: "Erro ao cadastrar", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Paciente cadastrado", description: `${nome} foi adicionado(a). Complete o cadastro para mais detalhes.` });
-      navigate(`/pacientes/${data.id}`);
+      toast({
+        title: "Paciente cadastrado",
+        description: shareWithPatient
+          ? `${nome} foi adicionado(a). Gere o link e compartilhe com o paciente.`
+          : `${nome} foi adicionado(a). Complete o cadastro para mais detalhes.`,
+      });
+      navigate(`/pacientes/${data.id}`, {
+        state: shareWithPatient ? { openShareDialog: true } : undefined,
+      });
     }
     setSubmitting(false);
   };
@@ -132,10 +141,20 @@ const NovoPaciente = () => {
           <ArrowLeft className="h-4 w-4 mr-2" />
           Cancelar
         </Button>
-        <Button onClick={handleSubmit} disabled={submitting || !canSubmit}>
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-          Cadastrar Paciente
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => handleSubmit(true)}
+            disabled={submitting || !canSubmit || !sharePassword}
+          >
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Share2 className="h-4 w-4 mr-2" />}
+            Cadastrar e compartilhar
+          </Button>
+          <Button onClick={() => handleSubmit(false)} disabled={submitting || !canSubmit}>
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+            Cadastrar Paciente
+          </Button>
+        </div>
       </div>
     </motion.div>
   );
