@@ -1,4 +1,4 @@
-import { ChevronRight, User, Venus, Mars } from "lucide-react";
+import { ChevronRight, User, Circle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
