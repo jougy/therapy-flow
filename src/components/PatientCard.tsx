@@ -34,8 +34,8 @@ const formatCpf = (cpf: string) =>
   cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 
 const GenderIcon = ({ gender }: { gender: string | null }) => {
-  if (gender === "feminino") return <Venus className="h-4 w-4 text-pink-400 shrink-0" />;
-  if (gender === "masculino") return <Mars className="h-4 w-4 text-blue-400 shrink-0" />;
+  if (gender === "feminino") return <span className="text-sm shrink-0" title="Feminino">♀</span>;
+  if (gender === "masculino") return <span className="text-sm shrink-0" title="Masculino">♂</span>;
   return <User className="h-4 w-4 text-muted-foreground shrink-0" />;
 };
 
