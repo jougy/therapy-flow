@@ -1,32 +1,14 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, CalendarDays, DollarSign, TrendingUp, Clock, AlertCircle, Search, Plus, ChevronRight, Loader2 } from "lucide-react";
+import { Users, CalendarDays, Search, Plus, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-
-interface PatientWithGroups {
-  id: string;
-  name: string;
-  age: number | null;
-  phone: string | null;
-  status: string;
-  updated_at: string;
-  groups: { name: string; color: string }[];
-  sessionCount: number;
-}
-
-const groupBadgeColors: Record<string, string> = {
-  lavender: "bg-group-lavender/40 text-foreground border-group-lavender",
-  sage: "bg-group-sage/40 text-foreground border-group-sage",
-  peach: "bg-group-peach/40 text-foreground border-group-peach",
-  sky: "bg-group-sky/40 text-foreground border-group-sky",
-  rose: "bg-group-rose/40 text-foreground border-group-rose",
-};
+import AgendaWidget from "@/components/AgendaWidget";
+import PatientCard, { type PatientCardData } from "@/components/PatientCard";
 
 const container = {
   hidden: { opacity: 0 },
@@ -40,7 +22,7 @@ const item = {
 
 const Index = () => {
   const [search, setSearch] = useState("");
-  const [patients, setPatients] = useState<PatientWithGroups[]>([]);
+  const [patients, setPatients] = useState<PatientCardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, active: 0, sessions: 0 });
   const navigate = useNavigate();
@@ -54,27 +36,31 @@ const Index = () => {
       const [patientsRes, groupsRes, sessionsRes] = await Promise.all([
         supabase.from("patients").select("*").order("updated_at", { ascending: false }),
         supabase.from("patient_groups").select("*"),
-        supabase.from("sessions").select("id, patient_id"),
+        supabase.from("sessions").select("id, patient_id, session_date"),
       ]);
 
       const pats = patientsRes.data ?? [];
       const groups = groupsRes.data ?? [];
       const sessions = sessionsRes.data ?? [];
 
-      const sessionCounts: Record<string, number> = {};
+      // Last session date per patient
+      const lastSession: Record<string, string> = {};
       sessions.forEach((s) => {
-        sessionCounts[s.patient_id] = (sessionCounts[s.patient_id] || 0) + 1;
+        if (!lastSession[s.patient_id] || s.session_date > lastSession[s.patient_id]) {
+          lastSession[s.patient_id] = s.session_date;
+        }
       });
 
-      const mapped: PatientWithGroups[] = pats.map((p) => ({
+      const mapped: PatientCardData[] = pats.map((p) => ({
         id: p.id,
         name: p.name,
-        age: p.age,
-        phone: p.phone,
+        gender: p.gender,
+        pronoun: p.pronoun,
+        date_of_birth: p.date_of_birth,
+        cpf: p.cpf,
         status: p.status,
-        updated_at: p.updated_at,
+        lastSessionDate: lastSession[p.id] || null,
         groups: groups.filter((g) => g.patient_id === p.id).map((g) => ({ name: g.name, color: g.color })),
-        sessionCount: sessionCounts[p.id] || 0,
       }));
 
       setPatients(mapped);
@@ -96,7 +82,6 @@ const Index = () => {
     { title: "Pacientes Ativos", value: String(stats.active), icon: Users, accent: "text-primary", bgAccent: "bg-primary/10" },
     { title: "Total de Pacientes", value: String(stats.total), icon: Users, accent: "text-primary", bgAccent: "bg-primary/10" },
     { title: "Total de Sessões", value: String(stats.sessions), icon: CalendarDays, accent: "text-success", bgAccent: "bg-success/10" },
-    { title: "Taxa de Retorno", value: stats.total > 0 ? `${Math.round((stats.active / stats.total) * 100)}%` : "—", icon: TrendingUp, accent: "text-primary", bgAccent: "bg-primary/10" },
   ];
 
   if (loading) {
@@ -141,43 +126,7 @@ const Index = () => {
             </p>
             {filtered.map((patient) => (
               <motion.div key={patient.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
-                <Card
-                  className="p-4 cursor-pointer hover:shadow-md transition-shadow duration-150 group"
-                  onClick={() => navigate(`/pacientes/${patient.id}`)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Ver detalhes de ${patient.name}`}
-                  onKeyDown={(e) => e.key === "Enter" && navigate(`/pacientes/${patient.id}`)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <h3 className="font-semibold text-sm">{patient.name}</h3>
-                        <Badge
-                          variant={patient.status === "ativo" ? "default" : "secondary"}
-                          className={patient.status === "ativo" ? "bg-success/15 text-success border-success/20 hover:bg-success/20" : ""}
-                        >
-                          {patient.status === "ativo" ? "Ativo" : "Inativo"}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
-                        {patient.age && <span>{patient.age} anos</span>}
-                        {patient.phone && <span>{patient.phone}</span>}
-                        <span>{patient.sessionCount} sessões</span>
-                      </div>
-                      {patient.groups.length > 0 && (
-                        <div className="flex gap-1.5 mt-2 flex-wrap">
-                          {patient.groups.map((g) => (
-                            <Badge key={g.name} variant="outline" className={`text-xs ${groupBadgeColors[g.color] || ""}`}>
-                              {g.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0 ml-4" />
-                  </div>
-                </Card>
+                <PatientCard patient={patient} />
               </motion.div>
             ))}
             {filtered.length === 0 && (
@@ -209,6 +158,9 @@ const Index = () => {
                   </Card>
                 </motion.div>
               ))}
+              <motion.div variants={item}>
+                <AgendaWidget />
+              </motion.div>
             </div>
 
             {patients.length > 0 && (
@@ -216,30 +168,7 @@ const Index = () => {
                 <h2 className="text-sm font-medium text-muted-foreground mb-3">Pacientes recentes</h2>
                 <div className="space-y-2">
                   {patients.slice(0, 5).map((patient) => (
-                    <Card
-                      key={patient.id}
-                      className="p-3 cursor-pointer hover:shadow-md transition-shadow duration-150 group"
-                      onClick={() => navigate(`/pacientes/${patient.id}`)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === "Enter" && navigate(`/pacientes/${patient.id}`)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="font-medium text-sm">{patient.name}</span>
-                          {patient.groups.length > 0 && (
-                            <div className="flex gap-1 mt-1">
-                              {patient.groups.map((g) => (
-                                <Badge key={g.name} variant="outline" className={`text-xs ${groupBadgeColors[g.color] || ""}`}>
-                                  {g.name}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                      </div>
-                    </Card>
+                    <PatientCard key={patient.id} patient={patient} />
                   ))}
                 </div>
               </div>
