@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Copy, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Copy, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildSessionPayload, isCompletedSessionLocked, type SessionFormValues } from "@/lib/session-payload";
 import { getPreferredPatientGroupId } from "@/lib/patient-group-defaults";
+import { createTreatmentBlock, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
 import {
   buildTemplateLayout,
   getVisibleTemplateFields,
@@ -37,26 +38,11 @@ const isJsonObject = (value: Json | null): value is Record<string, Json | undefi
 
 const readJsonString = (value: Json | undefined) => (typeof value === "string" ? value : "");
 
-const readJsonStringArray = (value: Json | undefined): string[] =>
-  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-
 const readJsonRecord = (value: Json | null): AnamnesisFormResponse =>
   isJsonObject(value) ? (value as Record<string, string | number | string[] | boolean | null>) : {};
 
 const readTemplateSchema = (value: Json): AnamnesisTemplateSchema =>
   Array.isArray(value) ? (value as AnamnesisTemplateSchema) : [];
-
-const TECHNIQUES = [
-  "Mobilização articular",
-  "Alongamento",
-  "Liberação miofascial",
-  "Eletroterapia",
-  "Cinesioterapia",
-  "Termoterapia",
-  "Crioterapia",
-  "Acupuntura",
-  "Bandagem funcional",
-];
 
 const SessaoDetalhe = () => {
   const { id: patientId, sessionId } = useParams();
@@ -79,9 +65,8 @@ const SessaoDetalhe = () => {
   const [painScore, setPainScore] = useState([0]);
   const [complexityScore, setComplexityScore] = useState([0]);
   const [observacoes, setObservacoes] = useState("");
-  const [selectedTechniques, setSelectedTechniques] = useState<string[]>([]);
-  const [descricaoTratamento, setDescricaoTratamento] = useState("");
-  const [orientacoes, setOrientacoes] = useState("");
+  const [treatmentBlocks, setTreatmentBlocks] = useState<TreatmentBlock[]>([]);
+  const [treatmentGeneralGuidance, setTreatmentGeneralGuidance] = useState("");
   const [status, setStatus] = useState("rascunho");
   const [notes, setNotes] = useState("");
   const [groupId, setGroupId] = useState<string | null>(null);
@@ -148,14 +133,14 @@ const SessaoDetalhe = () => {
         if (data) {
           const anamnesis = isJsonObject(data.anamnesis) ? data.anamnesis : {};
           const treatment = isJsonObject(data.treatment) ? data.treatment : {};
+          const treatmentState = readTreatmentState(treatment);
           setQueixa(readJsonString(anamnesis.queixa));
           setSintomas(readJsonString(anamnesis.sintomas));
           setObservacoes(readJsonString(anamnesis.observacoes));
           setPainScore([data.pain_score || 0]);
           setComplexityScore([data.complexity_score || 0]);
-          setSelectedTechniques(readJsonStringArray(treatment.techniques));
-          setDescricaoTratamento(readJsonString(treatment.descricao));
-          setOrientacoes(readJsonString(treatment.orientacoes));
+          setTreatmentBlocks(treatmentState.blocks);
+          setTreatmentGeneralGuidance(treatmentState.generalGuidance);
           setStatus(data.status);
           setNotes(data.notes || "");
           setGroupId(data.group_id);
@@ -190,16 +175,15 @@ const SessaoDetalhe = () => {
     anamnesisFormResponse,
     anamnesisTemplateId,
     complexityScore: complexityScore[0],
-    descricaoTratamento,
     groupId,
     notes,
     observacoes,
-    orientacoes,
     painScore: painScore[0],
     queixa,
-    selectedTechniques,
     sintomas,
     status,
+    treatmentBlocks,
+    treatmentGeneralGuidance,
   };
 
   const buildCurrentSessionPayload = (clinicId: string | null, statusOverride?: string) =>
@@ -276,10 +260,18 @@ const SessaoDetalhe = () => {
     setStartingFromThis(false);
   };
 
-  const toggleTechnique = (tech: string) => {
-    setSelectedTechniques((prev) =>
-      prev.includes(tech) ? prev.filter((t) => t !== tech) : [...prev, tech]
+  const addTreatmentBlock = () => {
+    setTreatmentBlocks((current) => [...current, createTreatmentBlock(current.length)]);
+  };
+
+  const updateTreatmentBlock = (blockId: string, changes: Partial<TreatmentBlock>) => {
+    setTreatmentBlocks((current) =>
+      current.map((block) => (block.id === blockId ? { ...block, ...changes } : block))
     );
+  };
+
+  const removeTreatmentBlock = (blockId: string) => {
+    setTreatmentBlocks((current) => current.filter((block) => block.id !== blockId));
   };
 
   const painColor =
@@ -708,51 +700,120 @@ const SessaoDetalhe = () => {
         <TabsContent value="tratamento" className="mt-4 space-y-4">
           <Card>
             <CardContent className="p-6 space-y-5">
-              <div>
-                <Label className="text-sm font-medium">Técnicas Aplicadas</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
-                  {TECHNIQUES.map((tech) => (
-                    <label
-                      key={tech}
-                      className={`flex items-center gap-2 p-2 rounded-md border transition-colors text-sm ${
-                        selectedTechniques.includes(tech) ? "bg-accent border-primary" : ""
-                      } ${locked ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-accent/50"}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedTechniques.includes(tech)}
-                        onChange={() => toggleTechnique(tech)}
-                        className="rounded border-input"
-                        disabled={locked}
-                      />
-                      <span>{tech}</span>
-                    </label>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <h3 className="font-medium">Receituário de tratamento</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Adicione blocos com o nome do tratamento, frequência, duração e instruções específicas.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" onClick={addTreatmentBlock} disabled={locked}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adicionar bloco
+                </Button>
+              </div>
+
+              {treatmentBlocks.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  Nenhum bloco de tratamento adicionado. Use o botão "+" para montar o receituário.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {treatmentBlocks.map((block, index) => (
+                    <div key={block.id} className="rounded-xl border p-4 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-medium">Bloco {index + 1}</p>
+                          <p className="text-sm text-muted-foreground">Tratamento com frequência, duração e instruções.</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeTreatmentBlock(block.id)}
+                          disabled={locked}
+                          aria-label="Remover bloco"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Nome do tratamento</Label>
+                          <Input
+                            value={block.name}
+                            onChange={(event) => updateTreatmentBlock(block.id, { name: event.target.value })}
+                            placeholder="Ex: Alongamento lombar"
+                            disabled={locked}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>De quanto em quanto tempo</Label>
+                          <Input
+                            value={block.frequency}
+                            onChange={(event) => updateTreatmentBlock(block.id, { frequency: event.target.value })}
+                            placeholder="Ex: a cada 8h"
+                            disabled={locked}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Por quanto tempo</Label>
+                          <Input
+                            value={block.duration}
+                            onChange={(event) => updateTreatmentBlock(block.id, { duration: event.target.value })}
+                            placeholder="Ex: por 15 dias"
+                            disabled={locked}
+                          />
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Quantidade de séries</Label>
+                            <Input
+                              value={block.series}
+                              onChange={(event) => updateTreatmentBlock(block.id, { series: event.target.value })}
+                              placeholder="Opcional"
+                              disabled={locked}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Quantidade de repetições</Label>
+                            <Input
+                              value={block.repetitions}
+                              onChange={(event) => updateTreatmentBlock(block.id, { repetitions: event.target.value })}
+                              placeholder="Opcional"
+                              disabled={locked}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Instruções adicionais</Label>
+                        <Textarea
+                          value={block.instructions}
+                          onChange={(event) => updateTreatmentBlock(block.id, { instructions: event.target.value })}
+                          placeholder="Descreva detalhes do bloco de tratamento..."
+                          rows={3}
+                          disabled={locked}
+                        />
+                      </div>
+                    </div>
                   ))}
                 </div>
-              </div>
+              )}
 
               <div>
-                <Label htmlFor="descricao-tratamento" className="text-sm font-medium">Descrição do Tratamento</Label>
+                <Label htmlFor="treatment-general-guidance" className="text-sm font-medium">
+                  Orientações gerais e observações
+                </Label>
                 <Textarea
-                  id="descricao-tratamento"
-                  value={descricaoTratamento}
-                  onChange={(e) => setDescricaoTratamento(e.target.value)}
-                  placeholder="Descreva o tratamento realizado..."
+                  id="treatment-general-guidance"
+                  value={treatmentGeneralGuidance}
+                  onChange={(event) => setTreatmentGeneralGuidance(event.target.value)}
+                  placeholder="Registre orientações gerais do receituário, alertas e observações importantes..."
                   className="mt-1.5"
-                  rows={4}
-                  disabled={locked}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="orientacoes" className="text-sm font-medium">Orientações ao Paciente</Label>
-                <Textarea
-                  id="orientacoes"
-                  value={orientacoes}
-                  onChange={(e) => setOrientacoes(e.target.value)}
-                  placeholder="Orientações e exercícios para casa..."
-                  className="mt-1.5"
-                  rows={3}
+                  rows={5}
                   disabled={locked}
                 />
               </div>

@@ -1,5 +1,7 @@
 import type { Database } from "@/integrations/supabase/types";
 import type { AnamnesisFormResponse } from "@/lib/anamnesis-forms";
+import type { TreatmentBlock } from "@/lib/session-treatment";
+import { buildTreatmentPayload } from "@/lib/session-treatment";
 
 type SessionInsert = Database["public"]["Tables"]["sessions"]["Insert"];
 
@@ -7,16 +9,15 @@ export interface SessionFormValues {
   anamnesisFormResponse: AnamnesisFormResponse;
   anamnesisTemplateId: string | null;
   complexityScore: number;
-  descricaoTratamento: string;
   groupId: string | null;
   notes: string;
   observacoes: string;
-  orientacoes: string;
   painScore: number;
   queixa: string;
-  selectedTechniques: string[];
   sintomas: string;
   status: string;
+  treatmentBlocks: TreatmentBlock[];
+  treatmentGeneralGuidance: string;
 }
 
 interface BuildSessionPayloadParams {
@@ -49,11 +50,10 @@ export const buildSessionPayload = ({
     queixa: values.queixa,
     sintomas: values.sintomas,
   },
-  treatment: {
-    descricao: values.descricaoTratamento,
-    orientacoes: values.orientacoes,
-    techniques: [...values.selectedTechniques],
-  },
+  treatment: buildTreatmentPayload({
+    blocks: values.treatmentBlocks,
+    generalGuidance: values.treatmentGeneralGuidance,
+  }),
 });
 
 export const isCompletedSessionLocked = (isNew: boolean, status: string) =>
