@@ -1,5 +1,6 @@
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
+import { formatTreatmentSummary, readTreatmentState } from "@/lib/session-treatment";
 
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
 
@@ -60,7 +61,7 @@ export const getSessionPreviewContent = (
   baseSchema?: AnamnesisTemplateSchema
 ): SessionPreviewContent => {
   const anamnesis = isJsonObject(session.anamnesis) ? session.anamnesis : {};
-  const treatment = isJsonObject(session.treatment) ? session.treatment : {};
+  const treatmentState = readTreatmentState(session.treatment);
 
   const complaintFields = (baseSchema ?? []).filter((field) => field.systemKey && shouldShowInPatientList(field));
 
@@ -73,8 +74,7 @@ export const getSessionPreviewContent = (
       ]);
 
   const treatmentSummary = joinNonEmpty([
-    readJsonString(treatment.descricao),
-    readJsonString(treatment.orientacoes),
+    formatTreatmentSummary(treatmentState),
     (session.notes ?? "").trim(),
   ]);
 

@@ -14,13 +14,25 @@ describe("getSessionPreviewContent", () => {
       pain_score: 7,
       complexity_score: 4,
       treatment: {
-        descricao: "Mobilizacao e alongamento",
-        orientacoes: "Exercicios domiciliares",
+        blocks: [
+          {
+            duration: "por 15 dias",
+            frequency: "a cada 8h",
+            id: "block-1",
+            instructions: "Aplicar gelo depois",
+            name: "Mobilizacao e alongamento",
+            repetitions: "12",
+            series: "3",
+          },
+        ],
+        general_guidance: "Exercicios domiciliares",
       },
     });
 
     expect(result.complaint).toBe("Dor lombar\n\nRigidez matinal\n\nDor piora ao sentar");
-    expect(result.treatment).toBe("Mobilizacao e alongamento\n\nExercicios domiciliares\n\nRetorno em sete dias");
+    expect(result.treatment).toBe(
+      "Mobilizacao e alongamento | a cada 8h | por 15 dias | 3 series | 12 repeticoes | Aplicar gelo depois\n\nOrientacoes gerais: Exercicios domiciliares\n\nRetorno em sete dias"
+    );
   });
 
   it("returns empty strings when no preview fields are available", () => {
