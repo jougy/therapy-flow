@@ -67,6 +67,7 @@ export default {
           ring: "hsl(var(--sidebar-ring))",
         },
         group: {
+          gray: "hsl(var(--group-gray))",
           lavender: "hsl(var(--group-lavender))",
           sage: "hsl(var(--group-sage))",
           peach: "hsl(var(--group-peach))",

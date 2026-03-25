@@ -15,6 +15,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildSessionPayload, isCompletedSessionLocked, type SessionFormValues } from "@/lib/session-payload";
+import { getPreferredPatientGroupId } from "@/lib/patient-group-defaults";
 
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 
@@ -70,13 +71,27 @@ const SessaoDetalhe = () => {
       if (!patientId) return;
 
       // Fetch patient name and groups in parallel
-      const [patientRes, groupsRes] = await Promise.all([
+      const [patientRes, groupsRes, lastUsedGroupRes] = await Promise.all([
         supabase.from("patients").select("name").eq("id", patientId).maybeSingle(),
         supabase.from("patient_groups").select("*").eq("patient_id", patientId),
+        supabase
+          .from("sessions")
+          .select("group_id")
+          .eq("patient_id", patientId)
+          .not("group_id", "is", null)
+          .order("session_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
       
       if (patientRes.data) setPatientName(patientRes.data.name);
-      if (groupsRes.data) setGroups(groupsRes.data);
+      if (groupsRes.data) {
+        setGroups(groupsRes.data);
+
+        if (isNew) {
+          setGroupId(getPreferredPatientGroupId(groupsRes.data, lastUsedGroupRes.data?.group_id ?? null));
+        }
+      }
 
       if (!isNew && sessionId) {
         const { data } = await supabase

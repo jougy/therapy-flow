@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { useNavigate } from "react-router-dom";
 
 const groupBadgeColors: Record<string, string> = {
+  gray: "bg-group-gray/40 text-foreground border-group-gray",
   lavender: "bg-group-lavender/40 text-foreground border-group-lavender",
   sage: "bg-group-sage/40 text-foreground border-group-sage",
   peach: "bg-group-peach/40 text-foreground border-group-peach",
@@ -27,7 +28,7 @@ export interface PatientCardData {
   cpf: string | null;
   status: string;
   lastSessionDate: string | null;
-  groups: { name: string; color: string }[];
+  groups: { name: string; color: string; status: string | null }[];
 }
 
 const formatCpf = (cpf: string) =>

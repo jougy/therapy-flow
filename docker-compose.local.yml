@@ -1,0 +1,24 @@
+services:
+  app:
+    image: node:22-bookworm
+    working_dir: /workspace
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/workspace
+      - local_node_modules:/workspace/node_modules
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      sh -lc '
+        npm ci &&
+        set -a &&
+        . ./.env.local &&
+        set +a &&
+        VITE_SUPABASE_URL="$(printf "%s" "$VITE_SUPABASE_URL" | sed "s#://127.0.0.1#://host.docker.internal#; s#://localhost#://host.docker.internal#")" &&
+        export VITE_SUPABASE_URL &&
+        npm run dev -- --host 0.0.0.0 --port 8080
+      '
+
+volumes:
+  local_node_modules:

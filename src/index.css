@@ -43,6 +43,7 @@
     --radius: 0.625rem;
 
     /* Grouping colors for session groups */
+    --group-gray: 210 18% 88%;
     --group-lavender: 263 70% 85%;
     --group-sage: 142 40% 80%;
     --group-peach: 20 90% 85%;

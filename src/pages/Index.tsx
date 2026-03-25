@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import AgendaWidget from "@/components/AgendaWidget";
 import PatientCard, { type PatientCardData } from "@/components/PatientCard";
+import { filterActivePatientGroups } from "@/lib/patient-groups";
 
 const container = {
   hidden: { opacity: 0 },
@@ -60,7 +61,11 @@ const Index = () => {
         cpf: p.cpf,
         status: p.status,
         lastSessionDate: lastSession[p.id] || null,
-        groups: groups.filter((g) => g.patient_id === p.id).map((g) => ({ name: g.name, color: g.color })),
+        groups: filterActivePatientGroups(
+          groups
+            .filter((g) => g.patient_id === p.id)
+            .map((g) => ({ name: g.name, color: g.color, status: g.status }))
+        ),
       }));
 
       setPatients(mapped);

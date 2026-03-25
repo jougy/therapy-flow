@@ -17,6 +17,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
+import type { PatientGroupStatus } from "@/lib/patient-groups";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -28,6 +29,7 @@ type ShareLinkResponse = {
 };
 
 const GROUP_COLORS = [
+  { value: "gray", label: "Cinza claro" },
   { value: "lavender", label: "Lavanda" },
   { value: "sage", label: "Verde" },
   { value: "peach", label: "Pêssego" },
@@ -35,12 +37,29 @@ const GROUP_COLORS = [
   { value: "rose", label: "Rosa" },
 ];
 
+const GROUP_STATUSES: { value: PatientGroupStatus; label: string }[] = [
+  { value: "em_andamento", label: "Em andamento" },
+  { value: "pausado", label: "Pausado" },
+  { value: "concluido", label: "Concluído" },
+  { value: "cancelado", label: "Cancelado" },
+  { value: "inativo", label: "Inativo" },
+];
+
 const groupBorderColors: Record<string, string> = {
+  gray: "border-l-group-gray",
   lavender: "border-l-group-lavender",
   sage: "border-l-group-sage",
   peach: "border-l-group-peach",
   sky: "border-l-group-sky",
   rose: "border-l-group-rose",
+};
+
+const groupStatusBadgeStyles: Record<PatientGroupStatus, string> = {
+  em_andamento: "bg-primary/10 text-primary border-primary/20",
+  pausado: "bg-warning/15 text-warning border-warning/20",
+  concluido: "bg-success/15 text-success border-success/20",
+  cancelado: "bg-destructive/15 text-destructive border-destructive/20",
+  inativo: "bg-muted text-muted-foreground border-border",
 };
 
 const statusColors: Record<string, string> = {
@@ -98,6 +117,7 @@ const PacienteDetalhe = () => {
   const [editingGroup, setEditingGroup] = useState<PatientGroup | null>(null);
   const [groupName, setGroupName] = useState("");
   const [groupColor, setGroupColor] = useState("lavender");
+  const [groupStatus, setGroupStatus] = useState<PatientGroupStatus>("em_andamento");
   const [savingGroup, setSavingGroup] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -163,13 +183,20 @@ const PacienteDetalhe = () => {
     setEditingGroup(null);
     setGroupName("");
     setGroupColor("lavender");
+    setGroupStatus("em_andamento");
     setGroupDialogOpen(true);
   };
 
   const openEditGroup = (g: PatientGroup) => {
+    if (g.is_default) {
+      toast({ title: "O grupo padrão não pode ser editado dessa forma", variant: "destructive" });
+      return;
+    }
+
     setEditingGroup(g);
     setGroupName(g.name);
     setGroupColor(g.color);
+    setGroupStatus((g.status as PatientGroupStatus) || "em_andamento");
     setGroupDialogOpen(true);
   };
 
@@ -180,13 +207,18 @@ const PacienteDetalhe = () => {
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
 
     if (editingGroup) {
-      const { error } = await supabase.from("patient_groups").update({ name: groupName.trim(), color: groupColor }).eq("id", editingGroup.id);
+      const { error } = await supabase
+        .from("patient_groups")
+        .update({ name: groupName.trim(), color: groupColor, status: groupStatus })
+        .eq("id", editingGroup.id);
       if (error) { toast({ title: "Erro ao atualizar grupo", variant: "destructive" }); }
       else { toast({ title: "Grupo atualizado" }); }
     } else {
       const { error } = await supabase.from("patient_groups").insert({
         name: groupName.trim(),
         color: groupColor,
+        status: groupStatus,
+        is_default: false,
         patient_id: id,
         user_id: user.id,
         clinic_id: clinicRes.data,
@@ -201,6 +233,13 @@ const PacienteDetalhe = () => {
   };
 
   const handleDeleteGroup = async (groupId: string) => {
+    const group = groups.find((item) => item.id === groupId);
+    if (group?.is_default) {
+      toast({ title: "O grupo padrão não pode ser excluído", variant: "destructive" });
+      setDeleteConfirmId(null);
+      return;
+    }
+
     // Unlink sessions first
     await supabase.from("sessions").update({ group_id: null }).eq("group_id", groupId);
     const { error } = await supabase.from("patient_groups").delete().eq("id", groupId);
@@ -369,16 +408,27 @@ const PacienteDetalhe = () => {
           <CardHeader className={`border-l-4 rounded-tl-lg ${groupBorderColors[group.color] || ""}`}>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-lg">{group.name}</CardTitle>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <CardTitle className="text-lg">{group.name}</CardTitle>
+                  {!group.is_default && group.status && (
+                    <Badge variant="outline" className={groupStatusBadgeStyles[group.status as PatientGroupStatus]}>
+                      {GROUP_STATUSES.find((status) => status.value === group.status)?.label || "Em andamento"}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">{group.sessions.length} atendimento{group.sessions.length !== 1 ? "s" : ""}</p>
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditGroup(group)} aria-label="Editar grupo">
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteConfirmId(group.id)} aria-label="Excluir grupo">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                {!group.is_default && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditGroup(group)} aria-label="Editar grupo">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {!group.is_default && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteConfirmId(group.id)} aria-label="Excluir grupo">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -461,6 +511,19 @@ const PacienteDetalhe = () => {
             <div className="space-y-2">
               <Label>Nome do grupo</Label>
               <Input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Ex: Lombalgia crônica" />
+            </div>
+            <div className="space-y-2">
+              <Label>Status do grupo</Label>
+              <Select value={groupStatus} onValueChange={(value) => setGroupStatus(value as PatientGroupStatus)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GROUP_STATUSES.map((status) => (
+                    <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Cor</Label>

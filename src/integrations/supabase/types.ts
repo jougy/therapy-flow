@@ -14,6 +14,57 @@ export type Database = {
   }
   public: {
     Tables: {
+      agenda_events: {
+        Row: {
+          clinic_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          patient_id: string | null
+          scheduled_for: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          clinic_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          patient_id?: string | null
+          scheduled_for: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          clinic_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          patient_id?: string | null
+          scheduled_for?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agenda_events_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agenda_events_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
           cnpj: string
@@ -53,8 +104,10 @@ export type Database = {
           color: string
           created_at: string
           id: string
+          is_default: boolean
           name: string
           patient_id: string
+          status: string | null
           user_id: string
         }
         Insert: {
@@ -62,8 +115,10 @@ export type Database = {
           color?: string
           created_at?: string
           id?: string
+          is_default?: boolean
           name: string
           patient_id: string
+          status?: string | null
           user_id: string
         }
         Update: {
@@ -71,8 +126,10 @@ export type Database = {
           color?: string
           created_at?: string
           id?: string
+          is_default?: boolean
           name?: string
           patient_id?: string
+          status?: string | null
           user_id?: string
         }
         Relationships: [

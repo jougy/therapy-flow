@@ -6,3 +6,6 @@ additional_redirect_urls = ["http://localhost:8080", "http://127.0.0.1:8080"]
 
 [auth.email]
 enable_confirmations = false
+
+[analytics]
+enabled = false

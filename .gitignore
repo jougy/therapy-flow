@@ -13,6 +13,7 @@ dist-ssr
 *.local
 .env.local
 .env.*.local
+.control
 .vercel
 supabase/.temp
 supabase/.branches
