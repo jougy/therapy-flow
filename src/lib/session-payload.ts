@@ -1,8 +1,11 @@
 import type { Database } from "@/integrations/supabase/types";
+import type { AnamnesisFormResponse } from "@/lib/anamnesis-forms";
 
 type SessionInsert = Database["public"]["Tables"]["sessions"]["Insert"];
 
 export interface SessionFormValues {
+  anamnesisFormResponse: AnamnesisFormResponse;
+  anamnesisTemplateId: string | null;
   complexityScore: number;
   descricaoTratamento: string;
   groupId: string | null;
@@ -31,6 +34,8 @@ export const buildSessionPayload = ({
   values,
   statusOverride,
 }: BuildSessionPayloadParams): SessionInsert => ({
+  anamnesis_form_response: values.anamnesisFormResponse,
+  anamnesis_template_id: values.anamnesisTemplateId,
   patient_id: patientId,
   user_id: userId,
   clinic_id: clinicId,
