@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Copy, GripVertical, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Copy, GripVertical, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,7 +41,11 @@ const FormularioEditor = () => {
   const [templateDescription, setTemplateDescription] = useState("");
   const [templateFields, setTemplateFields] = useState<AnamnesisTemplateSchema>(createDefaultTemplateSchema());
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [template, setTemplate] = useState<TemplateRow | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [desktopMenuTop, setDesktopMenuTop] = useState(128);
+  const [desktopMenuMaxHeight, setDesktopMenuMaxHeight] = useState(480);
 
   useEffect(() => {
     if (isBase) {
@@ -95,11 +100,72 @@ const FormularioEditor = () => {
     void fetchTemplate();
   }, [clinicId, isBase, isNew, navigate, templateId]);
 
+  useEffect(() => {
+    const updateDesktopMenuBounds = () => {
+      if (typeof window === "undefined") return;
+
+      const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? 96;
+      const topOffset = Math.max(Math.round(headerBottom + 16), 96);
+      const maxHeight = Math.max(window.innerHeight - topOffset - 24, 240);
+
+      setDesktopMenuTop(topOffset);
+      setDesktopMenuMaxHeight(maxHeight);
+    };
+
+    updateDesktopMenuBounds();
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" && headerRef.current
+        ? new ResizeObserver(() => updateDesktopMenuBounds())
+        : null;
+
+    if (headerRef.current && resizeObserver) {
+      resizeObserver.observe(headerRef.current);
+    }
+
+    window.addEventListener("resize", updateDesktopMenuBounds);
+    window.addEventListener("scroll", updateDesktopMenuBounds, { passive: true });
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateDesktopMenuBounds);
+      window.removeEventListener("scroll", updateDesktopMenuBounds);
+    };
+  }, []);
+
   const sectionOptions = useMemo(() => getSectionSelectorOptions(templateFields), [templateFields]);
   const groupedLayout = useMemo(() => buildTemplateLayout(templateFields), [templateFields]);
   const availableSections = useMemo(
     () => templateFields.filter((field) => field.type === "section"),
     [templateFields]
+  );
+
+  const blockMenuContent = (
+    <Card className="border-border/70">
+      <CardHeader>
+        <CardTitle className="text-base">Blocos disponíveis</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-2">
+        {ANAMNESIS_FIELD_LIBRARY.map((item) => (
+          <Button
+            key={item.type}
+            type="button"
+            variant="outline"
+            className="justify-start"
+            onClick={() => handleAddField(item.type)}
+            disabled={isBase && item.type !== "section"}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            {item.label}
+          </Button>
+        ))}
+        {isBase && (
+          <p className="text-xs text-muted-foreground mt-2">
+            No bloco padrão universal, você pode reorganizar os campos fixos e criar seções, mas não adicionar campos extras.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 
   const handleAddField = (type: AnamnesisField["type"]) => {
@@ -206,7 +272,7 @@ const FormularioEditor = () => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+      <div ref={headerRef} className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/configuracoes")} aria-label="Voltar para configurações">
             <ArrowLeft className="h-4 w-4" />
@@ -228,33 +294,34 @@ const FormularioEditor = () => {
         </Button>
       </div>
 
+      <Button
+        type="button"
+        variant="secondary"
+        size="icon"
+        className="fixed left-3 top-1/2 z-40 h-11 w-11 -translate-y-1/2 rounded-full shadow-lg lg:hidden"
+        aria-label="Abrir blocos disponíveis"
+        onClick={() => setMobileMenuOpen(true)}
+      >
+        <ChevronRight className="h-5 w-5" />
+      </Button>
+
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent side="left" className="w-[300px] overflow-y-auto sm:w-[340px]">
+          <SheetHeader>
+            <SheetTitle>Blocos disponíveis</SheetTitle>
+          </SheetHeader>
+          <div className="mt-6">{blockMenuContent}</div>
+        </SheetContent>
+      </Sheet>
+
       <div className="space-y-6 lg:relative">
-        <div className="lg:w-[260px]">
-          <Card className="lg:fixed lg:top-20 lg:left-6 lg:w-[260px]">
-            <CardHeader>
-              <CardTitle className="text-base">Blocos disponíveis</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-2">
-              {ANAMNESIS_FIELD_LIBRARY.map((item) => (
-                <Button
-                  key={item.type}
-                  type="button"
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => handleAddField(item.type)}
-                  disabled={isBase && item.type !== "section"}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  {item.label}
-                </Button>
-              ))}
-              {isBase && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  No bloco padrão universal, você pode reorganizar os campos fixos e criar seções, mas não adicionar campos extras.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+        <div className="hidden lg:block lg:w-[260px]">
+          <div
+            className="fixed left-6 z-20 w-[260px] overflow-y-auto"
+            style={{ top: `${desktopMenuTop}px`, maxHeight: `${desktopMenuMaxHeight}px` }}
+          >
+            {blockMenuContent}
+          </div>
         </div>
 
         <div className="space-y-4 min-h-0 lg:pl-[284px]">

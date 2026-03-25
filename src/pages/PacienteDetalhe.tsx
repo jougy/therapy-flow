@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp,
-  Pencil, Trash2, Palette, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2
+  Pencil, Trash2, Palette, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, Search, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/l
 import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { PatientGroupStatus } from "@/lib/patient-groups";
 import { getSessionPreviewContent } from "@/lib/session-preview";
+import { buildPatientSessionsView, canDeleteSelectedSessions } from "@/lib/patient-sessions-view";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -69,6 +70,20 @@ const statusColors: Record<string, string> = {
   concluído: "bg-success/15 text-success border-success/20",
   rascunho: "bg-warning/15 text-warning border-warning/20",
   cancelado: "bg-destructive/15 text-destructive border-destructive/20",
+};
+
+const SESSION_STATUSES = [
+  { value: "rascunho", label: "Rascunho" },
+  { value: "concluído", label: "Concluído" },
+  { value: "cancelado", label: "Cancelado" },
+] as const;
+
+const formatSessionMetaDate = (value: string | null) => {
+  if (!value) {
+    return "—";
+  }
+
+  return new Date(value).toLocaleDateString("pt-BR");
 };
 
 const PainIndicator = ({ score }: { score: number }) => {
@@ -122,20 +137,47 @@ const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemp
 const SessionCard = ({
   baseSchema,
   borderClassName,
+  isSelected,
   navigateTo,
+  onPressCancel,
+  onPressStart,
+  onToggleSelect,
+  selectionMode,
   session,
 }: {
   baseSchema: AnamnesisTemplateSchema;
   borderClassName?: string;
+  isSelected: boolean;
   navigateTo: () => void;
+  onPressCancel: () => void;
+  onPressStart: () => void;
+  onToggleSelect: () => void;
+  selectionMode: boolean;
   session: Session;
 }) => (
   <Card
-    className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${borderClassName || ""}`}
-    onClick={navigateTo}
+    className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${borderClassName || ""} ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
+    onClick={selectionMode ? onToggleSelect : navigateTo}
     role="button"
     tabIndex={0}
-    onKeyDown={(event) => event.key === "Enter" && navigateTo()}
+    onKeyDown={(event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (selectionMode) {
+        onToggleSelect();
+        return;
+      }
+
+      navigateTo();
+    }}
+    onPointerDown={selectionMode ? undefined : onPressStart}
+    onPointerUp={selectionMode ? undefined : onPressCancel}
+    onPointerLeave={selectionMode ? undefined : onPressCancel}
+    onPointerCancel={selectionMode ? undefined : onPressCancel}
   >
     <CardContent className="p-4">
       <div className="flex items-start justify-between gap-3">
@@ -143,6 +185,11 @@ const SessionCard = ({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
             <Badge variant="outline" className={`text-xs ${statusColors[session.status] || ""}`}>{session.status}</Badge>
+            {selectionMode && (
+              <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
+                {isSelected ? "Selecionado" : "Toque para selecionar"}
+              </Badge>
+            )}
           </div>
           <SessionTabsPreview baseSchema={baseSchema} session={session} />
         </div>
@@ -193,6 +240,15 @@ const PacienteDetalhe = () => {
   const [shareLink, setShareLink] = useState("");
   const [sharePassword, setSharePassword] = useState("");
   const [shareCompleted, setShareCompleted] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sessionStatusFilter, setSessionStatusFilter] = useState("all");
+  const [groupStatusFilter, setGroupStatusFilter] = useState("all");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -214,6 +270,20 @@ const PacienteDetalhe = () => {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    setCollapsedGroups((current) => {
+      const next = { ...current };
+
+      groups.forEach((group) => {
+        if (!(group.id in next)) {
+          next[group.id] = false;
+        }
+      });
+
+      return next;
+    });
+  }, [groups]);
 
   const handleOpenShareDialog = useCallback(async () => {
     if (!id || !patient) return;
@@ -319,6 +389,166 @@ const PacienteDetalhe = () => {
     void fetchData();
   };
 
+  const clearLongPress = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleSessionPressStart = (sessionId: string) => {
+    if (selectionMode) {
+      return;
+    }
+
+    clearLongPress();
+    longPressTriggeredRef.current = false;
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      setSelectionMode(true);
+      setSelectedSessionIds([sessionId]);
+    }, 420);
+  };
+
+  const handleSessionPressCancel = () => {
+    clearLongPress();
+  };
+
+  const toggleSessionSelection = (sessionId: string) => {
+    setSelectedSessionIds((current) =>
+      current.includes(sessionId) ? current.filter((id) => id !== sessionId) : [...current, sessionId]
+    );
+  };
+
+  const handleSessionNavigate = (sessionId: string) => {
+    if (selectionMode) {
+      toggleSessionSelection(sessionId);
+      return;
+    }
+
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+
+    navigate(`/pacientes/${id}/sessao/${sessionId}`);
+  };
+
+  const handleExitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedSessionIds([]);
+    longPressTriggeredRef.current = false;
+    clearLongPress();
+  };
+
+  const getSessionSearchText = useCallback(
+    (session: Session) => {
+      const preview = getSessionPreviewContent(session, baseSchema);
+      return [preview.complaint, preview.treatment].filter(Boolean).join(" ");
+    },
+    [baseSchema]
+  );
+
+  const sessionView = useMemo(
+    () =>
+      buildPatientSessionsView({
+        groups,
+        sessions,
+        filters: {
+          searchTerm,
+          sessionStatus: sessionStatusFilter,
+          groupStatus: groupStatusFilter,
+        },
+        getSessionText: getSessionSearchText,
+      }),
+    [getSessionSearchText, groupStatusFilter, groups, searchTerm, sessionStatusFilter, sessions]
+  );
+
+  const selectedSessions = useMemo(
+    () => sessions.filter((session) => selectedSessionIds.includes(session.id)),
+    [selectedSessionIds, sessions]
+  );
+
+  const canDeleteSelection = canDeleteSelectedSessions(selectedSessions);
+
+  const handleBulkMove = async (nextGroupId: string) => {
+    if (selectedSessionIds.length === 0) {
+      return;
+    }
+
+    setBulkUpdating(true);
+    const { error } = await supabase
+      .from("sessions")
+      .update({ group_id: nextGroupId === "none" ? null : nextGroupId })
+      .in("id", selectedSessionIds);
+
+    if (error) {
+      toast({ title: "Erro ao mover atendimentos", description: error.message, variant: "destructive" });
+      setBulkUpdating(false);
+      return;
+    }
+
+    toast({ title: "Atendimentos movidos" });
+    handleExitSelectionMode();
+    setBulkUpdating(false);
+    void fetchData();
+  };
+
+  const handleBulkStatusUpdate = async (nextStatus: string) => {
+    if (selectedSessionIds.length === 0) {
+      return;
+    }
+
+    setBulkUpdating(true);
+    const { error } = await supabase
+      .from("sessions")
+      .update({ status: nextStatus })
+      .in("id", selectedSessionIds);
+
+    if (error) {
+      toast({ title: "Erro ao atualizar status", description: error.message, variant: "destructive" });
+      setBulkUpdating(false);
+      return;
+    }
+
+    toast({ title: "Status dos atendimentos atualizado" });
+    handleExitSelectionMode();
+    setBulkUpdating(false);
+    void fetchData();
+  };
+
+  const handleBulkDelete = async () => {
+    if (!canDeleteSelection) {
+      toast({
+        title: "Só é possível excluir rascunhos",
+        description: "Remova da seleção os atendimentos concluídos ou cancelados para excluir em lote.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBulkUpdating(true);
+    const { error } = await supabase.from("sessions").delete().in("id", selectedSessionIds);
+
+    if (error) {
+      toast({ title: "Erro ao excluir atendimentos", description: error.message, variant: "destructive" });
+      setBulkUpdating(false);
+      return;
+    }
+
+    toast({ title: "Atendimentos excluídos" });
+    handleExitSelectionMode();
+    setBulkUpdating(false);
+    void fetchData();
+  };
+
+  const toggleGroupCollapsed = (groupId: string) => {
+    setCollapsedGroups((current) => ({
+      ...current,
+      [groupId]: !current[groupId],
+    }));
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   }
@@ -328,11 +558,6 @@ const PacienteDetalhe = () => {
   }
 
   const sharePasswordAvailable = !!getPatientRegistrationPassword(patient.cpf);
-  const groupedSessions = groups.map((g) => ({
-    ...g,
-    sessions: sessions.filter((s) => s.group_id === g.id),
-  }));
-  const ungroupedSessions = sessions.filter((s) => !s.group_id);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
@@ -464,73 +689,226 @@ const PacienteDetalhe = () => {
       </Card>
 
       {/* Group management toolbar */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Grupos & Atendimentos</h2>
-        <Button variant="outline" size="sm" onClick={openNewGroup}>
-          <FolderPlus className="h-4 w-4 mr-2" />
-          Novo Grupo
-        </Button>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="text-lg font-semibold">Grupos & Atendimentos</h2>
+          <Button variant="outline" size="sm" onClick={openNewGroup}>
+            <FolderPlus className="h-4 w-4 mr-2" />
+            Novo Grupo
+          </Button>
+        </div>
+
+        <Card>
+          <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr),180px,180px]">
+            <div className="space-y-2">
+              <Label htmlFor="sessions-search">Buscar por grupo ou atendimento</Label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="sessions-search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Ex: lombar, rascunho, 18/03/2026"
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Status do atendimento</Label>
+              <Select value={sessionStatusFilter} onValueChange={setSessionStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {SESSION_STATUSES.map((status) => (
+                    <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Status do grupo</Label>
+              <Select value={groupStatusFilter} onValueChange={setGroupStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {GROUP_STATUSES.map((status) => (
+                    <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {selectionMode && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="flex flex-wrap items-center gap-3 p-4">
+              <Badge variant="secondary">{selectedSessionIds.length} atendimento(s) selecionado(s)</Badge>
+              <Select onValueChange={(value) => void handleBulkMove(value)} disabled={bulkUpdating || selectedSessionIds.length === 0}>
+                <SelectTrigger className="w-[220px] bg-background">
+                  <SelectValue placeholder="Mover para grupo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem grupo</SelectItem>
+                  {groups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select onValueChange={(value) => void handleBulkStatusUpdate(value)} disabled={bulkUpdating || selectedSessionIds.length === 0}>
+                <SelectTrigger className="w-[220px] bg-background">
+                  <SelectValue placeholder="Alterar status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SESSION_STATUSES.map((status) => (
+                    <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => void handleBulkDelete()}
+                disabled={bulkUpdating || !canDeleteSelection}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Excluir rascunhos
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleExitSelectionMode} disabled={bulkUpdating}>
+                <X className="h-4 w-4 mr-2" />
+                Cancelar seleção
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Groups with sessions */}
-      {groupedSessions.map((group) => (
-        <Card key={group.id}>
-          <CardHeader className={`border-l-4 rounded-tl-lg ${groupBorderColors[group.color] || ""}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <CardTitle className="text-lg">{group.name}</CardTitle>
-                  {!group.is_default && group.status && (
-                    <Badge variant="outline" className={groupStatusBadgeStyles[group.status as PatientGroupStatus]}>
-                      {GROUP_STATUSES.find((status) => status.value === group.status)?.label || "Em andamento"}
-                    </Badge>
-                  )}
+      {sessionView.groups.map((groupView) => (
+        <Card key={groupView.group.id}>
+          <CardHeader className={`border-l-4 rounded-tl-lg ${groupBorderColors[groupView.group.color] || ""}`}>
+            <div className="flex items-start justify-between gap-3">
+              <button
+                type="button"
+                className="flex flex-1 items-start justify-between text-left"
+                onClick={() => toggleGroupCollapsed(groupView.group.id)}
+              >
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <CardTitle className="text-lg">{groupView.group.name}</CardTitle>
+                    {!groupView.group.is_default && groupView.group.status && (
+                      <Badge variant="outline" className={groupStatusBadgeStyles[groupView.group.status as PatientGroupStatus]}>
+                        {GROUP_STATUSES.find((status) => status.value === groupView.group.status)?.label || "Em andamento"}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                    <span>{groupView.sessionCount} atendimento{groupView.sessionCount !== 1 ? "s" : ""}</span>
+                    <span>Primeiro: {formatSessionMetaDate(groupView.firstSessionDate)}</span>
+                    <span>Mais recente: {formatSessionMetaDate(groupView.latestSessionDate)}</span>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">{group.sessions.length} atendimento{group.sessions.length !== 1 ? "s" : ""}</p>
-              </div>
+                {collapsedGroups[groupView.group.id] ? <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" /> : <ChevronUp className="mt-1 h-4 w-4 text-muted-foreground" />}
+              </button>
               <div className="flex items-center gap-1">
-                {!group.is_default && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditGroup(group)} aria-label="Editar grupo">
+                {!groupView.group.is_default && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditGroup(groupView.group)} aria-label="Editar grupo">
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                {!group.is_default && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteConfirmId(group.id)} aria-label="Excluir grupo">
+                {!groupView.group.is_default && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteConfirmId(groupView.group.id)} aria-label="Excluir grupo">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 )}
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-4 space-y-3">
-            {group.sessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                baseSchema={baseSchema}
-                session={session}
-                borderClassName={groupBorderColors[group.color] || ""}
-                navigateTo={() => navigate(`/pacientes/${id}/sessao/${session.id}`)}
-              />
-            ))}
-            {group.sessions.length === 0 && <p className="text-sm text-muted-foreground py-2">Nenhum atendimento neste grupo.</p>}
-          </CardContent>
+          <AnimatePresence initial={false}>
+            {!collapsedGroups[groupView.group.id] && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <CardContent className="pt-4 space-y-3">
+                  {groupView.sessions.map((session) => (
+                    <SessionCard
+                      key={session.id}
+                      baseSchema={baseSchema}
+                      session={session}
+                      isSelected={selectedSessionIds.includes(session.id)}
+                      selectionMode={selectionMode}
+                      borderClassName={groupBorderColors[groupView.group.color] || ""}
+                      onPressStart={() => handleSessionPressStart(session.id)}
+                      onPressCancel={handleSessionPressCancel}
+                      onToggleSelect={() => toggleSessionSelection(session.id)}
+                      navigateTo={() => handleSessionNavigate(session.id)}
+                    />
+                  ))}
+                  {groupView.sessions.length === 0 && <p className="text-sm text-muted-foreground py-2">Nenhum atendimento neste grupo.</p>}
+                </CardContent>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </Card>
       ))}
 
       {/* Ungrouped sessions */}
-      {ungroupedSessions.length > 0 && (
+      {sessionView.ungrouped.length > 0 && (
         <Card>
-          <CardHeader><CardTitle className="text-lg">Atendimentos sem grupo</CardTitle></CardHeader>
-          <CardContent className="pt-4 space-y-3">
-            {ungroupedSessions.map((session) => (
-              <SessionCard
-                key={session.id}
-                baseSchema={baseSchema}
-                session={session}
-                navigateTo={() => navigate(`/pacientes/${id}/sessao/${session.id}`)}
-              />
-            ))}
-          </CardContent>
+          <CardHeader>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-left"
+              onClick={() => toggleGroupCollapsed("ungrouped")}
+            >
+              <div>
+                <CardTitle className="text-lg">Atendimentos sem grupo</CardTitle>
+                <p className="mt-2 text-sm text-muted-foreground">{sessionView.ungrouped.length} atendimento{sessionView.ungrouped.length !== 1 ? "s" : ""}</p>
+              </div>
+              {collapsedGroups.ungrouped ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
+            </button>
+          </CardHeader>
+          <AnimatePresence initial={false}>
+            {!collapsedGroups.ungrouped && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <CardContent className="pt-4 space-y-3">
+                  {sessionView.ungrouped.map((session) => (
+                    <SessionCard
+                      key={session.id}
+                      baseSchema={baseSchema}
+                      session={session}
+                      isSelected={selectedSessionIds.includes(session.id)}
+                      selectionMode={selectionMode}
+                      onPressStart={() => handleSessionPressStart(session.id)}
+                      onPressCancel={handleSessionPressCancel}
+                      onToggleSelect={() => toggleSessionSelection(session.id)}
+                      navigateTo={() => handleSessionNavigate(session.id)}
+                    />
+                  ))}
+                </CardContent>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </Card>
+      )}
+
+      {sessionView.groups.length === 0 && sessionView.ungrouped.length === 0 && (
+        <Card className="p-8 text-center">
+          <p className="text-muted-foreground">Nenhum resultado encontrado para a busca ou filtros atuais.</p>
         </Card>
       )}
 
