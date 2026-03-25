@@ -12,12 +12,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
+import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { PatientGroupStatus } from "@/lib/patient-groups";
+import { getSessionPreviewContent } from "@/lib/session-preview";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -88,6 +91,70 @@ const InfoField = ({ label, value, capitalize: cap }: { label: string; value?: s
   </div>
 );
 
+const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemplateSchema; session: Session }) => {
+  const preview = getSessionPreviewContent(session, baseSchema);
+
+  return (
+    <Tabs
+      defaultValue="queixa"
+      className="mt-3"
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <TabsList className="grid w-full grid-cols-2">
+        <TabsTrigger value="queixa" className="text-xs sm:text-sm">Queixa principal</TabsTrigger>
+        <TabsTrigger value="tratamento" className="text-xs sm:text-sm">Tratamento</TabsTrigger>
+      </TabsList>
+      <TabsContent value="queixa" className="rounded-md border bg-muted/20 p-3">
+        <p className="text-sm text-muted-foreground whitespace-pre-line">
+          {preview.complaint || "Nenhuma queixa principal registrada."}
+        </p>
+      </TabsContent>
+      <TabsContent value="tratamento" className="rounded-md border bg-muted/20 p-3">
+        <p className="text-sm text-muted-foreground whitespace-pre-line">
+          {preview.treatment || "Nenhum tratamento registrado."}
+        </p>
+      </TabsContent>
+    </Tabs>
+  );
+};
+
+const SessionCard = ({
+  baseSchema,
+  borderClassName,
+  navigateTo,
+  session,
+}: {
+  baseSchema: AnamnesisTemplateSchema;
+  borderClassName?: string;
+  navigateTo: () => void;
+  session: Session;
+}) => (
+  <Card
+    className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${borderClassName || ""}`}
+    onClick={navigateTo}
+    role="button"
+    tabIndex={0}
+    onKeyDown={(event) => event.key === "Enter" && navigateTo()}
+  >
+    <CardContent className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
+            <Badge variant="outline" className={`text-xs ${statusColors[session.status] || ""}`}>{session.status}</Badge>
+          </div>
+          <SessionTabsPreview baseSchema={baseSchema} session={session} />
+        </div>
+        <div className="space-y-1.5 shrink-0">
+          <div><span className="text-xs text-muted-foreground block">Dor</span><PainIndicator score={session.pain_score || 0} /></div>
+          <div><span className="text-xs text-muted-foreground block">Complexidade</span><PainIndicator score={session.complexity_score || 0} /></div>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
 const isShareLinkResponse = (value: Json): value is ShareLinkResponse => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -105,10 +172,11 @@ const PacienteDetalhe = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { clinicId, user } = useAuth();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [baseSchema, setBaseSchema] = useState<AnamnesisTemplateSchema>([]);
   const [loading, setLoading] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
 
@@ -129,17 +197,19 @@ const PacienteDetalhe = () => {
   const fetchData = useCallback(async () => {
     if (!id) return;
 
-    const [pRes, gRes, sRes] = await Promise.all([
+    const [pRes, gRes, sRes, clinicRes] = await Promise.all([
       supabase.from("patients").select("*").eq("id", id).single(),
       supabase.from("patient_groups").select("*").eq("patient_id", id),
       supabase.from("sessions").select("*").eq("patient_id", id).order("session_date", { ascending: false }),
+      clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null }),
     ]);
 
     setPatient(pRes.data);
     setGroups(gRes.data ?? []);
     setSessions(sRes.data ?? []);
+    setBaseSchema(Array.isArray(clinicRes.data?.anamnesis_base_schema) ? (clinicRes.data.anamnesis_base_schema as AnamnesisTemplateSchema) : []);
     setLoading(false);
-  }, [id]);
+  }, [clinicId, id]);
 
   useEffect(() => {
     void fetchData();
@@ -434,30 +504,13 @@ const PacienteDetalhe = () => {
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
             {group.sessions.map((session) => (
-              <Card
+              <SessionCard
                 key={session.id}
-                className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${groupBorderColors[group.color] || ""}`}
-                onClick={() => navigate(`/pacientes/${id}/sessao/${session.id}`)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => e.key === "Enter" && navigate(`/pacientes/${id}/sessao/${session.id}`)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
-                        <Badge variant="outline" className={`text-xs ${statusColors[session.status] || ""}`}>{session.status}</Badge>
-                      </div>
-                      {session.notes && <p className="text-sm text-muted-foreground">{session.notes}</p>}
-                    </div>
-                    <div className="space-y-1.5 shrink-0">
-                      <div><span className="text-xs text-muted-foreground block">Dor</span><PainIndicator score={session.pain_score || 0} /></div>
-                      <div><span className="text-xs text-muted-foreground block">Complexidade</span><PainIndicator score={session.complexity_score || 0} /></div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                baseSchema={baseSchema}
+                session={session}
+                borderClassName={groupBorderColors[group.color] || ""}
+                navigateTo={() => navigate(`/pacientes/${id}/sessao/${session.id}`)}
+              />
             ))}
             {group.sessions.length === 0 && <p className="text-sm text-muted-foreground py-2">Nenhum atendimento neste grupo.</p>}
           </CardContent>
@@ -470,26 +523,12 @@ const PacienteDetalhe = () => {
           <CardHeader><CardTitle className="text-lg">Atendimentos sem grupo</CardTitle></CardHeader>
           <CardContent className="pt-4 space-y-3">
             {ungroupedSessions.map((session) => (
-              <Card
+              <SessionCard
                 key={session.id}
-                className="cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => navigate(`/pacientes/${id}/sessao/${session.id}`)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => e.key === "Enter" && navigate(`/pacientes/${id}/sessao/${session.id}`)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
-                      <Badge variant="outline" className={`text-xs ml-2 ${statusColors[session.status] || ""}`}>{session.status}</Badge>
-                    </div>
-                    <div className="flex gap-4">
-                      <div><span className="text-xs text-muted-foreground">Dor: {session.pain_score || 0}/10</span></div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                baseSchema={baseSchema}
+                session={session}
+                navigateTo={() => navigate(`/pacientes/${id}/sessao/${session.id}`)}
+              />
             ))}
           </CardContent>
         </Card>

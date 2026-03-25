@@ -13,6 +13,8 @@ import CadastroCompleto from "./pages/CadastroCompleto";
 import CadastroPacienteCompartilhado from "./pages/CadastroPacienteCompartilhado";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import Configuracoes from "./pages/Configuracoes";
+import FormularioEditor from "./pages/FormularioEditor";
 import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient();
@@ -60,6 +62,8 @@ const App = () => (
                   <AppLayout>
                     <Routes>
                       <Route path="/" element={<Index />} />
+                      <Route path="/configuracoes" element={<Configuracoes />} />
+                      <Route path="/configuracoes/formularios/:templateId" element={<FormularioEditor />} />
                       <Route path="/pacientes/novo" element={<NovoPaciente />} />
                       <Route path="/pacientes/:id" element={<PacienteDetalhe />} />
                       <Route path="/pacientes/:id/cadastro" element={<CadastroCompleto />} />

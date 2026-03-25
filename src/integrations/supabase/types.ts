@@ -65,8 +65,56 @@ export type Database = {
           },
         ]
       }
+      anamnesis_form_templates: {
+        Row: {
+          clinic_id: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          is_system_default: boolean
+          name: string
+          schema: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          clinic_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_system_default?: boolean
+          name: string
+          schema?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          clinic_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_system_default?: boolean
+          name?: string
+          schema?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anamnesis_form_templates_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
+          anamnesis_base_schema: Json
           cnpj: string
           created_at: string
           custom_fields: Json | null
@@ -77,6 +125,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          anamnesis_base_schema?: Json
           cnpj: string
           created_at?: string
           custom_fields?: Json | null
@@ -87,6 +136,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          anamnesis_base_schema?: Json
           cnpj?: string
           created_at?: string
           custom_fields?: Json | null
@@ -345,6 +395,8 @@ export type Database = {
       sessions: {
         Row: {
           anamnesis: Json | null
+          anamnesis_form_response: Json | null
+          anamnesis_template_id: string | null
           clinic_id: string | null
           complexity_score: number | null
           created_at: string
@@ -361,6 +413,8 @@ export type Database = {
         }
         Insert: {
           anamnesis?: Json | null
+          anamnesis_form_response?: Json | null
+          anamnesis_template_id?: string | null
           clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
@@ -377,6 +431,8 @@ export type Database = {
         }
         Update: {
           anamnesis?: Json | null
+          anamnesis_form_response?: Json | null
+          anamnesis_template_id?: string | null
           clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
@@ -392,6 +448,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "sessions_anamnesis_template_id_fkey"
+            columns: ["anamnesis_template_id"]
+            isOneToOne: false
+            referencedRelation: "anamnesis_form_templates"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "sessions_clinic_id_fkey"
             columns: ["clinic_id"]
