@@ -13,7 +13,7 @@ import { getPatientRegistrationPassword } from "@/lib/patient-registration";
 
 const NovoPaciente = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { clinicId, user } = useAuth();
   const [submitting, setSubmitting] = useState(false);
 
   const [nome, setNome] = useState("");
@@ -51,24 +51,12 @@ const NovoPaciente = () => {
   const canSubmit = nome.trim().length > 0;
 
   const handleSubmit = async (shareWithPatient = false) => {
-    if (!user || !canSubmit) return;
+    if (!user || !canSubmit || !clinicId) return;
     setSubmitting(true);
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("clinic_id")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.clinic_id) {
-      toast({ title: "Erro", description: "Perfil não encontrado.", variant: "destructive" });
-      setSubmitting(false);
-      return;
-    }
 
     const { data, error } = await supabase.from("patients").insert({
       user_id: user.id,
-      clinic_id: profile.clinic_id,
+      clinic_id: clinicId,
       name: nome.trim(),
       date_of_birth: dataNascimento || null,
       age: calculateAge(dataNascimento),

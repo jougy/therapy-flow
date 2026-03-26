@@ -7,7 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { LogIn, UserPlus, Loader2, Building2, Eye, EyeOff } from "lucide-react";
-import { ensureTestLogin, isLocalSupabaseUrl, TEST_LOGIN } from "@/lib/test-login";
+import { isLocalSupabaseUrl, LOCAL_TEST_LOGINS } from "@/lib/test-login";
+
+type SubscriptionPlan = "solo" | "clinic";
 
 const formatCNPJ = (value: string) => {
   const digits = value.replace(/\D/g, "").slice(0, 14);
@@ -23,6 +25,7 @@ const Auth = () => {
   const [cnpj, setCnpj] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [subscriptionPlan, setSubscriptionPlan] = useState<SubscriptionPlan>("solo");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const cnpjDigits = cnpj.replace(/\D/g, "");
@@ -31,27 +34,28 @@ const Auth = () => {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const canUseLocalTestLogin = isDev && isLocalSupabaseUrl(supabaseUrl);
 
-  const handleTestLogin = async () => {
+  const handleTestLogin = async (testAccount: (typeof LOCAL_TEST_LOGINS)[keyof typeof LOCAL_TEST_LOGINS]) => {
     setLoading(true);
-    setCnpj(TEST_LOGIN.cnpjFormatted);
-    setEmail(TEST_LOGIN.email);
-    setPassword(TEST_LOGIN.password);
+    setCnpj(testAccount.cnpjFormatted);
+    setEmail(testAccount.email);
+    setPassword(testAccount.password);
 
     try {
-      const result = await ensureTestLogin(supabase, window.location.origin);
-      if ("requiresEmailConfirmation" in result && result.requiresEmailConfirmation) {
-        toast({
-          title: "Conta de teste criada",
-          description: "O Supabase atual exige confirmacao por e-mail antes do primeiro login.",
-        });
-      } else {
-        toast({
-          title: result.created ? "Conta de teste criada" : "Conta de teste carregada",
-          description: `${TEST_LOGIN.email} / ${TEST_LOGIN.password}`,
-        });
+      const { error } = await supabase.auth.signInWithPassword({
+        email: testAccount.email,
+        password: testAccount.password,
+      });
+
+      if (error) {
+        throw error;
       }
+
+      toast({
+        title: `${testAccount.label} carregada`,
+        description: `${testAccount.email} / ${testAccount.password}`,
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel preparar a conta de teste.";
+      const message = error instanceof Error ? error.message : "Nao foi possivel acessar a conta de teste.";
       toast({ title: "Erro no login de teste", description: message, variant: "destructive" });
     } finally {
       setLoading(false);
@@ -102,6 +106,7 @@ const Auth = () => {
           _user_id: data.user.id,
           _email: email,
           _cnpj: cnpjDigits,
+          _subscription_plan: subscriptionPlan,
         });
 
         if (setupError) {
@@ -191,6 +196,26 @@ const Auth = () => {
                   </button>
                 </div>
               </div>
+              {!isLogin && (
+                <div className="space-y-2">
+                  <Label>Tipo de conta</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: "solo", label: "Solo" },
+                      { value: "clinic", label: "Clinic" },
+                    ] as const).map((plan) => (
+                      <Button
+                        key={plan.value}
+                        type="button"
+                        variant={subscriptionPlan === plan.value ? "default" : "outline"}
+                        onClick={() => setSubscriptionPlan(plan.value)}
+                      >
+                        {plan.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <Button type="submit" className="w-full" disabled={loading || !isCnpjValid}>
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -218,13 +243,26 @@ const Auth = () => {
             </div>
             {isDev && canUseLocalTestLogin && (
               <div className="mt-4 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                <p className="font-medium text-foreground">Login de teste local</p>
-                <p>CNPJ: {TEST_LOGIN.cnpjFormatted}</p>
-                <p>E-mail: {TEST_LOGIN.email}</p>
-                <p>Senha: {TEST_LOGIN.password}</p>
-                <Button type="button" variant="outline" className="mt-3 w-full" onClick={handleTestLogin} disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Entrar com login de teste"}
-                </Button>
+                <p className="font-medium text-foreground">Logins de teste locais</p>
+                <div className="mt-3 space-y-3">
+                  {Object.values(LOCAL_TEST_LOGINS).map((testAccount) => (
+                    <div key={testAccount.email} className="rounded-md border bg-background/80 p-3">
+                      <p className="font-medium text-foreground">{testAccount.label}</p>
+                      <p>CNPJ: {testAccount.cnpjFormatted}</p>
+                      <p>E-mail: {testAccount.email}</p>
+                      <p>Senha: {testAccount.password}</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="mt-3 w-full"
+                        onClick={() => void handleTestLogin(testAccount)}
+                        disabled={loading}
+                      >
+                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : `Entrar com ${testAccount.label}`}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             {isDev && !canUseLocalTestLogin && (

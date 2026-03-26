@@ -38,7 +38,19 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const currentPath = location.pathname;
-  const { signOut } = useAuth();
+  const { can, signOut } = useAuth();
+
+  const visibleMainItems = mainItems.filter((item) => {
+    if (item.url === "/financeiro") {
+      return can("treasury.manage");
+    }
+
+    if (item.url === "/fichas") {
+      return can("forms.manage");
+    }
+
+    return true;
+  });
 
   const isActive = (path: string) =>
     path === "/" ? currentPath === "/" : currentPath.startsWith(path);
@@ -50,7 +62,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Principal</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => (
+              {visibleMainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild

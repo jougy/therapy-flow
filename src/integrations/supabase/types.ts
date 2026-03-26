@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.4"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -112,37 +132,114 @@ export type Database = {
           },
         ]
       }
+      clinic_memberships: {
+        Row: {
+          account_role: Database["public"]["Enums"]["account_role_type"] | null
+          clinic_id: string
+          created_at: string
+          ended_at: string | null
+          id: string
+          invited_by: string | null
+          is_active: boolean
+          joined_at: string
+          membership_status: Database["public"]["Enums"]["membership_status_type"]
+          operational_role: Database["public"]["Enums"]["operational_role_type"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_role?: Database["public"]["Enums"]["account_role_type"] | null
+          clinic_id: string
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          invited_by?: string | null
+          is_active?: boolean
+          joined_at?: string
+          membership_status?: Database["public"]["Enums"]["membership_status_type"]
+          operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_role?: Database["public"]["Enums"]["account_role_type"] | null
+          clinic_id?: string
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          invited_by?: string | null
+          is_active?: boolean
+          joined_at?: string
+          membership_status?: Database["public"]["Enums"]["membership_status_type"]
+          operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_memberships_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
+          account_owner_user_id: string | null
+          address: Json
           anamnesis_base_schema: Json
+          business_hours: Json
           cnpj: string
           created_at: string
           custom_fields: Json | null
+          email: string | null
           id: string
+          legal_name: string | null
           logo_url: string | null
           name: string
+          phone: string | null
+          subaccount_limit: number
+          subscription_plan: Database["public"]["Enums"]["subscription_plan"]
           theme: Json | null
           updated_at: string
         }
         Insert: {
+          account_owner_user_id?: string | null
+          address?: Json
           anamnesis_base_schema?: Json
+          business_hours?: Json
           cnpj: string
           created_at?: string
           custom_fields?: Json | null
+          email?: string | null
           id?: string
+          legal_name?: string | null
           logo_url?: string | null
           name?: string
+          phone?: string | null
+          subaccount_limit?: number
+          subscription_plan?: Database["public"]["Enums"]["subscription_plan"]
           theme?: Json | null
           updated_at?: string
         }
         Update: {
+          account_owner_user_id?: string | null
+          address?: Json
           anamnesis_base_schema?: Json
+          business_hours?: Json
           cnpj?: string
           created_at?: string
           custom_fields?: Json | null
+          email?: string | null
           id?: string
+          legal_name?: string | null
           logo_url?: string | null
           name?: string
+          phone?: string | null
+          subaccount_limit?: number
+          subscription_plan?: Database["public"]["Enums"]["subscription_plan"]
           theme?: Json | null
           updated_at?: string
         }
@@ -362,25 +459,70 @@ export type Database = {
       }
       profiles: {
         Row: {
+          address: Json
+          avatar_url: string | null
+          bio: string | null
+          birth_date: string | null
           clinic_id: string
+          cpf: string | null
           created_at: string
           email: string | null
           full_name: string | null
           id: string
+          job_title: string | null
+          last_seen_at: string | null
+          phone: string | null
+          professional_license: string | null
+          public_code: string
+          social_name: string | null
+          specialties: Json
+          specialty: string | null
+          updated_at: string
+          working_hours: string | null
         }
         Insert: {
+          address?: Json
+          avatar_url?: string | null
+          bio?: string | null
+          birth_date?: string | null
           clinic_id: string
+          cpf?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
           id: string
+          job_title?: string | null
+          last_seen_at?: string | null
+          phone?: string | null
+          professional_license?: string | null
+          public_code?: string
+          social_name?: string | null
+          specialties?: Json
+          specialty?: string | null
+          updated_at?: string
+          working_hours?: string | null
         }
         Update: {
+          address?: Json
+          avatar_url?: string | null
+          bio?: string | null
+          birth_date?: string | null
           clinic_id?: string
+          cpf?: string | null
           created_at?: string
           email?: string | null
           full_name?: string | null
           id?: string
+          job_title?: string | null
+          last_seen_at?: string | null
+          phone?: string | null
+          professional_license?: string | null
+          public_code?: string
+          social_name?: string | null
+          specialties?: Json
+          specialty?: string | null
+          updated_at?: string
+          working_hours?: string | null
         }
         Relationships: [
           {
@@ -405,6 +547,7 @@ export type Database = {
           notes: string | null
           pain_score: number | null
           patient_id: string
+          provider_id: string | null
           session_date: string
           status: string
           treatment: Json | null
@@ -423,6 +566,7 @@ export type Database = {
           notes?: string | null
           pain_score?: number | null
           patient_id: string
+          provider_id?: string | null
           session_date?: string
           status?: string
           treatment?: Json | null
@@ -441,6 +585,7 @@ export type Database = {
           notes?: string | null
           pain_score?: number | null
           patient_id?: string
+          provider_id?: string | null
           session_date?: string
           status?: string
           treatment?: Json | null
@@ -501,24 +646,52 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_clinic_subaccount: {
+        Args: {
+          _clinic_id?: string
+          _email: string
+          _full_name: string
+          _job_title?: string
+          _operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          _password: string
+          _specialty?: string
+        }
+        Returns: Json
+      }
       create_patient_registration_link: {
         Args: { _patient_id: string }
         Returns: Json
       }
+      current_user_can: {
+        Args: { _capability: string; _clinic_id?: string }
+        Returns: boolean
+      }
+      generate_profile_public_code: { Args: never; Returns: string }
       get_patient_registration_form: {
         Args: { _password: string; _token: string }
         Returns: Json
       }
       get_user_clinic_id: { Args: { _user_id: string }; Returns: string }
-      handle_signup: {
-        Args: {
-          _cnpj: string
-          _email: string
-          _full_name?: string
-          _user_id: string
-        }
-        Returns: Json
-      }
+      handle_signup:
+        | {
+            Args: {
+              _cnpj: string
+              _email: string
+              _full_name?: string
+              _user_id: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              _cnpj: string
+              _email: string
+              _full_name?: string
+              _subscription_plan?: Database["public"]["Enums"]["subscription_plan"]
+              _user_id: string
+            }
+            Returns: Json
+          }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -530,13 +703,73 @@ export type Database = {
         Args: { _password: string; _payload: Json; _token: string }
         Returns: Json
       }
+      update_clinic_subaccount: {
+        Args: {
+          _cpf?: string
+          _email?: string
+          _full_name?: string
+          _job_title?: string
+          _membership_id: string
+          _membership_status?: Database["public"]["Enums"]["membership_status_type"]
+          _new_password?: string
+          _operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          _phone?: string
+          _professional_license?: string
+          _specialty?: string
+          _working_hours?: string
+        }
+        Returns: Json
+      }
+      update_clinic_subaccount_profile: {
+        Args: {
+          _address?: Json
+          _bio?: string
+          _birth_date?: string
+          _cpf?: string
+          _email?: string
+          _full_name?: string
+          _job_title?: string
+          _membership_id: string
+          _membership_status?: Database["public"]["Enums"]["membership_status_type"]
+          _new_password?: string
+          _operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          _phone?: string
+          _professional_license?: string
+          _social_name?: string
+          _specialty?: string
+          _working_hours?: string
+        }
+        Returns: Json
+      }
+      update_current_profile: {
+        Args: {
+          _address?: Json
+          _bio?: string
+          _birth_date?: string
+          _cpf?: string
+          _email?: string
+          _full_name?: string
+          _job_title?: string
+          _new_password?: string
+          _phone?: string
+          _professional_license?: string
+          _social_name?: string
+          _specialty?: string
+          _working_hours?: string
+        }
+        Returns: Json
+      }
       validate_user_clinic: {
         Args: { _cnpj: string; _user_id: string }
         Returns: boolean
       }
     }
     Enums: {
+      account_role_type: "account_owner"
       app_role: "super_admin" | "clinic_admin" | "user"
+      membership_status_type: "invited" | "active" | "inactive" | "suspended"
+      operational_role_type: "owner" | "admin" | "professional" | "assistant"
+      subscription_plan: "solo" | "clinic"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -662,9 +895,17 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
+      account_role_type: ["account_owner"],
       app_role: ["super_admin", "clinic_admin", "user"],
+      membership_status_type: ["invited", "active", "inactive", "suspended"],
+      operational_role_type: ["owner", "admin", "professional", "assistant"],
+      subscription_plan: ["solo", "clinic"],
     },
   },
 } as const
+

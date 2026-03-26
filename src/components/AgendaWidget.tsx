@@ -37,7 +37,7 @@ const eventTypeLabels: Record<AgendaEventType, string> = {
 };
 
 const AgendaWidget = () => {
-  const { clinicId, user } = useAuth();
+  const { can, clinicId, user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [patients, setPatients] = useState<AgendaPatientOption[]>([]);
@@ -232,12 +232,14 @@ const AgendaWidget = () => {
                 </Badge>
                 <span className="font-medium truncate">{event.title}</span>
               </div>
-              <button
-                onClick={() => handleRemove(event.id)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive ml-1"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              {can("agenda.delete_events") && (
+                <button
+                  onClick={() => handleRemove(event.id)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive ml-1"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
           ))}
         </div>

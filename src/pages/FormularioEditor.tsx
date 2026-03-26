@@ -31,9 +31,10 @@ type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row
 const FormularioEditor = () => {
   const { templateId } = useParams();
   const navigate = useNavigate();
-  const { clinicId, user } = useAuth();
+  const { can, clinicId, user } = useAuth();
   const isNew = templateId === "novo";
   const isBase = templateId === "base";
+  const canManageForms = can("forms.manage");
 
   const [loading, setLoading] = useState(!isNew && !isBase);
   const [saving, setSaving] = useState(false);
@@ -48,6 +49,12 @@ const FormularioEditor = () => {
   const [desktopMenuMaxHeight, setDesktopMenuMaxHeight] = useState(480);
 
   useEffect(() => {
+    if (!canManageForms) {
+      toast({ title: "Acesso restrito", description: "Seu perfil não pode gerenciar formulários.", variant: "destructive" });
+      navigate("/configuracoes");
+      return;
+    }
+
     if (isBase) {
       const fetchClinic = async () => {
         if (!clinicId) return;
@@ -98,7 +105,7 @@ const FormularioEditor = () => {
     };
 
     void fetchTemplate();
-  }, [clinicId, isBase, isNew, navigate, templateId]);
+  }, [canManageForms, clinicId, isBase, isNew, navigate, templateId]);
 
   useEffect(() => {
     const updateDesktopMenuBounds = () => {

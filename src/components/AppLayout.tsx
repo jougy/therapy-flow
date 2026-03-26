@@ -1,4 +1,4 @@
-import { Settings } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -9,7 +9,7 @@ interface AppLayoutProps {
 }
 
 const AppLayout = ({ children }: AppLayoutProps) => {
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
   const navigate = useNavigate();
 
   const displayName = profile?.full_name || profile?.email || "Usuário";
@@ -50,6 +50,15 @@ const AppLayout = ({ children }: AppLayoutProps) => {
             aria-label="Configurações"
           >
             <Settings className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            onClick={signOut}
+            aria-label="Sair da conta"
+          >
+            <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </header>

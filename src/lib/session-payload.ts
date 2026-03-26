@@ -13,6 +13,7 @@ export interface SessionFormValues {
   notes: string;
   observacoes: string;
   painScore: number;
+  providerId: string | null;
   queixa: string;
   sintomas: string;
   status: string;
@@ -45,6 +46,7 @@ export const buildSessionPayload = ({
   status: statusOverride ?? values.status,
   notes: values.notes || null,
   group_id: values.groupId || null,
+  provider_id: values.providerId || userId,
   anamnesis: {
     observacoes: values.observacoes,
     queixa: values.queixa,
