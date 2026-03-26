@@ -37,6 +37,7 @@ type ClinicSummary = Pick<
   Database["public"]["Tables"]["clinics"]["Row"],
   | "account_owner_user_id"
   | "id"
+  | "logo_url"
   | "name"
   | "subaccount_limit"
   | "subscription_plan"
@@ -54,6 +55,7 @@ interface AuthContextType {
   membershipStatus: MembershipStatus | null;
   operationalRole: OperationalRole;
   profile: Profile | null;
+  refreshAuthState: () => Promise<void>;
   session: Session | null;
   signOut: () => Promise<void>;
   subscriptionPlan: SubscriptionPlan | null;
@@ -76,6 +78,7 @@ const AuthContext = createContext<AuthContextType>({
   membershipStatus: null,
   operationalRole: null,
   profile: null,
+  refreshAuthState: async () => {},
   session: null,
   signOut: async () => {},
   subscriptionPlan: null,
@@ -127,7 +130,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (nextClinicId) {
       const clinicRes = await supabase
         .from("clinics")
-        .select("account_owner_user_id, id, name, subaccount_limit, subscription_plan")
+        .select("account_owner_user_id, id, logo_url, name, subaccount_limit, subscription_plan")
         .eq("id", nextClinicId)
         .maybeSingle();
 
@@ -193,6 +196,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await supabase.auth.signOut();
   };
 
+  const refreshAuthState = async () => {
+    const nextUserId = session?.user?.id;
+    if (!nextUserId) {
+      return;
+    }
+
+    await fetchAuthState(nextUserId);
+  };
+
   const can = (capability: AccessCapability) => capabilities[capability];
 
   return (
@@ -209,6 +221,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         membershipStatus: (membership?.membership_status as MembershipStatus) ?? null,
         operationalRole: (membership?.operational_role as OperationalRole) ?? null,
         profile,
+        refreshAuthState,
         session,
         signOut,
         subscriptionPlan: (clinic?.subscription_plan as SubscriptionPlan) ?? null,
