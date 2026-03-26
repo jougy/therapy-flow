@@ -1,15 +1,16 @@
 import { LogOut, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { getClinicBrandName } from "@/lib/clinic-settings";
 
 interface AppLayoutProps {
   children: React.ReactNode;
 }
 
 const AppLayout = ({ children }: AppLayoutProps) => {
-  const { profile, signOut } = useAuth();
+  const { clinic, profile, signOut } = useAuth();
   const navigate = useNavigate();
 
   const displayName = profile?.full_name || profile?.email || "Usuário";
@@ -20,24 +21,33 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     .join("")
     .toUpperCase();
 
+  const clinicBrandName = getClinicBrandName(clinic?.name);
+
   return (
     <div className="min-h-screen flex flex-col w-full">
       <header className="h-14 flex items-center justify-between border-b bg-card px-4 sm:px-6 shrink-0">
-        <span
-          className="text-lg font-semibold text-foreground tracking-tight cursor-pointer"
+        <button
+          type="button"
+          className="flex items-center gap-3 text-left"
           onClick={() => navigate("/")}
+          aria-label={`Ir para a página inicial da clínica ${clinicBrandName}`}
         >
-          TherapyFlow
-        </span>
+          {clinic?.logo_url ? (
+            <img src={clinic.logo_url} alt={`Logo da ${clinicBrandName}`} className="h-9 max-w-[140px] object-contain" />
+          ) : (
+            <span className="text-lg font-semibold text-foreground tracking-tight">{clinicBrandName}</span>
+          )}
+        </button>
 
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex flex-col items-end mr-1">
             <span className="text-sm font-medium leading-none">{displayName}</span>
             <span className="text-xs text-muted-foreground leading-tight mt-0.5">
-              TherapyFlow
+              {clinicBrandName}
             </span>
           </div>
           <Avatar className="h-8 w-8">
+            {profile?.avatar_url ? <AvatarImage src={profile.avatar_url} alt={displayName} /> : null}
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
               {initials}
             </AvatarFallback>

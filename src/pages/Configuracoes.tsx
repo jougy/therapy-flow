@@ -54,6 +54,12 @@ import {
   readProfileAddress,
   type ProfileAddress,
 } from "@/lib/profile-settings";
+import {
+  buildBusinessHours,
+  getClinicBrandName,
+  readBusinessHours,
+  type ClinicBusinessHours,
+} from "@/lib/clinic-settings";
 
 type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 type SessionRow = Database["public"]["Tables"]["sessions"]["Row"];
@@ -134,7 +140,7 @@ const OPERATIONAL_ROLE_LABELS: Record<SubaccountOperationalRole | "owner", strin
 
 const Configuracoes = () => {
   const navigate = useNavigate();
-  const { accountRole, can, clinic: authClinic, clinicId, profile, signOut, subscriptionPlan, user } = useAuth();
+  const { accountRole, can, clinic: authClinic, clinicId, profile, refreshAuthState, signOut, subscriptionPlan, user } = useAuth();
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [sessions, setSessions] = useState<Pick<SessionRow, "anamnesis_template_id" | "session_date">[]>([]);
@@ -154,6 +160,9 @@ const Configuracoes = () => {
   const [clinicLegalName, setClinicLegalName] = useState("");
   const [clinicEmail, setClinicEmail] = useState("");
   const [clinicPhone, setClinicPhone] = useState("");
+  const [clinicLogoUrl, setClinicLogoUrl] = useState("");
+  const [clinicAddress, setClinicAddress] = useState<ProfileAddress>(readProfileAddress(null));
+  const [clinicBusinessHours, setClinicBusinessHours] = useState<ClinicBusinessHours>({ summary: "" });
   const [ownProfileForm, setOwnProfileForm] = useState<EditableOwnProfileState>({
     address: readProfileAddress(null),
     bio: "",
@@ -215,7 +224,10 @@ const Configuracoes = () => {
     setClinicName(clinicRes.data?.name ?? "");
     setClinicLegalName(clinicRes.data?.legal_name ?? "");
     setClinicEmail(clinicRes.data?.email ?? "");
-    setClinicPhone(clinicRes.data?.phone ?? "");
+    setClinicPhone(formatPhone(clinicRes.data?.phone ?? ""));
+    setClinicLogoUrl(clinicRes.data?.logo_url ?? "");
+    setClinicAddress(readProfileAddress(clinicRes.data?.address));
+    setClinicBusinessHours(readBusinessHours(clinicRes.data?.business_hours));
     const ownProfileRow = (profilesRes.data ?? []).find((row) => row.id === user?.id) ?? null;
     setOwnProfileForm({
       address: readProfileAddress(ownProfileRow?.address),
@@ -375,10 +387,13 @@ const Configuracoes = () => {
     const { error } = await supabase
       .from("clinics")
       .update({
+        address: buildProfileAddress(clinicAddress),
+        business_hours: buildBusinessHours(clinicBusinessHours),
         email: clinicEmail.trim() || null,
         legal_name: clinicLegalName.trim() || null,
+        logo_url: clinicLogoUrl.trim() || null,
         name: clinicName.trim(),
-        phone: clinicPhone.trim() || null,
+        phone: clinicPhone.replace(/\D/g, "") || null,
       })
       .eq("id", clinicId);
 
@@ -390,7 +405,15 @@ const Configuracoes = () => {
 
     toast({ title: "Perfil da clínica atualizado" });
     setSavingClinic(false);
+    await refreshAuthState();
     void fetchData();
+  };
+
+  const updateClinicAddressField = (key: keyof ProfileAddress, value: string) => {
+    setClinicAddress((current) => ({
+      ...current,
+      [key]: value,
+    }));
   };
 
   const updateOwnProfileField = <K extends keyof EditableOwnProfileState>(key: K, value: EditableOwnProfileState[K]) => {
@@ -819,39 +842,145 @@ const Configuracoes = () => {
                 <CardTitle className="text-xl">Perfil da clínica</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Nome da clínica</Label>
-                    <Input value={clinicName} onChange={(event) => setClinicName(event.target.value)} />
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Marca ativa</p>
+                    <p className="mt-2 font-medium">{getClinicBrandName(clinicName)}</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Razão social</Label>
-                    <Input value={clinicLegalName} onChange={(event) => setClinicLegalName(event.target.value)} />
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Plano</p>
+                    <p className="mt-2 font-medium">{clinic.subscription_plan}</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>CNPJ</Label>
-                    <Input value={clinic.cnpj} disabled />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Plano</Label>
-                    <Input value={clinic.subscription_plan} disabled />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>E-mail institucional</Label>
-                    <Input value={clinicEmail} onChange={(event) => setClinicEmail(event.target.value)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Telefone institucional</Label>
-                    <Input value={clinicPhone} onChange={(event) => setClinicPhone(event.target.value)} />
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Conta compradora</p>
+                    <p className="mt-2 font-medium">{accountRole === "account_owner" ? "Você" : "Outro usuário da clínica"}</p>
                   </div>
                 </div>
-                <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                  Conta compradora: {accountRole === "account_owner" ? "você" : authClinic?.account_owner_user_id || "não identificado"}
+
+                <div className="rounded-lg border p-4 space-y-4">
+                  <div>
+                    <p className="font-medium">Dados de acesso e marca</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      O nome e o logo cadastrados aqui passam a representar a clínica no topo da plataforma.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-[120px,1fr] items-start">
+                    <div className="rounded-xl border bg-muted/30 p-3 flex items-center justify-center min-h-[96px]">
+                      {clinicLogoUrl ? (
+                        <img src={clinicLogoUrl} alt={`Logo da ${getClinicBrandName(clinicName)}`} className="max-h-20 max-w-full object-contain" />
+                      ) : (
+                        <span className="text-sm text-muted-foreground text-center">{getClinicBrandName(clinicName)}</span>
+                      )}
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Nome da clínica</Label>
+                        <Input value={clinicName} onChange={(event) => setClinicName(event.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>URL do logo</Label>
+                        <Input
+                          value={clinicLogoUrl}
+                          onChange={(event) => setClinicLogoUrl(event.target.value)}
+                          placeholder="https://..."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>E-mail institucional</Label>
+                        <Input value={clinicEmail} onChange={(event) => setClinicEmail(event.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Telefone institucional</Label>
+                        <Input
+                          value={clinicPhone}
+                          maxLength={15}
+                          onChange={(event) => setClinicPhone(formatPhone(event.target.value))}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <Button onClick={() => void handleSaveClinicProfile()} disabled={savingClinic || !clinicName.trim()}>
-                  {savingClinic ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Salvar perfil da clínica
-                </Button>
+
+                <div className="rounded-lg border p-4 space-y-4">
+                  <div>
+                    <p className="font-medium">Dados institucionais</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Informações formais e operacionais da clínica.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>Razão social</Label>
+                      <Input value={clinicLegalName} onChange={(event) => setClinicLegalName(event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>CNPJ</Label>
+                      <Input value={clinic.cnpj} disabled />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Plano contratado</Label>
+                      <Input value={clinic.subscription_plan} disabled />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Horário de funcionamento</Label>
+                    <Textarea
+                      value={clinicBusinessHours.summary}
+                      onChange={(event) => setClinicBusinessHours({ summary: event.target.value })}
+                      placeholder="Ex.: seg-sex 08h-18h; sábado 08h-12h"
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-4 space-y-4">
+                  <div>
+                    <p className="font-medium">Endereço</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Preenchimento estruturado para uso em documentos e identificação da clínica.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>CEP</Label>
+                      <Input
+                        value={clinicAddress.cep}
+                        maxLength={9}
+                        onChange={(event) => updateClinicAddressField("cep", formatCep(event.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-2 xl:col-span-2">
+                      <Label>Rua</Label>
+                      <Input value={clinicAddress.street} onChange={(event) => updateClinicAddressField("street", event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Número</Label>
+                      <Input value={clinicAddress.number} onChange={(event) => updateClinicAddressField("number", event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Complemento</Label>
+                      <Input value={clinicAddress.complement} onChange={(event) => updateClinicAddressField("complement", event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Bairro</Label>
+                      <Input value={clinicAddress.neighborhood} onChange={(event) => updateClinicAddressField("neighborhood", event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Cidade</Label>
+                      <Input value={clinicAddress.city} onChange={(event) => updateClinicAddressField("city", event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Estado</Label>
+                      <Input value={clinicAddress.state} onChange={(event) => updateClinicAddressField("state", event.target.value)} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button onClick={() => void handleSaveClinicProfile()} disabled={savingClinic || !clinicName.trim()}>
+                    {savingClinic ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                    Salvar perfil da clínica
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
