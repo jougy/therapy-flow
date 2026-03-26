@@ -1,5 +1,5 @@
 import type { Database, Json } from "@/integrations/supabase/types";
-import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
+import { getVisibleTemplateFields, type AnamnesisField, type AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import { formatTreatmentSummary, readTreatmentState } from "@/lib/session-treatment";
 
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
@@ -16,6 +16,19 @@ export interface SessionPreviewContent {
   treatment: string;
 }
 
+export interface SessionPreviewIndicator {
+  id: string;
+  label: string;
+  max: number;
+  min: number;
+  score: number;
+}
+
+type SessionComplaintSource = Pick<
+  Session,
+  "anamnesis" | "anamnesis_form_response" | "complexity_score" | "pain_score"
+>;
+
 const shouldShowInPatientList = (field: { showInPatientList?: boolean; systemKey?: string }) => {
   if (typeof field.showInPatientList === "boolean") {
     return field.showInPatientList;
@@ -24,11 +37,43 @@ const shouldShowInPatientList = (field: { showInPatientList?: boolean; systemKey
   return field.systemKey === "queixa" || field.systemKey === "sintomas" || field.systemKey === "observacoes";
 };
 
+const formatResponseValue = (field: AnamnesisField, responseValue: Json | undefined) => {
+  if (typeof responseValue === "string") {
+    const trimmed = responseValue.trim();
+
+    if (!trimmed) {
+      return "";
+    }
+
+    if (field.options?.length) {
+      return field.options.find((option) => option.id === trimmed)?.label ?? trimmed;
+    }
+
+    return trimmed;
+  }
+
+  if (typeof responseValue === "number") {
+    return String(responseValue);
+  }
+
+  if (Array.isArray(responseValue)) {
+    const formatted = responseValue
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item) => field.options?.find((option) => option.id === item)?.label ?? item)
+      .join(", ");
+
+    return formatted;
+  }
+
+  return "";
+};
+
 const formatComplaintLine = (
-  field: { label: string; systemKey?: string },
-  session: Pick<Session, "anamnesis" | "complexity_score" | "pain_score">
+  field: AnamnesisField,
+  session: SessionComplaintSource
 ) => {
   const anamnesis = isJsonObject(session.anamnesis) ? session.anamnesis : {};
+  const formResponse = isJsonObject(session.anamnesis_form_response) ? session.anamnesis_form_response : {};
 
   if (field.systemKey === "queixa") {
     const value = readJsonString(anamnesis.queixa);
@@ -53,25 +98,43 @@ const formatComplaintLine = (
     return `${field.label}: ${session.complexity_score}/10`;
   }
 
+  if (field.id) {
+    const formattedValue = formatResponseValue(field, formResponse[field.id]);
+    return formattedValue ? `${field.label}: ${formattedValue}` : "";
+  }
+
   return "";
 };
 
+const getFallbackComplaint = (session: SessionComplaintSource) => {
+  const anamnesis = isJsonObject(session.anamnesis) ? session.anamnesis : {};
+
+  return joinNonEmpty([
+    readJsonString(anamnesis.queixa),
+    readJsonString(anamnesis.sintomas),
+    readJsonString(anamnesis.observacoes),
+  ]);
+};
+
+const collectComplaintLines = (
+  session: SessionComplaintSource,
+  fields: AnamnesisTemplateSchema
+) => joinNonEmpty(fields.map((field) => formatComplaintLine(field, session)));
+
 export const getSessionPreviewContent = (
-  session: Pick<Session, "anamnesis" | "complexity_score" | "notes" | "pain_score" | "treatment">,
+  session: Pick<Session, "anamnesis" | "anamnesis_form_response" | "complexity_score" | "notes" | "pain_score" | "treatment">,
   baseSchema?: AnamnesisTemplateSchema
 ): SessionPreviewContent => {
   const anamnesis = isJsonObject(session.anamnesis) ? session.anamnesis : {};
   const treatmentState = readTreatmentState(session.treatment);
 
-  const complaintFields = (baseSchema ?? []).filter((field) => field.systemKey && shouldShowInPatientList(field));
+  const complaintFields = (baseSchema ?? []).filter(
+    (field) => field.type !== "section" && field.type !== "slider" && shouldShowInPatientList(field)
+  );
 
   const complaint = complaintFields.length > 0
-    ? joinNonEmpty(complaintFields.map((field) => formatComplaintLine(field, session)))
-    : joinNonEmpty([
-        readJsonString(anamnesis.queixa),
-        readJsonString(anamnesis.sintomas),
-        readJsonString(anamnesis.observacoes),
-      ]);
+    ? collectComplaintLines(session, complaintFields)
+    : getFallbackComplaint(session);
 
   const treatmentSummary = joinNonEmpty([
     formatTreatmentSummary(treatmentState),
@@ -82,4 +145,63 @@ export const getSessionPreviewContent = (
     complaint,
     treatment: treatmentSummary,
   };
+};
+
+export const getSessionSummaryContent = (
+  session: SessionComplaintSource,
+  baseSchema?: AnamnesisTemplateSchema,
+  templateSchema?: AnamnesisTemplateSchema
+) => {
+  const visibleFields = getVisibleTemplateFields(
+    [...(baseSchema ?? []), ...(templateSchema ?? [])],
+    isJsonObject(session.anamnesis_form_response)
+      ? (session.anamnesis_form_response as Record<string, string | number | string[] | boolean | null>)
+      : {}
+  ).filter((field) => !["section", "slider", "section_selector"].includes(field.type));
+
+  if (visibleFields.length === 0) {
+    return getFallbackComplaint(session);
+  }
+
+  const complaint = collectComplaintLines(session, visibleFields);
+  return complaint || getFallbackComplaint(session);
+};
+
+export const getSessionPreviewIndicators = (
+  session: Pick<Session, "anamnesis_form_response" | "complexity_score" | "pain_score">,
+  baseSchema?: AnamnesisTemplateSchema
+): SessionPreviewIndicator[] => {
+  const formResponse = isJsonObject(session.anamnesis_form_response) ? session.anamnesis_form_response : {};
+
+  return (baseSchema ?? [])
+    .filter((field) => field.type === "slider" && shouldShowInPatientList(field))
+    .flatMap((field) => {
+      let rawValue: number | null = null;
+
+      if (field.systemKey === "pain_score" && typeof session.pain_score === "number") {
+        rawValue = session.pain_score;
+      } else if (field.systemKey === "complexity_score" && typeof session.complexity_score === "number") {
+        rawValue = session.complexity_score;
+      } else if (field.id) {
+        const responseValue = formResponse[field.id];
+        if (typeof responseValue === "number") {
+          rawValue = responseValue;
+        } else if (typeof responseValue === "string" && responseValue.trim()) {
+          const parsed = Number(responseValue);
+          rawValue = Number.isNaN(parsed) ? null : parsed;
+        }
+      }
+
+      if (rawValue === null) {
+        return [];
+      }
+
+      return [{
+        id: field.id,
+        label: field.label,
+        max: field.max ?? 10,
+        min: field.min ?? 0,
+        score: rawValue,
+      }];
+    });
 };

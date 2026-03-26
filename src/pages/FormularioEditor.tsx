@@ -160,7 +160,6 @@ const FormularioEditor = () => {
             variant="outline"
             className="justify-start"
             onClick={() => handleAddField(item.type)}
-            disabled={isBase && item.type !== "section"}
           >
             <Plus className="h-4 w-4 mr-2" />
             {item.label}
@@ -168,7 +167,7 @@ const FormularioEditor = () => {
         ))}
         {isBase && (
           <p className="text-xs text-muted-foreground mt-2">
-            No bloco padrão universal, você pode reorganizar os campos fixos e criar seções, mas não adicionar campos extras.
+            No bloco padrão universal, você pode manter os campos fixos, adicionar novos campos e escolher quais aparecem no bloco de atendimentos do paciente.
           </p>
         )}
       </CardContent>
@@ -402,7 +401,7 @@ const FormularioEditor = () => {
                                   <Copy className="h-4 w-4" />
                                 </Button>
                               )}
-                              {(!isBase || field.type === "section") && (
+                              {(!isBase || !field.systemKey) && (
                                 <Button type="button" variant="ghost" size="icon" onClick={() => removeField(field.id)}>
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -478,7 +477,7 @@ const FormularioEditor = () => {
                             </div>
                           )}
 
-                          {isBase && field.systemKey && (
+                          {isBase && field.type !== "section" && (
                             <div className="flex items-center gap-3">
                               <Checkbox
                                 id={`show_in_patient_list_${field.id}`}
