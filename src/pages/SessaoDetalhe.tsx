@@ -35,6 +35,7 @@ import {
 
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 type AnamnesisTemplate = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
+type ClinicMembership = Database["public"]["Tables"]["clinic_memberships"]["Row"];
 
 const isJsonObject = (value: Json | null): value is Record<string, Json | undefined> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -59,6 +60,7 @@ const SessaoDetalhe = () => {
   const [isEditing, setIsEditing] = useState(isNew);
   const [patientName, setPatientName] = useState("");
   const [groups, setGroups] = useState<PatientGroup[]>([]);
+  const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([]);
   const [anamnesisTemplates, setAnamnesisTemplates] = useState<AnamnesisTemplate[]>([]);
   const [baseTemplateSchema, setBaseTemplateSchema] = useState<AnamnesisTemplateSchema>([]);
   const [locked, setLocked] = useState(false);
@@ -74,6 +76,7 @@ const SessaoDetalhe = () => {
   const [status, setStatus] = useState("rascunho");
   const [notes, setNotes] = useState("");
   const [groupId, setGroupId] = useState<string | null>(null);
+  const [providerId, setProviderId] = useState<string | null>(user?.id ?? null);
   const [sessionDate, setSessionDate] = useState<string>("");
   const [anamnesisTemplateId, setAnamnesisTemplateId] = useState<string | null>(null);
   const [anamnesisFormResponse, setAnamnesisFormResponse] = useState<AnamnesisFormResponse>({});
@@ -83,7 +86,7 @@ const SessaoDetalhe = () => {
       if (!patientId || !clinicId) return;
 
       // Fetch patient name and groups in parallel
-      const [patientRes, groupsRes, lastUsedGroupRes, templatesRes, clinicRes] = await Promise.all([
+      const [patientRes, groupsRes, lastUsedGroupRes, templatesRes, clinicRes, membershipsRes, profilesRes] = await Promise.all([
         supabase.from("patients").select("name").eq("id", patientId).maybeSingle(),
         supabase.from("patient_groups").select("*").eq("patient_id", patientId),
         supabase
@@ -106,6 +109,16 @@ const SessaoDetalhe = () => {
           .select("anamnesis_base_schema")
           .eq("id", clinicId)
           .single(),
+        supabase
+          .from("clinic_memberships")
+          .select("*")
+          .eq("clinic_id", clinicId)
+          .eq("is_active", true)
+          .eq("membership_status", "active"),
+        supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .eq("clinic_id", clinicId),
       ]);
       
       if (patientRes.data) setPatientName(patientRes.data.name);
@@ -124,6 +137,23 @@ const SessaoDetalhe = () => {
 
         if (isNew) {
           setGroupId(getPreferredPatientGroupId(groupsRes.data, lastUsedGroupRes.data?.group_id ?? null));
+        }
+      }
+      if (membershipsRes.data && profilesRes.data) {
+        const profileMap = new Map(
+          profilesRes.data.map((profile) => [profile.id, profile.full_name || profile.email || "Colaborador"])
+        );
+        const clinicProviders = (membershipsRes.data as ClinicMembership[])
+          .filter((membership) => ["owner", "admin", "professional"].includes(membership.operational_role))
+          .map((membership) => ({
+            id: membership.user_id,
+            name: profileMap.get(membership.user_id) || "Colaborador",
+          }));
+
+        setProviders(clinicProviders);
+
+        if (isNew) {
+          setProviderId((current) => current ?? user?.id ?? clinicProviders[0]?.id ?? null);
         }
       }
 
@@ -148,6 +178,7 @@ const SessaoDetalhe = () => {
           setStatus(data.status);
           setNotes(data.notes || "");
           setGroupId(data.group_id);
+          setProviderId(data.provider_id ?? data.user_id);
           setSessionDate(new Date(data.session_date).toLocaleDateString("pt-BR"));
           setAnamnesisTemplateId(data.anamnesis_template_id);
           setAnamnesisFormResponse(readJsonRecord(data.anamnesis_form_response));
@@ -161,7 +192,7 @@ const SessaoDetalhe = () => {
       setLoading(false);
     };
     fetchData();
-  }, [clinicId, patientId, sessionId, isNew]);
+  }, [clinicId, patientId, sessionId, isNew, user?.id]);
 
   const activeTemplate = anamnesisTemplates.find((template) => template.id === anamnesisTemplateId) ?? null;
   const activeTemplateSchema = activeTemplate ? readTemplateSchema(activeTemplate.schema) : [];
@@ -185,6 +216,7 @@ const SessaoDetalhe = () => {
     notes,
     observacoes,
     painScore: painScore[0],
+    providerId,
     queixa,
     sintomas,
     status,
@@ -750,6 +782,18 @@ const SessaoDetalhe = () => {
                   <SelectItem value="none">Sem grupo</SelectItem>
                   {groups.map((g) => (
                     <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {providers.length > 0 && (
+              <Select value={providerId || "none"} onValueChange={(value) => setProviderId(value === "none" ? null : value)} disabled={locked}>
+                <SelectTrigger className="w-[220px] h-9 text-sm">
+                  <SelectValue placeholder="Profissional responsável" />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
