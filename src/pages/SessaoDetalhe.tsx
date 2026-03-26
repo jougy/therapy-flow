@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Copy, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, Copy, Loader2, Plus, Trash2, Pencil, Share2, Printer, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,14 +14,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildSessionPayload, isCompletedSessionLocked, type SessionFormValues } from "@/lib/session-payload";
+import { buildSessionDocument, isSessionImmutable, type SessionDocumentKind } from "@/lib/session-documents";
 import { getPreferredPatientGroupId } from "@/lib/patient-group-defaults";
-import { createTreatmentBlock, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
+import { buildTreatmentPayload, createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
+import { getSessionPreviewContent } from "@/lib/session-preview";
 import {
   buildTemplateLayout,
   getVisibleTemplateFields,
@@ -53,6 +56,7 @@ const SessaoDetalhe = () => {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [startingFromThis, setStartingFromThis] = useState(false);
+  const [isEditing, setIsEditing] = useState(isNew);
   const [patientName, setPatientName] = useState("");
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [anamnesisTemplates, setAnamnesisTemplates] = useState<AnamnesisTemplate[]>([]);
@@ -147,10 +151,12 @@ const SessaoDetalhe = () => {
           setSessionDate(new Date(data.session_date).toLocaleDateString("pt-BR"));
           setAnamnesisTemplateId(data.anamnesis_template_id);
           setAnamnesisFormResponse(readJsonRecord(data.anamnesis_form_response));
-          setLocked(isCompletedSessionLocked(false, data.status));
+          setLocked(isSessionImmutable(false, data.status));
+          setIsEditing(false);
         }
       } else {
         setLocked(false);
+        setIsEditing(true);
       }
       setLoading(false);
     };
@@ -196,7 +202,7 @@ const SessaoDetalhe = () => {
     });
 
   const handleSave = async () => {
-    if (!patientId || !user || locked) return;
+    if (!patientId || !user || locked || (!isNew && !isEditing)) return;
     setSaving(true);
 
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
@@ -213,6 +219,7 @@ const SessaoDetalhe = () => {
         toast({ title: "Erro ao criar atendimento", variant: "destructive" });
       } else {
         toast({ title: "Atendimento criado" });
+        setIsEditing(false);
         navigate(`/pacientes/${patientId}/sessao/${data.id}`, { replace: true });
       }
     } else {
@@ -224,7 +231,8 @@ const SessaoDetalhe = () => {
       if (error) {
         toast({ title: "Erro ao salvar atendimento", variant: "destructive" });
       } else {
-        setLocked(isCompletedSessionLocked(false, status));
+        setLocked(isSessionImmutable(false, status));
+        setIsEditing(false);
         toast({
           title: status === "concluído" ? "Atendimento concluído" : "Atendimento salvo",
           description:
@@ -276,6 +284,115 @@ const SessaoDetalhe = () => {
 
   const painColor =
     painScore[0] <= 3 ? "text-success" : painScore[0] <= 6 ? "text-warning" : "text-destructive";
+
+  const readOnly = locked || (!isNew && !isEditing);
+  const canEditSavedDraft = !isNew && status === "rascunho";
+  const canDeleteDraft = !isNew && status === "rascunho";
+  const treatmentPayload = buildTreatmentPayload({
+    blocks: treatmentBlocks,
+    generalGuidance: treatmentGeneralGuidance,
+  });
+  const treatmentSummary = formatTreatmentSummary({
+    blocks: treatmentBlocks,
+    generalGuidance: treatmentGeneralGuidance,
+  });
+  const previewContent = getSessionPreviewContent(
+    {
+      anamnesis: {
+        observacoes,
+        queixa,
+        sintomas,
+      },
+      complexity_score: complexityScore[0],
+      notes: null,
+      pain_score: painScore[0],
+      treatment: treatmentPayload,
+    },
+    baseTemplateSchema
+  );
+
+  const handleDelete = async () => {
+    if (!sessionId || !canDeleteDraft) {
+      return;
+    }
+
+    if (!window.confirm("Excluir este atendimento em rascunho?")) {
+      return;
+    }
+
+    const { error } = await supabase.from("sessions").delete().eq("id", sessionId);
+
+    if (error) {
+      toast({ title: "Erro ao excluir atendimento", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    toast({ title: "Atendimento excluído" });
+    navigate(`/pacientes/${patientId}`);
+  };
+
+  const openDocumentWindow = (kind: SessionDocumentKind) => {
+    const documentData = buildSessionDocument(kind, {
+      anamnesisSummary: previewContent.complaint,
+      patientName,
+      quickNotes: notes,
+      sessionDate,
+      treatmentSummary,
+    });
+    const printWindow = window.open("", "_blank", "noopener,noreferrer");
+
+    if (!printWindow) {
+      toast({ title: "Não foi possível abrir o documento", variant: "destructive" });
+      return null;
+    }
+
+    printWindow.document.write(documentData.html);
+    printWindow.document.close();
+    return { documentData, printWindow };
+  };
+
+  const handleShareDocument = async (kind: SessionDocumentKind) => {
+    const documentData = buildSessionDocument(kind, {
+      anamnesisSummary: previewContent.complaint,
+      patientName,
+      quickNotes: notes,
+      sessionDate,
+      treatmentSummary,
+    });
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          text: documentData.text,
+          title: documentData.title,
+        });
+      } else {
+        await navigator.clipboard.writeText(documentData.text);
+        toast({ title: "Documento copiado para a área de transferência" });
+      }
+    } catch (error) {
+      toast({
+        title: "Não foi possível compartilhar",
+        description: error instanceof Error ? error.message : "Tente novamente.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handlePrintDocument = (kind: SessionDocumentKind, mode: "print" | "pdf") => {
+    const result = openDocumentWindow(kind);
+
+    if (!result) {
+      return;
+    }
+
+    if (mode === "pdf") {
+      toast({ title: "Use o destino 'Salvar como PDF' na janela de impressão" });
+    }
+
+    result.printWindow.focus();
+    result.printWindow.print();
+  };
 
   const renderDynamicField = (field: AnamnesisField) => {
     if (field.systemKey === "queixa") {
@@ -588,10 +705,22 @@ const SessaoDetalhe = () => {
 
       {/* Action Bar */}
       <div className="flex gap-2 flex-wrap items-center">
-        {!locked && (
+        {(isNew || isEditing) && !locked && (
           <Button size="sm" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             <span>Salvar</span>
+          </Button>
+        )}
+        {!isNew && canEditSavedDraft && !isEditing && (
+          <Button size="sm" onClick={() => setIsEditing(true)}>
+            <Pencil className="h-4 w-4 mr-2" />
+            <span>Editar</span>
+          </Button>
+        )}
+        {!isNew && canDeleteDraft && !isEditing && (
+          <Button size="sm" variant="outline" onClick={() => void handleDelete()}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            <span>Excluir</span>
           </Button>
         )}
         {!isNew && (
@@ -600,58 +729,198 @@ const SessaoDetalhe = () => {
             <span>Iniciar Novo Atendimento a Partir Deste</span>
           </Button>
         )}
-        <Select value={status} onValueChange={setStatus} disabled={locked}>
-          <SelectTrigger className="w-[140px] h-9 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="rascunho">Rascunho</SelectItem>
-            <SelectItem value="concluído">Concluído</SelectItem>
-            <SelectItem value="cancelado">Cancelado</SelectItem>
-          </SelectContent>
-        </Select>
-        {groups.length > 0 && (
-          <Select value={groupId || "none"} onValueChange={(v) => setGroupId(v === "none" ? null : v)} disabled={locked}>
-            <SelectTrigger className="w-[180px] h-9 text-sm">
-              <SelectValue placeholder="Sem grupo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Sem grupo</SelectItem>
-              {groups.map((g) => (
-                <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {(isNew || isEditing) && (
+          <>
+            <Select value={status} onValueChange={setStatus} disabled={locked}>
+              <SelectTrigger className="w-[140px] h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rascunho">Rascunho</SelectItem>
+                <SelectItem value="concluído">Concluído</SelectItem>
+                <SelectItem value="cancelado">Cancelado</SelectItem>
+              </SelectContent>
+            </Select>
+            {groups.length > 0 && (
+              <Select value={groupId || "none"} onValueChange={(v) => setGroupId(v === "none" ? null : v)} disabled={locked}>
+                <SelectTrigger className="w-[180px] h-9 text-sm">
+                  <SelectValue placeholder="Sem grupo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem grupo</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {anamnesisTemplates.length > 0 && (
+              <Select
+                value={anamnesisTemplateId || "none"}
+                onValueChange={(value) => {
+                  setAnamnesisTemplateId(value === "none" ? null : value);
+                  setAnamnesisFormResponse({});
+                }}
+                disabled={locked}
+              >
+                <SelectTrigger className="w-[220px] h-9 text-sm">
+                  <SelectValue placeholder="Ficha de anamnese" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem ficha extra</SelectItem>
+                  {anamnesisTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </>
         )}
-        {anamnesisTemplates.length > 0 && (
-          <Select
-            value={anamnesisTemplateId || "none"}
-            onValueChange={(value) => {
-              setAnamnesisTemplateId(value === "none" ? null : value);
-              setAnamnesisFormResponse({});
-            }}
-            disabled={locked}
-          >
-            <SelectTrigger className="w-[220px] h-9 text-sm">
-              <SelectValue placeholder="Ficha de anamnese" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Sem ficha extra</SelectItem>
-              {anamnesisTemplates.map((template) => (
-                <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {!isNew && !isEditing && (
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Compartilhar
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => void handleShareDocument("anamnesis")}>Anamnese</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handleShareDocument("treatment")}>Tratamento</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handleShareDocument("combined")}>Anamnese + Tratamento</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Exportar como PDF
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => handlePrintDocument("anamnesis", "pdf")}>Anamnese</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePrintDocument("treatment", "pdf")}>Tratamento</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePrintDocument("combined", "pdf")}>Anamnese + Tratamento</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Printer className="h-4 w-4 mr-2" />
+                  Imprimir
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => handlePrintDocument("anamnesis", "print")}>Anamnese</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePrintDocument("treatment", "print")}>Tratamento</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePrintDocument("combined", "print")}>Anamnese + Tratamento</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
         )}
       </div>
 
       {locked && (
         <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-          Este atendimento já foi concluído e não pode mais ser editado. Use "Iniciar novo atendimento a partir deste"
+          Este atendimento está com status final e não pode mais ser editado. Use "Iniciar novo atendimento a partir deste"
           para abrir um novo rascunho com todos os campos já preenchidos.
         </div>
       )}
 
+      {!isNew && !isEditing ? (
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="grid gap-4 p-6 md:grid-cols-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                <p className="mt-1 font-medium">{status}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Grupo</p>
+                <p className="mt-1 font-medium">{groups.find((group) => group.id === groupId)?.name || "Sem grupo"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Ficha complementar</p>
+                <p className="mt-1 font-medium">{activeTemplate?.name || "Sem ficha extra"}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-4 p-6">
+              <div>
+                <h2 className="text-lg font-semibold">Anamnese</h2>
+                <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+                  {previewContent.complaint || "Nenhuma anamnese registrada."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-4 p-6">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">Tratamento</h2>
+                <Badge variant="outline">{treatmentBlocks.length} bloco(s)</Badge>
+              </div>
+              {treatmentBlocks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum bloco de tratamento registrado.</p>
+              ) : (
+                <div className="space-y-4">
+                  {treatmentBlocks.map((block, index) => (
+                    <div key={block.id} className="rounded-xl border p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">Bloco {index + 1}</p>
+                        <span className="text-sm text-muted-foreground">{block.name || "Sem nome"}</span>
+                      </div>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Frequência</p>
+                          <p className="mt-1 text-sm">{block.frequency || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Duração</p>
+                          <p className="mt-1 text-sm">{block.duration || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Séries</p>
+                          <p className="mt-1 text-sm">{block.series || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Repetições</p>
+                          <p className="mt-1 text-sm">{block.repetitions || "—"}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Instruções adicionais</p>
+                        <p className="mt-1 whitespace-pre-line text-sm">{block.instructions || "—"}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Orientações gerais e observações</p>
+                <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+                  {treatmentGeneralGuidance || "Nenhuma orientação geral registrada."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <h2 className="text-lg font-semibold">Anotações rápidas</h2>
+              <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+                {notes || "Nenhuma anotação rápida registrada."}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+      <>
       {/* Notes */}
       <div>
         <Label htmlFor="notes" className="text-sm font-medium">Anotações rápidas</Label>
@@ -821,6 +1090,8 @@ const SessaoDetalhe = () => {
           </Card>
         </TabsContent>
       </Tabs>
+      </>
+      )}
     </motion.div>
   );
 };

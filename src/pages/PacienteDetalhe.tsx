@@ -31,6 +31,7 @@ type ShareLinkResponse = {
   password_prefix: string;
   token: string;
 };
+type PatientStatus = "ativo" | "pausado" | "inativo" | "alta";
 
 const GROUP_COLORS = [
   { value: "gray", label: "Cinza claro" },
@@ -47,6 +48,13 @@ const GROUP_STATUSES: { value: PatientGroupStatus; label: string }[] = [
   { value: "concluido", label: "Concluído" },
   { value: "cancelado", label: "Cancelado" },
   { value: "inativo", label: "Inativo" },
+];
+
+const PATIENT_STATUSES: { value: PatientStatus; label: string }[] = [
+  { value: "ativo", label: "Ativo" },
+  { value: "pausado", label: "Pausado" },
+  { value: "inativo", label: "Inativo" },
+  { value: "alta", label: "Alta" },
 ];
 
 const groupBorderColors: Record<string, string> = {
@@ -240,6 +248,7 @@ const PacienteDetalhe = () => {
   const [shareLink, setShareLink] = useState("");
   const [sharePassword, setSharePassword] = useState("");
   const [shareCompleted, setShareCompleted] = useState(false);
+  const [updatingPatientStatus, setUpdatingPatientStatus] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sessionStatusFilter, setSessionStatusFilter] = useState("all");
   const [groupStatusFilter, setGroupStatusFilter] = useState("all");
@@ -387,6 +396,28 @@ const PacienteDetalhe = () => {
     else { toast({ title: "Grupo excluído" }); }
     setDeleteConfirmId(null);
     void fetchData();
+  };
+
+  const handlePatientStatusChange = async (nextStatus: PatientStatus) => {
+    if (!patient || patient.status === nextStatus) {
+      return;
+    }
+
+    setUpdatingPatientStatus(true);
+    const { error } = await supabase
+      .from("patients")
+      .update({ status: nextStatus })
+      .eq("id", patient.id);
+
+    if (error) {
+      toast({ title: "Erro ao atualizar status do paciente", description: error.message, variant: "destructive" });
+      setUpdatingPatientStatus(false);
+      return;
+    }
+
+    setPatient((current) => (current ? { ...current, status: nextStatus } : current));
+    toast({ title: "Status do paciente atualizado" });
+    setUpdatingPatientStatus(false);
   };
 
   const clearLongPress = () => {
@@ -574,6 +605,20 @@ const PacienteDetalhe = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Select
+            value={patient.status}
+            onValueChange={(value) => void handlePatientStatusChange(value as PatientStatus)}
+            disabled={updatingPatientStatus}
+          >
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PATIENT_STATUSES.map((status) => (
+                <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/cadastro`)}>
             <ClipboardEdit className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Cadastro Completo</span>
