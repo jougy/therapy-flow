@@ -15,7 +15,9 @@ const groupBadgeColors: Record<string, string> = {
 
 const statusMap: Record<string, { label: string; className: string }> = {
   ativo: { label: "Ativo", className: "bg-success/15 text-success border-success/20 hover:bg-success/20" },
+  pausado: { label: "Pausado", className: "bg-warning/15 text-warning border-warning/20 hover:bg-warning/20" },
   inativo: { label: "Inativo", className: "" },
+  alta: { label: "Alta", className: "bg-sky-100 text-sky-700 border-sky-200 hover:bg-sky-100" },
   pagamento_pendente: { label: "Pagamento pendente", className: "bg-warning/15 text-warning border-warning/20 hover:bg-warning/20" },
 };
 
