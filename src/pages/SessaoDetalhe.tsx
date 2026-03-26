@@ -21,10 +21,16 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildSessionPayload, isCompletedSessionLocked, type SessionFormValues } from "@/lib/session-payload";
-import { buildSessionDocument, isSessionImmutable, type SessionDocumentKind } from "@/lib/session-documents";
+import {
+  buildSessionDocument,
+  downloadSessionDocumentPdf,
+  isSessionImmutable,
+  printSessionDocument,
+  type SessionDocumentKind,
+} from "@/lib/session-documents";
 import { getPreferredPatientGroupId } from "@/lib/patient-group-defaults";
-import { buildTreatmentPayload, createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
-import { getSessionPreviewContent } from "@/lib/session-preview";
+import { createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
+import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
 import {
   buildTemplateLayout,
   getVisibleTemplateFields,
@@ -47,6 +53,23 @@ const readJsonRecord = (value: Json | null): AnamnesisFormResponse =>
 
 const readTemplateSchema = (value: Json): AnamnesisTemplateSchema =>
   Array.isArray(value) ? (value as AnamnesisTemplateSchema) : [];
+
+const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: number; score: number }) => {
+  const color = score <= 3 ? "bg-success" : score <= 6 ? "bg-warning" : "bg-destructive";
+  const totalBars = Math.max(max - min, 1);
+  const normalizedScore = Math.max(Math.min(score - min, totalBars), 0);
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex gap-0.5">
+        {Array.from({ length: totalBars }).map((_, index) => (
+          <div key={index} className={`h-4 w-2 rounded-sm ${index < normalizedScore ? color : "bg-muted"}`} />
+        ))}
+      </div>
+      <span className="text-xs font-medium text-muted-foreground">{score}/{max}</span>
+    </div>
+  );
+};
 
 const SessaoDetalhe = () => {
   const { id: patientId, sessionId } = useParams();
@@ -198,14 +221,62 @@ const SessaoDetalhe = () => {
   const activeTemplateSchema = activeTemplate ? readTemplateSchema(activeTemplate.schema) : [];
   const visibleBaseFields = getVisibleTemplateFields(baseTemplateSchema, anamnesisFormResponse);
   const visibleTemplateFields = getVisibleTemplateFields(activeTemplateSchema, anamnesisFormResponse);
-  const baseLayout = buildTemplateLayout(visibleBaseFields);
+  const visibleBaseSliderFields = visibleBaseFields.filter((field) => field.type === "slider");
+  const baseLayout = buildTemplateLayout(visibleBaseFields.filter((field) => field.type !== "slider")).filter(
+    (item) => item.type === "field" || item.items.length > 0
+  );
   const extraLayout = buildTemplateLayout(visibleTemplateFields);
+  const previewIndicators = getSessionPreviewIndicators(
+    {
+      anamnesis_form_response: anamnesisFormResponse as Json,
+      complexity_score: complexityScore[0],
+      pain_score: painScore[0],
+    },
+    baseTemplateSchema
+  );
 
   const updateFormResponse = (fieldId: string, value: string | number | string[] | boolean | null) => {
     setAnamnesisFormResponse((current) => ({
       ...current,
       [fieldId]: value,
     }));
+  };
+
+  const readBaseSliderValue = (field: AnamnesisField) => {
+    if (field.systemKey === "pain_score") {
+      return painScore[0];
+    }
+
+    if (field.systemKey === "complexity_score") {
+      return complexityScore[0];
+    }
+
+    const responseValue = anamnesisFormResponse[field.id];
+
+    if (typeof responseValue === "number") {
+      return responseValue;
+    }
+
+    if (typeof responseValue === "string" && responseValue.trim()) {
+      const parsed = Number(responseValue);
+      return Number.isNaN(parsed) ? field.min ?? 0 : parsed;
+    }
+
+    return field.min ?? 0;
+  };
+
+  const updateBaseSliderValue = (field: AnamnesisField, next: number) => {
+    if (field.systemKey === "pain_score") {
+      setPainScore([next]);
+      return;
+    }
+
+    if (field.systemKey === "complexity_score") {
+      setComplexityScore([next]);
+      return;
+    }
+
+    updateFormResponse(field.id, next);
   };
 
   const formValues: SessionFormValues = {
@@ -320,27 +391,23 @@ const SessaoDetalhe = () => {
   const readOnly = locked || (!isNew && !isEditing);
   const canEditSavedDraft = !isNew && status === "rascunho";
   const canDeleteDraft = !isNew && status === "rascunho";
-  const treatmentPayload = buildTreatmentPayload({
-    blocks: treatmentBlocks,
-    generalGuidance: treatmentGeneralGuidance,
-  });
   const treatmentSummary = formatTreatmentSummary({
     blocks: treatmentBlocks,
     generalGuidance: treatmentGeneralGuidance,
   });
-  const previewContent = getSessionPreviewContent(
+  const sessionSummary = getSessionSummaryContent(
     {
       anamnesis: {
         observacoes,
         queixa,
         sintomas,
       },
+      anamnesis_form_response: anamnesisFormResponse as Json,
       complexity_score: complexityScore[0],
-      notes: null,
       pain_score: painScore[0],
-      treatment: treatmentPayload,
     },
-    baseTemplateSchema
+    baseTemplateSchema,
+    activeTemplateSchema
   );
 
   const handleDelete = async () => {
@@ -363,34 +430,16 @@ const SessaoDetalhe = () => {
     navigate(`/pacientes/${patientId}`);
   };
 
-  const openDocumentWindow = (kind: SessionDocumentKind) => {
-    const documentData = buildSessionDocument(kind, {
-      anamnesisSummary: previewContent.complaint,
-      patientName,
-      quickNotes: notes,
-      sessionDate,
-      treatmentSummary,
-    });
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-
-    if (!printWindow) {
-      toast({ title: "Não foi possível abrir o documento", variant: "destructive" });
-      return null;
-    }
-
-    printWindow.document.write(documentData.html);
-    printWindow.document.close();
-    return { documentData, printWindow };
+  const currentDocumentData = {
+    anamnesisSummary: sessionSummary,
+    patientName,
+    quickNotes: notes,
+    sessionDate,
+    treatmentSummary,
   };
 
   const handleShareDocument = async (kind: SessionDocumentKind) => {
-    const documentData = buildSessionDocument(kind, {
-      anamnesisSummary: previewContent.complaint,
-      patientName,
-      quickNotes: notes,
-      sessionDate,
-      treatmentSummary,
-    });
+    const documentData = buildSessionDocument(kind, currentDocumentData);
 
     try {
       if (navigator.share) {
@@ -411,19 +460,22 @@ const SessaoDetalhe = () => {
     }
   };
 
-  const handlePrintDocument = (kind: SessionDocumentKind, mode: "print" | "pdf") => {
-    const result = openDocumentWindow(kind);
+  const handlePrintDocument = async (kind: SessionDocumentKind, mode: "print" | "pdf") => {
+    try {
+      if (mode === "pdf") {
+        const filename = await downloadSessionDocumentPdf(kind, currentDocumentData);
+        toast({ title: "PDF gerado", description: filename });
+        return;
+      }
 
-    if (!result) {
-      return;
+      await printSessionDocument(kind, currentDocumentData);
+    } catch (error) {
+      toast({
+        title: mode === "pdf" ? "Não foi possível gerar o PDF" : "Não foi possível imprimir o documento",
+        description: error instanceof Error ? error.message : "Tente novamente.",
+        variant: "destructive",
+      });
     }
-
-    if (mode === "pdf") {
-      toast({ title: "Use o destino 'Salvar como PDF' na janela de impressão" });
-    }
-
-    result.printWindow.focus();
-    result.printWindow.print();
   };
 
   const renderDynamicField = (field: AnamnesisField) => {
@@ -691,6 +743,46 @@ const SessaoDetalhe = () => {
     </div>
   );
 
+  const renderBaseSliderSection = (mode: "edit" | "view") => {
+    if (visibleBaseSliderFields.length === 0) {
+      return null;
+    }
+
+    return (
+      <Card>
+        <CardContent className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+          {visibleBaseSliderFields.map((field) => {
+            const value = readBaseSliderValue(field);
+
+            return (
+              <div key={field.id} className="rounded-xl border bg-muted/20 p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-medium">{field.label}</p>
+                  {field.helpText && <p className="mt-1 text-xs text-muted-foreground">{field.helpText}</p>}
+                </div>
+                {mode === "view" ? (
+                  <ScaleIndicator score={value} min={field.min ?? 0} max={field.max ?? 10} />
+                ) : (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-muted-foreground">{value}/{field.max ?? 10}</div>
+                    <Slider
+                      value={[value]}
+                      onValueChange={([next]) => updateBaseSliderValue(field, next)}
+                      min={field.min ?? 0}
+                      max={field.max ?? 10}
+                      step={1}
+                      disabled={locked}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -710,7 +802,7 @@ const SessaoDetalhe = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
-      className="space-y-6 max-w-4xl"
+      className="mx-auto w-full max-w-5xl space-y-6"
     >
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -891,12 +983,14 @@ const SessaoDetalhe = () => {
             </CardContent>
           </Card>
 
+          {renderBaseSliderSection("view")}
+
           <Card>
             <CardContent className="space-y-4 p-6">
               <div>
                 <h2 className="text-lg font-semibold">Anamnese</h2>
                 <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
-                  {previewContent.complaint || "Nenhuma anamnese registrada."}
+                  {sessionSummary || "Nenhuma anamnese registrada."}
                 </p>
               </div>
             </CardContent>
@@ -987,6 +1081,8 @@ const SessaoDetalhe = () => {
         </TabsList>
 
         <TabsContent value="anamnese" className="mt-4 space-y-4">
+          {renderBaseSliderSection("edit")}
+
           <Card>
             <CardContent className="p-6 space-y-5">
               {renderTemplateLayout(baseLayout)}

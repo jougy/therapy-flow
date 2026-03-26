@@ -20,7 +20,7 @@ import { toast } from "@/hooks/use-toast";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
 import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { PatientGroupStatus } from "@/lib/patient-groups";
-import { getSessionPreviewContent } from "@/lib/session-preview";
+import { getSessionPreviewContent, getSessionPreviewIndicators } from "@/lib/session-preview";
 import { buildPatientSessionsView, canDeleteSelectedSessions } from "@/lib/patient-sessions-view";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
@@ -94,16 +94,19 @@ const formatSessionMetaDate = (value: string | null) => {
   return new Date(value).toLocaleDateString("pt-BR");
 };
 
-const PainIndicator = ({ score }: { score: number }) => {
+const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: number; score: number }) => {
   const color = score <= 3 ? "bg-success" : score <= 6 ? "bg-warning" : "bg-destructive";
+  const totalBars = Math.max(max - min, 1);
+  const normalizedScore = Math.max(Math.min(score - min, totalBars), 0);
+
   return (
     <div className="flex items-center gap-2">
       <div className="flex gap-0.5">
-        {Array.from({ length: 10 }).map((_, i) => (
-          <div key={i} className={`w-2 h-4 rounded-sm ${i < score ? color : "bg-muted"}`} />
+        {Array.from({ length: totalBars }).map((_, i) => (
+          <div key={i} className={`w-2 h-4 rounded-sm ${i < normalizedScore ? color : "bg-muted"}`} />
         ))}
       </div>
-      <span className="text-xs font-medium text-muted-foreground">{score}/10</span>
+      <span className="text-xs font-medium text-muted-foreground">{score}/{max}</span>
     </div>
   );
 };
@@ -162,53 +165,63 @@ const SessionCard = ({
   onToggleSelect: () => void;
   selectionMode: boolean;
   session: Session;
-}) => (
-  <Card
-    className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${borderClassName || ""} ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
-    onClick={selectionMode ? onToggleSelect : navigateTo}
-    role="button"
-    tabIndex={0}
-    onKeyDown={(event) => {
-      if (event.key !== "Enter" && event.key !== " ") {
-        return;
-      }
+}) => {
+  const indicators = getSessionPreviewIndicators(session, baseSchema);
 
-      event.preventDefault();
+  return (
+    <Card
+      className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${borderClassName || ""} ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
+      onClick={selectionMode ? onToggleSelect : navigateTo}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
 
-      if (selectionMode) {
-        onToggleSelect();
-        return;
-      }
+        event.preventDefault();
 
-      navigateTo();
-    }}
-    onPointerDown={selectionMode ? undefined : onPressStart}
-    onPointerUp={selectionMode ? undefined : onPressCancel}
-    onPointerLeave={selectionMode ? undefined : onPressCancel}
-    onPointerCancel={selectionMode ? undefined : onPressCancel}
-  >
-    <CardContent className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
-            <Badge variant="outline" className={`text-xs ${statusColors[session.status] || ""}`}>{session.status}</Badge>
-            {selectionMode && (
-              <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
-                {isSelected ? "Selecionado" : "Toque para selecionar"}
-              </Badge>
-            )}
+        if (selectionMode) {
+          onToggleSelect();
+          return;
+        }
+
+        navigateTo();
+      }}
+      onPointerDown={selectionMode ? undefined : onPressStart}
+      onPointerUp={selectionMode ? undefined : onPressCancel}
+      onPointerLeave={selectionMode ? undefined : onPressCancel}
+      onPointerCancel={selectionMode ? undefined : onPressCancel}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
+              <Badge variant="outline" className={`text-xs ${statusColors[session.status] || ""}`}>{session.status}</Badge>
+              {selectionMode && (
+                <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
+                  {isSelected ? "Selecionado" : "Toque para selecionar"}
+                </Badge>
+              )}
+            </div>
+            <SessionTabsPreview baseSchema={baseSchema} session={session} />
           </div>
-          <SessionTabsPreview baseSchema={baseSchema} session={session} />
+          {indicators.length > 0 && (
+            <div className="space-y-1.5 shrink-0">
+              {indicators.map((indicator) => (
+                <div key={indicator.id}>
+                  <span className="text-xs text-muted-foreground block">{indicator.label}</span>
+                  <ScaleIndicator score={indicator.score} min={indicator.min} max={indicator.max} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="space-y-1.5 shrink-0">
-          <div><span className="text-xs text-muted-foreground block">Dor</span><PainIndicator score={session.pain_score || 0} /></div>
-          <div><span className="text-xs text-muted-foreground block">Complexidade</span><PainIndicator score={session.complexity_score || 0} /></div>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
+      </CardContent>
+    </Card>
+  );
+};
 
 const isShareLinkResponse = (value: Json): value is ShareLinkResponse => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
