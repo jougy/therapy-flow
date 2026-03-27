@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Copy, Loader2, Plus, Trash2, Pencil, Share2, Printer, FileDown } from "lucide-react";
+import { ArrowLeft, Save, Copy, Loader2, Plus, Trash2, Pencil, Share2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,10 +20,11 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { readBusinessHours } from "@/lib/clinic-settings";
+import { readProfileAddress } from "@/lib/profile-settings";
 import { buildSessionPayload, isCompletedSessionLocked, type SessionFormValues } from "@/lib/session-payload";
 import {
   buildSessionDocument,
-  downloadSessionDocumentPdf,
   isSessionImmutable,
   printSessionDocument,
   type SessionDocumentKind,
@@ -42,6 +43,14 @@ import {
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 type AnamnesisTemplate = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 type ClinicMembership = Database["public"]["Tables"]["clinic_memberships"]["Row"];
+type ClinicDocumentSummary = Pick<
+  Database["public"]["Tables"]["clinics"]["Row"],
+  "address" | "anamnesis_base_schema" | "business_hours" | "cnpj" | "email" | "legal_name" | "logo_url" | "name" | "phone"
+>;
+type ProviderProfile = Pick<
+  Database["public"]["Tables"]["profiles"]["Row"],
+  "email" | "full_name" | "id" | "job_title" | "phone" | "professional_license" | "specialty"
+>;
 
 const isJsonObject = (value: Json | null): value is Record<string, Json | undefined> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -53,6 +62,34 @@ const readJsonRecord = (value: Json | null): AnamnesisFormResponse =>
 
 const readTemplateSchema = (value: Json): AnamnesisTemplateSchema =>
   Array.isArray(value) ? (value as AnamnesisTemplateSchema) : [];
+
+const formatCnpj = (value: string | null | undefined) => {
+  const digits = (value ?? "").replace(/\D/g, "").slice(0, 14);
+
+  if (digits.length !== 14) {
+    return value?.trim() || "";
+  }
+
+  return digits
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
+};
+
+const formatAddressLine = (value: Json | null | undefined) => {
+  const address = readProfileAddress(value);
+
+  return [
+    [address.street, address.number].filter(Boolean).join(", "),
+    address.complement,
+    address.neighborhood,
+    [address.city, address.state].filter(Boolean).join(" - "),
+    address.cep,
+  ]
+    .filter(Boolean)
+    .join(", ");
+};
 
 const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: number; score: number }) => {
   const color = score <= 3 ? "bg-success" : score <= 6 ? "bg-warning" : "bg-destructive";
@@ -74,7 +111,7 @@ const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: numb
 const SessaoDetalhe = () => {
   const { id: patientId, sessionId } = useParams();
   const navigate = useNavigate();
-  const { user, clinicId } = useAuth();
+  const { user, clinicId, profile } = useAuth();
   const isNew = sessionId === "novo";
 
   const [loading, setLoading] = useState(!isNew);
@@ -84,8 +121,10 @@ const SessaoDetalhe = () => {
   const [patientName, setPatientName] = useState("");
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([]);
+  const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>([]);
   const [anamnesisTemplates, setAnamnesisTemplates] = useState<AnamnesisTemplate[]>([]);
   const [baseTemplateSchema, setBaseTemplateSchema] = useState<AnamnesisTemplateSchema>([]);
+  const [clinicDocumentInfo, setClinicDocumentInfo] = useState<ClinicDocumentSummary | null>(null);
   const [locked, setLocked] = useState(false);
 
   // Form state
@@ -129,7 +168,7 @@ const SessaoDetalhe = () => {
           .order("updated_at", { ascending: false }),
         supabase
           .from("clinics")
-          .select("anamnesis_base_schema")
+          .select("address, anamnesis_base_schema, business_hours, cnpj, email, legal_name, logo_url, name, phone")
           .eq("id", clinicId)
           .single(),
         supabase
@@ -140,7 +179,7 @@ const SessaoDetalhe = () => {
           .eq("membership_status", "active"),
         supabase
           .from("profiles")
-          .select("id, full_name, email")
+          .select("id, full_name, email, phone, specialty, job_title, professional_license")
           .eq("clinic_id", clinicId),
       ]);
       
@@ -153,6 +192,7 @@ const SessaoDetalhe = () => {
         }
       }
       if (clinicRes.data) {
+        setClinicDocumentInfo(clinicRes.data);
         setBaseTemplateSchema(readTemplateSchema(clinicRes.data.anamnesis_base_schema));
       }
       if (groupsRes.data) {
@@ -163,6 +203,7 @@ const SessaoDetalhe = () => {
         }
       }
       if (membershipsRes.data && profilesRes.data) {
+        setProviderProfiles(profilesRes.data as ProviderProfile[]);
         const profileMap = new Map(
           profilesRes.data.map((profile) => [profile.id, profile.full_name || profile.email || "Colaborador"])
         );
@@ -234,6 +275,10 @@ const SessaoDetalhe = () => {
     },
     baseTemplateSchema
   );
+  const currentProviderProfile =
+    providerProfiles.find((provider) => provider.id === providerId) ??
+    providerProfiles.find((provider) => provider.id === user?.id) ??
+    null;
 
   const updateFormResponse = (fieldId: string, value: string | number | string[] | boolean | null) => {
     setAnamnesisFormResponse((current) => ({
@@ -430,16 +475,41 @@ const SessaoDetalhe = () => {
     navigate(`/pacientes/${patientId}`);
   };
 
-  const currentDocumentData = {
+  const buildCurrentDocumentData = () => ({
+    anamnesisIndicators: previewIndicators,
     anamnesisSummary: sessionSummary,
+    appName: "TherapyFlow",
+    clinic: {
+      address: formatAddressLine(clinicDocumentInfo?.address),
+      businessHours: readBusinessHours(clinicDocumentInfo?.business_hours).summary,
+      cnpj: formatCnpj(clinicDocumentInfo?.cnpj),
+      email: clinicDocumentInfo?.email ?? null,
+      legalName: clinicDocumentInfo?.legal_name ?? null,
+      logoUrl: clinicDocumentInfo?.logo_url ?? null,
+      name: clinicDocumentInfo?.name ?? "TherapyFlow",
+      phone: clinicDocumentInfo?.phone ?? null,
+    },
+    generatedAt: new Date().toLocaleString("pt-BR"),
     patientName,
+    provider: {
+      email: currentProviderProfile?.email ?? profile?.email ?? user?.email ?? null,
+      fullName: currentProviderProfile?.full_name ?? profile?.full_name ?? user?.email ?? "Profissional responsável",
+      jobTitle: currentProviderProfile?.job_title ?? profile?.job_title ?? null,
+      phone: currentProviderProfile?.phone ?? profile?.phone ?? null,
+      professionalLicense: currentProviderProfile?.professional_license ?? profile?.professional_license ?? null,
+      specialty: currentProviderProfile?.specialty ?? profile?.specialty ?? null,
+    },
     quickNotes: notes,
     sessionDate,
+    treatmentDetails: {
+      blocks: treatmentBlocks,
+      generalGuidance: treatmentGeneralGuidance,
+    },
     treatmentSummary,
-  };
+  });
 
   const handleShareDocument = async (kind: SessionDocumentKind) => {
-    const documentData = buildSessionDocument(kind, currentDocumentData);
+    const documentData = buildSessionDocument(kind, buildCurrentDocumentData());
 
     try {
       if (navigator.share) {
@@ -460,18 +530,12 @@ const SessaoDetalhe = () => {
     }
   };
 
-  const handlePrintDocument = async (kind: SessionDocumentKind, mode: "print" | "pdf") => {
+  const handlePrintDocument = async (kind: SessionDocumentKind) => {
     try {
-      if (mode === "pdf") {
-        const filename = await downloadSessionDocumentPdf(kind, currentDocumentData);
-        toast({ title: "PDF gerado", description: filename });
-        return;
-      }
-
-      await printSessionDocument(kind, currentDocumentData);
+      await printSessionDocument(kind, buildCurrentDocumentData());
     } catch (error) {
       toast({
-        title: mode === "pdf" ? "Não foi possível gerar o PDF" : "Não foi possível imprimir o documento",
+        title: "Não foi possível imprimir o documento",
         description: error instanceof Error ? error.message : "Tente novamente.",
         variant: "destructive",
       });
@@ -930,27 +994,14 @@ const SessaoDetalhe = () => {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline">
-                  <FileDown className="h-4 w-4 mr-2" />
-                  Exportar como PDF
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={() => handlePrintDocument("anamnesis", "pdf")}>Anamnese</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handlePrintDocument("treatment", "pdf")}>Tratamento</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handlePrintDocument("combined", "pdf")}>Anamnese + Tratamento</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline">
                   <Printer className="h-4 w-4 mr-2" />
                   Imprimir
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={() => handlePrintDocument("anamnesis", "print")}>Anamnese</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handlePrintDocument("treatment", "print")}>Tratamento</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handlePrintDocument("combined", "print")}>Anamnese + Tratamento</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePrintDocument("anamnesis")}>Anamnese</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePrintDocument("treatment")}>Tratamento</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePrintDocument("combined")}>Anamnese + Tratamento</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </>

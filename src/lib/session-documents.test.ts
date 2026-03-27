@@ -10,11 +10,49 @@ import {
 } from "@/lib/session-documents";
 
 const baseData: SessionDocumentData = {
+  appName: "TherapyFlow",
   patientName: "Maria Souza",
   sessionDate: "25/03/2026",
+  generatedAt: "26/03/2026 16:10",
   anamnesisSummary: "Queixa principal: Dor lombar\nSintomas: Rigidez matinal",
+  anamnesisIndicators: [
+    { label: "Dor", score: 7, min: 0, max: 10 },
+    { label: "Complexidade", score: 4, min: 0, max: 10 },
+  ],
   treatmentSummary: "Alongamento lombar | a cada 8h | por 15 dias",
+  treatmentDetails: {
+    blocks: [
+      {
+        duration: "15 dias",
+        frequency: "12h",
+        id: "block-1",
+        instructions: "Respirar de forma cadenciada",
+        name: "Agachamento",
+        repetitions: "20",
+        series: "3",
+      },
+    ],
+    generalGuidance: "Executar com supervisão e respeitar a dor.",
+  },
   quickNotes: "Paciente relata melhora parcial.",
+  clinic: {
+    address: "Rua das Flores, 123, Centro, Manaus - AM, 69000-000",
+    businessHours: "Seg-sex 08h-18h",
+    cnpj: "12.345.678/0001-90",
+    email: "contato@guardians.com",
+    legalName: "Instituto Guardians of the Amazon",
+    logoUrl: "https://example.com/logo.png",
+    name: "Ins. Guardians of the Amazon",
+    phone: "(92) 3333-4444",
+  },
+  provider: {
+    email: "jougy@guardians.com",
+    fullName: "Jougy",
+    jobTitle: "Sênior",
+    phone: "(92) 99999-0000",
+    professionalLicense: "CREFITO 12345",
+    specialty: "Fisioterapeuta",
+  },
 };
 
 describe("isSessionImmutable", () => {
@@ -50,10 +88,40 @@ describe("buildSessionDocument", () => {
 
     expect(result.title).toBe("Atendimento - Maria Souza - 25/03/2026");
     expect(result.subtitle).toBe("Atendimento em 25/03/2026");
+    expect(result.brandTitle).toBe("Ins. Guardians of the Amazon");
+    expect(result.patientLabel).toBe("Maria Souza");
     expect(result.sections).toEqual([
-      { title: "Anamnese", content: "Queixa principal: Dor lombar\nSintomas: Rigidez matinal" },
-      { title: "Tratamento", content: "Alongamento lombar | a cada 8h | por 15 dias" },
-      { title: "Observações rápidas", content: "Paciente relata melhora parcial." },
+      {
+        title: "Anamnese",
+        content: "Queixa principal: Dor lombar\nSintomas: Rigidez matinal",
+        indicators: [
+          { label: "Dor", score: 7, min: 0, max: 10 },
+          { label: "Complexidade", score: 4, min: 0, max: 10 },
+        ],
+        kind: "anamnesis",
+      },
+      {
+        title: "Tratamento",
+        content:
+          "1)\nTratamento: Agachamento\nDe quanto em quanto tempo: 12h\nPor quanto tempo: 15 dias\nSéries: 3\nRepetições: 20\nInstruções adicionais: Respirar de forma cadenciada\n\nOrientações gerais e observações: Executar com supervisão e respeitar a dor.",
+        indicators: [],
+        kind: "treatment",
+        treatmentDetails: {
+          blocks: [
+            {
+              duration: "15 dias",
+              frequency: "12h",
+              id: "block-1",
+              instructions: "Respirar de forma cadenciada",
+              name: "Agachamento",
+              repetitions: "20",
+              series: "3",
+            },
+          ],
+          generalGuidance: "Executar com supervisão e respeitar a dor.",
+        },
+      },
+      { title: "Observações rápidas", content: "Paciente relata melhora parcial.", indicators: [], kind: "notes" },
     ]);
   });
 
@@ -74,5 +142,30 @@ describe("buildSessionDocument", () => {
 
     expect(html).toContain("Nenhum conteúdo registrado.");
     expect(html).toContain("<!doctype html>");
+  });
+
+  it("renders clinic, professional, patient and footer information in the html document", () => {
+    const html = renderSessionDocumentHtml(buildSessionDocumentModel("combined", baseData));
+    const anamnesisTitleIndex = html.indexOf('class="section-title">Anamnese');
+    const firstIndicatorIndex = html.indexOf('class="indicator-grid"');
+
+    expect(html).toContain("Ins. Guardians of the Amazon");
+    expect(html).toContain("TherapyFlow");
+    expect(html).toContain("Instituto Guardians of the Amazon");
+    expect(html).toContain("CREFITO 12345");
+    expect(html).toContain("Maria Souza");
+    expect(html).toContain("26/03/2026 16:10");
+    expect(html).toContain("Rua das Flores, 123, Centro, Manaus - AM, 69000-000");
+    expect(html).toContain("Seg-sex 08h-18h");
+    expect(html).toContain("Dor");
+    expect(html).toContain("7/10");
+    expect(html).toContain("Figtree");
+    expect(html).toContain("De quanto em quanto tempo");
+    expect(html).toContain("Respirar de forma cadenciada");
+    expect(html).toContain('class="facts-grid facts-grid--clinic"');
+    expect(html).toContain('class="document-section document-section--treatment"');
+    expect(html).toContain(">1)</h3>");
+    expect(anamnesisTitleIndex).toBeGreaterThan(-1);
+    expect(firstIndicatorIndex).toBeGreaterThan(anamnesisTitleIndex);
   });
 });
