@@ -4,6 +4,8 @@ import {
   getMembershipStatusMeta,
   countOccupiedSubaccounts,
   getSubaccountCapacity,
+  shouldShowTeamAnalyticsSection,
+  shouldShowTeamSettingsSection,
   sortMembershipsForDisplay,
   type MembershipLike,
 } from "@/lib/subaccounts";
@@ -124,5 +126,19 @@ describe("formatLastSeenAt", () => {
 
   it("returns a fallback when the subaccount never logged in", () => {
     expect(formatLastSeenAt(null)).toBe("Nunca acessou");
+  });
+});
+
+describe("team section visibility", () => {
+  it("shows the team section only for clinic plans", () => {
+    expect(shouldShowTeamSettingsSection("clinic")).toBe(true);
+    expect(shouldShowTeamSettingsSection("solo")).toBe(false);
+    expect(shouldShowTeamSettingsSection(null)).toBe(false);
+  });
+
+  it("shows team analytics only when the plan is clinic and the capability is granted", () => {
+    expect(shouldShowTeamAnalyticsSection("clinic", true)).toBe(true);
+    expect(shouldShowTeamAnalyticsSection("clinic", false)).toBe(false);
+    expect(shouldShowTeamAnalyticsSection("solo", true)).toBe(false);
   });
 });

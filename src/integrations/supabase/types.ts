@@ -470,7 +470,9 @@ export type Database = {
           full_name: string | null
           id: string
           job_title: string | null
+          last_password_changed_at: string | null
           last_seen_at: string | null
+          password_temporary: boolean
           phone: string | null
           professional_license: string | null
           public_code: string
@@ -492,10 +494,12 @@ export type Database = {
           full_name?: string | null
           id: string
           job_title?: string | null
+          last_password_changed_at?: string | null
           last_seen_at?: string | null
+          password_temporary?: boolean
           phone?: string | null
           professional_license?: string | null
-          public_code?: string
+          public_code: string
           social_name?: string | null
           specialties?: Json
           specialty?: string | null
@@ -514,7 +518,9 @@ export type Database = {
           full_name?: string | null
           id?: string
           job_title?: string | null
+          last_password_changed_at?: string | null
           last_seen_at?: string | null
+          password_temporary?: boolean
           phone?: string | null
           professional_license?: string | null
           public_code?: string
@@ -530,6 +536,86 @@ export type Database = {
             columns: ["clinic_id"]
             isOneToOne: false
             referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      security_events: {
+        Row: {
+          actor_user_id: string | null
+          clinic_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          payload: Json
+          target_user_id: string | null
+          visibility_scope: string
+        }
+        Insert: {
+          actor_user_id?: string | null
+          clinic_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          payload?: Json
+          target_user_id?: string | null
+          visibility_scope?: string
+        }
+        Update: {
+          actor_user_id?: string | null
+          clinic_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          payload?: Json
+          target_user_id?: string | null
+          visibility_scope?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "security_events_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_edit_history: {
+        Row: {
+          clinic_id: string
+          edited_at: string
+          editor_user_id: string
+          id: string
+          session_id: string
+        }
+        Insert: {
+          clinic_id: string
+          edited_at?: string
+          editor_user_id: string
+          id?: string
+          session_id: string
+        }
+        Update: {
+          clinic_id?: string
+          edited_at?: string
+          editor_user_id?: string
+          id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_edit_history_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_edit_history_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -641,6 +727,103 @@ export type Database = {
         }
         Relationships: []
       }
+      user_security_sessions: {
+        Row: {
+          browser: string | null
+          clinic_id: string | null
+          created_at: string
+          device_label: string | null
+          ended_at: string | null
+          id: string
+          last_seen_at: string
+          platform: string | null
+          session_key: string
+          signed_in_at: string
+          updated_at: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          browser?: string | null
+          clinic_id?: string | null
+          created_at?: string
+          device_label?: string | null
+          ended_at?: string | null
+          id?: string
+          last_seen_at?: string
+          platform?: string | null
+          session_key: string
+          signed_in_at?: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          browser?: string | null
+          clinic_id?: string | null
+          created_at?: string
+          device_label?: string | null
+          ended_at?: string | null
+          id?: string
+          last_seen_at?: string
+          platform?: string | null
+          session_key?: string
+          signed_in_at?: string
+          updated_at?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_security_sessions_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_security_settings: {
+        Row: {
+          alert_access_change: boolean
+          alert_new_login: boolean
+          alert_other_sessions_ended: boolean
+          alert_password_changed: boolean
+          clinic_id: string | null
+          created_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_access_change?: boolean
+          alert_new_login?: boolean
+          alert_other_sessions_ended?: boolean
+          alert_password_changed?: boolean
+          clinic_id?: string | null
+          created_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_access_change?: boolean
+          alert_new_login?: boolean
+          alert_other_sessions_ended?: boolean
+          alert_password_changed?: boolean
+          clinic_id?: string | null
+          created_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_security_settings_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -666,7 +849,15 @@ export type Database = {
         Args: { _capability: string; _clinic_id?: string }
         Returns: boolean
       }
+      end_other_security_sessions: {
+        Args: { _current_session_key: string }
+        Returns: Json
+      }
       generate_profile_public_code: { Args: never; Returns: string }
+      generate_profile_public_code_for_clinic: {
+        Args: { _clinic_id: string }
+        Returns: string
+      }
       get_patient_registration_form: {
         Args: { _password: string; _token: string }
         Returns: Json
@@ -698,6 +889,27 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      log_security_event: {
+        Args: {
+          _actor_user_id: string
+          _clinic_id: string
+          _event_type: string
+          _payload?: Json
+          _target_user_id: string
+          _visibility_scope?: string
+        }
+        Returns: string
+      }
+      register_current_security_session: {
+        Args: {
+          _browser?: string
+          _device_label?: string
+          _platform?: string
+          _session_key: string
+          _user_agent?: string
+        }
+        Returns: Json
       }
       submit_patient_registration_form: {
         Args: { _password: string; _payload: Json; _token: string }
@@ -756,6 +968,15 @@ export type Database = {
           _social_name?: string
           _specialty?: string
           _working_hours?: string
+        }
+        Returns: Json
+      }
+      upsert_current_user_security_settings: {
+        Args: {
+          _alert_access_change?: boolean
+          _alert_new_login?: boolean
+          _alert_other_sessions_ended?: boolean
+          _alert_password_changed?: boolean
         }
         Returns: Json
       }

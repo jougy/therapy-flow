@@ -6,6 +6,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -15,14 +16,14 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { readBusinessHours } from "@/lib/clinic-settings";
 import { readProfileAddress } from "@/lib/profile-settings";
-import { buildSessionPayload, isCompletedSessionLocked, type SessionFormValues } from "@/lib/session-payload";
+import { buildSessionPayload, type SessionFormValues } from "@/lib/session-payload";
 import {
   buildSessionDocument,
   isSessionImmutable,
@@ -30,6 +31,7 @@ import {
   type SessionDocumentKind,
 } from "@/lib/session-documents";
 import { getPreferredPatientGroupId } from "@/lib/patient-group-defaults";
+import { buildSessionEditHistoryView, formatSessionAuditDateTime, getSessionPersonLabel } from "@/lib/session-people";
 import { createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
 import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
 import {
@@ -42,15 +44,15 @@ import {
 
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 type AnamnesisTemplate = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
-type ClinicMembership = Database["public"]["Tables"]["clinic_memberships"]["Row"];
 type ClinicDocumentSummary = Pick<
   Database["public"]["Tables"]["clinics"]["Row"],
   "address" | "anamnesis_base_schema" | "business_hours" | "cnpj" | "email" | "legal_name" | "logo_url" | "name" | "phone"
 >;
-type ProviderProfile = Pick<
+type CollaboratorProfile = Pick<
   Database["public"]["Tables"]["profiles"]["Row"],
   "email" | "full_name" | "id" | "job_title" | "phone" | "professional_license" | "specialty"
 >;
+type SessionEditHistoryRow = Database["public"]["Tables"]["session_edit_history"]["Row"];
 
 const isJsonObject = (value: Json | null): value is Record<string, Json | undefined> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -120,12 +122,15 @@ const SessaoDetalhe = () => {
   const [isEditing, setIsEditing] = useState(isNew);
   const [patientName, setPatientName] = useState("");
   const [groups, setGroups] = useState<PatientGroup[]>([]);
-  const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([]);
-  const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>([]);
+  const [collaboratorProfiles, setCollaboratorProfiles] = useState<CollaboratorProfile[]>([]);
   const [anamnesisTemplates, setAnamnesisTemplates] = useState<AnamnesisTemplate[]>([]);
   const [baseTemplateSchema, setBaseTemplateSchema] = useState<AnamnesisTemplateSchema>([]);
   const [clinicDocumentInfo, setClinicDocumentInfo] = useState<ClinicDocumentSummary | null>(null);
   const [locked, setLocked] = useState(false);
+  const [createdByUserId, setCreatedByUserId] = useState<string | null>(user?.id ?? null);
+  const [sessionCreatedAt, setSessionCreatedAt] = useState<string | null>(null);
+  const [editHistory, setEditHistory] = useState<SessionEditHistoryRow[]>([]);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
 
   // Form state
   const [queixa, setQueixa] = useState("");
@@ -138,125 +143,119 @@ const SessaoDetalhe = () => {
   const [status, setStatus] = useState("rascunho");
   const [notes, setNotes] = useState("");
   const [groupId, setGroupId] = useState<string | null>(null);
-  const [providerId, setProviderId] = useState<string | null>(user?.id ?? null);
   const [sessionDate, setSessionDate] = useState<string>("");
   const [anamnesisTemplateId, setAnamnesisTemplateId] = useState<string | null>(null);
   const [anamnesisFormResponse, setAnamnesisFormResponse] = useState<AnamnesisFormResponse>({});
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!patientId || !clinicId) return;
+  const loadSessionPage = useCallback(async () => {
+    if (!patientId || !clinicId) {
+      return;
+    }
 
-      // Fetch patient name and groups in parallel
-      const [patientRes, groupsRes, lastUsedGroupRes, templatesRes, clinicRes, membershipsRes, profilesRes] = await Promise.all([
-        supabase.from("patients").select("name").eq("id", patientId).maybeSingle(),
-        supabase.from("patient_groups").select("*").eq("patient_id", patientId),
-        supabase
-          .from("sessions")
-          .select("group_id")
-          .eq("patient_id", patientId)
-          .not("group_id", "is", null)
-          .order("session_date", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("anamnesis_form_templates")
-          .select("*")
-          .eq("clinic_id", clinicId)
-          .eq("is_active", true)
-          .eq("is_system_default", false)
-          .order("updated_at", { ascending: false }),
-        supabase
-          .from("clinics")
-          .select("address, anamnesis_base_schema, business_hours, cnpj, email, legal_name, logo_url, name, phone")
-          .eq("id", clinicId)
-          .single(),
-        supabase
-          .from("clinic_memberships")
-          .select("*")
-          .eq("clinic_id", clinicId)
-          .eq("is_active", true)
-          .eq("membership_status", "active"),
-        supabase
-          .from("profiles")
-          .select("id, full_name, email, phone, specialty, job_title, professional_license")
-          .eq("clinic_id", clinicId),
+    setLoading(true);
+
+    const [patientRes, groupsRes, lastUsedGroupRes, templatesRes, clinicRes, profilesRes] = await Promise.all([
+      supabase.from("patients").select("name").eq("id", patientId).maybeSingle(),
+      supabase.from("patient_groups").select("*").eq("patient_id", patientId),
+      supabase
+        .from("sessions")
+        .select("group_id")
+        .eq("patient_id", patientId)
+        .not("group_id", "is", null)
+        .order("session_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("anamnesis_form_templates")
+        .select("*")
+        .eq("clinic_id", clinicId)
+        .eq("is_active", true)
+        .eq("is_system_default", false)
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("clinics")
+        .select("address, anamnesis_base_schema, business_hours, cnpj, email, legal_name, logo_url, name, phone")
+        .eq("id", clinicId)
+        .single(),
+      supabase
+        .from("profiles")
+        .select("id, full_name, email, phone, specialty, job_title, professional_license")
+        .eq("clinic_id", clinicId),
+    ]);
+
+    if (patientRes.data) {
+      setPatientName(patientRes.data.name);
+    }
+
+    if (templatesRes.data) {
+      setAnamnesisTemplates(templatesRes.data);
+
+      if (isNew && templatesRes.data.length > 0) {
+        setAnamnesisTemplateId((current) => current ?? templatesRes.data[0].id);
+      }
+    }
+
+    if (clinicRes.data) {
+      setClinicDocumentInfo(clinicRes.data);
+      setBaseTemplateSchema(readTemplateSchema(clinicRes.data.anamnesis_base_schema));
+    }
+
+    if (profilesRes.data) {
+      setCollaboratorProfiles(profilesRes.data as CollaboratorProfile[]);
+    }
+
+    if (groupsRes.data) {
+      setGroups(groupsRes.data);
+
+      if (isNew) {
+        setGroupId(getPreferredPatientGroupId(groupsRes.data, lastUsedGroupRes.data?.group_id ?? null));
+      }
+    }
+
+    if (!isNew && sessionId) {
+      const [{ data: sessionData }, { data: historyData }] = await Promise.all([
+        supabase.from("sessions").select("*").eq("id", sessionId).maybeSingle(),
+        supabase.from("session_edit_history").select("*").eq("session_id", sessionId).order("edited_at", { ascending: false }),
       ]);
-      
-      if (patientRes.data) setPatientName(patientRes.data.name);
-      if (templatesRes.data) {
-        setAnamnesisTemplates(templatesRes.data);
 
-        if (isNew && templatesRes.data.length > 0) {
-          setAnamnesisTemplateId((current) => current ?? templatesRes.data[0].id);
-        }
+      if (sessionData) {
+        const anamnesis = isJsonObject(sessionData.anamnesis) ? sessionData.anamnesis : {};
+        const treatment = isJsonObject(sessionData.treatment) ? sessionData.treatment : {};
+        const treatmentState = readTreatmentState(treatment);
+
+        setQueixa(readJsonString(anamnesis.queixa));
+        setSintomas(readJsonString(anamnesis.sintomas));
+        setObservacoes(readJsonString(anamnesis.observacoes));
+        setPainScore([sessionData.pain_score || 0]);
+        setComplexityScore([sessionData.complexity_score || 0]);
+        setTreatmentBlocks(treatmentState.blocks);
+        setTreatmentGeneralGuidance(treatmentState.generalGuidance);
+        setStatus(sessionData.status);
+        setNotes(sessionData.notes || "");
+        setGroupId(sessionData.group_id);
+        setSessionDate(new Date(sessionData.session_date).toLocaleDateString("pt-BR"));
+        setAnamnesisTemplateId(sessionData.anamnesis_template_id);
+        setAnamnesisFormResponse(readJsonRecord(sessionData.anamnesis_form_response));
+        setLocked(isSessionImmutable(false, sessionData.status));
+        setCreatedByUserId(sessionData.user_id);
+        setSessionCreatedAt(sessionData.created_at);
+        setEditHistory(historyData ?? []);
+        setIsEditing(false);
       }
-      if (clinicRes.data) {
-        setClinicDocumentInfo(clinicRes.data);
-        setBaseTemplateSchema(readTemplateSchema(clinicRes.data.anamnesis_base_schema));
-      }
-      if (groupsRes.data) {
-        setGroups(groupsRes.data);
+    } else {
+      setLocked(false);
+      setIsEditing(true);
+      setCreatedByUserId(user?.id ?? null);
+      setSessionCreatedAt(null);
+      setEditHistory([]);
+    }
 
-        if (isNew) {
-          setGroupId(getPreferredPatientGroupId(groupsRes.data, lastUsedGroupRes.data?.group_id ?? null));
-        }
-      }
-      if (membershipsRes.data && profilesRes.data) {
-        setProviderProfiles(profilesRes.data as ProviderProfile[]);
-        const profileMap = new Map(
-          profilesRes.data.map((profile) => [profile.id, profile.full_name || profile.email || "Colaborador"])
-        );
-        const clinicProviders = (membershipsRes.data as ClinicMembership[])
-          .filter((membership) => ["owner", "admin", "professional"].includes(membership.operational_role))
-          .map((membership) => ({
-            id: membership.user_id,
-            name: profileMap.get(membership.user_id) || "Colaborador",
-          }));
+    setLoading(false);
+  }, [clinicId, isNew, patientId, sessionId, user?.id]);
 
-        setProviders(clinicProviders);
-
-        if (isNew) {
-          setProviderId((current) => current ?? user?.id ?? clinicProviders[0]?.id ?? null);
-        }
-      }
-
-      if (!isNew && sessionId) {
-        const { data } = await supabase
-          .from("sessions")
-          .select("*")
-          .eq("id", sessionId)
-          .maybeSingle();
-
-        if (data) {
-          const anamnesis = isJsonObject(data.anamnesis) ? data.anamnesis : {};
-          const treatment = isJsonObject(data.treatment) ? data.treatment : {};
-          const treatmentState = readTreatmentState(treatment);
-          setQueixa(readJsonString(anamnesis.queixa));
-          setSintomas(readJsonString(anamnesis.sintomas));
-          setObservacoes(readJsonString(anamnesis.observacoes));
-          setPainScore([data.pain_score || 0]);
-          setComplexityScore([data.complexity_score || 0]);
-          setTreatmentBlocks(treatmentState.blocks);
-          setTreatmentGeneralGuidance(treatmentState.generalGuidance);
-          setStatus(data.status);
-          setNotes(data.notes || "");
-          setGroupId(data.group_id);
-          setProviderId(data.provider_id ?? data.user_id);
-          setSessionDate(new Date(data.session_date).toLocaleDateString("pt-BR"));
-          setAnamnesisTemplateId(data.anamnesis_template_id);
-          setAnamnesisFormResponse(readJsonRecord(data.anamnesis_form_response));
-          setLocked(isSessionImmutable(false, data.status));
-          setIsEditing(false);
-        }
-      } else {
-        setLocked(false);
-        setIsEditing(true);
-      }
-      setLoading(false);
-    };
-    fetchData();
-  }, [clinicId, patientId, sessionId, isNew, user?.id]);
+  useEffect(() => {
+    void loadSessionPage();
+  }, [loadSessionPage]);
 
   const activeTemplate = anamnesisTemplates.find((template) => template.id === anamnesisTemplateId) ?? null;
   const activeTemplateSchema = activeTemplate ? readTemplateSchema(activeTemplate.schema) : [];
@@ -275,10 +274,27 @@ const SessaoDetalhe = () => {
     },
     baseTemplateSchema
   );
-  const currentProviderProfile =
-    providerProfiles.find((provider) => provider.id === providerId) ??
-    providerProfiles.find((provider) => provider.id === user?.id) ??
-    null;
+  const collaboratorProfileMap = useMemo(
+    () => new Map(collaboratorProfiles.map((person) => [person.id, person])),
+    [collaboratorProfiles]
+  );
+  const creatorProfile =
+    (createdByUserId ? collaboratorProfileMap.get(createdByUserId) : null) ??
+    (profile && createdByUserId === user?.id
+      ? {
+          email: profile.email,
+          full_name: profile.full_name,
+          id: profile.id,
+          job_title: profile.job_title,
+          phone: profile.phone,
+          professional_license: profile.professional_license,
+          specialty: profile.specialty,
+        }
+      : null);
+  const editHistoryView = useMemo(
+    () => buildSessionEditHistoryView(editHistory, collaboratorProfileMap),
+    [collaboratorProfileMap, editHistory]
+  );
 
   const updateFormResponse = (fieldId: string, value: string | number | string[] | boolean | null) => {
     setAnamnesisFormResponse((current) => ({
@@ -332,7 +348,6 @@ const SessaoDetalhe = () => {
     notes,
     observacoes,
     painScore: painScore[0],
-    providerId,
     queixa,
     sintomas,
     status,
@@ -343,8 +358,8 @@ const SessaoDetalhe = () => {
   const buildCurrentSessionPayload = (clinicId: string | null, statusOverride?: string) =>
     buildSessionPayload({
       clinicId,
+      creatorUserId: createdByUserId ?? user!.id,
       patientId: patientId!,
-      userId: user!.id,
       values: formValues,
       statusOverride,
     });
@@ -379,8 +394,7 @@ const SessaoDetalhe = () => {
       if (error) {
         toast({ title: "Erro ao salvar atendimento", variant: "destructive" });
       } else {
-        setLocked(isSessionImmutable(false, status));
-        setIsEditing(false);
+        await loadSessionPage();
         toast({
           title: status === "concluído" ? "Atendimento concluído" : "Atendimento salvo",
           description:
@@ -492,12 +506,12 @@ const SessaoDetalhe = () => {
     generatedAt: new Date().toLocaleString("pt-BR"),
     patientName,
     provider: {
-      email: currentProviderProfile?.email ?? profile?.email ?? user?.email ?? null,
-      fullName: currentProviderProfile?.full_name ?? profile?.full_name ?? user?.email ?? "Profissional responsável",
-      jobTitle: currentProviderProfile?.job_title ?? profile?.job_title ?? null,
-      phone: currentProviderProfile?.phone ?? profile?.phone ?? null,
-      professionalLicense: currentProviderProfile?.professional_license ?? profile?.professional_license ?? null,
-      specialty: currentProviderProfile?.specialty ?? profile?.specialty ?? null,
+      email: creatorProfile?.email ?? null,
+      fullName: getSessionPersonLabel(creatorProfile, "Profissional responsável"),
+      jobTitle: creatorProfile?.job_title ?? null,
+      phone: creatorProfile?.phone ?? null,
+      professionalLicense: creatorProfile?.professional_license ?? null,
+      specialty: creatorProfile?.specialty ?? null,
     },
     quickNotes: notes,
     sessionDate,
@@ -942,18 +956,6 @@ const SessaoDetalhe = () => {
                 </SelectContent>
               </Select>
             )}
-            {providers.length > 0 && (
-              <Select value={providerId || "none"} onValueChange={(value) => setProviderId(value === "none" ? null : value)} disabled={locked}>
-                <SelectTrigger className="w-[220px] h-9 text-sm">
-                  <SelectValue placeholder="Profissional responsável" />
-                </SelectTrigger>
-                <SelectContent>
-                  {providers.map((provider) => (
-                    <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
             {anamnesisTemplates.length > 0 && (
               <Select
                 value={anamnesisTemplateId || "none"}
@@ -1018,7 +1020,7 @@ const SessaoDetalhe = () => {
       {!isNew && !isEditing ? (
         <div className="space-y-4">
           <Card>
-            <CardContent className="grid gap-4 p-6 md:grid-cols-3">
+            <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
                 <p className="mt-1 font-medium">{status}</p>
@@ -1030,6 +1032,35 @@ const SessaoDetalhe = () => {
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Ficha complementar</p>
                 <p className="mt-1 font-medium">{activeTemplate?.name || "Sem ficha extra"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Criado por</p>
+                <p className="mt-1 font-medium">{getSessionPersonLabel(creatorProfile)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {sessionCreatedAt ? formatSessionAuditDateTime(sessionCreatedAt) : "Ainda não salvo"}
+                </p>
+                {editHistoryView.length > 0 && (
+                  <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="link" className="mt-1 h-auto px-0 text-xs text-muted-foreground">
+                        Ver edições ({editHistoryView.length})
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Histórico de edições</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-3">
+                        {editHistoryView.map((entry) => (
+                          <div key={entry.id} className="rounded-lg border p-3">
+                            <p className="text-sm font-medium">{entry.editorName}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{entry.editedAtLabel}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             </CardContent>
           </Card>

@@ -1,19 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
   BarChart3,
+  BellRing,
   Building2,
   ChevronDown,
   ChevronUp,
+  Clock3,
   ClipboardList,
   CreditCard,
+  KeyRound,
+  Laptop,
   Loader2,
   LogOut,
   Pencil,
   Plus,
   Settings,
   Shield,
+  ShieldAlert,
+  ShieldCheck,
   UsersRound,
   Wallet,
   Save,
@@ -26,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -43,6 +50,8 @@ import {
   formatLastSeenAt,
   getMembershipStatusMeta,
   getSubaccountCapacity,
+  shouldShowTeamAnalyticsSection,
+  shouldShowTeamSettingsSection,
   sortMembershipsForDisplay,
 } from "@/lib/subaccounts";
 import {
@@ -51,6 +60,9 @@ import {
   formatCpf,
   formatPhone,
   getProfilePublicCodeLabel,
+  isSelfServiceProfileAddressLocked,
+  isSelfServiceProfileDateLocked,
+  isSelfServiceProfileFieldLocked,
   readProfileAddress,
   type ProfileAddress,
 } from "@/lib/profile-settings";
@@ -60,24 +72,36 @@ import {
   readBusinessHours,
   type ClinicBusinessHours,
 } from "@/lib/clinic-settings";
+import {
+  createSecuritySessionKey,
+  formatSecurityEventTimestamp,
+  getSecurityEventMeta,
+  getSecurityPostureMeta,
+  parseSecurityUserAgent,
+  shouldShowAdminSecuritySection,
+} from "@/lib/security-settings";
 
 type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 type SessionRow = Database["public"]["Tables"]["sessions"]["Row"];
 type ClinicRow = Database["public"]["Tables"]["clinics"]["Row"];
 type MembershipRow = Database["public"]["Tables"]["clinic_memberships"]["Row"];
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+type SecurityEventRow = Database["public"]["Tables"]["security_events"]["Row"];
+type SecuritySessionRow = Database["public"]["Tables"]["user_security_sessions"]["Row"];
+type SecuritySettingsRow = Database["public"]["Tables"]["user_security_settings"]["Row"];
 type SubaccountOperationalRole = Exclude<MembershipRow["operational_role"], "owner">;
 type TeamProfileRow = Pick<
   ProfileRow,
   | "address"
-  | "bio"
   | "birth_date"
   | "cpf"
   | "email"
   | "full_name"
   | "id"
   | "job_title"
+  | "last_password_changed_at"
   | "last_seen_at"
+  | "password_temporary"
   | "phone"
   | "professional_license"
   | "public_code"
@@ -88,7 +112,6 @@ type TeamProfileRow = Pick<
 
 type EditableSubaccountState = {
   address: ProfileAddress;
-  bio: string;
   birthDate: string;
   cpf: string;
   email: string;
@@ -106,18 +129,20 @@ type EditableSubaccountState = {
 
 type EditableOwnProfileState = {
   address: ProfileAddress;
-  bio: string;
   birthDate: string;
   cpf: string;
   email: string;
   fullName: string;
-  jobTitle: string;
   phone: string;
   professionalLicense: string;
-  resetPassword: string;
   socialName: string;
-  specialty: string;
-  workingHours: string;
+};
+
+type SecurityAlertState = {
+  alertAccessChange: boolean;
+  alertNewLogin: boolean;
+  alertOtherSessionsEnded: boolean;
+  alertPasswordChanged: boolean;
 };
 
 type SettingsSection =
@@ -138,9 +163,16 @@ const OPERATIONAL_ROLE_LABELS: Record<SubaccountOperationalRole | "owner", strin
   professional: "Profissional",
 };
 
+const SECURITY_TONE_BADGE_CLASSNAMES = {
+  admin: "border-sky-200 bg-sky-50 text-sky-700",
+  default: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  muted: "border-slate-200 bg-slate-50 text-slate-700",
+  warning: "border-amber-200 bg-amber-50 text-amber-700",
+} as const;
+
 const Configuracoes = () => {
   const navigate = useNavigate();
-  const { accountRole, can, clinic: authClinic, clinicId, profile, refreshAuthState, signOut, subscriptionPlan, user } = useAuth();
+  const { accountRole, can, clinic: authClinic, clinicId, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [sessions, setSessions] = useState<Pick<SessionRow, "anamnesis_template_id" | "session_date">[]>([]);
@@ -149,6 +181,7 @@ const Configuracoes = () => {
   const [loading, setLoading] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>("profile");
+  const [mobileDescriptionSection, setMobileDescriptionSection] = useState<SettingsSection | null>(null);
   const [savingClinic, setSavingClinic] = useState(false);
   const [savingMembershipId, setSavingMembershipId] = useState<string | null>(null);
   const [savingOwnProfile, setSavingOwnProfile] = useState(false);
@@ -156,6 +189,21 @@ const Configuracoes = () => {
   const [expandedSubaccountIds, setExpandedSubaccountIds] = useState<string[]>([]);
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
   const [editingSubaccount, setEditingSubaccount] = useState<EditableSubaccountState | null>(null);
+  const [securitySettings, setSecuritySettings] = useState<SecurityAlertState>({
+    alertAccessChange: false,
+    alertNewLogin: true,
+    alertOtherSessionsEnded: true,
+    alertPasswordChanged: true,
+  });
+  const [securityEvents, setSecurityEvents] = useState<SecurityEventRow[]>([]);
+  const [adminSecurityEvents, setAdminSecurityEvents] = useState<SecurityEventRow[]>([]);
+  const [securitySessions, setSecuritySessions] = useState<SecuritySessionRow[]>([]);
+  const [securityPassword, setSecurityPassword] = useState("");
+  const [securityPasswordConfirm, setSecurityPasswordConfirm] = useState("");
+  const [savingSecuritySettings, setSavingSecuritySettings] = useState(false);
+  const [savingSecurityPassword, setSavingSecurityPassword] = useState(false);
+  const [endingOtherSessions, setEndingOtherSessions] = useState(false);
+  const [currentSecuritySessionKey, setCurrentSecuritySessionKey] = useState<string | null>(null);
   const [clinicName, setClinicName] = useState("");
   const [clinicLegalName, setClinicLegalName] = useState("");
   const [clinicEmail, setClinicEmail] = useState("");
@@ -165,18 +213,13 @@ const Configuracoes = () => {
   const [clinicBusinessHours, setClinicBusinessHours] = useState<ClinicBusinessHours>({ summary: "" });
   const [ownProfileForm, setOwnProfileForm] = useState<EditableOwnProfileState>({
     address: readProfileAddress(null),
-    bio: "",
     birthDate: "",
     cpf: "",
     email: "",
     fullName: "",
-    jobTitle: "",
     phone: "",
     professionalLicense: "",
-    resetPassword: "",
     socialName: "",
-    specialty: "",
-    workingHours: "",
   });
   const [newSubaccountName, setNewSubaccountName] = useState("");
   const [newSubaccountEmail, setNewSubaccountEmail] = useState("");
@@ -184,12 +227,15 @@ const Configuracoes = () => {
   const [newSubaccountJobTitle, setNewSubaccountJobTitle] = useState("");
   const [newSubaccountSpecialty, setNewSubaccountSpecialty] = useState("");
   const [newSubaccountRole, setNewSubaccountRole] = useState<SubaccountOperationalRole>("professional");
+  const mobileLongPressTimerRef = useRef<number | null>(null);
+  const mobileLongPressTriggeredRef = useRef(false);
+  const mobileDescriptionTimerRef = useRef<number | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!clinicId) return;
+    if (!clinicId || !user?.id) return;
 
     setLoading(true);
-    const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes] = await Promise.all([
+    const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes] = await Promise.all([
       supabase.from("clinics").select("*").eq("id", clinicId).single(),
       supabase
         .from("anamnesis_form_templates")
@@ -208,8 +254,33 @@ const Configuracoes = () => {
         .order("created_at", { ascending: true }),
       supabase
         .from("profiles")
-        .select("address, bio, birth_date, cpf, email, full_name, id, job_title, last_seen_at, phone, professional_license, public_code, social_name, specialty, working_hours")
+        .select("address, birth_date, cpf, email, full_name, id, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours")
         .eq("clinic_id", clinicId),
+      supabase
+        .from("user_security_settings")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("user_security_sessions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("last_seen_at", { ascending: false })
+        .limit(8),
+      supabase
+        .from("security_events")
+        .select("*")
+        .or(`actor_user_id.eq.${user.id},target_user_id.eq.${user.id}`)
+        .order("created_at", { ascending: false })
+        .limit(12),
+      shouldShowAdminSecuritySection(subscriptionPlan, can("subaccounts.manage"))
+        ? supabase
+            .from("security_events")
+            .select("*")
+            .eq("visibility_scope", "admin")
+            .order("created_at", { ascending: false })
+            .limit(12)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (templatesRes.error) {
@@ -221,6 +292,15 @@ const Configuracoes = () => {
     setSessions(sessionsRes.data ?? []);
     setMemberships(membershipsRes.data ?? []);
     setProfiles(profilesRes.data ?? []);
+    setSecuritySettings({
+      alertAccessChange: securitySettingsRes.data?.alert_access_change ?? false,
+      alertNewLogin: securitySettingsRes.data?.alert_new_login ?? true,
+      alertOtherSessionsEnded: securitySettingsRes.data?.alert_other_sessions_ended ?? true,
+      alertPasswordChanged: securitySettingsRes.data?.alert_password_changed ?? true,
+    });
+    setSecuritySessions(securitySessionsRes.data ?? []);
+    setSecurityEvents(securityEventsRes.data ?? []);
+    setAdminSecurityEvents((adminSecurityEventsRes.data as SecurityEventRow[] | null) ?? []);
     setClinicName(clinicRes.data?.name ?? "");
     setClinicLegalName(clinicRes.data?.legal_name ?? "");
     setClinicEmail(clinicRes.data?.email ?? "");
@@ -231,26 +311,30 @@ const Configuracoes = () => {
     const ownProfileRow = (profilesRes.data ?? []).find((row) => row.id === user?.id) ?? null;
     setOwnProfileForm({
       address: readProfileAddress(ownProfileRow?.address),
-      bio: ownProfileRow?.bio ?? "",
       birthDate: ownProfileRow?.birth_date ?? "",
       cpf: formatCpf(ownProfileRow?.cpf ?? ""),
       email: ownProfileRow?.email ?? user?.email ?? "",
       fullName: ownProfileRow?.full_name ?? "",
-      jobTitle: ownProfileRow?.job_title ?? "",
       phone: formatPhone(ownProfileRow?.phone ?? ""),
       professionalLicense: ownProfileRow?.professional_license ?? "",
-      resetPassword: "",
       socialName: ownProfileRow?.social_name ?? "",
-      specialty: ownProfileRow?.specialty ?? "",
-      workingHours: ownProfileRow?.working_hours ?? "",
     });
     setSelectedTemplateId((current) => current ?? templatesRes.data?.[0]?.id ?? null);
     setLoading(false);
-  }, [clinicId, user?.email, user?.id]);
+  }, [can, clinicId, subscriptionPlan, user?.email, user?.id]);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!session?.access_token) {
+      setCurrentSecuritySessionKey(null);
+      return;
+    }
+
+    void createSecuritySessionKey(session.access_token).then(setCurrentSecuritySessionKey);
+  }, [session?.access_token]);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? templates[0] ?? null,
@@ -296,9 +380,11 @@ const Configuracoes = () => {
     [memberships]
   );
 
-  const subaccountMemberships = useMemo(
-    () => sortedMemberships.filter((membershipRow) => membershipRow.account_role !== "account_owner"),
-    [sortedMemberships]
+  const canManageTeam = can("subaccounts.manage") || can("subaccounts_roles.manage");
+  const canViewAdminSecurity = shouldShowAdminSecuritySection(subscriptionPlan, canManageTeam);
+  const visibleTeamMemberships = useMemo(
+    () => (subscriptionPlan === "clinic" ? sortedMemberships : []),
+    [sortedMemberships, subscriptionPlan]
   );
 
   const subaccountCapacity = useMemo(
@@ -321,7 +407,7 @@ const Configuracoes = () => {
           id: "clinic" as const,
           title: "Perfil da clínica",
         },
-        (can("subaccounts.manage") || can("subaccounts_roles.manage") || subscriptionPlan === "solo") && {
+        shouldShowTeamSettingsSection(subscriptionPlan) && {
           description: "Visualize subcontas, papéis e status de membership.",
           icon: UsersRound,
           id: "team" as const,
@@ -339,7 +425,7 @@ const Configuracoes = () => {
           id: "treasury" as const,
           title: "Tesouraria",
         },
-        can("subaccounts_analytics.read") && {
+        shouldShowTeamAnalyticsSection(subscriptionPlan, can("subaccounts_analytics.read")) && {
           description: "Acompanhe desempenho e atividade das subcontas.",
           icon: BarChart3,
           id: "analytics" as const,
@@ -377,6 +463,119 @@ const Configuracoes = () => {
       setActiveSection(availableSections[0]?.id ?? "profile");
     }
   }, [activeSection, availableSections]);
+
+  const activeSectionMeta = useMemo(
+    () => availableSections.find((section) => section.id === activeSection) ?? availableSections[0] ?? null,
+    [activeSection, availableSections]
+  );
+
+  const clearMobileLongPress = useCallback(() => {
+    if (mobileLongPressTimerRef.current !== null) {
+      window.clearTimeout(mobileLongPressTimerRef.current);
+      mobileLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const showMobileDescription = useCallback((sectionId: SettingsSection) => {
+    setMobileDescriptionSection(sectionId);
+
+    if (mobileDescriptionTimerRef.current !== null) {
+      window.clearTimeout(mobileDescriptionTimerRef.current);
+    }
+
+    mobileDescriptionTimerRef.current = window.setTimeout(() => {
+      setMobileDescriptionSection((current) => (current === sectionId ? null : current));
+      mobileDescriptionTimerRef.current = null;
+    }, 2200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearMobileLongPress();
+
+      if (mobileDescriptionTimerRef.current !== null) {
+        window.clearTimeout(mobileDescriptionTimerRef.current);
+      }
+    };
+  }, [clearMobileLongPress]);
+
+  const ownProfileLocks = useMemo(
+    () => ({
+      address: isSelfServiceProfileAddressLocked(profile?.address),
+      birthDate: isSelfServiceProfileDateLocked(profile?.birth_date),
+      cpf: isSelfServiceProfileFieldLocked(profile?.cpf),
+      fullName: isSelfServiceProfileFieldLocked(profile?.full_name),
+      phone: isSelfServiceProfileFieldLocked(profile?.phone),
+      professionalLicense: isSelfServiceProfileFieldLocked(profile?.professional_license),
+      socialName: isSelfServiceProfileFieldLocked(profile?.social_name),
+    }),
+    [profile]
+  );
+
+  const activeSecuritySessions = useMemo(
+    () => securitySessions.filter((securitySession) => !securitySession.ended_at),
+    [securitySessions]
+  );
+
+  const currentSecuritySession = useMemo(
+    () =>
+      activeSecuritySessions.find((securitySession) => securitySession.session_key === currentSecuritySessionKey) ??
+      activeSecuritySessions[0] ??
+      null,
+    [activeSecuritySessions, currentSecuritySessionKey]
+  );
+
+  const otherSecuritySessions = useMemo(
+    () =>
+      activeSecuritySessions.filter((securitySession) => securitySession.session_key !== currentSecuritySessionKey),
+    [activeSecuritySessions, currentSecuritySessionKey]
+  );
+
+  const ownSecurityPosture = useMemo(
+    () =>
+      getSecurityPostureMeta({
+        lastPasswordChangedAt: profile?.last_password_changed_at ?? null,
+        lastSeenAt: profile?.last_seen_at ?? null,
+        passwordTemporary: profile?.password_temporary ?? false,
+      }),
+    [profile]
+  );
+
+  const localDeviceInfo = useMemo(
+    () => parseSecurityUserAgent(typeof navigator === "undefined" ? null : navigator.userAgent),
+    []
+  );
+
+  const teamSecurityRows = useMemo(
+    () =>
+      visibleTeamMemberships.map((membershipRow) => {
+        const relatedProfile = profileMap.get(membershipRow.user_id);
+        return {
+          lastSeenAt: relatedProfile?.last_seen_at ?? null,
+          membership: membershipRow,
+          posture: getSecurityPostureMeta({
+            lastPasswordChangedAt: relatedProfile?.last_password_changed_at ?? null,
+            lastSeenAt: relatedProfile?.last_seen_at ?? null,
+            passwordTemporary: relatedProfile?.password_temporary ?? false,
+          }),
+          profile: relatedProfile,
+        };
+      }),
+    [profileMap, visibleTeamMemberships]
+  );
+
+  const staleTeamSecurityCount = useMemo(
+    () =>
+      teamSecurityRows.filter(
+        (row) => !row.profile?.last_seen_at || row.posture.label === "Acesso desatualizado"
+      ).length,
+    [teamSecurityRows]
+  );
+
+  const temporaryPasswordCount = useMemo(
+    () => teamSecurityRows.filter((row) => row.profile?.password_temporary).length,
+    [teamSecurityRows]
+  );
 
   const handleSaveClinicProfile = async () => {
     if (!clinicId || !can("clinic_profile.manage")) {
@@ -456,18 +655,13 @@ const Configuracoes = () => {
     setSavingOwnProfile(true);
     const { error } = await supabase.rpc("update_current_profile", {
       _address: buildProfileAddress(ownProfileForm.address),
-      _bio: ownProfileForm.bio || null,
       _birth_date: ownProfileForm.birthDate || null,
       _cpf: ownProfileForm.cpf || null,
       _email: ownProfileForm.email,
       _full_name: ownProfileForm.fullName,
-      _job_title: ownProfileForm.jobTitle || null,
-      _new_password: ownProfileForm.resetPassword || null,
       _phone: ownProfileForm.phone || null,
       _professional_license: ownProfileForm.professionalLicense || null,
       _social_name: ownProfileForm.socialName || null,
-      _specialty: ownProfileForm.specialty || null,
-      _working_hours: ownProfileForm.workingHours || null,
     });
 
     if (error) {
@@ -478,7 +672,86 @@ const Configuracoes = () => {
 
     toast({ title: "Perfil atualizado" });
     setSavingOwnProfile(false);
-    setOwnProfileForm((current) => ({ ...current, resetPassword: "" }));
+    await refreshAuthState();
+    void fetchData();
+  };
+
+  const handleSaveSecurityAlerts = async () => {
+    setSavingSecuritySettings(true);
+    const { error } = await supabase.rpc("upsert_current_user_security_settings", {
+      _alert_access_change: securitySettings.alertAccessChange,
+      _alert_new_login: securitySettings.alertNewLogin,
+      _alert_other_sessions_ended: securitySettings.alertOtherSessionsEnded,
+      _alert_password_changed: securitySettings.alertPasswordChanged,
+    });
+
+    if (error) {
+      toast({ title: "Erro ao salvar alertas", description: error.message, variant: "destructive" });
+      setSavingSecuritySettings(false);
+      return;
+    }
+
+    toast({ title: "Alertas de seguranca atualizados" });
+    setSavingSecuritySettings(false);
+    void fetchData();
+  };
+
+  const handleChangeSecurityPassword = async () => {
+    if (!securityPassword.trim()) {
+      toast({ title: "Informe a nova senha", variant: "destructive" });
+      return;
+    }
+
+    if (securityPassword.trim().length < 6) {
+      toast({ title: "A senha precisa ter pelo menos 6 caracteres", variant: "destructive" });
+      return;
+    }
+
+    if (securityPassword !== securityPasswordConfirm) {
+      toast({ title: "As senhas nao conferem", variant: "destructive" });
+      return;
+    }
+
+    setSavingSecurityPassword(true);
+    const { error } = await supabase.rpc("update_current_profile", {
+      _new_password: securityPassword.trim(),
+    });
+
+    if (error) {
+      toast({ title: "Erro ao alterar senha", description: error.message, variant: "destructive" });
+      setSavingSecurityPassword(false);
+      return;
+    }
+
+    toast({ title: "Senha atualizada" });
+    setSecurityPassword("");
+    setSecurityPasswordConfirm("");
+    setSavingSecurityPassword(false);
+    await refreshAuthState();
+    void fetchData();
+  };
+
+  const handleEndOtherSessions = async () => {
+    setEndingOtherSessions(true);
+    const authResult = await supabase.auth.signOut({ scope: "others" });
+    if (authResult.error) {
+      toast({ title: "Erro ao encerrar outras sessoes", description: authResult.error.message, variant: "destructive" });
+      setEndingOtherSessions(false);
+      return;
+    }
+
+    const { error } = await supabase.rpc("end_other_security_sessions", {
+      _current_session_key: currentSecuritySessionKey,
+    });
+
+    if (error) {
+      toast({ title: "As outras sessoes foram encerradas, mas o historico nao foi atualizado", description: error.message, variant: "destructive" });
+      setEndingOtherSessions(false);
+      return;
+    }
+
+    toast({ title: "Outras sessoes encerradas" });
+    setEndingOtherSessions(false);
     void fetchData();
   };
 
@@ -497,7 +770,6 @@ const Configuracoes = () => {
     setEditingMembershipId(membershipRow.id);
     setEditingSubaccount({
       address: readProfileAddress(relatedProfile?.address),
-      bio: relatedProfile?.bio ?? "",
       birthDate: relatedProfile?.birth_date ?? "",
       cpf: relatedProfile?.cpf ?? "",
       email: relatedProfile?.email ?? "",
@@ -569,7 +841,6 @@ const Configuracoes = () => {
     setSavingMembershipId(membershipRow.id);
     const { error } = await supabase.rpc("update_clinic_subaccount_profile", {
       _address: buildProfileAddress(editingSubaccount.address),
-      _bio: editingSubaccount.bio || null,
       _birth_date: editingSubaccount.birthDate || null,
       _membership_id: membershipRow.id,
       _cpf: editingSubaccount.cpf || null,
@@ -621,8 +892,35 @@ const Configuracoes = () => {
     );
   }
 
+  const renderSettingsMenu = (onSelect?: () => void) => (
+    <div className="space-y-3">
+      {availableSections.map((item) => (
+        <button
+          key={item.id}
+          className={`w-full rounded-lg border p-3 text-left transition-colors ${
+            activeSection === item.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"
+          }`}
+          onClick={() => {
+            setActiveSection(item.id);
+            onSelect?.();
+          }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="rounded-md bg-muted p-2">
+              <item.icon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-medium text-sm">{item.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6 pb-28 lg:pb-0">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
           <Button
@@ -638,39 +936,24 @@ const Configuracoes = () => {
             <p className="text-sm text-muted-foreground mt-1">
               Ajuste preferências da conta e acesse as ferramentas administrativas do projeto.
             </p>
+            {activeSectionMeta && (
+              <p className="mt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground lg:hidden">
+                {activeSectionMeta.title}
+              </p>
+            )}
           </div>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
-        <Card>
+        <Card className="hidden lg:block">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Settings className="h-4 w-4" />
               Opções
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {availableSections.map((item) => (
-              <button
-                key={item.id}
-                className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                  activeSection === item.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"
-                }`}
-                onClick={() => setActiveSection(item.id)}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="rounded-md bg-muted p-2">
-                    <item.icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm">{item.title}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </CardContent>
+          <CardContent>{renderSettingsMenu()}</CardContent>
         </Card>
 
         <div className="space-y-6">
@@ -682,7 +965,7 @@ const Configuracoes = () => {
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="rounded-lg border p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">ID simbólico</p>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">ID</p>
                     <p className="mt-2 font-medium">{getProfilePublicCodeLabel(profile?.public_code ?? null)}</p>
                   </div>
                   <div className="rounded-lg border p-4">
@@ -699,22 +982,13 @@ const Configuracoes = () => {
                   <div>
                     <p className="font-medium">Dados de acesso</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Ajuste o e-mail da conta e, se quiser, já defina uma nova senha.
+                      Ajuste o e-mail principal da conta. A troca de senha fica centralizada na subpagina `Seguranca`.
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label>E-mail de acesso</Label>
                       <Input value={ownProfileForm.email} onChange={(event) => updateOwnProfileField("email", event.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Nova senha</Label>
-                      <Input
-                        type="text"
-                        placeholder="Deixe em branco para manter"
-                        value={ownProfileForm.resetPassword}
-                        onChange={(event) => updateOwnProfileField("resetPassword", event.target.value)}
-                      />
                     </div>
                   </div>
                 </div>
@@ -723,21 +997,34 @@ const Configuracoes = () => {
                   <div>
                     <p className="font-medium">Dados pessoais</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Preenchimento rápido com máscara para CPF e telefone, mantendo o cadastro prático.
+                      Você pode completar seus dados cadastrais uma vez. Depois disso, qualquer ajuste fica restrito à administração da clínica.
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     <div className="space-y-2">
                       <Label>Nome completo</Label>
-                      <Input value={ownProfileForm.fullName} onChange={(event) => updateOwnProfileField("fullName", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.fullName}
+                        onChange={(event) => updateOwnProfileField("fullName", event.target.value)}
+                        disabled={ownProfileLocks.fullName}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Nome social</Label>
-                      <Input value={ownProfileForm.socialName} onChange={(event) => updateOwnProfileField("socialName", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.socialName}
+                        onChange={(event) => updateOwnProfileField("socialName", event.target.value)}
+                        disabled={ownProfileLocks.socialName}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Data de nascimento</Label>
-                      <Input type="date" value={ownProfileForm.birthDate} onChange={(event) => updateOwnProfileField("birthDate", event.target.value)} />
+                      <Input
+                        type="date"
+                        value={ownProfileForm.birthDate}
+                        onChange={(event) => updateOwnProfileField("birthDate", event.target.value)}
+                        disabled={ownProfileLocks.birthDate}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>CPF</Label>
@@ -745,6 +1032,7 @@ const Configuracoes = () => {
                         value={ownProfileForm.cpf}
                         maxLength={14}
                         onChange={(event) => updateOwnProfileField("cpf", formatCpf(event.target.value))}
+                        disabled={ownProfileLocks.cpf}
                       />
                     </div>
                     <div className="space-y-2">
@@ -753,6 +1041,7 @@ const Configuracoes = () => {
                         value={ownProfileForm.phone}
                         maxLength={15}
                         onChange={(event) => updateOwnProfileField("phone", formatPhone(event.target.value))}
+                        disabled={ownProfileLocks.phone}
                       />
                     </div>
                     <div className="space-y-2">
@@ -760,24 +1049,9 @@ const Configuracoes = () => {
                       <Input
                         value={ownProfileForm.professionalLicense}
                         onChange={(event) => updateOwnProfileField("professionalLicense", event.target.value)}
+                        disabled={ownProfileLocks.professionalLicense}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Especialidade</Label>
-                      <Input value={ownProfileForm.specialty} onChange={(event) => updateOwnProfileField("specialty", event.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Cargo</Label>
-                      <Input value={ownProfileForm.jobTitle} onChange={(event) => updateOwnProfileField("jobTitle", event.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Horário de trabalho</Label>
-                      <Input value={ownProfileForm.workingHours} onChange={(event) => updateOwnProfileField("workingHours", event.target.value)} />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Bio / apresentação</Label>
-                    <Textarea value={ownProfileForm.bio} onChange={(event) => updateOwnProfileField("bio", event.target.value)} />
                   </div>
                 </div>
 
@@ -785,7 +1059,7 @@ const Configuracoes = () => {
                   <div>
                     <p className="font-medium">Endereço</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Estrutura objetiva para preencher rápido sem esconder campos importantes.
+                      Depois de preenchido, o endereço passa a ser gerenciado pela administração da clínica.
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -795,31 +1069,78 @@ const Configuracoes = () => {
                         value={ownProfileForm.address.cep}
                         maxLength={9}
                         onChange={(event) => updateOwnProfileAddressField("cep", formatCep(event.target.value))}
+                        disabled={ownProfileLocks.address}
                       />
                     </div>
                     <div className="space-y-2 xl:col-span-2">
                       <Label>Rua</Label>
-                      <Input value={ownProfileForm.address.street} onChange={(event) => updateOwnProfileAddressField("street", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.address.street}
+                        onChange={(event) => updateOwnProfileAddressField("street", event.target.value)}
+                        disabled={ownProfileLocks.address}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Número</Label>
-                      <Input value={ownProfileForm.address.number} onChange={(event) => updateOwnProfileAddressField("number", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.address.number}
+                        onChange={(event) => updateOwnProfileAddressField("number", event.target.value)}
+                        disabled={ownProfileLocks.address}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Complemento</Label>
-                      <Input value={ownProfileForm.address.complement} onChange={(event) => updateOwnProfileAddressField("complement", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.address.complement}
+                        onChange={(event) => updateOwnProfileAddressField("complement", event.target.value)}
+                        disabled={ownProfileLocks.address}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Bairro</Label>
-                      <Input value={ownProfileForm.address.neighborhood} onChange={(event) => updateOwnProfileAddressField("neighborhood", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.address.neighborhood}
+                        onChange={(event) => updateOwnProfileAddressField("neighborhood", event.target.value)}
+                        disabled={ownProfileLocks.address}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Cidade</Label>
-                      <Input value={ownProfileForm.address.city} onChange={(event) => updateOwnProfileAddressField("city", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.address.city}
+                        onChange={(event) => updateOwnProfileAddressField("city", event.target.value)}
+                        disabled={ownProfileLocks.address}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Estado</Label>
-                      <Input value={ownProfileForm.address.state} onChange={(event) => updateOwnProfileAddressField("state", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.address.state}
+                        onChange={(event) => updateOwnProfileAddressField("state", event.target.value)}
+                        disabled={ownProfileLocks.address}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-lg border p-4 space-y-4">
+                  <div>
+                    <p className="font-medium">Campos administrados pela clínica</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Cargo, especialidade e horário de trabalho são mantidos pela administração em Colaboradores e acessos.
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-lg bg-muted/30 p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Cargo</p>
+                      <p className="mt-2 text-sm">{profile?.job_title || "Não informado"}</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/30 p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Especialidade</p>
+                      <p className="mt-2 text-sm">{profile?.specialty || "Não informado"}</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/30 p-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Horário de trabalho</p>
+                      <p className="mt-2 text-sm whitespace-pre-wrap">{profile?.working_hours || "Não informado"}</p>
                     </div>
                   </div>
                 </div>
@@ -991,32 +1312,36 @@ const Configuracoes = () => {
                 <CardTitle className="text-xl">Colaboradores e acessos</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {subscriptionPlan === "solo" ? (
+                {!shouldShowTeamSettingsSection(subscriptionPlan) ? (
                   <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                     O plano `solo` não permite subcontas. Ao migrar para `clinic`, esta seção passa a permitir equipe e hierarquia simples.
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-lg border p-4 text-sm">
-                      <p className="font-medium">Limite atual de subcontas</p>
-                      <p className="mt-1 text-muted-foreground">
-                        {subaccountCapacity.occupied} de {subaccountCapacity.limit} subconta(s) em uso no plano clinic atual.
-                      </p>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div className="rounded-lg border p-4">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Assentos ocupados</p>
-                        <p className="mt-2 text-2xl font-semibold">{subaccountCapacity.occupied}</p>
-                      </div>
-                      <div className="rounded-lg border p-4">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Disponíveis</p>
-                        <p className="mt-2 text-2xl font-semibold">{subaccountCapacity.available}</p>
-                      </div>
-                      <div className="rounded-lg border p-4">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Conta principal</p>
-                        <p className="mt-2 text-sm font-medium">{accountRole === "account_owner" ? "Você" : "Outro usuário da clínica"}</p>
-                      </div>
-                    </div>
+                    {canManageTeam && (
+                      <>
+                        <div className="rounded-lg border p-4 text-sm">
+                          <p className="font-medium">Limite atual de subcontas</p>
+                          <p className="mt-1 text-muted-foreground">
+                            {subaccountCapacity.occupied} de {subaccountCapacity.limit} subconta(s) em uso no plano clinic atual.
+                          </p>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div className="rounded-lg border p-4">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Assentos ocupados</p>
+                            <p className="mt-2 text-2xl font-semibold">{subaccountCapacity.occupied}</p>
+                          </div>
+                          <div className="rounded-lg border p-4">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Disponíveis</p>
+                            <p className="mt-2 text-2xl font-semibold">{subaccountCapacity.available}</p>
+                          </div>
+                          <div className="rounded-lg border p-4">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Conta principal</p>
+                            <p className="mt-2 text-sm font-medium">{accountRole === "account_owner" ? "Você" : "Outro usuário da clínica"}</p>
+                          </div>
+                        </div>
+                      </>
+                    )}
 
                     {can("subaccounts.manage") && (
                       <div className="rounded-lg border p-4 space-y-4">
@@ -1093,16 +1418,17 @@ const Configuracoes = () => {
                       </div>
                     )}
 
-                    {subaccountMemberships.length === 0 ? (
+                    {visibleTeamMemberships.length === 0 ? (
                       <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                        Nenhuma subconta criada ainda. Use o bloco acima para criar a primeira subconta do plano clinic.
+                        Nenhum colaborador encontrado para esta clínica.
                       </div>
                     ) : (
-                      subaccountMemberships.map((membershipRow) => {
+                      visibleTeamMemberships.map((membershipRow) => {
                         const relatedProfile = profileMap.get(membershipRow.user_id);
                         const statusMeta = getMembershipStatusMeta(membershipRow.membership_status);
                         const isExpanded = expandedSubaccountIds.includes(membershipRow.id);
                         const isEditing = editingMembershipId === membershipRow.id && editingSubaccount !== null;
+                        const canEditMembershipRow = canManageTeam && membershipRow.account_role !== "account_owner";
 
                         return (
                           <div key={membershipRow.id} className="rounded-lg border p-4 space-y-4">
@@ -1119,24 +1445,26 @@ const Configuracoes = () => {
                                   <span>Último acesso: {formatLastSeenAt(relatedProfile?.last_seen_at ?? null)}</span>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <Button variant="outline" size="sm" onClick={() => toggleExpandedSubaccount(membershipRow.id)}>
-                                  {isExpanded ? <ChevronUp className="h-4 w-4 mr-2" /> : <ChevronDown className="h-4 w-4 mr-2" />}
-                                  Ver mais
-                                </Button>
-                                {can("subaccounts.manage") && (
-                                  <Button variant="outline" size="sm" onClick={() => startEditingSubaccount(membershipRow)}>
-                                    <Pencil className="h-4 w-4 mr-2" />
-                                    Editar campos
+                              {canManageTeam && (
+                                <div className="flex items-center gap-2">
+                                  <Button variant="outline" size="sm" onClick={() => toggleExpandedSubaccount(membershipRow.id)}>
+                                    {isExpanded ? <ChevronUp className="h-4 w-4 mr-2" /> : <ChevronDown className="h-4 w-4 mr-2" />}
+                                    Ver mais
                                   </Button>
-                                )}
-                              </div>
+                                  {canEditMembershipRow && (
+                                    <Button variant="outline" size="sm" onClick={() => startEditingSubaccount(membershipRow)}>
+                                      <Pencil className="h-4 w-4 mr-2" />
+                                      Editar campos
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
-                            {isExpanded && (
+                            {canManageTeam && isExpanded && (
                               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                 <div className="rounded-lg bg-muted/30 p-3">
-                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">ID simbólico</p>
+                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">ID</p>
                                   <p className="mt-2 text-sm">{getProfilePublicCodeLabel(relatedProfile?.public_code ?? null)}</p>
                                 </div>
                                 <div className="rounded-lg bg-muted/30 p-3">
@@ -1187,14 +1515,10 @@ const Configuracoes = () => {
                                       .join(" • ") || "Não informado"}
                                   </p>
                                 </div>
-                                <div className="rounded-lg bg-muted/30 p-3 xl:col-span-3">
-                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Bio</p>
-                                  <p className="mt-2 text-sm whitespace-pre-wrap">{relatedProfile?.bio || "Não informado"}</p>
-                                </div>
                               </div>
                             )}
 
-                            {isEditing && editingSubaccount && (
+                            {canEditMembershipRow && isEditing && editingSubaccount && (
                               <div className="rounded-lg border bg-muted/20 p-4 space-y-4">
                                 <div className="grid gap-4 md:grid-cols-2">
                                   <div className="space-y-2">
@@ -1314,13 +1638,6 @@ const Configuracoes = () => {
                                     value={editingSubaccount.workingHours}
                                     onChange={(event) => updateEditingSubaccountField("workingHours", event.target.value)}
                                     placeholder="Ex.: seg-sex 08h-18h; sábado 08h-12h"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>Bio / apresentação</Label>
-                                  <Textarea
-                                    value={editingSubaccount.bio}
-                                    onChange={(event) => updateEditingSubaccountField("bio", event.target.value)}
                                   />
                                 </div>
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1452,24 +1769,367 @@ const Configuracoes = () => {
           )}
 
           {activeSection === "security" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-xl">Segurança</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-lg border p-4">
-                  <p className="font-medium">Boas práticas atuais</p>
-                  <ul className="mt-3 space-y-2 text-sm text-muted-foreground list-disc pl-5">
-                    <li>Use um e-mail individual por colaborador.</li>
-                    <li>Evite compartilhar a mesma conta entre profissionais.</li>
-                    <li>Saia da conta ao usar computadores compartilhados.</li>
-                  </ul>
-                </div>
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  A troca de senha, sessões ativas e regras adicionais de segurança podem entrar aqui na próxima etapa.
-                </div>
-              </CardContent>
-            </Card>
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl">Segurança</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Proteja sua conta, acompanhe as sessões abertas e revise eventos sensíveis sem misturar isso com dados cadastrais ou gestão de subcontas.
+                  </p>
+                </CardHeader>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <KeyRound className="h-5 w-5" />
+                    Acesso da minha conta
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <div className="rounded-lg border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">E-mail de acesso</p>
+                      <p className="mt-2 font-medium break-all">{ownProfileForm.email || user?.email || "Não informado"}</p>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Último acesso</p>
+                      <p className="mt-2 font-medium">{formatLastSeenAt(profile?.last_seen_at ?? null)}</p>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Última troca de senha</p>
+                      <p className="mt-2 font-medium">{formatSecurityEventTimestamp(profile?.last_password_changed_at ?? null)}</p>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Status da senha</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className={SECURITY_TONE_BADGE_CLASSNAMES[ownSecurityPosture.tone]}>
+                          {ownSecurityPosture.label}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">{ownSecurityPosture.description}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border p-4 space-y-4">
+                    <div>
+                      <p className="font-medium">Alterar senha</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        A troca de senha fica centralizada aqui para manter a parte de segurança separada do cadastro do perfil.
+                      </p>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Nova senha</Label>
+                        <Input
+                          type="password"
+                          placeholder="Mínimo de 6 caracteres"
+                          value={securityPassword}
+                          onChange={(event) => setSecurityPassword(event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Confirmar nova senha</Label>
+                        <Input
+                          type="password"
+                          placeholder="Repita a nova senha"
+                          value={securityPasswordConfirm}
+                          onChange={(event) => setSecurityPasswordConfirm(event.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <p className="text-sm text-muted-foreground">
+                        Se esta conta estiver com senha provisória, a troca aqui passa a marcar a senha como definitiva.
+                      </p>
+                      <Button
+                        onClick={() => void handleChangeSecurityPassword()}
+                        disabled={savingSecurityPassword || !securityPassword.trim() || !securityPasswordConfirm.trim()}
+                      >
+                        {savingSecurityPassword ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                        Atualizar senha
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Laptop className="h-5 w-5" />
+                    Sessões e dispositivos
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg border p-4">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div>
+                        <p className="font-medium">Sessão atual</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {currentSecuritySession?.device_label || `${localDeviceInfo.browser} • ${localDeviceInfo.platform}`}
+                        </p>
+                      </div>
+                      <Badge variant="outline">Ativa neste dispositivo</Badge>
+                    </div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-3">
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Navegador</p>
+                        <p className="mt-2 font-medium">{currentSecuritySession?.browser || localDeviceInfo.browser}</p>
+                      </div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Plataforma</p>
+                        <p className="mt-2 font-medium">{currentSecuritySession?.platform || localDeviceInfo.platform}</p>
+                      </div>
+                      <div className="rounded-lg bg-muted/30 p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Última atividade</p>
+                        <p className="mt-2 font-medium">
+                          {formatSecurityEventTimestamp(currentSecuritySession?.last_seen_at ?? profile?.last_seen_at ?? null)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border p-4 space-y-4">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div>
+                        <p className="font-medium">Outras sessões abertas</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Lista resumida das outras sessões registradas para esta conta.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleEndOtherSessions()}
+                        disabled={endingOtherSessions || otherSecuritySessions.length === 0}
+                      >
+                        {endingOtherSessions ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShieldAlert className="h-4 w-4 mr-2" />}
+                        Encerrar outras sessões
+                      </Button>
+                    </div>
+
+                    {otherSecuritySessions.length === 0 ? (
+                      <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                        Nenhuma outra sessão ativa registrada no momento.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {otherSecuritySessions.map((securitySession) => (
+                          <div key={securitySession.id} className="rounded-lg border p-3">
+                            <div className="flex items-center justify-between gap-4 flex-wrap">
+                              <div>
+                                <p className="font-medium">{securitySession.device_label || "Sessão sem identificação"}</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {(securitySession.browser || "Navegador")} • {(securitySession.platform || "Dispositivo")}
+                                </p>
+                              </div>
+                              <Badge variant="outline">Outra sessão</Badge>
+                            </div>
+                            <p className="mt-3 text-sm text-muted-foreground">
+                              Última atividade: {formatSecurityEventTimestamp(securitySession.last_seen_at)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <BellRing className="h-5 w-5" />
+                    Alertas e proteções
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4">
+                    {[
+                      {
+                        description: "Avise por e-mail quando a senha desta conta for alterada.",
+                        key: "alertPasswordChanged" as const,
+                        title: "Alerta ao trocar senha",
+                      },
+                      {
+                        description: "Avise quando uma nova sessão relevante for registrada nesta conta.",
+                        key: "alertNewLogin" as const,
+                        title: "Alerta de novo login",
+                      },
+                      {
+                        description: "Avise quando as outras sessões forem encerradas por esta conta.",
+                        key: "alertOtherSessionsEnded" as const,
+                        title: "Alerta ao encerrar outras sessões",
+                      },
+                      {
+                        description: "Avise sobre mudanças críticas de acesso no plano clinic, quando aplicável.",
+                        key: "alertAccessChange" as const,
+                        title: "Alerta de mudança de acesso",
+                      },
+                    ].map((item) => (
+                      <div key={item.key} className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                        <div>
+                          <p className="font-medium">{item.title}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                        </div>
+                        <Switch
+                          checked={securitySettings[item.key]}
+                          onCheckedChange={(checked) =>
+                            setSecuritySettings((current) => ({
+                              ...current,
+                              [item.key]: checked,
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-end">
+                    <Button onClick={() => void handleSaveSecurityAlerts()} disabled={savingSecuritySettings}>
+                      {savingSecuritySettings ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                      Salvar alertas
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Clock3 className="h-5 w-5" />
+                    Histórico de eventos sensíveis
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {securityEvents.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                      Nenhum evento de segurança registrado para esta conta até agora.
+                    </div>
+                  ) : (
+                    securityEvents.map((eventRow) => {
+                      const eventMeta = getSecurityEventMeta(eventRow.event_type);
+                      return (
+                        <div key={eventRow.id} className="rounded-lg border p-4">
+                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium">{eventMeta.label}</p>
+                                <Badge variant="outline" className={SECURITY_TONE_BADGE_CLASSNAMES[eventMeta.tone]}>
+                                  {eventMeta.tone === "admin" ? "Administrativo" : "Conta"}
+                                </Badge>
+                              </div>
+                              <p className="mt-1 text-sm text-muted-foreground">{eventMeta.description}</p>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{formatSecurityEventTimestamp(eventRow.created_at)}</p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </CardContent>
+              </Card>
+
+              {canViewAdminSecurity && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <ShieldCheck className="h-5 w-5" />
+                      Visão administrativa de segurança
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="rounded-lg border p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Equipe monitorada</p>
+                        <p className="mt-2 text-2xl font-semibold">{teamSecurityRows.length}</p>
+                      </div>
+                      <div className="rounded-lg border p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Senhas provisórias</p>
+                        <p className="mt-2 text-2xl font-semibold">{temporaryPasswordCount}</p>
+                      </div>
+                      <div className="rounded-lg border p-4">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Acessos desatualizados</p>
+                        <p className="mt-2 text-2xl font-semibold">{staleTeamSecurityCount}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border p-4 space-y-3">
+                      <div>
+                        <p className="font-medium">Sinais de atenção na equipe</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Esta área é apenas de observação. A gestão de subcontas continua em `Colaboradores e acessos`.
+                        </p>
+                      </div>
+                      {teamSecurityRows.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                          Nenhum colaborador encontrado para esta clínica.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {teamSecurityRows.map((row) => (
+                            <div key={row.membership.id} className="rounded-lg border p-3">
+                              <div className="flex items-start justify-between gap-4 flex-wrap">
+                                <div>
+                                  <p className="font-medium">{row.profile?.full_name || row.profile?.email || row.membership.user_id}</p>
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    {OPERATIONAL_ROLE_LABELS[row.membership.operational_role]} • Último acesso: {formatLastSeenAt(row.profile?.last_seen_at ?? null)}
+                                  </p>
+                                </div>
+                                <Badge variant="outline" className={SECURITY_TONE_BADGE_CLASSNAMES[row.posture.tone]}>
+                                  {row.posture.label}
+                                </Badge>
+                              </div>
+                              <p className="mt-3 text-sm text-muted-foreground">{row.posture.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border p-4 space-y-3">
+                      <div>
+                        <p className="font-medium">Eventos administrativos recentes</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Eventos críticos ligados a acessos e contas da equipe.
+                        </p>
+                      </div>
+                      {adminSecurityEvents.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                          Nenhum evento administrativo de segurança registrado até agora.
+                        </div>
+                      ) : (
+                        adminSecurityEvents.map((eventRow) => {
+                          const eventMeta = getSecurityEventMeta(eventRow.event_type);
+                          const actorProfile = eventRow.actor_user_id ? profileMap.get(eventRow.actor_user_id) : null;
+                          const targetProfile = eventRow.target_user_id ? profileMap.get(eventRow.target_user_id) : null;
+
+                          return (
+                            <div key={eventRow.id} className="rounded-lg border p-3">
+                              <div className="flex items-start justify-between gap-4 flex-wrap">
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-medium">{eventMeta.label}</p>
+                                    <Badge variant="outline" className={SECURITY_TONE_BADGE_CLASSNAMES[eventMeta.tone]}>
+                                      Administrativo
+                                    </Badge>
+                                  </div>
+                                  <p className="mt-1 text-sm text-muted-foreground">{eventMeta.description}</p>
+                                  <p className="mt-2 text-sm text-muted-foreground">
+                                    {actorProfile?.full_name || actorProfile?.email || "Conta da clínica"}
+                                    {targetProfile ? ` → ${targetProfile.full_name || targetProfile.email || targetProfile.id}` : ""}
+                                  </p>
+                                </div>
+                                <p className="text-sm text-muted-foreground">{formatSecurityEventTimestamp(eventRow.created_at)}</p>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
 
           {activeSection === "signout" && (
@@ -1640,6 +2300,57 @@ const Configuracoes = () => {
               )}
             </>
           )}
+        </div>
+      </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90 lg:hidden">
+        <div className="mx-auto max-w-screen-sm px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+          {mobileDescriptionSection && (
+            <div className="mb-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
+              <p className="text-xs font-medium">{availableSections.find((item) => item.id === mobileDescriptionSection)?.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {availableSections.find((item) => item.id === mobileDescriptionSection)?.description}
+              </p>
+            </div>
+          )}
+          <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {availableSections.map((item) => {
+              const isActive = activeSection === item.id;
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`flex min-w-[88px] shrink-0 snap-start flex-col items-center justify-center rounded-xl border px-3 py-2 text-center transition-colors ${
+                    isActive ? "border-primary bg-primary/8 text-primary" : "bg-background text-muted-foreground"
+                  }`}
+                  onPointerDown={() => {
+                    mobileLongPressTriggeredRef.current = false;
+                    clearMobileLongPress();
+                    mobileLongPressTimerRef.current = window.setTimeout(() => {
+                      mobileLongPressTriggeredRef.current = true;
+                      showMobileDescription(item.id);
+                    }, 450);
+                  }}
+                  onPointerUp={clearMobileLongPress}
+                  onPointerLeave={clearMobileLongPress}
+                  onPointerCancel={clearMobileLongPress}
+                  onClick={() => {
+                    if (mobileLongPressTriggeredRef.current) {
+                      mobileLongPressTriggeredRef.current = false;
+                      return;
+                    }
+
+                    setMobileDescriptionSection(null);
+                    setActiveSection(item.id);
+                  }}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span className="mt-1 text-[11px] font-medium leading-tight">{item.title}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </motion.div>

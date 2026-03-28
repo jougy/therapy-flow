@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { type Session, type User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
   hasCapability,
@@ -22,7 +23,9 @@ type Profile = Pick<
   | "email"
   | "full_name"
   | "job_title"
+  | "last_password_changed_at"
   | "last_seen_at"
+  | "password_temporary"
   | "phone"
   | "professional_license"
   | "public_code"
@@ -95,16 +98,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [clinic, setClinic] = useState<ClinicSummary | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
-  const fetchAuthState = async (userId: string) => {
+  const registerSecuritySession = useCallback(async (nextSession: Session) => {
+    const browserInfo = parseSecurityUserAgent(
+      typeof navigator === "undefined" ? null : navigator.userAgent
+    );
+    const sessionKey = await createSecuritySessionKey(nextSession.access_token);
+
+    await supabase.rpc("register_current_security_session", {
+      _browser: browserInfo.browser,
+      _device_label: `${browserInfo.browser} • ${browserInfo.platform}`,
+      _platform: browserInfo.platform,
+      _session_key: sessionKey,
+      _user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
+    });
+  }, []);
+
+  const fetchAuthState = useCallback(async (userId: string, nextSession?: Session | null) => {
     await supabase
       .from("profiles")
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", userId);
 
+    if (nextSession?.access_token) {
+      await registerSecuritySession(nextSession);
+    }
+
     const [profileRes, roleRes, membershipRes] = await Promise.all([
       supabase
         .from("profiles")
-        .select("address, avatar_url, bio, birth_date, clinic_id, cpf, email, full_name, job_title, last_seen_at, phone, professional_license, public_code, social_name, specialty, working_hours")
+        .select(
+          "address, avatar_url, bio, birth_date, clinic_id, cpf, email, full_name, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours"
+        )
         .eq("id", userId)
         .maybeSingle(),
       supabase.from("user_roles").select("role").eq("user_id", userId),
@@ -138,7 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } else {
       setClinic(null);
     }
-  };
+  }, [registerSecuritySession]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -146,7 +170,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (nextSession?.user) {
         setTimeout(() => {
-          void fetchAuthState(nextSession.user.id).finally(() => setLoading(false));
+          void fetchAuthState(nextSession.user.id, nextSession).finally(() => setLoading(false));
         }, 0);
       } else {
         setProfile(null);
@@ -161,14 +185,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(nextSession);
 
       if (nextSession?.user) {
-        void fetchAuthState(nextSession.user.id).finally(() => setLoading(false));
+        void fetchAuthState(nextSession.user.id, nextSession).finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchAuthState]);
 
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {
@@ -202,7 +226,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    await fetchAuthState(nextUserId);
+    await fetchAuthState(nextUserId, session);
   };
 
   const can = (capability: AccessCapability) => capabilities[capability];

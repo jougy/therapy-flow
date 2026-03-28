@@ -40,6 +40,14 @@ export const getSubaccountCapacity = (limit: number, memberships: MembershipLike
   };
 };
 
+export const shouldShowTeamSettingsSection = (subscriptionPlan: "solo" | "clinic" | null | undefined) =>
+  subscriptionPlan === "clinic";
+
+export const shouldShowTeamAnalyticsSection = (
+  subscriptionPlan: "solo" | "clinic" | null | undefined,
+  canReadAnalytics: boolean
+) => subscriptionPlan === "clinic" && canReadAnalytics;
+
 export const sortMembershipsForDisplay = (memberships: MembershipLike[]) =>
   [...memberships].sort((left, right) => {
     if (left.account_role === "account_owner" && right.account_role !== "account_owner") {
