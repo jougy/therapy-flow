@@ -61,4 +61,16 @@ export const buildProfileAddress = (address: ProfileAddress) => ({
   street: address.street.trim(),
 });
 
-export const getProfilePublicCodeLabel = (value: string | null) => value || "Aguardando código";
+export const hasProfileAddressValue = (address: ProfileAddress) =>
+  Object.values(address).some((value) => value.trim().length > 0);
+
+export const isSelfServiceProfileFieldLocked = (value: string | null | undefined) =>
+  typeof value === "string" ? value.trim().length > 0 : false;
+
+export const isSelfServiceProfileDateLocked = (value: string | null | undefined) =>
+  typeof value === "string" ? value.trim().length > 0 : false;
+
+export const isSelfServiceProfileAddressLocked = (value: Json | null | undefined) =>
+  hasProfileAddressValue(readProfileAddress(value));
+
+export const getProfilePublicCodeLabel = (value: string | null) => value || "Aguardando ID";

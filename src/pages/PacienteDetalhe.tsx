@@ -20,12 +20,14 @@ import { toast } from "@/hooks/use-toast";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
 import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { PatientGroupStatus } from "@/lib/patient-groups";
+import { getSessionPersonLabel } from "@/lib/session-people";
 import { getSessionPreviewContent, getSessionPreviewIndicators } from "@/lib/session-preview";
 import { buildPatientSessionsView, canDeleteSelectedSessions } from "@/lib/patient-sessions-view";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
+type ProfileSummary = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id">;
 type ShareLinkResponse = {
   completed: boolean;
   password_prefix: string;
@@ -148,6 +150,7 @@ const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemp
 const SessionCard = ({
   baseSchema,
   borderClassName,
+  creatorName,
   isSelected,
   navigateTo,
   onPressCancel,
@@ -158,6 +161,7 @@ const SessionCard = ({
 }: {
   baseSchema: AnamnesisTemplateSchema;
   borderClassName?: string;
+  creatorName: string;
   isSelected: boolean;
   navigateTo: () => void;
   onPressCancel: () => void;
@@ -199,6 +203,9 @@ const SessionCard = ({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
               <Badge variant="outline" className={`text-xs ${statusColors[session.status] || ""}`}>{session.status}</Badge>
+              <Badge variant="secondary" className="text-xs">
+                {creatorName}
+              </Badge>
               {selectionMode && (
                 <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
                   {isSelected ? "Selecionado" : "Toque para selecionar"}
@@ -244,6 +251,7 @@ const PacienteDetalhe = () => {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [baseSchema, setBaseSchema] = useState<AnamnesisTemplateSchema>([]);
   const [loading, setLoading] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
@@ -275,16 +283,18 @@ const PacienteDetalhe = () => {
   const fetchData = useCallback(async () => {
     if (!id) return;
 
-    const [pRes, gRes, sRes, clinicRes] = await Promise.all([
+    const [pRes, gRes, sRes, clinicRes, profilesRes] = await Promise.all([
       supabase.from("patients").select("*").eq("id", id).single(),
       supabase.from("patient_groups").select("*").eq("patient_id", id),
       supabase.from("sessions").select("*").eq("patient_id", id).order("session_date", { ascending: false }),
       clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null }),
+      clinicId ? supabase.from("profiles").select("id, full_name, email").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
     ]);
 
     setPatient(pRes.data);
     setGroups(gRes.data ?? []);
     setSessions(sRes.data ?? []);
+    setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
     setBaseSchema(Array.isArray(clinicRes.data?.anamnesis_base_schema) ? (clinicRes.data.anamnesis_base_schema as AnamnesisTemplateSchema) : []);
     setLoading(false);
   }, [clinicId, id]);
@@ -485,12 +495,23 @@ const PacienteDetalhe = () => {
     clearLongPress();
   };
 
+  const profileMap = useMemo(
+    () => new Map(profiles.map((item) => [item.id, item])),
+    [profiles]
+  );
+
   const getSessionSearchText = useCallback(
     (session: Session) => {
       const preview = getSessionPreviewContent(session, baseSchema);
-      return [preview.complaint, preview.treatment].filter(Boolean).join(" ");
+      return [
+        preview.complaint,
+        preview.treatment,
+        getSessionPersonLabel(profileMap.get(session.user_id)),
+      ]
+        .filter(Boolean)
+        .join(" ");
     },
-    [baseSchema]
+    [baseSchema, profileMap]
   );
 
   const sessionView = useMemo(
@@ -900,6 +921,7 @@ const PacienteDetalhe = () => {
                     <SessionCard
                       key={session.id}
                       baseSchema={baseSchema}
+                      creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
                       session={session}
                       isSelected={selectedSessionIds.includes(session.id)}
                       selectionMode={selectionMode}
@@ -948,6 +970,7 @@ const PacienteDetalhe = () => {
                     <SessionCard
                       key={session.id}
                       baseSchema={baseSchema}
+                      creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
                       session={session}
                       isSelected={selectedSessionIds.includes(session.id)}
                       selectionMode={selectionMode}

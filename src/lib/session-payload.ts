@@ -13,7 +13,6 @@ export interface SessionFormValues {
   notes: string;
   observacoes: string;
   painScore: number;
-  providerId: string | null;
   queixa: string;
   sintomas: string;
   status: string;
@@ -23,30 +22,30 @@ export interface SessionFormValues {
 
 interface BuildSessionPayloadParams {
   clinicId: string | null;
+  creatorUserId: string;
   patientId: string;
-  userId: string;
   values: SessionFormValues;
   statusOverride?: string;
 }
 
 export const buildSessionPayload = ({
   clinicId,
+  creatorUserId,
   patientId,
-  userId,
   values,
   statusOverride,
 }: BuildSessionPayloadParams): SessionInsert => ({
   anamnesis_form_response: values.anamnesisFormResponse,
   anamnesis_template_id: values.anamnesisTemplateId,
   patient_id: patientId,
-  user_id: userId,
+  user_id: creatorUserId,
   clinic_id: clinicId,
   pain_score: values.painScore,
   complexity_score: values.complexityScore,
   status: statusOverride ?? values.status,
   notes: values.notes || null,
   group_id: values.groupId || null,
-  provider_id: values.providerId || userId,
+  provider_id: creatorUserId,
   anamnesis: {
     observacoes: values.observacoes,
     queixa: values.queixa,

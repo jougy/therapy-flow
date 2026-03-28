@@ -4,6 +4,10 @@ import {
   formatCpf,
   formatPhone,
   getProfilePublicCodeLabel,
+  hasProfileAddressValue,
+  isSelfServiceProfileAddressLocked,
+  isSelfServiceProfileDateLocked,
+  isSelfServiceProfileFieldLocked,
   readProfileAddress,
 } from "@/lib/profile-settings";
 
@@ -43,7 +47,34 @@ describe("profile settings helpers", () => {
   });
 
   it("provides a fallback label for symbolic ids", () => {
-    expect(getProfilePublicCodeLabel("COL-AB12CD34")).toBe("COL-AB12CD34");
-    expect(getProfilePublicCodeLabel(null)).toBe("Aguardando código");
+    expect(getProfilePublicCodeLabel("003")).toBe("003");
+    expect(getProfilePublicCodeLabel(null)).toBe("Aguardando ID");
+  });
+
+  it("detects when self-service fields should be locked", () => {
+    expect(isSelfServiceProfileFieldLocked("Jougy")).toBe(true);
+    expect(isSelfServiceProfileFieldLocked("")).toBe(false);
+    expect(isSelfServiceProfileDateLocked("2026-03-27")).toBe(true);
+    expect(isSelfServiceProfileDateLocked(null)).toBe(false);
+  });
+
+  it("detects whether an address was already filled", () => {
+    expect(
+      hasProfileAddressValue({
+        cep: "",
+        city: "",
+        complement: "",
+        neighborhood: "",
+        number: "",
+        state: "",
+        street: "",
+      })
+    ).toBe(false);
+
+    expect(
+      isSelfServiceProfileAddressLocked({
+        city: "Manaus",
+      })
+    ).toBe(true);
   });
 });
