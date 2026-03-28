@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -50,7 +51,6 @@ import {
   formatLastSeenAt,
   getMembershipStatusMeta,
   getSubaccountCapacity,
-  shouldShowTeamAnalyticsSection,
   shouldShowTeamSettingsSection,
   sortMembershipsForDisplay,
 } from "@/lib/subaccounts";
@@ -80,6 +80,16 @@ import {
   parseSecurityUserAgent,
   shouldShowAdminSecuritySection,
 } from "@/lib/security-settings";
+import {
+  buildOnboardingChecklist,
+  buildTeamDevelopmentSummary,
+  getDevelopmentDashboardTone,
+  getDevelopmentLevelMeta,
+  getDevelopmentStatusScore,
+  getDevelopmentStatusMeta,
+  type DevelopmentLevel,
+  type DevelopmentStatus,
+} from "@/lib/team-development";
 
 type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 type SessionRow = Database["public"]["Tables"]["sessions"]["Row"];
@@ -89,6 +99,7 @@ type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type SecurityEventRow = Database["public"]["Tables"]["security_events"]["Row"];
 type SecuritySessionRow = Database["public"]["Tables"]["user_security_sessions"]["Row"];
 type SecuritySettingsRow = Database["public"]["Tables"]["user_security_settings"]["Row"];
+type TeamDevelopmentRow = Database["public"]["Tables"]["team_development_profiles"]["Row"];
 type SubaccountOperationalRole = Exclude<MembershipRow["operational_role"], "owner">;
 type TeamProfileRow = Pick<
   ProfileRow,
@@ -145,6 +156,17 @@ type SecurityAlertState = {
   alertPasswordChanged: boolean;
 };
 
+type EditableTeamDevelopmentState = {
+  developmentStatus: DevelopmentStatus;
+  goals: string;
+  internalLevel: DevelopmentLevel;
+  lastReviewAt: string;
+  nextReviewAt: string;
+  onboardingFlowRead: boolean;
+  onboardingInitialTraining: boolean;
+  reviewNotes: string;
+};
+
 type SettingsSection =
   | "profile"
   | "clinic"
@@ -170,14 +192,39 @@ const SECURITY_TONE_BADGE_CLASSNAMES = {
   warning: "border-amber-200 bg-amber-50 text-amber-700",
 } as const;
 
+const DEVELOPMENT_DASHBOARD_TONE_CLASSNAMES = {
+  healthy: "text-emerald-700",
+  highlight: "text-violet-700",
+  muted: "text-slate-700",
+  progress: "text-sky-700",
+  warning: "text-amber-700",
+} as const;
+
+const DEVELOPMENT_STATUS_OPTIONS: DevelopmentStatus[] = [
+  "onboarding",
+  "em_evolucao",
+  "consolidado",
+  "precisa_supervisao",
+  "em_pausa",
+];
+
+const DEVELOPMENT_LEVEL_OPTIONS: DevelopmentLevel[] = [
+  "estagiario",
+  "junior",
+  "pleno",
+  "senior",
+  "referencia",
+];
+
 const Configuracoes = () => {
   const navigate = useNavigate();
   const { accountRole, can, clinic: authClinic, clinicId, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
-  const [sessions, setSessions] = useState<Pick<SessionRow, "anamnesis_template_id" | "session_date">[]>([]);
+  const [sessions, setSessions] = useState<Pick<SessionRow, "anamnesis_template_id" | "provider_id" | "session_date" | "status" | "user_id">[]>([]);
   const [memberships, setMemberships] = useState<MembershipRow[]>([]);
   const [profiles, setProfiles] = useState<TeamProfileRow[]>([]);
+  const [teamDevelopmentProfiles, setTeamDevelopmentProfiles] = useState<TeamDevelopmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>("profile");
@@ -189,6 +236,8 @@ const Configuracoes = () => {
   const [expandedSubaccountIds, setExpandedSubaccountIds] = useState<string[]>([]);
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
   const [editingSubaccount, setEditingSubaccount] = useState<EditableSubaccountState | null>(null);
+  const [teamDevelopmentForms, setTeamDevelopmentForms] = useState<Record<string, EditableTeamDevelopmentState>>({});
+  const [savingTeamDevelopmentUserId, setSavingTeamDevelopmentUserId] = useState<string | null>(null);
   const [securitySettings, setSecuritySettings] = useState<SecurityAlertState>({
     alertAccessChange: false,
     alertNewLogin: true,
@@ -235,7 +284,7 @@ const Configuracoes = () => {
     if (!clinicId || !user?.id) return;
 
     setLoading(true);
-    const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes] = await Promise.all([
+    const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes] = await Promise.all([
       supabase.from("clinics").select("*").eq("id", clinicId).single(),
       supabase
         .from("anamnesis_form_templates")
@@ -245,7 +294,7 @@ const Configuracoes = () => {
         .order("updated_at", { ascending: false }),
       supabase
         .from("sessions")
-        .select("anamnesis_template_id, session_date")
+        .select("anamnesis_template_id, provider_id, session_date, status, user_id")
         .eq("clinic_id", clinicId),
       supabase
         .from("clinic_memberships")
@@ -255,6 +304,10 @@ const Configuracoes = () => {
       supabase
         .from("profiles")
         .select("address, birth_date, cpf, email, full_name, id, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours")
+        .eq("clinic_id", clinicId),
+      supabase
+        .from("team_development_profiles")
+        .select("*")
         .eq("clinic_id", clinicId),
       supabase
         .from("user_security_settings")
@@ -292,6 +345,24 @@ const Configuracoes = () => {
     setSessions(sessionsRes.data ?? []);
     setMemberships(membershipsRes.data ?? []);
     setProfiles(profilesRes.data ?? []);
+    setTeamDevelopmentProfiles(teamDevelopmentRes.data ?? []);
+    setTeamDevelopmentForms(
+      Object.fromEntries(
+        (teamDevelopmentRes.data ?? []).map((row) => [
+          row.user_id,
+          {
+            developmentStatus: row.development_status as DevelopmentStatus,
+            goals: row.goals ?? "",
+            internalLevel: row.internal_level as DevelopmentLevel,
+            lastReviewAt: row.last_review_at ?? "",
+            nextReviewAt: row.next_review_at ?? "",
+            onboardingFlowRead: row.onboarding_flow_read,
+            onboardingInitialTraining: row.onboarding_initial_training,
+            reviewNotes: row.review_notes ?? "",
+          },
+        ])
+      )
+    );
     setSecuritySettings({
       alertAccessChange: securitySettingsRes.data?.alert_access_change ?? false,
       alertNewLogin: securitySettingsRes.data?.alert_new_login ?? true,
@@ -382,9 +453,75 @@ const Configuracoes = () => {
 
   const canManageTeam = can("subaccounts.manage") || can("subaccounts_roles.manage");
   const canViewAdminSecurity = shouldShowAdminSecuritySection(subscriptionPlan, canManageTeam);
+  const canReadTeamDevelopment = can("subaccounts_analytics.read");
   const visibleTeamMemberships = useMemo(
     () => (subscriptionPlan === "clinic" ? sortedMemberships : []),
     [sortedMemberships, subscriptionPlan]
+  );
+  const teamDevelopmentMap = useMemo(
+    () => new Map(teamDevelopmentProfiles.map((row) => [row.user_id, row])),
+    [teamDevelopmentProfiles]
+  );
+  const visibleDevelopmentMemberships = useMemo(
+    () =>
+      canReadTeamDevelopment
+        ? visibleTeamMemberships
+        : visibleTeamMemberships.filter((membershipRow) => membershipRow.user_id === user?.id),
+    [canReadTeamDevelopment, user?.id, visibleTeamMemberships]
+  );
+
+  const developmentRows = useMemo(
+    () =>
+      visibleDevelopmentMemberships.map((membershipRow) => {
+        const profileRow = profileMap.get(membershipRow.user_id);
+        const developmentRow = teamDevelopmentMap.get(membershipRow.user_id) ?? null;
+        const checklist = buildOnboardingChecklist({
+          birthDate: profileRow?.birth_date ?? null,
+          email: profileRow?.email ?? null,
+          fullName: profileRow?.full_name ?? null,
+          hasTemporaryPassword: profileRow?.password_temporary ?? false,
+          onboardingFlowRead: developmentRow?.onboarding_flow_read ?? false,
+          onboardingInitialTraining: developmentRow?.onboarding_initial_training ?? false,
+          phone: profileRow?.phone ?? null,
+          professionalLicense: profileRow?.professional_license ?? null,
+          socialName: profileRow?.social_name ?? null,
+        });
+        const recentCreatedSessions = sessions.filter(
+          (sessionRow) =>
+            sessionRow.user_id === membershipRow.user_id &&
+            new Date(sessionRow.session_date).getTime() >= Date.now() - 1000 * 60 * 60 * 24 * 30
+        ).length;
+        const recentFinalizedSessions = sessions.filter(
+          (sessionRow) =>
+            (sessionRow.provider_id ?? sessionRow.user_id) === membershipRow.user_id &&
+            sessionRow.status !== "rascunho" &&
+            new Date(sessionRow.session_date).getTime() >= Date.now() - 1000 * 60 * 60 * 24 * 30
+        ).length;
+
+        return {
+          checklist,
+          development: developmentRow,
+          membership: membershipRow,
+          operationalSignals: {
+            recentCreatedSessions,
+            recentFinalizedSessions,
+          },
+          profile: profileRow,
+        };
+      }),
+    [profileMap, sessions, teamDevelopmentMap, visibleDevelopmentMemberships]
+  );
+
+  const teamDevelopmentSummary = useMemo(
+    () =>
+      buildTeamDevelopmentSummary(
+        developmentRows.map((row) => ({
+          developmentStatus: (row.development?.development_status as DevelopmentStatus | null) ?? "onboarding",
+          membershipStatus: row.membership.membership_status,
+          operationalRole: row.membership.operational_role,
+        }))
+      ),
+    [developmentRows]
   );
 
   const subaccountCapacity = useMemo(
@@ -424,12 +561,6 @@ const Configuracoes = () => {
           icon: Wallet,
           id: "treasury" as const,
           title: "Tesouraria",
-        },
-        shouldShowTeamAnalyticsSection(subscriptionPlan, can("subaccounts_analytics.read")) && {
-          description: "Acompanhe desempenho e atividade das subcontas.",
-          icon: BarChart3,
-          id: "analytics" as const,
-          title: "Desempenho da equipe",
         },
         {
           description: "Ajustes de acesso e orientações de proteção da conta.",
@@ -645,6 +776,37 @@ const Configuracoes = () => {
           }
         : current
     );
+  };
+
+  const getTeamDevelopmentFormState = (userId: string): EditableTeamDevelopmentState => {
+    const developmentRow = teamDevelopmentMap.get(userId);
+
+    return (
+      teamDevelopmentForms[userId] ?? {
+        developmentStatus: (developmentRow?.development_status as DevelopmentStatus | null) ?? "onboarding",
+        goals: developmentRow?.goals ?? "",
+        internalLevel: (developmentRow?.internal_level as DevelopmentLevel | null) ?? "junior",
+        lastReviewAt: developmentRow?.last_review_at ?? "",
+        nextReviewAt: developmentRow?.next_review_at ?? "",
+        onboardingFlowRead: developmentRow?.onboarding_flow_read ?? false,
+        onboardingInitialTraining: developmentRow?.onboarding_initial_training ?? false,
+        reviewNotes: developmentRow?.review_notes ?? "",
+      }
+    );
+  };
+
+  const updateTeamDevelopmentField = <K extends keyof EditableTeamDevelopmentState>(
+    userId: string,
+    key: K,
+    value: EditableTeamDevelopmentState[K]
+  ) => {
+    setTeamDevelopmentForms((current) => ({
+      ...current,
+      [userId]: {
+        ...getTeamDevelopmentFormState(userId),
+        [key]: value,
+      },
+    }));
   };
 
   const handleSaveOwnProfile = async () => {
@@ -866,6 +1028,36 @@ const Configuracoes = () => {
     toast({ title: "Subconta atualizada" });
     setSavingMembershipId(null);
     cancelEditingSubaccount();
+    void fetchData();
+  };
+
+  const handleSaveTeamDevelopment = async (userId: string) => {
+    if (!canReadTeamDevelopment) {
+      return;
+    }
+
+    const form = getTeamDevelopmentFormState(userId);
+    setSavingTeamDevelopmentUserId(userId);
+    const { error } = await supabase.rpc("update_team_development_profile", {
+      _development_status: form.developmentStatus,
+      _goals: form.goals || null,
+      _internal_level: form.internalLevel,
+      _last_review_at: form.lastReviewAt || null,
+      _next_review_at: form.nextReviewAt || null,
+      _onboarding_flow_read: form.onboardingFlowRead,
+      _onboarding_initial_training: form.onboardingInitialTraining,
+      _review_notes: form.reviewNotes || null,
+      _user_id: userId,
+    });
+
+    if (error) {
+      toast({ title: "Erro ao salvar desenvolvimento", description: error.message, variant: "destructive" });
+      setSavingTeamDevelopmentUserId(null);
+      return;
+    }
+
+    toast({ title: "Desenvolvimento atualizado" });
+    setSavingTeamDevelopmentUserId(null);
     void fetchData();
   };
 
@@ -1756,16 +1948,332 @@ const Configuracoes = () => {
           )}
 
           {activeSection === "analytics" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-xl">Desempenho da equipe</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  Esta seção fica reservada para atividade e desempenho das subcontas. A capacidade já está separada em `subaccounts_analytics.read`.
-                </div>
-              </CardContent>
-            </Card>
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl">Desenvolvimento da equipe</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Use um painel visual simples para acompanhar onboarding, evolução e sinais operacionais da equipe sem transformar esta área em um formulário longo.
+                  </p>
+                </CardHeader>
+              </Card>
+
+              {canReadTeamDevelopment && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Panorama da equipe</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                      <div className="rounded-xl border bg-background p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Ativos</p>
+                        <p className="mt-2 text-2xl font-semibold">{teamDevelopmentSummary.activeTotal}</p>
+                      </div>
+                      <div className="rounded-xl border bg-background p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Onboarding</p>
+                        <p className="mt-2 text-2xl font-semibold">{teamDevelopmentSummary.inOnboarding}</p>
+                      </div>
+                      <div className="rounded-xl border bg-background p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Precisam de atenção</p>
+                        <p className="mt-2 text-2xl font-semibold">{teamDevelopmentSummary.needsAttention}</p>
+                      </div>
+                      <div className="rounded-xl border bg-background p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Em dia</p>
+                        <p className="mt-2 text-2xl font-semibold">{teamDevelopmentSummary.onTrack}</p>
+                      </div>
+                      <div className="rounded-xl border bg-background p-4 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Distribuição</p>
+                        <p className="mt-2 text-sm font-medium">
+                          {teamDevelopmentSummary.byRole.admin} admin • {teamDevelopmentSummary.byRole.professional} profissional • {teamDevelopmentSummary.byRole.assistant} assistente
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border bg-muted/20 p-4">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                          <p className="font-medium">Pulso rápido da equipe</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Visão consolidada do estágio atual dos colaboradores ativos.
+                          </p>
+                        </div>
+                        <Badge variant="outline">{teamDevelopmentSummary.activeTotal} colaborador(es)</Badge>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="rounded-lg bg-background p-3 shadow-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Onboarding</p>
+                            <span className="text-sm font-semibold">{teamDevelopmentSummary.inOnboarding}</span>
+                          </div>
+                          <Progress
+                            value={teamDevelopmentSummary.activeTotal > 0 ? (teamDevelopmentSummary.inOnboarding / teamDevelopmentSummary.activeTotal) * 100 : 0}
+                            className="mt-3 h-2"
+                          />
+                        </div>
+                        <div className="rounded-lg bg-background p-3 shadow-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Precisam de atenção</p>
+                            <span className="text-sm font-semibold">{teamDevelopmentSummary.needsAttention}</span>
+                          </div>
+                          <Progress
+                            value={teamDevelopmentSummary.activeTotal > 0 ? (teamDevelopmentSummary.needsAttention / teamDevelopmentSummary.activeTotal) * 100 : 0}
+                            className="mt-3 h-2"
+                          />
+                        </div>
+                        <div className="rounded-lg bg-background p-3 shadow-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Em dia</p>
+                            <span className="text-sm font-semibold">{teamDevelopmentSummary.onTrack}</span>
+                          </div>
+                          <Progress
+                            value={teamDevelopmentSummary.activeTotal > 0 ? (teamDevelopmentSummary.onTrack / teamDevelopmentSummary.activeTotal) * 100 : 0}
+                            className="mt-3 h-2"
+                          />
+                        </div>
+                        <div className="rounded-lg bg-background p-3 shadow-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Admins ativos</p>
+                            <span className="text-sm font-semibold">{teamDevelopmentSummary.byRole.admin}</span>
+                          </div>
+                          <Progress
+                            value={teamDevelopmentSummary.activeTotal > 0 ? (teamDevelopmentSummary.byRole.admin / teamDevelopmentSummary.activeTotal) * 100 : 0}
+                            className="mt-3 h-2"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">{canReadTeamDevelopment ? "Dashboard da equipe" : "Meu dashboard"}</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Cada card mostra o estágio geral do colaborador, o andamento do onboarding e sinais operacionais simples dos últimos 30 dias.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {developmentRows.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                      Nenhum registro de desenvolvimento encontrado para esta clínica.
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      {developmentRows.map((row) => {
+                        const checklist = row.checklist;
+                        const form = getTeamDevelopmentFormState(row.membership.user_id);
+                        const statusMeta = getDevelopmentStatusMeta(form.developmentStatus);
+                        const levelMeta = getDevelopmentLevelMeta(form.internalLevel);
+                        const statusScore = getDevelopmentStatusScore(form.developmentStatus);
+                        const dashboardTone = getDevelopmentDashboardTone(form.developmentStatus);
+                        const onboardingPercent = Math.round((checklist.completedCount / checklist.totalCount) * 100);
+
+                        return (
+                          <div key={`dashboard-${row.membership.user_id}`} className="rounded-2xl border bg-background p-5 shadow-sm space-y-5">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div>
+                                <p className="font-semibold">{row.profile?.full_name || row.profile?.email || row.membership.user_id}</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {OPERATIONAL_ROLE_LABELS[row.membership.operational_role]} • Último acesso: {formatLastSeenAt(row.profile?.last_seen_at ?? null)}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline" className={`${statusMeta.className} text-white border-transparent`}>
+                                  {statusMeta.label}
+                                </Badge>
+                                <Badge variant="outline" className={`${levelMeta.className} text-white border-transparent`}>
+                                  {levelMeta.label}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="rounded-xl border bg-muted/20 p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Onboarding</p>
+                                  <span className="text-sm font-semibold">{onboardingPercent}%</span>
+                                </div>
+                                <Progress value={onboardingPercent} className="mt-3 h-2" />
+                                <p className="mt-3 text-sm text-muted-foreground">
+                                  {checklist.completedCount} de {checklist.totalCount} checkpoint(s) concluído(s)
+                                </p>
+                              </div>
+
+                              <div className="rounded-xl border bg-muted/20 p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Evolução atual</p>
+                                  <span className={`text-sm font-semibold ${DEVELOPMENT_DASHBOARD_TONE_CLASSNAMES[dashboardTone]}`}>
+                                    {statusScore}%
+                                  </span>
+                                </div>
+                                <Progress value={statusScore} className="mt-3 h-2" />
+                                <p className="mt-3 text-sm text-muted-foreground">{statusMeta.label}</p>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                              <div className="rounded-lg border p-3">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Criadas em 30 dias</p>
+                                <p className="mt-2 text-2xl font-semibold">{row.operationalSignals.recentCreatedSessions}</p>
+                              </div>
+                              <div className="rounded-lg border p-3">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Finalizadas em 30 dias</p>
+                                <p className="mt-2 text-2xl font-semibold">{row.operationalSignals.recentFinalizedSessions}</p>
+                              </div>
+                              <div className="rounded-lg border p-3">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Última revisão</p>
+                                <p className="mt-2 font-medium">
+                                  {form.lastReviewAt ? new Date(form.lastReviewAt).toLocaleDateString("pt-BR") : "Não registrada"}
+                                </p>
+                              </div>
+                              <div className="rounded-lg border p-3">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Próxima revisão</p>
+                                <p className="mt-2 font-medium">
+                                  {form.nextReviewAt ? new Date(form.nextReviewAt).toLocaleDateString("pt-BR") : "Sem agenda"}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-medium">Checkpoints do onboarding</p>
+                                <Badge variant="outline">{checklist.completedCount}/{checklist.totalCount}</Badge>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {checklist.items.map((item) => (
+                                  <div
+                                    key={item.id}
+                                    className={`rounded-lg border p-3 text-sm ${
+                                      item.completed ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-border bg-background text-muted-foreground"
+                                    }`}
+                                  >
+                                    <p className="font-medium">{item.label}</p>
+                                    <p className="mt-1 text-xs uppercase tracking-wide">
+                                      {item.completed ? "Concluído" : "Pendente"}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {canReadTeamDevelopment && (
+                              <div className="rounded-xl border border-dashed p-4 space-y-4">
+                                <div className="flex items-start justify-between gap-3 flex-wrap">
+                                  <div>
+                                    <p className="font-medium">Atualização rápida</p>
+                                    <p className="mt-1 text-sm text-muted-foreground">
+                                      Somente o necessário para manter o dashboard atualizado.
+                                    </p>
+                                  </div>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => updateTeamDevelopmentField(row.membership.user_id, "lastReviewAt", new Date().toISOString().slice(0, 10))}
+                                  >
+                                    Registrar revisão hoje
+                                  </Button>
+                                </div>
+
+                                <div className="grid gap-4 md:grid-cols-3">
+                                  <div className="space-y-2">
+                                    <Label>Status</Label>
+                                    <Select
+                                      value={form.developmentStatus}
+                                      onValueChange={(value) => updateTeamDevelopmentField(row.membership.user_id, "developmentStatus", value as DevelopmentStatus)}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {DEVELOPMENT_STATUS_OPTIONS.map((status) => (
+                                          <SelectItem key={status} value={status}>
+                                            {getDevelopmentStatusMeta(status).label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Nível</Label>
+                                    <Select
+                                      value={form.internalLevel}
+                                      onValueChange={(value) => updateTeamDevelopmentField(row.membership.user_id, "internalLevel", value as DevelopmentLevel)}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {DEVELOPMENT_LEVEL_OPTIONS.map((level) => (
+                                          <SelectItem key={level} value={level}>
+                                            {getDevelopmentLevelMeta(level).label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Próxima revisão</Label>
+                                    <Input
+                                      type="date"
+                                      value={form.nextReviewAt}
+                                      onChange={(event) => updateTeamDevelopmentField(row.membership.user_id, "nextReviewAt", event.target.value)}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid gap-3 md:grid-cols-2">
+                                  <div className="rounded-lg bg-muted/30 p-3">
+                                    <div className="flex items-center justify-between gap-4">
+                                      <div>
+                                        <p className="font-medium">Fluxo interno lido</p>
+                                        <p className="mt-1 text-sm text-muted-foreground">Checkpoint rápido de adaptação operacional.</p>
+                                      </div>
+                                      <Switch
+                                        checked={form.onboardingFlowRead}
+                                        onCheckedChange={(checked) => updateTeamDevelopmentField(row.membership.user_id, "onboardingFlowRead", checked)}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="rounded-lg bg-muted/30 p-3">
+                                    <div className="flex items-center justify-between gap-4">
+                                      <div>
+                                        <p className="font-medium">Treinamento inicial</p>
+                                        <p className="mt-1 text-sm text-muted-foreground">Marca o onboarding base como concluído.</p>
+                                      </div>
+                                      <Switch
+                                        checked={form.onboardingInitialTraining}
+                                        onCheckedChange={(checked) => updateTeamDevelopmentField(row.membership.user_id, "onboardingInitialTraining", checked)}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-end">
+                                  <Button
+                                    onClick={() => void handleSaveTeamDevelopment(row.membership.user_id)}
+                                    disabled={savingTeamDevelopmentUserId === row.membership.user_id}
+                                    size="sm"
+                                  >
+                                    {savingTeamDevelopmentUserId === row.membership.user_id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    ) : (
+                                      <Save className="h-4 w-4 mr-2" />
+                                    )}
+                                    Atualizar dashboard
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
           )}
 
           {activeSection === "security" && (
