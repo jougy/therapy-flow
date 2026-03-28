@@ -709,6 +709,62 @@ export type Database = {
           },
         ]
       }
+      team_development_profiles: {
+        Row: {
+          clinic_id: string
+          created_at: string
+          development_status: string
+          goals: string | null
+          id: string
+          internal_level: string
+          last_review_at: string | null
+          next_review_at: string | null
+          onboarding_flow_read: boolean
+          onboarding_initial_training: boolean
+          review_notes: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          clinic_id: string
+          created_at?: string
+          development_status?: string
+          goals?: string | null
+          id?: string
+          internal_level?: string
+          last_review_at?: string | null
+          next_review_at?: string | null
+          onboarding_flow_read?: boolean
+          onboarding_initial_training?: boolean
+          review_notes?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          clinic_id?: string
+          created_at?: string
+          development_status?: string
+          goals?: string | null
+          id?: string
+          internal_level?: string
+          last_review_at?: string | null
+          next_review_at?: string | null
+          onboarding_flow_read?: boolean
+          onboarding_initial_training?: boolean
+          review_notes?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_development_profiles_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -853,6 +909,10 @@ export type Database = {
         Args: { _current_session_key: string }
         Returns: Json
       }
+      ensure_team_development_profile: {
+        Args: { _clinic_id: string; _user_id: string }
+        Returns: string
+      }
       generate_profile_public_code: { Args: never; Returns: string }
       generate_profile_public_code_for_clinic: {
         Args: { _clinic_id: string }
@@ -968,6 +1028,20 @@ export type Database = {
           _social_name?: string
           _specialty?: string
           _working_hours?: string
+        }
+        Returns: Json
+      }
+      update_team_development_profile: {
+        Args: {
+          _development_status?: string
+          _goals?: string
+          _internal_level?: string
+          _last_review_at?: string
+          _next_review_at?: string
+          _onboarding_flow_read?: boolean
+          _onboarding_initial_training?: boolean
+          _review_notes?: string
+          _user_id: string
         }
         Returns: Json
       }
