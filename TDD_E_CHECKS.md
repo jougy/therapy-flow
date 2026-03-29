@@ -60,6 +60,29 @@ Objetivo:
 - garantir que a tela reaja corretamente
 - reduzir regressao em formularios e condicoes de exibicao
 
+### 2.1 Smoke tests de paginas criticas
+
+Algumas paginas concentram muitas dependencias, estados e composicoes de dados. Nelas, um erro pequeno pode derrubar a tela inteira mesmo com `build` e testes unitarios passando.
+
+Essas paginas devem ter pelo menos um smoke test de renderizacao.
+
+Exemplos prioritarios:
+
+- `Configuracoes`
+- `SessaoDetalhe`
+- `PacienteDetalhe`
+- `Auth`
+
+Objetivo:
+
+- detectar crash de runtime causado por props, helpers ou `useMemo`
+- garantir que a pagina monta com mocks basicos
+- validar pelo menos uma navegacao interna importante da tela
+
+Regra pratica:
+
+- sempre que uma pagina critica ganhar nova subpagina, novo card importante ou nova composicao de contexto, considerar obrigatorio adicionar ou atualizar um smoke test dessa pagina
+
 ### 3. Validacoes de integracao com banco
 
 Usar para regras que dependem do Supabase, migrations, triggers, defaults, constraints e relacoes.
@@ -148,6 +171,7 @@ Esta secao deve crescer com o projeto.
 - Regra: agenda deve distinguir `atendimento`, `reuniao` e `evento`
 - Regra: login de teste local nao deve aparecer quando o ambiente estiver apontando para backend remoto
 - Regra: `.env.local` precisa ser gerado de forma compativel com Supabase CLI
+- Smoke test: `Configuracoes` deve renderizar e abrir subpaginas chave sem crash de runtime
 
 ### Checks que valem entrar em breve
 
@@ -159,6 +183,8 @@ Esta secao deve crescer com o projeto.
 - Clinica e colaborador: garantir vinculacao correta entre usuario e clinica
 - Auth: garantir comportamento correto para contas sem confirmacao de e-mail
 - Supabase local: smoke check de start, stop e reset em ambiente de desenvolvimento
+- Smoke test: `SessaoDetalhe` deve renderizar resumo e modo de edicao sem quebrar a tela
+- Smoke test: `PacienteDetalhe` deve montar com grupos e atendimentos mockados sem excecao
 
 ## Perguntas que devem orientar novas checagens
 
