@@ -13,6 +13,8 @@ import {
   KeyRound,
   Laptop,
   Loader2,
+  Mail,
+  MessageCircle,
   LogOut,
   Pencil,
   Plus,
@@ -35,7 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -90,6 +92,12 @@ import {
   type DevelopmentLevel,
   type DevelopmentStatus,
 } from "@/lib/team-development";
+import {
+  buildSupportEmailHref,
+  buildSupportWhatsAppHref,
+  type SupportCategory,
+  type SupportContactDraft,
+} from "@/lib/support-contact";
 
 type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 type SessionRow = Database["public"]["Tables"]["sessions"]["Row"];
@@ -167,6 +175,13 @@ type EditableTeamDevelopmentState = {
   reviewNotes: string;
 };
 
+type SupportFormState = {
+  category: SupportCategory;
+  includeContext: boolean;
+  message: string;
+  subject: string;
+};
+
 type SettingsSection =
   | "profile"
   | "clinic"
@@ -175,6 +190,7 @@ type SettingsSection =
   | "treasury"
   | "analytics"
   | "security"
+  | "support"
   | "forms"
   | "signout";
 
@@ -216,7 +232,18 @@ const DEVELOPMENT_LEVEL_OPTIONS: DevelopmentLevel[] = [
   "referencia",
 ];
 
+const SUPPORT_EMAIL = "jougy@gmx.com";
+const SUPPORT_WHATSAPP = "+5511992305889";
+
+const SUPPORT_CATEGORY_OPTIONS: Array<{ label: string; value: SupportCategory }> = [
+  { label: "Erro", value: "erro" },
+  { label: "Melhoria", value: "melhoria" },
+  { label: "Dúvida", value: "duvida" },
+  { label: "Outro", value: "outro" },
+];
+
 const Configuracoes = () => {
+  const location = useLocation();
   const navigate = useNavigate();
   const { accountRole, can, clinic: authClinic, clinicId, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
@@ -269,6 +296,12 @@ const Configuracoes = () => {
     phone: "",
     professionalLicense: "",
     socialName: "",
+  });
+  const [supportForm, setSupportForm] = useState<SupportFormState>({
+    category: "erro",
+    includeContext: true,
+    message: "",
+    subject: "",
   });
   const [newSubaccountName, setNewSubaccountName] = useState("");
   const [newSubaccountEmail, setNewSubaccountEmail] = useState("");
@@ -524,6 +557,32 @@ const Configuracoes = () => {
     [developmentRows]
   );
 
+  const supportDraft = useMemo<SupportContactDraft>(
+    () => ({
+      category: supportForm.category,
+      clinicName: getClinicBrandName(clinic?.name ?? authClinic?.name) || null,
+      currentPath: location.pathname || null,
+      includeContext: supportForm.includeContext,
+      message: supportForm.message,
+      subject: supportForm.subject,
+      userEmail: ownProfileForm.email || user?.email || null,
+      userName: ownProfileForm.fullName || profile?.full_name || null,
+    }),
+    [
+      authClinic?.name,
+      clinic,
+      location.pathname,
+      ownProfileForm.email,
+      ownProfileForm.fullName,
+      profile?.full_name,
+      supportForm.category,
+      supportForm.includeContext,
+      supportForm.message,
+      supportForm.subject,
+      user?.email,
+    ]
+  );
+
   const subaccountCapacity = useMemo(
     () => getSubaccountCapacity(authClinic?.subaccount_limit ?? 0, memberships),
     [authClinic?.subaccount_limit, memberships]
@@ -567,6 +626,12 @@ const Configuracoes = () => {
           icon: Shield,
           id: "security" as const,
           title: "Segurança",
+        },
+        {
+          description: "Fale com o suporte por e-mail ou WhatsApp com contexto básico da sua conta.",
+          icon: MessageCircle,
+          id: "support" as const,
+          title: "Suporte",
         },
         can("forms.manage") && {
           description: "Criar, editar e analisar fichas de anamnese.",
@@ -915,6 +980,32 @@ const Configuracoes = () => {
     toast({ title: "Outras sessoes encerradas" });
     setEndingOtherSessions(false);
     void fetchData();
+  };
+
+  const handleOpenSupportEmail = () => {
+    if (!supportForm.subject.trim() && !supportForm.message.trim()) {
+      toast({
+        title: "Preencha o suporte",
+        description: "Informe pelo menos um assunto ou uma mensagem antes de abrir o e-mail.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    window.location.href = buildSupportEmailHref(SUPPORT_EMAIL, supportDraft);
+  };
+
+  const handleOpenSupportWhatsApp = () => {
+    if (!supportForm.subject.trim() && !supportForm.message.trim()) {
+      toast({
+        title: "Preencha o suporte",
+        description: "Informe pelo menos um assunto ou uma mensagem antes de abrir o WhatsApp.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    window.open(buildSupportWhatsAppHref(SUPPORT_WHATSAPP, supportDraft), "_blank", "noopener,noreferrer");
   };
 
   const toggleExpandedSubaccount = (membershipId: string) => {
@@ -2637,6 +2728,146 @@ const Configuracoes = () => {
                   </CardContent>
                 </Card>
               )}
+            </>
+          )}
+
+          {activeSection === "support" && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl">Suporte</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Use este formulário para abrir rapidamente um contato de suporte por e-mail ou WhatsApp, sem depender de um painel interno nesta fase do MVP.
+                  </p>
+                </CardHeader>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Abrir contato</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Categoria</Label>
+                      <Select
+                        value={supportForm.category}
+                        onValueChange={(value) =>
+                          setSupportForm((current) => ({
+                            ...current,
+                            category: value as SupportCategory,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUPPORT_CATEGORY_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Assunto</Label>
+                      <Input
+                        placeholder="Ex: erro ao salvar atendimento"
+                        value={supportForm.subject}
+                        onChange={(event) =>
+                          setSupportForm((current) => ({
+                            ...current,
+                            subject: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Mensagem</Label>
+                    <Textarea
+                      placeholder="Descreva o problema, a dúvida ou a melhoria sugerida."
+                      value={supportForm.message}
+                      onChange={(event) =>
+                        setSupportForm((current) => ({
+                          ...current,
+                          message: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="rounded-xl border bg-muted/20 p-4 space-y-4">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div>
+                        <p className="font-medium">Contexto automático</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Quando ativado, a mensagem já inclui clínica, usuário e a página atual. Evite enviar dados sensíveis de pacientes.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={supportForm.includeContext}
+                        onCheckedChange={(checked) =>
+                          setSupportForm((current) => ({
+                            ...current,
+                            includeContext: checked,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="rounded-lg border bg-background p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Clínica</p>
+                        <p className="mt-2 font-medium">{supportDraft.clinicName || "Não identificada"}</p>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Usuário</p>
+                        <p className="mt-2 font-medium">{supportDraft.userName || supportDraft.userEmail || "Não identificado"}</p>
+                      </div>
+                      <div className="rounded-lg border bg-background p-3">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Página atual</p>
+                        <p className="mt-2 font-medium break-all">{supportDraft.currentPath || "Não identificada"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        <p className="font-medium">Enviar por e-mail</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground break-all">{SUPPORT_EMAIL}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Abre o seu app de e-mail com a mensagem já preenchida.
+                      </p>
+                      <Button onClick={handleOpenSupportEmail} className="w-full">
+                        <Mail className="h-4 w-4 mr-2" />
+                        Abrir e-mail
+                      </Button>
+                    </div>
+
+                    <div className="rounded-xl border p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <MessageCircle className="h-4 w-4" />
+                        <p className="font-medium">Falar no WhatsApp</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{SUPPORT_WHATSAPP}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Abre uma conversa com a mensagem pronta para suporte rápido.
+                      </p>
+                      <Button onClick={handleOpenSupportWhatsApp} variant="outline" className="w-full">
+                        <MessageCircle className="h-4 w-4 mr-2" />
+                        Abrir WhatsApp
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </>
           )}
 

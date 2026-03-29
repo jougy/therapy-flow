@@ -16,4 +16,5 @@ export const buildBusinessHours = (value: ClinicBusinessHours) => ({
   summary: value.summary.trim(),
 });
 
-export const getClinicBrandName = (value: string | null | undefined) => value?.trim() || "TherapyFlow";
+export const getClinicBrandName = (value: unknown) =>
+  typeof value === "string" && value.trim() ? value.trim() : "TherapyFlow";
