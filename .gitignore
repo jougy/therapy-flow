@@ -11,9 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
 .env.local
 .env.*.local
 .control
+.local-tools
+account-admin-local.sh
 .vercel
 supabase/.temp
 supabase/.branches

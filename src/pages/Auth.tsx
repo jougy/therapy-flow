@@ -1,15 +1,12 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { Building2, Eye, EyeOff, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
-import { LogIn, UserPlus, Loader2, Building2, Eye, EyeOff } from "lucide-react";
-import { isLocalSupabaseUrl, LOCAL_TEST_LOGINS } from "@/lib/test-login";
-
-type SubscriptionPlan = "solo" | "clinic";
 
 const formatCNPJ = (value: string) => {
   const digits = value.replace(/\D/g, "").slice(0, 14);
@@ -21,104 +18,41 @@ const formatCNPJ = (value: string) => {
 };
 
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
   const [cnpj, setCnpj] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [subscriptionPlan, setSubscriptionPlan] = useState<SubscriptionPlan>("solo");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const cnpjDigits = cnpj.replace(/\D/g, "");
   const isCnpjValid = cnpjDigits.length === 14;
-  const isDev = import.meta.env.DEV;
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const canUseLocalTestLogin = isDev && isLocalSupabaseUrl(supabaseUrl);
-
-  const handleTestLogin = async (testAccount: (typeof LOCAL_TEST_LOGINS)[keyof typeof LOCAL_TEST_LOGINS]) => {
-    setLoading(true);
-    setCnpj(testAccount.cnpjFormatted);
-    setEmail(testAccount.email);
-    setPassword(testAccount.password);
-
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: testAccount.email,
-        password: testAccount.password,
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      toast({
-        title: `${testAccount.label} carregada`,
-        description: `${testAccount.email} / ${testAccount.password}`,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel acessar a conta de teste.";
-      toast({ title: "Erro no login de teste", description: message, variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!isCnpjValid) {
       toast({ title: "CNPJ inválido", description: "Informe um CNPJ com 14 dígitos.", variant: "destructive" });
       return;
     }
+
     setLoading(true);
 
-    if (isLogin) {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        toast({ title: "Erro ao entrar", description: error.message, variant: "destructive" });
-        setLoading(false);
-        return;
-      }
-
-      // Validate CNPJ matches user's clinic
-      const { data: valid } = await supabase.rpc("validate_user_clinic", {
-        _user_id: data.user.id,
-        _cnpj: cnpjDigits,
-      });
-
-      if (!valid) {
-        await supabase.auth.signOut();
-        toast({ title: "CNPJ incorreto", description: "Este CNPJ não corresponde à sua conta.", variant: "destructive" });
-      }
-    } else {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: window.location.origin },
-      });
-      if (error) {
-        toast({ title: "Erro ao cadastrar", description: error.message, variant: "destructive" });
-        setLoading(false);
-        return;
-      }
-
-      if (data.user) {
-        // Create clinic + profile + role
-        const { error: setupError } = await supabase.rpc("handle_signup", {
-          _user_id: data.user.id,
-          _email: email,
-          _cnpj: cnpjDigits,
-          _subscription_plan: subscriptionPlan,
-        });
-
-        if (setupError) {
-          toast({ title: "Erro ao configurar conta", description: setupError.message, variant: "destructive" });
-        } else {
-          toast({
-            title: "Cadastro realizado!",
-            description: "Verifique seu e-mail para confirmar a conta.",
-          });
-        }
-      }
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      toast({ title: "Erro ao entrar", description: error.message, variant: "destructive" });
+      setLoading(false);
+      return;
     }
+
+    const { data: valid } = await supabase.rpc("validate_user_clinic", {
+      _cnpj: cnpjDigits,
+      _user_id: data.user.id,
+    });
+
+    if (!valid) {
+      await supabase.auth.signOut();
+      toast({ title: "CNPJ incorreto", description: "Este CNPJ não corresponde à sua conta.", variant: "destructive" });
+    }
+
     setLoading(false);
   };
 
@@ -137,16 +71,20 @@ const Auth = () => {
 
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="text-lg">
-              {isLogin ? "Entrar" : "Criar conta"}
-            </CardTitle>
-            <CardDescription>
-              {isLogin
-                ? "Acesse sua conta para gerenciar pacientes"
-                : "Crie sua conta para começar a usar"}
-            </CardDescription>
+            <CardTitle className="text-lg">Entrar</CardTitle>
+            <CardDescription>Acesso restrito. As contas são liberadas internamente pelo administrador.</CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">Cadastro público desativado</p>
+                  <p>Se você ainda não tem acesso, a liberação precisa ser feita internamente pelo administrador da plataforma.</p>
+                </div>
+              </div>
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="cnpj">CNPJ da Clínica</Label>
@@ -163,6 +101,7 @@ const Auth = () => {
                   />
                 </div>
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="email">E-mail</Label>
                 <Input
@@ -174,6 +113,7 @@ const Auth = () => {
                   required
                 />
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="password">Senha</Label>
                 <div className="relative">
@@ -196,83 +136,18 @@ const Auth = () => {
                   </button>
                 </div>
               </div>
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label>Tipo de conta</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      { value: "solo", label: "Solo" },
-                      { value: "clinic", label: "Clinic" },
-                    ] as const).map((plan) => (
-                      <Button
-                        key={plan.value}
-                        type="button"
-                        variant={subscriptionPlan === plan.value ? "default" : "outline"}
-                        onClick={() => setSubscriptionPlan(plan.value)}
-                      >
-                        {plan.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
+
               <Button type="submit" className="w-full" disabled={loading || !isCnpjValid}>
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
-                ) : isLogin ? (
+                ) : (
                   <>
                     <LogIn className="h-4 w-4 mr-2" />
                     Entrar
                   </>
-                ) : (
-                  <>
-                    <UserPlus className="h-4 w-4 mr-2" />
-                    Criar conta
-                  </>
                 )}
               </Button>
             </form>
-            <div className="mt-4 text-center">
-              <button
-                type="button"
-                onClick={() => setIsLogin(!isLogin)}
-                className="text-sm text-primary hover:underline"
-              >
-                {isLogin ? "Não tem conta? Cadastre-se" : "Já tem conta? Entre"}
-              </button>
-            </div>
-            {isDev && canUseLocalTestLogin && (
-              <div className="mt-4 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                <p className="font-medium text-foreground">Logins de teste locais</p>
-                <div className="mt-3 space-y-3">
-                  {Object.values(LOCAL_TEST_LOGINS).map((testAccount) => (
-                    <div key={testAccount.email} className="rounded-md border bg-background/80 p-3">
-                      <p className="font-medium text-foreground">{testAccount.label}</p>
-                      <p>CNPJ: {testAccount.cnpjFormatted}</p>
-                      <p>E-mail: {testAccount.email}</p>
-                      <p>Senha: {testAccount.password}</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="mt-3 w-full"
-                        onClick={() => void handleTestLogin(testAccount)}
-                        disabled={loading}
-                      >
-                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : `Entrar com ${testAccount.label}`}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {isDev && !canUseLocalTestLogin && (
-              <div className="mt-4 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                <p className="font-medium text-foreground">Login de teste local indisponivel</p>
-                <p>O frontend esta apontando para um Supabase remoto.</p>
-                <p className="break-all">URL atual: {supabaseUrl ?? "nao configurada"}</p>
-                <p className="mt-2">Para usar a conta de teste local, rode `npm run dev:local` com o Docker/Supabase local ativos.</p>
-              </div>
-            )}
           </CardContent>
         </Card>
       </motion.div>
