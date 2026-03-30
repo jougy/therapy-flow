@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, ChevronRight, Copy, GripVertical, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -20,10 +20,13 @@ import {
   buildTemplateLayout,
   createAnamnesisField,
   createDefaultTemplateSchema,
+  getAssignableContainerFields,
   getSectionSelectorOptions,
+  isContainerField,
   isAnamnesisTemplateSchema,
   normalizeOptions,
   type AnamnesisField,
+  type TemplateLayoutItem,
   type AnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
 
@@ -142,10 +145,6 @@ const FormularioEditor = () => {
 
   const sectionOptions = useMemo(() => getSectionSelectorOptions(templateFields), [templateFields]);
   const groupedLayout = useMemo(() => buildTemplateLayout(templateFields), [templateFields]);
-  const availableSections = useMemo(
-    () => templateFields.filter((field) => field.type === "section"),
-    [templateFields]
-  );
 
   const blockMenuContent = (
     <Card className="border-border/70">
@@ -358,182 +357,222 @@ const FormularioEditor = () => {
 
           <div className="space-y-3">
             {groupedLayout.map((layoutItem) => {
-              const fieldsToRender = layoutItem.type === "section" ? [layoutItem.field, ...layoutItem.items] : [layoutItem.field];
+              const renderEditorItem = (item: TemplateLayoutItem, depth = 0): ReactNode => {
+                const field = item.field;
+                const assignableContainers = getAssignableContainerFields(templateFields, field.id);
+                const isNested = depth > 0;
+                const isContainer = isContainerField(field);
 
-              return (
-                <Card
-                  key={layoutItem.field.id}
-                  draggable
-                  onDragStart={() => setDraggedFieldId(layoutItem.field.id)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => {
-                    if (!draggedFieldId) return;
+                return (
+                  <Card
+                    key={field.id}
+                    draggable={!isNested}
+                    onDragStart={() => !isNested && setDraggedFieldId(field.id)}
+                    onDragOver={(event) => !isNested && event.preventDefault()}
+                    onDrop={() => {
+                      if (!draggedFieldId || isNested) return;
 
-                    if (layoutItem.type === "section" && draggedFieldId !== layoutItem.field.id) {
-                      assignFieldToSection(draggedFieldId, layoutItem.field.id);
-                    } else {
-                      moveField(draggedFieldId, layoutItem.field.id);
-                    }
+                      if (item.type !== "field" && draggedFieldId !== field.id) {
+                        assignFieldToSection(draggedFieldId, field.id);
+                      } else {
+                        moveField(draggedFieldId, field.id);
+                      }
 
-                    setDraggedFieldId(null);
-                  }}
-                >
-                  <CardContent className="p-5 space-y-4">
-                    {fieldsToRender.map((field, fieldIndex) => (
-                      <div key={field.id} className={fieldIndex > 0 ? "rounded-lg border border-dashed p-4" : ""}>
-                        {fieldIndex > 0 && (
-                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3">
-                            Campo dentro da seção
-                          </p>
-                        )}
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
-                              <GripVertical className="h-4 w-4 text-muted-foreground" />
-                              <div>
-                                <p className="font-medium text-sm">{ANAMNESIS_FIELD_LIBRARY.find((item) => item.type === field.type)?.label || field.type}</p>
-                                <p className="text-xs text-muted-foreground">{field.id}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {!isBase && (
-                                <Button type="button" variant="ghost" size="icon" onClick={() => duplicateField(field)}>
-                                  <Copy className="h-4 w-4" />
-                                </Button>
-                              )}
-                              {(!isBase || !field.systemKey) && (
-                                <Button type="button" variant="ghost" size="icon" onClick={() => removeField(field.id)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
+                      setDraggedFieldId(null);
+                    }}
+                    className={isNested ? "border-dashed bg-muted/10" : undefined}
+                  >
+                    <CardContent className="p-5 space-y-4">
+                      {isNested && (
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {item.type === "horizontal_section" ? "Seção horizontal interna" : item.type === "section" ? "Subseção" : "Campo dentro da seção"}
+                        </p>
+                      )}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <GripVertical className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                              <p className="font-medium text-sm">{ANAMNESIS_FIELD_LIBRARY.find((entry) => entry.type === field.type)?.label || field.type}</p>
+                              <p className="text-xs text-muted-foreground">{field.id}</p>
                             </div>
                           </div>
+                          <div className="flex items-center gap-2">
+                            {!isBase && (
+                              <Button type="button" variant="ghost" size="icon" onClick={() => duplicateField(field)}>
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {(!isBase || !field.systemKey) && (
+                              <Button type="button" variant="ghost" size="icon" onClick={() => removeField(field.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
 
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Rótulo</Label>
+                            <Input value={field.label} onChange={(event) => updateField(field.id, { label: event.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Ajuda</Label>
+                            <Input value={field.helpText ?? ""} onChange={(event) => updateField(field.id, { helpText: event.target.value })} />
+                          </div>
+                        </div>
+
+                        {!isContainer && (
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-2">
-                              <Label>Rótulo</Label>
-                              <Input value={field.label} onChange={(event) => updateField(field.id, { label: event.target.value })} />
+                              <Label>Placeholder</Label>
+                              <Input value={field.placeholder ?? ""} onChange={(event) => updateField(field.id, { placeholder: event.target.value })} />
                             </div>
                             <div className="space-y-2">
-                              <Label>Ajuda</Label>
-                              <Input value={field.helpText ?? ""} onChange={(event) => updateField(field.id, { helpText: event.target.value })} />
-                            </div>
-                          </div>
-
-                          {field.type !== "section" && (
-                            <div className="grid gap-4 md:grid-cols-2">
-                              <div className="space-y-2">
-                                <Label>Placeholder</Label>
-                                <Input value={field.placeholder ?? ""} onChange={(event) => updateField(field.id, { placeholder: event.target.value })} />
-                              </div>
-                              <div className="space-y-2">
-                                <Label>Agrupar na seção</Label>
-                                <Select
-                                  value={field.groupKey ?? "none"}
-                                  onValueChange={(value) => assignFieldToSection(field.id, value === "none" ? null : value)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Sem seção" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">Sem seção</SelectItem>
-                                    {availableSections.map((section) => (
-                                      <SelectItem key={section.id} value={section.id}>{section.label}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                          )}
-
-                          {field.type !== "section" && field.type !== "section_selector" && (
-                            <div className="space-y-2">
-                              <Label>Vincular à seção condicional</Label>
+                              <Label>Agrupar no contêiner</Label>
                               <Select
-                                value={field.sectionKey ?? "none"}
-                                onValueChange={(value) => updateField(field.id, { sectionKey: value === "none" ? null : value })}
+                                value={field.groupKey ?? "none"}
+                                onValueChange={(value) => assignFieldToSection(field.id, value === "none" ? null : value)}
                               >
                                 <SelectTrigger>
-                                  <SelectValue placeholder="Sempre visível" />
+                                  <SelectValue placeholder="Sem contêiner" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="none">Sempre visível</SelectItem>
-                                  {sectionOptions.map((option) => (
-                                    <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
+                                  <SelectItem value="none">Sem contêiner</SelectItem>
+                                  {assignableContainers.map((container) => (
+                                    <SelectItem key={container.id} value={container.id}>{container.label}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
                             </div>
-                          )}
+                          </div>
+                        )}
 
-                          {field.type !== "section" && (
-                            <div className="flex items-center gap-3">
-                              <Checkbox
-                                id={`required_${field.id}`}
-                                checked={field.required ?? false}
-                                onCheckedChange={(checked) => updateField(field.id, { required: checked === true })}
-                              />
-                              <Label htmlFor={`required_${field.id}`}>Campo obrigatório</Label>
-                            </div>
-                          )}
+                        {isContainer && (
+                          <div className="space-y-2">
+                            <Label>Inserir dentro de</Label>
+                            <Select
+                              value={field.groupKey ?? "none"}
+                              onValueChange={(value) => assignFieldToSection(field.id, value === "none" ? null : value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sem seção pai" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Sem seção pai</SelectItem>
+                                {assignableContainers.map((container) => (
+                                  <SelectItem key={container.id} value={container.id}>{container.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
 
-                          {isBase && field.type !== "section" && (
-                            <div className="flex items-center gap-3">
-                              <Checkbox
-                                id={`show_in_patient_list_${field.id}`}
-                                checked={field.showInPatientList ?? false}
-                                onCheckedChange={(checked) => updateField(field.id, { showInPatientList: checked === true })}
-                              />
-                              <Label htmlFor={`show_in_patient_list_${field.id}`}>
-                                Exibir este campo na lista de atendimentos do paciente
-                              </Label>
-                            </div>
-                          )}
+                        {!isContainer && field.type !== "section_selector" && (
+                          <div className="space-y-2">
+                            <Label>Vincular à seção condicional</Label>
+                            <Select
+                              value={field.sectionKey ?? "none"}
+                              onValueChange={(value) => updateField(field.id, { sectionKey: value === "none" ? null : value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sempre visível" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Sempre visível</SelectItem>
+                                {sectionOptions.map((option) => (
+                                  <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
 
-                          {(field.type === "checklist" || field.type === "multiple_choice" || field.type === "select" || field.type === "section_selector") && (
+                        {!isContainer && (
+                          <div className="flex items-center gap-3">
+                            <Checkbox
+                              id={`required_${field.id}`}
+                              checked={field.required ?? false}
+                              onCheckedChange={(checked) => updateField(field.id, { required: checked === true })}
+                            />
+                            <Label htmlFor={`required_${field.id}`}>Campo obrigatório</Label>
+                          </div>
+                        )}
+
+                        {isBase && !isContainer && (
+                          <div className="flex items-center gap-3">
+                            <Checkbox
+                              id={`show_in_patient_list_${field.id}`}
+                              checked={field.showInPatientList ?? false}
+                              onCheckedChange={(checked) => updateField(field.id, { showInPatientList: checked === true })}
+                            />
+                            <Label htmlFor={`show_in_patient_list_${field.id}`}>
+                              Exibir este campo na lista de atendimentos do paciente
+                            </Label>
+                          </div>
+                        )}
+
+                        {(field.type === "checklist" || field.type === "multiple_choice" || field.type === "select" || field.type === "section_selector") && (
+                          <div className="space-y-2">
+                            <Label>Opções</Label>
+                            <Textarea
+                              rows={4}
+                              value={(field.options ?? []).map((option) => option.label).join("\n")}
+                              onChange={(event) => updateField(field.id, { options: normalizeOptions(event.target.value) })}
+                              placeholder="Uma opção por linha"
+                            />
+                          </div>
+                        )}
+
+                        {field.type === "slider" && (
+                          <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-2">
-                              <Label>Opções</Label>
-                              <Textarea
-                                rows={4}
-                                value={(field.options ?? []).map((option) => option.label).join("\n")}
-                                onChange={(event) => updateField(field.id, { options: normalizeOptions(event.target.value) })}
-                                placeholder="Uma opção por linha"
+                              <Label>Mínimo</Label>
+                              <Input
+                                type="number"
+                                value={field.min ?? 0}
+                                onChange={(event) => updateField(field.id, { min: Number(event.target.value) })}
                               />
                             </div>
-                          )}
-
-                          {field.type === "slider" && (
-                            <div className="grid gap-4 md:grid-cols-2">
-                              <div className="space-y-2">
-                                <Label>Mínimo</Label>
-                                <Input
-                                  type="number"
-                                  value={field.min ?? 0}
-                                  onChange={(event) => updateField(field.id, { min: Number(event.target.value) })}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label>Máximo</Label>
-                                <Input
-                                  type="number"
-                                  value={field.max ?? 10}
-                                  onChange={(event) => updateField(field.id, { max: Number(event.target.value) })}
-                                />
-                              </div>
+                            <div className="space-y-2">
+                              <Label>Máximo</Label>
+                              <Input
+                                type="number"
+                                value={field.max ?? 10}
+                                onChange={(event) => updateField(field.id, { max: Number(event.target.value) })}
+                              />
                             </div>
-                          )}
+                          </div>
+                        )}
 
-                          {field.type === "section" && (
-                            <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-                              Arraste campos para dentro desta seção ou use o seletor "Agrupar na seção".
-                            </div>
-                          )}
-                        </div>
+                        {field.type === "section" && (
+                          <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
+                            Você pode colocar campos, subseções e seções horizontais dentro desta seção.
+                          </div>
+                        )}
+
+                        {field.type === "horizontal_section" && (
+                          <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
+                            Os itens desta seção serão exibidos lado a lado com rolagem horizontal. Seções não podem ser inseridas aqui.
+                          </div>
+                        )}
+
+                        {item.type !== "field" && item.items.length > 0 && (
+                          <div className={item.type === "horizontal_section" ? "flex gap-3 overflow-x-auto pb-2" : "space-y-3"}>
+                            {item.items.map((child) => (
+                              <div key={child.field.id} className={item.type === "horizontal_section" ? "min-w-[320px] flex-1" : undefined}>
+                                {renderEditorItem(child, depth + 1)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              );
+                    </CardContent>
+                  </Card>
+                );
+              };
+
+              return renderEditorItem(layoutItem);
             })}
           </div>
         </div>

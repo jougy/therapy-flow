@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +35,7 @@ import { getPreferredPatientGroupId } from "@/lib/patient-group-defaults";
 import { buildSessionEditHistoryView, formatSessionAuditDateTime, getSessionPersonLabel } from "@/lib/session-people";
 import { createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
 import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
+import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import {
   buildTemplateLayout,
   getVisibleTemplateFields,
@@ -560,7 +562,7 @@ const SessaoDetalhe = () => {
     if (field.systemKey === "queixa") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <Textarea
             value={queixa}
             onChange={(event) => setQueixa(event.target.value)}
@@ -576,7 +578,7 @@ const SessaoDetalhe = () => {
     if (field.systemKey === "sintomas") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <Textarea
             value={sintomas}
             onChange={(event) => setSintomas(event.target.value)}
@@ -592,9 +594,10 @@ const SessaoDetalhe = () => {
     if (field.systemKey === "pain_score") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}: <span className={`font-bold ${painColor}`}>{painScore[0]}/10</span>
-          </Label>
+          <div className="flex items-center justify-between gap-3">
+            <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
+            <span className={`text-sm font-bold ${painColor}`}>{painScore[0]}/10</span>
+          </div>
           <Slider value={painScore} onValueChange={setPainScore} max={10} step={1} className="mt-3" disabled={locked} />
         </div>
       );
@@ -603,9 +606,10 @@ const SessaoDetalhe = () => {
     if (field.systemKey === "complexity_score") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}: <span className="font-bold">{complexityScore[0]}/10</span>
-          </Label>
+          <div className="flex items-center justify-between gap-3">
+            <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
+            <span className="text-sm font-bold">{complexityScore[0]}/10</span>
+          </div>
           <Slider value={complexityScore} onValueChange={setComplexityScore} max={10} step={1} className="mt-3" disabled={locked} />
         </div>
       );
@@ -614,7 +618,7 @@ const SessaoDetalhe = () => {
     if (field.systemKey === "observacoes") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <Textarea
             value={observacoes}
             onChange={(event) => setObservacoes(event.target.value)}
@@ -641,7 +645,7 @@ const SessaoDetalhe = () => {
     if (field.type === "short_text") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <Input
             value={typeof value === "string" ? value : ""}
             onChange={(event) => updateFormResponse(field.id, event.target.value)}
@@ -655,7 +659,7 @@ const SessaoDetalhe = () => {
     if (field.type === "long_text") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <Textarea
             value={typeof value === "string" ? value : ""}
             onChange={(event) => updateFormResponse(field.id, event.target.value)}
@@ -670,7 +674,7 @@ const SessaoDetalhe = () => {
     if (field.type === "number") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <Input
             type="number"
             value={typeof value === "number" || typeof value === "string" ? value : ""}
@@ -686,7 +690,10 @@ const SessaoDetalhe = () => {
       const sliderValue = typeof value === "number" ? value : field.min ?? 0;
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}: <span className="font-semibold">{sliderValue}</span></Label>
+          <div className="flex items-center justify-between gap-3">
+            <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
+            <span className="text-sm font-semibold">{sliderValue}</span>
+          </div>
           <Slider
             value={[sliderValue]}
             onValueChange={([next]) => updateFormResponse(field.id, next)}
@@ -702,7 +709,7 @@ const SessaoDetalhe = () => {
     if (field.type === "select") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <Select value={typeof value === "string" ? value : ""} onValueChange={(next) => updateFormResponse(field.id, next)} disabled={locked}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione" />
@@ -720,7 +727,7 @@ const SessaoDetalhe = () => {
     if (field.type === "multiple_choice") {
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <RadioGroup value={typeof value === "string" ? value : ""} onValueChange={(next) => updateFormResponse(field.id, next)}>
             {(field.options ?? []).map((option) => (
               <div key={option.id} className="flex items-center gap-2">
@@ -737,7 +744,7 @@ const SessaoDetalhe = () => {
       const selectedValues = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
       return (
         <div key={field.id} className="space-y-2">
-          <Label>{field.label}</Label>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <div className="space-y-2">
             {(field.options ?? []).map((option) => (
               <div key={option.id} className="flex items-center gap-2">
@@ -764,10 +771,7 @@ const SessaoDetalhe = () => {
       const selectedValues = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
       return (
         <div key={field.id} className="space-y-3 rounded-lg border p-4">
-          <div>
-            <Label>{field.label}</Label>
-            {field.helpText && <p className="text-sm text-muted-foreground mt-1">{field.helpText}</p>}
-          </div>
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <div className="space-y-3">
             {(field.options ?? []).map((option) => (
               <div key={option.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
@@ -802,6 +806,29 @@ const SessaoDetalhe = () => {
           return renderDynamicField(item.field);
         }
 
+        if (item.type === "horizontal_section") {
+          return (
+            <Card key={item.field.id}>
+              <CardContent className="space-y-4 p-4">
+                <div>
+                  <p className="font-medium">{item.field.label}</p>
+                  {item.field.helpText && <p className="mt-1 text-sm text-muted-foreground">{item.field.helpText}</p>}
+                </div>
+                <ScrollArea className="w-full whitespace-nowrap">
+                  <div className="flex gap-4 pb-4">
+                    {item.items.map((child) => (
+                      <div key={child.field.id} className="min-w-[280px] flex-1 whitespace-normal rounded-lg border bg-muted/10 p-4">
+                        {child.type === "field" ? renderDynamicField(child.field) : renderTemplateLayout([child])}
+                      </div>
+                    ))}
+                  </div>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          );
+        }
+
         return (
           <Accordion key={item.field.id} type="multiple" defaultValue={[item.field.id]} className="rounded-lg border px-4">
             <AccordionItem value={item.field.id} className="border-none">
@@ -812,7 +839,7 @@ const SessaoDetalhe = () => {
                 </div>
               </AccordionTrigger>
               <AccordionContent className="space-y-4 pt-2">
-                {item.items.map((child) => renderDynamicField(child))}
+                {renderTemplateLayout(item.items)}
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -835,8 +862,7 @@ const SessaoDetalhe = () => {
             return (
               <div key={field.id} className="rounded-xl border bg-muted/20 p-4 space-y-3">
                 <div>
-                  <p className="text-sm font-medium">{field.label}</p>
-                  {field.helpText && <p className="mt-1 text-xs text-muted-foreground">{field.helpText}</p>}
+                  <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
                 </div>
                 {mode === "view" ? (
                   <ScaleIndicator score={value} min={field.min ?? 0} max={field.max ?? 10} />
