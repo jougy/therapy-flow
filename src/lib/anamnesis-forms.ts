@@ -14,6 +14,7 @@ export interface AnamnesisFieldOption {
   id: string;
   label: string;
   description?: string;
+  row?: number;
 }
 
 export interface AnamnesisField {
@@ -107,9 +108,10 @@ export const isContainerField = (field: AnamnesisField) => isContainerFieldType(
 export const hasScrollableOptionEditor = (type: AnamnesisFieldType) =>
   type === "checklist" || type === "multiple_choice";
 
-export const createFieldOption = (label: string, index: number): AnamnesisFieldOption => ({
+export const createFieldOption = (label: string, index: number, row = 0): AnamnesisFieldOption => ({
   id: `option_${index + 1}`,
   label,
+  row,
 });
 
 export const createDefaultTemplateSchema = () =>
@@ -164,10 +166,77 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
 
 export const normalizeOptions = (raw: string) =>
   raw
-    .split(/[\n;]+/u)
-    .map((item) => item.trim())
+    .split("\n")
+    .flatMap((line, rowIndex) =>
+      line
+        .split(";")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((label) => ({ label, row: rowIndex }))
+    )
     .filter(Boolean)
-    .map((label, index) => createFieldOption(label, index));
+    .map(({ label, row }, index) => createFieldOption(label, index, row));
+
+const sortOptionsByMatrix = (options: AnamnesisFieldOption[]) =>
+  [...options].sort((left, right) => {
+    const leftRow = left.row ?? 0;
+    const rightRow = right.row ?? 0;
+
+    if (leftRow !== rightRow) {
+      return leftRow - rightRow;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+
+export const getOptionMatrixRows = (options: AnamnesisFieldOption[] = []) => {
+  const source = options.length > 0 ? sortOptionsByMatrix(options) : [createFieldOption("Opção 1", 0, 0)];
+  const rows = new Map<number, AnamnesisFieldOption[]>();
+
+  source.forEach((option) => {
+    const rowIndex = option.row ?? 0;
+    rows.set(rowIndex, [...(rows.get(rowIndex) ?? []), option]);
+  });
+
+  return [...rows.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([rowIndex, items]) => ({ rowIndex, items }));
+};
+
+const createMatrixOptionId = () => `option_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+export const addOptionToMatrixRow = (options: AnamnesisFieldOption[] = [], rowIndex: number) => {
+  const next = options.length > 0 ? [...options] : [createFieldOption("Opção 1", 0, 0)];
+
+  next.push({
+    id: createMatrixOptionId(),
+    label: "",
+    row: rowIndex,
+  });
+
+  return next;
+};
+
+export const addOptionMatrixRow = (options: AnamnesisFieldOption[] = []) => {
+  const source = options.length > 0 ? [...options] : [createFieldOption("Opção 1", 0, 0)];
+  const nextRowIndex = Math.max(...source.map((option) => option.row ?? 0), 0) + 1;
+
+  source.push({
+    id: createMatrixOptionId(),
+    label: "",
+    row: nextRowIndex,
+  });
+
+  return source;
+};
+
+export const updateOptionMatrixLabel = (options: AnamnesisFieldOption[], optionId: string, label: string) =>
+  options.map((option) => (option.id === optionId ? { ...option, label } : option));
+
+export const removeOptionFromMatrix = (options: AnamnesisFieldOption[], optionId: string) => {
+  const next = options.filter((option) => option.id !== optionId);
+  return next.length > 0 ? next : [createFieldOption("Opção 1", 0, 0)];
+};
 
 export const getSectionSelectorOptions = (fields: AnamnesisTemplateSchema) =>
   fields

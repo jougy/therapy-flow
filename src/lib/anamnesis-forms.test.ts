@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  addOptionMatrixRow,
+  addOptionToMatrixRow,
   buildTemplateLayout,
   countTemplateQuestionFields,
   countTemplateSections,
   createDefaultTemplateSchema,
+  getOptionMatrixRows,
   getAssignableContainerFields,
   hasScrollableOptionEditor,
   getVisibleTemplateFields,
   isAnamnesisTemplateSchema,
   normalizeOptions,
+  removeOptionFromMatrix,
+  updateOptionMatrixLabel,
   type AnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
 
@@ -63,10 +68,10 @@ describe("anamnesis forms helpers", () => {
 
   it("normalizes semicolon and line-based options", () => {
     expect(normalizeOptions("Uma; Duas\n\n Três ;Quatro")).toEqual([
-      { id: "option_1", label: "Uma" },
-      { id: "option_2", label: "Duas" },
-      { id: "option_3", label: "Três" },
-      { id: "option_4", label: "Quatro" },
+      { id: "option_1", label: "Uma", row: 0 },
+      { id: "option_2", label: "Duas", row: 0 },
+      { id: "option_3", label: "Três", row: 2 },
+      { id: "option_4", label: "Quatro", row: 2 },
     ]);
   });
 
@@ -154,5 +159,37 @@ describe("anamnesis forms helpers", () => {
     expect(hasScrollableOptionEditor("multiple_choice")).toBe(true);
     expect(hasScrollableOptionEditor("select")).toBe(false);
     expect(hasScrollableOptionEditor("section_selector")).toBe(false);
+  });
+
+  it("builds and updates option matrices by row", () => {
+    const parsed = normalizeOptions("Dor; Rigidez\nFormigamento");
+
+    expect(getOptionMatrixRows(parsed)).toEqual([
+      {
+        rowIndex: 0,
+        items: [
+          { id: "option_1", label: "Dor", row: 0 },
+          { id: "option_2", label: "Rigidez", row: 0 },
+        ],
+      },
+      {
+        rowIndex: 1,
+        items: [{ id: "option_3", label: "Formigamento", row: 1 }],
+      },
+    ]);
+
+    const withExtraColumn = addOptionToMatrixRow(parsed, 1);
+    const withExtraRow = addOptionMatrixRow(withExtraColumn);
+    const updated = updateOptionMatrixLabel(withExtraRow, withExtraRow[3]!.id, "Dormência");
+
+    expect(getOptionMatrixRows(updated)[1]?.items).toHaveLength(2);
+    expect(getOptionMatrixRows(updated)[2]?.items).toHaveLength(1);
+    expect(updated.some((option) => option.label === "Dormência")).toBe(true);
+  });
+
+  it("keeps at least one matrix option when removing items", () => {
+    expect(removeOptionFromMatrix([{ id: "option_1", label: "Dor", row: 0 }], "option_1")).toEqual([
+      { id: "option_1", label: "Opção 1", row: 0 },
+    ]);
   });
 });

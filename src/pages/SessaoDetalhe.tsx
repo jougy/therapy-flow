@@ -38,6 +38,7 @@ import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/ses
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import {
   buildTemplateLayout,
+  getOptionMatrixRows,
   getVisibleTemplateFields,
   type AnamnesisField,
   type AnamnesisFormResponse,
@@ -725,16 +726,26 @@ const SessaoDetalhe = () => {
     }
 
     if (field.type === "multiple_choice") {
+      const optionRows = getOptionMatrixRows(field.options ?? []);
       return (
         <div key={field.id} className="space-y-2">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <RadioGroup value={typeof value === "string" ? value : ""} onValueChange={(next) => updateFormResponse(field.id, next)}>
-            {(field.options ?? []).map((option) => (
-              <div key={option.id} className="flex items-center gap-2">
-                <RadioGroupItem value={option.id} id={`${field.id}_${option.id}`} disabled={locked} />
-                <Label htmlFor={`${field.id}_${option.id}`}>{option.label}</Label>
-              </div>
-            ))}
+            <div className="space-y-3">
+              {optionRows.map(({ rowIndex, items }) => (
+                <ScrollArea key={rowIndex} className="w-full whitespace-nowrap rounded-md">
+                  <div className="flex min-w-max gap-4 pb-2">
+                    {items.map((option) => (
+                      <div key={option.id} className="flex min-w-[220px] items-center gap-2 whitespace-normal rounded-md border p-3">
+                        <RadioGroupItem value={option.id} id={`${field.id}_${option.id}`} disabled={locked} />
+                        <Label htmlFor={`${field.id}_${option.id}`}>{option.label}</Label>
+                      </div>
+                    ))}
+                  </div>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
+              ))}
+            </div>
           </RadioGroup>
         </div>
       );
@@ -742,25 +753,33 @@ const SessaoDetalhe = () => {
 
     if (field.type === "checklist") {
       const selectedValues = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+      const optionRows = getOptionMatrixRows(field.options ?? []);
       return (
         <div key={field.id} className="space-y-2">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
-          <div className="space-y-2">
-            {(field.options ?? []).map((option) => (
-              <div key={option.id} className="flex items-center gap-2">
-                <Checkbox
-                  id={`${field.id}_${option.id}`}
-                  checked={selectedValues.includes(option.id)}
-                  disabled={locked}
-                  onCheckedChange={(checked) => {
-                    const next = checked === true
-                      ? [...selectedValues, option.id]
-                      : selectedValues.filter((item) => item !== option.id);
-                    updateFormResponse(field.id, next);
-                  }}
-                />
-                <Label htmlFor={`${field.id}_${option.id}`}>{option.label}</Label>
-              </div>
+          <div className="space-y-3">
+            {optionRows.map(({ rowIndex, items }) => (
+              <ScrollArea key={rowIndex} className="w-full whitespace-nowrap rounded-md">
+                <div className="flex min-w-max gap-4 pb-2">
+                  {items.map((option) => (
+                    <div key={option.id} className="flex min-w-[220px] items-center gap-2 whitespace-normal rounded-md border p-3">
+                      <Checkbox
+                        id={`${field.id}_${option.id}`}
+                        checked={selectedValues.includes(option.id)}
+                        disabled={locked}
+                        onCheckedChange={(checked) => {
+                          const next = checked === true
+                            ? [...selectedValues, option.id]
+                            : selectedValues.filter((item) => item !== option.id);
+                          updateFormResponse(field.id, next);
+                        }}
+                      />
+                      <Label htmlFor={`${field.id}_${option.id}`}>{option.label}</Label>
+                    </div>
+                  ))}
+                </div>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
             ))}
           </div>
         </div>

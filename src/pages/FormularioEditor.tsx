@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { OptionMatrixEditor } from "@/components/anamnesis/OptionMatrixEditor";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -516,14 +517,19 @@ const FormularioEditor = () => {
                         {(field.type === "checklist" || field.type === "multiple_choice" || field.type === "select" || field.type === "section_selector") && (
                           <div className="space-y-2">
                             <Label>Opções</Label>
-                            <Textarea
-                              rows={4}
-                              wrap={hasScrollableOptionEditor(field.type) ? "off" : undefined}
-                              className={hasScrollableOptionEditor(field.type) ? "overflow-x-auto whitespace-pre font-mono" : undefined}
-                              value={(field.options ?? []).map((option) => option.label).join("\n")}
-                              onChange={(event) => updateField(field.id, { options: normalizeOptions(event.target.value) })}
-                              placeholder={hasScrollableOptionEditor(field.type) ? "Use ; ou Enter para separar as opções" : "Uma opção por linha"}
-                            />
+                            {hasScrollableOptionEditor(field.type) ? (
+                              <OptionMatrixEditor
+                                options={field.options}
+                                onChange={(options) => updateField(field.id, { options })}
+                              />
+                            ) : (
+                              <Textarea
+                                rows={4}
+                                value={(field.options ?? []).map((option) => option.label).join("\n")}
+                                onChange={(event) => updateField(field.id, { options: normalizeOptions(event.target.value) })}
+                                placeholder="Uma opção por linha"
+                              />
+                            )}
                           </div>
                         )}
 
