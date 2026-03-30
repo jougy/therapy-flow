@@ -104,6 +104,8 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
 
 export const isContainerFieldType = (type: AnamnesisFieldType) => type === "section" || type === "horizontal_section";
 export const isContainerField = (field: AnamnesisField) => isContainerFieldType(field.type);
+export const hasScrollableOptionEditor = (type: AnamnesisFieldType) =>
+  type === "checklist" || type === "multiple_choice";
 
 export const createFieldOption = (label: string, index: number): AnamnesisFieldOption => ({
   id: `option_${index + 1}`,
@@ -162,8 +164,8 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
 
 export const normalizeOptions = (raw: string) =>
   raw
-    .split("\n")
-    .map((line) => line.trim())
+    .split(/[\n;]+/u)
+    .map((item) => item.trim())
     .filter(Boolean)
     .map((label, index) => createFieldOption(label, index));
 

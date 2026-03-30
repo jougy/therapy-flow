@@ -22,6 +22,7 @@ import {
   createDefaultTemplateSchema,
   getAssignableContainerFields,
   getSectionSelectorOptions,
+  hasScrollableOptionEditor,
   isContainerField,
   isAnamnesisTemplateSchema,
   normalizeOptions,
@@ -517,9 +518,11 @@ const FormularioEditor = () => {
                             <Label>Opções</Label>
                             <Textarea
                               rows={4}
+                              wrap={hasScrollableOptionEditor(field.type) ? "off" : undefined}
+                              className={hasScrollableOptionEditor(field.type) ? "overflow-x-auto whitespace-pre font-mono" : undefined}
                               value={(field.options ?? []).map((option) => option.label).join("\n")}
                               onChange={(event) => updateField(field.id, { options: normalizeOptions(event.target.value) })}
-                              placeholder="Uma opção por linha"
+                              placeholder={hasScrollableOptionEditor(field.type) ? "Use ; ou Enter para separar as opções" : "Uma opção por linha"}
                             />
                           </div>
                         )}

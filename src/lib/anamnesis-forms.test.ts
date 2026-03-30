@@ -5,6 +5,7 @@ import {
   countTemplateSections,
   createDefaultTemplateSchema,
   getAssignableContainerFields,
+  hasScrollableOptionEditor,
   getVisibleTemplateFields,
   isAnamnesisTemplateSchema,
   normalizeOptions,
@@ -60,11 +61,12 @@ describe("anamnesis forms helpers", () => {
     expect(countTemplateQuestionFields(schema)).toBe(2);
   });
 
-  it("normalizes line-based options", () => {
-    expect(normalizeOptions("Uma\n\nDuas\n Três ")).toEqual([
+  it("normalizes semicolon and line-based options", () => {
+    expect(normalizeOptions("Uma; Duas\n\n Três ;Quatro")).toEqual([
       { id: "option_1", label: "Uma" },
       { id: "option_2", label: "Duas" },
       { id: "option_3", label: "Três" },
+      { id: "option_4", label: "Quatro" },
     ]);
   });
 
@@ -145,5 +147,12 @@ describe("anamnesis forms helpers", () => {
 
     expect(getAssignableContainerFields(schema, "section_3").map((field) => field.id)).toEqual(["section_1"]);
     expect(getAssignableContainerFields(schema, "field_1").map((field) => field.id)).toEqual(["section_1", "section_2", "section_3"]);
+  });
+
+  it("uses the scrollable matrix editor only for checklist and multiple choice options", () => {
+    expect(hasScrollableOptionEditor("checklist")).toBe(true);
+    expect(hasScrollableOptionEditor("multiple_choice")).toBe(true);
+    expect(hasScrollableOptionEditor("select")).toBe(false);
+    expect(hasScrollableOptionEditor("section_selector")).toBe(false);
   });
 });
