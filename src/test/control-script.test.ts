@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const repoRoot = path.resolve(__dirname, "../..");
@@ -65,6 +67,32 @@ describe("control.sh", () => {
 
     expect(errorMessage).toContain("SUPABASE_ACCESS_TOKEN");
     expect(errorMessage).toContain("senha do banco");
+  });
+
+  it("still validates credentials when HOME has no usable profile", () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "therapy-flow-home-"));
+    let errorMessage = "";
+
+    try {
+      execFileSync("sh", [controlScript, "--run", "supabase-online-deploy"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: tempHome,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      errorMessage = String((error as { stderr?: string }).stderr ?? error);
+    } finally {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+
+    expect(errorMessage).toContain("SUPABASE_ACCESS_TOKEN");
+    expect(errorMessage).toContain("senha do banco");
+    expect(errorMessage).not.toContain("parameter not set");
+    expect(errorMessage).not.toContain(".profile");
   });
 
   it("fails clearly when Cloudflare Pages deploy lacks required credentials", () => {

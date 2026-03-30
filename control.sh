@@ -12,8 +12,14 @@ FRONTEND_LOG_FILE="$STATE_DIR/frontend.log"
 
 ensure_profile() {
   # Load the user's shell profile before Node/npm/npx/Supabase commands.
+  profile_path="${HOME:-}/.profile"
+
+  if [ -z "${HOME:-}" ] || [ ! -f "$profile_path" ]; then
+    return 0
+  fi
+
   # shellcheck disable=SC1090
-  . "$HOME/.profile"
+  . "$profile_path" 2>/dev/null || true
 }
 
 compose_cmd() {
@@ -161,7 +167,7 @@ start_frontend_headless() {
     rm -f "$FRONTEND_PID_FILE"
   fi
 
-  nohup sh -lc '. "$HOME/.profile" && cd "'"$SCRIPT_DIR"'" && npm run dev -- --host 0.0.0.0 --port 8080' > "$FRONTEND_LOG_FILE" 2>&1 &
+  nohup sh -lc 'if [ -n "${HOME:-}" ] && [ -f "$HOME/.profile" ]; then . "$HOME/.profile" 2>/dev/null || true; fi; cd "'"$SCRIPT_DIR"'" && npm run dev -- --host 0.0.0.0 --port 8080' > "$FRONTEND_LOG_FILE" 2>&1 &
   frontend_pid=$!
   echo "$frontend_pid" > "$FRONTEND_PID_FILE"
   echo "Frontend iniciado em background. PID: $frontend_pid"
@@ -318,16 +324,14 @@ action_cloudflare_pages_deploy() {
 
   api_token="${CLOUDFLARE_API_TOKEN:-}"
   account_id="${CLOUDFLARE_ACCOUNT_ID:-}"
-  project_name="${CLOUDFLARE_PAGES_PROJECT_NAME:-$PROJECT_NAME}"
-  branch_name="${CLOUDFLARE_PAGES_BRANCH:-production}"
   supabase_url="$(read_env_value "VITE_SUPABASE_URL" ".env" || true)"
 
   if [ -z "$api_token" ] || [ -z "$account_id" ]; then
     if ! is_interactive_shell; then
-      echo "CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID sao obrigatorios para o deploy da Cloudflare Pages." >&2
+      echo "CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID sao obrigatorios para o deploy da Cloudflare." >&2
       exit 1
     fi
-    echo "Preparando deploy remoto do frontend na Cloudflare Pages..." >&2
+    echo "Preparando deploy remoto do frontend na Cloudflare..." >&2
     echo "Informe as credenciais abaixo para continuar." >&2
   fi
 
@@ -344,8 +348,7 @@ action_cloudflare_pages_deploy() {
     exit 1
   fi
 
-  echo "Projeto Pages: $project_name"
-  echo "Branch Pages: $branch_name"
+  echo "Worker/Assets: $PROJECT_NAME"
   if [ -n "$supabase_url" ]; then
     echo "Build local apontando para: $supabase_url"
   fi
@@ -353,12 +356,12 @@ action_cloudflare_pages_deploy() {
   echo "Rodando build local do frontend..."
   npm run build
 
-  echo "Publicando dist na Cloudflare Pages por Direct Upload..."
+  echo "Publicando dist na Cloudflare via Wrangler..."
   CLOUDFLARE_API_TOKEN="$api_token" \
   CLOUDFLARE_ACCOUNT_ID="$account_id" \
-  npx wrangler pages deploy dist --project-name "$project_name" --branch "$branch_name"
+  npx wrangler deploy
 
-  echo "Deploy do frontend concluido na Cloudflare Pages."
+  echo "Deploy do frontend concluido na Cloudflare."
 }
 
 action_account_create() {
@@ -529,7 +532,7 @@ list_actions() {
   cat <<'EOF'
 docker-start|Iniciar o Docker com Colima
 docker-clean|Parar e limpar Docker e docker-compose
-cloudflare-pages-deploy|Publicar o frontend na Cloudflare Pages
+cloudflare-pages-deploy|Publicar o frontend na Cloudflare
 supabase-start|Iniciar Supabase local
 supabase-restart|Reiniciar Supabase local
 supabase-stop|Parar Supabase local

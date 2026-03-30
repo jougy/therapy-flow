@@ -1,23 +1,23 @@
-# Deploy do Frontend na Cloudflare Pages
+# Deploy do Frontend na Cloudflare
 
 ## Estrategia escolhida
 
-O frontend sera publicado por `Direct Upload` na Cloudflare Pages.
+O frontend sera publicado na Cloudflare usando `Wrangler` com `Workers Static Assets`.
 
 Isso faz sentido para este projeto porque:
 
 - o app e um SPA em Vite;
 - o build ja e gerado localmente em `dist`;
 - o `.env` de producao fica local e ja contem a configuracao do Supabase remoto;
-- evita duplicar secrets na Cloudflare neste primeiro deploy.
+- fica alinhado com o build conectado ao GitHub, que esta usando `Workers Builds`.
 
 ## Configuracao atual
 
-- Pages project esperado: `therapy-flow`
+- worker/projeto esperado: `therapy-flow`
 - build local: `npm run build`
-- diretorio publicado: `dist`
+- diretorio publicado: `dist` via [wrangler.toml](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/wrangler.toml)
 - fallback SPA: [public/_redirects](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/public/_redirects)
-- configuracao do Wrangler: [wrangler.toml](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/wrangler.toml)
+- `not_found_handling = "single-page-application"` no `wrangler.toml`
 
 ## Credenciais necessarias
 
@@ -33,7 +33,7 @@ O build vai usar o `.env` local, entao o frontend sera compilado com:
 
 ## Fluxo recomendado
 
-1. Criar uma vez o projeto `therapy-flow` na Cloudflare Pages.
+1. Garantir que o worker/projeto `therapy-flow` exista na Cloudflare.
 2. Rodar o deploy pelo [control.sh](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/control.sh).
 
 Opcao interativa:
@@ -55,15 +55,6 @@ CLOUDFLARE_ACCOUNT_ID='...' \
 ## Observacoes
 
 - O script faz o build local antes do upload.
-- O deploy usa `npx wrangler pages deploy dist`.
-- Se o nome do projeto Pages nao for `therapy-flow`, voce pode sobrescrever com:
-
-```sh
-CLOUDFLARE_PAGES_PROJECT_NAME='outro-nome'
-```
-
-- Se quiser publicar em outra branch logica do Pages:
-
-```sh
-CLOUDFLARE_PAGES_BRANCH='preview'
-```
+- O deploy usa `npx wrangler deploy`.
+- O nome usado no deploy vem do [wrangler.toml](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/wrangler.toml).
+- Se o repositorio continuar conectado ao GitHub na Cloudflare, os builds de PR devem usar essa mesma configuracao.

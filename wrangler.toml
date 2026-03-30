@@ -1,3 +1,6 @@
 name = "therapy-flow"
 compatibility_date = "2026-03-30"
-pages_build_output_dir = "./dist"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"

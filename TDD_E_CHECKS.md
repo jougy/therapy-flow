@@ -83,6 +83,27 @@ Regra pratica:
 
 - sempre que uma pagina critica ganhar nova subpagina, novo card importante ou nova composicao de contexto, considerar obrigatorio adicionar ou atualizar um smoke test dessa pagina
 
+### 2.2 Smoke tests de configuracao de deploy
+
+Algumas quebras importantes nao aparecem na UI nem nos helpers, mas na configuracao de deploy.
+
+Exemplos prioritarios:
+
+- `wrangler.toml`
+- `_redirects`
+- scripts de controle usados em CI ou deploy
+
+Objetivo:
+
+- detectar incompatibilidade entre o tipo de deploy configurado na plataforma externa e o formato esperado no repositorio
+- garantir que scripts de deploy continuem funcionando em shells mais restritos, como o `sh` usado em CI
+- evitar PRs que passam no `build` local mas quebram no GitHub Actions ou na Cloudflare
+
+Regra pratica:
+
+- sempre que um fluxo de deploy, script operacional ou arquivo de configuracao externa for alterado, adicionar ou atualizar pelo menos um teste dedicado a essa configuracao
+- quando um script depende de perfil de shell, tratar esse carregamento como opcional e cobrir isso em teste
+
 ### 3. Validacoes de integracao com banco
 
 Usar para regras que dependem do Supabase, migrations, triggers, defaults, constraints e relacoes.
