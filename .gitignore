@@ -17,6 +17,7 @@ dist-ssr
 .control
 .local-tools
 account-admin-local.sh
+account-admin-prod.sh
 control.sh
 .vercel
 .wrangler

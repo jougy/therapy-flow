@@ -7,30 +7,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
-
-const formatCNPJ = (value: string) => {
-  const digits = value.replace(/\D/g, "").slice(0, 14);
-  return digits
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/\.(\d{3})(\d)/, ".$1/$2")
-    .replace(/(\d{4})(\d)/, "$1-$2");
-};
+import { formatOwnerDocument, getOwnerDocumentDigits, isOwnerDocumentValid } from "@/lib/owner-document";
 
 const Auth = () => {
-  const [cnpj, setCnpj] = useState("");
+  const [ownerDocument, setOwnerDocument] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const cnpjDigits = cnpj.replace(/\D/g, "");
-  const isCnpjValid = cnpjDigits.length === 14;
+  const ownerDocumentDigits = getOwnerDocumentDigits(ownerDocument);
+  const isOwnerDocumentAccepted = isOwnerDocumentValid(ownerDocument);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!isCnpjValid) {
-      toast({ title: "CNPJ inválido", description: "Informe um CNPJ com 14 dígitos.", variant: "destructive" });
+    if (!isOwnerDocumentAccepted) {
+      toast({
+        title: "Documento inválido",
+        description: "Informe um CPF com 11 dígitos ou um CNPJ com 14 dígitos.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -44,13 +40,17 @@ const Auth = () => {
     }
 
     const { data: valid } = await supabase.rpc("validate_user_clinic", {
-      _cnpj: cnpjDigits,
+      _cnpj: ownerDocumentDigits,
       _user_id: data.user.id,
     });
 
     if (!valid) {
       await supabase.auth.signOut();
-      toast({ title: "CNPJ incorreto", description: "Este CNPJ não corresponde à sua conta.", variant: "destructive" });
+      toast({
+        title: "Documento incorreto",
+        description: "Este CPF ou CNPJ não corresponde à sua conta.",
+        variant: "destructive",
+      });
     }
 
     setLoading(false);
@@ -87,14 +87,14 @@ const Auth = () => {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="cnpj">CNPJ da Clínica</Label>
+                <Label htmlFor="owner-document">CPF ou CNPJ do owner</Label>
                 <div className="relative">
                   <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="cnpj"
-                    value={cnpj}
-                    onChange={(e) => setCnpj(formatCNPJ(e.target.value))}
-                    placeholder="00.000.000/0000-00"
+                    id="owner-document"
+                    value={ownerDocument}
+                    onChange={(e) => setOwnerDocument(formatOwnerDocument(e.target.value))}
+                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
                     required
                     className="pl-9"
                     autoFocus
@@ -137,7 +137,7 @@ const Auth = () => {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading || !isCnpjValid}>
+              <Button type="submit" className="w-full" disabled={loading || !isOwnerDocumentAccepted}>
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
