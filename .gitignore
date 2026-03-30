@@ -18,6 +18,7 @@ dist-ssr
 .local-tools
 account-admin-local.sh
 .vercel
+.wrangler
 supabase/.temp
 supabase/.branches
 

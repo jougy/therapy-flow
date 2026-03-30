@@ -8,6 +8,7 @@ Este arquivo centraliza a documentacao principal do projeto e aponta para os doc
 
 - Visao resumida do produto: [README.md](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/README.md)
 - Ambiente local, deploy e operacao tecnica: [AMBIENTE_E_OPERACAO.md](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/AMBIENTE_E_OPERACAO.md)
+- Deploy do frontend na Cloudflare Pages: [CLOUDFLARE_PAGES_DEPLOY.md](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/CLOUDFLARE_PAGES_DEPLOY.md)
 
 ## Notas centrais do produto
 

@@ -85,19 +85,68 @@ open_url() {
 
 prompt_value() {
   label="$1"
-  printf "%s: " "$label"
+  printf "%s: " "$label" >&2
   IFS= read -r value
   printf '%s' "$value"
 }
 
 prompt_secret() {
   label="$1"
-  printf "%s: " "$label"
-  stty -echo
+  printf "%s: " "$label" >&2
+  stty -echo 2>/dev/null || true
   IFS= read -r value
-  stty echo
-  printf '\n'
+  stty echo 2>/dev/null || true
+  printf '\n' >&2
   printf '%s' "$value"
+}
+
+is_interactive_shell() {
+  [ -t 0 ]
+}
+
+read_env_value() {
+  key="$1"
+  file_path="${2:-.env}"
+
+  if [ ! -f "$file_path" ]; then
+    return 1
+  fi
+
+  line="$(grep "^${key}=" "$file_path" | tail -n 1 || true)"
+  if [ -z "$line" ]; then
+    return 1
+  fi
+
+  value="${line#*=}"
+  value="$(printf '%s' "$value" | sed 's/^"//; s/"$//')"
+  printf '%s' "$value"
+}
+
+set_supabase_project_ref() {
+  project_ref="$1"
+  config_file="supabase/config.toml"
+
+  if [ ! -f "$config_file" ]; then
+    echo "Arquivo $config_file nao encontrado." >&2
+    exit 1
+  fi
+
+  tmp_file="$(mktemp)"
+  awk -v new_ref="$project_ref" '
+    BEGIN { updated = 0 }
+    /^project_id = / {
+      print "project_id = \"" new_ref "\""
+      updated = 1
+      next
+    }
+    { print }
+    END {
+      if (updated == 0) {
+        print "project_id = \"" new_ref "\""
+      }
+    }
+  ' "$config_file" > "$tmp_file"
+  mv "$tmp_file" "$config_file"
 }
 
 start_frontend_headless() {
@@ -211,6 +260,105 @@ action_db_update() {
 
 action_db_reset() {
   run_node_cmd npm run supabase:reset
+}
+
+action_supabase_online_deploy() {
+  ensure_profile
+
+  access_token="${SUPABASE_ACCESS_TOKEN:-}"
+  db_password="${SUPABASE_DB_PASSWORD:-}"
+  project_ref="${SUPABASE_PROJECT_REF:-}"
+
+  if [ -z "$project_ref" ]; then
+    project_ref="$(read_env_value "VITE_SUPABASE_PROJECT_ID" ".env" || true)"
+  fi
+
+  if [ -z "$project_ref" ]; then
+    echo "Nao foi possivel determinar o project ref remoto. Defina SUPABASE_PROJECT_REF ou ajuste o .env." >&2
+    exit 1
+  fi
+
+  if [ -z "$access_token" ] || [ -z "$db_password" ]; then
+    if ! is_interactive_shell; then
+      echo "SUPABASE_ACCESS_TOKEN e a senha do banco remoto sao obrigatorios para o deploy online do Supabase." >&2
+      exit 1
+    fi
+    echo "Preparando deploy remoto do Supabase..." >&2
+    echo "Informe as credenciais abaixo para continuar." >&2
+  fi
+
+  if [ -z "$access_token" ]; then
+    access_token="$(prompt_secret "SUPABASE_ACCESS_TOKEN")"
+  fi
+
+  if [ -z "$db_password" ]; then
+    db_password="$(prompt_secret "Senha do banco remoto do Supabase")"
+  fi
+
+  if [ -z "$access_token" ] || [ -z "$db_password" ]; then
+    echo "SUPABASE_ACCESS_TOKEN e senha do banco remoto sao obrigatorios." >&2
+    exit 1
+  fi
+
+  echo "Projeto remoto: $project_ref"
+  echo "Atualizando supabase/config.toml..."
+  set_supabase_project_ref "$project_ref"
+
+  echo "Linkando projeto remoto... isso pode levar alguns segundos."
+  SUPABASE_ACCESS_TOKEN="$access_token" npx supabase link --project-ref "$project_ref" --password "$db_password"
+
+  echo "Aplicando migrations no Supabase remoto... aguarde ate o comando terminar."
+  SUPABASE_ACCESS_TOKEN="$access_token" npx supabase db push --linked --password "$db_password"
+
+  echo "Deploy do Supabase remoto concluido para $project_ref."
+}
+
+action_cloudflare_pages_deploy() {
+  ensure_profile
+
+  api_token="${CLOUDFLARE_API_TOKEN:-}"
+  account_id="${CLOUDFLARE_ACCOUNT_ID:-}"
+  project_name="${CLOUDFLARE_PAGES_PROJECT_NAME:-$PROJECT_NAME}"
+  branch_name="${CLOUDFLARE_PAGES_BRANCH:-production}"
+  supabase_url="$(read_env_value "VITE_SUPABASE_URL" ".env" || true)"
+
+  if [ -z "$api_token" ] || [ -z "$account_id" ]; then
+    if ! is_interactive_shell; then
+      echo "CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID sao obrigatorios para o deploy da Cloudflare Pages." >&2
+      exit 1
+    fi
+    echo "Preparando deploy remoto do frontend na Cloudflare Pages..." >&2
+    echo "Informe as credenciais abaixo para continuar." >&2
+  fi
+
+  if [ -z "$api_token" ]; then
+    api_token="$(prompt_secret "CLOUDFLARE_API_TOKEN")"
+  fi
+
+  if [ -z "$account_id" ]; then
+    account_id="$(prompt_value "CLOUDFLARE_ACCOUNT_ID")"
+  fi
+
+  if [ -z "$api_token" ] || [ -z "$account_id" ]; then
+    echo "CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID sao obrigatorios." >&2
+    exit 1
+  fi
+
+  echo "Projeto Pages: $project_name"
+  echo "Branch Pages: $branch_name"
+  if [ -n "$supabase_url" ]; then
+    echo "Build local apontando para: $supabase_url"
+  fi
+
+  echo "Rodando build local do frontend..."
+  npm run build
+
+  echo "Publicando dist na Cloudflare Pages por Direct Upload..."
+  CLOUDFLARE_API_TOKEN="$api_token" \
+  CLOUDFLARE_ACCOUNT_ID="$account_id" \
+  npx wrangler pages deploy dist --project-name "$project_name" --branch "$branch_name"
+
+  echo "Deploy do frontend concluido na Cloudflare Pages."
 }
 
 action_account_create() {
@@ -381,11 +529,13 @@ list_actions() {
   cat <<'EOF'
 docker-start|Iniciar o Docker com Colima
 docker-clean|Parar e limpar Docker e docker-compose
+cloudflare-pages-deploy|Publicar o frontend na Cloudflare Pages
 supabase-start|Iniciar Supabase local
 supabase-restart|Reiniciar Supabase local
 supabase-stop|Parar Supabase local
 supabase-install|Instalar Supabase CLI localmente
 supabase-reinit|Resetar Supabase local do zero
+supabase-online-deploy|Linkar projeto remoto e aplicar migrations online
 db-update|Atualizar banco de dados local
 db-reset|Resetar banco de dados local
 account-create|Criar nova conta local
@@ -410,11 +560,13 @@ run_action() {
   case "$action" in
     docker-start) action_docker_start ;;
     docker-clean) action_docker_clean ;;
+    cloudflare-pages-deploy) action_cloudflare_pages_deploy ;;
     supabase-start) action_supabase_start ;;
     supabase-restart) action_supabase_restart ;;
     supabase-stop) action_supabase_stop ;;
     supabase-install) action_supabase_install ;;
     supabase-reinit) action_supabase_reinit ;;
+    supabase-online-deploy) action_supabase_online_deploy ;;
     db-update) action_db_update ;;
     db-reset) action_db_reset ;;
     account-create) action_account_create ;;
@@ -452,24 +604,25 @@ Supabase
 5)  supabase-stop    Parar Supabase local
 6)  supabase-install Instalar Supabase local
 7)  supabase-reinit  Resetar Supabase local do zero
-8)  db-update        Atualizar banco de dados
-9)  db-reset         Resetar banco de dados
-10) account-create   Criar nova conta
-11) account-list     Listar contas existentes
+8)  supabase-online-deploy Linkar projeto remoto e aplicar migrations online
+9)  db-update        Atualizar banco de dados
+10) db-reset         Resetar banco de dados
+11) account-create   Criar nova conta
+12) account-list     Listar contas existentes
 
 Frontend
-12) frontend-install Instalar dependencias
-13) frontend-start   Iniciar frontend headless
-14) frontend-restart Reiniciar frontend
-15) frontend-stop    Parar frontend
-16) frontend-logs    Logs do frontend
+13) frontend-install Instalar dependencias
+14) frontend-start   Iniciar frontend headless
+15) frontend-restart Reiniciar frontend
+16) frontend-stop    Parar frontend
+17) frontend-logs    Logs do frontend
 
 Geral
-17) install-all      Instalar todas as dependencias
-18) update-packages  Verificar e atualizar pacotes/dependencias
-19) start-all        Iniciar tudo
-20) stop-all         Parar tudo
-21) tdd-check        Verificacoes de testes TDD
+18) install-all      Instalar todas as dependencias
+19) update-packages  Verificar e atualizar pacotes/dependencias
+20) start-all        Iniciar tudo
+21) stop-all         Parar tudo
+22) tdd-check        Verificacoes de testes TDD
 0)  quit             Sair
 EOF
 }
@@ -483,20 +636,21 @@ resolve_menu_choice() {
     5) echo "supabase-stop" ;;
     6) echo "supabase-install" ;;
     7) echo "supabase-reinit" ;;
-    8) echo "db-update" ;;
-    9) echo "db-reset" ;;
-    10) echo "account-create" ;;
-    11) echo "account-list" ;;
-    12) echo "frontend-install" ;;
-    13) echo "frontend-start" ;;
-    14) echo "frontend-restart" ;;
-    15) echo "frontend-stop" ;;
-    16) echo "frontend-logs" ;;
-    17) echo "install-all" ;;
-    18) echo "update-packages" ;;
-    19) echo "start-all" ;;
-    20) echo "stop-all" ;;
-    21) echo "tdd-check" ;;
+    8) echo "supabase-online-deploy" ;;
+    9) echo "db-update" ;;
+    10) echo "db-reset" ;;
+    11) echo "account-create" ;;
+    12) echo "account-list" ;;
+    13) echo "frontend-install" ;;
+    14) echo "frontend-start" ;;
+    15) echo "frontend-restart" ;;
+    16) echo "frontend-stop" ;;
+    17) echo "frontend-logs" ;;
+    18) echo "install-all" ;;
+    19) echo "update-packages" ;;
+    20) echo "start-all" ;;
+    21) echo "stop-all" ;;
+    22) echo "tdd-check" ;;
     0) echo "quit" ;;
     *) echo "" ;;
   esac

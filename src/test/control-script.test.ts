@@ -13,7 +13,9 @@ describe("control.sh", () => {
     });
 
     expect(output).toContain("docker-start");
+    expect(output).toContain("cloudflare-pages-deploy");
     expect(output).toContain("supabase-start");
+    expect(output).toContain("supabase-online-deploy");
     expect(output).toContain("account-create");
     expect(output).toContain("start-all");
   });
@@ -42,5 +44,47 @@ describe("control.sh", () => {
     }
 
     expect(errorMessage).toContain("Acao desconhecida");
+  });
+
+  it("fails clearly when online Supabase deploy lacks required credentials", () => {
+    let errorMessage = "";
+
+    try {
+      execFileSync("sh", [controlScript, "--run", "supabase-online-deploy"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: process.env.HOME ?? "",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      errorMessage = String((error as { stderr?: string }).stderr ?? error);
+    }
+
+    expect(errorMessage).toContain("SUPABASE_ACCESS_TOKEN");
+    expect(errorMessage).toContain("senha do banco");
+  });
+
+  it("fails clearly when Cloudflare Pages deploy lacks required credentials", () => {
+    let errorMessage = "";
+
+    try {
+      execFileSync("sh", [controlScript, "--run", "cloudflare-pages-deploy"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: process.env.HOME ?? "",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      errorMessage = String((error as { stderr?: string }).stderr ?? error);
+    }
+
+    expect(errorMessage).toContain("CLOUDFLARE_API_TOKEN");
+    expect(errorMessage).toContain("CLOUDFLARE_ACCOUNT_ID");
   });
 });
