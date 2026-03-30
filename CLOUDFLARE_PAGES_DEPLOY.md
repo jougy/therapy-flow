@@ -16,8 +16,7 @@ Isso faz sentido para este projeto porque:
 - worker/projeto esperado: `therapy-flow`
 - build local: `npm run build`
 - diretorio publicado: `dist` via [wrangler.toml](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/wrangler.toml)
-- fallback SPA: [public/_redirects](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/public/_redirects)
-- `not_found_handling = "single-page-application"` no `wrangler.toml`
+- fallback SPA: `not_found_handling = "single-page-application"` no [wrangler.toml](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/wrangler.toml)
 
 ## Credenciais necessarias
 
@@ -57,4 +56,5 @@ CLOUDFLARE_ACCOUNT_ID='...' \
 - O script faz o build local antes do upload.
 - O deploy usa `npx wrangler deploy`.
 - O nome usado no deploy vem do [wrangler.toml](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/wrangler.toml).
+- Nao deve existir `public/_redirects` com regra catch-all quando o deploy estiver em `Workers Static Assets`, porque isso causa loop de fallback na Cloudflare.
 - Se o repositorio continuar conectado ao GitHub na Cloudflare, os builds de PR devem usar essa mesma configuracao.

@@ -11,11 +11,11 @@ describe("deploy config", () => {
     expect(wranglerToml).toContain("name = \"therapy-flow\"");
     expect(wranglerToml).toContain("[assets]");
     expect(wranglerToml).toContain("directory = \"./dist\"");
+    expect(wranglerToml).toContain("not_found_handling = \"single-page-application\"");
     expect(wranglerToml).not.toContain("pages_build_output_dir");
   });
 
-  it("ships an SPA fallback redirect for BrowserRouter", () => {
-    const redirects = fs.readFileSync(path.join(repoRoot, "public/_redirects"), "utf8");
-    expect(redirects).toContain("/* /index.html 200");
+  it("does not ship a catch-all _redirects file when Workers handles SPA fallback", () => {
+    expect(fs.existsSync(path.join(repoRoot, "public/_redirects"))).toBe(false);
   });
 });
