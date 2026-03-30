@@ -17,6 +17,7 @@ dist-ssr
 .control
 .local-tools
 account-admin-local.sh
+control.sh
 .vercel
 .wrangler
 supabase/.temp

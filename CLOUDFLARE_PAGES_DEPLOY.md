@@ -33,22 +33,23 @@ O build vai usar o `.env` local, entao o frontend sera compilado com:
 ## Fluxo recomendado
 
 1. Garantir que o worker/projeto `therapy-flow` exista na Cloudflare.
-2. Rodar o deploy pelo [control.sh](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/control.sh).
+2. Rodar o deploy pelo seu script local privado de operacao, que nao fica versionado no repositorio.
 
 Opcao interativa:
 
-```sh
-./control.sh
-```
+O fluxo local deve:
 
-Depois escolha `cloudflare-pages-deploy`.
+```sh
+npm run build
+npx wrangler deploy
+```
 
 Opcao direta:
 
 ```sh
 CLOUDFLARE_API_TOKEN='...' \
 CLOUDFLARE_ACCOUNT_ID='...' \
-./control.sh --run cloudflare-pages-deploy
+npx wrangler deploy
 ```
 
 ## Observacoes
