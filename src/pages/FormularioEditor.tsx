@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { OptionListEditor } from "@/components/anamnesis/OptionListEditor";
 import { OptionMatrixEditor } from "@/components/anamnesis/OptionMatrixEditor";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -24,6 +25,7 @@ import {
   getAssignableContainerFields,
   getSectionSelectorOptions,
   hasScrollableOptionEditor,
+  hasVerticalOptionEditor,
   isContainerField,
   isAnamnesisTemplateSchema,
   normalizeOptions,
@@ -519,6 +521,11 @@ const FormularioEditor = () => {
                             <Label>Opções</Label>
                             {hasScrollableOptionEditor(field.type) ? (
                               <OptionMatrixEditor
+                                options={field.options}
+                                onChange={(options) => updateField(field.id, { options })}
+                              />
+                            ) : hasVerticalOptionEditor(field.type) ? (
+                              <OptionListEditor
                                 options={field.options}
                                 onChange={(options) => updateField(field.id, { options })}
                               />
