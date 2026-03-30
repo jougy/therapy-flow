@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,16 +7,12 @@ import path from "node:path";
 const repoRoot = path.resolve(__dirname, "../..");
 const controlScript = path.join(repoRoot, "control.sh");
 
-function getExecErrorOutput(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return String(error ?? "");
-  }
-
-  const execError = error as { stderr?: unknown; stdout?: unknown; message?: unknown };
-  return [execError.stderr, execError.stdout, execError.message]
-    .filter((part) => part != null)
-    .map((part) => String(part))
-    .join("\n");
+function runControl(args: string[], env?: NodeJS.ProcessEnv) {
+  return spawnSync("sh", [controlScript, ...args], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env,
+  });
 }
 
 describe("control.sh", () => {
@@ -45,62 +41,40 @@ describe("control.sh", () => {
   });
 
   it("fails with a clear error for an unknown action", () => {
-    let errorMessage = "";
+    const result = runControl(["--run", "missing-action"], process.env);
+    const errorMessage = `${result.stderr ?? ""}\n${result.stdout ?? ""}\n${result.error?.message ?? ""}`;
 
-    try {
-      execFileSync("sh", [controlScript, "--run", "missing-action"], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch (error) {
-      errorMessage = getExecErrorOutput(error);
-    }
-
+    expect(result.status).not.toBe(0);
     expect(errorMessage).toContain("Acao desconhecida");
   });
 
   it("fails clearly when online Supabase deploy lacks required credentials", () => {
-    let errorMessage = "";
+    const result = runControl(["--run", "supabase-online-deploy"], {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+    });
+    const errorMessage = `${result.stderr ?? ""}\n${result.stdout ?? ""}\n${result.error?.message ?? ""}`;
 
-    try {
-      execFileSync("sh", [controlScript, "--run", "supabase-online-deploy"], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        env: {
-          PATH: process.env.PATH ?? "",
-          HOME: process.env.HOME ?? "",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch (error) {
-      errorMessage = getExecErrorOutput(error);
-    }
-
+    expect(result.status).not.toBe(0);
     expect(errorMessage).toContain("SUPABASE_ACCESS_TOKEN");
     expect(errorMessage).toContain("senha do banco");
   });
 
   it("still validates credentials when HOME has no usable profile", () => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "therapy-flow-home-"));
-    let errorMessage = "";
+    let result;
 
     try {
-      execFileSync("sh", [controlScript, "--run", "supabase-online-deploy"], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        env: {
-          PATH: process.env.PATH ?? "",
-          HOME: tempHome,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
+      result = runControl(["--run", "supabase-online-deploy"], {
+        PATH: process.env.PATH ?? "",
+        HOME: tempHome,
       });
-    } catch (error) {
-      errorMessage = getExecErrorOutput(error);
     } finally {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
+    const errorMessage = `${result?.stderr ?? ""}\n${result?.stdout ?? ""}\n${result?.error?.message ?? ""}`;
 
+    expect(result?.status).not.toBe(0);
     expect(errorMessage).toContain("SUPABASE_ACCESS_TOKEN");
     expect(errorMessage).toContain("senha do banco");
     expect(errorMessage).not.toContain("parameter not set");
@@ -108,22 +82,13 @@ describe("control.sh", () => {
   });
 
   it("fails clearly when Cloudflare Pages deploy lacks required credentials", () => {
-    let errorMessage = "";
+    const result = runControl(["--run", "cloudflare-pages-deploy"], {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+    });
+    const errorMessage = `${result.stderr ?? ""}\n${result.stdout ?? ""}\n${result.error?.message ?? ""}`;
 
-    try {
-      execFileSync("sh", [controlScript, "--run", "cloudflare-pages-deploy"], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        env: {
-          PATH: process.env.PATH ?? "",
-          HOME: process.env.HOME ?? "",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch (error) {
-      errorMessage = getExecErrorOutput(error);
-    }
-
+    expect(result.status).not.toBe(0);
     expect(errorMessage).toContain("CLOUDFLARE_API_TOKEN");
     expect(errorMessage).toContain("CLOUDFLARE_ACCOUNT_ID");
   });
