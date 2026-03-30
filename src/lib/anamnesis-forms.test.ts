@@ -2,18 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   addOptionMatrixRow,
   addOptionToMatrixRow,
+  addOptionToVerticalList,
   buildTemplateLayout,
   countTemplateQuestionFields,
   countTemplateSections,
   createDefaultTemplateSchema,
   getOptionMatrixRows,
+  getVerticalOptionList,
   getAssignableContainerFields,
   hasScrollableOptionEditor,
+  hasVerticalOptionEditor,
   getVisibleTemplateFields,
   isAnamnesisTemplateSchema,
   normalizeOptions,
   removeOptionFromMatrix,
+  removeOptionFromVerticalList,
   updateOptionMatrixLabel,
+  updateVerticalOptionLabel,
   type AnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
 
@@ -161,6 +166,13 @@ describe("anamnesis forms helpers", () => {
     expect(hasScrollableOptionEditor("section_selector")).toBe(false);
   });
 
+  it("uses the vertical option editor only for droplists", () => {
+    expect(hasVerticalOptionEditor("select")).toBe(true);
+    expect(hasVerticalOptionEditor("checklist")).toBe(false);
+    expect(hasVerticalOptionEditor("multiple_choice")).toBe(false);
+    expect(hasVerticalOptionEditor("section_selector")).toBe(false);
+  });
+
   it("builds and updates option matrices by row", () => {
     const parsed = normalizeOptions("Dor; Rigidez\nFormigamento");
 
@@ -189,6 +201,22 @@ describe("anamnesis forms helpers", () => {
 
   it("keeps at least one matrix option when removing items", () => {
     expect(removeOptionFromMatrix([{ id: "option_1", label: "Dor", row: 0 }], "option_1")).toEqual([
+      { id: "option_1", label: "Opção 1", row: 0 },
+    ]);
+  });
+
+  it("builds and updates a vertical option list", () => {
+    const base = getVerticalOptionList([{ id: "option_1", label: "Manhã" }]);
+    const extended = addOptionToVerticalList(base);
+    const relabeled = updateVerticalOptionLabel(extended, extended[1]!.id, "Noite");
+
+    expect(base).toEqual([{ id: "option_1", label: "Manhã", row: 0 }]);
+    expect(relabeled).toHaveLength(2);
+    expect(relabeled[1]?.label).toBe("Noite");
+  });
+
+  it("keeps at least one vertical option when removing items", () => {
+    expect(removeOptionFromVerticalList([{ id: "option_1", label: "Única", row: 0 }], "option_1")).toEqual([
       { id: "option_1", label: "Opção 1", row: 0 },
     ]);
   });

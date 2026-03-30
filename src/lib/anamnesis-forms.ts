@@ -107,6 +107,7 @@ export const isContainerFieldType = (type: AnamnesisFieldType) => type === "sect
 export const isContainerField = (field: AnamnesisField) => isContainerFieldType(field.type);
 export const hasScrollableOptionEditor = (type: AnamnesisFieldType) =>
   type === "checklist" || type === "multiple_choice";
+export const hasVerticalOptionEditor = (type: AnamnesisFieldType) => type === "select";
 
 export const createFieldOption = (label: string, index: number, row = 0): AnamnesisFieldOption => ({
   id: `option_${index + 1}`,
@@ -205,6 +206,15 @@ export const getOptionMatrixRows = (options: AnamnesisFieldOption[] = []) => {
 
 const createMatrixOptionId = () => `option_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+export const getVerticalOptionList = (options: AnamnesisFieldOption[] = []) => {
+  const source = options.length > 0 ? [...options] : [createFieldOption("Opção 1", 0, 0)];
+
+  return source.map((option, index) => ({
+    ...option,
+    row: index,
+  }));
+};
+
 export const addOptionToMatrixRow = (options: AnamnesisFieldOption[] = [], rowIndex: number) => {
   const next = options.length > 0 ? [...options] : [createFieldOption("Opção 1", 0, 0)];
 
@@ -236,6 +246,26 @@ export const updateOptionMatrixLabel = (options: AnamnesisFieldOption[], optionI
 export const removeOptionFromMatrix = (options: AnamnesisFieldOption[], optionId: string) => {
   const next = options.filter((option) => option.id !== optionId);
   return next.length > 0 ? next : [createFieldOption("Opção 1", 0, 0)];
+};
+
+export const addOptionToVerticalList = (options: AnamnesisFieldOption[] = []) => {
+  const source = getVerticalOptionList(options);
+
+  source.push({
+    id: createMatrixOptionId(),
+    label: "",
+    row: source.length,
+  });
+
+  return source;
+};
+
+export const updateVerticalOptionLabel = (options: AnamnesisFieldOption[], optionId: string, label: string) =>
+  getVerticalOptionList(options).map((option) => (option.id === optionId ? { ...option, label } : option));
+
+export const removeOptionFromVerticalList = (options: AnamnesisFieldOption[], optionId: string) => {
+  const next = getVerticalOptionList(options).filter((option) => option.id !== optionId);
+  return next.length > 0 ? getVerticalOptionList(next) : [createFieldOption("Opção 1", 0, 0)];
 };
 
 export const getSectionSelectorOptions = (fields: AnamnesisTemplateSchema) =>
