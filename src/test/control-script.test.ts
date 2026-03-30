@@ -7,6 +7,18 @@ import path from "node:path";
 const repoRoot = path.resolve(__dirname, "../..");
 const controlScript = path.join(repoRoot, "control.sh");
 
+function getExecErrorOutput(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return String(error ?? "");
+  }
+
+  const execError = error as { stderr?: unknown; stdout?: unknown; message?: unknown };
+  return [execError.stderr, execError.stdout, execError.message]
+    .filter((part) => part != null)
+    .map((part) => String(part))
+    .join("\n");
+}
+
 describe("control.sh", () => {
   it("lists available actions", () => {
     const output = execFileSync("sh", [controlScript, "--list"], {
@@ -42,7 +54,7 @@ describe("control.sh", () => {
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (error) {
-      errorMessage = String((error as { stderr?: string }).stderr ?? error);
+      errorMessage = getExecErrorOutput(error);
     }
 
     expect(errorMessage).toContain("Acao desconhecida");
@@ -62,7 +74,7 @@ describe("control.sh", () => {
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (error) {
-      errorMessage = String((error as { stderr?: string }).stderr ?? error);
+      errorMessage = getExecErrorOutput(error);
     }
 
     expect(errorMessage).toContain("SUPABASE_ACCESS_TOKEN");
@@ -84,7 +96,7 @@ describe("control.sh", () => {
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (error) {
-      errorMessage = String((error as { stderr?: string }).stderr ?? error);
+      errorMessage = getExecErrorOutput(error);
     } finally {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
@@ -109,7 +121,7 @@ describe("control.sh", () => {
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (error) {
-      errorMessage = String((error as { stderr?: string }).stderr ?? error);
+      errorMessage = getExecErrorOutput(error);
     }
 
     expect(errorMessage).toContain("CLOUDFLARE_API_TOKEN");
