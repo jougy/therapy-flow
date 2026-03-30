@@ -492,7 +492,7 @@ const SessaoDetalhe = () => {
   const buildCurrentDocumentData = () => ({
     anamnesisIndicators: previewIndicators,
     anamnesisSummary: sessionSummary,
-    appName: "TherapyFlow",
+    appName: "Pronto Health - Fisio",
     clinic: {
       address: formatAddressLine(clinicDocumentInfo?.address),
       businessHours: readBusinessHours(clinicDocumentInfo?.business_hours).summary,
@@ -500,7 +500,7 @@ const SessaoDetalhe = () => {
       email: clinicDocumentInfo?.email ?? null,
       legalName: clinicDocumentInfo?.legal_name ?? null,
       logoUrl: clinicDocumentInfo?.logo_url ?? null,
-      name: clinicDocumentInfo?.name ?? "TherapyFlow",
+      name: clinicDocumentInfo?.name ?? "Pronto Health - Fisio",
       phone: clinicDocumentInfo?.phone ?? null,
     },
     generatedAt: new Date().toLocaleString("pt-BR"),

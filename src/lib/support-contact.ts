@@ -21,7 +21,7 @@ const SUPPORT_CATEGORY_LABELS: Record<SupportCategory, string> = {
 export const sanitizeSupportPhone = (phone: string) => phone.replace(/\D/g, "");
 
 const buildSupportSubject = (draft: SupportContactDraft) =>
-  `[TherapyFlow] ${SUPPORT_CATEGORY_LABELS[draft.category]} - ${draft.subject.trim() || "Contato de suporte"}`;
+  `[Pronto Health - Fisio] ${SUPPORT_CATEGORY_LABELS[draft.category]} - ${draft.subject.trim() || "Contato de suporte"}`;
 
 const buildSupportContext = (draft: SupportContactDraft) => {
   if (!draft.includeContext) {

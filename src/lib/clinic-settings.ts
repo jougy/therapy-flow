@@ -17,4 +17,4 @@ export const buildBusinessHours = (value: ClinicBusinessHours) => ({
 });
 
 export const getClinicBrandName = (value: unknown) =>
-  typeof value === "string" && value.trim() ? value.trim() : "TherapyFlow";
+  typeof value === "string" && value.trim() ? value.trim() : "Pronto Health - Fisio";

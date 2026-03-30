@@ -1,6 +1,6 @@
-# TherapyFlow
+# Pronto Health - Fisio
 
-TherapyFlow e uma plataforma para organizacao clinica, prontuario e acompanhamento de pacientes, pensada para operacao simples no dia a dia e evolucao gradual com base em feedback real de uso.
+Pronto Health - Fisio e uma plataforma para organizacao clinica, prontuario e acompanhamento de pacientes, pensada para operacao simples no dia a dia e evolucao gradual com base em feedback real de uso.
 
 ## Ideia do projeto
 

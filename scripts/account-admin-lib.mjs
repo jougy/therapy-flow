@@ -2,6 +2,7 @@ import { createHash, createPrivateKey, createPublicKey, sign, verify } from "nod
 
 export const sanitizeDigits = (value = "") => String(value).replace(/\D/g, "");
 export const ADMIN_ACCOUNT_STATUSES = ["active", "payment_pending", "temporarily_paused", "banned"];
+export const OWNER_DOCUMENT_LENGTHS = [11, 14];
 
 export const normalizeText = (value = "") =>
   String(value)
@@ -13,6 +14,18 @@ export const normalizeText = (value = "") =>
 export const normalizeAdminAccountStatus = (value) => {
   const normalized = normalizeText(value);
   return ADMIN_ACCOUNT_STATUSES.includes(normalized) ? normalized : null;
+};
+
+export const isOwnerClinicDocumentDigits = (value = "") => OWNER_DOCUMENT_LENGTHS.includes(sanitizeDigits(value).length);
+
+export const normalizeOwnerClinicDocumentOrThrow = (value) => {
+  const digits = sanitizeDigits(value);
+
+  if (!OWNER_DOCUMENT_LENGTHS.includes(digits.length)) {
+    throw new Error("Documento deve ter 11 dígitos (CPF) ou 14 dígitos (CNPJ).");
+  }
+
+  return digits;
 };
 
 export const deriveAdminAccountStatus = (account) => {

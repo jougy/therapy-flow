@@ -13,7 +13,7 @@ Isso faz sentido para este projeto porque:
 
 ## Configuracao atual
 
-- worker/projeto esperado: `therapy-flow`
+- worker/projeto esperado: `pronto-health-fisio`
 - build local: `npm run build`
 - diretorio publicado: `dist` via [wrangler.toml](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/wrangler.toml)
 - fallback SPA: `not_found_handling = "single-page-application"` no [wrangler.toml](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/wrangler.toml)
@@ -32,7 +32,7 @@ O build vai usar o `.env` local, entao o frontend sera compilado com:
 
 ## Fluxo recomendado
 
-1. Garantir que o worker/projeto `therapy-flow` exista na Cloudflare.
+1. Garantir que o worker/projeto `pronto-health-fisio` exista na Cloudflare.
 2. Rodar o deploy pelo seu script local privado de operacao, que nao fica versionado no repositorio.
 
 Opcao interativa:

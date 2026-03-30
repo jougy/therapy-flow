@@ -62,6 +62,7 @@ describe("Auth", () => {
       </MemoryRouter>
     );
 
+    expect(screen.getByText("Pronto Health - Fisio")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument();
     expect(screen.getByText(/acesso restrito/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/cpf ou cnpj/i)).toBeInTheDocument();

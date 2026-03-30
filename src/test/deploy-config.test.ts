@@ -8,7 +8,7 @@ describe("deploy config", () => {
   it("uses Workers static assets config for Cloudflare builds", () => {
     const wranglerToml = fs.readFileSync(path.join(repoRoot, "wrangler.toml"), "utf8");
 
-    expect(wranglerToml).toContain("name = \"therapy-flow\"");
+    expect(wranglerToml).toContain("name = \"pronto-health-fisio\"");
     expect(wranglerToml).toContain("[assets]");
     expect(wranglerToml).toContain("directory = \"./dist\"");
     expect(wranglerToml).toContain("not_found_handling = \"single-page-application\"");
