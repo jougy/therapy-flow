@@ -4,6 +4,7 @@ import {
   countTemplateQuestionFields,
   countTemplateSections,
   createDefaultTemplateSchema,
+  getAssignableContainerFields,
   getVisibleTemplateFields,
   isAnamnesisTemplateSchema,
   normalizeOptions,
@@ -50,11 +51,12 @@ describe("anamnesis forms helpers", () => {
   it("counts question fields and sections separately", () => {
     const schema: AnamnesisTemplateSchema = [
       { id: "section_1", label: "Contexto", type: "section" },
+      { id: "section_2", label: "Linha do tempo", type: "horizontal_section" },
       { id: "field_1", label: "Queixa", type: "long_text" },
       { id: "field_2", label: "Dor", type: "slider" },
     ];
 
-    expect(countTemplateSections(schema)).toBe(1);
+    expect(countTemplateSections(schema)).toBe(2);
     expect(countTemplateQuestionFields(schema)).toBe(2);
   });
 
@@ -85,7 +87,12 @@ describe("anamnesis forms helpers", () => {
     expect(buildTemplateLayout(schema)).toEqual([
       {
         field: schema[0],
-        items: [schema[1]],
+        items: [
+          {
+            field: schema[1],
+            type: "field",
+          },
+        ],
         type: "section",
       },
       {
@@ -93,5 +100,50 @@ describe("anamnesis forms helpers", () => {
         type: "field",
       },
     ]);
+  });
+
+  it("builds nested sections and horizontal sections recursively", () => {
+    const schema: AnamnesisTemplateSchema = [
+      { id: "section_1", label: "Contexto", type: "section" },
+      { id: "section_2", groupKey: "section_1", label: "Histórico", type: "section" },
+      { id: "field_1", groupKey: "section_2", label: "Queixa", type: "long_text" },
+      { id: "section_3", groupKey: "section_1", label: "Linha do tempo", type: "horizontal_section" },
+      { id: "field_2", groupKey: "section_3", label: "Início", type: "short_text" },
+      { id: "field_3", groupKey: "section_3", label: "Piora", type: "short_text" },
+    ];
+
+    expect(buildTemplateLayout(schema)).toEqual([
+      {
+        field: schema[0],
+        items: [
+          {
+            field: schema[1],
+            items: [{ field: schema[2], type: "field" }],
+            type: "section",
+          },
+          {
+            field: schema[3],
+            items: [
+              { field: schema[4], type: "field" },
+              { field: schema[5], type: "field" },
+            ],
+            type: "horizontal_section",
+          },
+        ],
+        type: "section",
+      },
+    ]);
+  });
+
+  it("does not allow nesting sections inside horizontal sections", () => {
+    const schema: AnamnesisTemplateSchema = [
+      { id: "section_1", label: "Contexto", type: "section" },
+      { id: "section_2", label: "Linha do tempo", type: "horizontal_section" },
+      { id: "section_3", label: "Subseção", type: "section" },
+      { id: "field_1", label: "Sintoma", type: "short_text" },
+    ];
+
+    expect(getAssignableContainerFields(schema, "section_3").map((field) => field.id)).toEqual(["section_1"]);
+    expect(getAssignableContainerFields(schema, "field_1").map((field) => field.id)).toEqual(["section_1", "section_2", "section_3"]);
   });
 });

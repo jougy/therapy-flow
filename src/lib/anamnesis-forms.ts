@@ -7,6 +7,7 @@ export type AnamnesisFieldType =
   | "select"
   | "slider"
   | "section"
+  | "horizontal_section"
   | "section_selector";
 
 export interface AnamnesisFieldOption {
@@ -97,8 +98,12 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
   { type: "select", label: "Droplist" },
   { type: "slider", label: "Slidebar" },
   { type: "section", label: "Seção" },
+  { type: "horizontal_section", label: "Seção horizontal" },
   { type: "section_selector", label: "Seletor de seções" },
 ];
+
+export const isContainerFieldType = (type: AnamnesisFieldType) => type === "section" || type === "horizontal_section";
+export const isContainerField = (field: AnamnesisField) => isContainerFieldType(field.type);
 
 export const createFieldOption = (label: string, index: number): AnamnesisFieldOption => ({
   id: `option_${index + 1}`,
@@ -144,11 +149,11 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
     };
   }
 
-  if (type === "section") {
+  if (type === "section" || type === "horizontal_section") {
     return {
       ...baseField,
-      label: "Nova seção",
-      helpText: "Texto introdutório da seção.",
+      label: type === "horizontal_section" ? "Nova seção horizontal" : "Nova seção",
+      helpText: type === "horizontal_section" ? "Agrupe campos lado a lado com rolagem horizontal." : "Texto introdutório da seção.",
     };
   }
 
@@ -184,18 +189,18 @@ export const getVisibleTemplateFields = (
 };
 
 export const countTemplateQuestionFields = (fields: AnamnesisTemplateSchema) =>
-  fields.filter((field) => field.type !== "section").length;
+  fields.filter((field) => !isContainerField(field)).length;
 
 export const countTemplateSections = (fields: AnamnesisTemplateSchema) =>
-  fields.filter((field) => field.type === "section").length;
+  fields.filter((field) => isContainerField(field)).length;
 
 export const isAnamnesisTemplateSchema = (value: unknown): value is AnamnesisTemplateSchema =>
   Array.isArray(value);
 
 export interface TemplateLayoutSection {
   field: AnamnesisField;
-  items: AnamnesisField[];
-  type: "section";
+  items: TemplateLayoutItem[];
+  type: "section" | "horizontal_section";
 }
 
 export interface TemplateLayoutField {
@@ -205,25 +210,95 @@ export interface TemplateLayoutField {
 
 export type TemplateLayoutItem = TemplateLayoutField | TemplateLayoutSection;
 
-export const buildTemplateLayout = (fields: AnamnesisTemplateSchema): TemplateLayoutItem[] => {
-  const sectionIds = new Set(fields.filter((field) => field.type === "section").map((field) => field.id));
+const getFieldById = (fields: AnamnesisTemplateSchema, fieldId: string | null | undefined) =>
+  fields.find((field) => field.id === fieldId) ?? null;
 
-  return fields.flatMap((field) => {
-    if (field.type === "section") {
-      return [{
-        field,
-        items: fields.filter((item) => item.groupKey === field.id),
-        type: "section" as const,
-      }];
+const canContainerAcceptChild = (container: AnamnesisField, child: AnamnesisField) => {
+  if (!isContainerField(container)) {
+    return false;
+  }
+
+  if (container.type === "horizontal_section" && isContainerField(child)) {
+    return false;
+  }
+
+  if (child.id === container.id) {
+    return false;
+  }
+
+  return true;
+};
+
+const isDescendantOf = (
+  fields: AnamnesisTemplateSchema,
+  fieldId: string,
+  potentialAncestorId: string,
+): boolean => {
+  let current = getFieldById(fields, fieldId);
+
+  while (current?.groupKey) {
+    if (current.groupKey === potentialAncestorId) {
+      return true;
     }
 
-    if (field.groupKey && sectionIds.has(field.groupKey)) {
+    current = getFieldById(fields, current.groupKey);
+  }
+
+  return false;
+};
+
+export const getAssignableContainerFields = (fields: AnamnesisTemplateSchema, childFieldId: string) => {
+  const child = getFieldById(fields, childFieldId);
+
+  if (!child) {
+    return [];
+  }
+
+  return fields.filter((field) => {
+    if (!isContainerField(field) || field.id === child.id) {
+      return false;
+    }
+
+    if (isDescendantOf(fields, field.id, child.id)) {
+      return false;
+    }
+
+    if (isContainerField(child)) {
+      return field.type === "section";
+    }
+
+    return canContainerAcceptChild(field, child);
+  });
+};
+
+const toTemplateLayoutItem = (
+  field: AnamnesisField,
+  fields: AnamnesisTemplateSchema,
+): TemplateLayoutItem => {
+  if (!isContainerField(field)) {
+    return {
+      field,
+      type: "field",
+    };
+  }
+
+  return {
+    field,
+    items: fields
+      .filter((child) => child.groupKey === field.id && canContainerAcceptChild(field, child))
+      .map((child) => toTemplateLayoutItem(child, fields)),
+    type: field.type,
+  };
+};
+
+export const buildTemplateLayout = (fields: AnamnesisTemplateSchema): TemplateLayoutItem[] => {
+  return fields.flatMap((field) => {
+    const parent = getFieldById(fields, field.groupKey);
+
+    if (parent && canContainerAcceptChild(parent, field)) {
       return [];
     }
 
-    return [{
-      field,
-      type: "field" as const,
-    }];
+    return [toTemplateLayoutItem(field, fields)];
   });
 };
