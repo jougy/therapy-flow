@@ -6,8 +6,11 @@ import {
   computePublicKeyFingerprint,
   filterAccounts,
   hasTrustedLocalAdminKeyMaterial,
+  isOwnerClinicDocumentDigits,
   matchesAccountIdentifier,
+  normalizeOwnerClinicDocumentOrThrow,
   normalizeAdminAccountStatus,
+  OWNER_DOCUMENT_LENGTHS,
   sanitizeDigits,
   verifyLocalAdminKeyChallenge,
   sortAccountsForDisplay,
@@ -61,6 +64,19 @@ const accounts = [
 describe("account admin lib", () => {
   it("sanitizes numeric identifiers", () => {
     expect(sanitizeDigits("12.345.678/0001-90")).toBe("12345678000190");
+  });
+
+  it("accepts cpf or cnpj for the owner clinic document", () => {
+    expect(OWNER_DOCUMENT_LENGTHS).toEqual([11, 14]);
+    expect(isOwnerClinicDocumentDigits("123.456.789-01")).toBe(true);
+    expect(isOwnerClinicDocumentDigits("12.345.678/0001-90")).toBe(true);
+    expect(isOwnerClinicDocumentDigits("1234567890")).toBe(false);
+  });
+
+  it("normalizes cpf or cnpj and rejects other document lengths", () => {
+    expect(normalizeOwnerClinicDocumentOrThrow("123.456.789-01")).toBe("12345678901");
+    expect(normalizeOwnerClinicDocumentOrThrow("12.345.678/0001-90")).toBe("12345678000190");
+    expect(() => normalizeOwnerClinicDocumentOrThrow("123")).toThrow(/11 dígitos/);
   });
 
   it("filters accounts by search query across multiple fields", () => {
@@ -167,7 +183,7 @@ MCowBQYDK2VwAyEA4rWN+uV7Lx9U8n8NLb4oM0xDkXxP4nBzC5Q9u+ExK2M=
 
     expect(
       verifyLocalAdminKeyChallenge({
-        challenge: "therapy-flow-admin-access",
+        challenge: "pronto-health-fisio-admin-access",
         fingerprint,
         privateKey,
         publicKey,

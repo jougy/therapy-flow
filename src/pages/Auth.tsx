@@ -65,7 +65,7 @@ const Auth = () => {
         className="w-full max-w-sm"
       >
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">TherapyFlow</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Pronto Health - Fisio</h1>
           <p className="text-sm text-muted-foreground mt-1">Gestão clínica simplificada</p>
         </div>
 

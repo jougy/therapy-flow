@@ -26,7 +26,7 @@ describe("support contact helpers", () => {
     const href = buildSupportEmailHref("jougy@gmx.com", baseDraft);
 
     expect(href).toContain("mailto:jougy@gmx.com");
-    expect(href).toContain("subject=%5BTherapyFlow%5D%20Erro%20-%20Tela%20de%20configuracoes%20com%20falha");
+    expect(href).toContain("subject=%5BPronto%20Health%20-%20Fisio%5D%20Erro%20-%20Tela%20de%20configuracoes%20com%20falha");
     expect(decodeURIComponent(href)).toContain("Clínica: Clinica Aurora");
     expect(decodeURIComponent(href)).toContain("Usuário: Alice");
     expect(decodeURIComponent(href)).toContain("Página: /configuracoes");
@@ -40,7 +40,7 @@ describe("support contact helpers", () => {
     });
 
     expect(href.startsWith("https://wa.me/5511992305889?text=")).toBe(true);
-    expect(decodeURIComponent(href)).toContain("[TherapyFlow] Melhoria");
+    expect(decodeURIComponent(href)).toContain("[Pronto Health - Fisio] Melhoria");
     expect(decodeURIComponent(href)).toContain("Sugestao para agenda");
     expect(decodeURIComponent(href)).toContain("Página: /configuracoes");
   });

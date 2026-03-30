@@ -31,7 +31,7 @@ BEGIN
   
   -- Check if super admin (hardcoded email)
   -- The platform owner can change this email
-  IF _email = 'admin@therapyflow.com' THEN
+  IF _email = 'admin@prontohealthfisio.com' THEN
     INSERT INTO public.user_roles (user_id, role)
     VALUES (_user_id, 'super_admin')
     ON CONFLICT (user_id, role) DO NOTHING;

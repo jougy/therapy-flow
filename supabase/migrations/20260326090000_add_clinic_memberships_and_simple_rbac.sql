@@ -316,7 +316,7 @@ BEGIN
   SET account_owner_user_id = _user_id
   WHERE id = _clinic_id;
 
-  IF _email = 'admin@therapyflow.com' THEN
+  IF _email = 'admin@prontohealthfisio.com' THEN
     INSERT INTO public.user_roles (user_id, role)
     VALUES (_user_id, 'super_admin')
     ON CONFLICT (user_id, role) DO NOTHING;
