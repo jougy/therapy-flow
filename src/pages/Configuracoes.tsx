@@ -99,6 +99,7 @@ import {
   type SupportCategory,
   type SupportContactDraft,
 } from "@/lib/support-contact";
+import { logRuntimeError } from "@/lib/runtime-debug";
 
 type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 type SessionRow = Database["public"]["Tables"]["sessions"]["Row"];
@@ -333,118 +334,137 @@ const Configuracoes = () => {
     if (!clinicId || !user?.id) return;
 
     setLoading(true);
-    const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes, concurrentAccessRes] = await Promise.all([
-      supabase.from("clinics").select("*").eq("id", clinicId).single(),
-      supabase
-        .from("anamnesis_form_templates")
-        .select("*")
-        .eq("clinic_id", clinicId)
-        .eq("is_system_default", false)
-        .order("updated_at", { ascending: false }),
-      supabase
-        .from("sessions")
-        .select("anamnesis_template_id, provider_id, session_date, status, user_id")
-        .eq("clinic_id", clinicId),
-      supabase
-        .from("clinic_memberships")
-        .select("*")
-        .eq("clinic_id", clinicId)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("profiles")
-        .select("address, birth_date, cpf, email, full_name, id, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours")
-        .eq("clinic_id", clinicId),
-      supabase
-        .from("team_development_profiles")
-        .select("*")
-        .eq("clinic_id", clinicId),
-      supabase
-        .from("user_security_settings")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("user_security_sessions")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("last_seen_at", { ascending: false })
-        .limit(8),
-      supabase
-        .from("security_events")
-        .select("*")
-        .or(`actor_user_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .order("created_at", { ascending: false })
-        .limit(12),
-      shouldShowAdminSecuritySection(subscriptionPlan, can("subaccounts.manage"))
-        ? supabase
-            .from("security_events")
-            .select("*")
-            .eq("visibility_scope", "admin")
-            .order("created_at", { ascending: false })
-            .limit(12)
-        : Promise.resolve({ data: [], error: null }),
-      shouldShowTeamSettingsSection(subscriptionPlan) && can("subaccounts.manage")
-        ? supabase.rpc("get_clinic_concurrent_access_overview", { _clinic_id: clinicId })
-        : Promise.resolve({ data: null, error: null }),
-    ]);
+    try {
+      const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes, concurrentAccessRes] = await Promise.all([
+        supabase.from("clinics").select("*").eq("id", clinicId).single(),
+        supabase
+          .from("anamnesis_form_templates")
+          .select("*")
+          .eq("clinic_id", clinicId)
+          .eq("is_system_default", false)
+          .order("updated_at", { ascending: false }),
+        supabase
+          .from("sessions")
+          .select("anamnesis_template_id, provider_id, session_date, status, user_id")
+          .eq("clinic_id", clinicId),
+        supabase
+          .from("clinic_memberships")
+          .select("*")
+          .eq("clinic_id", clinicId)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("profiles")
+          .select("address, birth_date, cpf, email, full_name, id, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours")
+          .eq("clinic_id", clinicId),
+        supabase
+          .from("team_development_profiles")
+          .select("*")
+          .eq("clinic_id", clinicId),
+        supabase
+          .from("user_security_settings")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("user_security_sessions")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("last_seen_at", { ascending: false })
+          .limit(8),
+        supabase
+          .from("security_events")
+          .select("*")
+          .or(`actor_user_id.eq.${user.id},target_user_id.eq.${user.id}`)
+          .order("created_at", { ascending: false })
+          .limit(12),
+        shouldShowAdminSecuritySection(subscriptionPlan, can("subaccounts.manage"))
+          ? supabase
+              .from("security_events")
+              .select("*")
+              .eq("visibility_scope", "admin")
+              .order("created_at", { ascending: false })
+              .limit(12)
+          : Promise.resolve({ data: [], error: null }),
+        shouldShowTeamSettingsSection(subscriptionPlan) && can("subaccounts.manage")
+          ? supabase.rpc("get_clinic_concurrent_access_overview", { _clinic_id: clinicId })
+          : Promise.resolve({ data: null, error: null }),
+      ]);
 
-    if (templatesRes.error) {
-      toast({ title: "Erro ao carregar formulários", description: templatesRes.error.message, variant: "destructive" });
+      if (clinicRes.error) {
+        logRuntimeError("settings.fetchData.clinic", clinicRes.error, { clinicId });
+      }
+
+      if (templatesRes.error) {
+        logRuntimeError("settings.fetchData.templates", templatesRes.error, { clinicId });
+        toast({ title: "Erro ao carregar formulários", description: templatesRes.error.message, variant: "destructive" });
+      }
+
+      if (concurrentAccessRes.error) {
+        logRuntimeError("settings.fetchData.concurrent_access_overview", concurrentAccessRes.error, { clinicId });
+      }
+
+      setClinic(clinicRes.data ?? null);
+      setTemplates(templatesRes.data ?? []);
+      setSessions(sessionsRes.data ?? []);
+      setMemberships(membershipsRes.data ?? []);
+      setProfiles(profilesRes.data ?? []);
+      setTeamDevelopmentProfiles(teamDevelopmentRes.data ?? []);
+      setTeamDevelopmentForms(
+        Object.fromEntries(
+          (teamDevelopmentRes.data ?? []).map((row) => [
+            row.user_id,
+            {
+              developmentStatus: row.development_status as DevelopmentStatus,
+              goals: row.goals ?? "",
+              internalLevel: row.internal_level as DevelopmentLevel,
+              lastReviewAt: row.last_review_at ?? "",
+              nextReviewAt: row.next_review_at ?? "",
+              onboardingFlowRead: row.onboarding_flow_read,
+              onboardingInitialTraining: row.onboarding_initial_training,
+              reviewNotes: row.review_notes ?? "",
+            },
+          ])
+        )
+      );
+      setSecuritySettings({
+        alertAccessChange: securitySettingsRes.data?.alert_access_change ?? false,
+        alertNewLogin: securitySettingsRes.data?.alert_new_login ?? true,
+        alertOtherSessionsEnded: securitySettingsRes.data?.alert_other_sessions_ended ?? true,
+        alertPasswordChanged: securitySettingsRes.data?.alert_password_changed ?? true,
+      });
+      setSecuritySessions(securitySessionsRes.data ?? []);
+      setSecurityEvents(securityEventsRes.data ?? []);
+      setAdminSecurityEvents((adminSecurityEventsRes.data as SecurityEventRow[] | null) ?? []);
+      setTeamConcurrentAccessOverview((concurrentAccessRes.data as TeamConcurrentAccessOverview | null) ?? null);
+      setClinicName(clinicRes.data?.name ?? "");
+      setClinicLegalName(clinicRes.data?.legal_name ?? "");
+      setClinicEmail(clinicRes.data?.email ?? "");
+      setClinicPhone(formatPhone(clinicRes.data?.phone ?? ""));
+      setClinicLogoUrl(clinicRes.data?.logo_url ?? "");
+      setClinicAddress(readProfileAddress(clinicRes.data?.address));
+      setClinicBusinessHours(readBusinessHours(clinicRes.data?.business_hours));
+      const ownProfileRow = (profilesRes.data ?? []).find((row) => row.id === user?.id) ?? null;
+      setOwnProfileForm({
+        address: readProfileAddress(ownProfileRow?.address),
+        birthDate: ownProfileRow?.birth_date ?? "",
+        cpf: formatCpf(ownProfileRow?.cpf ?? ""),
+        email: ownProfileRow?.email ?? user?.email ?? "",
+        fullName: ownProfileRow?.full_name ?? "",
+        phone: formatPhone(ownProfileRow?.phone ?? ""),
+        professionalLicense: ownProfileRow?.professional_license ?? "",
+        socialName: ownProfileRow?.social_name ?? "",
+      });
+      setSelectedTemplateId((current) => current ?? templatesRes.data?.[0]?.id ?? null);
+    } catch (error) {
+      logRuntimeError("settings.fetchData.unhandled", error, { clinicId, userId: user.id });
+      toast({
+        title: "Erro ao carregar configurações",
+        description: "Confira o console do navegador para mais detalhes.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-
-    setClinic(clinicRes.data ?? null);
-    setTemplates(templatesRes.data ?? []);
-    setSessions(sessionsRes.data ?? []);
-    setMemberships(membershipsRes.data ?? []);
-    setProfiles(profilesRes.data ?? []);
-    setTeamDevelopmentProfiles(teamDevelopmentRes.data ?? []);
-    setTeamDevelopmentForms(
-      Object.fromEntries(
-        (teamDevelopmentRes.data ?? []).map((row) => [
-          row.user_id,
-          {
-            developmentStatus: row.development_status as DevelopmentStatus,
-            goals: row.goals ?? "",
-            internalLevel: row.internal_level as DevelopmentLevel,
-            lastReviewAt: row.last_review_at ?? "",
-            nextReviewAt: row.next_review_at ?? "",
-            onboardingFlowRead: row.onboarding_flow_read,
-            onboardingInitialTraining: row.onboarding_initial_training,
-            reviewNotes: row.review_notes ?? "",
-          },
-        ])
-      )
-    );
-    setSecuritySettings({
-      alertAccessChange: securitySettingsRes.data?.alert_access_change ?? false,
-      alertNewLogin: securitySettingsRes.data?.alert_new_login ?? true,
-      alertOtherSessionsEnded: securitySettingsRes.data?.alert_other_sessions_ended ?? true,
-      alertPasswordChanged: securitySettingsRes.data?.alert_password_changed ?? true,
-    });
-    setSecuritySessions(securitySessionsRes.data ?? []);
-    setSecurityEvents(securityEventsRes.data ?? []);
-    setAdminSecurityEvents((adminSecurityEventsRes.data as SecurityEventRow[] | null) ?? []);
-    setTeamConcurrentAccessOverview((concurrentAccessRes.data as TeamConcurrentAccessOverview | null) ?? null);
-    setClinicName(clinicRes.data?.name ?? "");
-    setClinicLegalName(clinicRes.data?.legal_name ?? "");
-    setClinicEmail(clinicRes.data?.email ?? "");
-    setClinicPhone(formatPhone(clinicRes.data?.phone ?? ""));
-    setClinicLogoUrl(clinicRes.data?.logo_url ?? "");
-    setClinicAddress(readProfileAddress(clinicRes.data?.address));
-    setClinicBusinessHours(readBusinessHours(clinicRes.data?.business_hours));
-    const ownProfileRow = (profilesRes.data ?? []).find((row) => row.id === user?.id) ?? null;
-    setOwnProfileForm({
-      address: readProfileAddress(ownProfileRow?.address),
-      birthDate: ownProfileRow?.birth_date ?? "",
-      cpf: formatCpf(ownProfileRow?.cpf ?? ""),
-      email: ownProfileRow?.email ?? user?.email ?? "",
-      fullName: ownProfileRow?.full_name ?? "",
-      phone: formatPhone(ownProfileRow?.phone ?? ""),
-      professionalLicense: ownProfileRow?.professional_license ?? "",
-      socialName: ownProfileRow?.social_name ?? "",
-    });
-    setSelectedTemplateId((current) => current ?? templatesRes.data?.[0]?.id ?? null);
-    setLoading(false);
   }, [can, clinicId, subscriptionPlan, user?.email, user?.id]);
 
   useEffect(() => {
