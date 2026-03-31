@@ -39,6 +39,19 @@ export type AnamnesisTemplateSchema = AnamnesisField[];
 export type AnamnesisTableRow = Record<string, string>;
 export type AnamnesisFormValue = string | number | string[] | boolean | AnamnesisTableRow[] | null;
 export type AnamnesisFormResponse = Record<string, AnamnesisFormValue>;
+export type AnamnesisTemplateExchangeKind = "base" | "template";
+
+export interface AnamnesisTemplateExchangePayload {
+  exportedAt: string;
+  format: "pronto-health-fisio.anamnesis-template";
+  kind: AnamnesisTemplateExchangeKind;
+  template: {
+    description: string;
+    name: string;
+    schema: AnamnesisTemplateSchema;
+  };
+  version: 1;
+}
 
 export const DEFAULT_ANAMNESIS_TEMPLATE_SCHEMA: AnamnesisTemplateSchema = [
   {
@@ -127,6 +140,83 @@ export const createDefaultTemplateSchema = () =>
     ...field,
     id: `${field.id}_${index}`,
   }));
+
+const slugifyTemplateExchangeName = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+export const buildAnamnesisTemplateExchangeFileName = (
+  kind: AnamnesisTemplateExchangeKind,
+  name: string,
+) => {
+  const slug = slugifyTemplateExchangeName(name) || (kind === "base" ? "bloco-padrao" : "ficha");
+  return `pronto-health-fisio-modelo-${slug}.json`;
+};
+
+export const buildAnamnesisTemplateExchangePayload = ({
+  description,
+  exportedAt = new Date().toISOString(),
+  kind,
+  name,
+  schema,
+}: {
+  description?: string | null;
+  exportedAt?: string;
+  kind: AnamnesisTemplateExchangeKind;
+  name: string;
+  schema: AnamnesisTemplateSchema;
+}): AnamnesisTemplateExchangePayload => ({
+  exportedAt,
+  format: "pronto-health-fisio.anamnesis-template",
+  kind,
+  template: {
+    description: description?.trim() ?? "",
+    name: name.trim(),
+    schema,
+  },
+  version: 1,
+});
+
+const isAnamnesisTemplateExchangePayload = (value: unknown): value is AnamnesisTemplateExchangePayload => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<AnamnesisTemplateExchangePayload>;
+
+  return (
+    candidate.format === "pronto-health-fisio.anamnesis-template" &&
+    candidate.version === 1 &&
+    (candidate.kind === "base" || candidate.kind === "template") &&
+    typeof candidate.exportedAt === "string" &&
+    !!candidate.template &&
+    typeof candidate.template === "object" &&
+    typeof candidate.template.name === "string" &&
+    typeof candidate.template.description === "string" &&
+    isAnamnesisTemplateSchema(candidate.template.schema)
+  );
+};
+
+export const parseAnamnesisTemplateExchangePayload = (raw: string) => {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Arquivo de modelo inválido");
+  }
+
+  if (!isAnamnesisTemplateExchangePayload(parsed)) {
+    throw new Error("Arquivo de modelo inválido");
+  }
+
+  return parsed;
+};
 
 export const createAnamnesisField = (type: AnamnesisFieldType, index: number): AnamnesisField => {
   const baseField: AnamnesisField = {

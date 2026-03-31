@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, ChevronRight, Copy, GripVertical, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Copy, GripVertical, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   ANAMNESIS_FIELD_LIBRARY,
   buildTemplateLayout,
+  parseAnamnesisTemplateExchangePayload,
   createAnamnesisField,
   createDefaultTemplateSchema,
   getAssignableContainerFields,
@@ -53,6 +54,7 @@ const FormularioEditor = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [template, setTemplate] = useState<TemplateRow | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
+  const templateImportInputRef = useRef<HTMLInputElement | null>(null);
   const [desktopMenuTop, setDesktopMenuTop] = useState(128);
   const [desktopMenuMaxHeight, setDesktopMenuMaxHeight] = useState(480);
 
@@ -272,6 +274,40 @@ const FormularioEditor = () => {
     navigate(`/configuracoes/formularios/${data.id}`);
   };
 
+  const handleImportDraftModel = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const raw = await file.text();
+      const imported = parseAnamnesisTemplateExchangePayload(raw);
+
+      if (!isBase) {
+        setTemplateName(imported.template.name);
+        setTemplateDescription(imported.template.description);
+      }
+
+      setTemplateFields(imported.template.schema);
+
+      toast({
+        title: "Modelo importado no editor",
+        description: isBase
+          ? "A estrutura do bloco padrão foi substituída no rascunho atual."
+          : "A ficha aberta foi substituída pelo modelo importado. Salve quando quiser aplicar.",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao importar modelo",
+        description: error instanceof Error ? error.message : "Não foi possível ler este arquivo.",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -282,6 +318,13 @@ const FormularioEditor = () => {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
+      <input
+        ref={templateImportInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="sr-only"
+        onChange={(event) => void handleImportDraftModel(event)}
+      />
       <div ref={headerRef} className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/configuracoes")} aria-label="Voltar para configurações">
@@ -298,10 +341,16 @@ const FormularioEditor = () => {
             </p>
           </div>
         </div>
-        <Button onClick={() => void handleSave()} disabled={saving || !templateName.trim()}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-          Salvar ficha
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => templateImportInputRef.current?.click()}>
+            <Upload className="h-4 w-4 mr-2" />
+            Importar modelo
+          </Button>
+          <Button onClick={() => void handleSave()} disabled={saving || !templateName.trim()}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            Salvar ficha
+          </Button>
+        </div>
       </div>
 
       <Button
