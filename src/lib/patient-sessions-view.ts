@@ -12,6 +12,10 @@ export type SearchableSession = {
   status: string;
 };
 
+type SearchableOwnedSession = SearchableSession & {
+  user_id: string;
+};
+
 export type SessionSearchFilters = {
   groupStatus: string;
   searchTerm: string;
@@ -159,3 +163,49 @@ export const buildPatientSessionsView = <
 
 export const canDeleteSelectedSessions = <TSession extends SearchableSession>(selectedSessions: TSession[]) =>
   selectedSessions.length > 0 && selectedSessions.every((session) => session.status === "rascunho");
+
+export const filterSessionsForOperationalRole = <TSession extends SearchableOwnedSession>({
+  currentUserId,
+  operationalRole,
+  sessions,
+}: {
+  currentUserId: string | null | undefined;
+  operationalRole: "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
+  sessions: TSession[];
+}) => {
+  if (operationalRole !== "estagiario" || !currentUserId) {
+    return sessions;
+  }
+
+  return sessions.filter((session) => session.user_id === currentUserId);
+};
+
+export const shouldShowSessionCreatorInternBadge = (jobTitle: string | null | undefined) =>
+  (jobTitle ?? "").trim().toLowerCase() === "estagiário";
+
+export const shouldAutoCompleteInternDraft = ({
+  createdAt,
+  currentUserId,
+  now = new Date(),
+  operationalRole,
+  sessionStatus,
+  userId,
+}: {
+  createdAt: string | null | undefined;
+  currentUserId: string | null | undefined;
+  now?: Date;
+  operationalRole: "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
+  sessionStatus: string;
+  userId: string;
+}) => {
+  if (operationalRole !== "estagiario" || !currentUserId || currentUserId !== userId || sessionStatus !== "rascunho" || !createdAt) {
+    return false;
+  }
+
+  const createdAtMs = new Date(createdAt).getTime();
+  if (Number.isNaN(createdAtMs)) {
+    return false;
+  }
+
+  return now.getTime() - createdAtMs >= 1000 * 60 * 60 * 24 * 2;
+};

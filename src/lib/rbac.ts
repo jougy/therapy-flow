@@ -1,6 +1,6 @@
 export type SubscriptionPlan = "solo" | "clinic";
 export type AccountRole = "account_owner" | null;
-export type OperationalRole = "owner" | "admin" | "professional" | "assistant" | null;
+export type OperationalRole = "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
 export type MembershipStatus = "invited" | "active" | "inactive" | "suspended";
 
 export type AccessCapability =
@@ -81,17 +81,17 @@ export const hasCapability = (context: MembershipContext, capability: AccessCapa
       return false;
 
     case "patients.read":
+    case "patients.write":
+      return hasOperationalRole(context, ["owner", "admin", "professional", "assistant", "estagiario"]);
+
     case "schedule.read":
     case "schedule.write":
       return hasOperationalRole(context, ["owner", "admin", "professional", "assistant"]);
 
-    case "patients.write":
-      return hasOperationalRole(context, ["owner", "admin", "professional", "assistant"]);
-
     case "sessions.read":
-      return hasOperationalRole(context, ["owner", "admin", "professional"]);
-
     case "sessions.write":
+      return hasOperationalRole(context, ["owner", "admin", "professional", "estagiario"]);
+
     case "session.delete_draft":
       return hasOperationalRole(context, ["owner", "admin", "professional"]);
 

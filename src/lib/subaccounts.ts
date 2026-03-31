@@ -8,12 +8,28 @@ export type SecuritySessionLike = Pick<
   Database["public"]["Tables"]["user_security_sessions"]["Row"],
   "clinic_id" | "ended_at" | "last_seen_at" | "session_key" | "user_id"
 >;
+type TeamProfileLike = {
+  email?: string | null;
+  full_name?: string | null;
+  job_title?: string | null;
+  last_seen_at?: string | null;
+};
+type TeamSortKey = "created_at_desc" | "last_seen_desc" | "name_asc" | "role_priority";
+type TeamRoleFilter = MembershipLike["operational_role"] | "all";
+type TeamStatusFilter = MembershipLike["membership_status"] | "all" | "online";
+type TeamVisibleRow = {
+  activityStatus: { className: string; label: string };
+  isOnline: boolean;
+  membership: MembershipLike;
+  profile: TeamProfileLike | null;
+};
 
 const ROLE_PRIORITY: Record<NonNullable<MembershipLike["operational_role"]>, number> = {
   owner: 0,
   admin: 1,
   professional: 2,
   assistant: 3,
+  estagiario: 4,
 };
 const ACTIVE_SECURITY_SESSION_WINDOW_MS = 15 * 60 * 1000;
 
@@ -23,6 +39,14 @@ const MEMBERSHIP_STATUS_META: Record<MembershipLike["membership_status"], { clas
   invited: { className: "bg-sky-500", label: "Convidado" },
   suspended: { className: "bg-amber-500", label: "Suspenso" },
 };
+const ONLINE_STATUS_META = { className: "bg-sky-500", label: "Online" };
+
+const normalizeTeamSearch = (value: string | null | undefined) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
 
 export const isSecuritySessionActive = (
   session: SecuritySessionLike,
@@ -89,6 +113,11 @@ export const sortMembershipsForDisplay = (memberships: MembershipLike[]) =>
 
 export const getMembershipStatusMeta = (status: MembershipLike["membership_status"]) => MEMBERSHIP_STATUS_META[status];
 
+export const getCollaboratorActivityStatusMeta = (
+  status: MembershipLike["membership_status"],
+  isOnline: boolean
+) => (isOnline ? ONLINE_STATUS_META : getMembershipStatusMeta(status));
+
 export const formatLastSeenAt = (value: string | null) => {
   if (!value) {
     return "Nunca acessou";
@@ -101,4 +130,90 @@ export const formatLastSeenAt = (value: string | null) => {
     month: "2-digit",
     year: "numeric",
   }).format(new Date(value));
+};
+
+export const buildVisibleTeamMembershipRows = ({
+  memberships,
+  onlineUserIds,
+  profileMap,
+  roleFilter,
+  searchTerm,
+  sortKey,
+  statusFilter,
+}: {
+  memberships: MembershipLike[];
+  onlineUserIds: Set<string>;
+  profileMap: Map<string, TeamProfileLike>;
+  roleFilter: TeamRoleFilter;
+  searchTerm: string;
+  sortKey: TeamSortKey;
+  statusFilter: TeamStatusFilter;
+}): TeamVisibleRow[] => {
+  const normalizedSearch = normalizeTeamSearch(searchTerm);
+
+  const rows = memberships
+    .map<TeamVisibleRow>((membership) => {
+      const profile = profileMap.get(membership.user_id) ?? null;
+      const isOnline = onlineUserIds.has(membership.user_id);
+
+      return {
+        activityStatus: getCollaboratorActivityStatusMeta(membership.membership_status, isOnline),
+        isOnline,
+        membership,
+        profile,
+      };
+    })
+    .filter((row) => {
+      if (roleFilter !== "all" && row.membership.operational_role !== roleFilter) {
+        return false;
+      }
+
+      if (statusFilter === "online" && !row.isOnline) {
+        return false;
+      }
+
+      if (statusFilter !== "all" && statusFilter !== "online" && row.membership.membership_status !== statusFilter) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      const haystack = normalizeTeamSearch(
+        [
+          row.profile?.full_name,
+          row.profile?.email,
+          row.profile?.job_title,
+          row.membership.operational_role,
+          row.activityStatus.label,
+        ].join(" ")
+      );
+
+      return haystack.includes(normalizedSearch);
+    });
+
+  return [...rows].sort((left, right) => {
+    switch (sortKey) {
+      case "name_asc":
+        return (left.profile?.full_name ?? left.profile?.email ?? left.membership.user_id).localeCompare(
+          right.profile?.full_name ?? right.profile?.email ?? right.membership.user_id,
+          "pt-BR"
+        );
+      case "last_seen_desc":
+        return (right.profile?.last_seen_at ?? "").localeCompare(left.profile?.last_seen_at ?? "");
+      case "created_at_desc":
+        return right.membership.created_at.localeCompare(left.membership.created_at);
+      case "role_priority":
+      default: {
+        const priorityDelta =
+          ROLE_PRIORITY[left.membership.operational_role] - ROLE_PRIORITY[right.membership.operational_role];
+        if (priorityDelta !== 0) {
+          return priorityDelta;
+        }
+
+        return left.membership.created_at.localeCompare(right.membership.created_at);
+      }
+    }
+  });
 };

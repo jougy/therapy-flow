@@ -22,12 +22,18 @@ import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { PatientGroupStatus } from "@/lib/patient-groups";
 import { getSessionPersonLabel } from "@/lib/session-people";
 import { getSessionPreviewContent, getSessionPreviewIndicators } from "@/lib/session-preview";
-import { buildPatientSessionsView, canDeleteSelectedSessions } from "@/lib/patient-sessions-view";
+import {
+  buildPatientSessionsView,
+  canDeleteSelectedSessions,
+  filterSessionsForOperationalRole,
+  shouldAutoCompleteInternDraft,
+  shouldShowSessionCreatorInternBadge,
+} from "@/lib/patient-sessions-view";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
-type ProfileSummary = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id">;
+type ProfileSummary = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id" | "job_title">;
 type ShareLinkResponse = {
   completed: boolean;
   password_prefix: string;
@@ -151,6 +157,7 @@ const SessionCard = ({
   baseSchema,
   borderClassName,
   creatorName,
+  creatorIsIntern,
   isSelected,
   navigateTo,
   onPressCancel,
@@ -162,6 +169,7 @@ const SessionCard = ({
   baseSchema: AnamnesisTemplateSchema;
   borderClassName?: string;
   creatorName: string;
+  creatorIsIntern: boolean;
   isSelected: boolean;
   navigateTo: () => void;
   onPressCancel: () => void;
@@ -206,6 +214,11 @@ const SessionCard = ({
               <Badge variant="secondary" className="text-xs">
                 {creatorName}
               </Badge>
+              {creatorIsIntern && (
+                <Badge variant="outline" className="text-xs">
+                  Estagiario
+                </Badge>
+              )}
               {selectionMode && (
                 <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
                   {isSelected ? "Selecionado" : "Toque para selecionar"}
@@ -247,7 +260,7 @@ const PacienteDetalhe = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { clinicId, user } = useAuth();
+  const { clinicId, operationalRole, user } = useAuth();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -279,6 +292,7 @@ const PacienteDetalhe = () => {
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
+  const isIntern = operationalRole === "estagiario";
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -288,16 +302,50 @@ const PacienteDetalhe = () => {
       supabase.from("patient_groups").select("*").eq("patient_id", id),
       supabase.from("sessions").select("*").eq("patient_id", id).order("session_date", { ascending: false }),
       clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null }),
-      clinicId ? supabase.from("profiles").select("id, full_name, email").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
+      clinicId ? supabase.from("profiles").select("id, full_name, email, job_title").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
     ]);
+
+    const allSessions = (sRes.data ?? []) as Session[];
+    const staleInternDraftIds = allSessions
+      .filter((session) =>
+        shouldAutoCompleteInternDraft({
+          createdAt: session.created_at,
+          currentUserId: user?.id,
+          operationalRole,
+          sessionStatus: session.status,
+          userId: session.user_id,
+        })
+      )
+      .map((session) => session.id);
+
+    if (staleInternDraftIds.length > 0) {
+      const { error: autoCompleteError } = await supabase
+        .from("sessions")
+        .update({ status: "concluído" })
+        .in("id", staleInternDraftIds);
+
+      if (!autoCompleteError) {
+        allSessions.forEach((session) => {
+          if (staleInternDraftIds.includes(session.id)) {
+            session.status = "concluído";
+          }
+        });
+      }
+    }
 
     setPatient(pRes.data);
     setGroups(gRes.data ?? []);
-    setSessions(sRes.data ?? []);
+    setSessions(
+      filterSessionsForOperationalRole({
+        currentUserId: user?.id,
+        operationalRole,
+        sessions: allSessions,
+      })
+    );
     setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
     setBaseSchema(Array.isArray(clinicRes.data?.anamnesis_base_schema) ? (clinicRes.data.anamnesis_base_schema as AnamnesisTemplateSchema) : []);
     setLoading(false);
-  }, [clinicId, id]);
+  }, [clinicId, id, operationalRole, user?.id]);
 
   useEffect(() => {
     void fetchData();
@@ -459,8 +507,10 @@ const PacienteDetalhe = () => {
     longPressTriggeredRef.current = false;
     longPressTimerRef.current = window.setTimeout(() => {
       longPressTriggeredRef.current = true;
-      setSelectionMode(true);
-      setSelectedSessionIds([sessionId]);
+      if (!isIntern) {
+        setSelectionMode(true);
+        setSelectedSessionIds([sessionId]);
+      }
     }, 420);
   };
 
@@ -771,10 +821,12 @@ const PacienteDetalhe = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-lg font-semibold">Grupos & Atendimentos</h2>
-          <Button variant="outline" size="sm" onClick={openNewGroup}>
-            <FolderPlus className="h-4 w-4 mr-2" />
-            Novo Grupo
-          </Button>
+          {!isIntern && (
+            <Button variant="outline" size="sm" onClick={openNewGroup}>
+              <FolderPlus className="h-4 w-4 mr-2" />
+              Novo Grupo
+            </Button>
+          )}
         </div>
 
         <Card>
@@ -823,7 +875,7 @@ const PacienteDetalhe = () => {
           </CardContent>
         </Card>
 
-        {selectionMode && (
+        {!isIntern && selectionMode && (
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="flex flex-wrap items-center gap-3 p-4">
               <Badge variant="secondary">{selectedSessionIds.length} atendimento(s) selecionado(s)</Badge>
@@ -894,12 +946,12 @@ const PacienteDetalhe = () => {
                 {collapsedGroups[groupView.group.id] ? <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" /> : <ChevronUp className="mt-1 h-4 w-4 text-muted-foreground" />}
               </button>
               <div className="flex items-center gap-1">
-                {!groupView.group.is_default && (
+                {!isIntern && !groupView.group.is_default && (
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditGroup(groupView.group)} aria-label="Editar grupo">
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                 )}
-                {!groupView.group.is_default && (
+                {!isIntern && !groupView.group.is_default && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteConfirmId(groupView.group.id)} aria-label="Excluir grupo">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -922,9 +974,10 @@ const PacienteDetalhe = () => {
                       key={session.id}
                       baseSchema={baseSchema}
                       creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
+                      creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
                       session={session}
                       isSelected={selectedSessionIds.includes(session.id)}
-                      selectionMode={selectionMode}
+                      selectionMode={!isIntern && selectionMode}
                       borderClassName={groupBorderColors[groupView.group.color] || ""}
                       onPressStart={() => handleSessionPressStart(session.id)}
                       onPressCancel={handleSessionPressCancel}
@@ -971,9 +1024,10 @@ const PacienteDetalhe = () => {
                       key={session.id}
                       baseSchema={baseSchema}
                       creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
+                      creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
                       session={session}
                       isSelected={selectedSessionIds.includes(session.id)}
-                      selectionMode={selectionMode}
+                      selectionMode={!isIntern && selectionMode}
                       onPressStart={() => handleSessionPressStart(session.id)}
                       onPressCancel={handleSessionPressCancel}
                       onToggleSelect={() => toggleSessionSelection(session.id)}

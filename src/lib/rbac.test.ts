@@ -33,6 +33,14 @@ const assistantContext: MembershipContext = {
   subscriptionPlan: "clinic",
 };
 
+const internContext: MembershipContext = {
+  accountRole: null,
+  isActive: true,
+  membershipStatus: "active",
+  operationalRole: "estagiario",
+  subscriptionPlan: "clinic",
+};
+
 describe("canHaveSubaccounts", () => {
   it("only allows subaccounts for clinic plans", () => {
     expect(canHaveSubaccounts("clinic")).toBe(true);
@@ -80,6 +88,18 @@ describe("hasCapability", () => {
     expect(hasCapability(assistantContext, "patients.write")).toBe(true);
     expect(hasCapability(assistantContext, "sessions.write")).toBe(false);
     expect(hasCapability(assistantContext, "forms.manage")).toBe(false);
+  });
+
+  it("keeps estagiario limited to profile/security context and own-session workflows", () => {
+    expect(hasCapability(internContext, "patients.read")).toBe(true);
+    expect(hasCapability(internContext, "patients.write")).toBe(true);
+    expect(hasCapability(internContext, "sessions.read")).toBe(true);
+    expect(hasCapability(internContext, "sessions.write")).toBe(true);
+    expect(hasCapability(internContext, "session.delete_draft")).toBe(false);
+    expect(hasCapability(internContext, "schedule.read")).toBe(false);
+    expect(hasCapability(internContext, "schedule.write")).toBe(false);
+    expect(hasCapability(internContext, "forms.manage")).toBe(false);
+    expect(hasCapability(internContext, "subaccounts.manage")).toBe(false);
   });
 
   it("blocks inactive memberships", () => {

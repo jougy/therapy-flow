@@ -35,6 +35,7 @@ import { getPreferredPatientGroupId } from "@/lib/patient-group-defaults";
 import { buildSessionEditHistoryView, formatSessionAuditDateTime, getSessionPersonLabel } from "@/lib/session-people";
 import { createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
 import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
+import { shouldAutoCompleteInternDraft } from "@/lib/patient-sessions-view";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import {
@@ -122,7 +123,7 @@ const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: numb
 const SessaoDetalhe = () => {
   const { id: patientId, sessionId } = useParams();
   const navigate = useNavigate();
-  const { user, clinicId, profile } = useAuth();
+  const { user, clinicId, operationalRole, profile } = useAuth();
   const isNew = sessionId === "novo";
 
   const [loading, setLoading] = useState(!isNew);
@@ -222,12 +223,46 @@ const SessaoDetalhe = () => {
     }
 
     if (!isNew && sessionId) {
-      const [{ data: sessionData }, { data: historyData }] = await Promise.all([
+      const [{ data: fetchedSessionData }, { data: historyData }] = await Promise.all([
         supabase.from("sessions").select("*").eq("id", sessionId).maybeSingle(),
         supabase.from("session_edit_history").select("*").eq("session_id", sessionId).order("edited_at", { ascending: false }),
       ]);
 
+      let sessionData = fetchedSessionData;
+
       if (sessionData) {
+        if (operationalRole === "estagiario" && sessionData.user_id !== user?.id) {
+          toast({
+            title: "Acesso restrito",
+            description: "O papel Estagiário só pode acessar atendimentos criados pela própria conta.",
+            variant: "destructive",
+          });
+          navigate(`/pacientes/${patientId}`);
+          setLoading(false);
+          return;
+        }
+
+        if (
+          shouldAutoCompleteInternDraft({
+            createdAt: sessionData.created_at,
+            currentUserId: user?.id,
+            operationalRole,
+            sessionStatus: sessionData.status,
+            userId: sessionData.user_id,
+          })
+        ) {
+          const { data: updatedSessionData } = await supabase
+            .from("sessions")
+            .update({ status: "concluído" })
+            .eq("id", sessionData.id)
+            .select("*")
+            .maybeSingle();
+
+          if (updatedSessionData) {
+            sessionData = updatedSessionData;
+          }
+        }
+
         const anamnesis = isJsonObject(sessionData.anamnesis) ? sessionData.anamnesis : {};
         const treatment = isJsonObject(sessionData.treatment) ? sessionData.treatment : {};
         const treatmentState = readTreatmentState(treatment);
@@ -260,7 +295,7 @@ const SessaoDetalhe = () => {
     }
 
     setLoading(false);
-  }, [clinicId, isNew, patientId, sessionId, user?.id]);
+  }, [clinicId, isNew, navigate, operationalRole, patientId, sessionId, user?.id]);
 
   useEffect(() => {
     void loadSessionPage();

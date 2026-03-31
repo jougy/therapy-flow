@@ -95,6 +95,11 @@ const isSimultaneousAccessLimitError = (error: unknown) => {
   return message.includes("limite de acessos simultaneos");
 };
 
+const isForcedSignOutError = (error: unknown) => {
+  const message = getErrorMessage(error).toLowerCase();
+  return message.includes("sessao encerrada") || message.includes("sessão encerrada");
+};
+
 const deriveConcurrentAccessLimit = (clinicSummary: {
   subaccount_limit: number | null;
   subscription_plan: SubscriptionPlan;
@@ -210,12 +215,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       logRuntimeError("auth.register_current_security_session", error, { userId });
 
-      if (isSimultaneousAccessLimitError(error)) {
+      if (isSimultaneousAccessLimitError(error) || isForcedSignOutError(error)) {
         const message = getErrorMessage(error);
 
         await supabase.auth.signOut();
         toast({
-          title: "Acesso simultaneo indisponivel",
+          title: isForcedSignOutError(error) ? "Sessão encerrada" : "Acesso simultaneo indisponivel",
           description: message,
           variant: "destructive",
         });
@@ -306,6 +311,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         logRuntimeError("auth.register_current_security_session.heartbeat", error, {
           userId: session.user.id,
         });
+
+        if (isForcedSignOutError(error)) {
+          void supabase.auth.signOut();
+          toast({
+            title: "Sessão encerrada",
+            description: getErrorMessage(error),
+            variant: "destructive",
+          });
+        }
       });
     }, 5 * 60 * 1000);
 
