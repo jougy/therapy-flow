@@ -912,6 +912,10 @@ export type Database = {
         Args: { _capability: string; _clinic_id?: string }
         Returns: boolean
       }
+      end_clinic_user_security_sessions: {
+        Args: { _clinic_id?: string; _target_user_id: string }
+        Returns: Json
+      }
       end_other_security_sessions: {
         Args: { _current_session_key: string }
         Returns: Json
@@ -1070,7 +1074,7 @@ export type Database = {
       account_role_type: "account_owner"
       app_role: "super_admin" | "clinic_admin" | "user"
       membership_status_type: "invited" | "active" | "inactive" | "suspended"
-      operational_role_type: "owner" | "admin" | "professional" | "assistant"
+      operational_role_type: "owner" | "admin" | "professional" | "assistant" | "estagiario"
       subscription_plan: "solo" | "clinic"
     }
     CompositeTypes: {
@@ -1205,7 +1209,7 @@ export const Constants = {
       account_role_type: ["account_owner"],
       app_role: ["super_admin", "clinic_admin", "user"],
       membership_status_type: ["invited", "active", "inactive", "suspended"],
-      operational_role_type: ["owner", "admin", "professional", "assistant"],
+      operational_role_type: ["owner", "admin", "professional", "assistant", "estagiario"],
       subscription_plan: ["solo", "clinic"],
     },
   },

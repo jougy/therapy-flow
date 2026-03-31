@@ -5,6 +5,7 @@ import {
   BarChart3,
   BellRing,
   Building2,
+  CircleHelp,
   ChevronDown,
   ChevronUp,
   Clock3,
@@ -37,6 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -50,7 +52,9 @@ import {
   isAnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
 import {
+  buildVisibleTeamMembershipRows,
   formatLastSeenAt,
+  getCollaboratorActivityStatusMeta,
   getConcurrentAccessCapacity,
   getMembershipStatusMeta,
   isSecuritySessionActive,
@@ -213,9 +217,33 @@ type SettingsSection =
 const OPERATIONAL_ROLE_LABELS: Record<SubaccountOperationalRole | "owner", string> = {
   admin: "Admin",
   assistant: "Assistente",
+  estagiario: "Estagiário",
   owner: "Owner",
   professional: "Profissional",
 };
+
+const OPERATIONAL_ROLE_DESCRIPTIONS: Record<SubaccountOperationalRole, string> = {
+  admin: "Acompanha a equipe, ajusta acessos e gerencia configurações operacionais da clínica.",
+  assistant: "Apoia a operação com pacientes e agenda, mas não entra nas áreas clínicas mais sensíveis.",
+  estagiario: "Acesso mais restrito. Atua apenas no próprio fluxo de atendimentos e só vê/edita atendimentos criados por ele.",
+  professional: "Fluxo clínico completo para pacientes e atendimentos, sem poderes administrativos da clínica.",
+};
+
+const TEAM_STATUS_FILTER_OPTIONS = [
+  { label: "Todos os status", value: "all" },
+  { label: "Online", value: "online" },
+  { label: "Ativo", value: "active" },
+  { label: "Inativo", value: "inactive" },
+  { label: "Suspenso", value: "suspended" },
+  { label: "Convidado", value: "invited" },
+] as const;
+
+const TEAM_SORT_OPTIONS = [
+  { label: "Hierarquia", value: "role_priority" },
+  { label: "Nome (A-Z)", value: "name_asc" },
+  { label: "Último acesso", value: "last_seen_desc" },
+  { label: "Mais recentes", value: "created_at_desc" },
+] as const;
 
 const SECURITY_TONE_BADGE_CLASSNAMES = {
   admin: "border-sky-200 bg-sky-50 text-sky-700",
@@ -261,7 +289,7 @@ const SUPPORT_CATEGORY_OPTIONS: Array<{ label: string; value: SupportCategory }>
 const Configuracoes = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { accountRole, can, clinic: authClinic, clinicId, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
+  const { accountRole, can, clinic: authClinic, clinicId, operationalRole, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [sessions, setSessions] = useState<Pick<SessionRow, "anamnesis_template_id" | "provider_id" | "session_date" | "status" | "user_id">[]>([]);
@@ -326,6 +354,11 @@ const Configuracoes = () => {
   const [newSubaccountJobTitle, setNewSubaccountJobTitle] = useState("");
   const [newSubaccountSpecialty, setNewSubaccountSpecialty] = useState("");
   const [newSubaccountRole, setNewSubaccountRole] = useState<SubaccountOperationalRole>("professional");
+  const [teamSearchTerm, setTeamSearchTerm] = useState("");
+  const [teamRoleFilter, setTeamRoleFilter] = useState<SubaccountOperationalRole | "all">("all");
+  const [teamStatusFilter, setTeamStatusFilter] = useState<MembershipRow["membership_status"] | "all" | "online">("all");
+  const [teamSortKey, setTeamSortKey] = useState<"created_at_desc" | "last_seen_desc" | "name_asc" | "role_priority">("role_priority");
+  const [signingOutMembershipId, setSigningOutMembershipId] = useState<string | null>(null);
   const mobileLongPressTimerRef = useRef<number | null>(null);
   const mobileLongPressTriggeredRef = useRef(false);
   const mobileDescriptionTimerRef = useRef<number | null>(null);
@@ -527,13 +560,93 @@ const Configuracoes = () => {
   const canManageTeam = can("subaccounts.manage") || can("subaccounts_roles.manage");
   const canViewAdminSecurity = shouldShowAdminSecuritySection(subscriptionPlan, canManageTeam);
   const canReadTeamDevelopment = can("subaccounts_analytics.read");
-  const visibleTeamMemberships = useMemo(
+  const allTeamMemberships = useMemo(
     () => (subscriptionPlan === "clinic" ? sortedMemberships : []),
     [sortedMemberships, subscriptionPlan]
   );
   const teamDevelopmentMap = useMemo(
     () => new Map(teamDevelopmentProfiles.map((row) => [row.user_id, row])),
     [teamDevelopmentProfiles]
+  );
+
+  const supportDraft = useMemo<SupportContactDraft>(
+    () => ({
+      category: supportForm.category,
+      clinicName: getClinicBrandName(clinic?.name ?? authClinic?.name) || null,
+      currentPath: location.pathname || null,
+      includeContext: supportForm.includeContext,
+      message: supportForm.message,
+      subject: supportForm.subject,
+      userEmail: ownProfileForm.email || user?.email || null,
+      userName: ownProfileForm.fullName || profile?.full_name || null,
+    }),
+    [
+      authClinic?.name,
+      clinic,
+      location.pathname,
+      ownProfileForm.email,
+      ownProfileForm.fullName,
+      profile?.full_name,
+      supportForm.category,
+      supportForm.includeContext,
+      supportForm.message,
+      supportForm.subject,
+      user?.email,
+    ]
+  );
+
+  const concurrentAccessCapacity = useMemo(
+    () =>
+      getConcurrentAccessCapacity(
+        authClinic?.concurrent_access_limit ?? 1,
+        teamConcurrentAccessOverview?.active_sessions ?? [],
+        new Date()
+      ),
+    [authClinic?.concurrent_access_limit, teamConcurrentAccessOverview?.active_sessions]
+  );
+
+  const activeTeamAccessRows = useMemo(
+    () =>
+      (teamConcurrentAccessOverview?.active_sessions ?? [])
+        .filter((securitySession) =>
+          isSecuritySessionActive(
+            {
+              clinic_id: clinicId ?? "",
+              ended_at: null,
+              last_seen_at: securitySession.last_seen_at ?? new Date(0).toISOString(),
+              session_key: securitySession.session_key,
+              user_id: securitySession.user_id,
+            },
+            new Date()
+          )
+        )
+        .map((securitySession) => ({
+          profile: profileMap.get(securitySession.user_id),
+          session: securitySession,
+        })),
+    [clinicId, profileMap, teamConcurrentAccessOverview?.active_sessions]
+  );
+
+  const onlineUserIds = useMemo(
+    () => new Set(activeTeamAccessRows.map(({ session }) => session.user_id)),
+    [activeTeamAccessRows]
+  );
+  const visibleTeamRows = useMemo(
+    () =>
+      buildVisibleTeamMembershipRows({
+        memberships: allTeamMemberships,
+        onlineUserIds,
+        profileMap,
+        roleFilter: teamRoleFilter,
+        searchTerm: teamSearchTerm,
+        sortKey: teamSortKey,
+        statusFilter: teamStatusFilter,
+      }),
+    [allTeamMemberships, onlineUserIds, profileMap, teamRoleFilter, teamSearchTerm, teamSortKey, teamStatusFilter]
+  );
+  const visibleTeamMemberships = useMemo(
+    () => visibleTeamRows.map((row) => row.membership),
+    [visibleTeamRows]
   );
   const visibleDevelopmentMemberships = useMemo(
     () =>
@@ -597,64 +710,6 @@ const Configuracoes = () => {
     [developmentRows]
   );
 
-  const supportDraft = useMemo<SupportContactDraft>(
-    () => ({
-      category: supportForm.category,
-      clinicName: getClinicBrandName(clinic?.name ?? authClinic?.name) || null,
-      currentPath: location.pathname || null,
-      includeContext: supportForm.includeContext,
-      message: supportForm.message,
-      subject: supportForm.subject,
-      userEmail: ownProfileForm.email || user?.email || null,
-      userName: ownProfileForm.fullName || profile?.full_name || null,
-    }),
-    [
-      authClinic?.name,
-      clinic,
-      location.pathname,
-      ownProfileForm.email,
-      ownProfileForm.fullName,
-      profile?.full_name,
-      supportForm.category,
-      supportForm.includeContext,
-      supportForm.message,
-      supportForm.subject,
-      user?.email,
-    ]
-  );
-
-  const concurrentAccessCapacity = useMemo(
-    () =>
-      getConcurrentAccessCapacity(
-        authClinic?.concurrent_access_limit ?? 1,
-        teamConcurrentAccessOverview?.active_sessions ?? [],
-        new Date()
-      ),
-    [authClinic?.concurrent_access_limit, teamConcurrentAccessOverview?.active_sessions]
-  );
-
-  const activeTeamAccessRows = useMemo(
-    () =>
-      (teamConcurrentAccessOverview?.active_sessions ?? [])
-        .filter((securitySession) =>
-          isSecuritySessionActive(
-            {
-              clinic_id: clinicId ?? "",
-              ended_at: null,
-              last_seen_at: securitySession.last_seen_at ?? new Date(0).toISOString(),
-              session_key: securitySession.session_key,
-              user_id: securitySession.user_id,
-            },
-            new Date()
-          )
-        )
-        .map((securitySession) => ({
-          profile: profileMap.get(securitySession.user_id),
-          session: securitySession,
-        })),
-    [clinicId, profileMap, teamConcurrentAccessOverview?.active_sessions]
-  );
-
   const availableSections = useMemo(
     () =>
       [
@@ -712,13 +767,19 @@ const Configuracoes = () => {
           id: "signout" as const,
           title: "Sair da conta",
         },
-      ].filter(Boolean) as Array<{
+      ]
+        .filter(Boolean)
+        .filter((section) =>
+          operationalRole === "estagiario"
+            ? ["profile", "security", "signout"].includes((section as { id: SettingsSection }).id)
+            : true
+        ) as Array<{
         description: string;
         icon: typeof UserRound;
         id: SettingsSection;
         title: string;
       }>,
-    [can, subscriptionPlan]
+    [can, operationalRole, subscriptionPlan]
   );
 
   useEffect(() => {
@@ -1046,6 +1107,32 @@ const Configuracoes = () => {
 
     toast({ title: "Outras sessoes encerradas" });
     setEndingOtherSessions(false);
+    void fetchData();
+  };
+
+  const handleForceSignOutCollaborator = async (membershipRow: MembershipRow) => {
+    if (!canManageTeam || membershipRow.user_id === user?.id) {
+      return;
+    }
+
+    setSigningOutMembershipId(membershipRow.id);
+    const { error } = await supabase.rpc("end_clinic_user_security_sessions", {
+      _clinic_id: clinicId,
+      _target_user_id: membershipRow.user_id,
+    });
+
+    if (error) {
+      toast({
+        title: "Erro ao deslogar colaborador",
+        description: error.message,
+        variant: "destructive",
+      });
+      setSigningOutMembershipId(null);
+      return;
+    }
+
+    toast({ title: "Colaborador deslogado" });
+    setSigningOutMembershipId(null);
     void fetchData();
   };
 
@@ -1739,7 +1826,27 @@ const Configuracoes = () => {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Papel operacional</Label>
+                            <div className="flex items-center gap-2">
+                              <Label>Papel operacional</Label>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button type="button" aria-label="Explicar os papéis operacionais" className="text-muted-foreground hover:text-foreground">
+                                    <CircleHelp className="h-4 w-4" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="space-y-3">
+                                  <p className="text-sm font-medium">Diferenças entre os papéis operacionais</p>
+                                  <div className="space-y-2 text-sm text-muted-foreground">
+                                    {(["admin", "professional", "assistant", "estagiario"] as SubaccountOperationalRole[]).map((role) => (
+                                      <div key={role}>
+                                        <p className="font-medium text-foreground">{OPERATIONAL_ROLE_LABELS[role]}</p>
+                                        <p>{OPERATIONAL_ROLE_DESCRIPTIONS[role]}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
                             <Select
                               value={newSubaccountRole}
                               onValueChange={(value) => setNewSubaccountRole(value as SubaccountOperationalRole)}
@@ -1751,6 +1858,7 @@ const Configuracoes = () => {
                                 <SelectItem value="admin">admin</SelectItem>
                                 <SelectItem value="professional">professional</SelectItem>
                                 <SelectItem value="assistant">assistant</SelectItem>
+                                <SelectItem value="estagiario">estagiario</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -1788,12 +1896,68 @@ const Configuracoes = () => {
                         Nenhum colaborador encontrado para esta clínica.
                       </div>
                     ) : (
-                      visibleTeamMemberships.map((membershipRow) => {
+                      <>
+                        <div className="grid gap-4 rounded-lg border p-4 md:grid-cols-[minmax(0,1fr),180px,180px,180px]">
+                          <div className="space-y-2">
+                            <Label htmlFor="team-search">Buscar colaborador</Label>
+                            <Input
+                              id="team-search"
+                              value={teamSearchTerm}
+                              onChange={(event) => setTeamSearchTerm(event.target.value)}
+                              placeholder="Nome, e-mail, cargo ou papel"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Filtrar por papel</Label>
+                            <Select value={teamRoleFilter} onValueChange={(value) => setTeamRoleFilter(value as SubaccountOperationalRole | "all")}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todos</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                                <SelectItem value="professional">Profissional</SelectItem>
+                                <SelectItem value="assistant">Assistente</SelectItem>
+                                <SelectItem value="estagiario">Estagiário</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Filtrar por status</Label>
+                            <Select value={teamStatusFilter} onValueChange={(value) => setTeamStatusFilter(value as MembershipRow["membership_status"] | "all" | "online")}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {TEAM_STATUS_FILTER_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Ordenar por</Label>
+                            <Select value={teamSortKey} onValueChange={(value) => setTeamSortKey(value as typeof teamSortKey)}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {TEAM_SORT_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {visibleTeamRows.map((row) => {
+                          const membershipRow = row.membership;
                         const relatedProfile = profileMap.get(membershipRow.user_id);
-                        const statusMeta = getMembershipStatusMeta(membershipRow.membership_status);
+                        const statusMeta = row.activityStatus;
                         const isExpanded = expandedSubaccountIds.includes(membershipRow.id);
                         const isEditing = editingMembershipId === membershipRow.id && editingSubaccount !== null;
                         const canEditMembershipRow = canManageTeam && membershipRow.account_role !== "account_owner";
+                        const canForceSignOut = canManageTeam && row.isOnline && membershipRow.user_id !== user?.id;
 
                         return (
                           <div key={membershipRow.id} className="rounded-lg border p-4 space-y-4">
@@ -1812,6 +1976,21 @@ const Configuracoes = () => {
                               </div>
                               {canManageTeam && (
                                 <div className="flex items-center gap-2">
+                                  {canForceSignOut && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => void handleForceSignOutCollaborator(membershipRow)}
+                                      disabled={signingOutMembershipId === membershipRow.id}
+                                    >
+                                      {signingOutMembershipId === membershipRow.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                      ) : (
+                                        <LogOut className="h-4 w-4 mr-2" />
+                                      )}
+                                      Deslogar
+                                    </Button>
+                                  )}
                                   <Button variant="outline" size="sm" onClick={() => toggleExpandedSubaccount(membershipRow.id)}>
                                     {isExpanded ? <ChevronUp className="h-4 w-4 mr-2" /> : <ChevronDown className="h-4 w-4 mr-2" />}
                                     Ver mais
@@ -1967,6 +2146,7 @@ const Configuracoes = () => {
                                         <SelectItem value="admin">admin</SelectItem>
                                         <SelectItem value="professional">professional</SelectItem>
                                         <SelectItem value="assistant">assistant</SelectItem>
+                                        <SelectItem value="estagiario">estagiario</SelectItem>
                                       </SelectContent>
                                     </Select>
                                   </div>
@@ -2082,7 +2262,8 @@ const Configuracoes = () => {
                             )}
                           </div>
                         );
-                      })
+                      })}
+                      </>
                     )}
                   </>
                 )}

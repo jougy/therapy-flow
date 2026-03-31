@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildPatientSessionsView,
   canDeleteSelectedSessions,
+  filterSessionsForOperationalRole,
+  shouldAutoCompleteInternDraft,
+  shouldShowSessionCreatorInternBadge,
   shouldSessionBeVisibleInSearch,
   type SearchablePatientGroup,
   type SearchableSession,
@@ -120,6 +123,82 @@ describe("canDeleteSelectedSessions", () => {
     expect(canDeleteSelectedSessions([sessions[0], sessions[3]])).toBe(true);
     expect(canDeleteSelectedSessions([sessions[0], sessions[1]])).toBe(false);
     expect(canDeleteSelectedSessions([])).toBe(false);
+  });
+});
+
+describe("filterSessionsForOperationalRole", () => {
+  it("limits estagiario to sessions created by the current user", () => {
+    expect(
+      filterSessionsForOperationalRole({
+        currentUserId: "intern-user",
+        operationalRole: "estagiario",
+        sessions: [
+          { ...sessions[0], user_id: "intern-user" },
+          { ...sessions[1], user_id: "other-user" },
+        ],
+      }).map((session) => session.id)
+    ).toEqual(["session-1"]);
+  });
+
+  it("keeps clinic-wide visibility for the other operational roles", () => {
+    expect(
+      filterSessionsForOperationalRole({
+        currentUserId: "intern-user",
+        operationalRole: "professional",
+        sessions: [
+          { ...sessions[0], user_id: "intern-user" },
+          { ...sessions[1], user_id: "other-user" },
+        ],
+      }).map((session) => session.id)
+    ).toEqual(["session-1", "session-2"]);
+  });
+});
+
+describe("shouldShowSessionCreatorInternBadge", () => {
+  it("shows the extra Estagiario tag only when the creator cargo is Estagiário", () => {
+    expect(shouldShowSessionCreatorInternBadge("Estagiário")).toBe(true);
+    expect(shouldShowSessionCreatorInternBadge("estagiário")).toBe(true);
+    expect(shouldShowSessionCreatorInternBadge("Assistente")).toBe(false);
+    expect(shouldShowSessionCreatorInternBadge(null)).toBe(false);
+  });
+});
+
+describe("shouldAutoCompleteInternDraft", () => {
+  it("auto-completes drafts from estagiario after two days", () => {
+    expect(
+      shouldAutoCompleteInternDraft({
+        createdAt: "2026-03-01T10:00:00.000Z",
+        currentUserId: "intern-user",
+        now: new Date("2026-03-03T10:00:01.000Z"),
+        operationalRole: "estagiario",
+        sessionStatus: "rascunho",
+        userId: "intern-user",
+      })
+    ).toBe(true);
+  });
+
+  it("does not auto-complete sessions from other roles or other users", () => {
+    expect(
+      shouldAutoCompleteInternDraft({
+        createdAt: "2026-03-01T10:00:00.000Z",
+        currentUserId: "intern-user",
+        now: new Date("2026-03-03T10:00:01.000Z"),
+        operationalRole: "professional",
+        sessionStatus: "rascunho",
+        userId: "intern-user",
+      })
+    ).toBe(false);
+
+    expect(
+      shouldAutoCompleteInternDraft({
+        createdAt: "2026-03-01T10:00:00.000Z",
+        currentUserId: "intern-user",
+        now: new Date("2026-03-03T10:00:01.000Z"),
+        operationalRole: "estagiario",
+        sessionStatus: "rascunho",
+        userId: "other-user",
+      })
+    ).toBe(false);
   });
 });
 

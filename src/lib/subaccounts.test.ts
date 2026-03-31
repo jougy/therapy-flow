@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildVisibleTeamMembershipRows,
   countActiveConcurrentAccesses,
   formatLastSeenAt,
+  getCollaboratorActivityStatusMeta,
   getConcurrentAccessCapacity,
   getMembershipStatusMeta,
   isSecuritySessionActive,
@@ -129,6 +131,24 @@ describe("sortMembershipsForDisplay", () => {
       "assistant",
     ]);
   });
+
+  it("places estagiario after assistant in the operational priority ladder", () => {
+    const assistant = membership({
+      created_at: "2026-03-25T12:00:00.000Z",
+      operational_role: "assistant",
+      user_id: "assistant",
+    });
+    const intern = membership({
+      created_at: "2026-03-24T12:00:00.000Z",
+      operational_role: "estagiario",
+      user_id: "intern",
+    });
+
+    expect(sortMembershipsForDisplay([intern, assistant]).map((row) => row.user_id)).toEqual([
+      "assistant",
+      "intern",
+    ]);
+  });
 });
 
 describe("getMembershipStatusMeta", () => {
@@ -173,5 +193,69 @@ describe("team section visibility", () => {
     expect(shouldShowTeamAnalyticsSection("clinic", true)).toBe(true);
     expect(shouldShowTeamAnalyticsSection("clinic", false)).toBe(false);
     expect(shouldShowTeamAnalyticsSection("solo", true)).toBe(false);
+  });
+});
+
+describe("getCollaboratorActivityStatusMeta", () => {
+  it("prioritizes online status when there is an active session", () => {
+    expect(getCollaboratorActivityStatusMeta("active", true)).toEqual({
+      className: "bg-sky-500",
+      label: "Online",
+    });
+  });
+
+  it("falls back to the membership status when the collaborator is offline", () => {
+    expect(getCollaboratorActivityStatusMeta("inactive", false)).toEqual({
+      className: "bg-slate-400",
+      label: "Inativo",
+    });
+  });
+});
+
+describe("buildVisibleTeamMembershipRows", () => {
+  it("supports search, filters and sort options for the collaborator list", () => {
+    const rows = buildVisibleTeamMembershipRows({
+      memberships: [
+        membership({
+          account_role: "account_owner",
+          created_at: "2026-03-20T12:00:00.000Z",
+          operational_role: "owner",
+          user_id: "owner-1",
+        }),
+        membership({
+          created_at: "2026-03-24T12:00:00.000Z",
+          membership_status: "inactive",
+          operational_role: "assistant",
+          user_id: "assistant-1",
+        }),
+        membership({
+          created_at: "2026-03-23T12:00:00.000Z",
+          operational_role: "estagiario",
+          user_id: "intern-1",
+        }),
+      ],
+      onlineUserIds: new Set(["assistant-1"]),
+      profileMap: new Map([
+        [
+          "owner-1",
+          { email: "owner@test.com", full_name: "Ana Owner", job_title: "Diretora", last_seen_at: "2026-03-31T12:00:00.000Z" },
+        ],
+        [
+          "assistant-1",
+          { email: "assistente@test.com", full_name: "Bruno Assistente", job_title: "Recepção", last_seen_at: "2026-03-31T12:04:00.000Z" },
+        ],
+        [
+          "intern-1",
+          { email: "estagio@test.com", full_name: "Caio Estágio", job_title: "Estagiário", last_seen_at: null },
+        ],
+      ]),
+      roleFilter: "all",
+      searchTerm: "bruno",
+      sortKey: "name_asc",
+      statusFilter: "online",
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.membership.user_id).toBe("assistant-1");
   });
 });
