@@ -25,6 +25,7 @@ import {
   getAssignableContainerFields,
   getSectionSelectorOptions,
   hasScrollableOptionEditor,
+  hasTableColumnEditor,
   hasVerticalOptionEditor,
   isContainerField,
   isAnamnesisTemplateSchema,
@@ -516,11 +517,16 @@ const FormularioEditor = () => {
                           </div>
                         )}
 
-                        {(field.type === "checklist" || field.type === "multiple_choice" || field.type === "select" || field.type === "section_selector") && (
+                        {(field.type === "checklist" || field.type === "multiple_choice" || field.type === "select" || field.type === "table" || field.type === "section_selector") && (
                           <div className="space-y-2">
-                            <Label>Opções</Label>
+                            <Label>{hasTableColumnEditor(field.type) ? "Colunas" : "Opções"}</Label>
                             {hasScrollableOptionEditor(field.type) ? (
                               <OptionMatrixEditor
+                                options={field.options}
+                                onChange={(options) => updateField(field.id, { options })}
+                              />
+                            ) : hasTableColumnEditor(field.type) ? (
+                              <OptionListEditor
                                 options={field.options}
                                 onChange={(options) => updateField(field.id, { options })}
                               />

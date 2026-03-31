@@ -37,12 +37,17 @@ import { createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type 
 import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import {
+  addTableRow,
   buildTemplateLayout,
   getOptionMatrixRows,
+  getTableRows,
   getVisibleTemplateFields,
+  removeTableRow,
   type AnamnesisField,
+  type AnamnesisFormValue,
   type AnamnesisFormResponse,
   type AnamnesisTemplateSchema,
+  updateTableCellValue,
 } from "@/lib/anamnesis-forms";
 
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -63,7 +68,7 @@ const isJsonObject = (value: Json | null): value is Record<string, Json | undefi
 const readJsonString = (value: Json | undefined) => (typeof value === "string" ? value : "");
 
 const readJsonRecord = (value: Json | null): AnamnesisFormResponse =>
-  isJsonObject(value) ? (value as Record<string, string | number | string[] | boolean | null>) : {};
+  isJsonObject(value) ? (value as Record<string, AnamnesisFormValue>) : {};
 
 const readTemplateSchema = (value: Json): AnamnesisTemplateSchema =>
   Array.isArray(value) ? (value as AnamnesisTemplateSchema) : [];
@@ -299,7 +304,7 @@ const SessaoDetalhe = () => {
     [collaboratorProfileMap, editHistory]
   );
 
-  const updateFormResponse = (fieldId: string, value: string | number | string[] | boolean | null) => {
+  const updateFormResponse = (fieldId: string, value: AnamnesisFormValue) => {
     setAnamnesisFormResponse((current) => ({
       ...current,
       [fieldId]: value,
@@ -721,6 +726,66 @@ const SessaoDetalhe = () => {
               ))}
             </SelectContent>
           </Select>
+        </div>
+      );
+    }
+
+    if (field.type === "table") {
+      const rows = getTableRows(field, value);
+      const columns = field.options ?? [];
+
+      return (
+        <div key={field.id} className="space-y-3">
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
+          <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+            <div className="min-w-max space-y-3 p-3">
+              <div
+                className="grid gap-3 border-b pb-2"
+                style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(180px, 1fr)) 48px` }}
+              >
+                {columns.map((option) => (
+                  <div key={option.id} className="text-sm font-medium text-muted-foreground">
+                    {option.label}
+                  </div>
+                ))}
+                <div />
+              </div>
+
+              {rows.map((row, rowIndex) => (
+                <div
+                  key={`${field.id}_row_${rowIndex}`}
+                  className="grid gap-3"
+                  style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(180px, 1fr)) 48px` }}
+                >
+                  {columns.map((option) => (
+                    <Input
+                      key={option.id}
+                      value={row[option.id] ?? ""}
+                      onChange={(event) => updateFormResponse(field.id, updateTableCellValue(rows, rowIndex, option.id, event.target.value))}
+                      placeholder={option.label}
+                      disabled={locked}
+                    />
+                  ))}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={locked || rows.length === 1}
+                    aria-label={`Remover linha ${rowIndex + 1}`}
+                    onClick={() => updateFormResponse(field.id, removeTableRow(rows, rowIndex, field))}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <ScrollBar orientation="horizontal" />
+          </ScrollArea>
+
+          <Button type="button" variant="outline" size="sm" disabled={locked} onClick={() => updateFormResponse(field.id, addTableRow(rows, field))}>
+            <Plus className="mr-2 h-4 w-4" />
+            Adicionar linha
+          </Button>
         </div>
       );
     }
