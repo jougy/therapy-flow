@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { type Session, type User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { toast } from "@/hooks/use-toast";
 import { createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
@@ -39,6 +40,7 @@ type Membership = Database["public"]["Tables"]["clinic_memberships"]["Row"];
 type ClinicSummary = Pick<
   Database["public"]["Tables"]["clinics"]["Row"],
   | "account_owner_user_id"
+  | "concurrent_access_limit"
   | "id"
   | "logo_url"
   | "name"
@@ -104,13 +106,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
     const sessionKey = await createSecuritySessionKey(nextSession.access_token);
 
-    await supabase.rpc("register_current_security_session", {
+    const { error } = await supabase.rpc("register_current_security_session", {
       _browser: browserInfo.browser,
       _device_label: `${browserInfo.browser} • ${browserInfo.platform}`,
       _platform: browserInfo.platform,
       _session_key: sessionKey,
       _user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
     });
+
+    if (error) {
+      throw error;
+    }
   }, []);
 
   const fetchAuthState = useCallback(async (userId: string, nextSession?: Session | null) => {
@@ -119,8 +125,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", userId);
 
-    if (nextSession?.access_token) {
-      await registerSecuritySession(nextSession);
+    try {
+      if (nextSession?.access_token) {
+        await registerSecuritySession(nextSession);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nao foi possivel registrar a sessao atual.";
+      await supabase.auth.signOut();
+      toast({
+        title: "Acesso simultaneo indisponivel",
+        description: message,
+        variant: "destructive",
+      });
+      throw error;
     }
 
     const [profileRes, roleRes, membershipRes] = await Promise.all([
@@ -154,7 +171,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (nextClinicId) {
       const clinicRes = await supabase
         .from("clinics")
-        .select("account_owner_user_id, id, logo_url, name, subaccount_limit, subscription_plan")
+        .select("account_owner_user_id, concurrent_access_limit, id, logo_url, name, subaccount_limit, subscription_plan")
         .eq("id", nextClinicId)
         .maybeSingle();
 
@@ -170,7 +187,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (nextSession?.user) {
         setTimeout(() => {
-          void fetchAuthState(nextSession.user.id, nextSession).finally(() => setLoading(false));
+          void fetchAuthState(nextSession.user.id, nextSession)
+            .catch(() => undefined)
+            .finally(() => setLoading(false));
         }, 0);
       } else {
         setProfile(null);
@@ -185,7 +204,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(nextSession);
 
       if (nextSession?.user) {
-        void fetchAuthState(nextSession.user.id, nextSession).finally(() => setLoading(false));
+        void fetchAuthState(nextSession.user.id, nextSession)
+          .catch(() => undefined)
+          .finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
@@ -193,6 +214,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     return () => subscription.unsubscribe();
   }, [fetchAuthState]);
+
+  useEffect(() => {
+    if (!session?.user || !session.access_token) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void supabase
+        .from("profiles")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("id", session.user.id);
+      void registerSecuritySession(session).catch(() => undefined);
+    }, 5 * 60 * 1000);
+
+    return () => window.clearInterval(interval);
+  }, [registerSecuritySession, session]);
 
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {

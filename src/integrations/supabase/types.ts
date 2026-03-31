@@ -188,6 +188,7 @@ export type Database = {
       clinics: {
         Row: {
           account_owner_user_id: string | null
+          concurrent_access_limit: number
           address: Json
           anamnesis_base_schema: Json
           business_hours: Json
@@ -207,6 +208,7 @@ export type Database = {
         }
         Insert: {
           account_owner_user_id?: string | null
+          concurrent_access_limit?: number
           address?: Json
           anamnesis_base_schema?: Json
           business_hours?: Json
@@ -226,6 +228,7 @@ export type Database = {
         }
         Update: {
           account_owner_user_id?: string | null
+          concurrent_access_limit?: number
           address?: Json
           anamnesis_base_schema?: Json
           business_hours?: Json
@@ -897,6 +900,10 @@ export type Database = {
         }
         Returns: Json
       }
+      get_clinic_concurrent_access_overview: {
+        Args: { _clinic_id?: string }
+        Returns: Json
+      }
       create_patient_registration_link: {
         Args: { _patient_id: string }
         Returns: Json
@@ -1203,4 +1210,3 @@ export const Constants = {
     },
   },
 } as const
-

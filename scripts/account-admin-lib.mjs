@@ -3,6 +3,10 @@ import { createHash, createPrivateKey, createPublicKey, sign, verify } from "nod
 export const sanitizeDigits = (value = "") => String(value).replace(/\D/g, "");
 export const ADMIN_ACCOUNT_STATUSES = ["active", "payment_pending", "temporarily_paused", "banned"];
 export const OWNER_DOCUMENT_LENGTHS = [11, 14];
+export const DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN = {
+  clinic: 4,
+  solo: 1,
+};
 
 export const normalizeText = (value = "") =>
   String(value)
@@ -26,6 +30,18 @@ export const normalizeOwnerClinicDocumentOrThrow = (value) => {
   }
 
   return digits;
+};
+
+export const normalizeConcurrentAccessLimitOrThrow = (value, fallback = null) => {
+  const raw = String(value ?? "").trim();
+  const resolved = raw === "" && fallback !== null ? String(fallback).trim() : raw;
+  const numeric = Number.parseInt(resolved, 10);
+
+  if (!Number.isInteger(numeric) || numeric < 1) {
+    throw new Error("O limite de acessos simultâneos deve ser um número inteiro maior ou igual a 1.");
+  }
+
+  return numeric;
 };
 
 export const deriveAdminAccountStatus = (account) => {

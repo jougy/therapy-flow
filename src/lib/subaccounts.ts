@@ -4,14 +4,18 @@ export type MembershipLike = Pick<
   Database["public"]["Tables"]["clinic_memberships"]["Row"],
   "account_role" | "created_at" | "id" | "is_active" | "membership_status" | "operational_role" | "user_id"
 >;
+export type SecuritySessionLike = Pick<
+  Database["public"]["Tables"]["user_security_sessions"]["Row"],
+  "clinic_id" | "ended_at" | "last_seen_at" | "session_key" | "user_id"
+>;
 
-const OCCUPIED_STATUSES: Array<MembershipLike["membership_status"]> = ["active", "invited"];
 const ROLE_PRIORITY: Record<NonNullable<MembershipLike["operational_role"]>, number> = {
   owner: 0,
   admin: 1,
   professional: 2,
   assistant: 3,
 };
+const ACTIVE_SECURITY_SESSION_WINDOW_MS = 15 * 60 * 1000;
 
 const MEMBERSHIP_STATUS_META: Record<MembershipLike["membership_status"], { className: string; label: string }> = {
   active: { className: "bg-emerald-500", label: "Ativo" },
@@ -20,16 +24,33 @@ const MEMBERSHIP_STATUS_META: Record<MembershipLike["membership_status"], { clas
   suspended: { className: "bg-amber-500", label: "Suspenso" },
 };
 
-export const countOccupiedSubaccounts = (memberships: MembershipLike[]) =>
-  memberships.filter(
-    (membership) =>
-      membership.account_role !== "account_owner" &&
-      membership.is_active &&
-      OCCUPIED_STATUSES.includes(membership.membership_status)
-  ).length;
+export const isSecuritySessionActive = (
+  session: SecuritySessionLike,
+  now = new Date()
+) => {
+  if (session.ended_at) {
+    return false;
+  }
 
-export const getSubaccountCapacity = (limit: number, memberships: MembershipLike[]) => {
-  const occupied = countOccupiedSubaccounts(memberships);
+  const lastSeenAt = new Date(session.last_seen_at).getTime();
+  if (Number.isNaN(lastSeenAt)) {
+    return false;
+  }
+
+  return now.getTime() - lastSeenAt <= ACTIVE_SECURITY_SESSION_WINDOW_MS;
+};
+
+export const countActiveConcurrentAccesses = (
+  sessions: SecuritySessionLike[],
+  now = new Date()
+) => sessions.filter((session) => isSecuritySessionActive(session, now)).length;
+
+export const getConcurrentAccessCapacity = (
+  limit: number,
+  sessions: SecuritySessionLike[],
+  now = new Date()
+) => {
+  const occupied = countActiveConcurrentAccesses(sessions, now);
   const available = Math.max(limit - occupied, 0);
 
   return {
