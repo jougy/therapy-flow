@@ -4,6 +4,7 @@ import {
   addOptionToMatrixRow,
   addOptionToVerticalList,
   addTableRow,
+  ANAMNESIS_FIELD_LIBRARY,
   buildTemplateLayout,
   countTemplateQuestionFields,
   countTemplateSections,
@@ -103,6 +104,17 @@ describe("anamnesis forms helpers", () => {
         { label: "Coluna 2" },
       ],
     });
+  });
+
+  it("creates date fields", () => {
+    expect(createAnamnesisField("date", 0)).toMatchObject({
+      type: "date",
+      label: "Novo campo 1",
+    });
+  });
+
+  it("exposes date in the field library", () => {
+    expect(ANAMNESIS_FIELD_LIBRARY.some((field) => field.type === "date" && field.label === "Data")).toBe(true);
   });
 
   it("groups fields inside sections in layout order", () => {
