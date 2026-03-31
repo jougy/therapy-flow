@@ -18,6 +18,8 @@ dist-ssr
 .local-tools
 account-admin-local.sh
 account-admin-prod.sh
+scripts/account-admin*
+src/test/account-admin*
 control.sh
 .vercel
 .wrangler
