@@ -82,6 +82,7 @@ Objetivo:
 Regra pratica:
 
 - sempre que uma pagina critica ganhar nova subpagina, novo card importante ou nova composicao de contexto, considerar obrigatorio adicionar ou atualizar um smoke test dessa pagina
+- quando a pagina depender de RPC nova, coluna nova ou migration ainda nao aplicada em todos os ambientes, adicionar tambem um smoke test de degradacao segura com backend legado
 
 ### 2.2 Smoke tests de configuracao de deploy
 
@@ -118,6 +119,12 @@ Exemplos:
 Objetivo:
 
 - proteger regras que precisam existir no banco, nao so no frontend
+- detectar divergencia entre frontend novo e backend ainda nao migrado
+
+Regra pratica:
+
+- sempre que o frontend passar a depender de coluna nova, RPC nova ou mudanca de semantica no banco, adicionar pelo menos um teste que simule backend antigo e comprove que a UI nao quebra inteira
+- falha de compatibilidade deve gerar log claro no console e fallback seguro, nao tela branca
 
 ### 4. Checks de operacao
 
@@ -193,6 +200,8 @@ Esta secao deve crescer com o projeto.
 - Regra: login de teste local nao deve aparecer quando o ambiente estiver apontando para backend remoto
 - Regra: `.env.local` precisa ser gerado de forma compativel com Supabase CLI
 - Smoke test: `Configuracoes` deve renderizar e abrir subpaginas chave sem crash de runtime
+- Runtime: `AuthProvider` deve continuar montando mesmo se o backend ainda nao tiver a coluna ou RPC mais nova
+- Runtime: erros de render devem cair em error boundary com fallback visivel em vez de tela branca
 
 ### Checks que valem entrar em breve
 

@@ -3,6 +3,7 @@ import { type Session, type User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "@/hooks/use-toast";
+import { logRuntimeError } from "@/lib/runtime-debug";
 import { createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
@@ -71,6 +72,43 @@ const emptyCapabilities = Object.fromEntries(
   ACCESS_CAPABILITIES.map((capability) => [capability, false])
 ) as Record<AccessCapability, boolean>;
 
+const DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN: Record<SubscriptionPlan, number> = {
+  clinic: 4,
+  solo: 1,
+};
+
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    return typeof message === "string" ? message : String(message);
+  }
+
+  return String(error);
+};
+
+const isSimultaneousAccessLimitError = (error: unknown) => {
+  const message = getErrorMessage(error).toLowerCase();
+  return message.includes("limite de acessos simultaneos");
+};
+
+const deriveConcurrentAccessLimit = (clinicSummary: {
+  subaccount_limit: number | null;
+  subscription_plan: SubscriptionPlan;
+}) => {
+  if (clinicSummary.subscription_plan === "solo") {
+    return DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN.solo;
+  }
+
+  return Math.max(
+    clinicSummary.subaccount_limit ?? DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN.clinic,
+    DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN.clinic
+  );
+};
+
 const AuthContext = createContext<AuthContextType>({
   accountRole: null,
   can: () => false,
@@ -119,6 +157,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  const fetchClinicSummary = useCallback(async (clinicId: string) => {
+    const primaryRes = await supabase
+      .from("clinics")
+      .select("account_owner_user_id, concurrent_access_limit, id, logo_url, name, subaccount_limit, subscription_plan")
+      .eq("id", clinicId)
+      .maybeSingle();
+
+    if (!primaryRes.error) {
+      return primaryRes.data ?? null;
+    }
+
+    logRuntimeError("auth.fetchClinicSummary.primary", primaryRes.error, {
+      clinicId,
+      note: "Falling back to legacy clinic query without concurrent_access_limit.",
+    });
+
+    const fallbackRes = await supabase
+      .from("clinics")
+      .select("account_owner_user_id, id, logo_url, name, subaccount_limit, subscription_plan")
+      .eq("id", clinicId)
+      .maybeSingle();
+
+    if (fallbackRes.error) {
+      logRuntimeError("auth.fetchClinicSummary.fallback", fallbackRes.error, { clinicId });
+      return null;
+    }
+
+    if (!fallbackRes.data) {
+      return null;
+    }
+
+    return {
+      ...fallbackRes.data,
+      concurrent_access_limit: deriveConcurrentAccessLimit({
+        subaccount_limit: fallbackRes.data.subaccount_limit,
+        subscription_plan: fallbackRes.data.subscription_plan as SubscriptionPlan,
+      }),
+    };
+  }, []);
+
   const fetchAuthState = useCallback(async (userId: string, nextSession?: Session | null) => {
     await supabase
       .from("profiles")
@@ -130,14 +208,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         await registerSecuritySession(nextSession);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel registrar a sessao atual.";
-      await supabase.auth.signOut();
-      toast({
-        title: "Acesso simultaneo indisponivel",
-        description: message,
-        variant: "destructive",
-      });
-      throw error;
+      logRuntimeError("auth.register_current_security_session", error, { userId });
+
+      if (isSimultaneousAccessLimitError(error)) {
+        const message = getErrorMessage(error);
+
+        await supabase.auth.signOut();
+        toast({
+          title: "Acesso simultaneo indisponivel",
+          description: message,
+          variant: "destructive",
+        });
+        throw error;
+      }
     }
 
     const [profileRes, roleRes, membershipRes] = await Promise.all([
@@ -169,17 +252,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsSuperAdmin((roleRes.data ?? []).some((role) => role.role === "super_admin"));
 
     if (nextClinicId) {
-      const clinicRes = await supabase
-        .from("clinics")
-        .select("account_owner_user_id, concurrent_access_limit, id, logo_url, name, subaccount_limit, subscription_plan")
-        .eq("id", nextClinicId)
-        .maybeSingle();
-
-      setClinic(clinicRes.data ?? null);
+      setClinic(await fetchClinicSummary(nextClinicId));
     } else {
       setClinic(null);
     }
-  }, [registerSecuritySession]);
+  }, [fetchClinicSummary, registerSecuritySession]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -225,7 +302,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .from("profiles")
         .update({ last_seen_at: new Date().toISOString() })
         .eq("id", session.user.id);
-      void registerSecuritySession(session).catch(() => undefined);
+      void registerSecuritySession(session).catch((error) => {
+        logRuntimeError("auth.register_current_security_session.heartbeat", error, {
+          userId: session.user.id,
+        });
+      });
     }, 5 * 60 * 1000);
 
     return () => window.clearInterval(interval);

@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import Index from "./pages/Index";
 import PacienteDetalhe from "./pages/PacienteDetalhe";
 import SessaoDetalhe from "./pages/SessaoDetalhe";
@@ -47,37 +48,39 @@ const AuthRoute = ({ children }: { children: React.ReactNode }) => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
-            <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
-            <Route
-              path="/*"
-              element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Routes>
-                      <Route path="/" element={<Index />} />
-                      <Route path="/configuracoes" element={<Configuracoes />} />
-                      <Route path="/configuracoes/formularios/:templateId" element={<FormularioEditor />} />
-                      <Route path="/pacientes/novo" element={<NovoPaciente />} />
-                      <Route path="/pacientes/:id" element={<PacienteDetalhe />} />
-                      <Route path="/pacientes/:id/cadastro" element={<CadastroCompleto />} />
-                      <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
-                      <Route path="*" element={<NotFound />} />
-                    </Routes>
-                  </AppLayout>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+    <AppErrorBoundary>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <Routes>
+              <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
+              <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
+              <Route
+                path="/*"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <Routes>
+                        <Route path="/" element={<Index />} />
+                        <Route path="/configuracoes" element={<Configuracoes />} />
+                        <Route path="/configuracoes/formularios/:templateId" element={<FormularioEditor />} />
+                        <Route path="/pacientes/novo" element={<NovoPaciente />} />
+                        <Route path="/pacientes/:id" element={<PacienteDetalhe />} />
+                        <Route path="/pacientes/:id/cadastro" element={<CadastroCompleto />} />
+                        <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
+                        <Route path="*" element={<NotFound />} />
+                      </Routes>
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AppErrorBoundary>
   </QueryClientProvider>
 );
 

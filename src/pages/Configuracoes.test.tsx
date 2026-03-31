@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Configuracoes from "@/pages/Configuracoes";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: vi.fn(),
@@ -154,5 +155,31 @@ describe("Configuracoes", () => {
     });
 
     expect(screen.queryByText("Limite atual de subcontas")).not.toBeInTheDocument();
+  });
+
+  it("keeps rendering when the concurrent access overview RPC is unavailable", async () => {
+    vi.mocked(supabase.rpc).mockImplementation((fn: string) => {
+      if (fn === "get_clinic_concurrent_access_overview") {
+        return Promise.resolve({
+          data: null,
+          error: { message: "function public.get_clinic_concurrent_access_overview does not exist" },
+        });
+      }
+
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Colaboradores e acessos" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Limite atual de acessos simultâneos")).toBeInTheDocument();
+    });
   });
 });
