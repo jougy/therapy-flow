@@ -89,6 +89,10 @@ vi.mock("@/integrations/supabase/client", () => {
           return {
             account_owner_user_id: "owner-1",
             address: null,
+            anamnesis_base_schema: [
+              { id: "base-section", label: "Base", type: "section" },
+              { groupKey: "base-section", id: "base-field", label: "Queixa", type: "long_text" },
+            ],
             business_hours: null,
             concurrent_access_limit: 4,
             email: "contato@aurora.test",
@@ -98,6 +102,34 @@ vi.mock("@/integrations/supabase/client", () => {
             phone: "11999999999",
             subaccount_limit: 4,
           };
+        case "anamnesis_form_templates":
+          return [
+            {
+              clinic_id: "clinic-1",
+              created_at: "2026-03-30T12:00:00.000Z",
+              description: "Triagem padrão",
+              id: "template-1",
+              is_active: true,
+              is_system_default: false,
+              name: "Ficha ortopédica",
+              schema: [
+                { id: "section_1", label: "Contexto", type: "section" },
+                { groupKey: "section_1", id: "field_1", label: "Queixa", type: "long_text" },
+              ],
+              updated_at: "2026-03-30T12:00:00.000Z",
+              user_id: "owner-1",
+            },
+          ];
+        case "sessions":
+          return [
+            {
+              anamnesis_template_id: "template-1",
+              provider_id: "owner-1",
+              session_date: "2026-03-31",
+              status: "draft",
+              user_id: "owner-1",
+            },
+          ];
         default:
           return [];
       }
@@ -310,5 +342,20 @@ describe("Configuracoes", () => {
     expect(screen.getByText("Estagiário")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /explicar os papéis operacionais/i })).toBeInTheDocument();
     expect(screen.getByLabelText("Buscar colaborador")).toBeInTheDocument();
+  });
+
+  it("shows import and export controls in manage forms", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole("button", { name: /gerenciar formulários/i })[0]);
+
+    await waitFor(() => expect(screen.getByText("Bloco padrão universal")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /importar modelo/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /exportar modelo/i }).length).toBeGreaterThan(0);
   });
 });

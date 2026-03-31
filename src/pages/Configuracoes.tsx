@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   Clock3,
   ClipboardList,
   CreditCard,
+  Download,
   KeyRound,
   Laptop,
   Loader2,
@@ -23,6 +24,7 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Upload,
   UsersRound,
   Wallet,
   Save,
@@ -46,10 +48,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import {
   ANAMNESIS_FIELD_LIBRARY,
+  buildAnamnesisTemplateExchangeFileName,
+  buildAnamnesisTemplateExchangePayload,
   countTemplateQuestionFields,
   countTemplateSections,
   createDefaultTemplateSchema,
   isAnamnesisTemplateSchema,
+  parseAnamnesisTemplateExchangePayload,
 } from "@/lib/anamnesis-forms";
 import {
   buildVisibleTeamMembershipRows,
@@ -362,6 +367,7 @@ const Configuracoes = () => {
   const mobileLongPressTimerRef = useRef<number | null>(null);
   const mobileLongPressTriggeredRef = useRef(false);
   const mobileDescriptionTimerRef = useRef<number | null>(null);
+  const templateImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!clinicId || !user?.id) return;
@@ -1311,6 +1317,119 @@ const Configuracoes = () => {
     }
     void fetchData();
   };
+
+  const handleExportTemplateModel = useCallback(
+    ({
+      description,
+      kind,
+      name,
+      schema,
+    }: {
+      description?: string | null;
+      kind: "base" | "template";
+      name: string;
+      schema: unknown;
+    }) => {
+      if (!isAnamnesisTemplateSchema(schema)) {
+        toast({
+          title: "Modelo inválido",
+          description: "A estrutura deste formulário não pôde ser exportada.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const payload = buildAnamnesisTemplateExchangePayload({
+        description,
+        kind,
+        name,
+        schema,
+      });
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = objectUrl;
+      link.download = buildAnamnesisTemplateExchangeFileName(kind, name);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+
+      toast({
+        title: kind === "base" ? "Bloco padrão exportado" : "Modelo exportado",
+        description: "O arquivo JSON foi baixado com a estrutura completa do formulário.",
+      });
+    },
+    []
+  );
+
+  const handleImportTemplateFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+
+      if (!file || !clinicId || !user?.id) {
+        return;
+      }
+
+      try {
+        const raw = await file.text();
+        const imported = parseAnamnesisTemplateExchangePayload(raw);
+
+        if (imported.kind === "base") {
+          const { error } = await supabase
+            .from("clinics")
+            .update({ anamnesis_base_schema: imported.template.schema })
+            .eq("id", clinicId);
+
+          if (error) {
+            throw error;
+          }
+
+          await fetchData();
+          toast({
+            title: "Bloco padrão importado",
+            description: `A estrutura "${imported.template.name}" foi aplicada ao bloco padrão universal.`,
+          });
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("anamnesis_form_templates")
+          .insert({
+            clinic_id: clinicId,
+            description: imported.template.description.trim() || null,
+            is_active: true,
+            is_system_default: false,
+            name: imported.template.name.trim(),
+            schema: imported.template.schema,
+            user_id: user.id,
+          })
+          .select("id")
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        setSelectedTemplateId(data.id);
+        await fetchData();
+        toast({
+          title: "Modelo importado",
+          description: `A ficha "${imported.template.name}" foi criada com a mesma estrutura do arquivo.`,
+        });
+      } catch (error) {
+        toast({
+          title: "Erro ao importar modelo",
+          description: error instanceof Error ? error.message : "Não foi possível importar este arquivo.",
+          variant: "destructive",
+        });
+      }
+    },
+    [clinicId, fetchData, user?.id]
+  );
 
   if (loading) {
     return (
@@ -3153,6 +3272,13 @@ const Configuracoes = () => {
 
           {activeSection === "forms" && (
             <>
+              <input
+                ref={templateImportInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="sr-only"
+                onChange={(event) => void handleImportTemplateFile(event)}
+              />
               <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
                   <h2 className="text-xl font-semibold tracking-tight">Gerenciar formulários</h2>
@@ -3160,10 +3286,16 @@ const Configuracoes = () => {
                     Edite o bloco-base universal da anamnese e mantenha as fichas extras usadas nos atendimentos.
                   </p>
                 </div>
-                <Button onClick={() => navigate("/configuracoes/formularios/novo")}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Nova ficha
-                </Button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button variant="outline" onClick={() => templateImportInputRef.current?.click()}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Importar modelo
+                  </Button>
+                  <Button onClick={() => navigate("/configuracoes/formularios/novo")}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Nova ficha
+                  </Button>
+                </div>
               </div>
 
               <Card>
@@ -3174,10 +3306,27 @@ const Configuracoes = () => {
                       Esta é a primeira parte obrigatória da anamnese, aplicada em todas as fichas da clínica.
                     </p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => navigate("/configuracoes/formularios/base")}>
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Editar bloco padrão
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        handleExportTemplateModel({
+                          description: "Primeira parte obrigatória aplicada em todas as fichas da clínica.",
+                          kind: "base",
+                          name: "Bloco padrão universal",
+                          schema: baseSchema,
+                        })
+                      }
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Exportar modelo
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => navigate("/configuracoes/formularios/base")}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Editar bloco padrão
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-3">
                   <div className="rounded-lg border p-4">
@@ -3239,6 +3388,21 @@ const Configuracoes = () => {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            handleExportTemplateModel({
+                              description: selectedTemplate.description,
+                              kind: "template",
+                              name: selectedTemplate.name,
+                              schema: selectedTemplate.schema,
+                            })
+                          }
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Exportar modelo
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => navigate(`/configuracoes/formularios/${selectedTemplate.id}`)}>
                           <Pencil className="h-4 w-4 mr-2" />
                           Editar

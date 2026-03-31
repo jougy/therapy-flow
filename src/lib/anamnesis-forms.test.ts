@@ -5,6 +5,8 @@ import {
   addOptionToVerticalList,
   addTableRow,
   ANAMNESIS_FIELD_LIBRARY,
+  buildAnamnesisTemplateExchangeFileName,
+  buildAnamnesisTemplateExchangePayload,
   buildTemplateLayout,
   countTemplateQuestionFields,
   countTemplateSections,
@@ -18,6 +20,7 @@ import {
   hasVerticalOptionEditor,
   getVisibleTemplateFields,
   isAnamnesisTemplateSchema,
+  parseAnamnesisTemplateExchangePayload,
   normalizeOptions,
   removeOptionFromMatrix,
   removeOptionFromVerticalList,
@@ -115,6 +118,33 @@ describe("anamnesis forms helpers", () => {
 
   it("exposes date in the field library", () => {
     expect(ANAMNESIS_FIELD_LIBRARY.some((field) => field.type === "date" && field.label === "Data")).toBe(true);
+  });
+
+  it("exports and re-imports a template model without changing its schema", () => {
+    const schema = createDefaultTemplateSchema();
+    const payload = buildAnamnesisTemplateExchangePayload({
+      description: "Triagem inicial",
+      kind: "template",
+      name: "Ficha ortopédica",
+      schema,
+    });
+
+    expect(parseAnamnesisTemplateExchangePayload(JSON.stringify(payload))).toEqual(payload);
+  });
+
+  it("rejects invalid imported template models", () => {
+    expect(() => parseAnamnesisTemplateExchangePayload(JSON.stringify({ foo: "bar" }))).toThrow(
+      "Arquivo de modelo inválido"
+    );
+  });
+
+  it("builds a predictable export file name", () => {
+    expect(buildAnamnesisTemplateExchangeFileName("template", "Ficha ortopédica inicial")).toBe(
+      "pronto-health-fisio-modelo-ficha-ortopedica-inicial.json"
+    );
+    expect(buildAnamnesisTemplateExchangeFileName("base", "Bloco padrão universal")).toBe(
+      "pronto-health-fisio-modelo-bloco-padrao-universal.json"
+    );
   });
 
   it("groups fields inside sections in layout order", () => {
