@@ -8,6 +8,7 @@ import {
   hasTrustedLocalAdminKeyMaterial,
   isOwnerClinicDocumentDigits,
   matchesAccountIdentifier,
+  normalizeConcurrentAccessLimitOrThrow,
   normalizeOwnerClinicDocumentOrThrow,
   normalizeAdminAccountStatus,
   OWNER_DOCUMENT_LENGTHS,
@@ -77,6 +78,12 @@ describe("account admin lib", () => {
     expect(normalizeOwnerClinicDocumentOrThrow("123.456.789-01")).toBe("12345678901");
     expect(normalizeOwnerClinicDocumentOrThrow("12.345.678/0001-90")).toBe("12345678000190");
     expect(() => normalizeOwnerClinicDocumentOrThrow("123")).toThrow(/11 dígitos/);
+  });
+
+  it("normalizes a valid concurrent access limit", () => {
+    expect(normalizeConcurrentAccessLimitOrThrow("4")).toBe(4);
+    expect(normalizeConcurrentAccessLimitOrThrow("", 2)).toBe(2);
+    expect(() => normalizeConcurrentAccessLimitOrThrow("0")).toThrow(/acessos simultâneos/);
   });
 
   it("filters accounts by search query across multiple fields", () => {

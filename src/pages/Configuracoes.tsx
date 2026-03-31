@@ -51,8 +51,9 @@ import {
 } from "@/lib/anamnesis-forms";
 import {
   formatLastSeenAt,
+  getConcurrentAccessCapacity,
   getMembershipStatusMeta,
-  getSubaccountCapacity,
+  isSecuritySessionActive,
   shouldShowTeamSettingsSection,
   sortMembershipsForDisplay,
 } from "@/lib/subaccounts";
@@ -108,6 +109,20 @@ type SecurityEventRow = Database["public"]["Tables"]["security_events"]["Row"];
 type SecuritySessionRow = Database["public"]["Tables"]["user_security_sessions"]["Row"];
 type SecuritySettingsRow = Database["public"]["Tables"]["user_security_settings"]["Row"];
 type TeamDevelopmentRow = Database["public"]["Tables"]["team_development_profiles"]["Row"];
+type TeamConcurrentAccessOverview = {
+  active_sessions: Array<{
+    browser: string | null;
+    device_label: string | null;
+    last_seen_at: string | null;
+    platform: string | null;
+    session_key: string;
+    user_id: string;
+  }>;
+  available: number;
+  limit: number;
+  occupied: number;
+  reached: boolean;
+};
 type SubaccountOperationalRole = Exclude<MembershipRow["operational_role"], "owner">;
 type TeamProfileRow = Pick<
   ProfileRow,
@@ -274,6 +289,7 @@ const Configuracoes = () => {
   const [securityEvents, setSecurityEvents] = useState<SecurityEventRow[]>([]);
   const [adminSecurityEvents, setAdminSecurityEvents] = useState<SecurityEventRow[]>([]);
   const [securitySessions, setSecuritySessions] = useState<SecuritySessionRow[]>([]);
+  const [teamConcurrentAccessOverview, setTeamConcurrentAccessOverview] = useState<TeamConcurrentAccessOverview | null>(null);
   const [securityPassword, setSecurityPassword] = useState("");
   const [securityPasswordConfirm, setSecurityPasswordConfirm] = useState("");
   const [savingSecuritySettings, setSavingSecuritySettings] = useState(false);
@@ -317,7 +333,7 @@ const Configuracoes = () => {
     if (!clinicId || !user?.id) return;
 
     setLoading(true);
-    const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes] = await Promise.all([
+    const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes, concurrentAccessRes] = await Promise.all([
       supabase.from("clinics").select("*").eq("id", clinicId).single(),
       supabase
         .from("anamnesis_form_templates")
@@ -367,6 +383,9 @@ const Configuracoes = () => {
             .order("created_at", { ascending: false })
             .limit(12)
         : Promise.resolve({ data: [], error: null }),
+      shouldShowTeamSettingsSection(subscriptionPlan) && can("subaccounts.manage")
+        ? supabase.rpc("get_clinic_concurrent_access_overview", { _clinic_id: clinicId })
+        : Promise.resolve({ data: null, error: null }),
     ]);
 
     if (templatesRes.error) {
@@ -405,6 +424,7 @@ const Configuracoes = () => {
     setSecuritySessions(securitySessionsRes.data ?? []);
     setSecurityEvents(securityEventsRes.data ?? []);
     setAdminSecurityEvents((adminSecurityEventsRes.data as SecurityEventRow[] | null) ?? []);
+    setTeamConcurrentAccessOverview((concurrentAccessRes.data as TeamConcurrentAccessOverview | null) ?? null);
     setClinicName(clinicRes.data?.name ?? "");
     setClinicLegalName(clinicRes.data?.legal_name ?? "");
     setClinicEmail(clinicRes.data?.email ?? "");
@@ -583,9 +603,36 @@ const Configuracoes = () => {
     ]
   );
 
-  const subaccountCapacity = useMemo(
-    () => getSubaccountCapacity(authClinic?.subaccount_limit ?? 0, memberships),
-    [authClinic?.subaccount_limit, memberships]
+  const concurrentAccessCapacity = useMemo(
+    () =>
+      getConcurrentAccessCapacity(
+        authClinic?.concurrent_access_limit ?? 1,
+        teamConcurrentAccessOverview?.active_sessions ?? [],
+        new Date()
+      ),
+    [authClinic?.concurrent_access_limit, teamConcurrentAccessOverview?.active_sessions]
+  );
+
+  const activeTeamAccessRows = useMemo(
+    () =>
+      (teamConcurrentAccessOverview?.active_sessions ?? [])
+        .filter((securitySession) =>
+          isSecuritySessionActive(
+            {
+              clinic_id: clinicId ?? "",
+              ended_at: null,
+              last_seen_at: securitySession.last_seen_at ?? new Date(0).toISOString(),
+              session_key: securitySession.session_key,
+              user_id: securitySession.user_id,
+            },
+            new Date()
+          )
+        )
+        .map((securitySession) => ({
+          profile: profileMap.get(securitySession.user_id),
+          session: securitySession,
+        })),
+    [clinicId, profileMap, teamConcurrentAccessOverview?.active_sessions]
   );
 
   const availableSections = useMemo(
@@ -1046,15 +1093,6 @@ const Configuracoes = () => {
 
   const handleCreateSubaccount = async () => {
     if (!clinicId || !can("subaccounts.manage")) {
-      return;
-    }
-
-    if (subaccountCapacity.reached) {
-      toast({
-        title: "Limite de subcontas atingido",
-        description: "Inative uma subconta existente ou aumente o plano clinic antes de criar outra.",
-        variant: "destructive",
-      });
       return;
     }
 
@@ -1604,24 +1642,49 @@ const Configuracoes = () => {
                     {canManageTeam && (
                       <>
                         <div className="rounded-lg border p-4 text-sm">
-                          <p className="font-medium">Limite atual de subcontas</p>
+                          <p className="font-medium">Limite atual de acessos simultâneos</p>
                           <p className="mt-1 text-muted-foreground">
-                            {subaccountCapacity.occupied} de {subaccountCapacity.limit} subconta(s) em uso no plano clinic atual.
+                            {concurrentAccessCapacity.occupied} de {concurrentAccessCapacity.limit} acesso(s) simultâneo(s) em uso neste momento.
                           </p>
                         </div>
                         <div className="grid gap-4 md:grid-cols-3">
                           <div className="rounded-lg border p-4">
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Assentos ocupados</p>
-                            <p className="mt-2 text-2xl font-semibold">{subaccountCapacity.occupied}</p>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Acessos ativos agora</p>
+                            <p className="mt-2 text-2xl font-semibold">{concurrentAccessCapacity.occupied}</p>
                           </div>
                           <div className="rounded-lg border p-4">
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Disponíveis</p>
-                            <p className="mt-2 text-2xl font-semibold">{subaccountCapacity.available}</p>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Disponíveis agora</p>
+                            <p className="mt-2 text-2xl font-semibold">{concurrentAccessCapacity.available}</p>
                           </div>
                           <div className="rounded-lg border p-4">
                             <p className="text-xs uppercase tracking-wide text-muted-foreground">Conta principal</p>
                             <p className="mt-2 text-sm font-medium">{accountRole === "account_owner" ? "Você" : "Outro usuário da clínica"}</p>
                           </div>
+                        </div>
+                        <div className="rounded-lg border p-4 space-y-3">
+                          <div>
+                            <p className="font-medium">Acessos ativos neste momento</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              As subcontas são ilimitadas. O controle comercial atual da clínica é pelo número de acessos simultâneos em uso.
+                            </p>
+                          </div>
+                          {activeTeamAccessRows.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">Nenhum acesso ativo identificado agora.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {activeTeamAccessRows.map(({ profile: activeProfile, session: activeSession }) => (
+                                <div key={activeSession.session_key} className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                                  <div>
+                                    <p className="font-medium">{activeProfile?.full_name || activeProfile?.email || activeSession.user_id}</p>
+                                    <p className="mt-1 text-muted-foreground">
+                                      {activeSession.device_label || [activeSession.browser, activeSession.platform].filter(Boolean).join(" • ") || "Dispositivo sem identificação"}
+                                    </p>
+                                  </div>
+                                  <span className="text-muted-foreground">Visto por último: {formatLastSeenAt(activeSession.last_seen_at)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </>
                     )}
@@ -1682,13 +1745,12 @@ const Configuracoes = () => {
                         </div>
                         <div className="flex items-center justify-between gap-4 flex-wrap">
                           <p className="text-sm text-muted-foreground">
-                            A subconta já nasce ativa e ocupando um assento do plano.
+                            A subconta já nasce ativa. O limite comercial da clínica é controlado pelos acessos simultâneos, não pela quantidade de subcontas.
                           </p>
                           <Button
                             onClick={() => void handleCreateSubaccount()}
                             disabled={
                               creatingSubaccount ||
-                              subaccountCapacity.reached ||
                               !newSubaccountName.trim() ||
                               !newSubaccountEmail.trim() ||
                               newSubaccountPassword.trim().length < 6

@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  countActiveConcurrentAccesses,
   formatLastSeenAt,
+  getConcurrentAccessCapacity,
   getMembershipStatusMeta,
-  countOccupiedSubaccounts,
-  getSubaccountCapacity,
+  isSecuritySessionActive,
   shouldShowTeamAnalyticsSection,
   shouldShowTeamSettingsSection,
   sortMembershipsForDisplay,
   type MembershipLike,
+  type SecuritySessionLike,
 } from "@/lib/subaccounts";
 
 const membership = (overrides: Partial<MembershipLike>): MembershipLike => ({
@@ -21,27 +23,42 @@ const membership = (overrides: Partial<MembershipLike>): MembershipLike => ({
   ...overrides,
 });
 
-describe("countOccupiedSubaccounts", () => {
-  it("counts only active non-owner seats", () => {
+const securitySession = (overrides: Partial<SecuritySessionLike>): SecuritySessionLike => ({
+  clinic_id: "clinic-1",
+  ended_at: null,
+  last_seen_at: "2026-03-31T12:00:00.000Z",
+  session_key: crypto.randomUUID(),
+  user_id: crypto.randomUUID(),
+  ...overrides,
+});
+
+describe("countActiveConcurrentAccesses", () => {
+  it("counts only open and recent sessions", () => {
     expect(
-      countOccupiedSubaccounts([
-        membership({ account_role: "account_owner", operational_role: "owner" }),
-        membership({ operational_role: "admin" }),
-        membership({ membership_status: "invited" }),
-        membership({ is_active: false, membership_status: "inactive" }),
-        membership({ is_active: true, membership_status: "suspended" }),
-      ])
+      countActiveConcurrentAccesses(
+        [
+          securitySession({ session_key: "current" }),
+          securitySession({ user_id: "other-1", session_key: "other-1" }),
+          securitySession({ user_id: "other-2", ended_at: "2026-03-31T12:04:00.000Z" }),
+          securitySession({ user_id: "other-3", last_seen_at: "2026-03-31T11:30:00.000Z" }),
+        ],
+        new Date("2026-03-31T12:05:00.000Z")
+      )
     ).toBe(2);
   });
 });
 
-describe("getSubaccountCapacity", () => {
-  it("reports availability for clinic plans", () => {
+describe("getConcurrentAccessCapacity", () => {
+  it("reports availability for active accesses", () => {
     expect(
-      getSubaccountCapacity(4, [
-        membership({ operational_role: "admin" }),
-        membership({ operational_role: "assistant" }),
-      ])
+      getConcurrentAccessCapacity(
+        4,
+        [
+          securitySession({ user_id: "user-1", session_key: "one" }),
+          securitySession({ user_id: "user-2", session_key: "two" }),
+        ],
+        new Date("2026-03-31T12:05:00.000Z")
+      )
     ).toEqual({
       available: 2,
       limit: 4,
@@ -50,18 +67,34 @@ describe("getSubaccountCapacity", () => {
     });
   });
 
-  it("marks the plan as full when the seat limit is reached", () => {
+  it("marks the plan as full when the concurrent access limit is reached", () => {
     expect(
-      getSubaccountCapacity(2, [
-        membership({ operational_role: "admin" }),
-        membership({ operational_role: "assistant", membership_status: "invited" }),
-      ])
+      getConcurrentAccessCapacity(
+        2,
+        [
+          securitySession({ user_id: "user-1", session_key: "one" }),
+          securitySession({ user_id: "user-2", session_key: "two" }),
+          securitySession({ user_id: "user-3", last_seen_at: "2026-03-31T11:20:00.000Z" }),
+        ],
+        new Date("2026-03-31T12:05:00.000Z")
+      )
     ).toEqual({
       available: 0,
       limit: 2,
       occupied: 2,
       reached: true,
     });
+  });
+});
+
+describe("isSecuritySessionActive", () => {
+  it("treats stale sessions as inactive", () => {
+    expect(
+      isSecuritySessionActive(
+        securitySession({ last_seen_at: "2026-03-31T11:00:00.000Z" }),
+        new Date("2026-03-31T12:05:00.000Z")
+      )
+    ).toBe(false);
   });
 });
 
