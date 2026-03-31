@@ -3,11 +3,14 @@ import {
   addOptionMatrixRow,
   addOptionToMatrixRow,
   addOptionToVerticalList,
+  addTableRow,
   buildTemplateLayout,
   countTemplateQuestionFields,
   countTemplateSections,
   createDefaultTemplateSchema,
+  createAnamnesisField,
   getOptionMatrixRows,
+  getTableRows,
   getVerticalOptionList,
   getAssignableContainerFields,
   hasScrollableOptionEditor,
@@ -17,6 +20,8 @@ import {
   normalizeOptions,
   removeOptionFromMatrix,
   removeOptionFromVerticalList,
+  removeTableRow,
+  updateTableCellValue,
   updateOptionMatrixLabel,
   updateVerticalOptionLabel,
   type AnamnesisTemplateSchema,
@@ -87,6 +92,17 @@ describe("anamnesis forms helpers", () => {
     expect(schema).toHaveLength(6);
     expect(schema[0]?.type).toBe("section");
     expect(schema[1]?.label).toBe("Queixa principal");
+  });
+
+  it("creates table fields with default columns", () => {
+    expect(createAnamnesisField("table", 0)).toMatchObject({
+      type: "table",
+      label: "Nova tabela",
+      options: [
+        { label: "Coluna 1" },
+        { label: "Coluna 2" },
+      ],
+    });
   });
 
   it("groups fields inside sections in layout order", () => {
@@ -219,5 +235,23 @@ describe("anamnesis forms helpers", () => {
     expect(removeOptionFromVerticalList([{ id: "option_1", label: "Única", row: 0 }], "option_1")).toEqual([
       { id: "option_1", label: "Opção 1", row: 0 },
     ]);
+  });
+
+  it("builds and updates table rows using the fixed columns", () => {
+    const field = createAnamnesisField("table", 0);
+    const baseRows = getTableRows(field);
+    const updatedRows = updateTableCellValue(baseRows, 0, field.options?.[0]?.id ?? "", "Agachamento");
+    const withSecondRow = addTableRow(updatedRows, field);
+
+    expect(baseRows).toEqual([{ [field.options?.[0]?.id ?? ""]: "", [field.options?.[1]?.id ?? ""]: "" }]);
+    expect(updatedRows[0]?.[field.options?.[0]?.id ?? ""]).toBe("Agachamento");
+    expect(withSecondRow).toHaveLength(2);
+  });
+
+  it("keeps at least one table row when removing rows", () => {
+    const field = createAnamnesisField("table", 0);
+    const rows = getTableRows(field);
+
+    expect(removeTableRow(rows, 0, field)).toEqual(rows);
   });
 });

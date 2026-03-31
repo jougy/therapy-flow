@@ -158,4 +158,36 @@ describe("getSessionSummaryContent", () => {
       "Queixa principal: Dor lombar\n\nHistórico funcional: Paciente relata piora ao levantar cedo\n\nEvolução percebida: Melhorando"
     );
   });
+
+  it("formats table fields in the saved session summary", () => {
+    const extraSchema: AnamnesisTemplateSchema = [
+      {
+        id: "exercise_table",
+        label: "Exercícios aplicados",
+        type: "table",
+        options: [
+          { id: "exercise", label: "Exercício" },
+          { id: "repetitions", label: "Repetições" },
+        ],
+      },
+    ];
+
+    const result = getSessionSummaryContent(
+      {
+        anamnesis: null,
+        anamnesis_form_response: {
+          exercise_table: [
+            { exercise: "Agachamento", repetitions: "12" },
+            { exercise: "Ponte", repetitions: "10" },
+          ],
+        },
+      },
+      [],
+      extraSchema
+    );
+
+    expect(result).toBe(
+      "Exercícios aplicados: Exercício: Agachamento | Repetições: 12 / Exercício: Ponte | Repetições: 10"
+    );
+  });
 });

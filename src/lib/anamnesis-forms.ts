@@ -5,6 +5,7 @@ export type AnamnesisFieldType =
   | "checklist"
   | "multiple_choice"
   | "select"
+  | "table"
   | "slider"
   | "section"
   | "horizontal_section"
@@ -34,7 +35,9 @@ export interface AnamnesisField {
 }
 
 export type AnamnesisTemplateSchema = AnamnesisField[];
-export type AnamnesisFormResponse = Record<string, string | number | string[] | boolean | null>;
+export type AnamnesisTableRow = Record<string, string>;
+export type AnamnesisFormValue = string | number | string[] | boolean | AnamnesisTableRow[] | null;
+export type AnamnesisFormResponse = Record<string, AnamnesisFormValue>;
 
 export const DEFAULT_ANAMNESIS_TEMPLATE_SCHEMA: AnamnesisTemplateSchema = [
   {
@@ -97,6 +100,7 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
   { type: "checklist", label: "Checklist" },
   { type: "multiple_choice", label: "Múltipla escolha" },
   { type: "select", label: "Droplist" },
+  { type: "table", label: "Tabela" },
   { type: "slider", label: "Slidebar" },
   { type: "section", label: "Seção" },
   { type: "horizontal_section", label: "Seção horizontal" },
@@ -108,6 +112,7 @@ export const isContainerField = (field: AnamnesisField) => isContainerFieldType(
 export const hasScrollableOptionEditor = (type: AnamnesisFieldType) =>
   type === "checklist" || type === "multiple_choice";
 export const hasVerticalOptionEditor = (type: AnamnesisFieldType) => type === "select";
+export const hasTableColumnEditor = (type: AnamnesisFieldType) => type === "table";
 
 export const createFieldOption = (label: string, index: number, row = 0): AnamnesisFieldOption => ({
   id: `option_${index + 1}`,
@@ -135,6 +140,14 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
     return {
       ...baseField,
       options: [createFieldOption("Opção 1", 0), createFieldOption("Opção 2", 1)],
+    };
+  }
+
+  if (type === "table") {
+    return {
+      ...baseField,
+      label: "Nova tabela",
+      options: [createFieldOption("Coluna 1", 0), createFieldOption("Coluna 2", 1)],
     };
   }
 
@@ -266,6 +279,42 @@ export const updateVerticalOptionLabel = (options: AnamnesisFieldOption[], optio
 export const removeOptionFromVerticalList = (options: AnamnesisFieldOption[], optionId: string) => {
   const next = getVerticalOptionList(options).filter((option) => option.id !== optionId);
   return next.length > 0 ? getVerticalOptionList(next) : [createFieldOption("Opção 1", 0, 0)];
+};
+
+const createEmptyTableRow = (field: Pick<AnamnesisField, "options">): AnamnesisTableRow =>
+  Object.fromEntries((field.options ?? []).map((option) => [option.id, ""]));
+
+export const getTableRows = (
+  field: Pick<AnamnesisField, "options">,
+  value?: AnamnesisFormValue,
+) => {
+  if (Array.isArray(value) && value.every((row) => typeof row === "object" && row !== null && !Array.isArray(row))) {
+    const rows = value as AnamnesisTableRow[];
+    return rows.length > 0 ? rows : [createEmptyTableRow(field)];
+  }
+
+  return [createEmptyTableRow(field)];
+};
+
+export const addTableRow = (rows: AnamnesisTableRow[], field: Pick<AnamnesisField, "options">) => [
+  ...rows,
+  createEmptyTableRow(field),
+];
+
+export const updateTableCellValue = (
+  rows: AnamnesisTableRow[],
+  rowIndex: number,
+  columnId: string,
+  value: string,
+) => rows.map((row, index) => (index === rowIndex ? { ...row, [columnId]: value } : row));
+
+export const removeTableRow = (
+  rows: AnamnesisTableRow[],
+  rowIndex: number,
+  field: Pick<AnamnesisField, "options">,
+) => {
+  const next = rows.filter((_, index) => index !== rowIndex);
+  return next.length > 0 ? next : [createEmptyTableRow(field)];
 };
 
 export const getSectionSelectorOptions = (fields: AnamnesisTemplateSchema) =>

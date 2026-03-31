@@ -1,5 +1,11 @@
 import type { Database, Json } from "@/integrations/supabase/types";
-import { getVisibleTemplateFields, type AnamnesisField, type AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
+import {
+  getVisibleTemplateFields,
+  type AnamnesisField,
+  type AnamnesisFormValue,
+  type AnamnesisTableRow,
+  type AnamnesisTemplateSchema,
+} from "@/lib/anamnesis-forms";
 import { formatTreatmentSummary, readTreatmentState } from "@/lib/session-treatment";
 
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
@@ -57,6 +63,23 @@ const formatResponseValue = (field: AnamnesisField, responseValue: Json | undefi
   }
 
   if (Array.isArray(responseValue)) {
+    if (responseValue.every((item) => typeof item === "object" && item !== null && !Array.isArray(item))) {
+      const formattedRows = (responseValue as AnamnesisTableRow[])
+        .map((row) =>
+          (field.options ?? [])
+            .map((option) => {
+              const value = typeof row[option.id] === "string" ? row[option.id].trim() : "";
+              return value ? `${option.label}: ${value}` : "";
+            })
+            .filter(Boolean)
+            .join(" | ")
+        )
+        .filter(Boolean)
+        .join(" / ");
+
+      return formattedRows;
+    }
+
     const formatted = responseValue
       .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       .map((item) => field.options?.find((option) => option.id === item)?.label ?? item)
@@ -155,9 +178,9 @@ export const getSessionSummaryContent = (
   const visibleFields = getVisibleTemplateFields(
     [...(baseSchema ?? []), ...(templateSchema ?? [])],
     isJsonObject(session.anamnesis_form_response)
-      ? (session.anamnesis_form_response as Record<string, string | number | string[] | boolean | null>)
+      ? (session.anamnesis_form_response as Record<string, AnamnesisFormValue>)
       : {}
-  ).filter((field) => !["section", "slider", "section_selector"].includes(field.type));
+  ).filter((field) => !["section", "slider", "section_selector", "horizontal_section"].includes(field.type));
 
   if (visibleFields.length === 0) {
     return getFallbackComplaint(session);
