@@ -1,6 +1,7 @@
 export type AnamnesisFieldType =
   | "short_text"
   | "long_text"
+  | "date"
   | "number"
   | "checklist"
   | "multiple_choice"
@@ -96,6 +97,7 @@ export const DEFAULT_ANAMNESIS_TEMPLATE_SCHEMA: AnamnesisTemplateSchema = [
 export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: string }> = [
   { type: "short_text", label: "Texto curto" },
   { type: "long_text", label: "Texto longo" },
+  { type: "date", label: "Data" },
   { type: "number", label: "Apenas números" },
   { type: "checklist", label: "Checklist" },
   { type: "multiple_choice", label: "Múltipla escolha" },

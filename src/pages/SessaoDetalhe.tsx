@@ -36,6 +36,7 @@ import { buildSessionEditHistoryView, formatSessionAuditDateTime, getSessionPers
 import { createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
 import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
+import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import {
   addTableRow,
   buildTemplateLayout,
@@ -686,6 +687,20 @@ const SessaoDetalhe = () => {
             value={typeof value === "number" || typeof value === "string" ? value : ""}
             onChange={(event) => updateFormResponse(field.id, event.target.value === "" ? null : Number(event.target.value))}
             placeholder={field.placeholder}
+            disabled={locked}
+          />
+        </div>
+      );
+    }
+
+    if (field.type === "date") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
+          <DateFieldInput
+            id={field.id}
+            value={typeof value === "string" ? value : ""}
+            onChange={(next) => updateFormResponse(field.id, next)}
             disabled={locked}
           />
         </div>
