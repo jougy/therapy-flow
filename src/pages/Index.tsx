@@ -4,7 +4,7 @@ import { Users, CalendarDays, Search, Plus, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import AgendaWidget from "@/components/AgendaWidget";
@@ -27,8 +27,13 @@ const Index = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, active: 0, sessions: 0 });
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const isSearching = search.trim().length > 0;
+  const deletedPatientId =
+    typeof (location.state as { deletedPatientId?: unknown } | null)?.deletedPatientId === "string"
+      ? (location.state as { deletedPatientId: string }).deletedPatientId
+      : null;
 
   useEffect(() => {
     if (!user) return;
@@ -77,7 +82,29 @@ const Index = () => {
       setLoading(false);
     };
     fetchData();
-  }, [user]);
+  }, [location.key, user]);
+
+  useEffect(() => {
+    if (!deletedPatientId) {
+      return;
+    }
+
+    setPatients((current) => {
+      const deletedPatient = current.find((patient) => patient.id === deletedPatientId);
+
+      if (!deletedPatient) {
+        return current;
+      }
+
+      setStats((stats) => ({
+        ...stats,
+        active: deletedPatient.status === "ativo" ? Math.max(0, stats.active - 1) : stats.active,
+        total: Math.max(0, stats.total - 1),
+      }));
+
+      return current.filter((patient) => patient.id !== deletedPatientId);
+    });
+  }, [deletedPatientId]);
 
   const filtered = patients.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())

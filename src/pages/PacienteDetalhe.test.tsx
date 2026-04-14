@@ -331,7 +331,13 @@ describe("PacienteDetalhe", () => {
       ]);
     });
 
-    expect(navigateMock).toHaveBeenCalledWith("/");
+    expect(navigateMock).toHaveBeenCalledWith("/", {
+      replace: true,
+      state: {
+        deletedPatientId: "patient-1",
+        refreshPatientsAt: expect.any(Number),
+      },
+    });
     expect(toast).toHaveBeenCalledWith({ title: "Paciente excluído" });
   });
 });
