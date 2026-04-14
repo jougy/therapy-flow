@@ -526,7 +526,13 @@ const PacienteDetalhe = () => {
     toast({ title: "Paciente excluído" });
     setDeletePatientDialogOpen(false);
     setDeletingPatient(false);
-    navigate("/");
+    navigate("/", {
+      replace: true,
+      state: {
+        deletedPatientId: patient.id,
+        refreshPatientsAt: Date.now(),
+      },
+    });
   };
 
   const clearLongPress = () => {
