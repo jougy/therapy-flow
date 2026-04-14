@@ -40,6 +40,7 @@ type ShareLinkResponse = {
   token: string;
 };
 type PatientStatus = "ativo" | "pausado" | "inativo" | "alta";
+type PatientStatusSelectValue = PatientStatus | "delete";
 
 const GROUP_COLORS = [
   { value: "gray", label: "Cinza claro" },
@@ -64,6 +65,8 @@ const PATIENT_STATUSES: { value: PatientStatus; label: string }[] = [
   { value: "inativo", label: "Inativo" },
   { value: "alta", label: "Alta" },
 ];
+
+const DELETE_PATIENT_STATUS_OPTION = { value: "delete" as const, label: "Excluir" };
 
 const groupBorderColors: Record<string, string> = {
   gray: "border-l-group-gray",
@@ -260,7 +263,7 @@ const PacienteDetalhe = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { clinicId, operationalRole, user } = useAuth();
+  const { can, clinicId, operationalRole, user } = useAuth();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -283,6 +286,8 @@ const PacienteDetalhe = () => {
   const [sharePassword, setSharePassword] = useState("");
   const [shareCompleted, setShareCompleted] = useState(false);
   const [updatingPatientStatus, setUpdatingPatientStatus] = useState(false);
+  const [deletePatientDialogOpen, setDeletePatientDialogOpen] = useState(false);
+  const [deletingPatient, setDeletingPatient] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sessionStatusFilter, setSessionStatusFilter] = useState("all");
   const [groupStatusFilter, setGroupStatusFilter] = useState("all");
@@ -293,6 +298,7 @@ const PacienteDetalhe = () => {
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const isIntern = operationalRole === "estagiario";
+  const canDeletePatient = can("clinic_profile.manage");
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -469,7 +475,16 @@ const PacienteDetalhe = () => {
     void fetchData();
   };
 
-  const handlePatientStatusChange = async (nextStatus: PatientStatus) => {
+  const handlePatientStatusChange = async (nextStatus: PatientStatusSelectValue) => {
+    if (nextStatus === "delete") {
+      if (!canDeletePatient) {
+        return;
+      }
+
+      setDeletePatientDialogOpen(true);
+      return;
+    }
+
     if (!patient || patient.status === nextStatus) {
       return;
     }
@@ -489,6 +504,29 @@ const PacienteDetalhe = () => {
     setPatient((current) => (current ? { ...current, status: nextStatus } : current));
     toast({ title: "Status do paciente atualizado" });
     setUpdatingPatientStatus(false);
+  };
+
+  const handleDeletePatient = async () => {
+    if (!patient || !canDeletePatient) {
+      return;
+    }
+
+    setDeletingPatient(true);
+    const { error } = await supabase
+      .from("patients")
+      .delete()
+      .eq("id", patient.id);
+
+    if (error) {
+      toast({ title: "Erro ao excluir paciente", description: error.message, variant: "destructive" });
+      setDeletingPatient(false);
+      return;
+    }
+
+    toast({ title: "Paciente excluído" });
+    setDeletePatientDialogOpen(false);
+    setDeletingPatient(false);
+    navigate("/");
   };
 
   const clearLongPress = () => {
@@ -691,8 +729,8 @@ const PacienteDetalhe = () => {
         <div className="flex items-center gap-2">
           <Select
             value={patient.status}
-            onValueChange={(value) => void handlePatientStatusChange(value as PatientStatus)}
-            disabled={updatingPatientStatus}
+            onValueChange={(value) => void handlePatientStatusChange(value as PatientStatusSelectValue)}
+            disabled={updatingPatientStatus || deletingPatient}
           >
             <SelectTrigger className="w-[160px]">
               <SelectValue />
@@ -701,6 +739,11 @@ const PacienteDetalhe = () => {
               {PATIENT_STATUSES.map((status) => (
                 <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
               ))}
+              {canDeletePatient ? (
+                <SelectItem value={DELETE_PATIENT_STATUS_OPTION.value} className="text-destructive focus:text-destructive">
+                  {DELETE_PATIENT_STATUS_OPTION.label}
+                </SelectItem>
+              ) : null}
             </SelectContent>
           </Select>
           <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/cadastro`)}>
@@ -1120,6 +1163,26 @@ const PacienteDetalhe = () => {
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
             <Button variant="destructive" onClick={() => deleteConfirmId && handleDeleteGroup(deleteConfirmId)}>
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deletePatientDialogOpen} onOpenChange={setDeletePatientDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir paciente?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Essa ação apaga o paciente definitivamente, junto com grupos e atendimentos vinculados. Não dá para desfazer.
+          </p>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={deletingPatient}>Cancelar</Button>
+            </DialogClose>
+            <Button variant="destructive" onClick={() => void handleDeletePatient()} disabled={deletingPatient}>
+              {deletingPatient ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Excluir
             </Button>
           </DialogFooter>
