@@ -1,8 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 
 describe("DateFieldInput", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-14T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("formats direct typing as dd/mm/yyyy", () => {
     const handleChange = vi.fn();
 
