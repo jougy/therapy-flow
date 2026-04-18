@@ -47,6 +47,14 @@ const DEVELOPMENT_LEVEL_META: Record<DevelopmentLevel, { className: string; labe
   referencia: { className: "bg-sky-500", label: "Referencia interna" },
   senior: { className: "bg-indigo-500", label: "Senior" },
 };
+const UNKNOWN_DEVELOPMENT_STATUS_META = {
+  className: "bg-slate-400",
+  label: "Status desconhecido",
+};
+const UNKNOWN_DEVELOPMENT_LEVEL_META = {
+  className: "bg-slate-400",
+  label: "Nivel desconhecido",
+};
 
 export const shouldShowTeamDevelopmentSection = (
   subscriptionPlan: SubscriptionPlan | null | undefined,
@@ -54,9 +62,11 @@ export const shouldShowTeamDevelopmentSection = (
   operationalRole: OperationalRole
 ) => subscriptionPlan === "clinic" && (canReadAnalytics || operationalRole === "professional");
 
-export const getDevelopmentStatusMeta = (status: DevelopmentStatus) => DEVELOPMENT_STATUS_META[status];
+export const getDevelopmentStatusMeta = (status: DevelopmentStatus | string | null | undefined) =>
+  (status ? DEVELOPMENT_STATUS_META[status as DevelopmentStatus] : null) ?? UNKNOWN_DEVELOPMENT_STATUS_META;
 
-export const getDevelopmentLevelMeta = (level: DevelopmentLevel) => DEVELOPMENT_LEVEL_META[level];
+export const getDevelopmentLevelMeta = (level: DevelopmentLevel | string | null | undefined) =>
+  (level ? DEVELOPMENT_LEVEL_META[level as DevelopmentLevel] : null) ?? UNKNOWN_DEVELOPMENT_LEVEL_META;
 
 export const getDevelopmentStatusScore = (status: DevelopmentStatus) => {
   switch (status) {

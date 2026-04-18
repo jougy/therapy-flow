@@ -108,6 +108,7 @@ import {
   type SupportCategory,
   type SupportContactDraft,
 } from "@/lib/support-contact";
+import { sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 import { logRuntimeError } from "@/lib/runtime-debug";
 
 type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
@@ -180,6 +181,16 @@ type EditableOwnProfileState = {
   phone: string;
   professionalLicense: string;
   socialName: string;
+};
+
+type EditableClinicState = {
+  address: ProfileAddress;
+  businessHours: ClinicBusinessHours;
+  email: string;
+  legalName: string;
+  logoUrl: string;
+  name: string;
+  phone: string;
 };
 
 type SecurityAlertState = {
@@ -290,6 +301,176 @@ const SUPPORT_CATEGORY_OPTIONS: Array<{ label: string; value: SupportCategory }>
   { label: "Dúvida", value: "duvida" },
   { label: "Outro", value: "outro" },
 ];
+const SETTINGS_TEXT_LIMITS = {
+  addressCity: 80,
+  addressComplement: 80,
+  addressNeighborhood: 80,
+  addressNumber: 20,
+  addressState: 40,
+  addressStreet: 120,
+  businessHours: 500,
+  clinicEmail: 254,
+  clinicLegalName: 160,
+  clinicLogoUrl: 500,
+  clinicName: 120,
+  email: 254,
+  jobTitle: 80,
+  password: 128,
+  personName: 120,
+  professionalLicense: 60,
+  searchTerm: 80,
+  socialName: 120,
+  specialty: 80,
+  supportMessage: 2000,
+  supportSubject: 120,
+  workingHours: 500,
+} as const;
+const ADDRESS_FIELD_LIMITS: Record<keyof ProfileAddress, number> = {
+  cep: 9,
+  city: SETTINGS_TEXT_LIMITS.addressCity,
+  complement: SETTINGS_TEXT_LIMITS.addressComplement,
+  neighborhood: SETTINGS_TEXT_LIMITS.addressNeighborhood,
+  number: SETTINGS_TEXT_LIMITS.addressNumber,
+  state: SETTINGS_TEXT_LIMITS.addressState,
+  street: SETTINGS_TEXT_LIMITS.addressStreet,
+};
+
+const sanitizeAddressField = (key: keyof ProfileAddress, value: string) => sanitizeSingleLineInput(value, ADDRESS_FIELD_LIMITS[key]);
+
+const sanitizeOwnProfileFieldValue = <K extends keyof EditableOwnProfileState>(
+  key: K,
+  value: EditableOwnProfileState[K]
+) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  switch (key) {
+    case "email":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.email) as EditableOwnProfileState[K];
+    case "fullName":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.personName) as EditableOwnProfileState[K];
+    case "socialName":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.socialName) as EditableOwnProfileState[K];
+    case "professionalLicense":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.professionalLicense) as EditableOwnProfileState[K];
+    default:
+      return value;
+  }
+};
+
+const sanitizeClinicFieldValue = (
+  key: keyof EditableClinicState,
+  value: EditableClinicState[keyof EditableClinicState]
+) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  switch (key) {
+    case "email":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.clinicEmail);
+    case "legalName":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.clinicLegalName);
+    case "logoUrl":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.clinicLogoUrl);
+    case "name":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.clinicName);
+    default:
+      return value;
+  }
+};
+
+const sanitizeSubaccountFieldValue = <K extends keyof EditableSubaccountState>(
+  key: K,
+  value: EditableSubaccountState[K]
+) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  switch (key) {
+    case "email":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.email) as EditableSubaccountState[K];
+    case "fullName":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.personName) as EditableSubaccountState[K];
+    case "socialName":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.socialName) as EditableSubaccountState[K];
+    case "professionalLicense":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.professionalLicense) as EditableSubaccountState[K];
+    case "specialty":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.specialty) as EditableSubaccountState[K];
+    case "jobTitle":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.jobTitle) as EditableSubaccountState[K];
+    case "resetPassword":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.password) as EditableSubaccountState[K];
+    case "workingHours":
+      return sanitizeMultilineInput(value, SETTINGS_TEXT_LIMITS.workingHours) as EditableSubaccountState[K];
+    default:
+      return value;
+  }
+};
+
+const sanitizeSupportFieldValue = <K extends keyof SupportFormState>(key: K, value: SupportFormState[K]) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  switch (key) {
+    case "subject":
+      return sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.supportSubject) as SupportFormState[K];
+    case "message":
+      return sanitizeMultilineInput(value, SETTINGS_TEXT_LIMITS.supportMessage) as SupportFormState[K];
+    default:
+      return value;
+  }
+};
+
+const buildEditableOwnProfileState = (
+  ownProfileRow: TeamProfileRow | null,
+  fallbackEmail: string | null | undefined
+): EditableOwnProfileState => ({
+  address: readProfileAddress(ownProfileRow?.address),
+  birthDate: ownProfileRow?.birth_date ?? "",
+  cpf: formatCpf(ownProfileRow?.cpf ?? ""),
+  email: ownProfileRow?.email ?? fallbackEmail ?? "",
+  fullName: ownProfileRow?.full_name ?? "",
+  phone: formatPhone(ownProfileRow?.phone ?? ""),
+  professionalLicense: ownProfileRow?.professional_license ?? "",
+  socialName: ownProfileRow?.social_name ?? "",
+});
+
+const buildEditableClinicState = (clinic: ClinicRow | null): EditableClinicState => ({
+  address: readProfileAddress(clinic?.address),
+  businessHours: readBusinessHours(clinic?.business_hours),
+  email: clinic?.email ?? "",
+  legalName: clinic?.legal_name ?? "",
+  logoUrl: clinic?.logo_url ?? "",
+  name: clinic?.name ?? "",
+  phone: formatPhone(clinic?.phone ?? ""),
+});
+
+const buildEditableSubaccountState = (
+  relatedProfile: TeamProfileRow | null,
+  membershipRow: MembershipRow
+): EditableSubaccountState => ({
+  address: readProfileAddress(relatedProfile?.address),
+  birthDate: relatedProfile?.birth_date ?? "",
+  cpf: relatedProfile?.cpf ?? "",
+  email: relatedProfile?.email ?? "",
+  fullName: relatedProfile?.full_name ?? "",
+  jobTitle: relatedProfile?.job_title ?? "",
+  membershipStatus: membershipRow.membership_status,
+  operationalRole: membershipRow.operational_role as SubaccountOperationalRole,
+  phone: relatedProfile?.phone ?? "",
+  professionalLicense: relatedProfile?.professional_license ?? "",
+  resetPassword: "",
+  socialName: relatedProfile?.social_name ?? "",
+  specialty: relatedProfile?.specialty ?? "",
+  workingHours: relatedProfile?.working_hours ?? "",
+});
+
+const areEditableStatesEqual = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
 const Configuracoes = () => {
   const location = useLocation();
@@ -330,6 +511,7 @@ const Configuracoes = () => {
   const [savingSecurityPassword, setSavingSecurityPassword] = useState(false);
   const [endingOtherSessions, setEndingOtherSessions] = useState(false);
   const [currentSecuritySessionKey, setCurrentSecuritySessionKey] = useState<string | null>(null);
+  const [initialClinicForm, setInitialClinicForm] = useState<EditableClinicState>(() => buildEditableClinicState(null));
   const [clinicName, setClinicName] = useState("");
   const [clinicLegalName, setClinicLegalName] = useState("");
   const [clinicEmail, setClinicEmail] = useState("");
@@ -337,16 +519,13 @@ const Configuracoes = () => {
   const [clinicLogoUrl, setClinicLogoUrl] = useState("");
   const [clinicAddress, setClinicAddress] = useState<ProfileAddress>(readProfileAddress(null));
   const [clinicBusinessHours, setClinicBusinessHours] = useState<ClinicBusinessHours>({ summary: "" });
-  const [ownProfileForm, setOwnProfileForm] = useState<EditableOwnProfileState>({
-    address: readProfileAddress(null),
-    birthDate: "",
-    cpf: "",
-    email: "",
-    fullName: "",
-    phone: "",
-    professionalLicense: "",
-    socialName: "",
-  });
+  const [initialOwnProfileForm, setInitialOwnProfileForm] = useState<EditableOwnProfileState>(() =>
+    buildEditableOwnProfileState(null, null)
+  );
+  const [ownProfileForm, setOwnProfileForm] = useState<EditableOwnProfileState>(() =>
+    buildEditableOwnProfileState(null, null)
+  );
+  const [initialEditingSubaccount, setInitialEditingSubaccount] = useState<EditableSubaccountState | null>(null);
   const [supportForm, setSupportForm] = useState<SupportFormState>({
     category: "erro",
     includeContext: true,
@@ -442,6 +621,9 @@ const Configuracoes = () => {
         logRuntimeError("settings.fetchData.concurrent_access_overview", concurrentAccessRes.error, { clinicId });
       }
 
+      const nextClinic = clinicRes.data ?? null;
+      const nextClinicForm = buildEditableClinicState(nextClinic);
+
       setClinic(clinicRes.data ?? null);
       setTemplates(templatesRes.data ?? []);
       setSessions(sessionsRes.data ?? []);
@@ -475,24 +657,18 @@ const Configuracoes = () => {
       setSecurityEvents(securityEventsRes.data ?? []);
       setAdminSecurityEvents((adminSecurityEventsRes.data as SecurityEventRow[] | null) ?? []);
       setTeamConcurrentAccessOverview((concurrentAccessRes.data as TeamConcurrentAccessOverview | null) ?? null);
-      setClinicName(clinicRes.data?.name ?? "");
-      setClinicLegalName(clinicRes.data?.legal_name ?? "");
-      setClinicEmail(clinicRes.data?.email ?? "");
-      setClinicPhone(formatPhone(clinicRes.data?.phone ?? ""));
-      setClinicLogoUrl(clinicRes.data?.logo_url ?? "");
-      setClinicAddress(readProfileAddress(clinicRes.data?.address));
-      setClinicBusinessHours(readBusinessHours(clinicRes.data?.business_hours));
+      setInitialClinicForm(nextClinicForm);
+      setClinicName(nextClinicForm.name);
+      setClinicLegalName(nextClinicForm.legalName);
+      setClinicEmail(nextClinicForm.email);
+      setClinicPhone(nextClinicForm.phone);
+      setClinicLogoUrl(nextClinicForm.logoUrl);
+      setClinicAddress(nextClinicForm.address);
+      setClinicBusinessHours(nextClinicForm.businessHours);
       const ownProfileRow = (profilesRes.data ?? []).find((row) => row.id === user?.id) ?? null;
-      setOwnProfileForm({
-        address: readProfileAddress(ownProfileRow?.address),
-        birthDate: ownProfileRow?.birth_date ?? "",
-        cpf: formatCpf(ownProfileRow?.cpf ?? ""),
-        email: ownProfileRow?.email ?? user?.email ?? "",
-        fullName: ownProfileRow?.full_name ?? "",
-        phone: formatPhone(ownProfileRow?.phone ?? ""),
-        professionalLicense: ownProfileRow?.professional_license ?? "",
-        socialName: ownProfileRow?.social_name ?? "",
-      });
+      const nextOwnProfileForm = buildEditableOwnProfileState(ownProfileRow, user?.email);
+      setInitialOwnProfileForm(nextOwnProfileForm);
+      setOwnProfileForm(nextOwnProfileForm);
       setSelectedTemplateId((current) => current ?? templatesRes.data?.[0]?.id ?? null);
     } catch (error) {
       logRuntimeError("settings.fetchData.unhandled", error, { clinicId, userId: user.id });
@@ -941,26 +1117,61 @@ const Configuracoes = () => {
   const updateClinicAddressField = (key: keyof ProfileAddress, value: string) => {
     setClinicAddress((current) => ({
       ...current,
-      [key]: value,
+      [key]: sanitizeAddressField(key, value),
     }));
   };
 
-  const updateOwnProfileField = <K extends keyof EditableOwnProfileState>(key: K, value: EditableOwnProfileState[K]) => {
-    setOwnProfileForm((current) => ({ ...current, [key]: value }));
+  const updateClinicField = <K extends keyof EditableClinicState>(key: K, value: EditableClinicState[K]) => {
+    const sanitizedValue = sanitizeClinicFieldValue(key, value) as EditableClinicState[K];
+
+    switch (key) {
+      case "email":
+        setClinicEmail(sanitizedValue as EditableClinicState["email"]);
+        break;
+      case "legalName":
+        setClinicLegalName(sanitizedValue as EditableClinicState["legalName"]);
+        break;
+      case "logoUrl":
+        setClinicLogoUrl(sanitizedValue as EditableClinicState["logoUrl"]);
+        break;
+      case "name":
+        setClinicName(sanitizedValue as EditableClinicState["name"]);
+        break;
+      default:
+        break;
+    }
   };
+
+  const resetClinicForm = useCallback(() => {
+    setClinicName(initialClinicForm.name);
+    setClinicLegalName(initialClinicForm.legalName);
+    setClinicEmail(initialClinicForm.email);
+    setClinicPhone(initialClinicForm.phone);
+    setClinicLogoUrl(initialClinicForm.logoUrl);
+    setClinicAddress(initialClinicForm.address);
+    setClinicBusinessHours(initialClinicForm.businessHours);
+  }, [initialClinicForm]);
+
+  const updateOwnProfileField = <K extends keyof EditableOwnProfileState>(key: K, value: EditableOwnProfileState[K]) => {
+    setOwnProfileForm((current) => ({ ...current, [key]: sanitizeOwnProfileFieldValue(key, value) }));
+  };
+
+  const resetOwnProfileForm = useCallback(() => {
+    setOwnProfileForm(initialOwnProfileForm);
+  }, [initialOwnProfileForm]);
 
   const updateOwnProfileAddressField = (key: keyof ProfileAddress, value: string) => {
     setOwnProfileForm((current) => ({
       ...current,
       address: {
         ...current.address,
-        [key]: value,
+        [key]: sanitizeAddressField(key, value),
       },
     }));
   };
 
   const updateEditingSubaccountField = <K extends keyof EditableSubaccountState>(key: K, value: EditableSubaccountState[K]) => {
-    setEditingSubaccount((current) => (current ? { ...current, [key]: value } : current));
+    setEditingSubaccount((current) => (current ? { ...current, [key]: sanitizeSubaccountFieldValue(key, value) } : current));
   };
 
   const updateEditingSubaccountAddressField = (key: keyof ProfileAddress, value: string) => {
@@ -970,12 +1181,26 @@ const Configuracoes = () => {
             ...current,
             address: {
               ...current.address,
-              [key]: value,
+              [key]: sanitizeAddressField(key, value),
             },
           }
         : current
     );
   };
+
+  const updateNewSubaccountName = (value: string) => setNewSubaccountName(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.personName));
+  const updateNewSubaccountEmail = (value: string) => setNewSubaccountEmail(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.email));
+  const updateNewSubaccountPassword = (value: string) => setNewSubaccountPassword(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.password));
+  const updateNewSubaccountJobTitle = (value: string) => setNewSubaccountJobTitle(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.jobTitle));
+  const updateNewSubaccountSpecialty = (value: string) => setNewSubaccountSpecialty(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.specialty));
+  const updateTeamSearchTerm = (value: string) => setTeamSearchTerm(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.searchTerm));
+  const updateSecurityPassword = (value: string) => setSecurityPassword(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.password));
+  const updateSecurityPasswordConfirm = (value: string) => setSecurityPasswordConfirm(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.password));
+  const updateSupportFormField = <K extends keyof SupportFormState>(key: K, value: SupportFormState[K]) =>
+    setSupportForm((current) => ({
+      ...current,
+      [key]: sanitizeSupportFieldValue(key, value),
+    }));
 
   const getTeamDevelopmentFormState = (userId: string): EditableTeamDevelopmentState => {
     const developmentRow = teamDevelopmentMap.get(userId);
@@ -1176,31 +1401,19 @@ const Configuracoes = () => {
 
   const startEditingSubaccount = (membershipRow: MembershipRow) => {
     const relatedProfile = profileMap.get(membershipRow.user_id);
+    const nextEditingSubaccount = buildEditableSubaccountState(relatedProfile ?? null, membershipRow);
 
     setExpandedSubaccountIds((current) =>
       current.includes(membershipRow.id) ? current : [...current, membershipRow.id]
     );
     setEditingMembershipId(membershipRow.id);
-    setEditingSubaccount({
-      address: readProfileAddress(relatedProfile?.address),
-      birthDate: relatedProfile?.birth_date ?? "",
-      cpf: relatedProfile?.cpf ?? "",
-      email: relatedProfile?.email ?? "",
-      fullName: relatedProfile?.full_name ?? "",
-      jobTitle: relatedProfile?.job_title ?? "",
-      membershipStatus: membershipRow.membership_status,
-      operationalRole: membershipRow.operational_role as SubaccountOperationalRole,
-      phone: relatedProfile?.phone ?? "",
-      professionalLicense: relatedProfile?.professional_license ?? "",
-      socialName: relatedProfile?.social_name ?? "",
-      resetPassword: "",
-      specialty: relatedProfile?.specialty ?? "",
-      workingHours: relatedProfile?.working_hours ?? "",
-    });
+    setInitialEditingSubaccount(nextEditingSubaccount);
+    setEditingSubaccount(nextEditingSubaccount);
   };
 
   const cancelEditingSubaccount = () => {
     setEditingMembershipId(null);
+    setInitialEditingSubaccount(null);
     setEditingSubaccount(null);
   };
 
@@ -1431,6 +1644,68 @@ const Configuracoes = () => {
     [clinicId, fetchData, user?.id]
   );
 
+  const currentClinicForm = useMemo<EditableClinicState>(
+    () => ({
+      address: clinicAddress,
+      businessHours: clinicBusinessHours,
+      email: clinicEmail,
+      legalName: clinicLegalName,
+      logoUrl: clinicLogoUrl,
+      name: clinicName,
+      phone: clinicPhone,
+    }),
+    [clinicAddress, clinicBusinessHours, clinicEmail, clinicLegalName, clinicLogoUrl, clinicName, clinicPhone]
+  );
+  const ownProfileDirty = useMemo(
+    () => !areEditableStatesEqual(ownProfileForm, initialOwnProfileForm),
+    [initialOwnProfileForm, ownProfileForm]
+  );
+  const clinicDirty = useMemo(
+    () => !areEditableStatesEqual(currentClinicForm, initialClinicForm),
+    [currentClinicForm, initialClinicForm]
+  );
+  const editingSubaccountDirty = useMemo(
+    () =>
+      editingSubaccount !== null &&
+      initialEditingSubaccount !== null &&
+      !areEditableStatesEqual(editingSubaccount, initialEditingSubaccount),
+    [editingSubaccount, initialEditingSubaccount]
+  );
+  const editingMembership = useMemo(
+    () => memberships.find((membershipRow) => membershipRow.id === editingMembershipId) ?? null,
+    [editingMembershipId, memberships]
+  );
+
+  const floatingEditActions =
+    activeSection === "profile" && ownProfileDirty
+      ? {
+          onCancel: resetOwnProfileForm,
+          onSave: () => void handleSaveOwnProfile(),
+          saveDisabled: savingOwnProfile || !ownProfileForm.fullName.trim() || !ownProfileForm.email.trim(),
+          saveLabel: "Salvar perfil",
+          saving: savingOwnProfile,
+        }
+      : activeSection === "clinic" && clinic && clinicDirty
+        ? {
+            onCancel: resetClinicForm,
+            onSave: () => void handleSaveClinicProfile(),
+            saveDisabled: savingClinic || !clinicName.trim(),
+            saveLabel: "Salvar perfil da clínica",
+            saving: savingClinic,
+          }
+        : activeSection === "team" && editingSubaccountDirty && editingMembership && editingSubaccount
+          ? {
+              onCancel: cancelEditingSubaccount,
+              onSave: () => void handleSaveSubaccount(editingMembership),
+              saveDisabled:
+                savingMembershipId === editingMembership.id ||
+                !editingSubaccount.fullName.trim() ||
+                !editingSubaccount.email.trim(),
+              saveLabel: "Salvar alterações",
+              saving: savingMembershipId === editingMembership.id,
+            }
+          : null;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -1467,7 +1742,12 @@ const Configuracoes = () => {
   );
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6 pb-28 lg:pb-0">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+      className={floatingEditActions ? "space-y-6 pb-44 lg:pb-24" : "space-y-6 pb-28 lg:pb-0"}
+    >
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
           <Button
@@ -1535,7 +1815,11 @@ const Configuracoes = () => {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label>E-mail de acesso</Label>
-                      <Input value={ownProfileForm.email} onChange={(event) => updateOwnProfileField("email", event.target.value)} />
+                      <Input
+                        value={ownProfileForm.email}
+                        maxLength={SETTINGS_TEXT_LIMITS.email}
+                        onChange={(event) => updateOwnProfileField("email", event.target.value)}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1552,6 +1836,7 @@ const Configuracoes = () => {
                       <Label>Nome completo</Label>
                       <Input
                         value={ownProfileForm.fullName}
+                        maxLength={SETTINGS_TEXT_LIMITS.personName}
                         onChange={(event) => updateOwnProfileField("fullName", event.target.value)}
                         disabled={ownProfileLocks.fullName}
                       />
@@ -1560,6 +1845,7 @@ const Configuracoes = () => {
                       <Label>Nome social</Label>
                       <Input
                         value={ownProfileForm.socialName}
+                        maxLength={SETTINGS_TEXT_LIMITS.socialName}
                         onChange={(event) => updateOwnProfileField("socialName", event.target.value)}
                         disabled={ownProfileLocks.socialName}
                       />
@@ -1595,6 +1881,7 @@ const Configuracoes = () => {
                       <Label>Conselho regional</Label>
                       <Input
                         value={ownProfileForm.professionalLicense}
+                        maxLength={SETTINGS_TEXT_LIMITS.professionalLicense}
                         onChange={(event) => updateOwnProfileField("professionalLicense", event.target.value)}
                         disabled={ownProfileLocks.professionalLicense}
                       />
@@ -1623,6 +1910,7 @@ const Configuracoes = () => {
                       <Label>Rua</Label>
                       <Input
                         value={ownProfileForm.address.street}
+                        maxLength={ADDRESS_FIELD_LIMITS.street}
                         onChange={(event) => updateOwnProfileAddressField("street", event.target.value)}
                         disabled={ownProfileLocks.address}
                       />
@@ -1631,6 +1919,7 @@ const Configuracoes = () => {
                       <Label>Número</Label>
                       <Input
                         value={ownProfileForm.address.number}
+                        maxLength={ADDRESS_FIELD_LIMITS.number}
                         onChange={(event) => updateOwnProfileAddressField("number", event.target.value)}
                         disabled={ownProfileLocks.address}
                       />
@@ -1639,6 +1928,7 @@ const Configuracoes = () => {
                       <Label>Complemento</Label>
                       <Input
                         value={ownProfileForm.address.complement}
+                        maxLength={ADDRESS_FIELD_LIMITS.complement}
                         onChange={(event) => updateOwnProfileAddressField("complement", event.target.value)}
                         disabled={ownProfileLocks.address}
                       />
@@ -1647,6 +1937,7 @@ const Configuracoes = () => {
                       <Label>Bairro</Label>
                       <Input
                         value={ownProfileForm.address.neighborhood}
+                        maxLength={ADDRESS_FIELD_LIMITS.neighborhood}
                         onChange={(event) => updateOwnProfileAddressField("neighborhood", event.target.value)}
                         disabled={ownProfileLocks.address}
                       />
@@ -1655,6 +1946,7 @@ const Configuracoes = () => {
                       <Label>Cidade</Label>
                       <Input
                         value={ownProfileForm.address.city}
+                        maxLength={ADDRESS_FIELD_LIMITS.city}
                         onChange={(event) => updateOwnProfileAddressField("city", event.target.value)}
                         disabled={ownProfileLocks.address}
                       />
@@ -1663,6 +1955,7 @@ const Configuracoes = () => {
                       <Label>Estado</Label>
                       <Input
                         value={ownProfileForm.address.state}
+                        maxLength={ADDRESS_FIELD_LIMITS.state}
                         onChange={(event) => updateOwnProfileAddressField("state", event.target.value)}
                         disabled={ownProfileLocks.address}
                       />
@@ -1690,15 +1983,6 @@ const Configuracoes = () => {
                       <p className="mt-2 text-sm whitespace-pre-wrap">{profile?.working_hours || "Não informado"}</p>
                     </div>
                   </div>
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    onClick={() => void handleSaveOwnProfile()}
-                    disabled={savingOwnProfile || !ownProfileForm.fullName.trim() || !ownProfileForm.email.trim()}
-                  >
-                    {savingOwnProfile ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                    Salvar perfil
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -1743,19 +2027,28 @@ const Configuracoes = () => {
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
                         <Label>Nome da clínica</Label>
-                        <Input value={clinicName} onChange={(event) => setClinicName(event.target.value)} />
+                        <Input
+                          value={clinicName}
+                          maxLength={SETTINGS_TEXT_LIMITS.clinicName}
+                          onChange={(event) => updateClinicField("name", event.target.value)}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>URL do logo</Label>
                         <Input
                           value={clinicLogoUrl}
-                          onChange={(event) => setClinicLogoUrl(event.target.value)}
+                          maxLength={SETTINGS_TEXT_LIMITS.clinicLogoUrl}
+                          onChange={(event) => updateClinicField("logoUrl", event.target.value)}
                           placeholder="https://..."
                         />
                       </div>
                       <div className="space-y-2">
                         <Label>E-mail institucional</Label>
-                        <Input value={clinicEmail} onChange={(event) => setClinicEmail(event.target.value)} />
+                        <Input
+                          value={clinicEmail}
+                          maxLength={SETTINGS_TEXT_LIMITS.clinicEmail}
+                          onChange={(event) => updateClinicField("email", event.target.value)}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Telefone institucional</Label>
@@ -1779,7 +2072,11 @@ const Configuracoes = () => {
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     <div className="space-y-2">
                       <Label>Razão social</Label>
-                      <Input value={clinicLegalName} onChange={(event) => setClinicLegalName(event.target.value)} />
+                      <Input
+                        value={clinicLegalName}
+                        maxLength={SETTINGS_TEXT_LIMITS.clinicLegalName}
+                        onChange={(event) => updateClinicField("legalName", event.target.value)}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>CNPJ</Label>
@@ -1794,7 +2091,12 @@ const Configuracoes = () => {
                     <Label>Horário de funcionamento</Label>
                     <Textarea
                       value={clinicBusinessHours.summary}
-                      onChange={(event) => setClinicBusinessHours({ summary: event.target.value })}
+                      maxLength={SETTINGS_TEXT_LIMITS.businessHours}
+                      onChange={(event) =>
+                        setClinicBusinessHours({
+                          summary: sanitizeMultilineInput(event.target.value, SETTINGS_TEXT_LIMITS.businessHours),
+                        })
+                      }
                       placeholder="Ex.: seg-sex 08h-18h; sábado 08h-12h"
                     />
                   </div>
@@ -1818,37 +2120,55 @@ const Configuracoes = () => {
                     </div>
                     <div className="space-y-2 xl:col-span-2">
                       <Label>Rua</Label>
-                      <Input value={clinicAddress.street} onChange={(event) => updateClinicAddressField("street", event.target.value)} />
+                      <Input
+                        value={clinicAddress.street}
+                        maxLength={ADDRESS_FIELD_LIMITS.street}
+                        onChange={(event) => updateClinicAddressField("street", event.target.value)}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Número</Label>
-                      <Input value={clinicAddress.number} onChange={(event) => updateClinicAddressField("number", event.target.value)} />
+                      <Input
+                        value={clinicAddress.number}
+                        maxLength={ADDRESS_FIELD_LIMITS.number}
+                        onChange={(event) => updateClinicAddressField("number", event.target.value)}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Complemento</Label>
-                      <Input value={clinicAddress.complement} onChange={(event) => updateClinicAddressField("complement", event.target.value)} />
+                      <Input
+                        value={clinicAddress.complement}
+                        maxLength={ADDRESS_FIELD_LIMITS.complement}
+                        onChange={(event) => updateClinicAddressField("complement", event.target.value)}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Bairro</Label>
-                      <Input value={clinicAddress.neighborhood} onChange={(event) => updateClinicAddressField("neighborhood", event.target.value)} />
+                      <Input
+                        value={clinicAddress.neighborhood}
+                        maxLength={ADDRESS_FIELD_LIMITS.neighborhood}
+                        onChange={(event) => updateClinicAddressField("neighborhood", event.target.value)}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Cidade</Label>
-                      <Input value={clinicAddress.city} onChange={(event) => updateClinicAddressField("city", event.target.value)} />
+                      <Input
+                        value={clinicAddress.city}
+                        maxLength={ADDRESS_FIELD_LIMITS.city}
+                        onChange={(event) => updateClinicAddressField("city", event.target.value)}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Estado</Label>
-                      <Input value={clinicAddress.state} onChange={(event) => updateClinicAddressField("state", event.target.value)} />
+                      <Input
+                        value={clinicAddress.state}
+                        maxLength={ADDRESS_FIELD_LIMITS.state}
+                        onChange={(event) => updateClinicAddressField("state", event.target.value)}
+                      />
                     </div>
                   </div>
                 </div>
 
-                <div className="flex justify-end">
-                  <Button onClick={() => void handleSaveClinicProfile()} disabled={savingClinic || !clinicName.trim()}>
-                    {savingClinic ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                    Salvar perfil da clínica
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           )}
@@ -1926,14 +2246,19 @@ const Configuracoes = () => {
                         <div className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-2">
                             <Label>Nome completo</Label>
-                            <Input value={newSubaccountName} onChange={(event) => setNewSubaccountName(event.target.value)} />
+                            <Input
+                              value={newSubaccountName}
+                              maxLength={SETTINGS_TEXT_LIMITS.personName}
+                              onChange={(event) => updateNewSubaccountName(event.target.value)}
+                            />
                           </div>
                           <div className="space-y-2">
                             <Label>E-mail</Label>
                             <Input
                               type="email"
                               value={newSubaccountEmail}
-                              onChange={(event) => setNewSubaccountEmail(event.target.value)}
+                              maxLength={SETTINGS_TEXT_LIMITS.email}
+                              onChange={(event) => updateNewSubaccountEmail(event.target.value)}
                             />
                           </div>
                           <div className="space-y-2">
@@ -1941,7 +2266,8 @@ const Configuracoes = () => {
                             <Input
                               type="text"
                               value={newSubaccountPassword}
-                              onChange={(event) => setNewSubaccountPassword(event.target.value)}
+                              maxLength={SETTINGS_TEXT_LIMITS.password}
+                              onChange={(event) => updateNewSubaccountPassword(event.target.value)}
                             />
                           </div>
                           <div className="space-y-2">
@@ -1983,11 +2309,19 @@ const Configuracoes = () => {
                           </div>
                           <div className="space-y-2">
                             <Label>Cargo</Label>
-                            <Input value={newSubaccountJobTitle} onChange={(event) => setNewSubaccountJobTitle(event.target.value)} />
+                            <Input
+                              value={newSubaccountJobTitle}
+                              maxLength={SETTINGS_TEXT_LIMITS.jobTitle}
+                              onChange={(event) => updateNewSubaccountJobTitle(event.target.value)}
+                            />
                           </div>
                           <div className="space-y-2">
                             <Label>Especialidade</Label>
-                            <Input value={newSubaccountSpecialty} onChange={(event) => setNewSubaccountSpecialty(event.target.value)} />
+                            <Input
+                              value={newSubaccountSpecialty}
+                              maxLength={SETTINGS_TEXT_LIMITS.specialty}
+                              onChange={(event) => updateNewSubaccountSpecialty(event.target.value)}
+                            />
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -2022,7 +2356,8 @@ const Configuracoes = () => {
                             <Input
                               id="team-search"
                               value={teamSearchTerm}
-                              onChange={(event) => setTeamSearchTerm(event.target.value)}
+                              maxLength={SETTINGS_TEXT_LIMITS.searchTerm}
+                              onChange={(event) => updateTeamSearchTerm(event.target.value)}
                               placeholder="Nome, e-mail, cargo ou papel"
                             />
                           </div>
@@ -2188,6 +2523,7 @@ const Configuracoes = () => {
                                     <Label>Nome</Label>
                                     <Input
                                       value={editingSubaccount.fullName}
+                                      maxLength={SETTINGS_TEXT_LIMITS.personName}
                                       onChange={(event) => updateEditingSubaccountField("fullName", event.target.value)}
                                     />
                                   </div>
@@ -2195,6 +2531,7 @@ const Configuracoes = () => {
                                     <Label>Nome social</Label>
                                     <Input
                                       value={editingSubaccount.socialName}
+                                      maxLength={SETTINGS_TEXT_LIMITS.socialName}
                                       onChange={(event) => updateEditingSubaccountField("socialName", event.target.value)}
                                     />
                                   </div>
@@ -2203,6 +2540,7 @@ const Configuracoes = () => {
                                     <Input
                                       type="email"
                                       value={editingSubaccount.email}
+                                      maxLength={SETTINGS_TEXT_LIMITS.email}
                                       onChange={(event) => updateEditingSubaccountField("email", event.target.value)}
                                     />
                                   </div>
@@ -2226,6 +2564,7 @@ const Configuracoes = () => {
                                     <Label>Número do conselho regional</Label>
                                     <Input
                                       value={editingSubaccount.professionalLicense}
+                                      maxLength={SETTINGS_TEXT_LIMITS.professionalLicense}
                                       onChange={(event) => updateEditingSubaccountField("professionalLicense", event.target.value)}
                                     />
                                   </div>
@@ -2241,6 +2580,7 @@ const Configuracoes = () => {
                                     <Label>Especialidade</Label>
                                     <Input
                                       value={editingSubaccount.specialty}
+                                      maxLength={SETTINGS_TEXT_LIMITS.specialty}
                                       onChange={(event) => updateEditingSubaccountField("specialty", event.target.value)}
                                     />
                                   </div>
@@ -2248,6 +2588,7 @@ const Configuracoes = () => {
                                     <Label>Cargo</Label>
                                     <Input
                                       value={editingSubaccount.jobTitle}
+                                      maxLength={SETTINGS_TEXT_LIMITS.jobTitle}
                                       onChange={(event) => updateEditingSubaccountField("jobTitle", event.target.value)}
                                     />
                                   </div>
@@ -2290,6 +2631,7 @@ const Configuracoes = () => {
                                     <Input
                                       type="text"
                                       value={editingSubaccount.resetPassword}
+                                      maxLength={SETTINGS_TEXT_LIMITS.password}
                                       placeholder="Deixe em branco para manter"
                                       onChange={(event) => updateEditingSubaccountField("resetPassword", event.target.value)}
                                     />
@@ -2300,6 +2642,7 @@ const Configuracoes = () => {
                                   <Label>Horário de trabalho</Label>
                                   <Textarea
                                     value={editingSubaccount.workingHours}
+                                    maxLength={SETTINGS_TEXT_LIMITS.workingHours}
                                     onChange={(event) => updateEditingSubaccountField("workingHours", event.target.value)}
                                     placeholder="Ex.: seg-sex 08h-18h; sábado 08h-12h"
                                   />
@@ -2317,6 +2660,7 @@ const Configuracoes = () => {
                                     <Label>Rua</Label>
                                     <Input
                                       value={editingSubaccount.address.street}
+                                      maxLength={ADDRESS_FIELD_LIMITS.street}
                                       onChange={(event) => updateEditingSubaccountAddressField("street", event.target.value)}
                                     />
                                   </div>
@@ -2324,6 +2668,7 @@ const Configuracoes = () => {
                                     <Label>Número</Label>
                                     <Input
                                       value={editingSubaccount.address.number}
+                                      maxLength={ADDRESS_FIELD_LIMITS.number}
                                       onChange={(event) => updateEditingSubaccountAddressField("number", event.target.value)}
                                     />
                                   </div>
@@ -2331,6 +2676,7 @@ const Configuracoes = () => {
                                     <Label>Complemento</Label>
                                     <Input
                                       value={editingSubaccount.address.complement}
+                                      maxLength={ADDRESS_FIELD_LIMITS.complement}
                                       onChange={(event) => updateEditingSubaccountAddressField("complement", event.target.value)}
                                     />
                                   </div>
@@ -2338,6 +2684,7 @@ const Configuracoes = () => {
                                     <Label>Bairro</Label>
                                     <Input
                                       value={editingSubaccount.address.neighborhood}
+                                      maxLength={ADDRESS_FIELD_LIMITS.neighborhood}
                                       onChange={(event) => updateEditingSubaccountAddressField("neighborhood", event.target.value)}
                                     />
                                   </div>
@@ -2345,6 +2692,7 @@ const Configuracoes = () => {
                                     <Label>Cidade</Label>
                                     <Input
                                       value={editingSubaccount.address.city}
+                                      maxLength={ADDRESS_FIELD_LIMITS.city}
                                       onChange={(event) => updateEditingSubaccountAddressField("city", event.target.value)}
                                     />
                                   </div>
@@ -2352,31 +2700,12 @@ const Configuracoes = () => {
                                     <Label>Estado</Label>
                                     <Input
                                       value={editingSubaccount.address.state}
+                                      maxLength={ADDRESS_FIELD_LIMITS.state}
                                       onChange={(event) => updateEditingSubaccountAddressField("state", event.target.value)}
                                     />
                                   </div>
                                 </div>
 
-                                <div className="flex items-center justify-end gap-2">
-                                  <Button variant="ghost" onClick={cancelEditingSubaccount}>
-                                    Cancelar
-                                  </Button>
-                                  <Button
-                                    onClick={() => void handleSaveSubaccount(membershipRow)}
-                                    disabled={
-                                      savingMembershipId === membershipRow.id ||
-                                      !editingSubaccount.fullName.trim() ||
-                                      !editingSubaccount.email.trim()
-                                    }
-                                  >
-                                    {savingMembershipId === membershipRow.id ? (
-                                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                    ) : (
-                                      <Save className="h-4 w-4 mr-2" />
-                                    )}
-                                    Salvar alterações
-                                  </Button>
-                                </div>
                               </div>
                             )}
                           </div>
@@ -2806,7 +3135,8 @@ const Configuracoes = () => {
                           type="password"
                           placeholder="Mínimo de 6 caracteres"
                           value={securityPassword}
-                          onChange={(event) => setSecurityPassword(event.target.value)}
+                          maxLength={SETTINGS_TEXT_LIMITS.password}
+                          onChange={(event) => updateSecurityPassword(event.target.value)}
                         />
                       </div>
                       <div className="space-y-2">
@@ -2815,7 +3145,8 @@ const Configuracoes = () => {
                           type="password"
                           placeholder="Repita a nova senha"
                           value={securityPasswordConfirm}
-                          onChange={(event) => setSecurityPasswordConfirm(event.target.value)}
+                          maxLength={SETTINGS_TEXT_LIMITS.password}
+                          onChange={(event) => updateSecurityPasswordConfirm(event.target.value)}
                         />
                       </div>
                     </div>
@@ -3158,12 +3489,8 @@ const Configuracoes = () => {
                       <Input
                         placeholder="Ex: erro ao salvar atendimento"
                         value={supportForm.subject}
-                        onChange={(event) =>
-                          setSupportForm((current) => ({
-                            ...current,
-                            subject: event.target.value,
-                          }))
-                        }
+                        maxLength={SETTINGS_TEXT_LIMITS.supportSubject}
+                        onChange={(event) => updateSupportFormField("subject", event.target.value)}
                       />
                     </div>
                   </div>
@@ -3173,12 +3500,8 @@ const Configuracoes = () => {
                     <Textarea
                       placeholder="Descreva o problema, a dúvida ou a melhoria sugerida."
                       value={supportForm.message}
-                      onChange={(event) =>
-                        setSupportForm((current) => ({
-                          ...current,
-                          message: event.target.value,
-                        }))
-                      }
+                      maxLength={SETTINGS_TEXT_LIMITS.supportMessage}
+                      onChange={(event) => updateSupportFormField("message", event.target.value)}
                     />
                   </div>
 
@@ -3468,6 +3791,28 @@ const Configuracoes = () => {
           )}
         </div>
       </div>
+
+      {floatingEditActions && (
+        <div
+          role="region"
+          aria-label="Ações de edição"
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] left-3 right-3 z-50 sm:left-auto sm:right-4 lg:bottom-4"
+        >
+          <div className="ml-auto flex w-full max-w-max items-center gap-2 rounded-2xl border bg-background/95 p-2 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/90">
+            <Button variant="outline" onClick={floatingEditActions.onCancel} disabled={floatingEditActions.saving}>
+              Cancelar
+            </Button>
+            <Button onClick={floatingEditActions.onSave} disabled={floatingEditActions.saveDisabled}>
+              {floatingEditActions.saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              {floatingEditActions.saveLabel}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90 lg:hidden">
         <div className="mx-auto max-w-screen-sm px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">

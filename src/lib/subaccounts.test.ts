@@ -170,6 +170,13 @@ describe("getMembershipStatusMeta", () => {
       label: "Convidado",
     });
   });
+
+  it("returns a safe fallback for unknown membership statuses", () => {
+    expect(getMembershipStatusMeta("legacy_status")).toEqual({
+      className: "bg-slate-400",
+      label: "Status desconhecido",
+    });
+  });
 });
 
 describe("formatLastSeenAt", () => {
@@ -208,6 +215,13 @@ describe("getCollaboratorActivityStatusMeta", () => {
     expect(getCollaboratorActivityStatusMeta("inactive", false)).toEqual({
       className: "bg-slate-400",
       label: "Inativo",
+    });
+  });
+
+  it("keeps a readable fallback when an unexpected status comes from the backend", () => {
+    expect(getCollaboratorActivityStatusMeta("legacy_status", false)).toEqual({
+      className: "bg-slate-400",
+      label: "Status desconhecido",
     });
   });
 });
@@ -257,5 +271,36 @@ describe("buildVisibleTeamMembershipRows", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.membership.user_id).toBe("assistant-1");
+  });
+
+  it("does not crash when the backend returns unexpected team status or role values", () => {
+    const rows = buildVisibleTeamMembershipRows({
+      memberships: [
+        membership({
+          membership_status: "legacy_status" as MembershipLike["membership_status"],
+          operational_role: "legacy_role" as MembershipLike["operational_role"],
+          user_id: "legacy-user",
+        }),
+        membership({
+          operational_role: "assistant",
+          user_id: "assistant-user",
+        }),
+      ],
+      onlineUserIds: new Set(),
+      profileMap: new Map([
+        ["legacy-user", { email: "legacy@clinic.test", full_name: "Legado" }],
+        ["assistant-user", { email: "assistant@clinic.test", full_name: "Assistente" }],
+      ]),
+      roleFilter: "all",
+      searchTerm: "",
+      sortKey: "role_priority",
+      statusFilter: "all",
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows[1]?.activityStatus).toEqual({
+      className: "bg-slate-400",
+      label: "Status desconhecido",
+    });
   });
 });

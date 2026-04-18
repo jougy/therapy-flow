@@ -40,6 +40,10 @@ const MEMBERSHIP_STATUS_META: Record<MembershipLike["membership_status"], { clas
   suspended: { className: "bg-amber-500", label: "Suspenso" },
 };
 const ONLINE_STATUS_META = { className: "bg-sky-500", label: "Online" };
+const UNKNOWN_MEMBERSHIP_STATUS_META = {
+  className: "bg-slate-400",
+  label: "Status desconhecido",
+};
 
 const normalizeTeamSearch = (value: string | null | undefined) =>
   (value ?? "")
@@ -103,7 +107,9 @@ export const sortMembershipsForDisplay = (memberships: MembershipLike[]) =>
       return 1;
     }
 
-    const roleDelta = ROLE_PRIORITY[left.operational_role] - ROLE_PRIORITY[right.operational_role];
+    const leftRolePriority = ROLE_PRIORITY[left.operational_role] ?? Number.MAX_SAFE_INTEGER;
+    const rightRolePriority = ROLE_PRIORITY[right.operational_role] ?? Number.MAX_SAFE_INTEGER;
+    const roleDelta = leftRolePriority - rightRolePriority;
     if (roleDelta !== 0) {
       return roleDelta;
     }
@@ -111,10 +117,11 @@ export const sortMembershipsForDisplay = (memberships: MembershipLike[]) =>
     return left.created_at.localeCompare(right.created_at);
   });
 
-export const getMembershipStatusMeta = (status: MembershipLike["membership_status"]) => MEMBERSHIP_STATUS_META[status];
+export const getMembershipStatusMeta = (status: MembershipLike["membership_status"] | string | null | undefined) =>
+  (status ? MEMBERSHIP_STATUS_META[status as MembershipLike["membership_status"]] : null) ?? UNKNOWN_MEMBERSHIP_STATUS_META;
 
 export const getCollaboratorActivityStatusMeta = (
-  status: MembershipLike["membership_status"],
+  status: MembershipLike["membership_status"] | string | null | undefined,
   isOnline: boolean
 ) => (isOnline ? ONLINE_STATUS_META : getMembershipStatusMeta(status));
 
@@ -206,8 +213,9 @@ export const buildVisibleTeamMembershipRows = ({
         return right.membership.created_at.localeCompare(left.membership.created_at);
       case "role_priority":
       default: {
-        const priorityDelta =
-          ROLE_PRIORITY[left.membership.operational_role] - ROLE_PRIORITY[right.membership.operational_role];
+        const leftPriority = ROLE_PRIORITY[left.membership.operational_role] ?? Number.MAX_SAFE_INTEGER;
+        const rightPriority = ROLE_PRIORITY[right.membership.operational_role] ?? Number.MAX_SAFE_INTEGER;
+        const priorityDelta = leftPriority - rightPriority;
         if (priorityDelta !== 0) {
           return priorityDelta;
         }
