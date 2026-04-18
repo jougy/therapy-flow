@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Configuracoes from "@/pages/Configuracoes";
@@ -357,5 +357,94 @@ describe("Configuracoes", () => {
     await waitFor(() => expect(screen.getByText("Bloco padrão universal")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /importar modelo/i })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /exportar modelo/i }).length).toBeGreaterThan(0);
+  });
+
+  it("shows fixed profile actions only after editing and allows canceling changes", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    expect(screen.queryByRole("region", { name: /ações de edição/i })).not.toBeInTheDocument();
+
+    const ownEmailInput = screen.getByDisplayValue("owner@aurora.test");
+    fireEvent.change(ownEmailInput, { target: { value: "novo@aurora.test" } });
+
+    const floatingActions = screen.getByRole("region", { name: /ações de edição/i });
+    expect(within(floatingActions).getByRole("button", { name: "Salvar perfil" })).toBeInTheDocument();
+
+    fireEvent.click(within(floatingActions).getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.getByDisplayValue("owner@aurora.test")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /ações de edição/i })).not.toBeInTheDocument();
+  });
+
+  it("shows fixed clinic actions only after editing and allows canceling changes", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Perfil da clínica" }));
+
+    const clinicNameInput = await screen.findByDisplayValue("Clinica Aurora");
+    fireEvent.change(clinicNameInput, { target: { value: "Clinica Aurora Prime" } });
+
+    const floatingActions = screen.getByRole("region", { name: /ações de edição/i });
+    expect(within(floatingActions).getByRole("button", { name: "Salvar perfil da clínica" })).toBeInTheDocument();
+
+    fireEvent.click(within(floatingActions).getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.getByDisplayValue("Clinica Aurora")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /ações de edição/i })).not.toBeInTheDocument();
+  });
+
+  it("shows fixed collaborator actions only after editing and allows canceling the draft", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Colaboradores e acessos" }));
+    fireEvent.click(screen.getByRole("button", { name: /editar campos/i }));
+
+    const collaboratorNameInput = await screen.findByDisplayValue("Bianca");
+    fireEvent.change(collaboratorNameInput, { target: { value: "Bianca Nova" } });
+
+    const floatingActions = screen.getByRole("region", { name: /ações de edição/i });
+    expect(within(floatingActions).getByRole("button", { name: "Salvar alterações" })).toBeInTheDocument();
+
+    fireEvent.click(within(floatingActions).getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.queryByDisplayValue("Bianca Nova")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /ações de edição/i })).not.toBeInTheDocument();
+  });
+
+  it("limits oversized clinic and support text inputs before they become payloads", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Perfil da clínica" }));
+    const clinicNameInput = await screen.findByDisplayValue("Clinica Aurora");
+    fireEvent.change(clinicNameInput, { target: { value: `Clinica ${"😀".repeat(300)}` } });
+    expect(Array.from((clinicNameInput as HTMLInputElement).value)).toHaveLength(120);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /suporte/i })[0]);
+    const supportMessage = await screen.findByPlaceholderText("Descreva o problema, a dúvida ou a melhoria sugerida.");
+    fireEvent.change(supportMessage, { target: { value: `Linha 1\u0000\r\n${"A".repeat(5000)}` } });
+
+    expect((supportMessage as HTMLTextAreaElement).value).not.toContain("\u0000");
+    expect(Array.from((supportMessage as HTMLTextAreaElement).value).length).toBeLessThanOrEqual(2000);
   });
 });

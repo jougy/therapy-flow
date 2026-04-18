@@ -105,6 +105,18 @@ describe("team development helpers", () => {
     });
   });
 
+  it("returns safe fallbacks for unexpected development status and level values", () => {
+    expect(getDevelopmentStatusMeta("legado")).toEqual({
+      className: "bg-slate-400",
+      label: "Status desconhecido",
+    });
+
+    expect(getDevelopmentLevelMeta("especialista")).toEqual({
+      className: "bg-slate-400",
+      label: "Nivel desconhecido",
+    });
+  });
+
   it("provides compact dashboard scores and tones", () => {
     expect(getDevelopmentStatusScore("onboarding")).toBe(30);
     expect(getDevelopmentStatusScore("consolidado")).toBe(100);
