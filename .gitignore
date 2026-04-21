@@ -25,7 +25,6 @@ control.sh
 .wrangler
 supabase/.temp
 supabase/.branches
-core/Pluri-Health/
 
 # Editor directories and files
 .vscode/*
