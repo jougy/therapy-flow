@@ -49,9 +49,17 @@ vi.mock("@/integrations/supabase/client", () => {
         case "profiles":
           return [
             {
-              address: null,
-              birth_date: null,
-              cpf: null,
+              address: {
+                cep: "01310-930",
+                city: "Sao Paulo",
+                complement: "Sala 10",
+                neighborhood: "Bela Vista",
+                number: "100",
+                state: "SP",
+                street: "Av. Paulista",
+              },
+              birth_date: "1990-01-01",
+              cpf: "12345678901",
               email: "owner@aurora.test",
               full_name: "Alice",
               id: "owner-1",
@@ -59,10 +67,10 @@ vi.mock("@/integrations/supabase/client", () => {
               last_password_changed_at: null,
               last_seen_at: "2026-03-31T12:00:00.000Z",
               password_temporary: false,
-              phone: null,
-              professional_license: null,
+              phone: "11999998888",
+              professional_license: "CREFITO 123",
               public_code: "A-001",
-              social_name: null,
+              social_name: "Alice Aurora",
               specialty: null,
               working_hours: null,
             },
@@ -188,59 +196,70 @@ vi.mock("@/integrations/supabase/client", () => {
   };
 });
 
+const buildUseAuthMock = (overrides = {}) => ({
+  accountRole: "account_owner",
+  can: (capability: string) => capability !== "treasury.manage",
+  capabilities: {} as never,
+  clinic: {
+    account_owner_user_id: "owner-1",
+    id: "clinic-1",
+    logo_url: null,
+    name: "Clinica Aurora",
+    concurrent_access_limit: 4,
+    subaccount_limit: 4,
+    subscription_plan: "clinic",
+  },
+  clinicId: "clinic-1",
+  isSuperAdmin: false,
+  loading: false,
+  membership: null,
+  membershipStatus: "active",
+  operationalRole: "owner",
+  profile: {
+    address: {
+      cep: "01310-930",
+      city: "Sao Paulo",
+      complement: "Sala 10",
+      neighborhood: "Bela Vista",
+      number: "100",
+      state: "SP",
+      street: "Av. Paulista",
+    },
+    avatar_url: null,
+    bio: null,
+    birth_date: "1990-01-01",
+    clinic_id: "clinic-1",
+    cpf: "12345678901",
+    email: "owner@aurora.test",
+    full_name: "Alice",
+    job_title: null,
+    last_password_changed_at: null,
+    last_seen_at: null,
+    password_temporary: false,
+    phone: "11999998888",
+    professional_license: "CREFITO 123",
+    public_code: "A-001",
+    social_name: "Alice Aurora",
+    specialty: null,
+    working_hours: null,
+  },
+  refreshAuthState: vi.fn(async () => {}),
+  session: {
+    access_token: "token",
+  } as never,
+  signOut: vi.fn(async () => {}),
+  subscriptionPlan: "clinic",
+  user: {
+    email: "owner@aurora.test",
+    id: "owner-1",
+  } as never,
+  ...overrides,
+});
+
 describe("Configuracoes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(useAuth).mockReturnValue({
-      accountRole: "account_owner",
-      can: (capability) => capability !== "treasury.manage",
-      capabilities: {} as never,
-      clinic: {
-        account_owner_user_id: "owner-1",
-        id: "clinic-1",
-        logo_url: null,
-        name: "Clinica Aurora",
-        concurrent_access_limit: 4,
-        subaccount_limit: 4,
-        subscription_plan: "clinic",
-      },
-      clinicId: "clinic-1",
-      isSuperAdmin: false,
-      loading: false,
-      membership: null,
-      membershipStatus: "active",
-      operationalRole: "owner",
-      profile: {
-        address: null,
-        avatar_url: null,
-        bio: null,
-        birth_date: null,
-        clinic_id: "clinic-1",
-        cpf: null,
-        email: "owner@aurora.test",
-        full_name: "Alice",
-        job_title: null,
-        last_password_changed_at: null,
-        last_seen_at: null,
-        password_temporary: false,
-        phone: null,
-        professional_license: null,
-        public_code: "A-001",
-        social_name: null,
-        specialty: null,
-        working_hours: null,
-      },
-      refreshAuthState: vi.fn(async () => {}),
-      session: {
-        access_token: "token",
-      } as never,
-      signOut: vi.fn(async () => {}),
-      subscriptionPlan: "clinic",
-      user: {
-        email: "owner@aurora.test",
-        id: "owner-1",
-      } as never,
-    });
+    vi.mocked(useAuth).mockReturnValue(buildUseAuthMock() as ReturnType<typeof useAuth>);
 
     vi.mocked(supabase.rpc).mockImplementation((fn: string) => {
       if (fn === "get_clinic_concurrent_access_overview") {
@@ -379,6 +398,68 @@ describe("Configuracoes", () => {
 
     expect(screen.getByDisplayValue("owner@aurora.test")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: /ações de edição/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps prefilled own profile fields editable for the clinic owner", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+
+    expect(screen.getByText(/como owner da clínica, você pode ajustar seus dados cadastrais/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Alice")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("Alice Aurora")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("1990-01-01")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("123.456.789-01")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("(11) 99999-8888")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("CREFITO 123")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("01310-930")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("Av. Paulista")).not.toBeDisabled();
+  });
+
+  it("keeps prefilled own profile fields editable for the operational owner without account owner role", async () => {
+    vi.mocked(useAuth).mockReturnValue(
+      buildUseAuthMock({
+        accountRole: null,
+        operationalRole: "owner",
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+
+    expect(screen.getByText(/como owner da clínica, você pode ajustar seus dados cadastrais/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Alice")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("Av. Paulista")).not.toBeDisabled();
+  });
+
+  it("keeps prefilled own profile fields editable for clinic admins", async () => {
+    vi.mocked(useAuth).mockReturnValue(
+      buildUseAuthMock({
+        accountRole: null,
+        operationalRole: "admin",
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+
+    expect(screen.getByText(/como administrador da clínica, você pode ajustar seus dados cadastrais/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Alice")).not.toBeDisabled();
+    expect(screen.getByDisplayValue("Av. Paulista")).not.toBeDisabled();
   });
 
   it("shows fixed clinic actions only after editing and allows canceling changes", async () => {

@@ -476,6 +476,9 @@ const Configuracoes = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { accountRole, can, clinic: authClinic, clinicId, operationalRole, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
+  const isClinicOwner = accountRole === "account_owner" || operationalRole === "owner";
+  const isClinicAdmin = operationalRole === "admin";
+  const canSelfManageManagedProfileFields = isClinicOwner || isClinicAdmin;
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [sessions, setSessions] = useState<Pick<SessionRow, "anamnesis_template_id" | "provider_id" | "session_date" | "status" | "user_id">[]>([]);
@@ -1006,16 +1009,27 @@ const Configuracoes = () => {
   }, [clearMobileLongPress]);
 
   const ownProfileLocks = useMemo(
-    () => ({
-      address: isSelfServiceProfileAddressLocked(profile?.address),
-      birthDate: isSelfServiceProfileDateLocked(profile?.birth_date),
-      cpf: isSelfServiceProfileFieldLocked(profile?.cpf),
-      fullName: isSelfServiceProfileFieldLocked(profile?.full_name),
-      phone: isSelfServiceProfileFieldLocked(profile?.phone),
-      professionalLicense: isSelfServiceProfileFieldLocked(profile?.professional_license),
-      socialName: isSelfServiceProfileFieldLocked(profile?.social_name),
-    }),
-    [profile]
+    () =>
+      canSelfManageManagedProfileFields
+        ? {
+            address: false,
+            birthDate: false,
+            cpf: false,
+            fullName: false,
+            phone: false,
+            professionalLicense: false,
+            socialName: false,
+          }
+        : {
+            address: isSelfServiceProfileAddressLocked(profile?.address),
+            birthDate: isSelfServiceProfileDateLocked(profile?.birth_date),
+            cpf: isSelfServiceProfileFieldLocked(profile?.cpf),
+            fullName: isSelfServiceProfileFieldLocked(profile?.full_name),
+            phone: isSelfServiceProfileFieldLocked(profile?.phone),
+            professionalLicense: isSelfServiceProfileFieldLocked(profile?.professional_license),
+            socialName: isSelfServiceProfileFieldLocked(profile?.social_name),
+          },
+    [canSelfManageManagedProfileFields, profile]
   );
 
   const activeSecuritySessions = useMemo(
@@ -1828,7 +1842,11 @@ const Configuracoes = () => {
                   <div>
                     <p className="font-medium">Dados pessoais</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Você pode completar seus dados cadastrais uma vez. Depois disso, qualquer ajuste fica restrito à administração da clínica.
+                      {isClinicOwner
+                        ? "Como owner da clínica, você pode ajustar seus dados cadastrais sempre que precisar."
+                        : isClinicAdmin
+                          ? "Como administrador da clínica, você pode ajustar seus dados cadastrais sempre que precisar."
+                          : "Você pode completar seus dados cadastrais uma vez. Depois disso, qualquer ajuste fica restrito à administração da clínica."}
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1893,7 +1911,11 @@ const Configuracoes = () => {
                   <div>
                     <p className="font-medium">Endereço</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Depois de preenchido, o endereço passa a ser gerenciado pela administração da clínica.
+                      {isClinicOwner
+                        ? "Como owner da clínica, você pode manter seu endereço atualizado sempre que precisar."
+                        : isClinicAdmin
+                          ? "Como administrador da clínica, você pode manter seu endereço atualizado sempre que precisar."
+                          : "Depois de preenchido, o endereço passa a ser gerenciado pela administração da clínica."}
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
