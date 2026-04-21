@@ -142,4 +142,32 @@ describe("Index", () => {
     expect(screen.getByText("Maria Silva")).toBeInTheDocument();
     expect(screen.queryByText("João Souza")).not.toBeInTheDocument();
   });
+
+  it("restores the dashboard cards after returning filters and sorting to the default state", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Pacientes Ativos");
+
+    fireEvent.click(screen.getByRole("button", { name: /filtro/i }));
+    fireEvent.click(screen.getByLabelText("Ativo"));
+
+    expect(await screen.findByText("1 paciente encontrado")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /limpar filtros/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("1 paciente encontrado")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Pacientes Ativos")).toBeVisible();
+    expect(screen.getByText("Total de Pacientes")).toBeVisible();
+    expect(screen.getByText("Total de Sessões")).toBeVisible();
+    expect(screen.getByText("Agenda mock")).toBeVisible();
+  });
 });
