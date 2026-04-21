@@ -22,6 +22,7 @@ import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { PatientGroupStatus } from "@/lib/patient-groups";
 import { getSessionPersonLabel } from "@/lib/session-people";
 import { getSessionPreviewContent, getSessionPreviewIndicators } from "@/lib/session-preview";
+import { EDITABLE_PATIENT_STATUS_OPTIONS, type EditablePatientStatus } from "@/lib/patient-statuses";
 import {
   buildPatientSessionsView,
   canDeleteSelectedSessions,
@@ -39,7 +40,7 @@ type ShareLinkResponse = {
   password_prefix: string;
   token: string;
 };
-type PatientStatus = "ativo" | "pausado" | "inativo" | "alta";
+type PatientStatus = EditablePatientStatus;
 type PatientStatusSelectValue = PatientStatus | "delete";
 
 const GROUP_COLORS = [
@@ -57,13 +58,6 @@ const GROUP_STATUSES: { value: PatientGroupStatus; label: string }[] = [
   { value: "concluido", label: "Concluído" },
   { value: "cancelado", label: "Cancelado" },
   { value: "inativo", label: "Inativo" },
-];
-
-const PATIENT_STATUSES: { value: PatientStatus; label: string }[] = [
-  { value: "ativo", label: "Ativo" },
-  { value: "pausado", label: "Pausado" },
-  { value: "inativo", label: "Inativo" },
-  { value: "alta", label: "Alta" },
 ];
 
 const DELETE_PATIENT_STATUS_OPTION = { value: "delete" as const, label: "Excluir" };
@@ -742,7 +736,7 @@ const PacienteDetalhe = () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PATIENT_STATUSES.map((status) => (
+              {EDITABLE_PATIENT_STATUS_OPTIONS.map((status) => (
                 <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
               ))}
               {canDeletePatient ? (

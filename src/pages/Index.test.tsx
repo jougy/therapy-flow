@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Index from "@/pages/Index";
@@ -28,6 +28,7 @@ vi.mock("@/integrations/supabase/client", () => {
               gender: null,
               id: "patient-1",
               name: "Maria Silva",
+              phone: null,
               pronoun: null,
               status: "ativo",
               updated_at: "2026-04-14T10:00:00.000Z",
@@ -38,6 +39,7 @@ vi.mock("@/integrations/supabase/client", () => {
               gender: null,
               id: "patient-2",
               name: "João Souza",
+              phone: null,
               pronoun: null,
               status: "inativo",
               updated_at: "2026-04-14T09:00:00.000Z",
@@ -120,5 +122,24 @@ describe("Index", () => {
     });
 
     expect(screen.getByText("João Souza")).toBeInTheDocument();
+  });
+
+  it("shows the patient list when a status filter is applied", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("button", { name: /filtro/i });
+
+    fireEvent.click(screen.getByRole("button", { name: /filtro/i }));
+    fireEvent.click(screen.getByLabelText("Ativo"));
+
+    expect(await screen.findByText("1 paciente encontrado")).toBeInTheDocument();
+    expect(screen.getByText("Maria Silva")).toBeInTheDocument();
+    expect(screen.queryByText("João Souza")).not.toBeInTheDocument();
   });
 });

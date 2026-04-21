@@ -1,8 +1,9 @@
-import { ChevronRight, User, Circle } from "lucide-react";
+import { ChevronRight, User } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { useNavigate } from "react-router-dom";
+import { getPatientStatusMeta } from "@/lib/patient-statuses";
 
 const groupBadgeColors: Record<string, string> = {
   gray: "bg-group-gray/40 text-foreground border-group-gray",
@@ -11,14 +12,6 @@ const groupBadgeColors: Record<string, string> = {
   peach: "bg-group-peach/40 text-foreground border-group-peach",
   sky: "bg-group-sky/40 text-foreground border-group-sky",
   rose: "bg-group-rose/40 text-foreground border-group-rose",
-};
-
-const statusMap: Record<string, { label: string; className: string }> = {
-  ativo: { label: "Ativo", className: "bg-success/15 text-success border-success/20 hover:bg-success/20" },
-  pausado: { label: "Pausado", className: "bg-warning/15 text-warning border-warning/20 hover:bg-warning/20" },
-  inativo: { label: "Inativo", className: "" },
-  alta: { label: "Alta", className: "bg-sky-100 text-sky-700 border-sky-200 hover:bg-sky-100" },
-  pagamento_pendente: { label: "Pagamento pendente", className: "bg-warning/15 text-warning border-warning/20 hover:bg-warning/20" },
 };
 
 export interface PatientCardData {
@@ -44,7 +37,7 @@ const GenderIcon = ({ gender }: { gender: string | null }) => {
 
 const PatientCard = ({ patient }: { patient: PatientCardData }) => {
   const navigate = useNavigate();
-  const st = statusMap[patient.status] || statusMap.inativo;
+  const statusMeta = getPatientStatusMeta(patient.status);
 
   return (
     <Card
@@ -65,9 +58,9 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
             )}
             <Badge
               variant={patient.status === "ativo" ? "default" : "secondary"}
-              className={st.className}
+              className={statusMeta.badgeClassName}
             >
-              {st.label}
+              {statusMeta.label}
             </Badge>
           </div>
 
