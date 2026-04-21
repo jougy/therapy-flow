@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir core:*)",
+      "Bash(mv *.md core/)"
+    ]
+  }
+}
