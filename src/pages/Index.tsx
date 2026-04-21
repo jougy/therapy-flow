@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { ArrowUpDown, ListFilter, Loader2, Plus, Search, Users, CalendarDays, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,11 +31,6 @@ import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
 const container = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.05 } },
-};
-
-const item = {
-  hidden: { opacity: 0, y: 4 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.2 } },
 };
 
 const Index = () => {
@@ -310,81 +305,67 @@ const Index = () => {
         </div>
       )}
 
-      <AnimatePresence mode="wait">
-        {isShowingPatientList ? (
-          <motion.div
-            key="patients"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="space-y-3"
-          >
+      {isShowingPatientList ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado{visiblePatients.length !== 1 ? "s" : ""}
+          </p>
+          {visiblePatients.map((patient) => (
+            <motion.div key={patient.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
+              <PatientCard patient={patient} />
+            </motion.div>
+          ))}
+          {visiblePatients.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado{visiblePatients.length !== 1 ? "s" : ""}
+              Nenhum paciente encontrado.
             </p>
-            {visiblePatients.map((patient) => (
-              <motion.div key={patient.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
-                <PatientCard patient={patient} />
-              </motion.div>
-            ))}
-            {visiblePatients.length === 0 && (
-              <p className="text-center text-muted-foreground py-12">Nenhum paciente encontrado.</p>
-            )}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="dashboard"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="space-y-6"
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {dashboardStats.map((stat) => (
-                <motion.div key={stat.title} variants={item}>
-                  <Card className="hover:shadow-md transition-shadow duration-150">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-                      <div className={`p-2 rounded-lg ${stat.bgAccent}`}>
-                        <stat.icon className={`h-4 w-4 ${stat.accent}`} />
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{stat.value}</div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-              <motion.div variants={item}>
-                <AgendaWidget />
-              </motion.div>
-            </div>
-
-            {recentPatients.length > 0 && (
-              <div>
-                <h2 className="text-sm font-medium text-muted-foreground mb-3">Pacientes recentes</h2>
-                <div className="space-y-2">
-                  {recentPatients.slice(0, 5).map((patient) => (
-                    <PatientCard key={patient.id} patient={patient} />
-                  ))}
-                </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {dashboardStats.map((stat) => (
+              <div key={stat.title}>
+                <Card className="hover:shadow-md transition-shadow duration-150">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
+                    <div className={`p-2 rounded-lg ${stat.bgAccent}`}>
+                      <stat.icon className={`h-4 w-4 ${stat.accent}`} />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stat.value}</div>
+                  </CardContent>
+                </Card>
               </div>
-            )}
+            ))}
+            <div>
+              <AgendaWidget />
+            </div>
+          </div>
 
-            {recentPatients.length === 0 && (
-              <Card className="p-8 text-center">
-                <p className="text-muted-foreground">Nenhum paciente cadastrado ainda.</p>
-                <Button className="mt-4" onClick={() => navigate("/pacientes/novo")}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Cadastrar primeiro paciente
-                </Button>
-              </Card>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {recentPatients.length > 0 && (
+            <div>
+              <h2 className="text-sm font-medium text-muted-foreground mb-3">Pacientes recentes</h2>
+              <div className="space-y-2">
+                {recentPatients.slice(0, 5).map((patient) => (
+                  <PatientCard key={patient.id} patient={patient} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {recentPatients.length === 0 && (
+            <Card className="p-8 text-center">
+              <p className="text-muted-foreground">Nenhum paciente cadastrado ainda.</p>
+              <Button className="mt-4" onClick={() => navigate("/pacientes/novo")}>
+                <Plus className="h-4 w-4 mr-2" />
+                Cadastrar primeiro paciente
+              </Button>
+            </Card>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 };
