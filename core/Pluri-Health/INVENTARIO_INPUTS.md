@@ -36,24 +36,29 @@ Gerado em `2026-04-18` a partir de uma varredura manual no código em `src/`.
 
 ## `src/pages/CadastroCompleto.tsx`
 
-- `src/pages/CadastroCompleto.tsx:212` `gender`: `Select`; opções fechadas de gênero; placeholder `Selecione`.
-- `src/pages/CadastroCompleto.tsx:225` `pronoun`: `Select`; opções fechadas de pronome; placeholder `Selecione`.
-- `src/pages/CadastroCompleto.tsx:239` `rg`: `Input` de RG; placeholder `0000000-0`; sem formatação automática.
-- `src/pages/CadastroCompleto.tsx:243` `bloodType`: `Select`; usa `BLOOD_TYPES`.
-- `src/pages/CadastroCompleto.tsx:255` `profession`: `Input` de profissão; placeholder `Ex: Engenheiro(a)`; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:271` `cep`: `Input` com `handleCepLookup(...)`; placeholder `00000-000`; `maxLength={9}`.
-- `src/pages/CadastroCompleto.tsx:278` `country`: `Input` livre de país; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:282` `state`: `Input` livre de estado; placeholder `UF`; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:286` `city`: `Input` livre de cidade; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:291` `neighborhood`: `Input` livre de bairro; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:295` `street`: `Input` livre de rua; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:300` `addressNumber`: `Input` livre; placeholder `Ex: 123`; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:304` `addressComplement`: `Input` livre; placeholder `Apt, Bloco, etc.`; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:320` `chronic`: `Textarea`; placeholder de problemas crônicos; `rows={3}`.
-- `src/pages/CadastroCompleto.tsx:324` `surgeries`: `Textarea`; placeholder de cirurgias; `rows={3}`.
-- `src/pages/CadastroCompleto.tsx:328` `meds`: `Textarea`; placeholder de medicamentos; `rows={3}`.
-- `src/pages/CadastroCompleto.tsx:332` `allergies`: `Textarea`; placeholder de alergias; `rows={2}`.
-- `src/pages/CadastroCompleto.tsx:336` `clinicalNotes`: `Textarea`; placeholder de observações clínicas; `rows={3}`.
+- `src/pages/CadastroCompleto.tsx:255` `name`: `Input` de nome completo; obrigatório visual (`*` no label); sem `maxLength` explícito.
+- `src/pages/CadastroCompleto.tsx:262` `date-of-birth`: `Input` `type="date"` para data de nascimento.
+- `src/pages/CadastroCompleto.tsx:266` `cpf`: `Input` com `formatCpf(...)`; placeholder `000.000.000-00`; `maxLength={14}`.
+- `src/pages/CadastroCompleto.tsx:270` `phone`: `Input` com `formatPhone(...)`; placeholder `(00) 00000-0000`; `maxLength={15}`.
+- `src/pages/CadastroCompleto.tsx:274` `email`: `Input` `type="email"`; placeholder `paciente@email.com`; sem `maxLength` explícito.
+- `src/pages/CadastroCompleto.tsx:279` `gender`: `Select`; opções fechadas de gênero; placeholder `Selecione`.
+- `src/pages/CadastroCompleto.tsx:292` `pronoun`: `Select`; opções fechadas de pronome; placeholder `Selecione`.
+- `src/pages/CadastroCompleto.tsx:306` `rg`: `Input` de RG; placeholder `0000000-0`; sem formatação automática.
+- `src/pages/CadastroCompleto.tsx:310` `bloodType`: `Select`; usa `BLOOD_TYPES`.
+- `src/pages/CadastroCompleto.tsx:322` `profession`: `Input` de profissão; placeholder `Ex: Engenheiro(a)`; sem `maxLength`.
+- `src/pages/CadastroCompleto.tsx:339` `cep`: `Input` com `handleCepLookup(...)`; placeholder `00000-000`; `maxLength={9}`.
+- `src/pages/CadastroCompleto.tsx:346` `country`: `Input` livre de país; sem `maxLength`.
+- `src/pages/CadastroCompleto.tsx:350` `state`: `Input` livre de estado; placeholder `UF`; sem `maxLength`.
+- `src/pages/CadastroCompleto.tsx:354` `city`: `Input` livre de cidade; sem `maxLength`.
+- `src/pages/CadastroCompleto.tsx:359` `neighborhood`: `Input` livre de bairro; sem `maxLength`.
+- `src/pages/CadastroCompleto.tsx:363` `street`: `Input` livre de rua; sem `maxLength`.
+- `src/pages/CadastroCompleto.tsx:368` `addressNumber`: `Input` livre; placeholder `Ex: 123`; sem `maxLength`.
+- `src/pages/CadastroCompleto.tsx:372` `addressComplement`: `Input` livre; placeholder `Apt, Bloco, etc.`; sem `maxLength`.
+- `src/pages/CadastroCompleto.tsx:388` `chronic`: `Textarea`; placeholder de problemas crônicos; `rows={3}`.
+- `src/pages/CadastroCompleto.tsx:392` `surgeries`: `Textarea`; placeholder de cirurgias; `rows={3}`.
+- `src/pages/CadastroCompleto.tsx:396` `meds`: `Textarea`; placeholder de medicamentos; `rows={3}`.
+- `src/pages/CadastroCompleto.tsx:400` `allergies`: `Textarea`; placeholder de alergias; `rows={2}`.
+- `src/pages/CadastroCompleto.tsx:404` `clinicalNotes`: `Textarea`; placeholder de observações clínicas; `rows={3}`.
 
 ## `src/pages/CadastroPacienteCompartilhado.tsx`
 

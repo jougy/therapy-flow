@@ -13,6 +13,11 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Database } from "@/integrations/supabase/types";
+import { formatCep, formatCpf, formatPhone } from "@/lib/profile-settings";
+import {
+  buildPatientRegistrationPutPayload,
+  putPatientRegistration,
+} from "@/lib/patient-registration";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
@@ -29,10 +34,18 @@ interface AddressData {
 const CadastroCompleto = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { session, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [patientName, setPatientName] = useState("");
+  const [patientRecord, setPatientRecord] = useState<Patient | null>(null);
+
+  // Dados básicos
+  const [name, setName] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [cpf, setCpf] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
 
   // Dados pessoais
   const [gender, setGender] = useState("");
@@ -75,13 +88,19 @@ const CadastroCompleto = () => {
 
     const patient: Patient = data;
 
+    setPatientRecord(patient);
     setPatientName(patient.name);
+    setName(patient.name);
+    setDateOfBirth(patient.date_of_birth ?? "");
+    setCpf(formatCpf(patient.cpf ?? ""));
+    setPhone(formatPhone(patient.phone ?? ""));
+    setEmail(patient.email ?? "");
     setGender(patient.gender ?? "");
     setRg(patient.rg ?? "");
     setBloodType(patient.blood_type ?? "");
     setPronoun(patient.pronoun ?? "");
     setProfession(patient.profession ?? "");
-    setCep(patient.cep ?? "");
+    setCep(formatCep(patient.cep ?? ""));
     setCountry(patient.country ?? "Brasil");
     setState(patient.state ?? "");
     setCity(patient.city ?? "");
@@ -124,40 +143,64 @@ const CadastroCompleto = () => {
   };
 
   const handleSubmit = async () => {
-    if (!user || !id) return;
+    if (!user || !id || !patientRecord) return;
+
+    if (!session?.access_token) {
+      toast({ title: "Sessão inválida", description: "Faça login novamente para salvar o cadastro.", variant: "destructive" });
+      return;
+    }
+
+    if (!name.trim()) {
+      toast({ title: "Nome obrigatório", description: "Informe o nome completo do paciente.", variant: "destructive" });
+      return;
+    }
+
     setSubmitting(true);
 
-    const { error } = await supabase
-      .from("patients")
-      .update({
-        gender,
-        rg: rg || null,
-        blood_type: bloodType || null,
-        pronoun: pronoun || null,
-        profession: profession || null,
-        cep: cep.replace(/\D/g, "") || null,
+    try {
+      const payload = buildPatientRegistrationPutPayload(patientRecord, {
+        addressComplement,
+        addressNumber,
+        allergies,
+        bloodType,
+        cep,
+        cpf,
+        chronicConditions,
+        city,
+        clinicalNotes,
+        continuousMedications,
         country,
-        state: state || null,
-        city: city || null,
-        neighborhood: neighborhood || null,
-        street: street || null,
-        address_number: addressNumber || null,
-        address_complement: addressComplement || null,
-        chronic_conditions: chronicConditions || null,
-        surgeries: surgeries || null,
-        continuous_medications: continuousMedications || null,
-        allergies: allergies || null,
-        clinical_notes: clinicalNotes || null,
-        registration_complete: true,
-      })
-      .eq("id", id);
+        dateOfBirth,
+        email,
+        gender,
+        name,
+        neighborhood,
+        phone,
+        profession,
+        pronoun,
+        rg,
+        state,
+        street,
+        surgeries,
+      });
 
-    if (error) {
-      toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
-    } else {
+      await putPatientRegistration({
+        accessToken: session.access_token,
+        apiKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        patient: payload,
+        supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+      });
+
       toast({ title: "Cadastro atualizado", description: "Informações salvas com sucesso." });
       navigate(`/pacientes/${id}`);
+    } catch (error) {
+      toast({
+        title: "Erro ao salvar",
+        description: error instanceof Error ? error.message : "Não foi possível atualizar o cadastro.",
+        variant: "destructive",
+      });
     }
+
     setSubmitting(false);
   };
 
@@ -203,9 +246,34 @@ const CadastroCompleto = () => {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Dados Pessoais</CardTitle>
-              <CardDescription>Informações fixas de identificação</CardDescription>
+              <CardDescription>Informações principais de identificação e contato</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="name">Nome completo *</Label>
+                  <Input id="name" value={name} onChange={(e) => {
+                    setName(e.target.value);
+                    setPatientName(e.target.value);
+                  }} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="date-of-birth">Data de nascimento</Label>
+                  <Input id="date-of-birth" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cpf">CPF</Label>
+                  <Input id="cpf" value={cpf} onChange={(e) => setCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" maxLength={14} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Telefone</Label>
+                  <Input id="phone" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={15} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">E-mail</Label>
+                  <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="paciente@email.com" />
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="gender">Gênero</Label>
