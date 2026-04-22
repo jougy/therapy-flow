@@ -154,10 +154,35 @@ export const formatSecurityEventTimestamp = (value: string | null) => {
   }).format(new Date(value));
 };
 
-export const createSecuritySessionKey = async (token: string) => {
-  const encoder = new TextEncoder();
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", encoder.encode(token));
-  return Array.from(new Uint8Array(digest))
-    .map((item) => item.toString(16).padStart(2, "0"))
-    .join("");
+const SECURITY_SESSION_STORAGE_KEY = "therapy-flow-security-session-key";
+
+const generateSecuritySessionKey = () => {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+export const createSecuritySessionKey = async () => {
+  if (typeof window === "undefined") {
+    return generateSecuritySessionKey();
+  }
+
+  const existingKey = window.sessionStorage.getItem(SECURITY_SESSION_STORAGE_KEY);
+  if (existingKey) {
+    return existingKey;
+  }
+
+  const nextKey = generateSecuritySessionKey();
+  window.sessionStorage.setItem(SECURITY_SESSION_STORAGE_KEY, nextKey);
+  return nextKey;
+};
+
+export const clearSecuritySessionKey = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(SECURITY_SESSION_STORAGE_KEY);
 };

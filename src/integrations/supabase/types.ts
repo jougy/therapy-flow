@@ -912,8 +912,20 @@ export type Database = {
         Args: { _capability: string; _clinic_id?: string }
         Returns: boolean
       }
+      cleanup_user_security_sessions: {
+        Args: {
+          _inactive_window?: unknown
+          _retention_window?: unknown
+          _user_id?: string
+        }
+        Returns: Json
+      }
       end_clinic_user_security_sessions: {
         Args: { _clinic_id?: string; _target_user_id: string }
+        Returns: Json
+      }
+      end_current_security_session: {
+        Args: { _session_key: string }
         Returns: Json
       }
       end_other_security_sessions: {

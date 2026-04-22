@@ -93,6 +93,43 @@ vi.mock("@/integrations/supabase/client", () => {
               working_hours: null,
             },
           ];
+        case "user_security_sessions":
+          return [
+            {
+              browser: "Chrome",
+              clinic_id: "clinic-1",
+              created_at: "2026-03-31T12:00:00.000Z",
+              device_label: "Chrome • macOS",
+              ended_at: null,
+              force_signed_out_at: null,
+              forced_out_by: null,
+              id: "security-session-current",
+              last_seen_at: "2026-03-31T12:05:00.000Z",
+              platform: "macOS",
+              session_key: "session-1",
+              signed_in_at: "2026-03-31T12:00:00.000Z",
+              updated_at: "2026-03-31T12:05:00.000Z",
+              user_agent: "Chrome on macOS",
+              user_id: "owner-1",
+            },
+            {
+              browser: "Chrome",
+              clinic_id: "clinic-1",
+              created_at: "2026-03-31T09:00:00.000Z",
+              device_label: "Chrome • Linux",
+              ended_at: null,
+              force_signed_out_at: null,
+              forced_out_by: null,
+              id: "security-session-stale",
+              last_seen_at: "2026-03-31T09:10:00.000Z",
+              platform: "Linux",
+              session_key: "session-stale",
+              signed_in_at: "2026-03-31T09:00:00.000Z",
+              updated_at: "2026-03-31T09:10:00.000Z",
+              user_agent: "Chrome on Linux",
+              user_id: "owner-1",
+            },
+          ];
         case "clinics":
           return {
             account_owner_user_id: "owner-1",
@@ -376,6 +413,24 @@ describe("Configuracoes", () => {
     await waitFor(() => expect(screen.getByText("Bloco padrão universal")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: /importar modelo/i })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /exportar modelo/i }).length).toBeGreaterThan(0);
+  });
+
+  it("does not list stale security sessions as other open sessions", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Segurança" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Sessões e dispositivos")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Nenhuma outra sessão ativa registrada no momento.")).toBeInTheDocument();
+    expect(screen.queryByText("Chrome • Linux")).not.toBeInTheDocument();
   });
 
   it("shows fixed profile actions only after editing and allows canceling changes", async () => {
