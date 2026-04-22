@@ -7,20 +7,43 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Build and dependencies
 node_modules
 dist
 dist-ssr
+
+# Local-only config
 *.local
+
+# Environment and secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.*.sample
+
+# Local operational artifacts
 .control
 .local-tools
+
+# Local admin and ops entrypoints that should stay out of Git
 account-admin-local.sh
 account-admin-prod.sh
+control.sh
+scripts/**/.control/
+scripts/**/supabase.env
+scripts/**/supabase.*.env
+scripts/**/account-admin-local.sh
+scripts/**/account-admin-prod.sh
+scripts/**/control.sh
 scripts/account-admin*
 src/test/account-admin*
-control.sh
+
+# Local documentation vault / Obsidian state
+core/Pluri-Health/
+
+# Deploy/tool state
 .vercel
 .wrangler
 supabase/.temp
