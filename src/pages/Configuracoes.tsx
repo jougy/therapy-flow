@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { motion } from "framer-motion";
+import { useTheme } from "next-themes";
 import {
   ArrowLeft,
   BarChart3,
@@ -18,6 +19,7 @@ import {
   Mail,
   MessageCircle,
   LogOut,
+  MoonStar,
   Pencil,
   Plus,
   Settings,
@@ -475,10 +477,12 @@ const areEditableStatesEqual = (left: unknown, right: unknown) => JSON.stringify
 const Configuracoes = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { resolvedTheme, setTheme } = useTheme();
   const { accountRole, can, clinic: authClinic, clinicId, operationalRole, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
   const isClinicOwner = accountRole === "account_owner" || operationalRole === "owner";
   const isClinicAdmin = operationalRole === "admin";
   const canSelfManageManagedProfileFields = isClinicOwner || isClinicAdmin;
+  const isDarkTheme = resolvedTheme === "dark";
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [sessions, setSessions] = useState<Pick<SessionRow, "anamnesis_template_id" | "provider_id" | "session_date" | "status" | "user_id">[]>([]);
@@ -1816,6 +1820,27 @@ const Configuracoes = () => {
                   <div className="rounded-lg border p-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Clínica</p>
                     <p className="mt-2 font-medium">{authClinic?.name || "Não identificada"}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-full bg-primary/10 p-2 text-primary">
+                        <MoonStar className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="font-medium">Tema noturno</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Troque entre o visual claro atual e o novo tema escuro. A escolha fica salva neste dispositivo.
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={isDarkTheme}
+                      onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+                      aria-label="Ativar tema noturno"
+                    />
                   </div>
                 </div>
 

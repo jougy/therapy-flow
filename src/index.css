@@ -6,6 +6,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --background: 210 40% 98%;
     --foreground: 215 28% 17%;
 
@@ -64,6 +65,63 @@
     --sidebar-border: 214 32% 91%;
     --sidebar-ring: 199 89% 48%;
   }
+
+  .dark {
+    color-scheme: dark;
+    --background: 220 26% 11%;
+    --foreground: 210 20% 96%;
+
+    --card: 222 24% 15%;
+    --card-foreground: 210 20% 96%;
+
+    --popover: 222 24% 15%;
+    --popover-foreground: 210 20% 96%;
+
+    --primary: 198 93% 60%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 217 19% 21%;
+    --secondary-foreground: 210 20% 96%;
+
+    --muted: 217 19% 18%;
+    --muted-foreground: 215 16% 73%;
+
+    --accent: 217 19% 21%;
+    --accent-foreground: 210 20% 96%;
+
+    --destructive: 350 78% 58%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 160 70% 42%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 54%;
+    --warning-foreground: 222 47% 11%;
+
+    --border: 217 19% 24%;
+    --input: 217 19% 24%;
+    --ring: 198 93% 60%;
+
+    --group-gray: 219 13% 30%;
+    --group-lavender: 263 38% 38%;
+    --group-sage: 142 28% 32%;
+    --group-peach: 20 48% 38%;
+    --group-sky: 199 49% 36%;
+    --group-rose: 350 46% 38%;
+
+    --pain-low: 160 70% 42%;
+    --pain-mid: 38 92% 54%;
+    --pain-high: 350 78% 58%;
+
+    --sidebar-background: 222 27% 13%;
+    --sidebar-foreground: 210 20% 96%;
+    --sidebar-primary: 198 93% 60%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 217 19% 21%;
+    --sidebar-accent-foreground: 210 20% 96%;
+    --sidebar-border: 217 19% 24%;
+    --sidebar-ring: 198 93% 60%;
+  }
 }
 
 @layer base {
@@ -74,6 +132,15 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  body.dark,
+  .dark body {
+    background-image:
+      radial-gradient(circle at top, hsl(198 93% 60% / 0.08), transparent 34%),
+      linear-gradient(180deg, hsl(var(--background)), hsl(222 30% 9%));
   }
 
   h1, h2, h3, h4, h5, h6 {
