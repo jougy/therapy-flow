@@ -1,10 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { type Session, type User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
-import { createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
+import { clearSecuritySessionKey, createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
   hasCapability,
@@ -142,12 +142,47 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [membership, setMembership] = useState<Membership | null>(null);
   const [clinic, setClinic] = useState<ClinicSummary | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const currentSecuritySessionKeyRef = useRef<string | null>(null);
+
+  const endCurrentSecuritySession = useCallback(async (options?: { keepalive?: boolean; session?: Session | null }) => {
+    const nextSession = options?.session ?? session;
+    const accessToken = nextSession?.access_token;
+    if (!accessToken) {
+      clearSecuritySessionKey();
+      currentSecuritySessionKeyRef.current = null;
+      return;
+    }
+
+    const sessionKey = currentSecuritySessionKeyRef.current ?? await createSecuritySessionKey();
+    currentSecuritySessionKeyRef.current = sessionKey;
+
+    const request = fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/end_current_security_session`, {
+      method: "POST",
+      headers: {
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ _session_key: sessionKey }),
+      keepalive: options?.keepalive ?? false,
+    });
+
+    try {
+      await request;
+    } catch {
+      // Best-effort shutdown for abandoned tabs.
+    } finally {
+      clearSecuritySessionKey();
+      currentSecuritySessionKeyRef.current = null;
+    }
+  }, [session]);
 
   const registerSecuritySession = useCallback(async (nextSession: Session) => {
     const browserInfo = parseSecurityUserAgent(
       typeof navigator === "undefined" ? null : navigator.userAgent
     );
-    const sessionKey = await createSecuritySessionKey(nextSession.access_token);
+    const sessionKey = currentSecuritySessionKeyRef.current ?? await createSecuritySessionKey();
+    currentSecuritySessionKeyRef.current = sessionKey;
 
     const { error } = await supabase.rpc("register_current_security_session", {
       _browser: browserInfo.browser,
@@ -274,6 +309,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             .finally(() => setLoading(false));
         }, 0);
       } else {
+        currentSecuritySessionKeyRef.current = null;
         setProfile(null);
         setMembership(null);
         setClinic(null);
@@ -302,7 +338,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    const interval = window.setInterval(() => {
+    const heartbeat = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+
       void supabase
         .from("profiles")
         .update({ last_seen_at: new Date().toISOString() })
@@ -321,10 +361,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           });
         }
       });
-    }, 5 * 60 * 1000);
+    };
 
-    return () => window.clearInterval(interval);
-  }, [registerSecuritySession, session]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        heartbeat();
+      }
+    };
+
+    const handlePageHide = () => {
+      void endCurrentSecuritySession({ keepalive: true, session });
+    };
+
+    const interval = window.setInterval(heartbeat, 60 * 1000);
+    heartbeat();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [endCurrentSecuritySession, registerSecuritySession, session]);
 
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {
@@ -349,6 +408,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [clinic, membership]);
 
   const signOut = async () => {
+    await endCurrentSecuritySession({ session });
     await supabase.auth.signOut();
   };
 

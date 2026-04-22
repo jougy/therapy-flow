@@ -699,7 +699,7 @@ const Configuracoes = () => {
       return;
     }
 
-    void createSecuritySessionKey(session.access_token).then(setCurrentSecuritySessionKey);
+    void createSecuritySessionKey().then(setCurrentSecuritySessionKey);
   }, [session?.access_token]);
 
   const selectedTemplate = useMemo(
@@ -1037,7 +1037,7 @@ const Configuracoes = () => {
   );
 
   const activeSecuritySessions = useMemo(
-    () => securitySessions.filter((securitySession) => !securitySession.ended_at),
+    () => securitySessions.filter((securitySession) => isSecuritySessionActive(securitySession)),
     [securitySessions]
   );
 
