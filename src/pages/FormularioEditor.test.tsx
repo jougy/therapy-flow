@@ -15,16 +15,39 @@ vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
 }));
 
+interface MockSelectProps {
+  children?: React.ReactNode;
+  onValueChange?: (value: string) => void;
+  value?: string;
+}
+
+interface MockSelectContentProps {
+  children?: React.ReactNode;
+}
+
+interface MockSelectItemProps {
+  children?: React.ReactNode;
+  value?: string;
+}
+
+interface MockSelectTriggerProps {
+  children?: React.ReactNode;
+}
+
+interface MockSelectValueProps {
+  placeholder?: string;
+}
+
 vi.mock("@/components/ui/select", () => ({
-  Select: ({ value, onValueChange, children }: any) => (
+  Select: ({ value, onValueChange, children }: MockSelectProps) => (
     <select value={value} onChange={(event) => onValueChange?.(event.target.value)}>
       {children}
     </select>
   ),
-  SelectContent: ({ children }: any) => <>{children}</>,
-  SelectItem: ({ value, children }: any) => <option value={value}>{children}</option>,
-  SelectTrigger: ({ children }: any) => <>{children}</>,
-  SelectValue: ({ placeholder }: any) => <>{placeholder}</>,
+  SelectContent: ({ children }: MockSelectContentProps) => <>{children}</>,
+  SelectItem: ({ value, children }: MockSelectItemProps) => <option value={value}>{children}</option>,
+  SelectTrigger: ({ children }: MockSelectTriggerProps) => <>{children}</>,
+  SelectValue: ({ placeholder }: MockSelectValueProps) => <>{placeholder}</>,
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
