@@ -222,9 +222,16 @@ const loadRuntimeEnv = async () => {
   }
 
   const { stdout: envOutput } = await execFileAsync(
-    "sh",
-    ["-lc", '. "$HOME/.profile" && npx supabase status -o env'],
-    { cwd: process.cwd() }
+    "npx",
+    ["supabase", "status", "-o", "env"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NPM_CONFIG_PREFIX: "",
+        NPM_CONFIG_GLOBALCONFIG: "/dev/null",
+      },
+    }
   );
   const env = parseEnvBlock(envOutput);
 

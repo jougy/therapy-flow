@@ -1,9 +1,11 @@
+import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import FormularioEditor from "@/pages/FormularioEditor";
 import { useAuth } from "@/hooks/useAuth";
 import { buildAnamnesisTemplateExchangePayload } from "@/lib/anamnesis-forms";
+import { supabase } from "@/integrations/supabase/client";
 
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: vi.fn(),
@@ -11,6 +13,41 @@ vi.mock("@/hooks/useAuth", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
+}));
+
+interface MockSelectProps {
+  children?: React.ReactNode;
+  onValueChange?: (value: string) => void;
+  value?: string;
+}
+
+interface MockSelectContentProps {
+  children?: React.ReactNode;
+}
+
+interface MockSelectItemProps {
+  children?: React.ReactNode;
+  value?: string;
+}
+
+interface MockSelectTriggerProps {
+  children?: React.ReactNode;
+}
+
+interface MockSelectValueProps {
+  placeholder?: string;
+}
+
+vi.mock("@/components/ui/select", () => ({
+  Select: ({ value, onValueChange, children }: MockSelectProps) => (
+    <select value={value} onChange={(event) => onValueChange?.(event.target.value)}>
+      {children}
+    </select>
+  ),
+  SelectContent: ({ children }: MockSelectContentProps) => <>{children}</>,
+  SelectItem: ({ value, children }: MockSelectItemProps) => <option value={value}>{children}</option>,
+  SelectTrigger: ({ children }: MockSelectTriggerProps) => <>{children}</>,
+  SelectValue: ({ placeholder }: MockSelectValueProps) => <>{placeholder}</>,
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -27,6 +64,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 describe("FormularioEditor", () => {
   beforeEach(() => {
+    HTMLElement.prototype.scrollIntoView = vi.fn();
     vi.mocked(useAuth).mockReturnValue({
       accountRole: "account_owner",
       can: (capability) => capability === "forms.manage",
@@ -104,5 +142,76 @@ describe("FormularioEditor", () => {
     await waitFor(() => expect(screen.getByDisplayValue("Ficha importada")).toBeInTheDocument());
     expect(screen.getByDisplayValue("Triagem importada")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Campo importado")).toBeInTheDocument();
+  });
+
+  it("toggles checklist and multiple choice without resetting options", async () => {
+    const updateSpy = vi.fn().mockReturnThis();
+    const selectSpy = vi.fn().mockReturnThis();
+    const eqSpy = vi.fn().mockReturnThis();
+    const singleSpy = vi.fn().mockResolvedValue({
+      data: {
+        clinic_id: "clinic-1",
+        description: "Modelo inicial",
+        id: "template-1",
+        is_active: true,
+        is_system_default: false,
+        name: "Ficha teste",
+        schema: [
+          {
+            id: "field_1",
+            label: "Sintomas",
+            type: "checklist",
+            options: [
+              { id: "option_1", label: "Dor" },
+              { id: "option_2", label: "Rigidez" },
+            ],
+          },
+        ],
+        user_id: "owner-1",
+      },
+      error: null,
+    });
+
+    vi.mocked(supabase.from).mockReturnValue({
+      eq: eqSpy,
+      insert: vi.fn().mockReturnThis(),
+      select: selectSpy,
+      single: singleSpy,
+      update: updateSpy,
+    } as never);
+
+    render(
+      <MemoryRouter initialEntries={["/configuracoes/formularios/template-1"]}>
+        <Routes>
+          <Route path="/configuracoes/formularios/:templateId" element={<FormularioEditor />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByDisplayValue("Ficha teste")).toBeInTheDocument());
+    expect(screen.getByDisplayValue("Dor")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Rigidez")).toBeInTheDocument();
+
+    fireEvent.change(screen.getAllByRole("combobox")[0]!, { target: { value: "multiple_choice" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /salvar ficha/i }));
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schema: [
+          expect.objectContaining({
+            id: "field_1",
+            label: "Sintomas",
+            type: "multiple_choice",
+            options: [
+              { id: "option_1", label: "Dor" },
+              { id: "option_2", label: "Rigidez" },
+            ],
+          }),
+        ],
+      })
+    );
   });
 });

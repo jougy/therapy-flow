@@ -11,28 +11,13 @@
             "id": "e716af444d9e2d5a",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "TDD_E_CHECKS.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "TDD_E_CHECKS"
-            }
-          },
-          {
-            "id": "bce061d780ffe7c8",
-            "type": "leaf",
-            "state": {
-              "type": "graph",
+              "type": "empty",
               "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Visualização em gráfico"
+              "icon": "lucide-file",
+              "title": "Nova aba"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "vertical"
@@ -194,8 +179,11 @@
       "bases:Criar nova base": false
     }
   },
-  "active": "bce061d780ffe7c8",
+  "active": "0f7c775d930fa856",
   "lastOpenFiles": [
+    "00 - Navegacao/Mapa da vault.md",
+    "00 - Navegacao/Inicio.md",
+    "00 - Navegacao/Core do projeto.md",
     "Users/jougy/Documents/programacao/Prontuario/therapy-flow/TDD_E_CHECKS.md",
     "Users/jougy/Documents/programacao/Prontuario/therapy-flow",
     "Users/jougy/Documents/programacao/Prontuario",

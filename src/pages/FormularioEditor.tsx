@@ -30,6 +30,7 @@ import {
   hasVerticalOptionEditor,
   isContainerField,
   isAnamnesisTemplateSchema,
+  isSelectionChoiceFieldType,
   normalizeOptions,
   type AnamnesisField,
   type TemplateLayoutItem,
@@ -475,6 +476,28 @@ const FormularioEditor = () => {
                             <Input value={field.helpText ?? ""} onChange={(event) => updateField(field.id, { helpText: event.target.value })} />
                           </div>
                         </div>
+
+                        {isSelectionChoiceFieldType(field.type) && (
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label>Tipo de seleção</Label>
+                              <Select
+                                value={field.type}
+                                onValueChange={(value) =>
+                                  updateField(field.id, { type: value as AnamnesisField["type"] })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="multiple_choice">Múltipla escolha</SelectItem>
+                                  <SelectItem value="checklist">Checklist</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        )}
 
                         {!isContainer && (
                           <div className="grid gap-4 md:grid-cols-2">

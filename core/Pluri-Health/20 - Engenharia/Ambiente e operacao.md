@@ -69,6 +69,14 @@ URLs uteis da stack local:
 - Supabase Studio: `http://127.0.0.1:54323`
 - Inbucket/Mailpit: `http://127.0.0.1:54324`
 
+### Autenticacao local
+
+- O app usa Supabase Auth com email e senha.
+- O login de teste padrao e `anab.teste@email.com`.
+- A senha de teste padrao e `teste123`.
+- O frontend nao deve fazer auto-login silencioso; a sessao precisa ser criada via tela de acesso.
+- O cliente Supabase esta configurado com `persistSession=true` e `autoRefreshToken=false` para manter a sessao sem gerar o loop de refresh que poluía o console no ambiente local.
+
 Se quiser controlar a stack manualmente:
 
 ```bash
@@ -78,12 +86,14 @@ npm run supabase:env:local
 npm run supabase:stop
 ```
 
-Observacao para macOS com Colima:
+### Operacao por plataforma
 
-- este projeto sobe o Supabase local sem `logflare` e `vector`;
-- isso evita falhas de bind mount do `docker.sock` em alguns ambientes Colima;
-- o start tambem ignora um falso negativo eventual do health check do `storage` em alguns setups locais;
-- nao afeta o funcionamento normal do app, migrations, auth ou banco local.
+O [scripts/ops/control.sh](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/scripts/ops/control.sh) agora detecta automaticamente macOS ou Linux e segue a trilha correta:
+
+- no macOS usa `colima` para iniciar o Docker e `open` para abrir URLs;
+- no Linux valida `docker`/`docker compose` e usa `xdg-open` quando disponivel.
+
+Esse atalho unifica a experiencia local sem manter dois fluxos separados para o resto da operacao.
 
 ## Trabalhando com migrations
 

@@ -4,6 +4,9 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 
+export NPM_CONFIG_PREFIX=""
+export NPM_CONFIG_GLOBALCONFIG="/dev/null"
+
 if [ -n "${HOME:-}" ] && [ -f "$HOME/.profile" ]; then
   # shellcheck disable=SC1090
   . "$HOME/.profile" 2>/dev/null || true

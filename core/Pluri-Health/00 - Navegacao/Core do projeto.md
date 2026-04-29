@@ -25,15 +25,16 @@ Este arquivo centraliza a documentacao principal do projeto e aponta para os doc
 
 - Visao resumida do produto: [[Visao geral do produto]]
 - Ambiente local, deploy e operacao tecnica: [[Ambiente e operacao]]
-- Deploy do frontend na Cloudflare Pages: [[Deploy - Cloudflare Pages]]
+- Fluxo de leitura otimizado para o Codex: [[Codex Brain]]
 
 ## Notas centrais do produto
 
 - Estrutura inicial de clinica e colaborador no MVP: [[Clinica e colaborador no MVP]]
 - Estrategia viva de TDD, checks e protecoes contra regressao: [[TDD e checks]]
-- Proposta inicial para a subpagina de seguranca: [[Configuracoes - Seguranca]]
-- Proposta inicial para a subpagina de desenvolvimento da equipe: [[Configuracoes - Desenvolvimento da equipe]]
+- Seguranca: [[Configuracoes - Seguranca]]
+- Desenvolvimento da equipe: [[Configuracoes - Desenvolvimento da equipe]]
 - Plano do editor de hierarquias em Colaboradores e acessos: [[Hierarquias de colaboradores e acessos]]
+- Matriz de leitura barata: [[Matriz de contexto do Codex]]
 
 ## Rotas de leitura orientadas
 

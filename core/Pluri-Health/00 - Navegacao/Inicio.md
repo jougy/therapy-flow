@@ -17,11 +17,13 @@ Esta vault concentra a documentacao de produto, operacao e implementacao do proj
 - [[Mapa da vault]]
 - [[Visao geral do produto]]
 - [[Core do projeto]]
+- [[Codex Brain]]
 
 ## Atalhos por necessidade
 
 - Contexto rapido do produto: [[Visao geral do produto]]
 - Mapa central dos documentos: [[Core do projeto]]
+- Centro de contexto para o Codex: [[Codex Brain]]
 - Ambiente tecnico e deploy: [[Ambiente e operacao]]
 - Regras de equipe e acessos: [[Clinica e colaborador no MVP]]
 - Protecao contra regressao: [[TDD e checks]]
