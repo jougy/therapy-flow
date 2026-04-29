@@ -26,6 +26,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 - [[Visao geral do produto]]
 - [[Core do projeto]]
+- [[Codex Brain]]
 - [[Clinica e colaborador no MVP]]
 
 ### Equipe, acessos e configuracoes
@@ -72,6 +73,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 ### Prompts e execucao orientada
 
 - [[Prompt - Homepage filtro e ordenacao de pacientes]]
+- [[Matriz de contexto do Codex]]
 
 ## Convencao sugerida para novas notas
 

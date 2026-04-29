@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,14 +17,19 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { readBusinessHours } from "@/lib/clinic-settings";
 import { readProfileAddress } from "@/lib/profile-settings";
-import { buildSessionPayload, type SessionFormValues } from "@/lib/session-payload";
+import {
+  buildSessionPayload,
+  formatDateTimeForInput,
+  getCurrentDateTimeInputValue,
+  type SessionFormValues,
+} from "@/lib/session-payload";
 import {
   buildSessionDocument,
   isSessionImmutable,
@@ -75,6 +80,30 @@ const readJsonRecord = (value: Json | null): AnamnesisFormResponse =>
 const readTemplateSchema = (value: Json): AnamnesisTemplateSchema =>
   Array.isArray(value) ? (value as AnamnesisTemplateSchema) : [];
 
+const hasMeaningfulFormValue = (value: AnamnesisFormValue | undefined) => {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === "number") {
+    return true;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.values(value).some((item) => hasMeaningfulFormValue(item as AnamnesisFormValue));
+  }
+
+  return false;
+};
+
 const formatCnpj = (value: string | null | undefined) => {
   const digits = (value ?? "").replace(/\D/g, "").slice(0, 14);
 
@@ -103,6 +132,57 @@ const formatAddressLine = (value: Json | null | undefined) => {
     .join(", ");
 };
 
+const estimateLayoutWeight = (field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">) => {
+  const labelLength = (field.label ?? "").trim().length;
+  const helpLength = (field.helpText ?? "").trim().length;
+  const optionLabels = (field.options ?? []).map((option) => (option.label ?? "").trim().length);
+  const longestOption = optionLabels.length > 0 ? Math.max(...optionLabels) : 0;
+  const optionCount = field.options?.length ?? 0;
+
+  let weight = 1;
+
+  weight += Math.min(labelLength / 24, 1.25);
+  weight += Math.min(helpLength / 80, 0.75);
+  weight += Math.min(longestOption / 20, 1.5);
+  weight += Math.min(optionCount / 6, 1);
+
+  if (field.type === "checklist" || field.type === "multiple_choice") {
+    weight += 0.5;
+  }
+
+  return Math.max(weight, 1);
+};
+
+const buildHorizontalSectionGrid = (items: TemplateLayoutItem[]) => {
+  if (items.length === 0) {
+    return "minmax(0, 1fr)";
+  }
+
+  return items
+    .map((item) => {
+      const weight = estimateLayoutWeight(item.field);
+      return `${weight}fr`;
+    })
+    .join(" ");
+};
+
+const estimateHorizontalSectionRowHeight = (items: TemplateLayoutItem[]) => {
+  const tallestField = items.reduce((maxHeight, item) => {
+    const optionLengths = (item.field.options ?? []).map((option) => (option.label ?? "").trim().length);
+    const longestOption = optionLengths.length > 0 ? Math.max(...optionLengths) : 0;
+    const baseHeight =
+      92 +
+      Math.min(((item.field.label ?? "").trim().length / 14) * 8, 32) +
+      Math.min(((item.field.helpText ?? "").trim().length / 40) * 6, 24) +
+      Math.min((item.field.options?.length ?? 0) * 10, 42) +
+      Math.min(longestOption / 2, 28);
+
+    return Math.max(maxHeight, baseHeight);
+  }, 120);
+
+  return `${Math.ceil(tallestField)}px`;
+};
+
 const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: number; score: number }) => {
   const color = score <= 3 ? "bg-success" : score <= 6 ? "bg-warning" : "bg-destructive";
   const totalBars = Math.max(max - min, 1);
@@ -116,6 +196,153 @@ const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: numb
         ))}
       </div>
       <span className="text-xs font-medium text-muted-foreground">{score}/{max}</span>
+    </div>
+  );
+};
+
+const estimateChildWidth = (field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">) => {
+  const labelLength = (field.label ?? "").trim().length;
+  const helpLength = (field.helpText ?? "").trim().length;
+  const optionLabels = (field.options ?? []).map((option) => (option.label ?? "").trim().length);
+  const longestOption = optionLabels.length > 0 ? Math.max(...optionLabels) : 0;
+  const optionCount = field.options?.length ?? 0;
+
+  const width =
+    260 +
+    Math.min(labelLength * 8, 220) +
+    Math.min(helpLength * 2, 120) +
+    Math.min(longestOption * 7, 220) +
+    Math.min(optionCount * 18, 140);
+
+  return Math.max(220, Math.min(width, 720));
+};
+
+const estimateFieldPreferredWidth = (field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">) => {
+  const labelLength = (field.label ?? "").trim().length;
+  const helpLength = (field.helpText ?? "").trim().length;
+  const optionLabels = (field.options ?? []).map((option) => (option.label ?? "").trim().length);
+  const longestOption = optionLabels.length > 0 ? Math.max(...optionLabels) : 0;
+  const readableTextWidth = Math.max(labelLength, longestOption) * 8;
+
+  if (field.type === "select") {
+    return Math.max(260, Math.min(520, 180 + readableTextWidth + Math.min(helpLength * 2, 100)));
+  }
+
+  if (field.type === "date" || field.type === "number") {
+    return Math.max(220, Math.min(360, 170 + labelLength * 7));
+  }
+
+  if (field.type === "short_text") {
+    return Math.max(280, Math.min(560, 190 + labelLength * 7 + Math.min(helpLength * 2, 100)));
+  }
+
+  if (field.type === "slider") {
+    return Math.max(320, Math.min(520, 220 + labelLength * 7));
+  }
+
+  return estimateChildWidth(field);
+};
+
+const getFieldMaxWidth = (field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">) => {
+  if (field.type === "select") {
+    return Math.max(320, Math.min(560, estimateFieldPreferredWidth(field) + 80));
+  }
+
+  if (field.type === "date" || field.type === "number") {
+    return 380;
+  }
+
+  if (field.type === "short_text" || field.type === "slider") {
+    return Math.max(420, Math.min(640, estimateFieldPreferredWidth(field) + 80));
+  }
+
+  return null;
+};
+
+const getStandaloneFieldSizingStyle = (
+  field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">
+): CSSProperties | undefined => {
+  const maxWidth = getFieldMaxWidth(field);
+
+  if (!maxWidth) {
+    return undefined;
+  }
+
+  return {
+    maxWidth,
+    width: "100%",
+  };
+};
+
+const HorizontalScrollNavigator = ({
+  markerStyles,
+  onScrollLeft,
+  onScrollRight,
+  onTrackPointerDown,
+  onTrackPointerMove,
+  onTrackPointerUp,
+  scrollLeft,
+  scrollWidth,
+  clientWidth,
+}: {
+  clientWidth: number;
+  markerStyles: CSSProperties[];
+  onScrollLeft: () => void;
+  onScrollRight: () => void;
+  onTrackPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onTrackPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onTrackPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  scrollLeft: number;
+  scrollWidth: number;
+}) => {
+  const canScrollLeft = scrollLeft > 0;
+  const canScrollRight = scrollLeft + clientWidth < scrollWidth - 1;
+  const scrollableWidth = Math.max(scrollWidth - clientWidth, 0);
+  const scrollRatio = scrollableWidth > 0 ? Math.max(0, Math.min(1, scrollLeft / scrollableWidth)) : 0;
+  const thumbWidthValue = scrollWidth > clientWidth
+    ? Math.min(100, Math.max(8, (clientWidth / Math.max(scrollWidth, 1)) * 100))
+    : 100;
+  const maxThumbLeft = Math.max(0, 100 - thumbWidthValue);
+  const thumbLeft = `${scrollRatio * maxThumbLeft}%`;
+  const thumbWidth = `${thumbWidthValue}%`;
+
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-lg border bg-background px-2 py-2 shadow-sm">
+      <Button type="button" variant="outline" size="icon" onClick={onScrollLeft} disabled={!canScrollLeft} aria-label="Rolar para a esquerda">
+        <ArrowLeft className="h-4 w-4" />
+      </Button>
+      <div
+        className="relative h-5 flex-1 cursor-pointer overflow-hidden rounded-full border bg-muted/40"
+        onPointerDown={onTrackPointerDown}
+        onPointerMove={onTrackPointerMove}
+        onPointerUp={onTrackPointerUp}
+        onPointerCancel={onTrackPointerUp}
+      >
+        {markerStyles.map((style, index) => (
+          <span
+            key={index}
+            className="absolute top-0 h-full rounded-full opacity-70"
+            style={style}
+          />
+        ))}
+        <span
+          className="absolute top-0 h-full rounded-full border border-primary/50 bg-primary/10"
+          style={{
+            left: thumbLeft,
+            width: thumbWidth,
+          }}
+        />
+        <span
+          className="pointer-events-none absolute top-0 h-full rounded-full border border-primary bg-primary/40 shadow-[0_0_0_1px_rgba(255,255,255,0.4)_inset] transition-transform"
+          style={{
+            left: thumbLeft,
+            width: thumbWidth,
+          }}
+        />
+      </div>
+      <Button type="button" variant="outline" size="icon" onClick={onScrollRight} disabled={!canScrollRight} aria-label="Rolar para a direita">
+        <ArrowLeft className="h-4 w-4 rotate-180" />
+      </Button>
     </div>
   );
 };
@@ -156,6 +383,10 @@ const SessaoDetalhe = () => {
   const [sessionDate, setSessionDate] = useState<string>("");
   const [anamnesisTemplateId, setAnamnesisTemplateId] = useState<string | null>(null);
   const [anamnesisFormResponse, setAnamnesisFormResponse] = useState<AnamnesisFormResponse>({});
+  const [horizontalScrollState, setHorizontalScrollState] = useState<Record<string, { clientWidth: number; scrollLeft: number; scrollWidth: number }>>({});
+  const horizontalScrollRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const horizontalScrollRaf = useRef<number | null>(null);
+  const horizontalDragRef = useRef<{ key: string | null; pointerId: number | null; trackLeft: number; trackWidth: number } | null>(null);
 
   const loadSessionPage = useCallback(async () => {
     if (!patientId || !clinicId) {
@@ -277,7 +508,7 @@ const SessaoDetalhe = () => {
         setStatus(sessionData.status);
         setNotes(sessionData.notes || "");
         setGroupId(sessionData.group_id);
-        setSessionDate(new Date(sessionData.session_date).toLocaleDateString("pt-BR"));
+        setSessionDate(formatDateTimeForInput(sessionData.session_date));
         setAnamnesisTemplateId(sessionData.anamnesis_template_id);
         setAnamnesisFormResponse(readJsonRecord(sessionData.anamnesis_form_response));
         setLocked(isSessionImmutable(false, sessionData.status));
@@ -290,6 +521,7 @@ const SessaoDetalhe = () => {
       setLocked(false);
       setIsEditing(true);
       setCreatedByUserId(user?.id ?? null);
+      setSessionDate(getCurrentDateTimeInputValue());
       setSessionCreatedAt(null);
       setEditHistory([]);
     }
@@ -300,6 +532,68 @@ const SessaoDetalhe = () => {
   useEffect(() => {
     void loadSessionPage();
   }, [loadSessionPage]);
+
+  useEffect(() => {
+    const updateHorizontalScrollState = () => {
+      const nextState: Record<string, { clientWidth: number; scrollLeft: number; scrollWidth: number }> = {};
+
+      Object.entries(horizontalScrollRefs.current).forEach(([key, node]) => {
+        if (!node) return;
+
+        nextState[key] = {
+          clientWidth: node.clientWidth,
+          scrollLeft: node.scrollLeft,
+          scrollWidth: node.scrollWidth,
+        };
+      });
+
+      setHorizontalScrollState(nextState);
+    };
+
+    const scheduleUpdate = () => {
+      if (horizontalScrollRaf.current !== null) {
+        window.cancelAnimationFrame(horizontalScrollRaf.current);
+      }
+
+      horizontalScrollRaf.current = window.requestAnimationFrame(updateHorizontalScrollState);
+    };
+
+    scheduleUpdate();
+
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => scheduleUpdate()) : null;
+    Object.values(horizontalScrollRefs.current).forEach((node) => {
+      if (node) {
+        resizeObserver?.observe(node);
+      }
+    });
+
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      if (horizontalScrollRaf.current !== null) {
+        window.cancelAnimationFrame(horizontalScrollRaf.current);
+        horizontalScrollRaf.current = null;
+      }
+
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [
+    anamnesisTemplateId,
+    anamnesisFormResponse,
+    anamnesisTemplates,
+    baseTemplateSchema,
+    groups,
+    locked,
+    notes,
+    patientName,
+    painScore,
+    sessionDate,
+    status,
+    sintomas,
+    treatmentBlocks,
+    treatmentGeneralGuidance,
+  ]);
 
   const activeTemplate = anamnesisTemplates.find((template) => template.id === anamnesisTemplateId) ?? null;
   const activeTemplateSchema = activeTemplate ? readTemplateSchema(activeTemplate.schema) : [];
@@ -384,6 +678,103 @@ const SessaoDetalhe = () => {
     updateFormResponse(field.id, next);
   };
 
+  const syncHorizontalScrollState = useCallback(() => {
+    const nextState: Record<string, { clientWidth: number; scrollLeft: number; scrollWidth: number }> = {};
+
+    Object.entries(horizontalScrollRefs.current).forEach(([key, node]) => {
+      if (!node) return;
+
+      nextState[key] = {
+        clientWidth: node.clientWidth,
+        scrollLeft: node.scrollLeft,
+        scrollWidth: node.scrollWidth,
+      };
+    });
+
+    setHorizontalScrollState(nextState);
+  }, []);
+
+  const scheduleHorizontalScrollSync = useCallback(() => {
+    if (horizontalScrollRaf.current !== null) {
+      window.cancelAnimationFrame(horizontalScrollRaf.current);
+    }
+
+    horizontalScrollRaf.current = window.requestAnimationFrame(syncHorizontalScrollState);
+  }, [syncHorizontalScrollState]);
+
+  const scrollHorizontalSectionToRatio = useCallback((key: string, ratio: number, behavior: ScrollBehavior = "auto") => {
+    const node = horizontalScrollRefs.current[key];
+    if (!node) return;
+
+    const maxScrollLeft = Math.max(node.scrollWidth - node.clientWidth, 1);
+    node.scrollTo({ left: Math.max(0, Math.min(1, ratio)) * maxScrollLeft, behavior });
+  }, []);
+
+  const scrollHorizontalSectionToSibling = useCallback((key: string, direction: "left" | "right") => {
+    const node = horizontalScrollRefs.current[key];
+    const content = node?.firstElementChild;
+    if (!node || !content) return;
+
+    const maxScrollLeft = Math.max(node.scrollWidth - node.clientWidth, 0);
+    const currentLeft = node.scrollLeft;
+    const itemStarts = Array.from(content.children)
+      .map((child) => Math.max(0, Math.min(maxScrollLeft, (child as HTMLElement).offsetLeft)))
+      .filter((start, index, starts) => starts.indexOf(start) === index)
+      .sort((a, b) => a - b);
+
+    if (itemStarts.length === 0) {
+      node.scrollBy({ left: direction === "right" ? node.clientWidth * 0.75 : -node.clientWidth * 0.75, behavior: "smooth" });
+      return;
+    }
+
+    const edgeTolerance = 2;
+    const target =
+      direction === "right"
+        ? itemStarts.find((start) => start > currentLeft + edgeTolerance) ?? maxScrollLeft
+        : [...itemStarts].reverse().find((start) => start < currentLeft - edgeTolerance) ?? 0;
+
+    node.scrollTo({ left: target, behavior: "smooth" });
+  }, []);
+
+  const beginHorizontalDrag = useCallback(
+    (key: string, event: ReactPointerEvent<HTMLDivElement>) => {
+      const node = horizontalScrollRefs.current[key];
+      if (!node) return;
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      horizontalDragRef.current = {
+        key,
+        pointerId: event.pointerId,
+        trackLeft: rect.left,
+        trackWidth: rect.width,
+      };
+
+      event.currentTarget.setPointerCapture(event.pointerId);
+      scrollHorizontalSectionToRatio(key, (event.clientX - rect.left) / Math.max(rect.width, 1), "auto");
+    },
+    [scrollHorizontalSectionToRatio]
+  );
+
+  const updateHorizontalDrag = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = horizontalDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId || !drag.key) return;
+
+      scrollHorizontalSectionToRatio(drag.key, (event.clientX - drag.trackLeft) / Math.max(drag.trackWidth, 1), "auto");
+    },
+    [scrollHorizontalSectionToRatio]
+  );
+
+  const endHorizontalDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = horizontalDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    horizontalDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
   const formValues: SessionFormValues = {
     anamnesisFormResponse,
     anamnesisTemplateId,
@@ -404,6 +795,7 @@ const SessaoDetalhe = () => {
       clinicId,
       creatorUserId: createdByUserId ?? user!.id,
       patientId: patientId!,
+      sessionDate,
       values: formValues,
       statusOverride,
     });
@@ -456,7 +848,14 @@ const SessaoDetalhe = () => {
     setStartingFromThis(true);
 
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
-    const sessionData = buildCurrentSessionPayload(clinicRes.data, "rascunho");
+    const sessionData = buildSessionPayload({
+      clinicId: clinicRes.data,
+      creatorUserId: createdByUserId ?? user.id,
+      patientId: patientId,
+      sessionDate: getCurrentDateTimeInputValue(),
+      statusOverride: "rascunho",
+      values: formValues,
+    });
 
     const { data, error } = await supabase
       .from("sessions")
@@ -764,10 +1163,10 @@ const SessaoDetalhe = () => {
 
     if (field.type === "select") {
       return (
-        <div key={field.id} className="space-y-2">
+        <div key={field.id} className="min-w-0 space-y-2">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <Select value={typeof value === "string" ? value : ""} onValueChange={(next) => updateFormResponse(field.id, next)} disabled={locked}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Selecione" />
             </SelectTrigger>
             <SelectContent>
@@ -785,9 +1184,9 @@ const SessaoDetalhe = () => {
       const columns = field.options ?? [];
 
       return (
-        <div key={field.id} className="space-y-3">
+        <div key={field.id} className="min-w-0 space-y-3">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
-          <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+          <ScrollArea className="w-full min-w-0 whitespace-nowrap rounded-md border">
             <div className="min-w-max space-y-3 p-3">
               <div
                 className="grid gap-3 border-b pb-2"
@@ -829,7 +1228,6 @@ const SessaoDetalhe = () => {
                 </div>
               ))}
             </div>
-            <ScrollBar orientation="horizontal" />
           </ScrollArea>
 
           <Button type="button" variant="outline" size="sm" disabled={locked} onClick={() => updateFormResponse(field.id, addTableRow(rows, field))}>
@@ -843,22 +1241,30 @@ const SessaoDetalhe = () => {
     if (field.type === "multiple_choice") {
       const optionRows = getOptionMatrixRows(field.options ?? []);
       return (
-        <div key={field.id} className="space-y-2">
+        <div key={field.id} className="min-w-0 space-y-2">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <RadioGroup value={typeof value === "string" ? value : ""} onValueChange={(next) => updateFormResponse(field.id, next)}>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {optionRows.map(({ rowIndex, items }) => (
-                <ScrollArea key={rowIndex} className="w-full whitespace-nowrap rounded-md">
-                  <div className="flex min-w-max gap-4 pb-2">
+                <div key={rowIndex} className="space-y-3">
+                  <div className="flex flex-wrap items-start gap-3">
                     {items.map((option) => (
-                      <div key={option.id} className="flex min-w-[220px] items-center gap-2 whitespace-normal rounded-md border p-3">
-                        <RadioGroupItem value={option.id} id={`${field.id}_${option.id}`} disabled={locked} />
-                        <Label htmlFor={`${field.id}_${option.id}`}>{option.label}</Label>
+                      <div key={option.id} className="inline-flex w-fit max-w-full items-start gap-2 rounded-md border px-3 py-2">
+                        <RadioGroupItem value={option.id} id={`${field.id}_${option.id}`} disabled={locked} className="mt-0.5 shrink-0" />
+                        <Label htmlFor={`${field.id}_${option.id}`} className="max-w-[48ch] min-w-0 break-words leading-snug">
+                          {option.label}
+                        </Label>
                       </div>
                     ))}
                   </div>
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
+                  {rowIndex < optionRows.length - 1 && (
+                    <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.4em] text-muted-foreground/80">
+                      <span className="h-px flex-1 bg-border/80" />
+                      <span>---</span>
+                      <span className="h-px flex-1 bg-border/80" />
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </RadioGroup>
@@ -870,18 +1276,19 @@ const SessaoDetalhe = () => {
       const selectedValues = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
       const optionRows = getOptionMatrixRows(field.options ?? []);
       return (
-        <div key={field.id} className="space-y-2">
+        <div key={field.id} className="min-w-0 space-y-2">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
           <div className="space-y-3">
             {optionRows.map(({ rowIndex, items }) => (
-              <ScrollArea key={rowIndex} className="w-full whitespace-nowrap rounded-md">
-                <div className="flex min-w-max gap-4 pb-2">
+              <div key={rowIndex} className="space-y-3">
+                <div className="flex flex-wrap items-start gap-3">
                   {items.map((option) => (
-                    <div key={option.id} className="flex min-w-[220px] items-center gap-2 whitespace-normal rounded-md border p-3">
+                    <div key={option.id} className="inline-flex w-fit max-w-full items-start gap-2 rounded-md border px-3 py-2">
                       <Checkbox
                         id={`${field.id}_${option.id}`}
                         checked={selectedValues.includes(option.id)}
                         disabled={locked}
+                        className="mt-0.5 shrink-0"
                         onCheckedChange={(checked) => {
                           const next = checked === true
                             ? [...selectedValues, option.id]
@@ -889,12 +1296,20 @@ const SessaoDetalhe = () => {
                           updateFormResponse(field.id, next);
                         }}
                       />
-                      <Label htmlFor={`${field.id}_${option.id}`}>{option.label}</Label>
+                      <Label htmlFor={`${field.id}_${option.id}`} className="max-w-[48ch] min-w-0 break-words leading-snug">
+                        {option.label}
+                      </Label>
                     </div>
                   ))}
                 </div>
-                <ScrollBar orientation="horizontal" />
-              </ScrollArea>
+                {rowIndex < optionRows.length - 1 && (
+                  <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.4em] text-muted-foreground/80">
+                    <span className="h-px flex-1 bg-border/80" />
+                    <span>---</span>
+                    <span className="h-px flex-1 bg-border/80" />
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -906,10 +1321,10 @@ const SessaoDetalhe = () => {
       return (
         <div key={field.id} className="space-y-3 rounded-lg border p-4">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
-          <div className="space-y-3">
+          <div className="flex flex-wrap items-start gap-3">
             {(field.options ?? []).map((option) => (
-              <div key={option.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
-                <div>
+              <div key={option.id} className="inline-flex w-fit max-w-full items-center gap-3 rounded-md border px-3 py-2">
+                <div className="min-w-0">
                   <p className="font-medium text-sm">{option.label}</p>
                   {option.description && <p className="text-xs text-muted-foreground mt-1">{option.description}</p>}
                 </div>
@@ -937,34 +1352,97 @@ const SessaoDetalhe = () => {
     <div className="space-y-4">
       {layout.map((item) => {
         if (item.type === "field") {
-          return renderDynamicField(item.field);
+          return (
+            <div key={item.field.id} className="min-w-0" style={getStandaloneFieldSizingStyle(item.field)}>
+              {renderDynamicField(item.field)}
+            </div>
+          );
         }
 
         if (item.type === "horizontal_section") {
+          const scrollContainerId = item.field.id;
+          const horizontalRowMinHeight = estimateHorizontalSectionRowHeight(item.items);
+          const horizontalScrollSnapshot = horizontalScrollState[scrollContainerId];
+          const totalWidth = item.items.reduce((sum, sibling) => sum + estimateFieldPreferredWidth(sibling.field), 0);
+          const horizontalMarkerStyles = item.items.map((child, index, array) => {
+            const left = array.slice(0, index).reduce((sum, sibling) => sum + estimateFieldPreferredWidth(sibling.field), 0);
+            const width = estimateFieldPreferredWidth(child.field);
+            const hasContent = hasMeaningfulFormValue(anamnesisFormResponse[child.field.id]);
+            const isVisible =
+              horizontalScrollSnapshot &&
+              left + width > horizontalScrollSnapshot.scrollLeft &&
+              left < horizontalScrollSnapshot.scrollLeft + horizontalScrollSnapshot.clientWidth;
+
+            return {
+              backgroundColor: hasContent ? "rgb(96 165 250)" : "rgb(209 213 219)",
+              left: `${(left / totalWidth) * 100}%`,
+              opacity: isVisible ? 1 : 0.6,
+              width: `${(width / totalWidth) * 100}%`,
+            } satisfies CSSProperties;
+          });
+
           return (
-            <Card key={item.field.id}>
+            <Card key={item.field.id} className="min-w-0">
               <CardContent className="space-y-4 p-4">
                 <div>
                   <p className="font-medium">{item.field.label}</p>
                   {item.field.helpText && <p className="mt-1 text-sm text-muted-foreground">{item.field.helpText}</p>}
                 </div>
-                <ScrollArea className="w-full whitespace-nowrap">
-                  <div className="flex gap-4 pb-4">
-                    {item.items.map((child) => (
-                      <div key={child.field.id} className="min-w-[280px] flex-1 whitespace-normal rounded-lg border bg-muted/10 p-4">
-                        {child.type === "field" ? renderDynamicField(child.field) : renderTemplateLayout([child])}
-                      </div>
-                    ))}
+                <div
+                  ref={(node) => {
+                    horizontalScrollRefs.current[scrollContainerId] = node;
+                  }}
+                  className="w-full min-w-0 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+                  onScroll={scheduleHorizontalScrollSync}
+                >
+                  <div
+                    className="flex items-stretch gap-4 pb-4"
+                  >
+                    {item.items.map((child) => {
+                      const preferredWidth = estimateFieldPreferredWidth(child.field);
+                      const maxWidth = getFieldMaxWidth(child.field);
+
+                      return (
+                        <div
+                          key={child.field.id}
+                          className="min-w-0 whitespace-normal rounded-lg border bg-muted/10 p-4"
+                          style={{
+                            flex: `${estimateLayoutWeight(child.field)} 1 ${preferredWidth}px`,
+                            maxWidth: maxWidth ?? undefined,
+                            minHeight: horizontalRowMinHeight,
+                            minWidth: Math.min(preferredWidth, maxWidth ?? preferredWidth),
+                          }}
+                        >
+                          <div className="flex h-full min-h-0 flex-col">
+                            {child.type === "field" ? renderDynamicField(child.field) : renderTemplateLayout([child])}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
+                </div>
+                <HorizontalScrollNavigator
+                  clientWidth={horizontalScrollSnapshot?.clientWidth ?? 0}
+                  markerStyles={horizontalMarkerStyles}
+                  onScrollLeft={() => {
+                    scrollHorizontalSectionToSibling(scrollContainerId, "left");
+                  }}
+                  onScrollRight={() => {
+                    scrollHorizontalSectionToSibling(scrollContainerId, "right");
+                  }}
+                  onTrackPointerDown={(event) => beginHorizontalDrag(scrollContainerId, event)}
+                  onTrackPointerMove={updateHorizontalDrag}
+                  onTrackPointerUp={endHorizontalDrag}
+                  scrollLeft={horizontalScrollSnapshot?.scrollLeft ?? 0}
+                  scrollWidth={horizontalScrollSnapshot?.scrollWidth ?? 0}
+                />
               </CardContent>
             </Card>
           );
         }
 
         return (
-          <Accordion key={item.field.id} type="multiple" defaultValue={[item.field.id]} className="rounded-lg border px-4">
+          <Accordion key={item.field.id} type="multiple" defaultValue={[item.field.id]} className="min-w-0 rounded-lg border px-4">
             <AccordionItem value={item.field.id} className="border-none">
               <AccordionTrigger className="py-3 hover:no-underline">
                 <div className="text-left">
@@ -1040,7 +1518,7 @@ const SessaoDetalhe = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
-      className="mx-auto w-full max-w-5xl space-y-6"
+      className="mx-auto w-full max-w-[min(100vw-1.5rem,1680px)] space-y-6 px-3 sm:max-w-[min(100vw-2rem,1680px)] sm:px-6 lg:max-w-[min(100vw-3rem,1760px)]"
     >
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1060,9 +1538,24 @@ const SessaoDetalhe = () => {
             <p className="text-sm text-muted-foreground">{patientName}</p>
           </div>
         </div>
-        <Badge variant="outline" className={statusColors[status] || ""}>
-          {status}
-        </Badge>
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          <div className="space-y-1">
+            <Label htmlFor="session-date" className="text-xs text-muted-foreground">
+              Data e hora do atendimento
+            </Label>
+            <Input
+              id="session-date"
+              type="datetime-local"
+              value={sessionDate}
+              onChange={(event) => setSessionDate(event.target.value)}
+              disabled={locked}
+              className="w-[240px]"
+            />
+          </div>
+          <Badge variant="outline" className={statusColors[status] || ""}>
+            {status}
+          </Badge>
+        </div>
       </div>
 
       {/* Action Bar */}

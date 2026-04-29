@@ -128,6 +128,14 @@ export const hasScrollableOptionEditor = (type: AnamnesisFieldType) =>
   type === "checklist" || type === "multiple_choice";
 export const hasVerticalOptionEditor = (type: AnamnesisFieldType) => type === "select";
 export const hasTableColumnEditor = (type: AnamnesisFieldType) => type === "table";
+export const isSelectionChoiceFieldType = (type: AnamnesisFieldType) =>
+  type === "checklist" || type === "multiple_choice";
+
+export const toggleSelectionChoiceFieldType = (type: AnamnesisFieldType): AnamnesisFieldType => {
+  if (type === "checklist") return "multiple_choice";
+  if (type === "multiple_choice") return "checklist";
+  return type;
+};
 
 export const createFieldOption = (label: string, index: number, row = 0): AnamnesisFieldOption => ({
   id: `option_${index + 1}`,

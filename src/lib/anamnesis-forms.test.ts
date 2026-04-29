@@ -20,6 +20,7 @@ import {
   hasVerticalOptionEditor,
   getVisibleTemplateFields,
   isAnamnesisTemplateSchema,
+  isSelectionChoiceFieldType,
   parseAnamnesisTemplateExchangePayload,
   normalizeOptions,
   removeOptionFromMatrix,
@@ -28,6 +29,7 @@ import {
   updateTableCellValue,
   updateOptionMatrixLabel,
   updateVerticalOptionLabel,
+  toggleSelectionChoiceFieldType,
   type AnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
 
@@ -229,6 +231,16 @@ describe("anamnesis forms helpers", () => {
     expect(hasVerticalOptionEditor("checklist")).toBe(false);
     expect(hasVerticalOptionEditor("multiple_choice")).toBe(false);
     expect(hasVerticalOptionEditor("section_selector")).toBe(false);
+  });
+
+  it("identifies and toggles selection-only choice field types", () => {
+    expect(isSelectionChoiceFieldType("checklist")).toBe(true);
+    expect(isSelectionChoiceFieldType("multiple_choice")).toBe(true);
+    expect(isSelectionChoiceFieldType("select")).toBe(false);
+
+    expect(toggleSelectionChoiceFieldType("checklist")).toBe("multiple_choice");
+    expect(toggleSelectionChoiceFieldType("multiple_choice")).toBe("checklist");
+    expect(toggleSelectionChoiceFieldType("select")).toBe("select");
   });
 
   it("builds and updates option matrices by row", () => {

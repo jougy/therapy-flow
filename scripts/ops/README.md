@@ -4,7 +4,7 @@ Esta pasta reúne atalhos operacionais usados para subir o ambiente local, publi
 
 O conjunto está dividido em dois blocos:
 
-- `control.sh`: central de comandos para ambiente local, deploy e alguns atalhos administrativos.
+- `control.sh`: central de comandos para ambiente local, deploy e alguns atalhos administrativos, com trilha adaptativa para macOS e Linux.
 - `account-admin*.{mjs,sh}`: gerenciador administrativo de contas e pacientes, com wrappers para macOS, Linux e produção.
 
 ## Visão geral dos arquivos
@@ -15,7 +15,7 @@ Script shell com menu interativo e modo não interativo via `--run`.
 
 Ele resolve tarefas como:
 
-- iniciar e limpar Docker/Colima no macOS;
+- iniciar e validar o Docker conforme a plataforma;
 - subir, parar, reinstalar e resetar o Supabase local;
 - aplicar migrations localmente;
 - aplicar migrations no Supabase remoto;
@@ -25,7 +25,9 @@ Ele resolve tarefas como:
 
 Pontos importantes:
 
-- foi pensado para macOS e usa `open` e `colima` em algumas rotas;
+- detecta automaticamente macOS ou Linux para seguir a trilha correta;
+- no macOS usa `colima` para iniciar o Docker e `open` para abrir URLs;
+- no Linux valida `docker`/`docker compose` e usa `xdg-open` quando disponível;
 - carrega `~/.profile` antes de comandos Node/npm/npx/Supabase;
 - guarda PID e logs do frontend em `scripts/ops/.control/`.
 
@@ -58,6 +60,15 @@ Comandos principais expostos por ele:
 - `cloudflare-pages-deploy`
 - `account-create`
 - `account-list`
+
+### `docker-start`
+
+Atalho de plataforma para preparar o Docker antes dos demais comandos.
+
+- no macOS: inicia o Colima e valida o Docker antes de seguir;
+- no Linux: valida se o Docker daemon e o plugin `docker compose` estão disponíveis.
+
+Esse comando existe para padronizar a experiência local independentemente do sistema operacional.
 
 ### `account-admin.mjs`
 
