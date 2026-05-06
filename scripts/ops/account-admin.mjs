@@ -229,7 +229,7 @@ const loadRuntimeEnv = async () => {
       env: {
         ...process.env,
         NPM_CONFIG_PREFIX: "",
-        NPM_CONFIG_GLOBALCONFIG: "/dev/null",
+        NPM_CONFIG_USERCONFIG: "/dev/null",
       },
     }
   );

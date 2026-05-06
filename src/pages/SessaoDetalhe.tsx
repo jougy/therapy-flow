@@ -1,13 +1,13 @@
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Save, Copy, Loader2, Plus, Trash2, Pencil, Share2, Printer } from "lucide-react";
+import { ArrowLeft, Save, Copy, Info, Loader2, Plus, Trash2, Pencil, Share2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -17,11 +17,13 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { SessionShareDialog } from "@/components/SessionShareDialog";
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { readBusinessHours } from "@/lib/clinic-settings";
 import { readProfileAddress } from "@/lib/profile-settings";
 import {
@@ -41,6 +43,13 @@ import { buildSessionEditHistoryView, formatSessionAuditDateTime, getSessionPers
 import { createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
 import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
 import { shouldAutoCompleteInternDraft } from "@/lib/patient-sessions-view";
+import {
+  fetchClinicShareCollaborators,
+  fetchSessionShareRecipients,
+  getShareRecipientLabel,
+  type SessionShareCollaborator,
+  type SessionShareRecipient,
+} from "@/lib/session-sharing";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import {
@@ -68,11 +77,48 @@ type CollaboratorProfile = Pick<
   "email" | "full_name" | "id" | "job_title" | "phone" | "professional_license" | "specialty"
 >;
 type SessionEditHistoryRow = Database["public"]["Tables"]["session_edit_history"]["Row"];
+type ErrorDetails = {
+  title: string;
+  context: string;
+  message: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+};
 
 const isJsonObject = (value: Json | null): value is Record<string, Json | undefined> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const readJsonString = (value: Json | undefined) => (typeof value === "string" ? value : "");
+
+const getErrorDetails = (error: unknown, title: string, context: string): ErrorDetails => {
+  if (error && typeof error === "object") {
+    const data = error as Partial<{
+      code: string;
+      details: string;
+      hint: string;
+      message: string;
+      name: string;
+      status: number;
+      statusText: string;
+    }>;
+
+    return {
+      title,
+      context,
+      message: data.message ?? data.statusText ?? "Erro sem mensagem técnica retornada.",
+      code: data.code ?? (data.status ? String(data.status) : data.name),
+      details: data.details,
+      hint: data.hint,
+    };
+  }
+
+  return {
+    title,
+    context,
+    message: typeof error === "string" ? error : "Erro desconhecido.",
+  };
+};
 
 const readJsonRecord = (value: Json | null): AnamnesisFormResponse =>
   isJsonObject(value) ? (value as Record<string, AnamnesisFormValue>) : {};
@@ -360,6 +406,10 @@ const SessaoDetalhe = () => {
   const [patientName, setPatientName] = useState("");
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [collaboratorProfiles, setCollaboratorProfiles] = useState<CollaboratorProfile[]>([]);
+  const [shareCollaborators, setShareCollaborators] = useState<SessionShareCollaborator[]>([]);
+  const [shareRecipients, setShareRecipients] = useState<SessionShareRecipient[]>([]);
+  const [sessionShareDialogOpen, setSessionShareDialogOpen] = useState(false);
+  const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
   const [anamnesisTemplates, setAnamnesisTemplates] = useState<AnamnesisTemplate[]>([]);
   const [baseTemplateSchema, setBaseTemplateSchema] = useState<AnamnesisTemplateSchema>([]);
   const [clinicDocumentInfo, setClinicDocumentInfo] = useState<ClinicDocumentSummary | null>(null);
@@ -445,6 +495,13 @@ const SessaoDetalhe = () => {
       setCollaboratorProfiles(profilesRes.data as CollaboratorProfile[]);
     }
 
+    try {
+      const collaborators = await fetchClinicShareCollaborators(clinicId);
+      setShareCollaborators(collaborators);
+    } catch {
+      setShareCollaborators([]);
+    }
+
     if (groupsRes.data) {
       setGroups(groupsRes.data);
 
@@ -516,6 +573,13 @@ const SessaoDetalhe = () => {
         setSessionCreatedAt(sessionData.created_at);
         setEditHistory(historyData ?? []);
         setIsEditing(false);
+
+        try {
+          const recipients = await fetchSessionShareRecipients(sessionData.id);
+          setShareRecipients(recipients);
+        } catch {
+          setShareRecipients([]);
+        }
       }
     } else {
       setLocked(false);
@@ -524,6 +588,7 @@ const SessaoDetalhe = () => {
       setSessionDate(getCurrentDateTimeInputValue());
       setSessionCreatedAt(null);
       setEditHistory([]);
+      setShareRecipients([]);
     }
 
     setLoading(false);
@@ -800,6 +865,25 @@ const SessaoDetalhe = () => {
       statusOverride,
     });
 
+  const showErrorToast = (title: string, error: unknown, context: string) => {
+    const details = getErrorDetails(error, title, context);
+
+    toast({
+      title,
+      description: "Clique em i para ver o erro completo.",
+      variant: "destructive",
+      action: (
+        <ToastAction
+          altText="Ver detalhes do erro"
+          className="h-7 w-7 rounded-full px-0"
+          onClick={() => setErrorDetails(details)}
+        >
+          <Info className="h-3.5 w-3.5" />
+        </ToastAction>
+      ),
+    });
+  };
+
   const handleSave = async () => {
     if (!patientId || !user || locked || (!isNew && !isEditing)) return;
     setSaving(true);
@@ -815,7 +899,7 @@ const SessaoDetalhe = () => {
         .single();
 
       if (error) {
-        toast({ title: "Erro ao criar atendimento", variant: "destructive" });
+        showErrorToast("Erro ao criar atendimento", error, "Criação de atendimento em rascunho");
       } else {
         toast({ title: "Atendimento criado" });
         setIsEditing(false);
@@ -828,7 +912,7 @@ const SessaoDetalhe = () => {
         .eq("id", sessionId!);
 
       if (error) {
-        toast({ title: "Erro ao salvar atendimento", variant: "destructive" });
+        showErrorToast("Erro ao salvar atendimento", error, "Atualização dos dados do atendimento");
       } else {
         await loadSessionPage();
         toast({
@@ -850,7 +934,7 @@ const SessaoDetalhe = () => {
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
     const sessionData = buildSessionPayload({
       clinicId: clinicRes.data,
-      creatorUserId: createdByUserId ?? user.id,
+      creatorUserId: user.id,
       patientId: patientId,
       sessionDate: getCurrentDateTimeInputValue(),
       statusOverride: "rascunho",
@@ -864,7 +948,7 @@ const SessaoDetalhe = () => {
       .single();
 
     if (error) {
-      toast({ title: "Erro ao iniciar novo atendimento", variant: "destructive" });
+      showErrorToast("Erro ao iniciar novo atendimento", error, "Duplicação de atendimento para novo rascunho");
     } else {
       toast({ title: "Novo atendimento iniciado", description: "Os dados foram copiados para um novo rascunho editável." });
       navigate(`/pacientes/${patientId}/sessao/${data.id}`);
@@ -891,8 +975,12 @@ const SessaoDetalhe = () => {
     painScore[0] <= 3 ? "text-success" : painScore[0] <= 6 ? "text-warning" : "text-destructive";
 
   const readOnly = locked || (!isNew && !isEditing);
+  const canManageSessionDeletion = operationalRole === "owner" || operationalRole === "admin";
+  const canDeleteOwnProfessionalSession = operationalRole === "professional" && createdByUserId === user?.id;
+  const canManageSessionSharing =
+    !isNew && (canManageSessionDeletion || createdByUserId === user?.id);
   const canEditSavedDraft = !isNew && status === "rascunho";
-  const canDeleteDraft = !isNew && status === "rascunho";
+  const canDeleteSession = !isNew && (canManageSessionDeletion || canDeleteOwnProfessionalSession);
   const treatmentSummary = formatTreatmentSummary({
     blocks: treatmentBlocks,
     generalGuidance: treatmentGeneralGuidance,
@@ -913,23 +1001,36 @@ const SessaoDetalhe = () => {
   );
 
   const handleDelete = async () => {
-    if (!sessionId || !canDeleteDraft) {
+    if (!sessionId || !canDeleteSession) {
       return;
     }
 
-    if (!window.confirm("Excluir este atendimento em rascunho?")) {
+    if (!window.confirm("Excluir este atendimento definitivamente?")) {
       return;
     }
 
     const { error } = await supabase.from("sessions").delete().eq("id", sessionId);
 
     if (error) {
-      toast({ title: "Erro ao excluir atendimento", description: error.message, variant: "destructive" });
+      showErrorToast("Erro ao excluir atendimento", error, "Exclusão definitiva do atendimento");
       return;
     }
 
     toast({ title: "Atendimento excluído" });
     navigate(`/pacientes/${patientId}`);
+  };
+
+  const handleOpenShareAccess = () => {
+    if (!sessionId || !canManageSessionSharing) {
+      toast({
+        title: "Não foi possível compartilhar",
+        description: "Apenas o criador, owner ou admin podem compartilhar este atendimento.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSessionShareDialogOpen(true);
   };
 
   const buildCurrentDocumentData = () => ({
@@ -1572,10 +1673,16 @@ const SessaoDetalhe = () => {
             <span>Editar</span>
           </Button>
         )}
-        {!isNew && canDeleteDraft && !isEditing && (
+        {!isNew && canDeleteSession && !isEditing && (
           <Button size="sm" variant="outline" onClick={() => void handleDelete()}>
             <Trash2 className="h-4 w-4 mr-2" />
             <span>Excluir</span>
+          </Button>
+        )}
+        {!isNew && !isEditing && (
+          <Button size="sm" variant="outline" onClick={handleOpenShareAccess} disabled={!canManageSessionSharing}>
+            <Share2 className="h-4 w-4 mr-2" />
+            <span>Compartilhar com colaboradores</span>
           </Button>
         )}
         {!isNew && (
@@ -1673,7 +1780,7 @@ const SessaoDetalhe = () => {
       {!isNew && !isEditing ? (
         <div className="space-y-4">
           <Card>
-            <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-4">
+            <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-5">
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
                 <p className="mt-1 font-medium">{status}</p>
@@ -1713,6 +1820,29 @@ const SessaoDetalhe = () => {
                       </div>
                     </DialogContent>
                   </Dialog>
+                )}
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Compartilhamento</p>
+                {shareRecipients.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    <Badge variant="secondary" className="gap-1">
+                      <Share2 className="h-3.5 w-3.5" />
+                      {shareRecipients.length} colaborador(es)
+                    </Badge>
+                    <div className="space-y-1">
+                      {shareRecipients.slice(0, 3).map((recipient) => (
+                        <p key={recipient.id} className="truncate text-xs text-muted-foreground">
+                          {getShareRecipientLabel(recipient)}
+                        </p>
+                      ))}
+                      {shareRecipients.length > 3 ? (
+                        <p className="text-xs text-muted-foreground">+{shareRecipients.length - 3} outros</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm text-muted-foreground">Não compartilhado</p>
                 )}
               </div>
             </CardContent>
@@ -1967,6 +2097,52 @@ const SessaoDetalhe = () => {
       </Tabs>
       </>
       )}
+      <SessionShareDialog
+        collaborators={shareCollaborators}
+        currentUserId={user?.id}
+        existingRecipients={shareRecipients}
+        onOpenChange={setSessionShareDialogOpen}
+        onShared={() => {
+          void loadSessionPage();
+        }}
+        open={sessionShareDialogOpen}
+        sessionCount={1}
+        sessionIds={sessionId && sessionId !== "novo" ? [sessionId] : []}
+      />
+      <Dialog open={Boolean(errorDetails)} onOpenChange={(open) => !open && setErrorDetails(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{errorDetails?.title ?? "Detalhes do erro"}</DialogTitle>
+            <DialogDescription>{errorDetails?.context}</DialogDescription>
+          </DialogHeader>
+          {errorDetails ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/40 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mensagem técnica</p>
+                <p className="mt-2 break-words text-sm">{errorDetails.message}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Código</p>
+                  <p className="mt-1 break-words text-sm">{errorDetails.code ?? "Não informado"}</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sugestão do banco</p>
+                  <p className="mt-1 break-words text-sm">{errorDetails.hint ?? "Não informado"}</p>
+                </div>
+              </div>
+              {errorDetails.details ? (
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Detalhes</p>
+                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">
+                    {errorDetails.details}
+                  </pre>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 };

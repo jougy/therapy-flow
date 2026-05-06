@@ -11,10 +11,14 @@
             "id": "e716af444d9e2d5a",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "10 - Produto/Acesso mestre e painel administrativo global.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "Nova aba"
+              "title": "Acesso mestre e painel administrativo global"
             }
           }
         ]
@@ -179,12 +183,31 @@
       "bases:Criar nova base": false
     }
   },
-  "active": "0f7c775d930fa856",
+  "active": "e716af444d9e2d5a",
   "lastOpenFiles": [
+    "10 - Produto/Compartilhamento de fichas de atendimento.md",
+    "90 - Meta/AGENTS.md",
+    "Users/jougy/Documents/programacao/Prontuario/therapy-flow/TDD_E_CHECKS.md",
+    "40 - Prompts/Prompt - Homepage filtro e ordenacao de pacientes.md",
+    "70 - Release/01 - Pre-textuais.md",
+    "70 - Release/TCC release.md",
+    "10 - Produto/Visao geral do produto.md",
+    "10 - Produto/Hierarquias de colaboradores e acessos.md",
+    "10 - Produto/Configuracoes - Seguranca.md",
+    "10 - Produto/Configuracoes - Desenvolvimento da equipe.md",
+    "10 - Produto/Clinica e colaborador no MVP.md",
+    "60 - Apendices e anexos/Mapa de apendices e anexos.md",
+    "50 - Referencias/Lista bibliografica.md",
+    "30 - Metodologia/Objeto da pesquisa.md",
+    "30 - Metodologia/Metodo de analise.md",
+    "30 - Metodologia/Metodo de abordagem.md",
+    "30 - Metodologia/Local da pesquisa.md",
+    "10 - Projeto/Tema e delimitacao.md",
+    "10 - Projeto/Problema e hipoteses.md",
+    "10 - Projeto/Objetivos.md",
     "00 - Navegacao/Mapa da vault.md",
     "00 - Navegacao/Inicio.md",
     "00 - Navegacao/Core do projeto.md",
-    "Users/jougy/Documents/programacao/Prontuario/therapy-flow/TDD_E_CHECKS.md",
     "Users/jougy/Documents/programacao/Prontuario/therapy-flow",
     "Users/jougy/Documents/programacao/Prontuario",
     "Users/jougy/Documents/programacao",
@@ -194,16 +217,6 @@
     "TDD_E_CHECKS.md",
     "Sem título.canvas",
     "Sem título.md",
-    "security_conf.md",
-    "README.md",
-    "dev_equipe_config.md",
-    "INVENTARIO_INPUTS.md",
-    "CORE.md",
-    "CLINICA_COLABORADOR_MVP.md",
-    "Bem-vindo.md",
-    "AMBIENTE_E_OPERACAO.md",
-    "AGENTS.md",
-    "CLOUDFLARE_PAGES_DEPLOY.md",
-    "crie um link.md"
+    "security_conf.md"
   ]
 }

@@ -13,6 +13,7 @@ export type SearchableSession = {
 };
 
 type SearchableOwnedSession = SearchableSession & {
+  provider_id?: string | null;
   user_id: string;
 };
 
@@ -164,20 +165,44 @@ export const buildPatientSessionsView = <
 export const canDeleteSelectedSessions = <TSession extends SearchableSession>(selectedSessions: TSession[]) =>
   selectedSessions.length > 0 && selectedSessions.every((session) => session.status === "rascunho");
 
+export const canDeleteSelectedSessionsForRole = <TSession extends SearchableOwnedSession>({
+  currentUserId,
+  operationalRole,
+  selectedSessions,
+}: {
+  currentUserId: string | null | undefined;
+  operationalRole: "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
+  selectedSessions: TSession[];
+}) => {
+  if (operationalRole === "owner" || operationalRole === "admin") {
+    return selectedSessions.length > 0;
+  }
+
+  if (operationalRole === "professional" && currentUserId) {
+    return selectedSessions.length > 0 && selectedSessions.every((session) => session.user_id === currentUserId);
+  }
+
+  return false;
+};
+
 export const filterSessionsForOperationalRole = <TSession extends SearchableOwnedSession>({
   currentUserId,
   operationalRole,
+  sharedSessionIds = new Set<string>(),
   sessions,
 }: {
   currentUserId: string | null | undefined;
   operationalRole: "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
+  sharedSessionIds?: Set<string>;
   sessions: TSession[];
 }) => {
-  if (operationalRole !== "estagiario" || !currentUserId) {
+  if (operationalRole === "owner" || operationalRole === "admin" || !currentUserId) {
     return sessions;
   }
 
-  return sessions.filter((session) => session.user_id === currentUserId);
+  return sessions.filter(
+    (session) => session.user_id === currentUserId || session.provider_id === currentUserId || sharedSessionIds.has(session.id)
+  );
 };
 
 export const shouldShowSessionCreatorInternBadge = (jobTitle: string | null | undefined) =>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPatientSessionsView,
   canDeleteSelectedSessions,
+  canDeleteSelectedSessionsForRole,
   filterSessionsForOperationalRole,
   shouldAutoCompleteInternDraft,
   shouldShowSessionCreatorInternBadge,
@@ -126,6 +127,68 @@ describe("canDeleteSelectedSessions", () => {
   });
 });
 
+describe("canDeleteSelectedSessionsForRole", () => {
+  it("allows owner and admin to delete any selected sessions", () => {
+    expect(
+      canDeleteSelectedSessionsForRole({
+        currentUserId: "owner-user",
+        operationalRole: "owner",
+        selectedSessions: [sessions[1], sessions[2]],
+      })
+    ).toBe(true);
+
+    expect(
+      canDeleteSelectedSessionsForRole({
+        currentUserId: "admin-user",
+        operationalRole: "admin",
+        selectedSessions: [sessions[0], sessions[1]],
+      })
+    ).toBe(true);
+  });
+
+  it("allows professional to delete any status only when every selected session was created by them", () => {
+    expect(
+      canDeleteSelectedSessionsForRole({
+        currentUserId: "professional-user",
+        operationalRole: "professional",
+        selectedSessions: [
+          { ...sessions[0], user_id: "professional-user" },
+          { ...sessions[1], user_id: "professional-user" },
+        ],
+      })
+    ).toBe(true);
+
+    expect(
+      canDeleteSelectedSessionsForRole({
+        currentUserId: "professional-user",
+        operationalRole: "professional",
+        selectedSessions: [
+          { ...sessions[0], user_id: "professional-user" },
+          { ...sessions[1], user_id: "other-user" },
+        ],
+      })
+    ).toBe(false);
+  });
+
+  it("does not allow assistant or estagiario to delete sessions from the patient history", () => {
+    expect(
+      canDeleteSelectedSessionsForRole({
+        currentUserId: "assistant-user",
+        operationalRole: "assistant",
+        selectedSessions: [{ ...sessions[0], user_id: "assistant-user" }],
+      })
+    ).toBe(false);
+
+    expect(
+      canDeleteSelectedSessionsForRole({
+        currentUserId: "intern-user",
+        operationalRole: "estagiario",
+        selectedSessions: [{ ...sessions[0], user_id: "intern-user" }],
+      })
+    ).toBe(false);
+  });
+});
+
 describe("filterSessionsForOperationalRole", () => {
   it("limits estagiario to sessions created by the current user", () => {
     expect(
@@ -140,17 +203,45 @@ describe("filterSessionsForOperationalRole", () => {
     ).toEqual(["session-1"]);
   });
 
-  it("keeps clinic-wide visibility for the other operational roles", () => {
+  it("keeps clinic-wide visibility for owner and admin", () => {
     expect(
       filterSessionsForOperationalRole({
         currentUserId: "intern-user",
-        operationalRole: "professional",
+        operationalRole: "admin",
         sessions: [
           { ...sessions[0], user_id: "intern-user" },
           { ...sessions[1], user_id: "other-user" },
         ],
       }).map((session) => session.id)
     ).toEqual(["session-1", "session-2"]);
+  });
+
+  it("limits professional visibility to own and explicitly shared sessions", () => {
+    expect(
+      filterSessionsForOperationalRole({
+        currentUserId: "professional-user",
+        operationalRole: "professional",
+        sharedSessionIds: new Set(["session-2"]),
+        sessions: [
+          { ...sessions[0], user_id: "professional-user" },
+          { ...sessions[1], user_id: "other-user" },
+          { ...sessions[2], user_id: "other-user" },
+        ],
+      }).map((session) => session.id)
+    ).toEqual(["session-1", "session-2"]);
+  });
+
+  it("keeps provider visibility when the responsible professional differs from the creator", () => {
+    expect(
+      filterSessionsForOperationalRole({
+        currentUserId: "provider-user",
+        operationalRole: "professional",
+        sessions: [
+          { ...sessions[0], user_id: "other-user", provider_id: "provider-user" },
+          { ...sessions[1], user_id: "other-user", provider_id: "other-user" },
+        ],
+      }).map((session) => session.id)
+    ).toEqual(["session-1"]);
   });
 });
 

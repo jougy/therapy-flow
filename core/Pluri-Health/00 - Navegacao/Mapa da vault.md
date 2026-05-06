@@ -33,6 +33,8 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 - [[Clinica e colaborador no MVP]]
 - [[Hierarquias de colaboradores e acessos]]
+- [[Compartilhamento de fichas de atendimento]]
+- [[Acesso mestre e painel administrativo global]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
 
@@ -59,6 +61,8 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 ### Produto
 
 - [[Clinica e colaborador no MVP]]
+- [[Compartilhamento de fichas de atendimento]]
+- [[Acesso mestre e painel administrativo global]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
 - [[Hierarquias de colaboradores e acessos]]

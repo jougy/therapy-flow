@@ -466,8 +466,11 @@ CREATE POLICY "Users delete clinic draft sessions" ON public.sessions
 FOR DELETE TO authenticated
 USING (
   clinic_id = public.get_user_clinic_id(auth.uid())
-  AND status = 'rascunho'
   AND public.current_user_can('session.delete_draft', clinic_id)
+  AND (
+    status = 'rascunho'
+    OR public.current_user_can('subaccounts_roles.manage', clinic_id)
+  )
 );
 
 DROP POLICY IF EXISTS "Users manage clinic patient_groups" ON public.patient_groups;

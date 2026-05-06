@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp,
-  Pencil, Trash2, Palette, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, Search, X
+  Pencil, Trash2, Palette, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, Search, X, Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SessionShareDialog } from "@/components/SessionShareDialog";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,8 +25,15 @@ import { getSessionPersonLabel } from "@/lib/session-people";
 import { getSessionPreviewContent, getSessionPreviewIndicators } from "@/lib/session-preview";
 import { EDITABLE_PATIENT_STATUS_OPTIONS, type EditablePatientStatus } from "@/lib/patient-statuses";
 import {
+  fetchClinicShareCollaborators,
+  fetchSessionShareSummaries,
+  getShareRecipientLabel,
+  type SessionShareCollaborator,
+  type SessionShareSummary,
+} from "@/lib/session-sharing";
+import {
   buildPatientSessionsView,
-  canDeleteSelectedSessions,
+  canDeleteSelectedSessionsForRole,
   filterSessionsForOperationalRole,
   shouldAutoCompleteInternDraft,
   shouldShowSessionCreatorInternBadge,
@@ -160,6 +168,8 @@ const SessionCard = ({
   onPressCancel,
   onPressStart,
   onToggleSelect,
+  onViewShareRecipients,
+  shareSummary,
   selectionMode,
   session,
 }: {
@@ -172,10 +182,13 @@ const SessionCard = ({
   onPressCancel: () => void;
   onPressStart: () => void;
   onToggleSelect: () => void;
+  onViewShareRecipients: () => void;
   selectionMode: boolean;
+  shareSummary?: SessionShareSummary;
   session: Session;
 }) => {
   const indicators = getSessionPreviewIndicators(session, baseSchema);
+  const shareCount = shareSummary?.share_count ?? 0;
 
   return (
     <Card
@@ -215,6 +228,22 @@ const SessionCard = ({
                 <Badge variant="outline" className="text-xs">
                   Estagiario
                 </Badge>
+              )}
+              {shareCount > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onViewShareRecipients();
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  {shareCount}
+                </Button>
               )}
               {selectionMode && (
                 <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
@@ -262,6 +291,8 @@ const PacienteDetalhe = () => {
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
+  const [shareCollaborators, setShareCollaborators] = useState<SessionShareCollaborator[]>([]);
+  const [sessionShareSummaries, setSessionShareSummaries] = useState<Record<string, SessionShareSummary>>({});
   const [baseSchema, setBaseSchema] = useState<AnamnesisTemplateSchema>([]);
   const [loading, setLoading] = useState(true);
   const [showInfo, setShowInfo] = useState(false);
@@ -275,6 +306,8 @@ const PacienteDetalhe = () => {
   const [savingGroup, setSavingGroup] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [sessionShareDialogOpen, setSessionShareDialogOpen] = useState(false);
+  const [shareRecipientsSessionId, setShareRecipientsSessionId] = useState<string | null>(null);
   const [generatingShareLink, setGeneratingShareLink] = useState(false);
   const [shareLink, setShareLink] = useState("");
   const [sharePassword, setSharePassword] = useState("");
@@ -333,15 +366,22 @@ const PacienteDetalhe = () => {
       }
     }
 
+    const shareSummaries = await fetchSessionShareSummaries(allSessions.map((session) => session.id));
+    const shareSummaryMap = Object.fromEntries(shareSummaries.map((summary) => [summary.session_id, summary]));
+    const sharedSessionIds = new Set(shareSummaries.map((summary) => summary.session_id));
+    const visibleSessions = filterSessionsForOperationalRole({
+      currentUserId: user?.id,
+      operationalRole,
+      sharedSessionIds,
+      sessions: allSessions,
+    });
+    const collaborators = clinicId ? await fetchClinicShareCollaborators(clinicId) : [];
+
     setPatient(pRes.data);
     setGroups(gRes.data ?? []);
-    setSessions(
-      filterSessionsForOperationalRole({
-        currentUserId: user?.id,
-        operationalRole,
-        sessions: allSessions,
-      })
-    );
+    setSessions(visibleSessions);
+    setSessionShareSummaries(shareSummaryMap);
+    setShareCollaborators(collaborators);
     setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
     setBaseSchema(Array.isArray(clinicRes.data?.anamnesis_base_schema) ? (clinicRes.data.anamnesis_base_schema as AnamnesisTemplateSchema) : []);
     setLoading(false);
@@ -622,7 +662,30 @@ const PacienteDetalhe = () => {
     [selectedSessionIds, sessions]
   );
 
-  const canDeleteSelection = canDeleteSelectedSessions(selectedSessions);
+  const canDeleteSelection = canDeleteSelectedSessionsForRole({
+    currentUserId: user?.id,
+    operationalRole,
+    selectedSessions,
+  });
+  const canManageSessions = operationalRole === "owner" || operationalRole === "admin";
+  const canShareSelection =
+    selectedSessions.length > 0 &&
+    selectedSessions.every((session) => canManageSessions || session.user_id === user?.id || session.provider_id === user?.id);
+  const selectedShareRecipients = useMemo(() => {
+    const recipients = new Map<string, NonNullable<SessionShareSummary["recipients"]>[number]>();
+
+    selectedSessionIds.forEach((sessionId) => {
+      sessionShareSummaries[sessionId]?.recipients.forEach((recipient) => {
+        recipients.set(recipient.id, recipient);
+      });
+    });
+
+    return Array.from(recipients.values());
+  }, [selectedSessionIds, sessionShareSummaries]);
+  const shareRecipientsSession = shareRecipientsSessionId
+    ? sessions.find((session) => session.id === shareRecipientsSessionId) ?? null
+    : null;
+  const shareRecipientsSummary = shareRecipientsSessionId ? sessionShareSummaries[shareRecipientsSessionId] : undefined;
 
   const handleBulkMove = async (nextGroupId: string) => {
     if (selectedSessionIds.length === 0) {
@@ -672,9 +735,12 @@ const PacienteDetalhe = () => {
 
   const handleBulkDelete = async () => {
     if (!canDeleteSelection) {
+      const canDeleteAnyStatus = operationalRole === "owner" || operationalRole === "admin";
       toast({
-        title: "Só é possível excluir rascunhos",
-        description: "Remova da seleção os atendimentos concluídos ou cancelados para excluir em lote.",
+        title: canDeleteAnyStatus ? "Não foi possível excluir os atendimentos" : "Seleção sem permissão para exclusão",
+        description: canDeleteAnyStatus
+          ? "Tente novamente em alguns instantes."
+          : "Profissionais só podem excluir atendimentos que eles mesmos criaram.",
         variant: "destructive",
       });
       return;
@@ -693,6 +759,19 @@ const PacienteDetalhe = () => {
     handleExitSelectionMode();
     setBulkUpdating(false);
     void fetchData();
+  };
+
+  const handleOpenSessionShareDialog = () => {
+    if (!canShareSelection) {
+      toast({
+        title: "Não foi possível compartilhar",
+        description: "Selecione apenas atendimentos criados por você ou que você administra.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSessionShareDialogOpen(true);
   };
 
   const toggleGroupCollapsed = (groupId: string) => {
@@ -944,13 +1023,22 @@ const PacienteDetalhe = () => {
                 </SelectContent>
               </Select>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenSessionShareDialog}
+                disabled={bulkUpdating || !canShareSelection}
+              >
+                <Share2 className="h-4 w-4 mr-2" />
+                Compartilhar com colaboradores
+              </Button>
+              <Button
                 variant="destructive"
                 size="sm"
                 onClick={() => void handleBulkDelete()}
                 disabled={bulkUpdating || !canDeleteSelection}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                Excluir rascunhos
+                Excluir atendimentos
               </Button>
               <Button variant="ghost" size="sm" onClick={handleExitSelectionMode} disabled={bulkUpdating}>
                 <X className="h-4 w-4 mr-2" />
@@ -1019,12 +1107,14 @@ const PacienteDetalhe = () => {
                       creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
                       creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
                       session={session}
+                      shareSummary={sessionShareSummaries[session.id]}
                       isSelected={selectedSessionIds.includes(session.id)}
                       selectionMode={!isIntern && selectionMode}
                       borderClassName={groupBorderColors[groupView.group.color] || ""}
                       onPressStart={() => handleSessionPressStart(session.id)}
                       onPressCancel={handleSessionPressCancel}
                       onToggleSelect={() => toggleSessionSelection(session.id)}
+                      onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
                       navigateTo={() => handleSessionNavigate(session.id)}
                     />
                   ))}
@@ -1069,11 +1159,13 @@ const PacienteDetalhe = () => {
                       creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
                       creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
                       session={session}
+                      shareSummary={sessionShareSummaries[session.id]}
                       isSelected={selectedSessionIds.includes(session.id)}
                       selectionMode={!isIntern && selectionMode}
                       onPressStart={() => handleSessionPressStart(session.id)}
                       onPressCancel={handleSessionPressCancel}
                       onToggleSelect={() => toggleSessionSelection(session.id)}
+                      onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
                       navigateTo={() => handleSessionNavigate(session.id)}
                     />
                   ))}
@@ -1226,6 +1318,64 @@ const PacienteDetalhe = () => {
                   <p className="mt-2 font-mono text-base">{sharePassword}</p>
                 </div>
               </>
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Fechar</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <SessionShareDialog
+        collaborators={shareCollaborators}
+        currentUserId={user?.id}
+        existingRecipients={selectedShareRecipients}
+        onOpenChange={setSessionShareDialogOpen}
+        onShared={() => {
+          handleExitSelectionMode();
+          void fetchData();
+        }}
+        open={sessionShareDialogOpen}
+        sessionCount={selectedSessionIds.length}
+        sessionIds={selectedSessionIds}
+      />
+
+      <Dialog open={!!shareRecipientsSessionId} onOpenChange={(open) => !open && setShareRecipientsSessionId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Acesso compartilhado
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {shareRecipientsSession
+                ? `Atendimento de ${new Date(shareRecipientsSession.session_date).toLocaleDateString("pt-BR")}`
+                : "Atendimento selecionado"}
+            </p>
+            {(shareRecipientsSummary?.recipients ?? []).length > 0 ? (
+              <div className="divide-y rounded-lg border">
+                {shareRecipientsSummary?.recipients.map((recipient) => (
+                  <div key={recipient.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{getShareRecipientLabel(recipient)}</p>
+                      <p className="truncate text-xs text-muted-foreground">{recipient.email || "Sem email"}</p>
+                    </div>
+                    {recipient.created_at ? (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {new Date(recipient.created_at).toLocaleDateString("pt-BR")}
+                      </span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">
+                Nenhum colaborador com acesso compartilhado.
+              </p>
             )}
           </div>
           <DialogFooter>
