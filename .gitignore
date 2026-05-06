@@ -31,6 +31,9 @@ dist-ssr
 account-admin-local.sh
 account-admin-prod.sh
 control.sh
+control.py
+__pycache__/
+*.py[cod]
 scripts/**/.control/
 scripts/**/supabase.env
 scripts/**/supabase.*.env

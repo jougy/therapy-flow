@@ -623,6 +623,57 @@ export type Database = {
           },
         ]
       }
+      session_shares: {
+        Row: {
+          access_level: string
+          clinic_id: string
+          created_at: string
+          id: string
+          revoked_at: string | null
+          revoked_by_user_id: string | null
+          session_id: string
+          shared_by_user_id: string
+          shared_with_user_id: string
+        }
+        Insert: {
+          access_level?: string
+          clinic_id: string
+          created_at?: string
+          id?: string
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          session_id: string
+          shared_by_user_id: string
+          shared_with_user_id: string
+        }
+        Update: {
+          access_level?: string
+          clinic_id?: string
+          created_at?: string
+          id?: string
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          session_id?: string
+          shared_by_user_id?: string
+          shared_with_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_shares_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_shares_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
           anamnesis: Json | null
@@ -912,6 +963,14 @@ export type Database = {
         Args: { _capability: string; _clinic_id?: string }
         Returns: boolean
       }
+      can_read_session: {
+        Args: { _session_id: string }
+        Returns: boolean
+      }
+      can_share_session: {
+        Args: { _session_id: string }
+        Returns: boolean
+      }
       cleanup_user_security_sessions: {
         Args: {
           _inactive_window?: unknown
@@ -941,8 +1000,20 @@ export type Database = {
         Args: { _clinic_id: string }
         Returns: string
       }
+      get_clinic_share_collaborators: {
+        Args: { _clinic_id?: string }
+        Returns: Json
+      }
       get_patient_registration_form: {
         Args: { _password: string; _token: string }
+        Returns: Json
+      }
+      get_session_share_recipients: {
+        Args: { _session_id: string }
+        Returns: Json
+      }
+      get_session_share_summary: {
+        Args: { _session_ids: string[] }
         Returns: Json
       }
       get_user_clinic_id: { Args: { _user_id: string }; Returns: string }
@@ -992,6 +1063,14 @@ export type Database = {
           _session_key: string
           _user_agent?: string
         }
+        Returns: Json
+      }
+      revoke_session_share: {
+        Args: { _session_id: string; _user_id: string }
+        Returns: Json
+      }
+      share_sessions_with_collaborators: {
+        Args: { _session_ids: string[]; _user_ids: string[] }
         Returns: Json
       }
       submit_patient_registration_form: {
