@@ -30,10 +30,15 @@ import {
   type HomePatientSortKey,
   type HomeSessionRecord,
 } from "@/lib/home-patients-view";
+import { getLegacyGroupHex } from "@/lib/group-colors";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
 
 type ClinicMembershipRow = Database["public"]["Tables"]["clinic_memberships"]["Row"];
+type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+type PatientGroupWithColorSlot = PatientGroupRow & {
+  clinic_group_color_slots?: { color_hex: string | null } | null;
+};
 
 const normalize = (value: string | null | undefined) =>
   (value ?? "")
@@ -49,6 +54,9 @@ const roleLabels: Record<string, string> = {
   assistant: "Assistente",
   estagiario: "Estagiário",
 };
+
+const resolveGroupFilterColor = (group: PatientGroupWithColorSlot) =>
+  group.clinic_group_color_slots?.color_hex ?? getLegacyGroupHex(group.color);
 
 const FILTER_SECTIONS = {
   collaborator: "collaborator",
@@ -233,7 +241,7 @@ const Index = () => {
       setLoading(true);
       const [patientsRes, groupsRes, sessionsRes, membershipsRes, profilesRes] = await Promise.all([
         supabase.from("patients").select("*").order("updated_at", { ascending: false }),
-        supabase.from("patient_groups").select("*"),
+        supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)"),
         supabase.from("sessions").select("id, patient_id, provider_id, session_date, status, user_id"),
         clinicId
           ? supabase
@@ -247,7 +255,12 @@ const Index = () => {
       ]);
 
       const pats = patientsRes.data ?? [];
-      const groups = groupsRes.data ?? [];
+      const groups = ((groupsRes.data ?? []) as PatientGroupWithColorSlot[]).map<HomePatientGroupRecord>((group) => ({
+        color: resolveGroupFilterColor(group),
+        name: group.name,
+        patient_id: group.patient_id,
+        status: group.status,
+      }));
       const fetchedSessions = sessionsRes.data ?? [];
       const memberships = ((membershipsRes.data ?? []) as ClinicMembershipRow[]).filter(
         (membership) => membership.is_active && membership.membership_status === "active",
