@@ -4,15 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { useNavigate } from "react-router-dom";
 import { getPatientStatusMeta } from "@/lib/patient-statuses";
-
-const groupBadgeColors: Record<string, string> = {
-  gray: "bg-group-gray/40 text-foreground border-group-gray",
-  lavender: "bg-group-lavender/40 text-foreground border-group-lavender",
-  sage: "bg-group-sage/40 text-foreground border-group-sage",
-  peach: "bg-group-peach/40 text-foreground border-group-peach",
-  sky: "bg-group-sky/40 text-foreground border-group-sky",
-  rose: "bg-group-rose/40 text-foreground border-group-rose",
-};
+import { getLegacyGroupHex, getReadableTextColor, toRgbaString } from "@/lib/group-colors";
 
 export interface PatientCardData {
   id: string;
@@ -77,7 +69,15 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
           {patient.groups.length > 0 && (
             <div className="flex gap-1.5 flex-wrap">
               {patient.groups.map((g) => (
-                <Badge key={g.name} variant="outline" className={`text-xs ${groupBadgeColors[g.color] || ""}`}>
+                <Badge
+                  key={g.name}
+                  variant="outline"
+                  className="text-xs border-transparent"
+                  style={{
+                    backgroundColor: toRgbaString(getLegacyGroupHex(g.color), 22),
+                    color: getReadableTextColor(getLegacyGroupHex(g.color)),
+                  }}
+                >
                   {g.name}
                 </Badge>
               ))}

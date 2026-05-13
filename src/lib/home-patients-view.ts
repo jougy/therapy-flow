@@ -14,6 +14,9 @@ export type HomePatientSortKey =
   | "status_priority";
 
 export interface HomePatientFilters {
+  collaboratorIds: string[];
+  colors: string[];
+  groupNames: string[];
   searchTerm: string;
   sessionDateFrom: string;
   sessionDateTo: string;
@@ -43,11 +46,23 @@ export interface HomePatientGroupRecord {
 export interface HomeSessionRecord {
   id: string;
   patient_id: string;
+  provider_id?: string | null;
   session_date: string;
   status: string;
+  user_id?: string | null;
+}
+
+export interface HomeCollaboratorFilterRecord {
+  email: string | null;
+  full_name: string | null;
+  id: string;
+  job_title: string | null;
+  operational_role: string | null;
 }
 
 export interface HomePatientView {
+  collaboratorIds: string[];
+  colors: string[];
   cpf: string | null;
   date_of_birth: string | null;
   firstSessionDate: string | null;
@@ -168,12 +183,18 @@ const comparePatientsForSort = (sortKey: HomePatientSortKey, left: HomePatientVi
 };
 
 export const hasActiveHomePatientFilters = (filters: HomePatientFilters) =>
+  filters.collaboratorIds.length > 0 ||
+  filters.colors.length > 0 ||
+  filters.groupNames.length > 0 ||
   filters.statuses.length > 0 ||
   filters.weekdays.length > 0 ||
   filters.sessionDateFrom.length > 0 ||
   filters.sessionDateTo.length > 0;
 
 export const getActiveHomePatientFilterCount = (filters: HomePatientFilters) =>
+  filters.collaboratorIds.length +
+  filters.colors.length +
+  filters.groupNames.length +
   filters.statuses.length +
   filters.weekdays.length +
   (filters.sessionDateFrom ? 1 : 0) +
@@ -210,17 +231,27 @@ export const buildHomePatientViews = ({
       const sessionWeekdays = Array.from(new Set(patientSessions.map((session) => new Date(session.session_date).getDay()))).sort(
         (left, right) => left - right,
       );
+      const groups = filterActivePatientGroups(
+        patientGroups
+          .filter((group) => group.patient_id === patient.id)
+          .map((group) => ({ color: group.color, name: group.name, status: group.status })),
+      );
+      const collaboratorIds = Array.from(
+        new Set(
+          patientSessions.flatMap((session) =>
+            [session.user_id, session.provider_id].filter((value): value is string => Boolean(value)),
+          ),
+        ),
+      );
 
       return {
+        collaboratorIds,
+        colors: Array.from(new Set(groups.map((group) => group.color))),
         cpf: patient.cpf,
         date_of_birth: patient.date_of_birth,
         firstSessionDate: patientFirstSession,
         gender: patient.gender,
-        groups: filterActivePatientGroups(
-          patientGroups
-            .filter((group) => group.patient_id === patient.id)
-            .map((group) => ({ color: group.color, name: group.name, status: group.status })),
-        ),
+        groups,
         hasSessionInDateRange:
           !filters.sessionDateFrom && !filters.sessionDateTo
             ? true
@@ -249,6 +280,18 @@ export const buildHomePatientViews = ({
       }
 
       if (filters.statuses.length > 0 && !filters.statuses.includes(patient.status)) {
+        return false;
+      }
+
+      if (filters.groupNames.length > 0 && !patient.groups.some((group) => filters.groupNames.includes(group.name))) {
+        return false;
+      }
+
+      if (filters.colors.length > 0 && !patient.colors.some((color) => filters.colors.includes(color))) {
+        return false;
+      }
+
+      if (filters.collaboratorIds.length > 0 && !patient.collaboratorIds.some((id) => filters.collaboratorIds.includes(id))) {
         return false;
       }
 

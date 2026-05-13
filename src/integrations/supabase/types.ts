@@ -248,8 +248,47 @@ export type Database = {
         }
         Relationships: []
       }
+      clinic_group_color_slots: {
+        Row: {
+          alpha: number
+          clinic_id: string
+          color_hex: string
+          created_at: string
+          id: string
+          slot_index: number
+          updated_at: string
+        }
+        Insert: {
+          alpha?: number
+          clinic_id: string
+          color_hex: string
+          created_at?: string
+          id?: string
+          slot_index: number
+          updated_at?: string
+        }
+        Update: {
+          alpha?: number
+          clinic_id?: string
+          color_hex?: string
+          created_at?: string
+          id?: string
+          slot_index?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_group_color_slots_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_groups: {
         Row: {
+          clinic_color_slot_id: string | null
           clinic_id: string | null
           color: string
           created_at: string
@@ -261,6 +300,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          clinic_color_slot_id?: string | null
           clinic_id?: string | null
           color?: string
           created_at?: string
@@ -272,6 +312,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          clinic_color_slot_id?: string | null
           clinic_id?: string | null
           color?: string
           created_at?: string
@@ -284,6 +325,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "patient_groups_clinic_color_slot_id_fkey"
+            columns: ["clinic_color_slot_id"]
+            isOneToOne: false
+            referencedRelation: "clinic_group_color_slots"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "patient_groups_clinic_id_fkey"
             columns: ["clinic_id"]
             isOneToOne: false
@@ -295,6 +343,60 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_group_templates: {
+        Row: {
+          clinic_color_slot_id: string | null
+          clinic_id: string
+          color: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          normalized_name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          clinic_color_slot_id?: string | null
+          clinic_id: string
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          normalized_name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          clinic_color_slot_id?: string | null
+          clinic_id?: string
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          normalized_name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_group_templates_clinic_color_slot_id_fkey"
+            columns: ["clinic_color_slot_id"]
+            isOneToOne: false
+            referencedRelation: "clinic_group_color_slots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_group_templates_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
             referencedColumns: ["id"]
           },
         ]

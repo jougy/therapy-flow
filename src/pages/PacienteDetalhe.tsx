@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp,
-  Pencil, Trash2, Palette, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, Search, X, Users
+  Pencil, Trash2, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { GroupColorPaletteField, type ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import { SessionShareDialog } from "@/components/SessionShareDialog";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -38,11 +41,18 @@ import {
   shouldAutoCompleteInternDraft,
   shouldShowSessionCreatorInternBadge,
 } from "@/lib/patient-sessions-view";
+import {
+  DEFAULT_GROUP_COLOR_SLOT_SEEDS,
+  getLegacyGroupHex,
+} from "@/lib/group-colors";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
+type PatientGroupTemplate = Database["public"]["Tables"]["patient_group_templates"]["Row"];
+type ClinicColorSlotRow = Database["public"]["Tables"]["clinic_group_color_slots"]["Row"];
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
 type ProfileSummary = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id" | "job_title">;
+type GroupSuggestion = Pick<PatientGroupTemplate, "clinic_color_slot_id" | "color" | "name" | "normalized_name" | "status">;
 type ShareLinkResponse = {
   completed: boolean;
   password_prefix: string;
@@ -50,15 +60,6 @@ type ShareLinkResponse = {
 };
 type PatientStatus = EditablePatientStatus;
 type PatientStatusSelectValue = PatientStatus | "delete";
-
-const GROUP_COLORS = [
-  { value: "gray", label: "Cinza claro" },
-  { value: "lavender", label: "Lavanda" },
-  { value: "sage", label: "Verde" },
-  { value: "peach", label: "Pêssego" },
-  { value: "sky", label: "Azul" },
-  { value: "rose", label: "Rosa" },
-];
 
 const GROUP_STATUSES: { value: PatientGroupStatus; label: string }[] = [
   { value: "em_andamento", label: "Em andamento" },
@@ -69,15 +70,6 @@ const GROUP_STATUSES: { value: PatientGroupStatus; label: string }[] = [
 ];
 
 const DELETE_PATIENT_STATUS_OPTION = { value: "delete" as const, label: "Excluir" };
-
-const groupBorderColors: Record<string, string> = {
-  gray: "border-l-group-gray",
-  lavender: "border-l-group-lavender",
-  sage: "border-l-group-sage",
-  peach: "border-l-group-peach",
-  sky: "border-l-group-sky",
-  rose: "border-l-group-rose",
-};
 
 const groupStatusBadgeStyles: Record<PatientGroupStatus, string> = {
   em_andamento: "bg-primary/10 text-primary border-primary/20",
@@ -160,7 +152,7 @@ const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemp
 
 const SessionCard = ({
   baseSchema,
-  borderClassName,
+  borderColor,
   creatorName,
   creatorIsIntern,
   isSelected,
@@ -174,7 +166,7 @@ const SessionCard = ({
   session,
 }: {
   baseSchema: AnamnesisTemplateSchema;
-  borderClassName?: string;
+  borderColor?: string;
   creatorName: string;
   creatorIsIntern: boolean;
   isSelected: boolean;
@@ -192,7 +184,8 @@ const SessionCard = ({
 
   return (
     <Card
-      className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${borderClassName || ""} ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
+      className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
+      style={borderColor ? { borderLeftColor: borderColor } : undefined}
       onClick={selectionMode ? onToggleSelect : navigateTo}
       role="button"
       tabIndex={0}
@@ -282,6 +275,8 @@ const isShareLinkResponse = (value: Json): value is ShareLinkResponse => {
   );
 };
 
+const normalizeGroupName = (name: string) => name.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+
 const PacienteDetalhe = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -289,6 +284,8 @@ const PacienteDetalhe = () => {
   const { can, clinicId, operationalRole, user } = useAuth();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
+  const [groupSuggestions, setGroupSuggestions] = useState<GroupSuggestion[]>([]);
+  const [clinicColorSlots, setClinicColorSlots] = useState<ClinicColorSlotRow[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [shareCollaborators, setShareCollaborators] = useState<SessionShareCollaborator[]>([]);
@@ -301,7 +298,9 @@ const PacienteDetalhe = () => {
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<PatientGroup | null>(null);
   const [groupName, setGroupName] = useState("");
-  const [groupColor, setGroupColor] = useState("lavender");
+  const [groupComboboxOpen, setGroupComboboxOpen] = useState(false);
+  const [groupColor, setGroupColor] = useState(getLegacyGroupHex("lavender"));
+  const [groupColorSlotId, setGroupColorSlotId] = useState<string | null>(null);
   const [groupStatus, setGroupStatus] = useState<PatientGroupStatus>("em_andamento");
   const [savingGroup, setSavingGroup] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -330,13 +329,23 @@ const PacienteDetalhe = () => {
   const fetchData = useCallback(async () => {
     if (!id) return;
 
-    const [pRes, gRes, sRes, clinicRes, profilesRes] = await Promise.all([
+    const [pRes, gRes, sRes, clinicRes, profilesRes, colorSlotsRes] = await Promise.all([
       supabase.from("patients").select("*").eq("id", id).single(),
       supabase.from("patient_groups").select("*").eq("patient_id", id),
       supabase.from("sessions").select("*").eq("patient_id", id).order("session_date", { ascending: false }),
       clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null }),
       clinicId ? supabase.from("profiles").select("id, full_name, email, job_title").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
+      clinicId
+        ? supabase.from("clinic_group_color_slots").select("*").eq("clinic_id", clinicId).order("slot_index", { ascending: true })
+        : Promise.resolve({ data: [] }),
     ]);
+    const templatesRes = clinicId
+      ? await supabase
+          .from("patient_group_templates")
+          .select("clinic_color_slot_id, color, name, normalized_name, status")
+          .eq("clinic_id", clinicId)
+          .order("name", { ascending: true })
+      : { data: [] };
 
     const allSessions = (sRes.data ?? []) as Session[];
     const staleInternDraftIds = allSessions
@@ -379,6 +388,8 @@ const PacienteDetalhe = () => {
 
     setPatient(pRes.data);
     setGroups(gRes.data ?? []);
+    setGroupSuggestions((templatesRes.data ?? []) as GroupSuggestion[]);
+    setClinicColorSlots((colorSlotsRes.data ?? []) as ClinicColorSlotRow[]);
     setSessions(visibleSessions);
     setSessionShareSummaries(shareSummaryMap);
     setShareCollaborators(collaborators);
@@ -390,6 +401,24 @@ const PacienteDetalhe = () => {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  const resolvedClinicColorSlots = useMemo<ClinicGroupColorSlot[]>(
+    () =>
+      clinicColorSlots.length > 0
+        ? clinicColorSlots
+        : DEFAULT_GROUP_COLOR_SLOT_SEEDS.map((slot) => ({
+            alpha: slot.alpha,
+            color_hex: slot.colorHex,
+            id: `seed-${slot.slotIndex}`,
+            slot_index: slot.slotIndex,
+          })),
+    [clinicColorSlots]
+  );
+
+  const getSlotById = useCallback(
+    (slotId: string | null) => resolvedClinicColorSlots.find((slot) => slot.id === slotId) ?? null,
+    [resolvedClinicColorSlots]
+  );
 
   useEffect(() => {
     setCollapsedGroups((current) => {
@@ -404,6 +433,18 @@ const PacienteDetalhe = () => {
       return next;
     });
   }, [groups]);
+
+  useEffect(() => {
+    if (!groupColorSlotId) {
+      return;
+    }
+
+    const slot = getSlotById(groupColorSlotId);
+
+    if (slot && slot.color_hex !== groupColor) {
+      setGroupColor(slot.color_hex);
+    }
+  }, [getSlotById, groupColor, groupColorSlotId]);
 
   const handleOpenShareDialog = useCallback(async () => {
     if (!id || !patient) return;
@@ -440,9 +481,12 @@ const PacienteDetalhe = () => {
   }, [handleOpenShareDialog, location.pathname, location.state, navigate, patient]);
 
   const openNewGroup = () => {
+    const defaultSlot = resolvedClinicColorSlots[1] ?? resolvedClinicColorSlots[0] ?? null;
     setEditingGroup(null);
     setGroupName("");
-    setGroupColor("lavender");
+    setGroupComboboxOpen(false);
+    setGroupColor(defaultSlot?.color_hex ?? getLegacyGroupHex("lavender"));
+    setGroupColorSlotId(defaultSlot?.id ?? null);
     setGroupStatus("em_andamento");
     setGroupDialogOpen(true);
   };
@@ -455,41 +499,162 @@ const PacienteDetalhe = () => {
 
     setEditingGroup(g);
     setGroupName(g.name);
-    setGroupColor(g.color);
+    setGroupComboboxOpen(false);
+    setGroupColor(getLegacyGroupHex(g.color));
+    setGroupColorSlotId(g.clinic_color_slot_id);
     setGroupStatus((g.status as PatientGroupStatus) || "em_andamento");
     setGroupDialogOpen(true);
   };
 
+  const handleSelectGroupSuggestion = (suggestion: GroupSuggestion) => {
+    setGroupName(suggestion.name);
+    const slot = getSlotById(suggestion.clinic_color_slot_id);
+    setGroupColor(slot?.color_hex ?? getLegacyGroupHex(suggestion.color || "lavender"));
+    setGroupColorSlotId(slot?.id ?? null);
+    setGroupStatus((suggestion.status as PatientGroupStatus) || "em_andamento");
+    setGroupComboboxOpen(false);
+  };
+
+  const handleCreateTypedGroupName = () => {
+    setGroupName(groupName.trim().replace(/\s+/g, " "));
+    setGroupComboboxOpen(false);
+  };
+
+  const upsertGroupTemplate = async ({
+    clinicColorSlotId,
+    color,
+    name,
+    status,
+  }: {
+    clinicColorSlotId: string | null;
+    color: string;
+    name: string;
+    status: PatientGroupStatus;
+  }) => {
+    if (!clinicId || !user) return;
+
+    await supabase.from("patient_group_templates").upsert(
+      {
+        clinic_id: clinicId,
+        clinic_color_slot_id: clinicColorSlotId,
+        color,
+        created_by: user.id,
+        name,
+        normalized_name: normalizeGroupName(name),
+        status,
+      },
+      { onConflict: "clinic_id,normalized_name" }
+    );
+  };
+
   const handleSaveGroup = async () => {
     if (!groupName.trim() || !id || !user) return;
+    const normalizedName = normalizeGroupName(groupName);
+    const duplicateGroup = groups.find((group) => {
+      if (editingGroup?.id === group.id) return false;
+      return normalizeGroupName(group.name) === normalizedName;
+    });
+
+    if (duplicateGroup) {
+      toast({
+        title: "Grupo já existe neste paciente",
+        description: "Escolha o grupo existente na lista ou use outro nome.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSavingGroup(true);
 
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
+    const reusableSuggestion = !editingGroup
+      ? groupSuggestions.find((suggestion) => normalizeGroupName(suggestion.name) === normalizedName)
+      : undefined;
+    const suggestionSlot = getSlotById(reusableSuggestion?.clinic_color_slot_id ?? null);
+    const resolvedGroupColor = suggestionSlot?.color_hex || (reusableSuggestion?.color ? getLegacyGroupHex(reusableSuggestion.color) : groupColor);
+    const resolvedGroupColorSlotId = suggestionSlot?.id ?? reusableSuggestion?.clinic_color_slot_id ?? groupColorSlotId;
+    const resolvedGroupStatus = (reusableSuggestion?.status as PatientGroupStatus | null) || groupStatus;
 
     if (editingGroup) {
       const { error } = await supabase
         .from("patient_groups")
-        .update({ name: groupName.trim(), color: groupColor, status: groupStatus })
+        .update({ clinic_color_slot_id: groupColorSlotId, name: groupName.trim(), color: groupColor, status: groupStatus })
         .eq("id", editingGroup.id);
       if (error) { toast({ title: "Erro ao atualizar grupo", variant: "destructive" }); }
-      else { toast({ title: "Grupo atualizado" }); }
+      else {
+        await upsertGroupTemplate({ clinicColorSlotId: groupColorSlotId, color: groupColor, name: groupName.trim(), status: groupStatus });
+        toast({ title: "Grupo atualizado" });
+      }
     } else {
       const { error } = await supabase.from("patient_groups").insert({
+        clinic_color_slot_id: resolvedGroupColorSlotId,
         name: groupName.trim(),
-        color: groupColor,
-        status: groupStatus,
+        color: resolvedGroupColor,
+        status: resolvedGroupStatus,
         is_default: false,
         patient_id: id,
         user_id: user.id,
         clinic_id: clinicRes.data,
       });
       if (error) { toast({ title: "Erro ao criar grupo", variant: "destructive" }); }
-      else { toast({ title: "Grupo criado" }); }
+      else {
+        await upsertGroupTemplate({
+          clinicColorSlotId: resolvedGroupColorSlotId,
+          color: resolvedGroupColor,
+          name: groupName.trim(),
+          status: resolvedGroupStatus,
+        });
+        toast({ title: "Grupo criado" });
+      }
     }
 
     setSavingGroup(false);
     setGroupDialogOpen(false);
     void fetchData();
+  };
+
+  const handleSaveClinicColorSlot = async (slotIndex: number, colorHex: string, alpha: number) => {
+    if (!clinicId) {
+      return;
+    }
+
+    const existingSlot = clinicColorSlots.find((slot) => slot.slot_index === slotIndex) ?? null;
+    const payload = {
+      alpha,
+      clinic_id: clinicId,
+      color_hex: colorHex,
+      slot_index: slotIndex,
+    };
+
+    const { data, error } = await supabase
+      .from("clinic_group_color_slots")
+      .upsert(existingSlot ? { ...payload, id: existingSlot.id } : payload, { onConflict: "clinic_id,slot_index" })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      toast({ title: "Erro ao salvar cor da clínica", description: error?.message, variant: "destructive" });
+      return;
+    }
+
+    const slotId = data.id;
+    await Promise.all([
+      supabase
+        .from("patient_groups")
+        .update({ color: colorHex })
+        .eq("clinic_id", clinicId)
+        .eq("clinic_color_slot_id", slotId),
+      supabase
+        .from("patient_group_templates")
+        .update({ color: colorHex })
+        .eq("clinic_id", clinicId)
+        .eq("clinic_color_slot_id", slotId),
+    ]);
+
+    setGroupColorSlotId(slotId);
+    setGroupColor(colorHex);
+    toast({ title: "Paleta da clínica atualizada" });
+    await fetchData();
   };
 
   const handleDeleteGroup = async (groupId: string) => {
@@ -656,6 +821,18 @@ const PacienteDetalhe = () => {
       }),
     [getSessionSearchText, groupStatusFilter, groups, searchTerm, sessionStatusFilter, sessions]
   );
+
+  const normalizedGroupName = normalizeGroupName(groupName);
+  const existingPatientGroup = normalizedGroupName
+    ? groups.find((group) => {
+        if (editingGroup?.id === group.id) return false;
+        return normalizeGroupName(group.name) === normalizedGroupName;
+      })
+    : undefined;
+  const existingSuggestion = normalizedGroupName
+    ? groupSuggestions.find((suggestion) => normalizeGroupName(suggestion.name) === normalizedGroupName)
+    : undefined;
+  const patientGroupNameSet = new Set(groups.map((group) => normalizeGroupName(group.name)));
 
   const selectedSessions = useMemo(
     () => sessions.filter((session) => selectedSessionIds.includes(session.id)),
@@ -1052,7 +1229,10 @@ const PacienteDetalhe = () => {
       {/* Groups with sessions */}
       {sessionView.groups.map((groupView) => (
         <Card key={groupView.group.id}>
-          <CardHeader className={`border-l-4 rounded-tl-lg ${groupBorderColors[groupView.group.color] || ""}`}>
+          <CardHeader
+            className="border-l-4 rounded-tl-lg"
+            style={{ borderLeftColor: getLegacyGroupHex(groupView.group.color) }}
+          >
             <div className="flex items-start justify-between gap-3">
               <button
                 type="button"
@@ -1110,7 +1290,7 @@ const PacienteDetalhe = () => {
                       shareSummary={sessionShareSummaries[session.id]}
                       isSelected={selectedSessionIds.includes(session.id)}
                       selectionMode={!isIntern && selectionMode}
-                      borderClassName={groupBorderColors[groupView.group.color] || ""}
+                      borderColor={getLegacyGroupHex(groupView.group.color)}
                       onPressStart={() => handleSessionPressStart(session.id)}
                       onPressCancel={handleSessionPressCancel}
                       onToggleSelect={() => toggleSessionSelection(session.id)}
@@ -1197,7 +1377,77 @@ const PacienteDetalhe = () => {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Nome do grupo</Label>
-              <Input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Ex: Lombalgia crônica" />
+              <Popover open={groupComboboxOpen} onOpenChange={setGroupComboboxOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={groupComboboxOpen}
+                    className="h-auto min-h-10 w-full justify-between px-3 py-2 text-left font-normal"
+                  >
+                    <span className={groupName ? "truncate" : "truncate text-muted-foreground"}>
+                      {groupName || "Selecione um grupo ou digite para criar"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
+                  <Command>
+                    <CommandInput
+                      value={groupName}
+                      onValueChange={setGroupName}
+                      placeholder="Buscar ou criar grupo..."
+                    />
+                    <CommandList>
+                      {groupName.trim() && !existingSuggestion && !existingPatientGroup ? (
+                        <CommandGroup heading="Criar novo">
+                          <CommandItem value={groupName} onSelect={handleCreateTypedGroupName}>
+                            <Plus className="mr-2 h-4 w-4 text-muted-foreground" />
+                            <span>Criar</span>
+                            <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs font-medium">
+                              {groupName.trim().replace(/\s+/g, " ")}
+                            </span>
+                          </CommandItem>
+                        </CommandGroup>
+                      ) : null}
+                      <CommandEmpty>Nenhum grupo reutilizável encontrado.</CommandEmpty>
+                      <CommandGroup heading="Grupos reutilizáveis">
+                        {groupSuggestions.map((suggestion) => {
+                          const alreadyInPatient = patientGroupNameSet.has(normalizeGroupName(suggestion.name));
+
+                          return (
+                            <CommandItem
+                              key={normalizeGroupName(suggestion.name)}
+                              disabled={alreadyInPatient}
+                              value={suggestion.name}
+                              onSelect={() => handleSelectGroupSuggestion(suggestion)}
+                            >
+                              <span
+                                className="mr-2 h-3 w-3 rounded-full"
+                                style={{ backgroundColor: getLegacyGroupHex(suggestion.color) }}
+                              />
+                              <span className="truncate">{suggestion.name}</span>
+                              <Badge variant={alreadyInPatient ? "outline" : "secondary"} className="ml-auto">
+                                {alreadyInPatient ? "Já neste paciente" : "Reutilizar"}
+                              </Badge>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {existingPatientGroup ? (
+                <p className="text-xs text-destructive">Este paciente já possui um grupo com esse nome.</p>
+              ) : existingSuggestion && !editingGroup ? (
+                <p className="text-xs text-muted-foreground">
+                  Este nome já existe na clínica. Ao criar, ele será reutilizado neste paciente com a cor e status selecionados.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Digite para buscar grupos existentes ou criar uma nova opção reutilizável.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Status do grupo</Label>
@@ -1214,28 +1464,24 @@ const PacienteDetalhe = () => {
             </div>
             <div className="space-y-2">
               <Label>Cor</Label>
-              <Select value={groupColor} onValueChange={setGroupColor}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GROUP_COLORS.map((c) => (
-                    <SelectItem key={c.value} value={c.value}>
-                      <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full bg-group-${c.value}`} />
-                        {c.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <GroupColorPaletteField
+                defaultOpen={false}
+                onPaletteSave={handleSaveClinicColorSlot}
+                onSelectSlot={(slot) => {
+                  setGroupColorSlotId(slot.id);
+                  setGroupColor(slot.color_hex);
+                }}
+                previewColorHex={groupColor}
+                selectedSlotId={groupColorSlotId}
+                slots={resolvedClinicColorSlots}
+              />
             </div>
           </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
-            <Button onClick={handleSaveGroup} disabled={!groupName.trim() || savingGroup}>
+            <Button onClick={handleSaveGroup} disabled={!groupName.trim() || Boolean(existingPatientGroup) || savingGroup}>
               {savingGroup ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               {editingGroup ? "Salvar" : "Criar"}
             </Button>

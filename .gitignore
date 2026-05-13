@@ -26,6 +26,7 @@ dist-ssr
 # Local operational artifacts
 .control
 .local-tools
+backups/
 
 # Local admin and ops entrypoints that should stay out of Git
 account-admin-local.sh

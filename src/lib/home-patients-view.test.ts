@@ -49,12 +49,15 @@ const patientGroups = [
 ];
 
 const sessions = [
-  { id: "session-1", patient_id: "patient-1", session_date: "2026-04-13T15:00:00.000Z", status: "concluído" },
-  { id: "session-2", patient_id: "patient-1", session_date: "2026-04-10T15:00:00.000Z", status: "cancelado" },
-  { id: "session-3", patient_id: "patient-2", session_date: "2026-04-14T15:00:00.000Z", status: "rascunho" },
+  { id: "session-1", patient_id: "patient-1", provider_id: "collab-1", session_date: "2026-04-13T15:00:00.000Z", status: "concluído", user_id: "collab-1" },
+  { id: "session-2", patient_id: "patient-1", provider_id: "collab-1", session_date: "2026-04-10T15:00:00.000Z", status: "cancelado", user_id: "collab-2" },
+  { id: "session-3", patient_id: "patient-2", provider_id: "collab-2", session_date: "2026-04-14T15:00:00.000Z", status: "rascunho", user_id: "collab-2" },
 ];
 
 const defaultFilters: HomePatientFilters = {
+  collaboratorIds: [],
+  colors: [],
+  groupNames: [],
   searchTerm: "",
   sessionDateFrom: "",
   sessionDateTo: "",
@@ -85,10 +88,34 @@ describe("home patients view", () => {
     const result = buildHomePatientViews({
       filters: {
         searchTerm: "alice",
+        collaboratorIds: [],
+        colors: [],
+        groupNames: [],
         sessionDateFrom: "2026-04-12",
         sessionDateTo: "2026-04-13",
         statuses: ["ativo", "pausado"],
         weekdays: [1],
+      },
+      patientGroups,
+      patients,
+      sessions,
+      sortKey: DEFAULT_HOME_PATIENT_SORT_KEY,
+    });
+
+    expect(result.map((patient) => patient.name)).toEqual(["Alice Araujo"]);
+  });
+
+  it("filters by group, color and collaborator with OR inside each block", () => {
+    const result = buildHomePatientViews({
+      filters: {
+        collaboratorIds: ["collab-1"],
+        colors: ["lavender"],
+        groupNames: ["Coluna"],
+        searchTerm: "",
+        sessionDateFrom: "",
+        sessionDateTo: "",
+        statuses: [],
+        weekdays: [],
       },
       patientGroups,
       patients,
@@ -173,6 +200,9 @@ describe("home patients view", () => {
 
   it("counts active filter criteria for the UI summary", () => {
     const filters: HomePatientFilters = {
+      collaboratorIds: ["collab-1"],
+      colors: ["lavender"],
+      groupNames: ["Coluna"],
       searchTerm: "",
       sessionDateFrom: "2026-04-12",
       sessionDateTo: "",
@@ -181,6 +211,6 @@ describe("home patients view", () => {
     };
 
     expect(hasActiveHomePatientFilters(filters)).toBe(true);
-    expect(getActiveHomePatientFilterCount(filters)).toBe(4);
+    expect(getActiveHomePatientFilterCount(filters)).toBe(7);
   });
 });
