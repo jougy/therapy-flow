@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "ba0318177250892a",
+        "id": "20ca1b7272ad102b",
         "type": "tabs",
         "children": [
           {
-            "id": "e716af444d9e2d5a",
+            "id": "1ea62beb38fffc82",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "10 - Produto/Acesso mestre e painel administrativo global.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "Acesso mestre e painel administrativo global"
+              "title": "Nova aba"
             }
           }
         ]
@@ -183,14 +179,18 @@
       "bases:Criar nova base": false
     }
   },
-  "active": "e716af444d9e2d5a",
+  "active": "1ea62beb38fffc82",
   "lastOpenFiles": [
+    "70 - Release/TCC release.md",
+    "70 - Release/Fluxograma da release.md",
+    "10 - Produto/Acesso mestre e painel administrativo global.md",
+    "20 - Engenharia/Backup do Supabase antes de deploy.md",
+    "10 - Produto/Grupos reutilizaveis de atendimentos.md",
     "10 - Produto/Compartilhamento de fichas de atendimento.md",
     "90 - Meta/AGENTS.md",
     "Users/jougy/Documents/programacao/Prontuario/therapy-flow/TDD_E_CHECKS.md",
     "40 - Prompts/Prompt - Homepage filtro e ordenacao de pacientes.md",
     "70 - Release/01 - Pre-textuais.md",
-    "70 - Release/TCC release.md",
     "10 - Produto/Visao geral do produto.md",
     "10 - Produto/Hierarquias de colaboradores e acessos.md",
     "10 - Produto/Configuracoes - Seguranca.md",
@@ -207,16 +207,12 @@
     "10 - Projeto/Objetivos.md",
     "00 - Navegacao/Mapa da vault.md",
     "00 - Navegacao/Inicio.md",
-    "00 - Navegacao/Core do projeto.md",
     "Users/jougy/Documents/programacao/Prontuario/therapy-flow",
     "Users/jougy/Documents/programacao/Prontuario",
     "Users/jougy/Documents/programacao",
     "Users/jougy/Documents",
     "Users/jougy",
     "Users",
-    "TDD_E_CHECKS.md",
-    "Sem título.canvas",
-    "Sem título.md",
-    "security_conf.md"
+    "Sem título.canvas"
   ]
 }

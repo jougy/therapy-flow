@@ -46,14 +46,32 @@ vi.mock("@/integrations/supabase/client", () => {
             },
           ];
         case "patient_groups":
+          return [
+            { color: "#9AA33A", name: "teste", patient_id: "patient-1", status: "em_andamento" },
+            { color: "#7DD3FC", name: "pilates", patient_id: "patient-2", status: "em_andamento" },
+          ];
         case "sessions":
-          return [];
+          return [
+            { id: "session-1", patient_id: "patient-1", provider_id: "collab-1", session_date: "2026-04-14T10:00:00.000Z", status: "concluído", user_id: "collab-1" },
+            { id: "session-2", patient_id: "patient-2", provider_id: "collab-2", session_date: "2026-04-15T10:00:00.000Z", status: "concluído", user_id: "collab-2" },
+          ];
+        case "clinic_memberships":
+          return [
+            { clinic_id: "clinic-1", is_active: true, membership_status: "active", operational_role: "professional", user_id: "collab-1" },
+            { clinic_id: "clinic-1", is_active: true, membership_status: "active", operational_role: "assistant", user_id: "collab-2" },
+          ];
+        case "profiles":
+          return [
+            { email: "fuc@email.com", full_name: "fucredison", id: "collab-1", job_title: "Fisioterapeuta" },
+            { email: "maria@email.com", full_name: "Maria Apoio", id: "collab-2", job_title: "Assistente" },
+          ];
         default:
           return [];
       }
     };
 
     const builder = {
+      eq: () => builder,
       order: () => builder,
       select: () => builder,
       then: (
@@ -143,6 +161,29 @@ describe("Index", () => {
     expect(screen.queryByText("João Souza")).not.toBeInTheDocument();
   });
 
+  it("shows the patient list when filtering by group, color and collaborator", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("button", { name: /filtro/i });
+
+    fireEvent.click(screen.getByRole("button", { name: /filtro/i }));
+    fireEvent.click(screen.getByLabelText("teste"));
+    fireEvent.click(screen.getByLabelText("Cor #9AA33A"));
+    fireEvent.click(screen.getByPlaceholderText("Buscar por nome, email, função ou cargo"));
+    fireEvent.change(screen.getByPlaceholderText("Buscar por nome, email, função ou cargo"), { target: { value: "fucredison" } });
+    fireEvent.click(screen.getByLabelText("Selecionar fucredison"));
+
+    expect(await screen.findByText("1 paciente encontrado")).toBeInTheDocument();
+    expect(screen.getByText("Maria Silva")).toBeInTheDocument();
+    expect(screen.queryByText("João Souza")).not.toBeInTheDocument();
+  });
+
   it("restores the dashboard cards after returning filters and sorting to the default state", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -159,7 +200,7 @@ describe("Index", () => {
 
     expect(await screen.findByText("1 paciente encontrado")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /limpar filtros/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^limpar$/i }));
 
     await waitFor(() => {
       expect(screen.queryByText("1 paciente encontrado")).not.toBeInTheDocument();
