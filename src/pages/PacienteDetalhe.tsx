@@ -212,9 +212,9 @@ const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemp
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <TabsList className="grid w-full grid-cols-2">
-        <TabsTrigger value="queixa" className="text-xs sm:text-sm">Queixa principal</TabsTrigger>
-        <TabsTrigger value="tratamento" className="text-xs sm:text-sm">Tratamento</TabsTrigger>
+      <TabsList className="grid h-auto w-full grid-cols-2">
+        <TabsTrigger value="queixa" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">Queixa principal</TabsTrigger>
+        <TabsTrigger value="tratamento" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">Tratamento</TabsTrigger>
       </TabsList>
       <TabsContent value="queixa" className="rounded-md border bg-muted/20 p-3">
         <p className="text-sm text-muted-foreground whitespace-pre-line">
@@ -289,7 +289,7 @@ const SessionCard = ({
       onPointerCancel={selectionMode ? undefined : onPressCancel}
     >
       <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
@@ -327,7 +327,7 @@ const SessionCard = ({
             <SessionTabsPreview baseSchema={baseSchema} session={session} />
           </div>
           {indicators.length > 0 && (
-            <div className="space-y-1.5 shrink-0">
+            <div className="grid gap-3 sm:grid-cols-2 lg:w-[240px] lg:shrink-0 lg:grid-cols-1">
               {indicators.map((indicator) => (
                 <div key={indicator.id}>
                   <span className="text-xs text-muted-foreground block">{indicator.label}</span>
@@ -1334,7 +1334,7 @@ const PacienteDetalhe = () => {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 rounded-2xl border bg-background/70 p-3 shadow-sm backdrop-blur sm:flex-row sm:items-center xl:shrink-0">
+          <div className="grid gap-3 rounded-2xl border bg-background/70 p-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:grid-cols-[auto,auto,minmax(0,160px)] xl:shrink-0">
             <Button
               variant="outline"
               size="icon"
@@ -1346,7 +1346,7 @@ const PacienteDetalhe = () => {
             >
               <WhatsAppLogo className="h-5 w-5" />
             </Button>
-            <Button variant="outline" onClick={() => setPatientInfoDialogOpen(true)}>
+            <Button variant="outline" onClick={() => setPatientInfoDialogOpen(true)} className="w-full sm:w-auto">
               <MoreHorizontal className="h-4 w-4 mr-2" />
               Ver mais
             </Button>
@@ -1375,7 +1375,7 @@ const PacienteDetalhe = () => {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]">
         <div className="rounded-2xl border bg-card p-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <Button type="button" variant="outline" size="icon" onClick={goToPreviousSummary} aria-label="Resumo anterior">
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -1408,7 +1408,7 @@ const PacienteDetalhe = () => {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agendamento</p>
-              <h3 className="mt-1 text-lg font-semibold">
+              <h3 className="mt-1 text-base font-semibold sm:text-lg">
                 {upcomingAgendaEvent ? formatAgendaEventDateTime(upcomingAgendaEvent.scheduled_for) : "Sem agendamentos no momento"}
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -1429,11 +1429,11 @@ const PacienteDetalhe = () => {
                   <button
                     key={event.id}
                     type="button"
-                    className="flex w-full items-center gap-2 rounded-xl border bg-muted/20 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40"
+                    className="flex w-full flex-col items-start gap-2 rounded-xl border bg-muted/20 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40 sm:flex-row sm:items-center"
                     onClick={() => handleOpenAgendaDetails(event)}
                   >
                     <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate font-medium">{formatAgendaEventDateTime(event.scheduled_for)}</span>
+                    <span className="min-w-0 flex-1 font-medium sm:truncate">{formatAgendaEventDateTime(event.scheduled_for)}</span>
                     <Badge variant="outline" className={agendaStatusBadgeStyles[eventStatus]}>
                       {getAgendaStatusLabel(eventStatus)}
                     </Badge>
@@ -1456,8 +1456,8 @@ const PacienteDetalhe = () => {
 
       {/* Group management toolbar */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-lg font-semibold">Grupos & Atendimentos</h2>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 className="text-lg font-semibold">Grupos & Atendimentos</h2>
           {!isIntern && (
             <Button variant="outline" size="sm" onClick={openNewGroup}>
               <FolderPlus className="h-4 w-4 mr-2" />
@@ -1571,13 +1571,13 @@ const PacienteDetalhe = () => {
             className="border-l-4 rounded-tl-lg"
             style={{ borderLeftColor: getLegacyGroupHex(groupView.group.color) }}
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <button
                 type="button"
-                className="flex flex-1 items-start justify-between text-left"
+                className="flex w-full flex-1 items-start justify-between gap-3 text-left"
                 onClick={() => toggleGroupCollapsed(groupView.group.id)}
               >
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <CardTitle className="text-lg">{groupView.group.name}</CardTitle>
                     {getPatientGroupKind(groupView.group) !== "default" && groupView.group.status && (
@@ -1586,15 +1586,15 @@ const PacienteDetalhe = () => {
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  <div className="mt-2 grid gap-x-4 gap-y-1 text-sm text-muted-foreground sm:flex sm:flex-wrap">
                     <span>{groupView.sessionCount} atendimento{groupView.sessionCount !== 1 ? "s" : ""}</span>
                     <span>Primeiro: {formatSessionMetaDate(groupView.firstSessionDate)}</span>
                     <span>Mais recente: {formatSessionMetaDate(groupView.latestSessionDate)}</span>
                   </div>
                 </div>
-                {collapsedGroups[groupView.group.id] ? <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" /> : <ChevronUp className="mt-1 h-4 w-4 text-muted-foreground" />}
+                {collapsedGroups[groupView.group.id] ? <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronUp className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
               </button>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center justify-end gap-1 sm:pt-0">
                 {!isIntern && getPatientGroupKind(groupView.group) === "custom" && (
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditGroup(groupView.group)} aria-label="Editar grupo">
                     <Pencil className="h-3.5 w-3.5" />
@@ -2017,11 +2017,11 @@ const PacienteDetalhe = () => {
       </Dialog>
 
       <Dialog open={patientInfoDialogOpen} onOpenChange={setPatientInfoDialogOpen}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 supports-[height:100dvh]:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
+          <DialogHeader className="px-4 pt-5 sm:px-6">
             <DialogTitle>Resumo do paciente</DialogTitle>
           </DialogHeader>
-          <div className="space-y-5 py-2">
+          <div className="space-y-5 overflow-y-auto px-4 py-2 sm:px-6">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <SummaryField label="Nome" value={patient.name} />
               <SummaryField label="Status" value={patient.status} />
@@ -2062,7 +2062,7 @@ const PacienteDetalhe = () => {
               </section>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:justify-between">
+          <DialogFooter className="gap-2 border-t bg-background px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:justify-between sm:px-6">
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"

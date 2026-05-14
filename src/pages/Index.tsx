@@ -654,9 +654,9 @@ const Index = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             {dashboardStats.map((stat) => (
-              <div key={stat.title}>
+              <div key={stat.title} className="hidden md:block">
                 <Card className="hover:shadow-md transition-shadow duration-150">
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
@@ -670,7 +670,7 @@ const Index = () => {
                 </Card>
               </div>
             ))}
-            <div>
+            <div className="md:col-span-2 lg:col-span-1">
               <AgendaWidget />
             </div>
           </div>
