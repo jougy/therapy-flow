@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, Loader2, User, MapPin, HeartPulse } from "lucide-react";
+import { ArrowLeft, Check, FileText, HeartPulse, Loader2, MapPin, Phone, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,11 +13,26 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Database } from "@/integrations/supabase/types";
+import {
+  EMPTY_CLINICAL_PROFILE,
+  EMPTY_EMERGENCY_CONTACT,
+  FUNCTIONAL_INDEPENDENCE_OPTIONS,
+  parseClinicalProfile,
+  parseEmergencyContact,
+  type PatientClinicalProfile,
+  type PatientEmergencyContact,
+} from "@/lib/patient-clinical-profile";
 import { formatCep, formatCpf, formatPhone } from "@/lib/profile-settings";
 import {
   buildPatientRegistrationPutPayload,
   putPatientRegistration,
 } from "@/lib/patient-registration";
+import { SubstanceUseClinicalSection } from "@/components/patients/SubstanceUseClinicalSection";
+import {
+  buildClinicalSnapshotSummaryPayload,
+  buildPatientClinicalSnapshotState,
+  diffPatientClinicalSnapshotStates,
+} from "@/lib/patient-clinical-snapshots";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
@@ -71,6 +86,9 @@ const CadastroCompleto = () => {
   const [continuousMedications, setContinuousMedications] = useState("");
   const [allergies, setAllergies] = useState("");
   const [clinicalNotes, setClinicalNotes] = useState("");
+  const [clinicalProfile, setClinicalProfile] = useState<PatientClinicalProfile>(EMPTY_CLINICAL_PROFILE);
+  const [emergencyContact, setEmergencyContact] = useState<PatientEmergencyContact>(EMPTY_EMERGENCY_CONTACT);
+  const [snapshotNote, setSnapshotNote] = useState("");
 
   const fetchPatient = useCallback(async () => {
     if (!id) return;
@@ -113,10 +131,20 @@ const CadastroCompleto = () => {
     setContinuousMedications(patient.continuous_medications ?? "");
     setAllergies(patient.allergies ?? "");
     setClinicalNotes(patient.clinical_notes ?? "");
+    setClinicalProfile(parseClinicalProfile(patient.clinical_profile));
+    setEmergencyContact(parseEmergencyContact(patient.emergency_contact));
     setLoading(false);
   }, [id, navigate]);
 
   useEffect(() => { fetchPatient(); }, [fetchPatient]);
+
+  const updateClinicalProfile = <K extends keyof PatientClinicalProfile>(key: K, value: PatientClinicalProfile[K]) => {
+    setClinicalProfile((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateEmergencyContact = <K extends keyof PatientEmergencyContact>(key: K, value: PatientEmergencyContact[K]) => {
+    setEmergencyContact((current) => ({ ...current, [key]: value }));
+  };
 
   const handleCepLookup = async (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 8);
@@ -164,6 +192,7 @@ const CadastroCompleto = () => {
         allergies,
         bloodType,
         cep,
+        clinicalProfile,
         cpf,
         chronicConditions,
         city,
@@ -172,6 +201,7 @@ const CadastroCompleto = () => {
         country,
         dateOfBirth,
         email,
+        emergencyContact,
         gender,
         name,
         neighborhood,
@@ -184,12 +214,38 @@ const CadastroCompleto = () => {
         surgeries,
       });
 
+      const previousClinicalState = buildPatientClinicalSnapshotState(patientRecord);
+      const nextClinicalState = buildPatientClinicalSnapshotState(payload);
+      const clinicalChanges = diffPatientClinicalSnapshotStates(previousClinicalState, nextClinicalState);
+
       await putPatientRegistration({
         accessToken: session.access_token,
         apiKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         patient: payload,
         supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
       });
+
+      if (clinicalChanges.length > 0 && payload.clinic_id) {
+        const { error: snapshotError } = await supabase
+          .from("patient_clinical_snapshots")
+          .insert({
+            change_note: snapshotNote.trim() || null,
+            change_summary: buildClinicalSnapshotSummaryPayload(clinicalChanges),
+            changed_fields: clinicalChanges.map((change) => change.field),
+            clinic_id: payload.clinic_id,
+            created_by: user.id,
+            patient_id: payload.id,
+            snapshot_data: nextClinicalState as unknown as Database["public"]["Tables"]["patient_clinical_snapshots"]["Insert"]["snapshot_data"],
+          });
+
+        if (snapshotError) {
+          toast({
+            title: "Cadastro salvo com ressalva",
+            description: "Os dados do paciente foram atualizados, mas não foi possível registrar o snapshot clínico.",
+            variant: "destructive",
+          });
+        }
+      }
 
       toast({ title: "Cadastro atualizado", description: "Informações salvas com sucesso." });
       navigate(`/pacientes/${id}`);
@@ -225,18 +281,28 @@ const CadastroCompleto = () => {
       </div>
 
       <Tabs defaultValue="pessoais" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="pessoais" className="gap-2 text-xs sm:text-sm">
             <User className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Dados Pessoais</span>
             <span className="sm:hidden">Pessoais</span>
           </TabsTrigger>
+          <TabsTrigger value="contatos" className="gap-2 text-xs sm:text-sm">
+            <Phone className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Contatos</span>
+            <span className="sm:hidden">Contatos</span>
+          </TabsTrigger>
           <TabsTrigger value="endereco" className="gap-2 text-xs sm:text-sm">
             <MapPin className="h-3.5 w-3.5" />
             Endereço
           </TabsTrigger>
-          <TabsTrigger value="historico" className="gap-2 text-xs sm:text-sm">
+          <TabsTrigger value="saude" className="gap-2 text-xs sm:text-sm">
             <HeartPulse className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Saúde Base</span>
+            <span className="sm:hidden">Saúde</span>
+          </TabsTrigger>
+          <TabsTrigger value="historico" className="gap-2 text-xs sm:text-sm">
+            <FileText className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Histórico Clínico</span>
             <span className="sm:hidden">Clínico</span>
           </TabsTrigger>
@@ -246,7 +312,7 @@ const CadastroCompleto = () => {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Dados Pessoais</CardTitle>
-              <CardDescription>Informações principais de identificação e contato</CardDescription>
+              <CardDescription>Informações principais de identificação do paciente</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -264,14 +330,6 @@ const CadastroCompleto = () => {
                 <div className="space-y-2">
                   <Label htmlFor="cpf">CPF</Label>
                   <Input id="cpf" value={cpf} onChange={(e) => setCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" maxLength={14} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Telefone</Label>
-                  <Input id="phone" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={15} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">E-mail</Label>
-                  <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="paciente@email.com" />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -306,22 +364,144 @@ const CadastroCompleto = () => {
                   <Label htmlFor="rg">RG</Label>
                   <Input id="rg" value={rg} onChange={(e) => setRg(e.target.value)} placeholder="0000000-0" />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bloodType">Tipo Sanguíneo</Label>
-                  <Select value={bloodType} onValueChange={setBloodType}>
-                    <SelectTrigger id="bloodType"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                    <SelectContent>
-                      {BLOOD_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="profession">Profissão</Label>
                 <Input id="profession" value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="Ex: Engenheiro(a)" />
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="saude">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Saúde Base</CardTitle>
+              <CardDescription>Informações mais estáveis do perfil de saúde do paciente.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Condições e alertas permanentes</h3>
+                  <p className="text-xs text-muted-foreground">Dados de referência clínica que tendem a mudar pouco e precisam ficar fáceis de consultar.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="bloodType">Tipo Sanguíneo</Label>
+                    <Select value={bloodType} onValueChange={setBloodType}>
+                      <SelectTrigger id="bloodType"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                      <SelectContent>
+                        {BLOOD_TYPES.map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="alerts">Alertas clínicos e restrições relevantes</Label>
+                    <Textarea
+                      id="alerts"
+                      value={clinicalProfile.clinical_alerts}
+                      onChange={(e) => updateClinicalProfile("clinical_alerts", e.target.value)}
+                      placeholder="Anticoagulante, convulsões, restrição de carga, marcapasso..."
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="chronic">Problemas crônicos e comorbidades</Label>
+                  <Textarea id="chronic" value={chronicConditions} onChange={(e) => setChronicConditions(e.target.value)} placeholder="Hipertensão, diabetes, asma, osteoporose..." rows={3} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="allergies">Alergias</Label>
+                  <Textarea id="allergies" value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Substância, reação e gravidade quando souber" rows={3} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="congenitalGeneticConditions">Deficiências congênitas ou condições genéticas</Label>
+                  <Textarea
+                    id="congenitalGeneticConditions"
+                    value={clinicalProfile.congenital_genetic_conditions}
+                    onChange={(e) => updateClinicalProfile("congenital_genetic_conditions", e.target.value)}
+                    placeholder="Síndromes, alterações genéticas, condições congênitas relevantes..."
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="familyHistory">Histórico familiar relevante</Label>
+                  <Textarea
+                    id="familyHistory"
+                    value={clinicalProfile.family_history}
+                    onChange={(e) => updateClinicalProfile("family_history", e.target.value)}
+                    placeholder="Doenças hereditárias, histórico familiar cardiovascular, osteoporose, AVC..."
+                    rows={3}
+                  />
+                </div>
+              </section>
+
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="contatos">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Contatos</CardTitle>
+              <CardDescription>Contatos pessoais do paciente e referência para emergência.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Contato pessoal</h3>
+                  <p className="text-xs text-muted-foreground">Canais principais para comunicação com o paciente.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Telefone</Label>
+                    <Input id="phone" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={15} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">E-mail</Label>
+                    <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="paciente@email.com" />
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-4 rounded-xl border border-border/60 bg-background p-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Contato de emergência</h3>
+                  <p className="text-xs text-muted-foreground">Pessoa de referência para situações sensíveis ou comunicação assistencial rápida.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="emergencyContactName">Nome do contato</Label>
+                    <Input
+                      id="emergencyContactName"
+                      value={emergencyContact.name}
+                      onChange={(e) => updateEmergencyContact("name", e.target.value)}
+                      placeholder="Nome completo"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactRelationship">Parentesco ou vínculo</Label>
+                    <Input
+                      id="emergencyContactRelationship"
+                      value={emergencyContact.relationship}
+                      onChange={(e) => updateEmergencyContact("relationship", e.target.value)}
+                      placeholder="Mãe, cônjuge, irmão..."
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2 max-w-xs">
+                  <Label htmlFor="emergencyContactPhone">Telefone</Label>
+                  <Input
+                    id="emergencyContactPhone"
+                    value={emergencyContact.phone}
+                    onChange={(e) => updateEmergencyContact("phone", formatPhone(e.target.value))}
+                    placeholder="(00) 00000-0000"
+                    maxLength={15}
+                  />
+                </div>
+              </section>
             </CardContent>
           </Card>
         </TabsContent>
@@ -380,29 +560,101 @@ const CadastroCompleto = () => {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Histórico Clínico</CardTitle>
-              <CardDescription>Condições pré-existentes e dados médicos relevantes</CardDescription>
+              <CardDescription>Eventos, antecedentes e trajetória clínica do paciente ao longo do tempo.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="chronic">Problemas crônicos</Label>
-                <Textarea id="chronic" value={chronicConditions} onChange={(e) => setChronicConditions(e.target.value)} placeholder="Hipertensão, diabetes, etc." rows={3} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="surgeries">Cirurgias realizadas</Label>
-                <Textarea id="surgeries" value={surgeries} onChange={(e) => setSurgeries(e.target.value)} placeholder="Liste cirurgias anteriores" rows={3} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="meds">Medicamentos de uso contínuo</Label>
-                <Textarea id="meds" value={continuousMedications} onChange={(e) => setContinuousMedications(e.target.value)} placeholder="Nome e dosagem dos medicamentos" rows={3} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="allergies">Alergias</Label>
-                <Textarea id="allergies" value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="Alergias conhecidas" rows={2} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="clinicalNotes">Observações clínicas</Label>
-                <Textarea id="clinicalNotes" value={clinicalNotes} onChange={(e) => setClinicalNotes(e.target.value)} placeholder="Informações adicionais relevantes" rows={3} />
-              </div>
+            <CardContent className="space-y-6">
+              <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Antecedentes clínicos</h3>
+                  <p className="text-xs text-muted-foreground">Aspectos que ajudam a reconstruir a história clínica e eventos importantes da saúde.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="diagnoses">Diagnósticos prévios ou hipóteses diagnósticas</Label>
+                  <Textarea
+                    id="diagnoses"
+                    value={clinicalProfile.diagnoses}
+                    onChange={(e) => updateClinicalProfile("diagnoses", e.target.value)}
+                    placeholder="CID, hipóteses diagnósticas, condições que motivaram acompanhamento anterior..."
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="surgeries">Cirurgias e internações relevantes</Label>
+                  <Textarea id="surgeries" value={surgeries} onChange={(e) => setSurgeries(e.target.value)} placeholder="Procedimento, data aproximada e intercorrências importantes" rows={3} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="implantsDevices">Implantes, próteses ou dispositivos</Label>
+                  <Textarea
+                    id="implantsDevices"
+                    value={clinicalProfile.implants_devices}
+                    onChange={(e) => updateClinicalProfile("implants_devices", e.target.value)}
+                    placeholder="Prótese, órtese, marcapasso, parafusos, placa, stent..."
+                    rows={2}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fallsHistory">Histórico de quedas</Label>
+                  <Textarea
+                    id="fallsHistory"
+                    value={clinicalProfile.falls_history}
+                    onChange={(e) => updateClinicalProfile("falls_history", e.target.value)}
+                    placeholder="Quedas recentes, frequência, contexto e consequências"
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="meds">Medicamentos de uso contínuo</Label>
+                  <Textarea id="meds" value={continuousMedications} onChange={(e) => setContinuousMedications(e.target.value)} placeholder="Nome, dose, frequência e motivo do uso" rows={3} />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="functionalIndependence">Contexto funcional atual</Label>
+                    <Select
+                      value={clinicalProfile.functional_independence}
+                      onValueChange={(value) => updateClinicalProfile("functional_independence", value as PatientClinicalProfile["functional_independence"])}
+                    >
+                      <SelectTrigger id="functionalIndependence"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                      <SelectContent>
+                        {FUNCTIONAL_INDEPENDENCE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mobilityAids">Dispositivos de apoio em uso</Label>
+                    <Textarea
+                      id="mobilityAids"
+                      value={clinicalProfile.mobility_aids}
+                      onChange={(e) => updateClinicalProfile("mobility_aids", e.target.value)}
+                      placeholder="Bengala, muletas, andador, cadeira de rodas..."
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                <SubstanceUseClinicalSection
+                  clinicalProfile={clinicalProfile}
+                  updateClinicalProfile={updateClinicalProfile}
+                />
+                <div className="space-y-2">
+                  <Label htmlFor="clinicalNotes">Observações clínicas</Label>
+                  <Textarea id="clinicalNotes" value={clinicalNotes} onChange={(e) => setClinicalNotes(e.target.value)} placeholder="Informações adicionais relevantes" rows={3} />
+                </div>
+                <div className="space-y-2 rounded-xl border border-dashed border-border/70 bg-muted/20 p-4">
+                  <Label htmlFor="snapshotNote">Nota da atualização clínica</Label>
+                  <Textarea
+                    id="snapshotNote"
+                    value={snapshotNote}
+                    onChange={(e) => setSnapshotNote(e.target.value)}
+                    placeholder="Opcional. Ex.: reavaliação após piora da dor, ajuste medicamentoso, mudança funcional..."
+                    rows={2}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Quando houver mudança clínica relevante, essa nota será salva junto ao snapshot da evolução.
+                  </p>
+                </div>
+              </section>
+
             </CardContent>
           </Card>
         </TabsContent>

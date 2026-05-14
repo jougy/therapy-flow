@@ -1,4 +1,6 @@
 import type { Database } from "@/integrations/supabase/types";
+import type { PatientClinicalProfile, PatientEmergencyContact } from "@/lib/patient-clinical-profile";
+import { buildClinicalProfilePayload, buildEmergencyContactPayload } from "@/lib/patient-clinical-profile";
 
 export const extractCpfDigits = (value: string | null | undefined) => (value ?? "").replace(/\D/g, "");
 
@@ -23,6 +25,7 @@ export interface PatientRegistrationFormValues {
   allergies: string;
   bloodType: string;
   cep: string;
+  clinicalProfile: PatientClinicalProfile;
   cpf: string;
   chronicConditions: string;
   city: string;
@@ -30,6 +33,7 @@ export interface PatientRegistrationFormValues {
   country: string;
   dateOfBirth: string;
   email: string;
+  emergencyContact: PatientEmergencyContact;
   gender: string;
   name: string;
   neighborhood: string;
@@ -92,6 +96,7 @@ export const buildPatientRegistrationPutPayload = (
     allergies: trimToNull(formValues.allergies),
     blood_type: trimToNull(formValues.bloodType),
     cep: digitsToNull(formValues.cep),
+    clinical_profile: buildClinicalProfilePayload(formValues.clinicalProfile),
     chronic_conditions: trimToNull(formValues.chronicConditions),
     city: trimToNull(formValues.city),
     clinical_notes: trimToNull(formValues.clinicalNotes),
@@ -100,6 +105,7 @@ export const buildPatientRegistrationPutPayload = (
     cpf: digitsToNull(formValues.cpf),
     date_of_birth: normalizedBirthDate,
     email: trimToNull(formValues.email),
+    emergency_contact: buildEmergencyContactPayload(formValues.emergencyContact),
     gender: trimToNull(formValues.gender),
     name: normalizedName ?? patient.name,
     neighborhood: trimToNull(formValues.neighborhood),

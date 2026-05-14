@@ -63,3 +63,7 @@ supabase/.branches
 *.njsproj
 *.sln
 *.sw?
+
+core
+scripts
+control.py

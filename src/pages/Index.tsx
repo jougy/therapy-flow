@@ -47,14 +47,6 @@ const normalize = (value: string | null | undefined) =>
     .toLowerCase()
     .trim();
 
-const roleLabels: Record<string, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  professional: "Profissional",
-  assistant: "Assistente",
-  estagiario: "Estagiário",
-};
-
 const resolveGroupFilterColor = (group: PatientGroupWithColorSlot) =>
   group.clinic_group_color_slots?.color_hex ?? getLegacyGroupHex(group.color);
 
@@ -505,9 +497,9 @@ const Index = () => {
                                 <p className="truncate text-xs text-muted-foreground">{collaborator.email || "Sem email"}</p>
                               </div>
                               <div className="flex shrink-0 items-center gap-2">
-                                {collaborator.operational_role ? (
+                                {collaborator.job_title ? (
                                   <Badge variant="outline" className="hidden sm:inline-flex">
-                                    {roleLabels[collaborator.operational_role] ?? collaborator.operational_role}
+                                    {collaborator.job_title}
                                   </Badge>
                                 ) : null}
                                 {selected ? (
@@ -687,7 +679,7 @@ const Index = () => {
             <div>
               <h2 className="text-sm font-medium text-muted-foreground mb-3">Pacientes recentes</h2>
               <div className="space-y-2">
-                {recentPatients.slice(0, 5).map((patient) => (
+                {recentPatients.map((patient) => (
                   <PatientCard key={patient.id} patient={patient} />
                 ))}
               </div>

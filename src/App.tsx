@@ -9,6 +9,7 @@ import AppLayout from "@/components/AppLayout";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import Index from "./pages/Index";
 import PacienteDetalhe from "./pages/PacienteDetalhe";
+import PacienteResumo from "./pages/PacienteResumo";
 import SessaoDetalhe from "./pages/SessaoDetalhe";
 import NovoPaciente from "./pages/NovoPaciente";
 import CadastroCompleto from "./pages/CadastroCompleto";
@@ -70,6 +71,7 @@ const App = () => (
                           <Route path="/configuracoes/formularios/:templateId" element={<FormularioEditor />} />
                           <Route path="/pacientes/novo" element={<NovoPaciente />} />
                           <Route path="/pacientes/:id" element={<PacienteDetalhe />} />
+                          <Route path="/pacientes/:id/resumo" element={<PacienteResumo />} />
                           <Route path="/pacientes/:id/cadastro" element={<CadastroCompleto />} />
                           <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
                           <Route path="*" element={<NotFound />} />

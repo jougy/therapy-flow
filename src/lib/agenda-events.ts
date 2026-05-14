@@ -1,6 +1,7 @@
 import type { TablesInsert } from "@/integrations/supabase/types";
 
 export type AgendaEventType = "atendimento" | "reuniao" | "evento";
+export type AgendaEventStatus = "lembrete" | "aguardando_confirmacao" | "confirmado" | "cancelado";
 
 export interface AgendaPatientOption {
   id: string;
@@ -45,6 +46,7 @@ export const buildAgendaEventPayload = ({
     event_type: eventType,
     patient_id: selectedPatient?.id ?? null,
     scheduled_for: scheduledFor.toISOString(),
+    status: "aguardando_confirmacao",
     title: normalizedTitle,
     user_id: userId,
   };

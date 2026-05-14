@@ -42,6 +42,7 @@ export type Database = {
           id: string
           patient_id: string | null
           scheduled_for: string
+          status: string
           title: string
           updated_at: string
           user_id: string
@@ -53,6 +54,7 @@ export type Database = {
           id?: string
           patient_id?: string | null
           scheduled_for: string
+          status?: string
           title: string
           updated_at?: string
           user_id: string
@@ -64,6 +66,7 @@ export type Database = {
           id?: string
           patient_id?: string | null
           scheduled_for?: string
+          status?: string
           title?: string
           updated_at?: string
           user_id?: string
@@ -292,6 +295,7 @@ export type Database = {
           clinic_id: string | null
           color: string
           created_at: string
+          group_kind: string
           id: string
           is_default: boolean
           name: string
@@ -304,6 +308,7 @@ export type Database = {
           clinic_id?: string | null
           color?: string
           created_at?: string
+          group_kind?: string
           id?: string
           is_default?: boolean
           name: string
@@ -316,6 +321,7 @@ export type Database = {
           clinic_id?: string | null
           color?: string
           created_at?: string
+          group_kind?: string
           id?: string
           is_default?: boolean
           name?: string
@@ -460,6 +466,7 @@ export type Database = {
           allergies: string | null
           blood_type: string | null
           cep: string | null
+          clinical_profile: Json | null
           chronic_conditions: string | null
           city: string | null
           clinic_id: string | null
@@ -470,6 +477,7 @@ export type Database = {
           created_at: string
           date_of_birth: string | null
           email: string | null
+          emergency_contact: Json | null
           gender: string | null
           id: string
           name: string
@@ -493,6 +501,7 @@ export type Database = {
           allergies?: string | null
           blood_type?: string | null
           cep?: string | null
+          clinical_profile?: Json | null
           chronic_conditions?: string | null
           city?: string | null
           clinic_id?: string | null
@@ -503,6 +512,7 @@ export type Database = {
           created_at?: string
           date_of_birth?: string | null
           email?: string | null
+          emergency_contact?: Json | null
           gender?: string | null
           id?: string
           name: string
@@ -526,6 +536,7 @@ export type Database = {
           allergies?: string | null
           blood_type?: string | null
           cep?: string | null
+          clinical_profile?: Json | null
           chronic_conditions?: string | null
           city?: string | null
           clinic_id?: string | null
@@ -536,6 +547,7 @@ export type Database = {
           created_at?: string
           date_of_birth?: string | null
           email?: string | null
+          emergency_contact?: Json | null
           gender?: string | null
           id?: string
           name?: string
@@ -558,6 +570,64 @@ export type Database = {
             columns: ["clinic_id"]
             isOneToOne: false
             referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_clinical_snapshots: {
+        Row: {
+          change_note: string | null
+          change_summary: Json
+          changed_fields: string[]
+          clinic_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          patient_id: string
+          snapshot_data: Json
+        }
+        Insert: {
+          change_note?: string | null
+          change_summary?: Json
+          changed_fields?: string[]
+          clinic_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id: string
+          snapshot_data?: Json
+        }
+        Update: {
+          change_note?: string | null
+          change_summary?: Json
+          changed_fields?: string[]
+          clinic_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id?: string
+          snapshot_data?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_clinical_snapshots_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_clinical_snapshots_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_clinical_snapshots_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
             referencedColumns: ["id"]
           },
         ]

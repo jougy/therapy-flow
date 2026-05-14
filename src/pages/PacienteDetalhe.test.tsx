@@ -9,8 +9,13 @@ import { toast } from "@/hooks/use-toast";
 const navigateMock = vi.fn();
 
 const supabaseMocks = vi.hoisted(() => ({
+  agendaEvents: [] as Array<Record<string, unknown>>,
   deleteCalls: [] as Array<{ table: string; filters: Array<{ column: string; value: unknown }> }>,
   from: vi.fn(),
+  insertCalls: [] as Array<{
+    payload: Record<string, unknown>;
+    table: string;
+  }>,
   rpc: vi.fn(),
   updateCalls: [] as Array<{
     payload: Record<string, unknown>;
@@ -141,7 +146,7 @@ vi.mock("@/integrations/supabase/client", () => {
   };
 
   const createQueryBuilder = (table: string) => {
-    let mode: "delete" | "select" | "update" = "select";
+    let mode: "delete" | "insert" | "select" | "update" = "select";
     let payload: Record<string, unknown> = {};
     const filters: Array<{ column: string; value: unknown }> = [];
 
@@ -150,13 +155,62 @@ vi.mock("@/integrations/supabase/client", () => {
         case "patients":
           return patient;
         case "patient_groups":
-          return [];
+          return [
+            {
+              clinic_color_slot_id: null,
+              color: "lavender",
+              created_at: "2026-04-01T12:00:00.000Z",
+              group_kind: "custom",
+              id: "group-1",
+              is_default: false,
+              name: "Lombalgia",
+              status: "em_andamento",
+            },
+            {
+              clinic_color_slot_id: null,
+              color: "gray",
+              created_at: "2026-04-01T12:00:00.000Z",
+              group_kind: "default",
+              id: "group-default",
+              is_default: true,
+              name: "Grupo sem definição",
+              status: null,
+            },
+            {
+              clinic_color_slot_id: null,
+              color: "rose",
+              created_at: "2026-04-01T12:00:00.000Z",
+              group_kind: "cancelados",
+              id: "group-cancelados",
+              is_default: false,
+              name: "Cancelados",
+              status: "cancelado",
+            },
+          ];
         case "sessions":
-          return [];
+          return [
+            {
+              anamnesis: { queixa: "Dor lombar" },
+              anamnesis_form_response: {},
+              complexity_score: 3,
+              created_at: "2026-04-02T12:00:00.000Z",
+              group_id: "group-1",
+              id: "session-1",
+              notes: "",
+              pain_score: 5,
+              provider_id: "owner-1",
+              session_date: "2026-04-02T12:00:00.000Z",
+              status: "concluído",
+              treatment: null,
+              user_id: "owner-1",
+            },
+          ];
         case "clinics":
           return { anamnesis_base_schema: [] };
         case "profiles":
           return [];
+        case "agenda_events":
+          return supabaseMocks.agendaEvents;
         default:
           return [];
       }
@@ -170,7 +224,45 @@ vi.mock("@/integrations/supabase/client", () => {
 
       if (mode === "update") {
         supabaseMocks.updateCalls.push({ filters: [...filters], payload, table });
+        if (table === "agenda_events") {
+          const targetId = filters.find((filter) => filter.column === "id")?.value;
+          const existingEvent = supabaseMocks.agendaEvents.find((event) => event.id === targetId) ?? {};
+          const updatedEvent = { ...existingEvent, ...payload };
+          supabaseMocks.agendaEvents = supabaseMocks.agendaEvents.map((event) => (event.id === targetId ? updatedEvent : event));
+          return { data: updatedEvent, error: null };
+        }
         return { data: null, error: null };
+      }
+
+      if (mode === "insert") {
+        supabaseMocks.insertCalls.push({ payload, table });
+        if (table === "sessions") {
+          return {
+            data: {
+              created_at: "2026-05-14T12:00:00.000Z",
+              id: "session-canceled-1",
+              updated_at: "2026-05-14T12:00:00.000Z",
+              ...payload,
+            },
+            error: null,
+          };
+        }
+
+        return {
+          data: {
+            clinic_id: payload.clinic_id,
+            created_at: "2026-05-14T12:00:00.000Z",
+            event_type: payload.event_type,
+            id: "agenda-1",
+            patient_id: payload.patient_id,
+            scheduled_for: payload.scheduled_for,
+            status: payload.status,
+            title: payload.title,
+            updated_at: "2026-05-14T12:00:00.000Z",
+            user_id: payload.user_id,
+          },
+          error: null,
+        };
       }
 
       return { data: resolveData(), error: null };
@@ -189,15 +281,22 @@ vi.mock("@/integrations/supabase/client", () => {
         filters.push({ column, value: values });
         return builder;
       },
+      insert: (nextPayload: Record<string, unknown>) => {
+        mode = "insert";
+        payload = nextPayload;
+        return builder;
+      },
       limit: () => builder,
       maybeSingle: () => Promise.resolve({ data: resolveData(), error: null }),
       not: () => builder,
       order: () => builder,
       select: () => {
-        mode = "select";
+        if (mode !== "insert" && mode !== "update") {
+          mode = "select";
+        }
         return builder;
       },
-      single: () => Promise.resolve({ data: resolveData(), error: null }),
+      single: () => Promise.resolve(execute()),
       then: (
         resolve: (value: { data: unknown; error: null }) => unknown,
         reject?: (reason: unknown) => unknown,
@@ -244,7 +343,9 @@ describe("PacienteDetalhe", () => {
     }
 
     navigateMock.mockReset();
+    supabaseMocks.agendaEvents = [];
     supabaseMocks.deleteCalls = [];
+    supabaseMocks.insertCalls = [];
     supabaseMocks.updateCalls = [];
     vi.clearAllMocks();
 
@@ -278,6 +379,114 @@ describe("PacienteDetalhe", () => {
     await screen.findByRole("heading", { name: "Maria Silva" });
 
     expect(screen.getByRole("option", { name: "Excluir" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /novo atendimento/i })).not.toBeInTheDocument();
+  });
+
+  it("renders grouped sessions without crashing", async () => {
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Lombalgia" })).toBeInTheDocument();
+    expect(screen.getByText("Dor lombar")).toBeInTheDocument();
+  });
+
+  it("navigates patient summary cards in a single compact block", async () => {
+    renderPage();
+
+    await screen.findByText("Resumo");
+    expect(screen.getByText("atendimento no histórico")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /próximo resumo/i }));
+
+    expect(screen.getByText("Concluídos")).toBeInTheDocument();
+    expect(screen.getByText("atendimento")).toBeInTheDocument();
+  });
+
+  it("shows the patient agenda block and opens the scheduling dialog", async () => {
+    renderPage();
+
+    expect(await screen.findByText("Sem agendamentos no momento")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^agendar$/i }));
+
+    expect(await screen.findByRole("heading", { name: "Agendar atendimento" })).toBeInTheDocument();
+    expect(screen.getByText("Este agendamento usa a mesma agenda da homepage e aparecerá nos dois lugares.")).toBeInTheDocument();
+
+    const confirmButton = screen.getByRole("button", { name: /confirmar/i });
+    expect(confirmButton).not.toBeDisabled();
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(supabaseMocks.insertCalls).toEqual([
+        {
+          payload: expect.objectContaining({
+            clinic_id: "clinic-1",
+            event_type: "atendimento",
+            patient_id: "patient-1",
+            status: "aguardando_confirmacao",
+            title: "Maria Silva",
+            user_id: "owner-1",
+          }),
+          table: "agenda_events",
+        },
+      ]);
+    });
+  });
+
+  it("opens scheduled event details and creates a canceled session when applying canceled status", async () => {
+    supabaseMocks.agendaEvents = [
+      {
+        clinic_id: "clinic-1",
+        created_at: "2026-05-14T12:00:00.000Z",
+        event_type: "atendimento",
+        id: "agenda-existing-1",
+        patient_id: "patient-1",
+        scheduled_for: "2099-05-14T12:00:00.000Z",
+        status: "aguardando_confirmacao",
+        title: "Maria Silva",
+        updated_at: "2026-05-14T12:00:00.000Z",
+        user_id: "owner-1",
+      },
+    ];
+
+    renderPage();
+
+    const statusBadge = await screen.findByText("Aguardando confirmação");
+    fireEvent.click(statusBadge.closest("button")!);
+
+    expect(await screen.findByText("Revise o horário, atualize o status ou inicie o atendimento a partir deste agendamento.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "cancelado" } });
+    fireEvent.click(screen.getByRole("button", { name: /aplicar status/i }));
+
+    await waitFor(() => {
+      expect(supabaseMocks.updateCalls).toContainEqual({
+        filters: [{ column: "id", value: "agenda-existing-1" }],
+        payload: { status: "cancelado" },
+        table: "agenda_events",
+      });
+      expect(supabaseMocks.insertCalls).toContainEqual({
+        payload: expect.objectContaining({
+          group_id: "group-cancelados",
+          patient_id: "patient-1",
+          status: "cancelado",
+          user_id: "owner-1",
+        }),
+        table: "sessions",
+      });
+    });
+  });
+
+  it("opens the patient summary popup from the compact header", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Maria Silva" });
+
+    fireEvent.click(screen.getByRole("button", { name: /ver mais/i }));
+
+    expect(await screen.findByRole("heading", { name: "Resumo do paciente" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /resumo clínico/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /editar cadastro/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /compartilhar com o paciente/i })).toBeInTheDocument();
   });
 
   it("hides the delete option for non-admin flows", async () => {
