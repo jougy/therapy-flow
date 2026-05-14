@@ -44,6 +44,50 @@ vi.mock("@/integrations/supabase/client", () => {
               status: "inativo",
               updated_at: "2026-04-14T09:00:00.000Z",
             },
+            {
+              cpf: null,
+              date_of_birth: null,
+              gender: null,
+              id: "patient-3",
+              name: "Carla Lima",
+              phone: null,
+              pronoun: null,
+              status: "inativo",
+              updated_at: "2026-04-14T08:00:00.000Z",
+            },
+            {
+              cpf: null,
+              date_of_birth: null,
+              gender: null,
+              id: "patient-4",
+              name: "Bruno Costa",
+              phone: null,
+              pronoun: null,
+              status: "pausado",
+              updated_at: "2026-04-14T07:00:00.000Z",
+            },
+            {
+              cpf: null,
+              date_of_birth: null,
+              gender: null,
+              id: "patient-5",
+              name: "Daniela Rocha",
+              phone: null,
+              pronoun: null,
+              status: "pagamento_pendente",
+              updated_at: "2026-04-14T06:00:00.000Z",
+            },
+            {
+              cpf: null,
+              date_of_birth: null,
+              gender: null,
+              id: "patient-6",
+              name: "Eduardo Alves",
+              phone: null,
+              pronoun: null,
+              status: "alta",
+              updated_at: "2026-04-14T05:00:00.000Z",
+            },
           ];
         case "patient_groups":
           return [
@@ -142,6 +186,23 @@ describe("Index", () => {
     expect(screen.getByText("João Souza")).toBeInTheDocument();
   });
 
+  it("shows all recent patients instead of limiting the dashboard list to five", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Maria Silva")).toBeInTheDocument();
+    expect(screen.getByText("João Souza")).toBeInTheDocument();
+    expect(screen.getByText("Carla Lima")).toBeInTheDocument();
+    expect(screen.getByText("Bruno Costa")).toBeInTheDocument();
+    expect(screen.getByText("Daniela Rocha")).toBeInTheDocument();
+    expect(screen.getByText("Eduardo Alves")).toBeInTheDocument();
+  });
+
   it("shows the patient list when a status filter is applied", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -182,6 +243,24 @@ describe("Index", () => {
     expect(await screen.findByText("1 paciente encontrado")).toBeInTheDocument();
     expect(screen.getByText("Maria Silva")).toBeInTheDocument();
     expect(screen.queryByText("João Souza")).not.toBeInTheDocument();
+  });
+
+  it("shows collaborator job title instead of platform hierarchy in the collaborator filter", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("button", { name: /filtro/i });
+
+    fireEvent.click(screen.getByRole("button", { name: /filtro/i }));
+
+    expect(await screen.findByText("Fisioterapeuta")).toBeInTheDocument();
+    expect(screen.getByText("Assistente")).toBeInTheDocument();
+    expect(screen.queryByText("Profissional")).not.toBeInTheDocument();
   });
 
   it("restores the dashboard cards after returning filters and sorting to the default state", async () => {

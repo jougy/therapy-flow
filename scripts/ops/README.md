@@ -183,6 +183,18 @@ Função dele:
 
 Esse wrapper não publica código nem migrations. Ele serve para operações administrativas diretas no backend remoto já existente.
 
+No `control.sh`, a área `Gerenciamento de contas -> servidor em prod` agora também aceita uma configuração temporária só para a sessão atual do menu:
+
+- opção `config-remote-session`: pede `SUPABASE_URL` e a chave remota;
+- opção `clear-remote-session`: apaga essas credenciais da memória do processo atual;
+- essas credenciais não precisam ser gravadas em arquivo para uso imediato naquela sessão.
+
+Para a chave remota:
+
+- prefira a `Secret key` com formato `sb_secret_...`, disponível em `Settings > API Keys` no dashboard do Supabase;
+- se o projeto ainda estiver no modelo legado, a `service_role` também funciona;
+- não use `anon` nem `publishable` para esse fluxo administrativo.
+
 ### `account-admin-lib.mjs`
 
 Biblioteca auxiliar do gerenciador administrativo.

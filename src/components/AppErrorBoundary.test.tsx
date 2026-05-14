@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
@@ -21,6 +21,12 @@ describe("AppErrorBoundary", () => {
 
     expect(screen.getByText("Algo deu errado nesta tela")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /recarregar/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /debug/i }));
+
+    expect(screen.getByText("Detalhes do erro")).toBeInTheDocument();
+    expect(screen.getByText(/Error: render crash/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copiar/i })).toBeInTheDocument();
 
     consoleErrorSpy.mockRestore();
     consoleGroupSpy.mockRestore();

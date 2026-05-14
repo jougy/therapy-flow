@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, Loader2, LockKeyhole, Send, UserRoundCog } from "lucide-react";
+import { CheckCircle2, FileText, HeartPulse, Loader2, LockKeyhole, MapPin, Phone, Send, UserRoundCog } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
+import {
+  EMPTY_CLINICAL_PROFILE,
+  EMPTY_EMERGENCY_CONTACT,
+  FUNCTIONAL_INDEPENDENCE_OPTIONS,
+  parseClinicalProfile,
+  parseEmergencyContact,
+  type PatientClinicalProfile,
+  type PatientEmergencyContact,
+} from "@/lib/patient-clinical-profile";
+import { SubstanceUseClinicalSection } from "@/components/patients/SubstanceUseClinicalSection";
 import { useParams } from "react-router-dom";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -52,6 +62,8 @@ interface SharedPatientFormData {
   continuous_medications: string | null;
   allergies: string | null;
   clinical_notes: string | null;
+  clinical_profile: Json | null;
+  emergency_contact: Json | null;
 }
 
 interface SharedPatientResponse {
@@ -124,6 +136,8 @@ const CadastroPacienteCompartilhado = () => {
   const [continuousMedications, setContinuousMedications] = useState("");
   const [allergies, setAllergies] = useState("");
   const [clinicalNotes, setClinicalNotes] = useState("");
+  const [clinicalProfile, setClinicalProfile] = useState<PatientClinicalProfile>(EMPTY_CLINICAL_PROFILE);
+  const [emergencyContact, setEmergencyContact] = useState<PatientEmergencyContact>(EMPTY_EMERGENCY_CONTACT);
 
   const canSubmit = useMemo(() => name.trim().length > 0 && !locked, [name, locked]);
   const canUnlock = password.replace(/\D/g, "").length >= 6;
@@ -153,6 +167,16 @@ const CadastroPacienteCompartilhado = () => {
     setContinuousMedications(data.continuous_medications ?? "");
     setAllergies(data.allergies ?? "");
     setClinicalNotes(data.clinical_notes ?? "");
+    setClinicalProfile(parseClinicalProfile(data.clinical_profile));
+    setEmergencyContact(parseEmergencyContact(data.emergency_contact));
+  };
+
+  const updateClinicalProfile = <K extends keyof PatientClinicalProfile>(key: K, value: PatientClinicalProfile[K]) => {
+    setClinicalProfile((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateEmergencyContact = <K extends keyof PatientEmergencyContact>(key: K, value: PatientEmergencyContact[K]) => {
+    setEmergencyContact((current) => ({ ...current, [key]: value }));
   };
 
   const handleUnlock = async () => {
@@ -221,10 +245,15 @@ const CadastroPacienteCompartilhado = () => {
         chronic_conditions: chronicConditions,
         city,
         clinical_notes: clinicalNotes,
+        clinical_profile: clinicalProfile,
         continuous_medications: continuousMedications,
         country,
         date_of_birth: dateOfBirth || null,
         email,
+        emergency_contact: {
+          ...emergencyContact,
+          phone: emergencyContact.phone.replace(/\D/g, ""),
+        },
         gender,
         name,
         neighborhood,
@@ -298,21 +327,35 @@ const CadastroPacienteCompartilhado = () => {
         {!!patientId && !locked && (
           <>
             <Tabs defaultValue="basicos" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="basicos" className="gap-2 text-xs sm:text-sm">
                   <UserRoundCog className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Dados Básicos</span>
                   <span className="sm:hidden">Básicos</span>
                 </TabsTrigger>
-                <TabsTrigger value="endereco" className="text-xs sm:text-sm">Endereço</TabsTrigger>
-                <TabsTrigger value="historico" className="text-xs sm:text-sm">Clínico</TabsTrigger>
+                <TabsTrigger value="contatos" className="gap-2 text-xs sm:text-sm">
+                  <Phone className="h-3.5 w-3.5" />
+                  Contatos
+                </TabsTrigger>
+                <TabsTrigger value="endereco" className="gap-2 text-xs sm:text-sm">
+                  <MapPin className="h-3.5 w-3.5" />
+                  Endereço
+                </TabsTrigger>
+                <TabsTrigger value="saude" className="gap-2 text-xs sm:text-sm">
+                  <HeartPulse className="h-3.5 w-3.5" />
+                  Saúde
+                </TabsTrigger>
+                <TabsTrigger value="historico" className="gap-2 text-xs sm:text-sm">
+                  <FileText className="h-3.5 w-3.5" />
+                  Clínico
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="basicos">
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">Dados básicos</CardTitle>
-                    <CardDescription>Revise e complete seus dados principais.</CardDescription>
+                    <CardDescription>Revise e complete seus dados principais de identificação.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -327,14 +370,6 @@ const CadastroPacienteCompartilhado = () => {
                       <div className="space-y-2">
                         <Label htmlFor="cpf">CPF</Label>
                         <Input id="cpf" value={cpf} disabled readOnly />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="phone">Telefone</Label>
-                        <Input id="phone" value={phone} onChange={(event) => setPhone(formatPhone(event.target.value))} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="email">E-mail</Label>
-                        <Input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="gender">Gênero</Label>
@@ -365,22 +400,114 @@ const CadastroPacienteCompartilhado = () => {
                         <Label htmlFor="rg">RG</Label>
                         <Input id="rg" value={rg} onChange={(event) => setRg(event.target.value)} />
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="blood-type">Tipo sanguíneo</Label>
-                        <Select value={bloodType} onValueChange={setBloodType}>
-                          <SelectTrigger id="blood-type"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                          <SelectContent>
-                            {BLOOD_TYPES.map((type) => (
-                              <SelectItem key={type} value={type}>{type}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
                       <div className="space-y-2 sm:col-span-2">
                         <Label htmlFor="profession">Profissão</Label>
                         <Input id="profession" value={profession} onChange={(event) => setProfession(event.target.value)} />
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="saude">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Saúde base</CardTitle>
+                    <CardDescription>Informações mais estáveis do seu perfil de saúde.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+                      <div>
+                        <h3 className="text-sm font-semibold">Condições e alertas permanentes</h3>
+                        <p className="text-xs text-muted-foreground">Dados que ajudam a equipe a te atender com mais segurança.</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="blood-type">Tipo sanguíneo</Label>
+                          <Select value={bloodType} onValueChange={setBloodType}>
+                            <SelectTrigger id="blood-type"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                            <SelectContent>
+                              {BLOOD_TYPES.map((type) => (
+                                <SelectItem key={type} value={type}>{type}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="alerts">Alertas e restrições importantes</Label>
+                          <Textarea id="alerts" value={clinicalProfile.clinical_alerts} onChange={(event) => updateClinicalProfile("clinical_alerts", event.target.value)} rows={3} />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="chronic">Problemas crônicos</Label>
+                        <Textarea id="chronic" value={chronicConditions} onChange={(event) => setChronicConditions(event.target.value)} rows={3} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="allergies">Alergias</Label>
+                        <Textarea id="allergies" value={allergies} onChange={(event) => setAllergies(event.target.value)} rows={3} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="congenital-genetic-conditions">Deficiências congênitas ou condições genéticas</Label>
+                        <Textarea id="congenital-genetic-conditions" value={clinicalProfile.congenital_genetic_conditions} onChange={(event) => updateClinicalProfile("congenital_genetic_conditions", event.target.value)} rows={3} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="family-history">Histórico familiar relevante</Label>
+                        <Textarea id="family-history" value={clinicalProfile.family_history} onChange={(event) => updateClinicalProfile("family_history", event.target.value)} rows={3} />
+                      </div>
+                    </section>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="contatos">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Contatos</CardTitle>
+                    <CardDescription>Seus contatos pessoais e uma referência para emergência.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+                      <div>
+                        <h3 className="text-sm font-semibold">Contato pessoal</h3>
+                        <p className="text-xs text-muted-foreground">Usado pela clínica para falar com você quando necessário.</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="phone">Telefone</Label>
+                          <Input id="phone" value={phone} onChange={(event) => setPhone(formatPhone(event.target.value))} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="email">E-mail</Label>
+                          <Input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="space-y-4 rounded-xl border border-border/60 bg-background p-4">
+                      <div>
+                        <h3 className="text-sm font-semibold">Contato de emergência</h3>
+                        <p className="text-xs text-muted-foreground">Opcional, mas importante para situações delicadas.</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label htmlFor="emergency-contact-name">Nome</Label>
+                          <Input id="emergency-contact-name" value={emergencyContact.name} onChange={(event) => updateEmergencyContact("name", event.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="emergency-contact-relationship">Parentesco ou vínculo</Label>
+                          <Input id="emergency-contact-relationship" value={emergencyContact.relationship} onChange={(event) => updateEmergencyContact("relationship", event.target.value)} />
+                        </div>
+                      </div>
+                      <div className="space-y-2 max-w-xs">
+                        <Label htmlFor="emergency-contact-phone">Telefone</Label>
+                        <Input
+                          id="emergency-contact-phone"
+                          value={emergencyContact.phone}
+                          onChange={(event) => updateEmergencyContact("phone", formatPhone(event.target.value))}
+                          maxLength={15}
+                        />
+                      </div>
+                    </section>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -439,29 +566,66 @@ const CadastroPacienteCompartilhado = () => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">Histórico clínico</CardTitle>
-                    <CardDescription>Conte ao profissional informações importantes sobre sua saúde.</CardDescription>
+                    <CardDescription>Antecedentes, eventos e trajetória clínica ao longo do tempo.</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="chronic">Problemas crônicos</Label>
-                      <Textarea id="chronic" value={chronicConditions} onChange={(event) => setChronicConditions(event.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="surgeries">Cirurgias realizadas</Label>
-                      <Textarea id="surgeries" value={surgeries} onChange={(event) => setSurgeries(event.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="medications">Medicamentos de uso contínuo</Label>
-                      <Textarea id="medications" value={continuousMedications} onChange={(event) => setContinuousMedications(event.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="allergies">Alergias</Label>
-                      <Textarea id="allergies" value={allergies} onChange={(event) => setAllergies(event.target.value)} rows={3} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="clinical-notes">Observações clínicas</Label>
-                      <Textarea id="clinical-notes" value={clinicalNotes} onChange={(event) => setClinicalNotes(event.target.value)} rows={4} />
-                    </div>
+                  <CardContent className="space-y-6">
+                    <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+                      <div>
+                        <h3 className="text-sm font-semibold">Antecedentes clínicos</h3>
+                        <p className="text-xs text-muted-foreground">Aspectos importantes para reconstruir sua história de saúde.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="diagnoses">Diagnósticos prévios</Label>
+                        <Textarea id="diagnoses" value={clinicalProfile.diagnoses} onChange={(event) => updateClinicalProfile("diagnoses", event.target.value)} rows={3} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="surgeries">Cirurgias e internações</Label>
+                        <Textarea id="surgeries" value={surgeries} onChange={(event) => setSurgeries(event.target.value)} rows={3} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="implants-devices">Implantes, próteses ou dispositivos</Label>
+                        <Textarea id="implants-devices" value={clinicalProfile.implants_devices} onChange={(event) => updateClinicalProfile("implants_devices", event.target.value)} rows={2} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="falls-history">Histórico de quedas</Label>
+                          <Textarea id="falls-history" value={clinicalProfile.falls_history} onChange={(event) => updateClinicalProfile("falls_history", event.target.value)} rows={3} />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="medications">Medicamentos de uso contínuo</Label>
+                        <Textarea id="medications" value={continuousMedications} onChange={(event) => setContinuousMedications(event.target.value)} rows={3} />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="functional-independence">Contexto funcional atual</Label>
+                          <Select
+                            value={clinicalProfile.functional_independence}
+                            onValueChange={(value) => updateClinicalProfile("functional_independence", value as PatientClinicalProfile["functional_independence"])}
+                          >
+                            <SelectTrigger id="functional-independence"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                            <SelectContent>
+                              {FUNCTIONAL_INDEPENDENCE_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mobility-aids">Dispositivos de apoio em uso</Label>
+                          <Textarea id="mobility-aids" value={clinicalProfile.mobility_aids} onChange={(event) => updateClinicalProfile("mobility_aids", event.target.value)} rows={3} />
+                        </div>
+                      </div>
+                      <SubstanceUseClinicalSection
+                        clinicalProfile={clinicalProfile}
+                        updateClinicalProfile={updateClinicalProfile}
+                      />
+                      <div className="space-y-2">
+                        <Label htmlFor="clinical-notes">Observações clínicas</Label>
+                        <Textarea id="clinical-notes" value={clinicalNotes} onChange={(event) => setClinicalNotes(event.target.value)} rows={4} />
+                      </div>
+                    </section>
+
                   </CardContent>
                 </Card>
               </TabsContent>

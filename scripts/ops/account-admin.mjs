@@ -317,6 +317,15 @@ const normalizeStatusOrThrow = (value) => {
 const normalizeEmail = (value) => String(value ?? "").trim().toLowerCase();
 
 const normalizeClinicDocumentOrThrow = (value) => normalizeOwnerClinicDocumentOrThrow(value);
+const SUBACCOUNT_OPERATIONAL_ROLES = ["admin", "professional", "assistant", "estagiario"];
+
+const normalizeOperationalRoleOrThrow = (value) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!SUBACCOUNT_OPERATIONAL_ROLES.includes(normalized)) {
+    throw new Error(`Papel inválido. Use: ${SUBACCOUNT_OPERATIONAL_ROLES.join(", ")}`);
+  }
+  return normalized;
+};
 
 const isMissingConcurrentAccessLimitColumnError = (error) => {
   const message = String(error?.message ?? "").toLowerCase();
@@ -425,17 +434,62 @@ const fetchAccounts = async (client) => {
 };
 
 const printAccountsTable = (accounts) => {
-  console.table(
-    sortAccountsForDisplay(accounts).map((account) => ({
-      clinic: account.clinic_name ?? "",
-      email: account.email,
-      kind: account.managed_kind,
-      plan: account.subscription_plan ?? "",
-      public_code: account.public_code ?? "",
-      status: account.admin_status,
-      user_id: account.user_id,
-    }))
-  );
+  const describeHierarchy = (account) => {
+    if (account.managed_kind === "solo_owner") {
+      return "Owner solo";
+    }
+
+    if (account.managed_kind === "clinic_owner") {
+      return "Owner da clinica";
+    }
+
+    if (account.operational_role === "admin") {
+      return "Administrador da clinica";
+    }
+
+    if (account.operational_role === "professional") {
+      return "Profissional da clinica";
+    }
+
+    if (account.operational_role === "assistant") {
+      return "Assistente da clinica";
+    }
+
+    if (account.operational_role === "estagiario") {
+      return "Estagiario da clinica";
+    }
+
+    return "Subconta da clinica";
+  };
+
+  const describeFunction = (account) => {
+    if (account.managed_kind === "solo_owner" || account.managed_kind === "clinic_owner") {
+      return "owner";
+    }
+
+    return account.operational_role ?? account.account_role ?? "-";
+  };
+
+  const rows = sortAccountsForDisplay(accounts).map((account) => ({
+    codigo: account.public_code ?? "",
+    nome: account.full_name ?? "",
+    email: account.email ?? "",
+    clinica: account.clinic_name ?? "",
+    hierarquia: describeHierarchy(account),
+    funcao: describeFunction(account),
+    plano: account.subscription_plan ?? "",
+    status: account.admin_status ?? "",
+    confirmado: account.confirmed ? "sim" : "nao",
+    ultimo_acesso: account.last_sign_in_at ? new Date(account.last_sign_in_at).toLocaleString("pt-BR") : "-",
+    user_id: account.user_id ?? "",
+  }));
+
+  if (rows.length === 0) {
+    print("Nenhuma conta encontrada.");
+    return;
+  }
+
+  console.table(rows);
 };
 
 const resolveAccount = (accounts, identifier) => {
@@ -701,12 +755,21 @@ const updateOwnerAccess = async (client, account, { cnpj, concurrentAccessLimit,
   }
 };
 
-const updateSubaccountAccess = async (client, account, { email, password, status }) => {
+const updateSubaccountAccess = async (client, account, { email, password, role, status }) => {
   if (email !== undefined) {
     await updateManagedEmail(client, account, email);
   }
   if (password !== undefined) {
     await updateManagedPassword(client, account, password);
+  }
+  if (role !== undefined) {
+    const normalizedRole = normalizeOperationalRoleOrThrow(role);
+    const { error } = await client
+      .from("clinic_memberships")
+      .update({ operational_role: normalizedRole })
+      .eq("id", account.membership_id);
+
+    if (error) throw new Error(error.message);
   }
   if (status !== undefined) {
     await upsertAdminStatus(client, account, status);
@@ -1227,6 +1290,7 @@ const runUpdateSubaccountStatusCommand = async (client, options) => {
   await updateSubaccountAccess(client, account, {
     email: options["new-email"],
     password: options.password,
+    role: options.role,
     status: options.status,
   });
   print(`Subconta atualizada: ${identifier}`);
@@ -1292,8 +1356,8 @@ const printHelp = () => {
   print(`  ${CLI_NAME} create-clinic --email ... --password ... --cnpj ... [--concurrent-limit 4] [--status active|payment_pending|temporarily_paused|banned]`);
   print(`  ${CLI_NAME} update-clinic-owner-access --identifier email|user_id [--cnpj ...] [--new-email ...] [--password ...] [--concurrent-limit ...] [--status ...]`);
   print(`  ${CLI_NAME} delete-clinic (--clinic cpf-ou-cnpj|id | --identifier email|user_id) --yes --confirm-clinic`);
-  print(`  ${CLI_NAME} create-subaccount --clinic cpf-ou-cnpj|id --email ... --password ... [--role admin|professional|assistant] [--status active|payment_pending|temporarily_paused|banned]`);
-  print(`  ${CLI_NAME} update-subaccount-status --identifier email|user_id [--new-email ...] [--password ...] [--status ...]`);
+  print(`  ${CLI_NAME} create-subaccount --clinic cpf-ou-cnpj|id --email ... --password ... [--role admin|professional|assistant|estagiario] [--status active|payment_pending|temporarily_paused|banned]`);
+  print(`  ${CLI_NAME} update-subaccount-status --identifier email|user_id [--new-email ...] [--password ...] [--role admin|professional|assistant|estagiario] [--status ...]`);
   print(`  ${CLI_NAME} delete-subaccount --identifier email|user_id --yes`);
   print("");
   print("Segurança local:");
