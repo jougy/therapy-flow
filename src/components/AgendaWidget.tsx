@@ -101,7 +101,11 @@ const formatAgendaEventDateTime = (value: string) =>
     month: "short",
   });
 
-const AgendaWidget = () => {
+interface AgendaWidgetProps {
+  headerAccessory?: React.ReactNode;
+}
+
+const AgendaWidget = ({ headerAccessory }: AgendaWidgetProps) => {
   const navigate = useNavigate();
   const { can, clinicId, user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -413,10 +417,15 @@ const AgendaWidget = () => {
 
   return (
     <Card className="hover:shadow-md transition-shadow duration-150">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">Agenda</CardTitle>
-        <div className="p-2 rounded-lg bg-primary/10">
-          <CalendarDays className="h-4 w-4 text-primary" />
+      <CardHeader className="space-y-3 pb-2">
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Agenda</CardTitle>
+          <div className="flex items-center gap-2">
+            {headerAccessory}
+            <div className="rounded-lg bg-primary/10 p-2">
+              <CalendarDays className="h-4 w-4 text-primary" />
+            </div>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">

@@ -9,7 +9,12 @@ vi.mock("@/hooks/useAuth", () => ({
 }));
 
 vi.mock("@/components/AgendaWidget", () => ({
-  default: () => <div>Agenda mock</div>,
+  default: ({ headerAccessory }: { headerAccessory?: React.ReactNode }) => (
+    <div>
+      {headerAccessory}
+      <div>Agenda mock</div>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/PatientCard", () => ({
@@ -263,7 +268,7 @@ describe("Index", () => {
     expect(screen.queryByText("Profissional")).not.toBeInTheDocument();
   });
 
-  it("restores the dashboard cards after returning filters and sorting to the default state", async () => {
+  it("restores the homepage utility panel in agenda mode after returning filters and sorting to the default state", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
@@ -272,7 +277,7 @@ describe("Index", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Pacientes Ativos");
+    await screen.findByText("Agenda mock");
 
     fireEvent.click(screen.getByRole("button", { name: /filtro/i }));
     fireEvent.click(screen.getByLabelText("Ativo"));
@@ -285,9 +290,25 @@ describe("Index", () => {
       expect(screen.queryByText("1 paciente encontrado")).not.toBeInTheDocument();
     });
 
-    expect(screen.getByText("Pacientes Ativos")).toBeVisible();
-    expect(screen.getByText("Total de Pacientes")).toBeVisible();
-    expect(screen.getByText("Total de Sessões")).toBeVisible();
     expect(screen.getByText("Agenda mock")).toBeVisible();
+    expect(screen.queryByText("Resumo geral")).not.toBeInTheDocument();
+  });
+
+  it("switches the utility panel from agenda to resumo", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Agenda mock");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Resumo" }));
+
+    expect(await screen.findByText("Resumo geral")).toBeInTheDocument();
+    expect(screen.getByText("Total de pacientes")).toBeInTheDocument();
+    expect(screen.queryByText("Agenda mock")).not.toBeInTheDocument();
   });
 });

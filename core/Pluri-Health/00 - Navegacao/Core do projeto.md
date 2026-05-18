@@ -18,6 +18,7 @@ Este arquivo centraliza a documentacao principal do projeto e aponta para os doc
 ## Navegacao principal
 
 - [[Mapa da vault]]
+- [[README - Produto]]
 - [[Visao geral do produto]]
 - [[Ambiente e operacao]]
 
@@ -31,9 +32,11 @@ Este arquivo centraliza a documentacao principal do projeto e aponta para os doc
 
 - Estrutura inicial de clinica e colaborador no MVP: [[Clinica e colaborador no MVP]]
 - Estrategia viva de TDD, checks e protecoes contra regressao: [[TDD e checks]]
-- Seguranca: [[Configuracoes - Seguranca]]
+- Seguranca de produto: [[Configuracoes - Seguranca]]
+- Auditoria e vulnerabilidades: [[Plano de seguranca - hub]]
 - Desenvolvimento da equipe: [[Configuracoes - Desenvolvimento da equipe]]
 - Plano do editor de hierarquias em Colaboradores e acessos: [[Hierarquias de colaboradores e acessos]]
+- Estrategia de login, usuario global e seletor de clinicas: [[Identidade global do usuario e seletor de clinicas]]
 - Matriz de leitura barata: [[Matriz de contexto do Codex]]
 
 ## Rotas de leitura orientadas
