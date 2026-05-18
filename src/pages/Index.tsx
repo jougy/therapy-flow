@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronUp, ListFilter, Loader2, Plus, Search, Users, X } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Activity, ArrowDown, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDollarSign, Clock3, ListFilter, Loader2, Plus, Search, TrendingDown, Users, WalletCards, X } from "lucide-react";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -65,6 +66,22 @@ const container = {
   show: { opacity: 1, transition: { staggerChildren: 0.05 } },
 };
 
+const toLocalDate = (value: string) => {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
+const formatPercentage = (value: number) => `${Math.round(value)}%`;
+
+const getStartOfWeek = (reference: Date) => {
+  const result = new Date(reference);
+  const day = result.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  result.setDate(result.getDate() + diff);
+  result.setHours(0, 0, 0, 0);
+  return result;
+};
+
 const Index = () => {
   const [search, setSearch] = useState("");
   const [patients, setPatients] = useState<HomePatientRecord[]>([]);
@@ -72,7 +89,7 @@ const Index = () => {
   const [collaborators, setCollaborators] = useState<HomeCollaboratorFilterRecord[]>([]);
   const [sessions, setSessions] = useState<HomeSessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ total: 0, active: 0, sessions: 0 });
+  const [stats, setStats] = useState({ totalPatients: 0, activePatients: 0, totalSessions: 0 });
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedGroupNames, setSelectedGroupNames] = useState<string[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
@@ -90,6 +107,12 @@ const Index = () => {
   const [sessionDateFrom, setSessionDateFrom] = useState("");
   const [sessionDateTo, setSessionDateTo] = useState("");
   const [sortKey, setSortKey] = useState<HomePatientSortKey>(DEFAULT_HOME_PATIENT_SORT_KEY);
+  const [summaryCardIndex, setSummaryCardIndex] = useState(0);
+  const [homePanelView, setHomePanelView] = useState<"agenda" | "resumo">("agenda");
+  const [toolbarFixed, setToolbarFixed] = useState(false);
+  const toolbarSentinelRef = useRef<HTMLDivElement | null>(null);
+  const toolbarPlaceholderRef = useRef<HTMLDivElement | null>(null);
+  const toolbarStartTopRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { clinicId, user } = useAuth();
@@ -276,9 +299,9 @@ const Index = () => {
       setSessions(fetchedSessions);
       setCollaborators(collaboratorRows);
       setStats({
-        total: pats.length,
-        active: pats.filter((p) => p.status === "ativo").length,
-        sessions: fetchedSessions.length,
+        totalPatients: pats.length,
+        activePatients: pats.filter((p) => p.status === "ativo").length,
+        totalSessions: fetchedSessions.length,
       });
       setLoading(false);
     };
@@ -299,19 +322,133 @@ const Index = () => {
 
       setStats((stats) => ({
         ...stats,
-        active: deletedPatient.status === "ativo" ? Math.max(0, stats.active - 1) : stats.active,
-        total: Math.max(0, stats.total - 1),
+        activePatients: deletedPatient.status === "ativo" ? Math.max(0, stats.activePatients - 1) : stats.activePatients,
+        totalPatients: Math.max(0, stats.totalPatients - 1),
       }));
 
       return current.filter((patient) => patient.id !== deletedPatientId);
     });
   }, [deletedPatientId]);
 
-  const dashboardStats = [
-    { title: "Pacientes Ativos", value: String(stats.active), icon: Users, accent: "text-primary", bgAccent: "bg-primary/10" },
-    { title: "Total de Pacientes", value: String(stats.total), icon: Users, accent: "text-primary", bgAccent: "bg-primary/10" },
-    { title: "Total de Sessões", value: String(stats.sessions), icon: CalendarDays, accent: "text-success", bgAccent: "bg-success/10" },
-  ];
+  const summaryCards = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startOfWeek = getStartOfWeek(today);
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const sessionsByDay = sessions.filter((session) => toLocalDate(session.session_date).getTime() === today.getTime()).length;
+    const sessionsByWeek = sessions.filter((session) => toLocalDate(session.session_date) >= startOfWeek).length;
+    const sessionsByMonth = sessions.filter((session) => toLocalDate(session.session_date) >= startOfMonth).length;
+    const cancelledSessions = sessions.filter((session) => session.status === "cancelado").length;
+    const sessionBaseCount = sessions.length || 1;
+
+    return [
+      {
+        title: "Total de pacientes",
+        value: String(stats.totalPatients),
+        detail: "Pacientes cadastrados na clínica",
+        icon: Users,
+        accent: "text-primary",
+        bgAccent: "bg-primary/10",
+      },
+      {
+        title: "Total de atendimentos",
+        value: String(stats.totalSessions),
+        detail: "Histórico total registrado",
+        icon: CalendarDays,
+        accent: "text-success",
+        bgAccent: "bg-success/10",
+      },
+      {
+        title: "Quantidade por dia",
+        value: String(sessionsByDay),
+        detail: "Atendimentos marcados para hoje",
+        icon: Clock3,
+        accent: "text-primary",
+        bgAccent: "bg-primary/10",
+      },
+      {
+        title: "Quantidade por semana",
+        value: String(sessionsByWeek),
+        detail: "Atendimentos desde o início da semana",
+        icon: Activity,
+        accent: "text-primary",
+        bgAccent: "bg-primary/10",
+      },
+      {
+        title: "Quantidade por mês",
+        value: String(sessionsByMonth),
+        detail: "Atendimentos no mês atual",
+        icon: Activity,
+        accent: "text-success",
+        bgAccent: "bg-success/10",
+      },
+      {
+        title: "Pagamentos abertos",
+        value: "Em breve",
+        detail: "Pré-definido para o fluxo financeiro",
+        icon: WalletCards,
+        accent: "text-warning",
+        bgAccent: "bg-warning/10",
+      },
+      {
+        title: "Pagamentos concluídos",
+        value: "Em breve",
+        detail: "Pré-definido para o fluxo financeiro",
+        icon: CircleDollarSign,
+        accent: "text-success",
+        bgAccent: "bg-success/10",
+      },
+      {
+        title: "Índice de cancelamento",
+        value: formatPercentage((cancelledSessions / sessionBaseCount) * 100),
+        detail: `${cancelledSessions} cancelamento(s) registrados`,
+        icon: TrendingDown,
+        accent: "text-warning",
+        bgAccent: "bg-warning/10",
+      },
+    ];
+  }, [sessions, stats.totalPatients, stats.totalSessions]);
+
+  const activeSummaryCard = summaryCards[summaryCardIndex] ?? summaryCards[0];
+  const goToPreviousSummary = () =>
+    setSummaryCardIndex((current) => (current === 0 ? summaryCards.length - 1 : current - 1));
+  const goToNextSummary = () =>
+    setSummaryCardIndex((current) => (current + 1) % summaryCards.length);
+
+  useEffect(() => {
+    const measureToolbarStart = () => {
+      if (!toolbarSentinelRef.current || toolbarFixed) {
+        return;
+      }
+
+      toolbarStartTopRef.current =
+        toolbarSentinelRef.current.getBoundingClientRect().top + window.scrollY;
+    };
+
+    const updateToolbarState = () => {
+      if (toolbarStartTopRef.current === null) {
+        measureToolbarStart();
+      }
+
+      const shouldFix = window.scrollY > (toolbarStartTopRef.current ?? Number.POSITIVE_INFINITY);
+      setToolbarFixed((current) => (current === shouldFix ? current : shouldFix));
+    };
+
+    const initializeToolbarState = () => {
+      measureToolbarStart();
+      updateToolbarState();
+    };
+
+    initializeToolbarState();
+    window.addEventListener("scroll", updateToolbarState, { passive: true });
+    window.addEventListener("resize", initializeToolbarState);
+
+    return () => {
+      window.removeEventListener("scroll", updateToolbarState);
+      window.removeEventListener("resize", initializeToolbarState);
+    };
+  }, [toolbarFixed]);
 
   if (loading) {
     return (
@@ -323,18 +460,31 @@ const Index = () => {
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-lg">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar paciente, CPF ou telefone..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-            aria-label="Buscar paciente por nome, CPF ou telefone"
-          />
-        </div>
-        <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
+      <div ref={toolbarSentinelRef} aria-hidden="true" className="h-0" />
+      <div
+        ref={toolbarPlaceholderRef}
+        aria-hidden="true"
+        className={toolbarFixed ? "block h-[70px] sm:h-[62px]" : "hidden"}
+      />
+      <div
+        className={
+          toolbarFixed
+            ? "!mt-0 fixed left-0 right-0 top-0 z-30 border-b border-border/60 bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:px-6"
+            : "rounded-xl border border-border/60 bg-background/95 px-2 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:px-3"
+        }
+      >
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[200px] max-w-lg">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar paciente, CPF ou telefone..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+              aria-label="Buscar paciente por nome, CPF ou telefone"
+            />
+          </div>
+          <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" aria-label={activeFilterCount > 0 ? `Filtro, ${activeFilterCount} ativos` : "Filtro"}>
               <ListFilter className="h-4 w-4" />
@@ -581,24 +731,25 @@ const Index = () => {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
-        <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
-          <SelectTrigger className="w-[220px]" aria-label="Ordenar pacientes">
-            <div className="flex items-center gap-2">
-              <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-              <SelectValue />
-            </div>
-          </SelectTrigger>
-          <SelectContent>
-            {HOME_PATIENT_SORT_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button onClick={() => navigate("/pacientes/novo")}>
-          <Plus className="h-4 w-4 mr-2" />
-          <span>Novo Paciente</span>
-        </Button>
+          </Dialog>
+          <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
+            <SelectTrigger className="w-[220px]" aria-label="Ordenar pacientes">
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                <SelectValue />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              {HOME_PATIENT_SORT_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={() => navigate("/pacientes/novo")}>
+            <Plus className="h-4 w-4 mr-2" />
+            <span>Novo Paciente</span>
+          </Button>
+        </div>
       </div>
 
       {filtersAreActive && (
@@ -654,25 +805,93 @@ const Index = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {dashboardStats.map((stat) => (
-              <div key={stat.title} className="hidden md:block">
-                <Card className="hover:shadow-md transition-shadow duration-150">
-                  <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-                    <div className={`p-2 rounded-lg ${stat.bgAccent}`}>
-                      <stat.icon className={`h-4 w-4 ${stat.accent}`} />
+          <div className="xl:max-w-[420px]">
+            {homePanelView === "agenda" ? (
+              <AgendaWidget
+                headerAccessory={(
+                  <ToggleGroup
+                    type="single"
+                    value={homePanelView}
+                    onValueChange={(value) => {
+                      if (value === "agenda" || value === "resumo") {
+                        setHomePanelView(value);
+                      }
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full border bg-background/80 p-0.5"
+                    aria-label="Alternar painel da homepage"
+                  >
+                    <ToggleGroupItem value="agenda" className="h-7 rounded-full px-2.5 text-[11px]">
+                      Agenda
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="resumo" className="h-7 rounded-full px-2.5 text-[11px]">
+                      Resumo
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                )}
+              />
+            ) : (
+              <Card className="overflow-hidden border-dashed bg-card/70">
+                <CardContent className="p-3 sm:p-4">
+                  <div className="mb-3 flex items-center justify-end">
+                    <ToggleGroup
+                      type="single"
+                      value={homePanelView}
+                      onValueChange={(value) => {
+                        if (value === "agenda" || value === "resumo") {
+                          setHomePanelView(value);
+                        }
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full border bg-background/80 p-0.5"
+                      aria-label="Alternar painel da homepage"
+                    >
+                      <ToggleGroupItem value="agenda" className="h-7 rounded-full px-2.5 text-[11px]">
+                        Agenda
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="resumo" className="h-7 rounded-full px-2.5 text-[11px]">
+                        Resumo
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </div>
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={goToPreviousSummary} aria-label="Resumo anterior">
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Resumo geral</p>
+                      <div className="mt-2 flex min-w-0 items-center gap-2">
+                        <div className={`rounded-md p-1.5 ${activeSummaryCard.bgAccent}`}>
+                          <activeSummaryCard.icon className={`h-3.5 w-3.5 ${activeSummaryCard.accent}`} />
+                        </div>
+                        <p className="truncate text-sm font-medium text-foreground">{activeSummaryCard.title}</p>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <p className="text-lg font-semibold">{activeSummaryCard.value}</p>
+                        <p className="text-xs text-muted-foreground">{activeSummaryCard.detail}</p>
+                      </div>
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{stat.value}</div>
-                  </CardContent>
-                </Card>
-              </div>
-            ))}
-            <div className="md:col-span-2 lg:col-span-1">
-              <AgendaWidget />
-            </div>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={goToNextSummary} aria-label="Próximo resumo">
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="mt-3 flex justify-center gap-1.5" aria-label="Opções de resumo geral">
+                    {summaryCards.map((stat, index) => (
+                      <button
+                        key={stat.title}
+                        type="button"
+                        className={`h-1.5 rounded-full transition-all ${index === summaryCardIndex ? "w-4 bg-primary" : "w-1.5 bg-muted-foreground/30"}`}
+                        onClick={() => setSummaryCardIndex(index)}
+                        aria-label={`Mostrar ${stat.title}`}
+                        aria-current={index === summaryCardIndex ? "true" : undefined}
+                      />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {recentPatients.length > 0 && (
@@ -685,7 +904,6 @@ const Index = () => {
               </div>
             </div>
           )}
-
           {recentPatients.length === 0 && (
             <Card className="p-8 text-center">
               <p className="text-muted-foreground">Nenhum paciente cadastrado ainda.</p>

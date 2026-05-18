@@ -24,6 +24,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 ### Produto e direcao
 
+- [[README - Produto]]
 - [[Visao geral do produto]]
 - [[Core do projeto]]
 - [[Codex Brain]]
@@ -33,6 +34,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 - [[Clinica e colaborador no MVP]]
 - [[Hierarquias de colaboradores e acessos]]
+- [[Identidade global do usuario e seletor de clinicas]]
 - [[Compartilhamento de fichas de atendimento]]
 - [[Grupos reutilizaveis de atendimentos]]
 - [[Acesso mestre e painel administrativo global]]
@@ -46,6 +48,14 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Backup do Supabase antes de deploy]]
 - [[TDD e checks]]
 
+### Seguranca e vulnerabilidades
+
+- [[Plano de seguranca - hub]]
+- [[Plano de seguranca - visao geral]]
+- [[Modelo de ameacas e ativos sensiveis]]
+- [[Roteiro de testes de seguranca]]
+- [[Matriz de riscos de seguranca]]
+
 ### Implementacao guiada e referencia
 
 - [[Prompt - Homepage filtro e ordenacao de pacientes]]
@@ -57,18 +67,21 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Visao geral do produto]]: apresentacao curta do projeto.
 - [[Ambiente e operacao]]: ambiente local, fluxo tecnico e deploy.
 - [[TDD e checks]]: estrategia de protecao contra regressao.
+- [[Plano de seguranca - hub]]: plano de auditoria, vulnerabilidades e subplanos por camada.
 
 ## Notas por tema
 
 ### Produto
 
+- [[README - Produto]]
 - [[Clinica e colaborador no MVP]]
+- [[Identidade global do usuario e seletor de clinicas]]
+- [[Hierarquias de colaboradores e acessos]]
 - [[Compartilhamento de fichas de atendimento]]
 - [[Grupos reutilizaveis de atendimentos]]
 - [[Acesso mestre e painel administrativo global]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
-- [[Hierarquias de colaboradores e acessos]]
 
 ### Engenharia
 
@@ -77,6 +90,14 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Backup do Supabase antes de deploy]]
 - [[TDD e checks]]
 - [[Inventario de inputs]]
+
+### Seguranca
+
+- [[Plano de seguranca - hub]]
+- [[Checklist rapido de auditoria]]
+- [[Subplano Supabase Postgres RLS e RPCs]]
+- [[Subplano autorizacao RBAC clinicas e colaboradores]]
+- [[Subplano formularios publicos e compartilhamentos]]
 
 ### Prompts e execucao orientada
 

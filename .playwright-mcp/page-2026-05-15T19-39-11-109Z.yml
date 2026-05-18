@@ -1,0 +1,39 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - heading "Pronto Health - Fisio" [level=1] [ref=e6]
+      - paragraph [ref=e7]: Gestão clínica simplificada
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - heading "Entrar" [level=3] [ref=e10]
+        - paragraph [ref=e11]: Acesso restrito. As contas são liberadas internamente pelo administrador.
+      - generic [ref=e12]:
+        - generic [ref=e14]:
+          - img [ref=e15]
+          - generic [ref=e18]:
+            - paragraph [ref=e19]: Cadastro público desativado
+            - paragraph [ref=e20]: Se você ainda não tem acesso, a liberação precisa ser feita internamente pelo administrador da plataforma.
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - text: CPF ou CNPJ do owner
+            - generic [ref=e23]:
+              - img [ref=e24]
+              - textbox "CPF ou CNPJ do owner" [active] [ref=e28]:
+                - /placeholder: 000.000.000-00 ou 00.000.000/0000-00
+          - generic [ref=e29]:
+            - text: E-mail
+            - textbox "E-mail" [ref=e30]:
+              - /placeholder: seu@email.com
+          - generic [ref=e31]:
+            - text: Senha
+            - generic [ref=e32]:
+              - textbox "Senha" [ref=e33]:
+                - /placeholder: ••••••••
+              - button [ref=e34] [cursor=pointer]:
+                - img [ref=e35]
+          - button "Entrar" [disabled]:
+            - img
+            - text: Entrar
