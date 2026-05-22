@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { buildAgendaEventPayload, resolvePatientSelection } from "@/lib/agenda-events";
+import {
+  AGENDA_PAST_EVENT_ERROR_MESSAGE,
+  assertAgendaEventDateTimeIsFuture,
+  buildAgendaEventPayload,
+  resolvePatientSelection,
+} from "@/lib/agenda-events";
 
 describe("agenda event helpers", () => {
   it("builds an appointment payload from the selected patient", () => {
     const payload = buildAgendaEventPayload({
       clinicId: "clinic-1",
       eventType: "atendimento",
-      selectedDate: new Date("2026-03-24T00:00:00.000Z"),
+      selectedDate: new Date("2099-03-24T00:00:00.000Z"),
       selectedPatient: { id: "patient-1", name: "Ana Clara" },
       time: "09:30",
       title: "",
@@ -29,7 +34,7 @@ describe("agenda event helpers", () => {
     const payload = buildAgendaEventPayload({
       clinicId: "clinic-1",
       eventType: "reuniao",
-      selectedDate: new Date("2026-03-24T00:00:00.000Z"),
+      selectedDate: new Date("2099-03-24T00:00:00.000Z"),
       selectedPatient: null,
       time: "14:00",
       title: "Reunião com parceiros",
@@ -52,5 +57,14 @@ describe("agenda event helpers", () => {
     ]);
 
     expect(patient).toEqual({ id: "patient-1", name: "Ana Clara" });
+  });
+
+  it("rejects agenda events in the past", () => {
+    expect(() =>
+      assertAgendaEventDateTimeIsFuture(
+        new Date("2026-05-20T08:59:00.000Z"),
+        new Date("2026-05-20T09:00:00.000Z")
+      )
+    ).toThrow(AGENDA_PAST_EVENT_ERROR_MESSAGE);
   });
 });

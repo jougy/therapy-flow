@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
@@ -17,18 +17,39 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { GroupColorPaletteField, type ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import { SessionShareDialog } from "@/components/SessionShareDialog";
+import AgendaWidget from "@/components/AgendaWidget";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
-import { buildAgendaEventPayload, type AgendaEventStatus } from "@/lib/agenda-events";
+import {
+  AGENDA_EVENTS_UPDATED_EVENT,
+  AGENDA_PAST_EVENT_ERROR_MESSAGE,
+  assertAgendaEventDateTimeIsFuture,
+  buildAgendaEventPayload,
+  getAgendaEventDateTime,
+  isAgendaEventDateTimeInPast,
+  notifyAgendaEventsUpdated,
+  type AgendaEventStatus,
+} from "@/lib/agenda-events";
 import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { PatientGroupStatus } from "@/lib/patient-groups";
 import { getSessionPersonLabel } from "@/lib/session-people";
 import { getSessionPreviewContent, getSessionPreviewIndicators } from "@/lib/session-preview";
 import { EDITABLE_PATIENT_STATUS_OPTIONS, type EditablePatientStatus } from "@/lib/patient-statuses";
+import {
+  buildPatientOperationalSummary,
+  formatMoneyCents,
+  getArrivalDelayMinutes,
+  getPaymentAdjustmentCents,
+  getPaymentAdjustmentPercent,
+  getPaymentStatusLabel,
+  getSessionBalanceCents,
+  getSessionOriginalAmountCents,
+  hasPaymentAdjustment,
+} from "@/lib/session-operations";
 import {
   fetchClinicShareCollaborators,
   fetchSessionShareSummaries,
@@ -70,6 +91,15 @@ type PatientStatus = EditablePatientStatus;
 type PatientStatusSelectValue = PatientStatus | "delete";
 type AgendaStatusAction = AgendaEventStatus | "delete";
 type PatientGroupKind = "custom" | "default" | "cancelados";
+
+const dashboardColors = {
+  amber: "#f59e0b",
+  blue: "#0ea5e9",
+  emerald: "#10b981",
+  rose: "#f43f5e",
+  slate: "#64748b",
+  zinc: "#a1a1aa",
+};
 
 const GROUP_STATUSES: { value: PatientGroupStatus; label: string }[] = [
   { value: "em_andamento", label: "Em andamento" },
@@ -166,6 +196,16 @@ const getTimeInputValue = (value: string) => {
   return `${hours}:${minutes}`;
 };
 
+const getDefaultAgendaInputs = () => {
+  const nextSlot = new Date();
+  nextSlot.setMinutes(nextSlot.getMinutes() + 30, 0, 0);
+
+  return {
+    date: getDateInputValue(nextSlot),
+    time: getTimeInputValue(nextSlot.toISOString()),
+  };
+};
+
 const getAgendaEventStatus = (event: AgendaEvent | null | undefined): AgendaEventStatus => {
   const status = event?.status;
 
@@ -185,6 +225,46 @@ const SummaryField = ({ label, value }: { label: string; value?: string | null }
     <p className="mt-1 truncate text-sm font-medium text-foreground">{value?.trim() || "—"}</p>
   </div>
 );
+
+const SummaryInlineChart = ({
+  segments,
+}: {
+  segments: { color: string; label: string; value: number }[];
+}) => {
+  const normalizedSegments = segments.filter((segment) => Number.isFinite(segment.value) && segment.value > 0);
+  const total = normalizedSegments.reduce((sum, segment) => sum + segment.value, 0);
+
+  if (total <= 0) {
+    return (
+      <div className="mt-4 text-xs text-muted-foreground">
+        Sem dados suficientes
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto mt-3 w-full max-w-[40rem] space-y-2.5 md:mt-3.5 md:max-w-[28rem]">
+      <div className="flex h-2.5 overflow-hidden rounded-full bg-muted md:h-2">
+        {normalizedSegments.map((segment) => (
+          <div
+            key={segment.label}
+            className="h-full"
+            style={{ backgroundColor: segment.color, width: `${Math.max(6, (segment.value / total) * 100)}%` }}
+            title={`${segment.label}: ${segment.value}`}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground md:gap-x-2.5">
+        {normalizedSegments.map((segment) => (
+          <span key={segment.label} className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: segment.color }} />
+            {segment.label}: {segment.value} ({Math.round((segment.value / total) * 100)}%)
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: number; score: number }) => {
   const color = score <= 3 ? "bg-success" : score <= 6 ? "bg-warning" : "bg-destructive";
@@ -230,6 +310,14 @@ const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemp
   );
 };
 
+const formatOperationalTime = (value: string | null | undefined) =>
+  value
+    ? new Date(value).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
+
 const SessionCard = ({
   baseSchema,
   borderColor,
@@ -261,6 +349,15 @@ const SessionCard = ({
 }) => {
   const indicators = getSessionPreviewIndicators(session, baseSchema);
   const shareCount = shareSummary?.share_count ?? 0;
+  const delayMinutes = getArrivalDelayMinutes(session);
+  const balanceCents = getSessionBalanceCents(session);
+  const originalAmountCents = getSessionOriginalAmountCents(session);
+  const adjustmentCents = getPaymentAdjustmentCents(session);
+  const adjustmentPercent = getPaymentAdjustmentPercent(session);
+  const sessionHasPaymentAdjustment = hasPaymentAdjustment(session);
+  const hasOperationalInfo =
+    Boolean(session.scheduled_start_at || session.patient_arrived_at || session.amount_charged_cents || session.amount_paid_cents) ||
+    session.payment_status !== "nao_cobrado";
 
   return (
     <Card
@@ -324,6 +421,34 @@ const SessionCard = ({
                 </Badge>
               )}
             </div>
+            {hasOperationalInfo ? (
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {session.scheduled_start_at || session.patient_arrived_at ? (
+                  <span className="rounded-full bg-muted px-2 py-1" title={session.payment_adjustment_reason ?? undefined}>
+                    Agendado {formatOperationalTime(session.scheduled_start_at)} · Chegou {formatOperationalTime(session.patient_arrived_at)}
+                    {delayMinutes && delayMinutes > 0 ? ` · atraso ${delayMinutes}min` : ""}
+                  </span>
+                ) : null}
+                {session.payment_status !== "nao_cobrado" || session.amount_charged_cents || session.amount_paid_cents ? (
+                  <span className="rounded-full bg-muted px-2 py-1">
+                    {getPaymentStatusLabel(session.payment_status)} · {formatMoneyCents(session.amount_paid_cents)} de{" "}
+                    {sessionHasPaymentAdjustment ? (
+                      <>
+                        <span className="line-through">{formatMoneyCents(originalAmountCents)}</span>{" "}
+                        {formatMoneyCents(session.amount_charged_cents)}
+                        <span className={adjustmentCents > 0 ? "ml-1 font-semibold text-success" : "ml-1 font-semibold text-destructive"}>
+                          {adjustmentCents > 0 ? "+" : ""}
+                          {adjustmentPercent}%
+                        </span>
+                      </>
+                    ) : (
+                      formatMoneyCents(session.amount_charged_cents)
+                    )}
+                    {balanceCents > 0 ? ` · aberto ${formatMoneyCents(balanceCents)}` : ""}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             <SessionTabsPreview baseSchema={baseSchema} session={session} />
           </div>
           {indicators.length > 0 && (
@@ -371,6 +496,7 @@ const PacienteDetalhe = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { can, clinicId, operationalRole, user } = useAuth();
+  const canViewFinancialData = can("treasury.manage");
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [groupSuggestions, setGroupSuggestions] = useState<GroupSuggestion[]>([]);
@@ -398,12 +524,12 @@ const PacienteDetalhe = () => {
   const [patientInfoDialogOpen, setPatientInfoDialogOpen] = useState(false);
   const [summaryCardIndex, setSummaryCardIndex] = useState(0);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
-  const [agendaDate, setAgendaDate] = useState(getDateInputValue());
-  const [agendaTime, setAgendaTime] = useState("09:00");
+  const [agendaDate, setAgendaDate] = useState(() => getDefaultAgendaInputs().date);
+  const [agendaTime, setAgendaTime] = useState(() => getDefaultAgendaInputs().time);
   const [savingAgendaEvent, setSavingAgendaEvent] = useState(false);
   const [selectedAgendaEvent, setSelectedAgendaEvent] = useState<AgendaEvent | null>(null);
   const [selectedAgendaStatusAction, setSelectedAgendaStatusAction] = useState<AgendaStatusAction>("aguardando_confirmacao");
-  const [selectedAgendaDate, setSelectedAgendaDate] = useState(getDateInputValue());
+  const [selectedAgendaDate, setSelectedAgendaDate] = useState(() => getDefaultAgendaInputs().date);
   const [selectedAgendaTime, setSelectedAgendaTime] = useState("09:00");
   const [savingAgendaDetails, setSavingAgendaDetails] = useState(false);
   const [generatingShareLink, setGeneratingShareLink] = useState(false);
@@ -518,9 +644,38 @@ const PacienteDetalhe = () => {
     setLoading(false);
   }, [clinicId, id, operationalRole, user?.id]);
 
+  const fetchPatientAgendaEvents = useCallback(async () => {
+    if (!id) return;
+
+    const { data, error } = await supabase
+      .from("agenda_events")
+      .select("*")
+      .eq("patient_id", id)
+      .order("scheduled_for", { ascending: true });
+
+    if (error) {
+      toast({ title: "Erro ao atualizar agendamentos", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setAgendaEvents((data ?? []) as AgendaEvent[]);
+  }, [id]);
+
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const handleAgendaEventsUpdated = () => {
+      void fetchPatientAgendaEvents();
+    };
+
+    window.addEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleAgendaEventsUpdated);
+
+    return () => {
+      window.removeEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleAgendaEventsUpdated);
+    };
+  }, [fetchPatientAgendaEvents]);
 
   const resolvedClinicColorSlots = useMemo<ClinicGroupColorSlot[]>(
     () =>
@@ -1094,35 +1249,105 @@ const PacienteDetalhe = () => {
   );
   const latestSession = sortedSessionsByDate[0] ?? null;
   const completedSessionsCount = sessions.filter((session) => session.status === "concluído").length;
+  const operationalSummary = buildPatientOperationalSummary(sessions);
+  const paymentSummaryAdjustmentCents = operationalSummary.chargedCents - operationalSummary.originalChargedCents;
+  const paymentSummaryAdjustmentPercent =
+    operationalSummary.originalChargedCents > 0
+      ? Math.round((paymentSummaryAdjustmentCents / operationalSummary.originalChargedCents) * 100)
+      : 0;
+  const hasPaymentSummaryAdjustment = operationalSummary.originalChargedCents > 0 && paymentSummaryAdjustmentCents !== 0;
   const patientRegistrationStatus = patient.registration_complete ? "Cadastro concluído" : "Cadastro pendente";
-  const visibleUpcomingAgendaEvents = agendaEvents
-    .filter((event) => new Date(event.scheduled_for).getTime() >= Date.now())
-    .filter((event) => getAgendaEventStatus(event) !== "cancelado")
+  const activeAgendaEvents = agendaEvents.filter((event) => getAgendaEventStatus(event) !== "cancelado");
+  const nowTimestamp = Date.now();
+  const overdueAgendaEvents = activeAgendaEvents
+    .filter((event) => new Date(event.scheduled_for).getTime() < nowTimestamp)
+    .sort((left, right) => right.scheduled_for.localeCompare(left.scheduled_for));
+  const futureAgendaEvents = activeAgendaEvents
+    .filter((event) => new Date(event.scheduled_for).getTime() >= nowTimestamp)
     .sort((left, right) => left.scheduled_for.localeCompare(right.scheduled_for));
-  const upcomingAgendaEvent = visibleUpcomingAgendaEvents[0] ?? null;
-  const summaryCards = [
+  const visiblePatientAgendaEvents = [...overdueAgendaEvents, ...futureAgendaEvents];
+  const upcomingAgendaEvent = visiblePatientAgendaEvents[0] ?? null;
+  const futureAgendaCount = futureAgendaEvents.length;
+  const agendaDialogDateTime = agendaDate && agendaTime ? getAgendaEventDateTime(new Date(`${agendaDate}T12:00:00`), agendaTime) : null;
+  const isAgendaDialogDateTimePast = agendaDialogDateTime ? isAgendaEventDateTimeInPast(agendaDialogDateTime) : false;
+  const selectedAgendaDateTime =
+    selectedAgendaDate && selectedAgendaTime ? new Date(`${selectedAgendaDate}T${selectedAgendaTime || "00:00"}:00`) : null;
+  const isSelectedAgendaDateTimePast = selectedAgendaDateTime ? isAgendaEventDateTimeInPast(selectedAgendaDateTime) : false;
+  const canceledSessionsCount = sessions.filter((session) => session.status === "cancelado").length;
+  const draftSessionsCount = sessions.filter((session) => session.status === "rascunho").length;
+  const scheduledSessionsCount = sessions.filter((session) => session.scheduled_start_at).length;
+  const absentSessionsCount = operationalSummary.absences;
+  const delayedSessionsCount = sessions.filter((session) => {
+    const delay = getArrivalDelayMinutes(session);
+    return delay !== null && delay > 0;
+  }).length;
+  const onTimeSessionsCount = Math.max(scheduledSessionsCount - absentSessionsCount - delayedSessionsCount, 0);
+  const patientPaymentChartSegments = [
+    { color: dashboardColors.emerald, label: "Pago", value: sessions.filter((session) => getSessionBalanceCents(session) === 0 && (session.amount_charged_cents ?? 0) > 0 && (session.amount_paid_cents ?? 0) === (session.amount_charged_cents ?? 0)).length },
+    { color: dashboardColors.blue, label: "Crédito", value: sessions.filter((session) => getSessionBalanceCents(session) === 0 && getSessionOriginalAmountCents(session) > 0 && (session.amount_paid_cents ?? 0) > (session.amount_charged_cents ?? 0)).length },
+    { color: dashboardColors.rose, label: "Devendo", value: sessions.filter((session) => getSessionBalanceCents(session) > 0 && (session.amount_paid_cents ?? 0) > 0).length },
+    { color: dashboardColors.amber, label: "Pendente", value: sessions.filter((session) => getSessionBalanceCents(session) > 0 && (session.amount_paid_cents ?? 0) <= 0).length },
+    { color: dashboardColors.slate, label: "Não cobrado", value: sessions.filter((session) => (session.amount_charged_cents ?? 0) <= 0 && session.payment_status !== "cortesia").length },
+  ];
+  const patientAbsenteeismChartSegments = [
+    { color: dashboardColors.rose, label: "Faltou", value: absentSessionsCount },
+    { color: dashboardColors.amber, label: "Atrasou", value: delayedSessionsCount },
+    { color: dashboardColors.emerald, label: "No horário", value: onTimeSessionsCount },
+  ];
+  const summaryCards: { detail: ReactNode; label: string; value: string; chart?: ReactNode }[] = [
     {
-      detail: `atendimento${sessions.length !== 1 ? "s" : ""} no histórico`,
-      label: "Resumo",
-      value: String(sessions.length),
-    },
-    {
-      detail: `atendimento${completedSessionsCount !== 1 ? "s" : ""}`,
-      label: "Concluídos",
-      value: String(completedSessionsCount),
+      detail: (
+        <span className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          <span>{canceledSessionsCount} cancelamento{canceledSessionsCount !== 1 ? "s" : ""}</span>
+          <span className="hidden sm:inline">·</span>
+          <span>média {operationalSummary.averageDelayMinutes} min</span>
+          <span className="hidden sm:inline">·</span>
+          <span>{completedSessionsCount} concluído{completedSessionsCount !== 1 ? "s" : ""}</span>
+          <span className="hidden sm:inline">·</span>
+          <span>{draftSessionsCount} rascunho{draftSessionsCount !== 1 ? "s" : ""}</span>
+        </span>
+      ),
+      label: "Absenteísmo",
+      value: `${scheduledSessionsCount} atendimento${scheduledSessionsCount !== 1 ? "s" : ""}`,
+      chart: <SummaryInlineChart segments={patientAbsenteeismChartSegments} />,
     },
     {
       detail: latestSession?.status ?? "Sem atendimento",
       label: "Mais recente",
       value: formatSessionMetaDate(latestSession?.session_date ?? null),
     },
+    ...(canViewFinancialData
+      ? [{
+          detail: (
+            <>
+              Pago {formatMoneyCents(operationalSummary.paidCents)} · cobrado{" "}
+              {hasPaymentSummaryAdjustment ? (
+                <>
+                  <span className="line-through">{formatMoneyCents(operationalSummary.originalChargedCents)}</span>{" "}
+                  {formatMoneyCents(operationalSummary.chargedCents)}
+                  <span className={paymentSummaryAdjustmentCents > 0 ? "ml-1 font-semibold text-success" : "ml-1 font-semibold text-destructive"}>
+                    {paymentSummaryAdjustmentCents > 0 ? "+" : ""}
+                    {paymentSummaryAdjustmentPercent}%
+                  </span>
+                </>
+              ) : (
+                formatMoneyCents(operationalSummary.chargedCents)
+              )}
+            </>
+          ),
+          label: "Pagamentos",
+          value: operationalSummary.creditCents > 0 ? `${formatMoneyCents(operationalSummary.creditCents)} crédito` : formatMoneyCents(operationalSummary.openBalanceCents),
+          chart: <SummaryInlineChart segments={patientPaymentChartSegments} />,
+        }]
+      : []),
   ];
   const activeSummaryCard = summaryCards[summaryCardIndex] ?? summaryCards[0];
   const goToPreviousSummary = () => setSummaryCardIndex((current) => (current === 0 ? summaryCards.length - 1 : current - 1));
   const goToNextSummary = () => setSummaryCardIndex((current) => (current + 1) % summaryCards.length);
   const handleOpenPatientAgendaDialog = () => {
-    setAgendaDate(getDateInputValue());
-    setAgendaTime("09:00");
+    const nextDefaults = getDefaultAgendaInputs();
+    setAgendaDate(nextDefaults.date);
+    setAgendaTime(nextDefaults.time);
     setAgendaDialogOpen(true);
   };
   const handleOpenAgendaDetails = (event: AgendaEvent) => {
@@ -1137,6 +1362,8 @@ const PacienteDetalhe = () => {
     }
 
     try {
+      const selectedDateTime = getAgendaEventDateTime(new Date(`${agendaDate}T12:00:00`), agendaTime);
+      assertAgendaEventDateTimeIsFuture(selectedDateTime);
       setSavingAgendaEvent(true);
       const payload = buildAgendaEventPayload({
         clinicId,
@@ -1160,6 +1387,7 @@ const PacienteDetalhe = () => {
 
       setAgendaEvents((current) => [...current, data as AgendaEvent].sort((left, right) => left.scheduled_for.localeCompare(right.scheduled_for)));
       setAgendaDialogOpen(false);
+      notifyAgendaEventsUpdated();
       toast({ title: "Agendamento confirmado" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Nao foi possivel salvar o agendamento.";
@@ -1185,6 +1413,7 @@ const PacienteDetalhe = () => {
 
         setAgendaEvents((current) => current.filter((event) => event.id !== selectedAgendaEvent.id));
         setSelectedAgendaEvent(null);
+        notifyAgendaEventsUpdated();
         toast({ title: "Agendamento excluído" });
         return;
       }
@@ -1235,6 +1464,7 @@ const PacienteDetalhe = () => {
         }
       }
 
+      notifyAgendaEventsUpdated();
       toast({ title: "Status do agendamento atualizado" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Nao foi possivel atualizar o agendamento.";
@@ -1251,6 +1481,7 @@ const PacienteDetalhe = () => {
     try {
       setSavingAgendaDetails(true);
       const nextDate = new Date(`${selectedAgendaDate}T${selectedAgendaTime || "00:00"}:00`);
+      assertAgendaEventDateTimeIsFuture(nextDate);
       const { data, error } = await supabase
         .from("agenda_events")
         .update({ scheduled_for: nextDate.toISOString() })
@@ -1269,6 +1500,7 @@ const PacienteDetalhe = () => {
           .sort((left, right) => left.scheduled_for.localeCompare(right.scheduled_for))
       );
       setSelectedAgendaEvent(updatedEvent);
+      notifyAgendaEventsUpdated();
       toast({ title: "Data e horário atualizados" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Nao foi possivel trocar data/horario.";
@@ -1373,20 +1605,21 @@ const PacienteDetalhe = () => {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]">
-        <div className="rounded-2xl border bg-card p-4">
-          <div className="flex items-center gap-2 sm:gap-4">
-            <Button type="button" variant="outline" size="icon" onClick={goToPreviousSummary} aria-label="Resumo anterior">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]">
+        <div className="overflow-hidden rounded-2xl border bg-card p-4">
+          <div className="grid grid-cols-[44px,minmax(0,1fr),44px] items-center gap-2 md:flex md:gap-4">
+            <Button type="button" variant="outline" size="icon" onClick={goToPreviousSummary} aria-label="Resumo anterior" className="h-11 w-11 md:h-10 md:w-10">
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <div className="min-w-0 flex-1 text-center">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{activeSummaryCard.label}</p>
-              <p className={activeSummaryCard.label === "Mais recente" ? "mt-2 truncate text-lg font-semibold" : "mt-2 text-2xl font-semibold"}>
+              <p className={activeSummaryCard.label === "Mais recente" ? "mt-2 truncate text-lg font-semibold" : "mt-2 break-words text-[clamp(1.35rem,7vw,1.875rem)] font-semibold leading-tight md:truncate md:text-2xl"}>
                 {activeSummaryCard.value}
               </p>
-              <p className="truncate text-sm text-muted-foreground">{activeSummaryCard.detail}</p>
+              <p className="mx-auto mt-1 max-w-full text-balance text-sm leading-snug text-muted-foreground md:truncate">{activeSummaryCard.detail}</p>
+              {activeSummaryCard.chart}
             </div>
-            <Button type="button" variant="outline" size="icon" onClick={goToNextSummary} aria-label="Próximo resumo">
+            <Button type="button" variant="outline" size="icon" onClick={goToNextSummary} aria-label="Próximo resumo" className="h-11 w-11 md:h-10 md:w-10">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -1404,54 +1637,7 @@ const PacienteDetalhe = () => {
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-card p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agendamento</p>
-              <h3 className="mt-1 text-base font-semibold sm:text-lg">
-                {upcomingAgendaEvent ? formatAgendaEventDateTime(upcomingAgendaEvent.scheduled_for) : "Sem agendamentos no momento"}
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {upcomingAgendaEvent ? upcomingAgendaEvent.title : "Crie um horário para este paciente ou inicie um atendimento agora."}
-              </p>
-            </div>
-            <div className="rounded-lg bg-primary/10 p-2">
-              <Calendar className="h-4 w-4 text-primary" />
-            </div>
-          </div>
-
-          {visibleUpcomingAgendaEvents.length > 0 ? (
-            <div className="mt-4 max-h-36 space-y-2 overflow-y-auto pr-1">
-              {visibleUpcomingAgendaEvents.map((event) => {
-                const eventStatus = getAgendaEventStatus(event);
-
-                return (
-                  <button
-                    key={event.id}
-                    type="button"
-                    className="flex w-full flex-col items-start gap-2 rounded-xl border bg-muted/20 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/40 sm:flex-row sm:items-center"
-                    onClick={() => handleOpenAgendaDetails(event)}
-                  >
-                    <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 font-medium sm:truncate">{formatAgendaEventDateTime(event.scheduled_for)}</span>
-                    <Badge variant="outline" className={agendaStatusBadgeStyles[eventStatus]}>
-                      {getAgendaStatusLabel(eventStatus)}
-                    </Badge>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <Button type="button" onClick={handleOpenPatientAgendaDialog}>
-              Agendar
-            </Button>
-            <Button type="button" variant="outline" onClick={() => navigate(`/pacientes/${id}/sessao/novo`)}>
-              Atender agora
-            </Button>
-          </div>
-        </div>
+        <AgendaWidget fixedPatient={{ id: patient.id, name: patient.name }} />
       </div>
 
       {/* Group management toolbar */}
@@ -1866,7 +2052,7 @@ const PacienteDetalhe = () => {
       </Dialog>
 
       <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-sm sm:p-6">
           <DialogHeader>
             <DialogTitle>Agendar atendimento</DialogTitle>
             <DialogDescription>
@@ -1898,6 +2084,11 @@ const PacienteDetalhe = () => {
                 />
               </div>
             </div>
+            {isAgendaDialogDateTimePast ? (
+              <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                {AGENDA_PAST_EVENT_ERROR_MESSAGE}
+              </div>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               Este agendamento usa a mesma agenda da homepage e aparecerá nos dois lugares.
             </p>
@@ -1906,7 +2097,7 @@ const PacienteDetalhe = () => {
             <DialogClose asChild>
               <Button variant="outline" disabled={savingAgendaEvent}>Cancelar</Button>
             </DialogClose>
-            <Button onClick={() => void handleSchedulePatientAgendaEvent()} disabled={savingAgendaEvent || !agendaDate || !agendaTime}>
+            <Button onClick={() => void handleSchedulePatientAgendaEvent()} disabled={savingAgendaEvent || !agendaDate || !agendaTime || isAgendaDialogDateTimePast}>
               {savingAgendaEvent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Confirmar
             </Button>
@@ -1915,17 +2106,17 @@ const PacienteDetalhe = () => {
       </Dialog>
 
       <Dialog open={!!selectedAgendaEvent} onOpenChange={(open) => !open && setSelectedAgendaEvent(null)}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] grid-rows-none flex-col overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="shrink-0 border-b px-5 pb-3 pt-5 text-left">
             <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Agendamento</p>
-            <DialogTitle className="text-3xl">{patient.name}</DialogTitle>
+            <DialogTitle className="break-words pr-7 text-xl leading-tight sm:text-3xl">{patient.name}</DialogTitle>
             <DialogDescription>
               Revise o horário, atualize o status ou inicie o atendimento a partir deste agendamento.
             </DialogDescription>
           </DialogHeader>
 
           {selectedAgendaEvent ? (
-            <div className="space-y-5 py-2">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl bg-muted/25 px-4 py-3">
                   <p className="text-xs text-muted-foreground">Horário</p>
@@ -1988,17 +2179,23 @@ const PacienteDetalhe = () => {
                   type="button"
                   variant="outline"
                   onClick={() => void handleUpdateAgendaDateTime()}
-                  disabled={savingAgendaDetails || !selectedAgendaDate || !selectedAgendaTime}
+                  disabled={savingAgendaDetails || !selectedAgendaDate || !selectedAgendaTime || isSelectedAgendaDateTimePast}
                 >
                   Trocar data/horário
                 </Button>
               </div>
+              {isSelectedAgendaDateTimePast ? (
+                <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                  {AGENDA_PAST_EVENT_ERROR_MESSAGE}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
-          <DialogFooter className="grid gap-2 sm:grid-cols-3">
+          <DialogFooter className="grid shrink-0 grid-cols-2 gap-2 border-t bg-background px-5 py-4 sm:grid-cols-3">
             <Button
               type="button"
+              className="col-span-2 sm:col-span-1"
               onClick={() => void handleApplyAgendaStatus()}
               disabled={savingAgendaDetails}
               variant={selectedAgendaStatusAction === "delete" ? "destructive" : "default"}

@@ -1,0 +1,174 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e6]:
+    - banner [ref=e7]:
+      - button "Ir para a página inicial da clínica Clínica 11111111111111" [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]: Clínica 11111111111111
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: teste@email.com
+          - generic [ref=e13]: Clínica 11111111111111
+        - generic [ref=e15]: T
+        - button "Configurações" [ref=e16] [cursor=pointer]:
+          - img
+        - button "Sair da conta" [ref=e17] [cursor=pointer]:
+          - img
+    - main [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - button "Voltar" [ref=e23] [cursor=pointer]:
+              - img
+            - generic [ref=e24]:
+              - generic [ref=e25]:
+                - paragraph [ref=e26]: Paciente
+                - heading "Amanda Costa Rocha" [level=1] [ref=e27]
+              - generic [ref=e28]:
+                - generic [ref=e29]:
+                  - img [ref=e30]
+                  - text: 39 anos
+                - generic [ref=e32]:
+                  - img [ref=e33]
+                  - text: "11980200026"
+                - generic [ref=e35]:
+                  - img [ref=e36]
+                  - text: Cadastro concluído
+              - paragraph [ref=e39]: Acesse rapidamente contato, cadastro, status e novo atendimento sem sair da ficha do paciente.
+          - generic [ref=e40]:
+            - button "Abrir WhatsApp do paciente" [ref=e41] [cursor=pointer]:
+              - img
+            - button "Ver mais" [ref=e42] [cursor=pointer]:
+              - img
+              - text: Ver mais
+            - combobox [ref=e43] [cursor=pointer]:
+              - generic: Ativo
+              - img [ref=e44]
+        - generic [ref=e46]:
+          - generic [ref=e47]:
+            - generic [ref=e48]:
+              - button "Resumo anterior" [ref=e49] [cursor=pointer]:
+                - img
+              - generic [ref=e50]:
+                - paragraph [ref=e51]: Resumo
+                - paragraph [ref=e52]: "3"
+                - paragraph [ref=e53]: atendimentos no histórico
+              - button "Próximo resumo" [ref=e54] [cursor=pointer]:
+                - img
+            - generic "Opções de resumo" [ref=e55]:
+              - button "Mostrar Resumo" [ref=e56] [cursor=pointer]
+              - button "Mostrar Concluídos" [ref=e57] [cursor=pointer]
+              - button "Mostrar Mais recente" [ref=e58] [cursor=pointer]
+              - button "Mostrar Agenda" [ref=e59] [cursor=pointer]
+              - button "Mostrar Pagamentos" [ref=e60] [cursor=pointer]
+          - generic [ref=e61]:
+            - generic [ref=e63]:
+              - heading "Agenda" [level=3] [ref=e64]
+              - img [ref=e67]
+            - generic [ref=e69]:
+              - generic [ref=e70]:
+                - button "Ir para o dia anterior com agendamentos. 0 agendamentos antes desta data." [disabled]:
+                  - img
+                - button "22 de maio" [ref=e71] [cursor=pointer]:
+                  - img
+                  - generic [ref=e72]: 22 de maio
+                - button "Ir para o próximo dia com agendamentos. 1 agendamento depois desta data." [ref=e73] [cursor=pointer]:
+                  - img
+                  - generic [ref=e74]: "1"
+              - paragraph [ref=e76]: Sem eventos
+              - generic [ref=e77]:
+                - button "Agendar" [ref=e78] [cursor=pointer]:
+                  - img
+                  - text: Agendar
+                - button "Iniciar atendimento agora" [ref=e79] [cursor=pointer]
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - heading "Grupos & Atendimentos" [level=2] [ref=e82]
+            - button "Novo Grupo" [ref=e83] [cursor=pointer]:
+              - img
+              - text: Novo Grupo
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - text: Buscar por grupo ou atendimento
+              - generic [ref=e87]:
+                - img
+                - textbox "Buscar por grupo ou atendimento" [ref=e88]:
+                  - /placeholder: "Ex: lombar, rascunho, 18/03/2026"
+            - generic [ref=e89]:
+              - text: Status do atendimento
+              - combobox [ref=e90] [cursor=pointer]:
+                - generic: Todos
+                - img [ref=e91]
+            - generic [ref=e93]:
+              - text: Status do grupo
+              - combobox [ref=e94] [cursor=pointer]:
+                - generic: Todos
+                - img [ref=e95]
+        - generic [ref=e97]:
+          - 'button "Grupo sem definição 3 atendimentos Primeiro: 18/05/2026 Mais recente: 20/05/2026" [ref=e100] [cursor=pointer]':
+            - generic [ref=e101]:
+              - heading "Grupo sem definição" [level=3] [ref=e103]
+              - generic [ref=e104]:
+                - generic [ref=e105]: 3 atendimentos
+                - generic [ref=e106]: "Primeiro: 18/05/2026"
+                - generic [ref=e107]: "Mais recente: 20/05/2026"
+            - img [ref=e108]
+          - generic [ref=e111]:
+            - button "20/05/2026 rascunho teste@email.com Agendado 10:00 · Chegou 09:50 Cortesia · R$ 0,00 de R$ 100,00 Queixa principal" [ref=e112] [cursor=pointer]:
+              - generic [ref=e115]:
+                - generic [ref=e116]:
+                  - generic [ref=e117]: 20/05/2026
+                  - generic [ref=e118]: rascunho
+                  - generic [ref=e119]: teste@email.com
+                - generic [ref=e120]:
+                  - generic [ref=e121]: Agendado 10:00 · Chegou 09:50
+                  - generic [ref=e122]: Cortesia · R$ 0,00 de R$ 100,00
+                - generic [ref=e123]:
+                  - tablist [ref=e124]:
+                    - tab "Queixa principal" [selected] [ref=e125]
+                    - tab "Tratamento" [ref=e126]
+                  - tabpanel "Queixa principal" [ref=e127]:
+                    - paragraph [ref=e128]: Nenhuma queixa principal registrada.
+            - button "18/05/2026 rascunho teste@email.com Agendado 14:00 · Chegou 13:48 Crédito · R$ 3.000,00 de R$ 20,00 Queixa principal" [ref=e129] [cursor=pointer]:
+              - generic [ref=e132]:
+                - generic [ref=e133]:
+                  - generic [ref=e134]: 18/05/2026
+                  - generic [ref=e135]: rascunho
+                  - generic [ref=e136]: teste@email.com
+                - generic [ref=e137]:
+                  - generic [ref=e138]: Agendado 14:00 · Chegou 13:48
+                  - generic [ref=e139]: Crédito · R$ 3.000,00 de R$ 20,00
+                - generic [ref=e140]:
+                  - tablist [ref=e141]:
+                    - tab "Queixa principal" [selected] [ref=e142]
+                    - tab "Tratamento" [ref=e143]
+                  - tabpanel "Queixa principal" [ref=e144]:
+                    - paragraph [ref=e145]: Nenhuma queixa principal registrada.
+            - button "18/05/2026 rascunho teste@email.com Agendado 14:43 · Chegou 14:44 · atraso 1min Pendente · R$ 0,00 de R$ 20,00 · aberto R$ 20,00 Queixa principal" [ref=e146] [cursor=pointer]:
+              - generic [ref=e149]:
+                - generic [ref=e150]:
+                  - generic [ref=e151]: 18/05/2026
+                  - generic [ref=e152]: rascunho
+                  - generic [ref=e153]: teste@email.com
+                - generic [ref=e154]:
+                  - generic [ref=e155]: Agendado 14:43 · Chegou 14:44 · atraso 1min
+                  - generic [ref=e156]: Pendente · R$ 0,00 de R$ 20,00 · aberto R$ 20,00
+                - generic [ref=e157]:
+                  - tablist [ref=e158]:
+                    - tab "Queixa principal" [selected] [ref=e159]
+                    - tab "Tratamento" [ref=e160]
+                  - tabpanel "Queixa principal" [ref=e161]:
+                    - paragraph [ref=e162]: Nenhuma queixa principal registrada.
+        - generic [ref=e163]:
+          - 'button "Cancelados Cancelado 0 atendimentos Primeiro: — Mais recente: —" [ref=e166] [cursor=pointer]':
+            - generic [ref=e167]:
+              - generic [ref=e168]:
+                - heading "Cancelados" [level=3] [ref=e169]
+                - generic [ref=e170]: Cancelado
+              - generic [ref=e171]:
+                - generic [ref=e172]: 0 atendimentos
+                - generic [ref=e173]: "Primeiro: —"
+                - generic [ref=e174]: "Mais recente: —"
+            - img [ref=e175]
+          - paragraph [ref=e179]: Nenhum atendimento neste grupo.

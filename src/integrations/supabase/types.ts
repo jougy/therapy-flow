@@ -851,6 +851,9 @@ export type Database = {
           anamnesis: Json | null
           anamnesis_form_response: Json | null
           anamnesis_template_id: string | null
+          amount_charged_cents: number
+          amount_original_cents: number
+          amount_paid_cents: number
           clinic_id: string | null
           complexity_score: number | null
           created_at: string
@@ -859,7 +862,14 @@ export type Database = {
           notes: string | null
           pain_score: number | null
           patient_id: string
+          patient_arrived_at: string | null
+          payment_adjustment_reason: string | null
+          payment_installments: number
+          payment_method: string
+          payment_status_date: string | null
+          payment_status: string
           provider_id: string | null
+          scheduled_start_at: string | null
           session_date: string
           status: string
           treatment: Json | null
@@ -870,6 +880,9 @@ export type Database = {
           anamnesis?: Json | null
           anamnesis_form_response?: Json | null
           anamnesis_template_id?: string | null
+          amount_charged_cents?: number
+          amount_original_cents?: number
+          amount_paid_cents?: number
           clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
@@ -878,7 +891,14 @@ export type Database = {
           notes?: string | null
           pain_score?: number | null
           patient_id: string
+          patient_arrived_at?: string | null
+          payment_adjustment_reason?: string | null
+          payment_installments?: number
+          payment_method?: string
+          payment_status_date?: string | null
+          payment_status?: string
           provider_id?: string | null
+          scheduled_start_at?: string | null
           session_date?: string
           status?: string
           treatment?: Json | null
@@ -889,6 +909,9 @@ export type Database = {
           anamnesis?: Json | null
           anamnesis_form_response?: Json | null
           anamnesis_template_id?: string | null
+          amount_charged_cents?: number
+          amount_original_cents?: number
+          amount_paid_cents?: number
           clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
@@ -897,7 +920,14 @@ export type Database = {
           notes?: string | null
           pain_score?: number | null
           patient_id?: string
+          patient_arrived_at?: string | null
+          payment_adjustment_reason?: string | null
+          payment_installments?: number
+          payment_method?: string
+          payment_status_date?: string | null
+          payment_status?: string
           provider_id?: string | null
+          scheduled_start_at?: string | null
           session_date?: string
           status?: string
           treatment?: Json | null

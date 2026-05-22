@@ -1,0 +1,461 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e39]:
+    - banner [ref=e40]:
+      - button "Ir para a página inicial da clínica Clínica 11111111111111" [ref=e41] [cursor=pointer]:
+        - generic [ref=e42]: Clínica 11111111111111
+      - generic [ref=e43]:
+        - generic [ref=e44]:
+          - generic [ref=e45]: teste@email.com
+          - generic [ref=e46]: Clínica 11111111111111
+        - generic [ref=e48]: T
+        - button "Configurações" [ref=e49] [cursor=pointer]:
+          - img
+        - button "Sair da conta" [ref=e50] [cursor=pointer]:
+          - img
+    - main [ref=e51]:
+      - generic [ref=e52]:
+        - generic [ref=e54]:
+          - generic [ref=e55]:
+            - img [ref=e56]
+            - textbox "Buscar paciente por nome, CPF ou telefone" [ref=e59]:
+              - /placeholder: Buscar paciente, CPF ou telefone...
+          - button "Filtro" [ref=e60] [cursor=pointer]:
+            - img
+            - generic [ref=e61]: Filtro
+          - combobox "Ordenar pacientes" [ref=e62] [cursor=pointer]:
+            - generic [ref=e63]:
+              - img [ref=e64]
+              - generic: Padrão atual
+            - img [ref=e67]
+          - button "Novo Paciente" [ref=e69] [cursor=pointer]:
+            - img
+            - generic [ref=e70]: Novo Paciente
+        - generic [ref=e71]:
+          - generic [ref=e73]:
+            - generic [ref=e75]:
+              - heading "Agenda" [level=3] [ref=e76]
+              - generic [ref=e77]:
+                - group "Alternar painel da homepage" [ref=e78]:
+                  - radio "Agenda" [checked] [ref=e79] [cursor=pointer]
+                  - radio "Resumo" [ref=e80] [cursor=pointer]
+                - img [ref=e82]
+            - generic [ref=e84]:
+              - button "20 de maio" [ref=e85] [cursor=pointer]:
+                - img
+                - text: 20 de maio
+              - generic [ref=e86]:
+                - generic [ref=e87]:
+                  - button "09:00 Atendimento Aguardando Amanda Costa Rocha" [ref=e88] [cursor=pointer]:
+                    - img [ref=e89]
+                    - generic [ref=e92]: 09:00
+                    - generic [ref=e93]: Atendimento
+                    - generic [ref=e94]: Aguardando
+                    - generic [ref=e95]: Amanda Costa Rocha
+                  - button [ref=e96] [cursor=pointer]:
+                    - img [ref=e97]
+                - generic [ref=e100]:
+                  - button "11:45 Atendimento Lembrete Teste UI Agenda - Felipe lembrete" [ref=e101] [cursor=pointer]:
+                    - img [ref=e102]
+                    - generic [ref=e105]: 11:45
+                    - generic [ref=e106]: Atendimento
+                    - generic [ref=e107]: Lembrete
+                    - generic [ref=e108]: Teste UI Agenda - Felipe lembrete
+                  - button [ref=e109] [cursor=pointer]:
+                    - img [ref=e110]
+                - generic [ref=e113]:
+                  - button "13:30 Atendimento Cancelado Teste UI Agenda - Carla cancelado nao aparece" [ref=e114] [cursor=pointer]:
+                    - img [ref=e115]
+                    - generic [ref=e118]: 13:30
+                    - generic [ref=e119]: Atendimento
+                    - generic [ref=e120]: Cancelado
+                    - generic [ref=e121]: Teste UI Agenda - Carla cancelado nao aparece
+                  - button [ref=e122] [cursor=pointer]:
+                    - img [ref=e123]
+              - button "Adicionar evento" [ref=e126] [cursor=pointer]:
+                - img
+                - text: Adicionar evento
+          - generic [ref=e127]:
+            - heading "Pacientes recentes" [level=2] [ref=e128]
+            - generic [ref=e129]:
+              - button "Ver detalhes de Amanda Costa Rocha" [ref=e130] [cursor=pointer]:
+                - generic [ref=e131]:
+                  - generic [ref=e132]:
+                    - generic [ref=e133]:
+                      - generic "Masculino" [ref=e134]: ♂
+                      - heading "Amanda Costa Rocha" [level=3] [ref=e135]
+                      - generic [ref=e136]: (ele/dele)
+                      - generic [ref=e137]: Pausado
+                      - 'button "Pagamento: Crédito, R$ 2.980,00" [ref=e138]': $
+                      - 'button "Agendamento: 20/05/2026, 09:00" [ref=e139]':
+                        - img [ref=e140]
+                    - generic [ref=e143]:
+                      - generic [ref=e144]: "Nasc: 26/04/1987"
+                      - generic [ref=e145]: "CPF: 100.000.000-26"
+                      - generic [ref=e146]: "Último atend: 20/05/2026"
+                  - img [ref=e147]
+              - button "Ver detalhes de Ana Silva Santos" [ref=e149] [cursor=pointer]:
+                - generic [ref=e150]:
+                  - generic [ref=e151]:
+                    - generic [ref=e152]:
+                      - generic "Feminino" [ref=e153]: ♀
+                      - heading "Ana Silva Santos" [level=3] [ref=e154]
+                      - generic [ref=e155]: (ela/dela)
+                      - generic [ref=e156]: Ativo
+                      - 'button "Agendamento: 22/05/2026, 15:40" [ref=e157]':
+                        - img [ref=e158]
+                    - generic [ref=e161]:
+                      - generic [ref=e162]: "Nasc: 23/06/1975"
+                      - generic [ref=e163]: "CPF: 100.000.000-01"
+                  - img [ref=e164]
+              - button "Ver detalhes de Bianca Pereira Gomes" [ref=e166] [cursor=pointer]:
+                - generic [ref=e167]:
+                  - generic [ref=e168]:
+                    - generic [ref=e169]:
+                      - img [ref=e170]
+                      - heading "Bianca Pereira Gomes" [level=3] [ref=e173]
+                      - generic [ref=e174]: (elu/delu)
+                      - generic [ref=e175]: Alta
+                    - generic [ref=e176]:
+                      - generic [ref=e177]: "Nasc: 16/10/1987"
+                      - generic [ref=e178]: "CPF: 100.000.000-27"
+                  - img [ref=e179]
+              - button "Ver detalhes de Bruno Souza Lima" [ref=e181] [cursor=pointer]:
+                - generic [ref=e182]:
+                  - generic [ref=e183]:
+                    - generic [ref=e184]:
+                      - generic "Masculino" [ref=e185]: ♂
+                      - heading "Bruno Souza Lima" [level=3] [ref=e186]
+                      - generic [ref=e187]: (ele/dele)
+                      - generic [ref=e188]: Ativo
+                    - generic [ref=e189]:
+                      - generic [ref=e190]: "Nasc: 13/12/1975"
+                      - generic [ref=e191]: "CPF: 100.000.000-02"
+                  - img [ref=e192]
+              - button "Ver detalhes de Carla Oliveira Costa" [ref=e194] [cursor=pointer]:
+                - generic [ref=e195]:
+                  - generic [ref=e196]:
+                    - generic [ref=e197]:
+                      - img [ref=e198]
+                      - heading "Carla Oliveira Costa" [level=3] [ref=e201]
+                      - generic [ref=e202]: (elu/delu)
+                      - generic [ref=e203]: Ativo
+                    - generic [ref=e204]:
+                      - generic [ref=e205]: "Nasc: 03/06/1976"
+                      - generic [ref=e206]: "CPF: 100.000.000-03"
+                  - img [ref=e207]
+              - button "Ver detalhes de Daniel Santos Pereira" [ref=e209] [cursor=pointer]:
+                - generic [ref=e210]:
+                  - generic [ref=e211]:
+                    - generic [ref=e212]:
+                      - img [ref=e213]
+                      - heading "Daniel Santos Pereira" [level=3] [ref=e216]
+                      - generic [ref=e217]: Inativo
+                    - generic [ref=e218]:
+                      - generic [ref=e219]: "Nasc: 23/11/1976"
+                      - generic [ref=e220]: "CPF: 100.000.000-04"
+                  - img [ref=e221]
+              - button "Ver detalhes de Debora Rocha Souza" [ref=e223] [cursor=pointer]:
+                - generic [ref=e224]:
+                  - generic [ref=e225]:
+                    - generic [ref=e226]:
+                      - generic "Feminino" [ref=e227]: ♀
+                      - heading "Debora Rocha Souza" [level=3] [ref=e228]
+                      - generic [ref=e229]: (ela/dela)
+                      - generic [ref=e230]: Ativo
+                    - generic [ref=e231]:
+                      - generic [ref=e232]: "Nasc: 26/09/1988"
+                      - generic [ref=e233]: "CPF: 100.000.000-29"
+                  - img [ref=e234]
+              - button "Ver detalhes de Eduarda Lima Almeida" [ref=e236] [cursor=pointer]:
+                - generic [ref=e237]:
+                  - generic [ref=e238]:
+                    - generic [ref=e239]:
+                      - generic "Feminino" [ref=e240]: ♀
+                      - heading "Eduarda Lima Almeida" [level=3] [ref=e241]
+                      - generic [ref=e242]: (ela/dela)
+                      - generic [ref=e243]: Pausado
+                    - generic [ref=e244]:
+                      - generic [ref=e245]: "Nasc: 15/05/1977"
+                      - generic [ref=e246]: "CPF: 100.000.000-05"
+                  - img [ref=e247]
+              - button "Ver detalhes de Enzo Gomes Oliveira" [ref=e249] [cursor=pointer]:
+                - generic [ref=e250]:
+                  - generic [ref=e251]:
+                    - generic [ref=e252]:
+                      - generic "Masculino" [ref=e253]: ♂
+                      - heading "Enzo Gomes Oliveira" [level=3] [ref=e254]
+                      - generic [ref=e255]: (ele/dele)
+                      - generic [ref=e256]: Ativo
+                    - generic [ref=e257]:
+                      - generic [ref=e258]: "Nasc: 18/03/1989"
+                      - generic [ref=e259]: "CPF: 100.000.000-30"
+                  - img [ref=e260]
+              - button "Ver detalhes de Felipe Costa Rocha" [ref=e262] [cursor=pointer]:
+                - generic [ref=e263]:
+                  - generic [ref=e264]:
+                    - generic [ref=e265]:
+                      - generic "Masculino" [ref=e266]: ♂
+                      - heading "Felipe Costa Rocha" [level=3] [ref=e267]
+                      - generic [ref=e268]: (ele/dele)
+                      - generic [ref=e269]: Alta
+                      - 'button "Agendamento: 20/05/2026, 11:45" [ref=e270]':
+                        - img [ref=e271]
+                    - generic [ref=e274]:
+                      - generic [ref=e275]: "Nasc: 04/11/1977"
+                      - generic [ref=e276]: "CPF: 100.000.000-06"
+                  - img [ref=e277]
+              - button "Ver detalhes de Gabriela Pereira Gomes" [ref=e279] [cursor=pointer]:
+                - generic [ref=e280]:
+                  - generic [ref=e281]:
+                    - generic [ref=e282]:
+                      - img [ref=e283]
+                      - heading "Gabriela Pereira Gomes" [level=3] [ref=e286]
+                      - generic [ref=e287]: (elu/delu)
+                      - generic [ref=e288]: Pagamento pendente
+                    - generic [ref=e289]:
+                      - generic [ref=e290]: "Nasc: 26/04/1978"
+                      - generic [ref=e291]: "CPF: 100.000.000-07"
+                  - img [ref=e292]
+              - button "Ver detalhes de Hugo Almeida Silva" [ref=e294] [cursor=pointer]:
+                - generic [ref=e295]:
+                  - generic [ref=e296]:
+                    - generic [ref=e297]:
+                      - img [ref=e298]
+                      - heading "Hugo Almeida Silva" [level=3] [ref=e301]
+                      - generic [ref=e302]: Ativo
+                    - generic [ref=e303]:
+                      - generic [ref=e304]: "Nasc: 16/10/1978"
+                      - generic [ref=e305]: "CPF: 100.000.000-08"
+                  - img [ref=e306]
+              - button "Ver detalhes de Isabela Rocha Souza" [ref=e308] [cursor=pointer]:
+                - generic [ref=e309]:
+                  - generic [ref=e310]:
+                    - generic [ref=e311]:
+                      - generic "Feminino" [ref=e312]: ♀
+                      - heading "Isabela Rocha Souza" [level=3] [ref=e313]
+                      - generic [ref=e314]: (ela/dela)
+                      - generic [ref=e315]: Ativo
+                    - generic [ref=e316]:
+                      - generic [ref=e317]: "Nasc: 07/04/1979"
+                      - generic [ref=e318]: "CPF: 100.000.000-09"
+                  - img [ref=e319]
+              - button "Ver detalhes de Joao Gomes Oliveira" [ref=e321] [cursor=pointer]:
+                - generic [ref=e322]:
+                  - generic [ref=e323]:
+                    - generic [ref=e324]:
+                      - generic "Masculino" [ref=e325]: ♂
+                      - heading "Joao Gomes Oliveira" [level=3] [ref=e326]
+                      - generic [ref=e327]: (ele/dele)
+                      - generic [ref=e328]: Ativo
+                    - generic [ref=e329]:
+                      - generic [ref=e330]: "Nasc: 27/09/1979"
+                      - generic [ref=e331]: "CPF: 100.000.000-10"
+                  - img [ref=e332]
+              - button "Ver detalhes de Karen Silva Santos" [ref=e334] [cursor=pointer]:
+                - generic [ref=e335]:
+                  - generic [ref=e336]:
+                    - generic [ref=e337]:
+                      - img [ref=e338]
+                      - heading "Karen Silva Santos" [level=3] [ref=e341]
+                      - generic [ref=e342]: (elu/delu)
+                      - generic [ref=e343]: Inativo
+                    - generic [ref=e344]:
+                      - generic [ref=e345]: "Nasc: 18/03/1980"
+                      - generic [ref=e346]: "CPF: 100.000.000-11"
+                  - img [ref=e347]
+              - button "Ver detalhes de Lucas Souza Lima" [ref=e349] [cursor=pointer]:
+                - generic [ref=e350]:
+                  - generic [ref=e351]:
+                    - generic [ref=e352]:
+                      - img [ref=e353]
+                      - heading "Lucas Souza Lima" [level=3] [ref=e356]
+                      - generic [ref=e357]: Pausado
+                    - generic [ref=e358]:
+                      - generic [ref=e359]: "Nasc: 07/09/1980"
+                      - generic [ref=e360]: "CPF: 100.000.000-12"
+                  - img [ref=e361]
+              - button "Ver detalhes de Mariana Oliveira Costa" [ref=e363] [cursor=pointer]:
+                - generic [ref=e364]:
+                  - generic [ref=e365]:
+                    - generic [ref=e366]:
+                      - generic "Feminino" [ref=e367]: ♀
+                      - heading "Mariana Oliveira Costa" [level=3] [ref=e368]
+                      - generic [ref=e369]: (ela/dela)
+                      - generic [ref=e370]: Alta
+                    - generic [ref=e371]:
+                      - generic [ref=e372]: "Nasc: 27/02/1981"
+                      - generic [ref=e373]: "CPF: 100.000.000-13"
+                  - img [ref=e374]
+              - button "Ver detalhes de Nicolas Santos Pereira" [ref=e376] [cursor=pointer]:
+                - generic [ref=e377]:
+                  - generic [ref=e378]:
+                    - generic [ref=e379]:
+                      - generic "Masculino" [ref=e380]: ♂
+                      - heading "Nicolas Santos Pereira" [level=3] [ref=e381]
+                      - generic [ref=e382]: (ele/dele)
+                      - generic [ref=e383]: Pagamento pendente
+                    - generic [ref=e384]:
+                      - generic [ref=e385]: "Nasc: 19/08/1981"
+                      - generic [ref=e386]: "CPF: 100.000.000-14"
+                  - img [ref=e387]
+              - button "Ver detalhes de Olivia Lima Almeida" [ref=e389] [cursor=pointer]:
+                - generic [ref=e390]:
+                  - generic [ref=e391]:
+                    - generic [ref=e392]:
+                      - img [ref=e393]
+                      - heading "Olivia Lima Almeida" [level=3] [ref=e396]
+                      - generic [ref=e397]: (elu/delu)
+                      - generic [ref=e398]: Ativo
+                    - generic [ref=e399]:
+                      - generic [ref=e400]: "Nasc: 08/02/1982"
+                      - generic [ref=e401]: "CPF: 100.000.000-15"
+                  - img [ref=e402]
+              - button "Ver detalhes de Pedro Costa Rocha" [ref=e404] [cursor=pointer]:
+                - generic [ref=e405]:
+                  - generic [ref=e406]:
+                    - generic [ref=e407]:
+                      - img [ref=e408]
+                      - heading "Pedro Costa Rocha" [level=3] [ref=e411]
+                      - generic [ref=e412]: Ativo
+                    - generic [ref=e413]:
+                      - generic [ref=e414]: "Nasc: 31/07/1982"
+                      - generic [ref=e415]: "CPF: 100.000.000-16"
+                  - img [ref=e416]
+              - button "Ver detalhes de Quezia Pereira Gomes" [ref=e418] [cursor=pointer]:
+                - generic [ref=e419]:
+                  - generic [ref=e420]:
+                    - generic [ref=e421]:
+                      - generic "Feminino" [ref=e422]: ♀
+                      - heading "Quezia Pereira Gomes" [level=3] [ref=e423]
+                      - generic [ref=e424]: (ela/dela)
+                      - generic [ref=e425]: Ativo
+                    - generic [ref=e426]:
+                      - generic [ref=e427]: "Nasc: 20/01/1983"
+                      - generic [ref=e428]: "CPF: 100.000.000-17"
+                  - img [ref=e429]
+              - button "Ver detalhes de Rafael Almeida Silva" [ref=e431] [cursor=pointer]:
+                - generic [ref=e432]:
+                  - generic [ref=e433]:
+                    - generic [ref=e434]:
+                      - generic "Masculino" [ref=e435]: ♂
+                      - heading "Rafael Almeida Silva" [level=3] [ref=e436]
+                      - generic [ref=e437]: (ele/dele)
+                      - generic [ref=e438]: Inativo
+                    - generic [ref=e439]:
+                      - generic [ref=e440]: "Nasc: 12/07/1983"
+                      - generic [ref=e441]: "CPF: 100.000.000-18"
+                  - img [ref=e442]
+              - button "Ver detalhes de Sabrina Rocha Souza" [ref=e444] [cursor=pointer]:
+                - generic [ref=e445]:
+                  - generic [ref=e446]:
+                    - generic [ref=e447]:
+                      - img [ref=e448]
+                      - heading "Sabrina Rocha Souza" [level=3] [ref=e451]
+                      - generic [ref=e452]: (elu/delu)
+                      - generic [ref=e453]: Pausado
+                    - generic [ref=e454]:
+                      - generic [ref=e455]: "Nasc: 01/01/1984"
+                      - generic [ref=e456]: "CPF: 100.000.000-19"
+                  - img [ref=e457]
+              - button "Ver detalhes de Tiago Gomes Oliveira" [ref=e459] [cursor=pointer]:
+                - generic [ref=e460]:
+                  - generic [ref=e461]:
+                    - generic [ref=e462]:
+                      - img [ref=e463]
+                      - heading "Tiago Gomes Oliveira" [level=3] [ref=e466]
+                      - generic [ref=e467]: Alta
+                    - generic [ref=e468]:
+                      - generic [ref=e469]: "Nasc: 22/06/1984"
+                      - generic [ref=e470]: "CPF: 100.000.000-20"
+                  - img [ref=e471]
+              - button "Ver detalhes de Ursula Silva Santos" [ref=e473] [cursor=pointer]:
+                - generic [ref=e474]:
+                  - generic [ref=e475]:
+                    - generic [ref=e476]:
+                      - generic "Feminino" [ref=e477]: ♀
+                      - heading "Ursula Silva Santos" [level=3] [ref=e478]
+                      - generic [ref=e479]: (ela/dela)
+                      - generic [ref=e480]: Pagamento pendente
+                    - generic [ref=e481]:
+                      - generic [ref=e482]: "Nasc: 12/12/1984"
+                      - generic [ref=e483]: "CPF: 100.000.000-21"
+                  - img [ref=e484]
+              - button "Ver detalhes de Vinicius Souza Lima" [ref=e486] [cursor=pointer]:
+                - generic [ref=e487]:
+                  - generic [ref=e488]:
+                    - generic [ref=e489]:
+                      - generic "Masculino" [ref=e490]: ♂
+                      - heading "Vinicius Souza Lima" [level=3] [ref=e491]
+                      - generic [ref=e492]: (ele/dele)
+                      - generic [ref=e493]: Ativo
+                    - generic [ref=e494]:
+                      - generic [ref=e495]: "Nasc: 03/06/1985"
+                      - generic [ref=e496]: "CPF: 100.000.000-22"
+                  - img [ref=e497]
+              - button "Ver detalhes de Wesley Oliveira Costa" [ref=e499] [cursor=pointer]:
+                - generic [ref=e500]:
+                  - generic [ref=e501]:
+                    - generic [ref=e502]:
+                      - img [ref=e503]
+                      - heading "Wesley Oliveira Costa" [level=3] [ref=e506]
+                      - generic [ref=e507]: (elu/delu)
+                      - generic [ref=e508]: Ativo
+                    - generic [ref=e509]:
+                      - generic [ref=e510]: "Nasc: 23/11/1985"
+                      - generic [ref=e511]: "CPF: 100.000.000-23"
+                  - img [ref=e512]
+              - button "Ver detalhes de Yasmin Santos Pereira" [ref=e514] [cursor=pointer]:
+                - generic [ref=e515]:
+                  - generic [ref=e516]:
+                    - generic [ref=e517]:
+                      - img [ref=e518]
+                      - heading "Yasmin Santos Pereira" [level=3] [ref=e521]
+                      - generic [ref=e522]: Ativo
+                    - generic [ref=e523]:
+                      - generic [ref=e524]: "Nasc: 15/05/1986"
+                      - generic [ref=e525]: "CPF: 100.000.000-24"
+                  - img [ref=e526]
+              - button "Ver detalhes de Zuleica Lima Almeida" [ref=e528] [cursor=pointer]:
+                - generic [ref=e529]:
+                  - generic [ref=e530]:
+                    - generic [ref=e531]:
+                      - generic "Feminino" [ref=e532]: ♀
+                      - heading "Zuleica Lima Almeida" [level=3] [ref=e533]
+                      - generic [ref=e534]: (ela/dela)
+                      - generic [ref=e535]: Inativo
+                    - generic [ref=e536]:
+                      - generic [ref=e537]: "Nasc: 04/11/1986"
+                      - generic [ref=e538]: "CPF: 100.000.000-25"
+                  - img [ref=e539]
+              - button "Ver detalhes de Folaniudo" [ref=e541] [cursor=pointer]:
+                - generic [ref=e542]:
+                  - generic [ref=e543]:
+                    - generic [ref=e544]:
+                      - img [ref=e545]
+                      - heading "Folaniudo" [level=3] [ref=e548]
+                      - generic [ref=e549]: Ativo
+                      - 'button "Pagamento: Não cobrado" [ref=e550]': $
+                    - generic [ref=e551]:
+                      - generic [ref=e552]: "Nasc: 09/09/2000"
+                      - generic [ref=e553]: "CPF: 423.124.312-32"
+                      - generic [ref=e554]: "Último atend: 05/05/2026"
+                  - img [ref=e555]
+              - button "Ver detalhes de 1543tr" [ref=e557] [cursor=pointer]:
+                - generic [ref=e558]:
+                  - generic [ref=e559]:
+                    - generic [ref=e560]:
+                      - img [ref=e561]
+                      - heading "1543tr" [level=3] [ref=e564]
+                      - generic [ref=e565]: Ativo
+                      - 'button "Pagamento: Não cobrado" [ref=e566]': $
+                    - generic [ref=e567]:
+                      - generic [ref=e568]: "Nasc: 23/05/0413"
+                      - generic [ref=e569]: "CPF: 121.212.212-12"
+                      - generic [ref=e570]: "Último atend: 14/05/2026"
+                    - generic [ref=e571]:
+                      - generic [ref=e572]: teste
+                      - generic [ref=e573]: teste2
+                  - img [ref=e574]

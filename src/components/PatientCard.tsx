@@ -1,10 +1,13 @@
-import { ChevronRight, User } from "lucide-react";
+import { ChevronRight, Clock3, User } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
+import type { SyntheticEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { getPatientStatusMeta } from "@/lib/patient-statuses";
 import { getLegacyGroupHex, getReadableTextColor, toRgbaString } from "@/lib/group-colors";
+import { cn } from "@/lib/utils";
 
 export interface PatientCardData {
   id: string;
@@ -16,6 +19,19 @@ export interface PatientCardData {
   status: string;
   lastSessionDate: string | null;
   groups: { name: string; color: string; status: string | null }[];
+  nextAgendaSummary?: {
+    description: string;
+    scheduledForLabel: string;
+    statusLabel: string;
+    tone: "confirmed" | "late" | "next" | "unconfirmed";
+    title: string;
+  } | null;
+  paymentSummary?: {
+    amountLabel: string | null;
+    description: string;
+    label: string;
+    tone: "credit" | "debt" | "paid" | "pending";
+  } | null;
 }
 
 const formatCpf = (cpf: string) =>
@@ -26,6 +42,22 @@ const GenderIcon = ({ gender }: { gender: string | null }) => {
   if (gender === "masculino") return <span className="text-sm shrink-0" title="Masculino">♂</span>;
   return <User className="h-4 w-4 text-muted-foreground shrink-0" />;
 };
+
+const paymentToneClassNames: Record<NonNullable<PatientCardData["paymentSummary"]>["tone"], string> = {
+  credit: "border-primary/25 bg-primary/10 text-primary hover:bg-primary/15",
+  debt: "border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/15",
+  paid: "border-success/25 bg-success/10 text-success hover:bg-success/15",
+  pending: "border-warning/25 bg-warning/15 text-warning hover:bg-warning/20",
+};
+
+const agendaToneClassNames: Record<NonNullable<PatientCardData["nextAgendaSummary"]>["tone"], string> = {
+  confirmed: "border-success/25 bg-success/10 text-success hover:bg-success/15",
+  late: "border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/15",
+  next: "border-warning/25 bg-warning/15 text-warning hover:bg-warning/20",
+  unconfirmed: "border-sky-500/25 bg-sky-500/10 text-sky-700 hover:bg-sky-500/15",
+};
+
+const stopCardNavigation = (event: SyntheticEvent) => event.stopPropagation();
 
 const PatientCard = ({ patient }: { patient: PatientCardData }) => {
   const navigate = useNavigate();
@@ -54,6 +86,97 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
             >
               {statusMeta.label}
             </Badge>
+            {patient.paymentSummary && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                      paymentToneClassNames[patient.paymentSummary.tone],
+                    )}
+                    aria-label={
+                      patient.paymentSummary.amountLabel
+                        ? `Pagamento: ${patient.paymentSummary.label}, ${patient.paymentSummary.amountLabel}`
+                        : `Pagamento: ${patient.paymentSummary.label}`
+                    }
+                    title="Status financeiro"
+                    onClick={stopCardNavigation}
+                    onKeyDown={stopCardNavigation}
+                    onPointerDown={stopCardNavigation}
+                  >
+                    $
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-64 space-y-2 text-sm"
+                  onClick={stopCardNavigation}
+                  onPointerDown={stopCardNavigation}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold",
+                        paymentToneClassNames[patient.paymentSummary.tone],
+                      )}
+                    >
+                      $
+                    </span>
+                    <div>
+                      <p className="font-semibold">{patient.paymentSummary.label}</p>
+                      {patient.paymentSummary.amountLabel ? (
+                        <p className="text-xs text-muted-foreground">{patient.paymentSummary.amountLabel}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{patient.paymentSummary.description}</p>
+                </PopoverContent>
+              </Popover>
+            )}
+            {patient.nextAgendaSummary && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                      agendaToneClassNames[patient.nextAgendaSummary.tone],
+                    )}
+                    aria-label={`Agendamento: ${patient.nextAgendaSummary.scheduledForLabel}`}
+                    title="Próximo agendamento"
+                    onClick={stopCardNavigation}
+                    onKeyDown={stopCardNavigation}
+                    onPointerDown={stopCardNavigation}
+                  >
+                    <Clock3 className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-72 space-y-2 text-sm"
+                  onClick={stopCardNavigation}
+                  onPointerDown={stopCardNavigation}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-flex h-7 w-7 items-center justify-center rounded-full border",
+                        agendaToneClassNames[patient.nextAgendaSummary.tone],
+                      )}
+                    >
+                      <Clock3 className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="font-semibold">{patient.nextAgendaSummary.scheduledForLabel}</p>
+                      <p className="text-xs text-muted-foreground">{patient.nextAgendaSummary.statusLabel}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs font-medium text-foreground">{patient.nextAgendaSummary.title}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{patient.nextAgendaSummary.description}</p>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">

@@ -1,0 +1,109 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e6]:
+    - banner [ref=e7]:
+      - button "Ir para a página inicial da clínica Clínica 11111111111111" [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]: Clínica 11111111111111
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: teste@email.com
+          - generic [ref=e13]: Clínica 11111111111111
+        - generic [ref=e15]: T
+        - button "Configurações" [ref=e16] [cursor=pointer]:
+          - img
+        - button "Sair da conta" [ref=e17] [cursor=pointer]:
+          - img
+    - main [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]:
+          - generic [ref=e21]:
+            - button "Voltar para paciente" [ref=e22] [cursor=pointer]:
+              - img
+            - generic [ref=e23]:
+              - heading "Novo Atendimento" [level=1] [ref=e24]
+              - paragraph [ref=e25]: Amanda Costa Rocha
+          - generic [ref=e27]: rascunho
+        - generic [ref=e28]:
+          - button "Salvar" [ref=e29] [cursor=pointer]:
+            - img
+            - generic [ref=e30]: Salvar
+          - combobox [ref=e31] [cursor=pointer]:
+            - generic: Rascunho
+            - img [ref=e32]
+          - combobox [ref=e34] [cursor=pointer]:
+            - generic: Grupo sem definição
+            - img [ref=e35]
+          - combobox [ref=e37] [cursor=pointer]:
+            - generic: Ficha de Avaliação - Inicial (Estagiários)
+            - img [ref=e38]
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - heading "Presença" [level=2] [ref=e44]
+            - paragraph [ref=e45]: Registre o horário combinado e a chegada do paciente.
+          - generic [ref=e46]:
+            - generic [ref=e47]:
+              - text: Horário agendado
+              - textbox "Horário agendado" [ref=e48]
+            - generic [ref=e49]:
+              - generic [ref=e51]: Horário de chegada
+              - generic [ref=e52]:
+                - textbox "Horário de chegada" [ref=e53]
+                - button "Agora" [ref=e54] [cursor=pointer]
+            - generic [ref=e55]:
+              - text: Data e hora do início do atendimento
+              - textbox "Data e hora do início do atendimento" [ref=e56]: 2026-05-20T20:26
+        - generic [ref=e57]:
+          - text: Anotações rápidas
+          - textbox "Anotações rápidas" [ref=e58]:
+            - /placeholder: Observações gerais sobre o atendimento...
+        - generic [ref=e59]:
+          - tablist [ref=e60]:
+            - tab "Anamnese" [ref=e61] [cursor=pointer]
+            - tab "Tratamento" [ref=e62] [cursor=pointer]
+            - tab "Pagamento" [active] [selected] [ref=e63] [cursor=pointer]
+          - tabpanel "Pagamento" [ref=e64]:
+            - generic [ref=e66]:
+              - generic [ref=e67]:
+                - heading "Pagamento" [level=2] [ref=e68]
+                - paragraph [ref=e69]: Informe o status, valor da consulta e quanto já foi pago.
+              - generic [ref=e70]:
+                - generic [ref=e71]:
+                  - text: Status
+                  - generic [ref=e72]:
+                    - generic [ref=e73]: Não cobrado
+                    - generic [ref=e74]:
+                      - checkbox "Marcar pagamento como cortesia" [ref=e75] [cursor=pointer]
+                      - generic [ref=e76]: Cortesia
+                - generic [ref=e77]:
+                  - text: Data do pagamento
+                  - textbox "Data do pagamento" [ref=e78]
+                - generic [ref=e79]:
+                  - text: Valor original
+                  - generic [ref=e80]:
+                    - generic: R$
+                    - textbox "Valor original" [ref=e81]:
+                      - /placeholder: 0,00
+                - generic [ref=e82]:
+                  - text: Valor da consulta
+                  - generic [ref=e83]:
+                    - generic: R$
+                    - textbox "Valor da consulta" [ref=e84]:
+                      - /placeholder: 0,00
+              - generic [ref=e85]:
+                - generic [ref=e86]:
+                  - generic [ref=e87]:
+                    - generic [ref=e88]: Quanto foi pago
+                    - generic [ref=e89]: "Crédito: R$ 2.960,00"
+                  - generic [ref=e90]:
+                    - generic: R$
+                    - textbox "Quanto foi pago" [ref=e91]:
+                      - /placeholder: 0,00
+                  - generic [ref=e92]:
+                    - button "Usar crédito" [disabled]
+                - generic [ref=e93]:
+                  - text: Motivo do desconto/acréscimo
+                  - textbox "Motivo do desconto/acréscimo" [ref=e94]:
+                    - /placeholder: Opcional
+              - paragraph [ref=e95]: "Em aberto: R$ 0,00"

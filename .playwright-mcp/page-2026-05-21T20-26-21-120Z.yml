@@ -1,0 +1,547 @@
+- generic:
+  - generic:
+    - list
+    - region "Notifications alt+T"
+    - generic:
+      - banner:
+        - button:
+          - generic: Clínica 11111111111111
+        - generic:
+          - generic:
+            - generic: teste@email.com
+            - generic: Clínica 11111111111111
+          - generic:
+            - generic: T
+          - button:
+            - img
+          - button:
+            - img
+      - main:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - img
+                - textbox:
+                  - /placeholder: Buscar paciente, CPF ou telefone...
+              - button [expanded]:
+                - img
+                - generic: Filtro
+              - combobox:
+                - generic:
+                  - img
+                  - generic: Padrão atual
+                - img
+              - button:
+                - img
+                - generic: Novo Paciente
+              - button:
+                - img
+          - generic:
+            - generic:
+              - heading [level=2]: Pacientes recentes
+              - generic:
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♂
+                        - heading [level=3]: Amanda Costa Rocha
+                        - generic: (ele/dele)
+                        - generic: Ativo
+                        - button: $
+                        - button:
+                          - img
+                      - generic:
+                        - generic: "Nasc: 26/04/1987"
+                        - generic: "CPF: 100.000.000-26"
+                        - generic: "Último atend: 20/05/2026"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♀
+                        - heading [level=3]: Ana Silva Santos
+                        - generic: (ela/dela)
+                        - generic: Ativo
+                        - button:
+                          - img
+                      - generic:
+                        - generic: "Nasc: 23/06/1975"
+                        - generic: "CPF: 100.000.000-01"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Bianca Pereira Gomes
+                        - generic: (elu/delu)
+                        - generic: Alta
+                        - button:
+                          - img
+                      - generic:
+                        - generic: "Nasc: 16/10/1987"
+                        - generic: "CPF: 100.000.000-27"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♂
+                        - heading [level=3]: Bruno Souza Lima
+                        - generic: (ele/dele)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 13/12/1975"
+                        - generic: "CPF: 100.000.000-02"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Carla Oliveira Costa
+                        - generic: (elu/delu)
+                        - generic: Ativo
+                        - button:
+                          - img
+                      - generic:
+                        - generic: "Nasc: 03/06/1976"
+                        - generic: "CPF: 100.000.000-03"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Daniel Santos Pereira
+                        - generic: Inativo
+                      - generic:
+                        - generic: "Nasc: 23/11/1976"
+                        - generic: "CPF: 100.000.000-04"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♀
+                        - heading [level=3]: Debora Rocha Souza
+                        - generic: (ela/dela)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 26/09/1988"
+                        - generic: "CPF: 100.000.000-29"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♀
+                        - heading [level=3]: Eduarda Lima Almeida
+                        - generic: (ela/dela)
+                        - generic: Pausado
+                      - generic:
+                        - generic: "Nasc: 15/05/1977"
+                        - generic: "CPF: 100.000.000-05"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♂
+                        - heading [level=3]: Enzo Gomes Oliveira
+                        - generic: (ele/dele)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 18/03/1989"
+                        - generic: "CPF: 100.000.000-30"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♂
+                        - heading [level=3]: Felipe Costa Rocha
+                        - generic: (ele/dele)
+                        - generic: Alta
+                        - button:
+                          - img
+                      - generic:
+                        - generic: "Nasc: 04/11/1977"
+                        - generic: "CPF: 100.000.000-06"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Gabriela Pereira Gomes
+                        - generic: (elu/delu)
+                        - generic: Pagamento pendente
+                      - generic:
+                        - generic: "Nasc: 26/04/1978"
+                        - generic: "CPF: 100.000.000-07"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Hugo Almeida Silva
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 16/10/1978"
+                        - generic: "CPF: 100.000.000-08"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♀
+                        - heading [level=3]: Isabela Rocha Souza
+                        - generic: (ela/dela)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 07/04/1979"
+                        - generic: "CPF: 100.000.000-09"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♂
+                        - heading [level=3]: Joao Gomes Oliveira
+                        - generic: (ele/dele)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 27/09/1979"
+                        - generic: "CPF: 100.000.000-10"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Karen Silva Santos
+                        - generic: (elu/delu)
+                        - generic: Inativo
+                      - generic:
+                        - generic: "Nasc: 18/03/1980"
+                        - generic: "CPF: 100.000.000-11"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Lucas Souza Lima
+                        - generic: Pausado
+                      - generic:
+                        - generic: "Nasc: 07/09/1980"
+                        - generic: "CPF: 100.000.000-12"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♀
+                        - heading [level=3]: Mariana Oliveira Costa
+                        - generic: (ela/dela)
+                        - generic: Alta
+                      - generic:
+                        - generic: "Nasc: 27/02/1981"
+                        - generic: "CPF: 100.000.000-13"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♂
+                        - heading [level=3]: Nicolas Santos Pereira
+                        - generic: (ele/dele)
+                        - generic: Pagamento pendente
+                      - generic:
+                        - generic: "Nasc: 19/08/1981"
+                        - generic: "CPF: 100.000.000-14"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Olivia Lima Almeida
+                        - generic: (elu/delu)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 08/02/1982"
+                        - generic: "CPF: 100.000.000-15"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Pedro Costa Rocha
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 31/07/1982"
+                        - generic: "CPF: 100.000.000-16"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♀
+                        - heading [level=3]: Quezia Pereira Gomes
+                        - generic: (ela/dela)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 20/01/1983"
+                        - generic: "CPF: 100.000.000-17"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♂
+                        - heading [level=3]: Rafael Almeida Silva
+                        - generic: (ele/dele)
+                        - generic: Inativo
+                      - generic:
+                        - generic: "Nasc: 12/07/1983"
+                        - generic: "CPF: 100.000.000-18"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Sabrina Rocha Souza
+                        - generic: (elu/delu)
+                        - generic: Pausado
+                      - generic:
+                        - generic: "Nasc: 01/01/1984"
+                        - generic: "CPF: 100.000.000-19"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Tiago Gomes Oliveira
+                        - generic: Alta
+                      - generic:
+                        - generic: "Nasc: 22/06/1984"
+                        - generic: "CPF: 100.000.000-20"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♀
+                        - heading [level=3]: Ursula Silva Santos
+                        - generic: (ela/dela)
+                        - generic: Pagamento pendente
+                      - generic:
+                        - generic: "Nasc: 12/12/1984"
+                        - generic: "CPF: 100.000.000-21"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♂
+                        - heading [level=3]: Vinicius Souza Lima
+                        - generic: (ele/dele)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 03/06/1985"
+                        - generic: "CPF: 100.000.000-22"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Wesley Oliveira Costa
+                        - generic: (elu/delu)
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 23/11/1985"
+                        - generic: "CPF: 100.000.000-23"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Yasmin Santos Pereira
+                        - generic: Ativo
+                      - generic:
+                        - generic: "Nasc: 15/05/1986"
+                        - generic: "CPF: 100.000.000-24"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: ♀
+                        - heading [level=3]: Zuleica Lima Almeida
+                        - generic: (ela/dela)
+                        - generic: Inativo
+                      - generic:
+                        - generic: "Nasc: 04/11/1986"
+                        - generic: "CPF: 100.000.000-25"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: Folaniudo
+                        - generic: Ativo
+                        - button: $
+                        - button:
+                          - img
+                      - generic:
+                        - generic: "Nasc: 09/09/2000"
+                        - generic: "CPF: 423.124.312-32"
+                        - generic: "Último atend: 05/05/2026"
+                    - img
+                - button:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - heading [level=3]: 1543tr
+                        - generic: Ativo
+                        - button: $
+                      - generic:
+                        - generic: "Nasc: 23/05/0413"
+                        - generic: "CPF: 121.212.212-12"
+                        - generic: "Último atend: 14/05/2026"
+                      - generic:
+                        - generic: teste
+                        - generic: teste2
+                    - img
+  - dialog "Filtros" [ref=e7]:
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - heading "Filtros" [level=2] [ref=e11]
+        - paragraph [ref=e12]: Refine a lista por status, pagamentos, agendamentos, grupos, colaborador, período e dias da semana.
+      - button "Sem filtros" [ref=e13] [cursor=pointer]
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - button "Status de atividade" [expanded] [ref=e19] [cursor=pointer]:
+          - generic [ref=e20]: Status de atividade
+          - img [ref=e21]
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - checkbox "Ativo" [ref=e26] [cursor=pointer]
+            - generic [ref=e27]: Ativo
+          - generic [ref=e28]:
+            - checkbox "Pausado" [ref=e29] [cursor=pointer]
+            - generic [ref=e30]: Pausado
+          - generic [ref=e31]:
+            - checkbox "Pagamento pendente" [ref=e32] [cursor=pointer]
+            - generic [ref=e33]: Pagamento pendente
+          - generic [ref=e34]:
+            - checkbox "Inativo" [ref=e35] [cursor=pointer]
+            - generic [ref=e36]: Inativo
+          - generic [ref=e37]:
+            - checkbox "Alta" [ref=e38] [cursor=pointer]
+            - generic [ref=e39]: Alta
+      - generic [ref=e40]:
+        - button "Status de pagamento" [expanded] [active] [ref=e41] [cursor=pointer]:
+          - generic [ref=e42]: Status de pagamento
+          - img [ref=e134]
+        - generic [ref=e137]:
+          - generic [ref=e138]:
+            - checkbox "Crédito" [ref=e139] [cursor=pointer]
+            - generic [ref=e140]: Crédito
+          - generic [ref=e141]:
+            - checkbox "Devendo" [ref=e142] [cursor=pointer]
+            - generic [ref=e143]: Devendo
+          - generic [ref=e144]:
+            - checkbox "Pendente" [ref=e145] [cursor=pointer]
+            - generic [ref=e146]: Pendente
+          - generic [ref=e147]:
+            - checkbox "Pago" [ref=e148] [cursor=pointer]
+            - generic [ref=e149]: Pago
+          - generic [ref=e150]:
+            - checkbox "Cortesia" [ref=e151] [cursor=pointer]
+            - generic [ref=e152]: Cortesia
+          - generic [ref=e153]:
+            - checkbox "Não cobrado" [ref=e154] [cursor=pointer]
+            - generic [ref=e155]: Não cobrado
+          - generic [ref=e156]:
+            - checkbox "Sem registro financeiro" [ref=e157] [cursor=pointer]
+            - generic [ref=e158]: Sem registro financeiro
+      - button "Status de agendamento" [ref=e46] [cursor=pointer]:
+        - generic [ref=e47]: Status de agendamento
+        - img [ref=e48]
+      - generic [ref=e50]:
+        - button "Grupos" [expanded] [ref=e51] [cursor=pointer]:
+          - generic [ref=e52]: Grupos
+          - img [ref=e53]
+        - generic [ref=e55]:
+          - generic [ref=e59]:
+            - 'button "Cor #0757F7" [ref=e60] [cursor=pointer]':
+              - generic [ref=e61]: "#0757F7"
+            - 'button "Cor #A34A3A" [ref=e62] [cursor=pointer]':
+              - generic [ref=e63]: "#A34A3A"
+            - 'button "Cor #E5E7EB" [ref=e64] [cursor=pointer]':
+              - generic [ref=e65]: "#E5E7EB"
+            - 'button "Cor #FDA4AF" [ref=e66] [cursor=pointer]':
+              - generic [ref=e67]: "#FDA4AF"
+          - generic [ref=e71]:
+            - button "Cancelados Cancelados" [ref=e72] [cursor=pointer]:
+              - checkbox "Cancelados" [ref=e73]
+              - paragraph [ref=e75]: Cancelados
+            - button "Grupo sem definição Grupo sem definição" [ref=e76] [cursor=pointer]:
+              - checkbox "Grupo sem definição" [ref=e77]
+              - paragraph [ref=e79]: Grupo sem definição
+            - button "teste teste" [ref=e80] [cursor=pointer]:
+              - checkbox "teste" [ref=e81]
+              - paragraph [ref=e83]: teste
+            - button "teste2 teste2" [ref=e84] [cursor=pointer]:
+              - checkbox "teste2" [ref=e85]
+              - paragraph [ref=e87]: teste2
+      - generic [ref=e88]:
+        - button "Colaborador" [expanded] [ref=e89] [cursor=pointer]:
+          - generic [ref=e90]: Colaborador
+          - img [ref=e91]
+        - generic [ref=e93]:
+          - generic [ref=e94]:
+            - img
+            - textbox "Buscar por nome, email, função ou cargo" [ref=e95]
+          - generic [ref=e99]:
+            - button "Selecionar teste@email.com TE teste@email.com teste@email.com" [ref=e100] [cursor=pointer]:
+              - checkbox "Selecionar teste@email.com" [ref=e101]
+              - generic [ref=e102]: TE
+              - generic [ref=e103]:
+                - paragraph [ref=e104]: teste@email.com
+                - paragraph [ref=e105]: teste@email.com
+            - button "Selecionar fucredison FU fucredison fuc@email.com Fisioterapeuta" [ref=e106] [cursor=pointer]:
+              - checkbox "Selecionar fucredison" [ref=e107]
+              - generic [ref=e108]: FU
+              - generic [ref=e109]:
+                - paragraph [ref=e110]: fucredison
+                - paragraph [ref=e111]: fuc@email.com
+              - generic [ref=e113]: Fisioterapeuta
+      - button "Período dos atendimentos" [ref=e115] [cursor=pointer]:
+        - generic [ref=e116]: Período dos atendimentos
+        - img [ref=e117]
+      - button "Dias da semana" [ref=e120] [cursor=pointer]:
+        - generic [ref=e121]: Dias da semana
+        - img [ref=e122]
+    - generic [ref=e126]:
+      - button "Limpar" [ref=e127] [cursor=pointer]
+      - button "Aplicar filtros" [ref=e128] [cursor=pointer]:
+        - img
+        - text: Aplicar filtros
+    - button "Close" [ref=e129] [cursor=pointer]:
+      - img [ref=e130]
+      - generic [ref=e133]: Close

@@ -101,8 +101,21 @@ vi.mock("@/integrations/supabase/client", () => {
           ];
         case "sessions":
           return [
-            { id: "session-1", patient_id: "patient-1", provider_id: "collab-1", session_date: "2026-04-14T10:00:00.000Z", status: "concluído", user_id: "collab-1" },
-            { id: "session-2", patient_id: "patient-2", provider_id: "collab-2", session_date: "2026-04-15T10:00:00.000Z", status: "concluído", user_id: "collab-2" },
+            { amount_charged_cents: 10000, amount_paid_cents: 12000, id: "session-1", patient_id: "patient-1", payment_method: "pix", provider_id: "collab-1", session_date: "2026-04-14T10:00:00.000Z", status: "concluído", user_id: "collab-1" },
+            { amount_charged_cents: 20000, amount_paid_cents: 5000, id: "session-2", patient_id: "patient-2", payment_method: "cartao_credito", provider_id: "collab-2", session_date: "2026-04-15T10:00:00.000Z", status: "concluído", user_id: "collab-2" },
+            { amount_charged_cents: Infinity, amount_paid_cents: Number.NaN, id: "session-invalid-1", patient_id: "patient-3", payment_method: "dinheiro", provider_id: "collab-2", session_date: "not-a-date", status: "rascunho", user_id: "collab-2" },
+            { amount_charged_cents: -5000, amount_paid_cents: 999_999_999_999, id: "session-invalid-2", patient_id: "patient-4", payment_method: "nao_informado", provider_id: "collab-1", session_date: "2026-04-16T10:00:00.000Z", status: "cancelado", user_id: "collab-1" },
+          ];
+        case "agenda_events":
+          return [
+            {
+              event_type: "atendimento",
+              id: "agenda-1",
+              patient_id: "patient-1",
+              scheduled_for: "2099-04-15T10:00:00.000Z",
+              status: "confirmado",
+              title: "Maria Silva",
+            },
           ];
         case "clinic_memberships":
           return [
@@ -121,6 +134,8 @@ vi.mock("@/integrations/supabase/client", () => {
 
     const builder = {
       eq: () => builder,
+      gte: () => builder,
+      neq: () => builder,
       order: () => builder,
       select: () => builder,
       then: (
@@ -268,7 +283,7 @@ describe("Index", () => {
     expect(screen.queryByText("Profissional")).not.toBeInTheDocument();
   });
 
-  it("restores the homepage utility panel in agenda mode after returning filters and sorting to the default state", async () => {
+  it("keeps the clinic agenda available in a popup after returning filters and sorting to the default state", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
@@ -277,7 +292,10 @@ describe("Index", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Agenda mock");
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: /abrir agenda/i }).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("Agenda mock")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /filtro/i }));
     fireEvent.click(screen.getByLabelText("Ativo"));
@@ -290,11 +308,17 @@ describe("Index", () => {
       expect(screen.queryByText("1 paciente encontrado")).not.toBeInTheDocument();
     });
 
-    expect(screen.getByText("Agenda mock")).toBeVisible();
-    expect(screen.queryByText("Resumo geral")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Filtros" })).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: /abrir agenda/i })[0]);
+
+    expect(await screen.findByText("Agenda mock")).toBeVisible();
   });
 
-  it("switches the utility panel from agenda to resumo", async () => {
+  it("opens the clinic agenda from the toolbar", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
@@ -303,12 +327,40 @@ describe("Index", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Agenda mock");
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: /abrir agenda/i }).length).toBeGreaterThan(0);
+    });
 
-    fireEvent.click(screen.getByRole("radio", { name: "Resumo" }));
-
-    expect(await screen.findByText("Resumo geral")).toBeInTheDocument();
-    expect(screen.getByText("Total de pacientes")).toBeInTheDocument();
     expect(screen.queryByText("Agenda mock")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /abrir agenda/i })[0]);
+
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Agenda");
+    expect(screen.getByText("Agenda mock")).toBeVisible();
+  });
+
+  it("renders the dashboard without unsafe values from malformed financial records", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: /abrir dashboard/i }).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: /abrir dashboard/i })[0]);
+
+    expect(await screen.findByRole("dialog", { name: "Resumo geral" })).toBeInTheDocument();
+    expect(screen.getByText("Receita registrada")).toBeInTheDocument();
+    expect(screen.getByText("Método de pagamento")).toBeInTheDocument();
+    expect(screen.queryByText("Total de pacientes")).not.toBeInTheDocument();
+    expect(screen.getByText(/Pago: R\$/)).toBeInTheDocument();
+    expect(screen.getByText(/Crédito: R\$/)).toBeInTheDocument();
+    expect(screen.getByText(/Em aberto: R\$/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/NaN|Infinity|∞/);
   });
 });
