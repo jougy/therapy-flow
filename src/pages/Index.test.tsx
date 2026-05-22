@@ -340,6 +340,27 @@ describe("Index", () => {
   });
 
   it("renders the dashboard without unsafe values from malformed financial records", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      accountRole: "account_owner",
+      can: (capability) => capability === "treasury.manage",
+      capabilities: {} as never,
+      clinic: null,
+      clinicId: "clinic-1",
+      isSuperAdmin: false,
+      loading: false,
+      membership: null,
+      membershipStatus: "active",
+      operationalRole: "owner",
+      profile: null,
+      refreshAuthState: vi.fn(async () => {}),
+      session: null,
+      signOut: vi.fn(async () => {}),
+      subscriptionPlan: "clinic",
+      user: {
+        id: "owner-1",
+      } as never,
+    });
+
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>

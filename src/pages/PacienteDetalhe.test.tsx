@@ -392,13 +392,14 @@ describe("PacienteDetalhe", () => {
   it("navigates patient summary cards in a single compact block", async () => {
     renderPage();
 
-    await screen.findByText("Resumo");
-    expect(screen.getByText("atendimento no histórico")).toBeInTheDocument();
+    await screen.findByText("Absenteísmo");
+    expect(screen.getAllByText("0 atendimentos").length).toBeGreaterThan(0);
+    expect(screen.getByText(/1 concluído/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /próximo resumo/i }));
 
-    expect(screen.getByText("Concluídos")).toBeInTheDocument();
-    expect(screen.getByText("atendimento")).toBeInTheDocument();
+    expect(screen.getByText("Mais recente")).toBeInTheDocument();
+    expect(screen.getAllByText("concluído").length).toBeGreaterThan(0);
   });
 
   it("shows the patient agenda block and opens the scheduling dialog", async () => {
@@ -406,7 +407,7 @@ describe("PacienteDetalhe", () => {
 
     expect(await screen.findByText("Sem eventos")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /adicionar evento/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^agendar$/i }));
 
     expect(await screen.findByRole("heading", { name: /novo evento/i })).toBeInTheDocument();
     expect(screen.getAllByText("Maria Silva").length).toBeGreaterThan(1);
@@ -450,9 +451,13 @@ describe("PacienteDetalhe", () => {
 
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: /próximo dia com agendamentos/i }));
+    const nextAgendaDayButton = await screen.findByRole("button", { name: /próximo dia com agendamentos/i });
+    await waitFor(() => {
+      expect(nextAgendaDayButton).not.toBeDisabled();
+    });
+    fireEvent.click(nextAgendaDayButton);
 
-    const statusBadge = await screen.findByText("Aguardando");
+    const statusBadge = await screen.findByText(/Aguardando/i);
     fireEvent.click(statusBadge.closest("div[role='button']")!);
 
     expect(await screen.findByText("Revise o horário, atualize o status ou inicie o atendimento a partir deste agendamento.")).toBeInTheDocument();
@@ -498,7 +503,7 @@ describe("PacienteDetalhe", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Aguardando")).toBeInTheDocument();
+    expect(await screen.findByText(/Aguardando/i)).toBeInTheDocument();
     expect(screen.queryByText("Sem eventos")).not.toBeInTheDocument();
   });
 
