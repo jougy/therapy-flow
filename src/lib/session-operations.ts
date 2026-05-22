@@ -135,7 +135,12 @@ export const sanitizePaymentAdjustmentReason = (value: string) =>
   value
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .split("")
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code === 10 || (code > 31 && code !== 127);
+    })
+    .join("")
     .trim()
     .slice(0, PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH);
 

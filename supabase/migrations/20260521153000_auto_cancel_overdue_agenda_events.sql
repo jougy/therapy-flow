@@ -140,7 +140,7 @@ BEGIN
       SELECT cron.schedule(
         'finalize-overdue-agenda-events',
         '5 0 * * *',
-        $$SELECT public.finalize_overdue_agenda_events(1000, 'America/Sao_Paulo');$$
+        $job$SELECT public.finalize_overdue_agenda_events(1000, 'America/Sao_Paulo');$job$
       )
     $cron$;
   END IF;

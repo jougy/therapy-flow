@@ -12,6 +12,7 @@ import {
   hasPaymentAdjustment,
   normalizeSessionPaymentStatus,
   parseCurrencyToCents,
+  sanitizePaymentAdjustmentReason,
 } from "@/lib/session-operations";
 
 describe("session operations", () => {
@@ -62,6 +63,9 @@ describe("session operations", () => {
     expect(normalizeSessionPaymentStatus({ amountChargedCents: 12000, amountPaidCents: 0, requestedStatus: "cortesia" })).toBe("cortesia");
   });
 
+  it("sanitizes payment adjustment reasons without removing line breaks", () => {
+    expect(sanitizePaymentAdjustmentReason("  desconto\u0000especial\r\nmotivo\tinterno\u007F  ")).toBe("descontoespecial\nmotivointerno");
+  });
 
   it("calculates arrival delay and patient summary", () => {
     const summary = buildPatientOperationalSummary([
