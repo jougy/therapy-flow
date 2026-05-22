@@ -126,6 +126,10 @@ vi.mock("@/integrations/supabase/client", () => {
   const today = new Date();
   today.setHours(9, 0, 0, 0);
   const todayIso = today.toISOString();
+  const future = new Date(today);
+  future.setDate(future.getDate() + 2);
+  future.setHours(10, 30, 0, 0);
+  const futureIso = future.toISOString();
 
   const agendaEvents = [
     {
@@ -134,6 +138,14 @@ vi.mock("@/integrations/supabase/client", () => {
       patient_id: "patient-1",
       scheduled_for: todayIso,
       status: "aguardando_confirmacao",
+      title: "Maria Silva",
+    },
+    {
+      event_type: "atendimento",
+      id: "agenda-future-1",
+      patient_id: "patient-1",
+      scheduled_for: futureIso,
+      status: "confirmado",
       title: "Maria Silva",
     },
   ];
@@ -317,5 +329,21 @@ describe("AgendaWidget", () => {
         table: "sessions",
       });
     });
+  });
+
+  it("jumps to the next day with scheduled events", async () => {
+    render(
+      <MemoryRouter>
+        <AgendaWidget />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("09:00")).toBeInTheDocument();
+    expect(screen.queryByText("10:30")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /próximo dia com agendamentos/i }));
+
+    expect(await screen.findByText("10:30")).toBeInTheDocument();
+    expect(screen.getByText("Confirmado")).toBeInTheDocument();
   });
 });

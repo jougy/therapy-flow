@@ -1,5 +1,6 @@
 import { comparePatientStatusPriority } from "@/lib/patient-statuses";
 import { filterActivePatientGroups } from "@/lib/patient-groups";
+import { buildPatientOperationalSummary, formatMoneyCents } from "@/lib/session-operations";
 
 export const DEFAULT_HOME_PATIENT_SORT_KEY = "updated_at_desc" as const;
 
@@ -14,9 +15,11 @@ export type HomePatientSortKey =
   | "status_priority";
 
 export interface HomePatientFilters {
+  agendaStatuses: HomePatientAgendaFilterStatus[];
   collaboratorIds: string[];
   colors: string[];
   groupNames: string[];
+  paymentStatuses: HomePatientPaymentFilterStatus[];
   searchTerm: string;
   sessionDateFrom: string;
   sessionDateTo: string;
@@ -44,12 +47,25 @@ export interface HomePatientGroupRecord {
 }
 
 export interface HomeSessionRecord {
+  amount_charged_cents?: number | null;
+  amount_paid_cents?: number | null;
   id: string;
   patient_id: string;
+  payment_method?: string | null;
+  payment_status?: string | null;
   provider_id?: string | null;
   session_date: string;
   status: string;
   user_id?: string | null;
+}
+
+export interface HomeAgendaEventRecord {
+  event_type: string;
+  id: string;
+  patient_id: string | null;
+  scheduled_for: string;
+  status: string;
+  title: string;
 }
 
 export interface HomeCollaboratorFilterRecord {
@@ -73,6 +89,10 @@ export interface HomePatientView {
   lastSessionDate: string | null;
   missedCount: number;
   name: string;
+  agendaFilterStatuses: HomePatientAgendaFilterStatus[];
+  nextAgendaSummary: HomePatientAgendaSummary | null;
+  paymentFilterStatus: HomePatientPaymentFilterStatus;
+  paymentSummary: HomePatientPaymentSummary | null;
   phone: string | null;
   pronoun: string | null;
   searchableText: string;
@@ -82,6 +102,55 @@ export interface HomePatientView {
   statusPriority: number;
   updatedAt: string;
 }
+
+export interface HomePatientPaymentSummary {
+  amountLabel: string | null;
+  description: string;
+  label: string;
+  tone: "credit" | "debt" | "paid" | "pending";
+}
+
+export interface HomePatientAgendaSummary {
+  description: string;
+  scheduledForLabel: string;
+  statusLabel: string;
+  tone: "confirmed" | "late" | "next" | "unconfirmed";
+  title: string;
+}
+
+export type HomePatientPaymentFilterStatus =
+  | "credit"
+  | "debt"
+  | "pending"
+  | "paid"
+  | "courtesy"
+  | "not_charged"
+  | "no_financial_record";
+
+export type HomePatientAgendaFilterStatus =
+  | "late"
+  | "next"
+  | "confirmed"
+  | "unconfirmed"
+  | "no_agenda";
+
+export const HOME_PATIENT_PAYMENT_STATUS_OPTIONS: { label: string; value: HomePatientPaymentFilterStatus }[] = [
+  { label: "Crédito", value: "credit" },
+  { label: "Devendo", value: "debt" },
+  { label: "Pendente", value: "pending" },
+  { label: "Pago", value: "paid" },
+  { label: "Cortesia", value: "courtesy" },
+  { label: "Não cobrado", value: "not_charged" },
+  { label: "Sem registro financeiro", value: "no_financial_record" },
+];
+
+export const HOME_PATIENT_AGENDA_STATUS_OPTIONS: { label: string; value: HomePatientAgendaFilterStatus }[] = [
+  { label: "Atrasado", value: "late" },
+  { label: "Próximo atendimento", value: "next" },
+  { label: "Confirmado", value: "confirmed" },
+  { label: "Aguardando confirmação", value: "unconfirmed" },
+  { label: "Sem agendamento", value: "no_agenda" },
+];
 
 export const HOME_PATIENT_WEEKDAY_OPTIONS = [
   { label: "Domingo", value: 0 },
@@ -155,6 +224,194 @@ const isSessionInDateRange = (sessionDate: string, sessionDateFrom: string, sess
   return true;
 };
 
+const buildHomePatientPaymentSummary = (sessions: HomeSessionRecord[]): HomePatientPaymentSummary | null => {
+  if (sessions.length === 0) {
+    return null;
+  }
+
+  const summary = buildPatientOperationalSummary(sessions);
+  const netCreditCents = Math.max(0, summary.paidCents - summary.chargedCents);
+  const netOpenBalanceCents = Math.max(0, summary.chargedCents - summary.paidCents);
+
+  if (netCreditCents > 0) {
+    return {
+      amountLabel: formatMoneyCents(netCreditCents),
+      description: "O paciente tem valor pago a mais para usar como crédito.",
+      label: "Crédito",
+      tone: "credit",
+    };
+  }
+
+  if (netOpenBalanceCents > 0) {
+    const isPartiallyPaid = summary.paidCents > 0;
+
+    return {
+      amountLabel: formatMoneyCents(netOpenBalanceCents),
+      description: isPartiallyPaid ? "Existe saldo em aberto após pagamento parcial." : "Ainda não há baixa de pagamento para valores cobrados.",
+      label: isPartiallyPaid ? "Devendo" : "Pendente",
+      tone: isPartiallyPaid ? "debt" : "pending",
+    };
+  }
+
+  if (summary.chargedCents > 0) {
+    return {
+      amountLabel: null,
+      description: "Os valores cobrados estão quitados.",
+      label: "Pago",
+      tone: "paid",
+    };
+  }
+
+  if (sessions.some((session) => session.payment_status === "cortesia")) {
+    return {
+      amountLabel: null,
+      description: "Este paciente possui atendimento de cortesia.",
+      label: "Cortesia",
+      tone: "paid",
+    };
+  }
+
+  return {
+    amountLabel: null,
+    description: "Não há cobrança registrada nos atendimentos.",
+    label: "Não cobrado",
+    tone: "paid",
+  };
+};
+
+const buildHomePatientPaymentFilterStatus = (sessions: HomeSessionRecord[]): HomePatientPaymentFilterStatus => {
+  if (sessions.length === 0) {
+    return "no_financial_record";
+  }
+
+  const summary = buildPatientOperationalSummary(sessions);
+  const netCreditCents = Math.max(0, summary.paidCents - summary.chargedCents);
+  const netOpenBalanceCents = Math.max(0, summary.chargedCents - summary.paidCents);
+
+  if (netCreditCents > 0) {
+    return "credit";
+  }
+
+  if (netOpenBalanceCents > 0) {
+    return summary.paidCents > 0 ? "debt" : "pending";
+  }
+
+  if (summary.chargedCents > 0) {
+    return "paid";
+  }
+
+  if (sessions.some((session) => session.payment_status === "cortesia")) {
+    return "courtesy";
+  }
+
+  return "not_charged";
+};
+
+const agendaStatusLabels: Record<string, string> = {
+  aguardando_confirmacao: "Aguardando confirmação",
+  cancelado: "Cancelado",
+  confirmado: "Confirmado",
+  lembrete: "Lembrete",
+};
+
+const agendaTypeLabels: Record<string, string> = {
+  atendimento: "Atendimento",
+  evento: "Evento",
+  reuniao: "Reunião",
+};
+
+const formatAgendaDateTimeLabel = (value: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(value));
+
+const getAgendaEventTime = (event: HomeAgendaEventRecord) => new Date(event.scheduled_for).getTime();
+
+const getRelevantAgendaEvent = (agendaEvents: HomeAgendaEventRecord[], now: number) => {
+  const activeEvents = agendaEvents
+    .filter((event) => event.patient_id && event.status !== "cancelado" && !Number.isNaN(getAgendaEventTime(event)))
+    .sort((left, right) => getAgendaEventTime(left) - getAgendaEventTime(right));
+  const lateEvents = activeEvents
+    .filter((event) => getAgendaEventTime(event) < now)
+    .sort((left, right) => getAgendaEventTime(right) - getAgendaEventTime(left));
+
+  return lateEvents[0] ?? activeEvents.find((event) => getAgendaEventTime(event) >= now) ?? null;
+};
+
+const getNextGlobalAgendaEventId = (agendaEvents: HomeAgendaEventRecord[], now: number) =>
+  agendaEvents
+    .filter((event) => event.patient_id && event.status !== "cancelado" && !Number.isNaN(getAgendaEventTime(event)) && getAgendaEventTime(event) >= now)
+    .sort((left, right) => getAgendaEventTime(left) - getAgendaEventTime(right))[0]?.id ?? null;
+
+const getAgendaSummaryTone = (event: HomeAgendaEventRecord, nextGlobalAgendaEventId: string | null, now: number): HomePatientAgendaSummary["tone"] => {
+  if (getAgendaEventTime(event) < now) {
+    return "late";
+  }
+
+  if (event.id === nextGlobalAgendaEventId) {
+    return "next";
+  }
+
+  if (event.status === "confirmado") {
+    return "confirmed";
+  }
+
+  return "unconfirmed";
+};
+
+const buildHomePatientAgendaSummary = (
+  agendaEvents: HomeAgendaEventRecord[],
+  nextGlobalAgendaEventId: string | null,
+  now: number,
+): HomePatientAgendaSummary | null => {
+  const activeEvents = agendaEvents.filter((event) => event.patient_id && event.status !== "cancelado" && !Number.isNaN(getAgendaEventTime(event)));
+  const nextEvent = getRelevantAgendaEvent(activeEvents, now);
+
+  if (!nextEvent) {
+    return null;
+  }
+
+  const extraEventsCount = activeEvents.length - 1;
+  const eventTypeLabel = agendaTypeLabels[nextEvent.event_type] ?? "Agendamento";
+  const statusLabel = agendaStatusLabels[nextEvent.status] ?? nextEvent.status;
+  const eventIsLate = getAgendaEventTime(nextEvent) < now;
+
+  return {
+    description:
+      eventIsLate
+        ? `${eventTypeLabel} atrasado. Revise o horário ou atualize o status na agenda.`
+        : extraEventsCount > 0
+        ? `${eventTypeLabel} mais próximo. Há mais ${extraEventsCount} agendamento${extraEventsCount !== 1 ? "s" : ""} vinculado${extraEventsCount !== 1 ? "s" : ""} a este paciente.`
+        : `${eventTypeLabel} futuro vinculado a este paciente.`,
+    scheduledForLabel: formatAgendaDateTimeLabel(nextEvent.scheduled_for),
+    statusLabel,
+    tone: getAgendaSummaryTone(nextEvent, nextGlobalAgendaEventId, now),
+    title: nextEvent.title,
+  };
+};
+
+const buildHomePatientAgendaFilterStatuses = (
+  agendaEvents: HomeAgendaEventRecord[],
+  nextGlobalAgendaEventId: string | null,
+  now: number,
+): HomePatientAgendaFilterStatus[] => {
+  const activeEvents = agendaEvents.filter((event) => event.patient_id && event.status !== "cancelado" && !Number.isNaN(getAgendaEventTime(event)));
+
+  if (activeEvents.length === 0) {
+    return ["no_agenda"];
+  }
+
+  return Array.from(
+    new Set(
+      activeEvents.map((event) => getAgendaSummaryTone(event, nextGlobalAgendaEventId, now)),
+    ),
+  );
+};
+
 const compareByName = (left: HomePatientView, right: HomePatientView) => compareText(left.name, right.name);
 
 const compareByDefault = (left: HomePatientView, right: HomePatientView) =>
@@ -183,18 +440,22 @@ const comparePatientsForSort = (sortKey: HomePatientSortKey, left: HomePatientVi
 };
 
 export const hasActiveHomePatientFilters = (filters: HomePatientFilters) =>
+  filters.agendaStatuses.length > 0 ||
   filters.collaboratorIds.length > 0 ||
   filters.colors.length > 0 ||
   filters.groupNames.length > 0 ||
+  filters.paymentStatuses.length > 0 ||
   filters.statuses.length > 0 ||
   filters.weekdays.length > 0 ||
   filters.sessionDateFrom.length > 0 ||
   filters.sessionDateTo.length > 0;
 
 export const getActiveHomePatientFilterCount = (filters: HomePatientFilters) =>
+  filters.agendaStatuses.length +
   filters.collaboratorIds.length +
   filters.colors.length +
   filters.groupNames.length +
+  filters.paymentStatuses.length +
   filters.statuses.length +
   filters.weekdays.length +
   (filters.sessionDateFrom ? 1 : 0) +
@@ -202,23 +463,40 @@ export const getActiveHomePatientFilterCount = (filters: HomePatientFilters) =>
 
 export const buildHomePatientViews = ({
   filters,
+  agendaEvents = [],
   patientGroups,
   patients,
   sessions,
   sortKey,
+  showFinancialData = true,
 }: {
   filters: HomePatientFilters;
+  agendaEvents?: HomeAgendaEventRecord[];
   patientGroups: HomePatientGroupRecord[];
   patients: HomePatientRecord[];
   sessions: HomeSessionRecord[];
   sortKey: HomePatientSortKey;
+  showFinancialData?: boolean;
 }) => {
   const sessionsByPatientId = new Map<string, HomeSessionRecord[]>();
+  const agendaEventsByPatientId = new Map<string, HomeAgendaEventRecord[]>();
+  const now = Date.now();
+  const nextGlobalAgendaEventId = getNextGlobalAgendaEventId(agendaEvents, now);
 
   sessions.forEach((session) => {
     const current = sessionsByPatientId.get(session.patient_id) ?? [];
     current.push(session);
     sessionsByPatientId.set(session.patient_id, current);
+  });
+
+  agendaEvents.forEach((event) => {
+    if (!event.patient_id) {
+      return;
+    }
+
+    const current = agendaEventsByPatientId.get(event.patient_id) ?? [];
+    current.push(event);
+    agendaEventsByPatientId.set(event.patient_id, current);
   });
 
   return patients
@@ -245,6 +523,7 @@ export const buildHomePatientViews = ({
       );
 
       return {
+        agendaFilterStatuses: buildHomePatientAgendaFilterStatuses(agendaEventsByPatientId.get(patient.id) ?? [], nextGlobalAgendaEventId, now),
         collaboratorIds,
         colors: Array.from(new Set(groups.map((group) => group.color))),
         cpf: patient.cpf,
@@ -262,6 +541,9 @@ export const buildHomePatientViews = ({
         lastSessionDate: patientLastSession,
         missedCount: patientSessions.filter((session) => session.status === "cancelado").length,
         name: patient.name,
+        nextAgendaSummary: buildHomePatientAgendaSummary(agendaEventsByPatientId.get(patient.id) ?? [], nextGlobalAgendaEventId, now),
+        paymentFilterStatus: showFinancialData ? buildHomePatientPaymentFilterStatus(patientSessions) : "no_financial_record",
+        paymentSummary: showFinancialData ? buildHomePatientPaymentSummary(patientSessions) : null,
         phone: patient.phone,
         pronoun: patient.pronoun,
         searchableText: buildSearchableText(patient),
@@ -280,6 +562,14 @@ export const buildHomePatientViews = ({
       }
 
       if (filters.statuses.length > 0 && !filters.statuses.includes(patient.status)) {
+        return false;
+      }
+
+      if (filters.paymentStatuses.length > 0 && !filters.paymentStatuses.includes(patient.paymentFilterStatus)) {
+        return false;
+      }
+
+      if (filters.agendaStatuses.length > 0 && !patient.agendaFilterStatuses.some((status) => filters.agendaStatuses.includes(status))) {
         return false;
       }
 

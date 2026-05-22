@@ -1,0 +1,902 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e6]:
+    - banner [ref=e7]:
+      - button "Ir para a página inicial da clínica Clínica 11111111111111" [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]: Clínica 11111111111111
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: teste@email.com
+          - generic [ref=e13]: Clínica 11111111111111
+        - generic [ref=e15]: T
+        - button "Configurações" [ref=e16] [cursor=pointer]:
+          - img
+        - button "Sair da conta" [ref=e17] [cursor=pointer]:
+          - img
+    - main [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]:
+          - generic [ref=e21]:
+            - button "Voltar para paciente" [ref=e22] [cursor=pointer]:
+              - img
+            - generic [ref=e23]:
+              - heading "Novo Atendimento" [level=1] [ref=e24]
+              - paragraph [ref=e25]: Amanda Costa Rocha
+          - generic [ref=e27]: rascunho
+        - generic [ref=e28]:
+          - button "Salvar" [ref=e29] [cursor=pointer]:
+            - img
+            - generic [ref=e30]: Salvar
+          - combobox [ref=e31] [cursor=pointer]:
+            - generic: Rascunho
+            - img [ref=e32]
+          - combobox [ref=e34] [cursor=pointer]:
+            - generic: Grupo sem definição
+            - img [ref=e35]
+          - combobox [ref=e37] [cursor=pointer]:
+            - generic: Ficha de Avaliação - Inicial (Estagiários)
+            - img [ref=e38]
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - heading "Presença" [level=2] [ref=e44]
+            - paragraph [ref=e45]: Registre o horário combinado e a chegada do paciente.
+          - generic [ref=e46]:
+            - generic [ref=e47]:
+              - text: Horário agendado
+              - textbox "Horário agendado" [ref=e48]
+            - generic [ref=e49]:
+              - generic [ref=e51]: Horário de chegada
+              - generic [ref=e52]:
+                - textbox "Horário de chegada" [ref=e53]
+                - button "Agora" [ref=e54] [cursor=pointer]
+            - generic [ref=e55]:
+              - text: Data e hora do início do atendimento
+              - textbox "Data e hora do início do atendimento" [ref=e56]: 2026-05-22T14:08
+        - generic [ref=e57]:
+          - text: Anotações rápidas
+          - textbox "Anotações rápidas" [ref=e58]:
+            - /placeholder: Observações gerais sobre o atendimento...
+        - generic [ref=e59]:
+          - tablist [ref=e60]:
+            - tab "Anamnese" [selected] [ref=e61] [cursor=pointer]
+            - tab "Tratamento" [ref=e62] [cursor=pointer]
+            - tab "Pagamento" [ref=e63] [cursor=pointer]
+          - tabpanel "Anamnese" [ref=e64]:
+            - generic [ref=e66]:
+              - generic [ref=e69]:
+                - generic [ref=e71]: Queixa principal
+                - textbox [ref=e72]
+              - generic [ref=e73]:
+                - generic [ref=e74]:
+                  - paragraph [ref=e75]: Ficha complementar
+                  - paragraph [ref=e76]: Para estagiários
+                - generic [ref=e77]:
+                  - generic [ref=e79]:
+                    - heading "Anamnese Campos obrigatórios da primeira parte da anamnese." [level=3] [ref=e80]:
+                      - button "Anamnese Campos obrigatórios da primeira parte da anamnese." [expanded] [ref=e81] [cursor=pointer]:
+                        - generic [ref=e82]:
+                          - paragraph [ref=e83]: Anamnese
+                          - paragraph [ref=e84]: Campos obrigatórios da primeira parte da anamnese.
+                        - img [ref=e85]
+                    - region "Anamnese Campos obrigatórios da primeira parte da anamnese." [ref=e87]:
+                      - generic [ref=e89]:
+                        - generic [ref=e91]:
+                          - generic [ref=e92]:
+                            - generic [ref=e93]: H.D.A.
+                            - button "Ajuda para H.D.A." [ref=e94] [cursor=pointer]:
+                              - img [ref=e95]
+                          - textbox [ref=e98]
+                        - generic [ref=e100]:
+                          - generic [ref=e101]:
+                            - generic [ref=e102]: H.D.P.
+                            - button "Ajuda para H.D.P." [ref=e103] [cursor=pointer]:
+                              - img [ref=e104]
+                          - textbox [ref=e107]
+                        - generic [ref=e109]:
+                          - generic [ref=e110]:
+                            - generic [ref=e111]: HF
+                            - button "Ajuda para HF" [ref=e112] [cursor=pointer]:
+                              - img [ref=e113]
+                          - textbox [ref=e116]
+                        - generic [ref=e118]:
+                          - generic [ref=e119]:
+                            - generic [ref=e120]: HM
+                            - button "Ajuda para HM" [ref=e121] [cursor=pointer]:
+                              - img [ref=e122]
+                          - textbox [ref=e125]
+                  - generic [ref=e127]:
+                    - heading "Exame Físico Geral" [level=3] [ref=e128]:
+                      - button "Exame Físico Geral" [expanded] [ref=e129] [cursor=pointer]:
+                        - paragraph [ref=e131]: Exame Físico Geral
+                        - img [ref=e132]
+                    - region "Exame Físico Geral" [ref=e134]:
+                      - generic [ref=e136]:
+                        - generic [ref=e138]:
+                          - paragraph [ref=e140]: Sinais Vitais
+                          - generic [ref=e142]:
+                            - generic [ref=e145]:
+                              - generic [ref=e146]:
+                                - generic [ref=e147]: FR
+                                - button "Ajuda para FR" [ref=e148] [cursor=pointer]:
+                                  - img [ref=e149]
+                              - spinbutton [ref=e152]
+                            - generic [ref=e155]:
+                              - generic [ref=e156]:
+                                - generic [ref=e157]: FC
+                                - button "Ajuda para FC" [ref=e158] [cursor=pointer]:
+                                  - img [ref=e159]
+                              - spinbutton [ref=e162]
+                            - generic [ref=e165]:
+                              - generic [ref=e167]: T
+                              - spinbutton [ref=e168]
+                            - generic [ref=e171]:
+                              - generic [ref=e172]:
+                                - generic [ref=e173]: PA
+                                - button "Ajuda para PA" [ref=e174] [cursor=pointer]:
+                                  - img [ref=e175]
+                              - spinbutton [ref=e178]
+                            - generic [ref=e181]:
+                              - generic [ref=e182]:
+                                - generic [ref=e183]: SatO2
+                                - button "Ajuda para SatO2" [ref=e184] [cursor=pointer]:
+                                  - img [ref=e185]
+                              - spinbutton [ref=e188]
+                            - generic [ref=e191]:
+                              - generic [ref=e193]: Obs
+                              - textbox [ref=e194]
+                          - generic [ref=e195]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e205]:
+                          - generic [ref=e207]: Trofismo Muscular
+                          - combobox [ref=e208] [cursor=pointer]:
+                            - generic: Selecione
+                            - img [ref=e209]
+                        - generic [ref=e212]:
+                          - paragraph [ref=e214]: Tônus Muscular
+                          - generic [ref=e216]:
+                            - combobox [ref=e220] [cursor=pointer]:
+                              - generic: Selecione
+                              - img [ref=e221]
+                            - generic [ref=e225]:
+                              - generic [ref=e227]: OBS
+                              - textbox [ref=e228]
+                          - generic [ref=e229]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e235]:
+                          - generic [ref=e237]: Movimentos Involuntários
+                          - generic [ref=e240]:
+                            - generic [ref=e241]:
+                              - checkbox "Atetose" [ref=e242] [cursor=pointer]
+                              - generic [ref=e243]: Atetose
+                            - generic [ref=e244]:
+                              - checkbox "Coréia" [ref=e245] [cursor=pointer]
+                              - generic [ref=e246]: Coréia
+                            - generic [ref=e247]:
+                              - checkbox "Estereotipados" [ref=e248] [cursor=pointer]
+                              - generic [ref=e249]: Estereotipados
+                            - generic [ref=e250]:
+                              - checkbox "Ataxia" [ref=e251] [cursor=pointer]
+                              - generic [ref=e252]: Ataxia
+                            - generic [ref=e253]:
+                              - checkbox "Misto" [ref=e254] [cursor=pointer]
+                              - generic [ref=e255]: Misto
+                            - generic [ref=e256]:
+                              - checkbox "Distonia" [ref=e257] [cursor=pointer]
+                              - generic [ref=e258]: Distonia
+                            - generic [ref=e259]:
+                              - checkbox "Balismo" [ref=e260] [cursor=pointer]
+                              - generic [ref=e261]: Balismo
+                        - generic [ref=e263]:
+                          - generic [ref=e265]: Coloração da Pele
+                          - combobox [ref=e266] [cursor=pointer]:
+                            - generic: Selecione
+                            - img [ref=e267]
+                        - generic [ref=e270]:
+                          - heading "Linguagem Texto introdutório da seção." [level=3] [ref=e271]:
+                            - button "Linguagem Texto introdutório da seção." [expanded] [ref=e272] [cursor=pointer]:
+                              - generic [ref=e273]:
+                                - paragraph [ref=e274]: Linguagem
+                                - paragraph [ref=e275]: Texto introdutório da seção.
+                              - img [ref=e276]
+                          - region "Linguagem Texto introdutório da seção." [ref=e278]:
+                            - generic [ref=e280]:
+                              - generic [ref=e282]:
+                                - generic [ref=e284]: Distúrbios da articulação
+                                - generic [ref=e287]:
+                                  - generic [ref=e288]:
+                                    - checkbox "Disartria" [ref=e289] [cursor=pointer]
+                                    - generic [ref=e290]: Disartria
+                                  - generic [ref=e291]:
+                                    - checkbox "Dislalia" [ref=e292] [cursor=pointer]
+                                    - generic [ref=e293]: Dislalia
+                              - generic [ref=e295]:
+                                - generic [ref=e297]: Disturbios da linguagem
+                                - generic [ref=e300]:
+                                  - generic [ref=e301]:
+                                    - checkbox "Disfasia" [ref=e302] [cursor=pointer]
+                                    - generic [ref=e303]: Disfasia
+                                  - generic [ref=e304]:
+                                    - checkbox "Afasia" [ref=e305] [cursor=pointer]
+                                    - generic [ref=e306]: Afasia
+                        - generic [ref=e308]:
+                          - generic [ref=e310]: Convulsão
+                          - radiogroup [ref=e311]:
+                            - generic [ref=e314]:
+                              - generic [ref=e315]:
+                                - radio "Sim" [ref=e316] [cursor=pointer]
+                                - generic [ref=e317]: Sim
+                              - generic [ref=e318]:
+                                - radio "Não" [ref=e319] [cursor=pointer]
+                                - generic [ref=e320]: Não
+                        - generic [ref=e322]:
+                          - generic [ref=e324]: Frequência das Convulsões
+                          - textbox [ref=e325]
+                        - generic [ref=e327]:
+                          - generic [ref=e329]: Controle Vesical
+                          - radiogroup [ref=e330]:
+                            - generic [ref=e333]:
+                              - generic [ref=e334]:
+                                - radio "Sim" [ref=e335] [cursor=pointer]
+                                - generic [ref=e336]: Sim
+                              - generic [ref=e337]:
+                                - radio "Não" [ref=e338] [cursor=pointer]
+                                - generic [ref=e339]: Não
+                        - generic [ref=e341]:
+                          - generic [ref=e342]:
+                            - generic [ref=e343]: Contraturas
+                            - button "Ajuda para Contraturas" [ref=e344] [cursor=pointer]:
+                              - img [ref=e345]
+                          - radiogroup [ref=e348]:
+                            - generic [ref=e351]:
+                              - generic [ref=e352]:
+                                - radio "Sim" [ref=e353] [cursor=pointer]
+                                - generic [ref=e354]: Sim
+                              - generic [ref=e355]:
+                                - radio "Não" [ref=e356] [cursor=pointer]
+                                - generic [ref=e357]: Não
+                        - generic [ref=e359]:
+                          - generic [ref=e360]:
+                            - generic [ref=e361]: Local da Contratura
+                            - button "Ajuda para Local da Contratura" [ref=e362] [cursor=pointer]:
+                              - img [ref=e363]
+                          - textbox [ref=e366]
+                  - generic [ref=e368]:
+                    - heading "Inspeção Texto introdutório da seção." [level=3] [ref=e369]:
+                      - button "Inspeção Texto introdutório da seção." [expanded] [ref=e370] [cursor=pointer]:
+                        - generic [ref=e371]:
+                          - paragraph [ref=e372]: Inspeção
+                          - paragraph [ref=e373]: Texto introdutório da seção.
+                        - img [ref=e374]
+                    - region "Inspeção Texto introdutório da seção." [ref=e376]:
+                      - generic [ref=e378]:
+                        - generic [ref=e380]:
+                          - generic [ref=e382]: Condição da Pele
+                          - generic [ref=e385]:
+                            - generic [ref=e386]:
+                              - checkbox "Hidratada" [ref=e387] [cursor=pointer]
+                              - generic [ref=e388]: Hidratada
+                            - generic [ref=e389]:
+                              - checkbox "Desidratada" [ref=e390] [cursor=pointer]
+                              - generic [ref=e391]: Desidratada
+                            - generic [ref=e392]:
+                              - checkbox "Úmida" [ref=e393] [cursor=pointer]
+                              - generic [ref=e394]: Úmida
+                            - generic [ref=e395]:
+                              - checkbox "Íntegra" [ref=e396] [cursor=pointer]
+                              - generic [ref=e397]: Íntegra
+                            - generic [ref=e398]:
+                              - checkbox "Lesionada" [ref=e399] [cursor=pointer]
+                              - generic [ref=e400]: Lesionada
+                        - generic [ref=e402]:
+                          - generic [ref=e403]:
+                            - paragraph [ref=e404]: Edema
+                            - paragraph [ref=e405]: Agrupe campos lado a lado com rolagem horizontal.
+                          - generic [ref=e407]:
+                            - generic [ref=e410]:
+                              - generic [ref=e412]: Possui edema?
+                              - radiogroup [ref=e413]:
+                                - generic [ref=e416]:
+                                  - generic [ref=e417]:
+                                    - radio "Sim" [ref=e418] [cursor=pointer]
+                                    - generic [ref=e419]: Sim
+                                  - generic [ref=e420]:
+                                    - radio "Não" [ref=e421] [cursor=pointer]
+                                    - generic [ref=e422]: Não
+                            - generic [ref=e425]:
+                              - generic [ref=e427]: Local do edema
+                              - textbox [ref=e428]
+                            - generic [ref=e431]:
+                              - generic [ref=e433]: Tipo de edema
+                              - textbox [ref=e434]
+                          - generic [ref=e435]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e442]:
+                          - generic [ref=e443]:
+                            - paragraph [ref=e444]: Deformidades
+                            - paragraph [ref=e445]: Agrupe campos lado a lado com rolagem horizontal.
+                          - generic [ref=e447]:
+                            - generic [ref=e450]:
+                              - generic [ref=e452]: Local
+                              - generic [ref=e453]:
+                                - generic [ref=e454]:
+                                  - generic [ref=e456]:
+                                    - checkbox "Coluna" [ref=e457] [cursor=pointer]
+                                    - generic [ref=e458]: Coluna
+                                  - generic [ref=e461]: "---"
+                                - generic [ref=e463]:
+                                  - generic [ref=e465]:
+                                    - checkbox "Punho" [ref=e466] [cursor=pointer]
+                                    - generic [ref=e467]: Punho
+                                  - generic [ref=e470]: "---"
+                                - generic [ref=e472]:
+                                  - generic [ref=e474]:
+                                    - checkbox "joelho" [ref=e475] [cursor=pointer]
+                                    - generic [ref=e476]: joelho
+                                  - generic [ref=e479]: "---"
+                                - generic [ref=e483]:
+                                  - checkbox "Pé" [ref=e484] [cursor=pointer]
+                                  - generic [ref=e485]: Pé
+                            - generic [ref=e488]:
+                              - generic [ref=e490]: Tipo de Deformidade
+                              - generic [ref=e491]:
+                                - generic [ref=e492]:
+                                  - generic [ref=e493]:
+                                    - generic [ref=e494]:
+                                      - checkbox "Escoliose" [ref=e495] [cursor=pointer]
+                                      - generic [ref=e496]: Escoliose
+                                    - generic [ref=e497]:
+                                      - checkbox "Hipercifose" [ref=e498] [cursor=pointer]
+                                      - generic [ref=e499]: Hipercifose
+                                    - generic [ref=e500]:
+                                      - checkbox "Hiperlordose" [ref=e501] [cursor=pointer]
+                                      - generic [ref=e502]: Hiperlordose
+                                    - generic [ref=e503]:
+                                      - checkbox "Retificada" [ref=e504] [cursor=pointer]
+                                      - generic [ref=e505]: Retificada
+                                  - generic [ref=e508]: "---"
+                                - generic [ref=e510]:
+                                  - generic [ref=e511]:
+                                    - generic [ref=e512]:
+                                      - checkbox "Flexão" [ref=e513] [cursor=pointer]
+                                      - generic [ref=e514]: Flexão
+                                    - generic [ref=e515]:
+                                      - checkbox "Extensão" [ref=e516] [cursor=pointer]
+                                      - generic [ref=e517]: Extensão
+                                    - generic [ref=e518]:
+                                      - checkbox "Desvio Ulnar" [ref=e519] [cursor=pointer]
+                                      - generic [ref=e520]: Desvio Ulnar
+                                    - generic [ref=e521]:
+                                      - checkbox "Desvio Radial" [ref=e522] [cursor=pointer]
+                                      - generic [ref=e523]: Desvio Radial
+                                  - generic [ref=e526]: "---"
+                                - generic [ref=e528]:
+                                  - generic [ref=e529]:
+                                    - generic [ref=e530]:
+                                      - checkbox "valgo" [ref=e531] [cursor=pointer]
+                                      - generic [ref=e532]: valgo
+                                    - generic [ref=e533]:
+                                      - checkbox "varo" [ref=e534] [cursor=pointer]
+                                      - generic [ref=e535]: varo
+                                    - generic [ref=e536]:
+                                      - checkbox "genuflexo" [ref=e537] [cursor=pointer]
+                                      - generic [ref=e538]: genuflexo
+                                    - generic [ref=e539]:
+                                      - checkbox "genurrecurvatun" [ref=e540] [cursor=pointer]
+                                      - generic [ref=e541]: genurrecurvatun
+                                  - generic [ref=e544]: "---"
+                                - generic [ref=e547]:
+                                  - generic [ref=e548]:
+                                    - checkbox "valgo" [ref=e549] [cursor=pointer]
+                                    - generic [ref=e550]: valgo
+                                  - generic [ref=e551]:
+                                    - checkbox "varo" [ref=e552] [cursor=pointer]
+                                    - generic [ref=e553]: varo
+                                  - generic [ref=e554]:
+                                    - checkbox "Equino" [ref=e555] [cursor=pointer]
+                                    - generic [ref=e556]: Equino
+                                  - generic [ref=e557]:
+                                    - checkbox "Calcâneo" [ref=e558] [cursor=pointer]
+                                    - generic [ref=e559]: Calcâneo
+                          - generic [ref=e560]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e566]:
+                          - generic [ref=e567]:
+                            - paragraph [ref=e568]: Órtese
+                            - paragraph [ref=e569]: Agrupe campos lado a lado com rolagem horizontal.
+                          - generic [ref=e571]:
+                            - generic [ref=e574]:
+                              - generic [ref=e576]: Utiliza Órtese?
+                              - radiogroup [ref=e577]:
+                                - generic [ref=e580]:
+                                  - generic [ref=e581]:
+                                    - radio "Sim" [ref=e582] [cursor=pointer]
+                                    - generic [ref=e583]: Sim
+                                  - generic [ref=e584]:
+                                    - radio "Não" [ref=e585] [cursor=pointer]
+                                    - generic [ref=e586]: Não
+                            - generic [ref=e589]:
+                              - generic [ref=e591]: Tipo
+                              - textbox [ref=e592]
+                            - generic [ref=e595]:
+                              - generic [ref=e597]: Frequência de uso
+                              - textbox [ref=e598]
+                          - generic [ref=e599]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e606]:
+                          - generic [ref=e607]:
+                            - paragraph [ref=e608]: Lesão por pressão
+                            - paragraph [ref=e609]: Agrupe campos lado a lado com rolagem horizontal.
+                          - generic [ref=e611]:
+                            - generic [ref=e614]:
+                              - generic [ref=e616]: Teve alguma lesão por pressão?
+                              - radiogroup [ref=e617]:
+                                - generic [ref=e620]:
+                                  - generic [ref=e621]:
+                                    - radio "Sim" [ref=e622] [cursor=pointer]
+                                    - generic [ref=e623]: Sim
+                                  - generic [ref=e624]:
+                                    - radio "Não" [ref=e625] [cursor=pointer]
+                                    - generic [ref=e626]: Não
+                            - generic [ref=e629]:
+                              - generic [ref=e631]: Local
+                              - textbox [ref=e632]
+                          - generic [ref=e633]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e639]:
+                          - generic [ref=e640]:
+                            - generic [ref=e642]: Nível da Dor
+                            - generic [ref=e643]: "0"
+                          - slider [ref=e647]
+                        - generic [ref=e649]:
+                          - generic [ref=e651]: Início da dor
+                          - textbox [ref=e652]
+                        - generic [ref=e654]:
+                          - generic [ref=e656]: Avaliação da Dor
+                          - textbox [ref=e657]
+                  - generic [ref=e659]:
+                    - heading "AVALIAÇÃO RESPIRATÓRIA Texto introdutório da seção." [level=3] [ref=e660]:
+                      - button "AVALIAÇÃO RESPIRATÓRIA Texto introdutório da seção." [expanded] [ref=e661] [cursor=pointer]:
+                        - generic [ref=e662]:
+                          - paragraph [ref=e663]: AVALIAÇÃO RESPIRATÓRIA
+                          - paragraph [ref=e664]: Texto introdutório da seção.
+                        - img [ref=e665]
+                    - region "AVALIAÇÃO RESPIRATÓRIA Texto introdutório da seção." [ref=e667]:
+                      - generic [ref=e669]:
+                        - generic [ref=e671]:
+                          - generic [ref=e673]: Tipos de Tórax
+                          - generic [ref=e676]:
+                            - generic [ref=e677]:
+                              - checkbox "Normal" [ref=e678] [cursor=pointer]
+                              - generic [ref=e679]: Normal
+                            - generic [ref=e680]:
+                              - checkbox "Cifótico" [ref=e681] [cursor=pointer]
+                              - generic [ref=e682]: Cifótico
+                            - generic [ref=e683]:
+                              - checkbox "Escoliótico" [ref=e684] [cursor=pointer]
+                              - generic [ref=e685]: Escoliótico
+                            - generic [ref=e686]:
+                              - checkbox "Cifoescoliótico" [ref=e687] [cursor=pointer]
+                              - generic [ref=e688]: Cifoescoliótico
+                            - generic [ref=e689]:
+                              - checkbox "Pectus Escavatum" [ref=e690] [cursor=pointer]
+                              - generic [ref=e691]: Pectus Escavatum
+                            - generic [ref=e692]:
+                              - checkbox "Pectus Carinatum" [ref=e693] [cursor=pointer]
+                              - generic [ref=e694]: Pectus Carinatum
+                            - generic [ref=e695]:
+                              - checkbox "Tonel" [ref=e696] [cursor=pointer]
+                              - generic [ref=e697]: Tonel
+                        - generic [ref=e699]:
+                          - generic [ref=e701]: Ritmo Respiratório
+                          - generic [ref=e704]:
+                            - generic [ref=e705]:
+                              - checkbox "Irregular" [ref=e706] [cursor=pointer]
+                              - generic [ref=e707]: Irregular
+                            - generic [ref=e708]:
+                              - checkbox "Dispnéia" [ref=e709] [cursor=pointer]
+                              - generic [ref=e710]: Dispnéia
+                            - generic [ref=e711]:
+                              - checkbox "Bradipnéia" [ref=e712] [cursor=pointer]
+                              - generic [ref=e713]: Bradipnéia
+                            - generic [ref=e714]:
+                              - checkbox "Taquipnéia" [ref=e715] [cursor=pointer]
+                              - generic [ref=e716]: Taquipnéia
+                            - generic [ref=e717]:
+                              - checkbox "Eupnéia" [ref=e718] [cursor=pointer]
+                              - generic [ref=e719]: Eupnéia
+                        - generic [ref=e721]:
+                          - generic [ref=e723]: Padrão Respiratório
+                          - generic [ref=e726]:
+                            - generic [ref=e727]:
+                              - checkbox "Apical ou Costal" [ref=e728] [cursor=pointer]
+                              - generic [ref=e729]: Apical ou Costal
+                            - generic [ref=e730]:
+                              - checkbox "Toracoabdominal" [ref=e731] [cursor=pointer]
+                              - generic [ref=e732]: Toracoabdominal
+                            - generic [ref=e733]:
+                              - checkbox "Diafragmático" [ref=e734] [cursor=pointer]
+                              - generic [ref=e735]: Diafragmático
+                        - generic [ref=e737]:
+                          - generic [ref=e739]: Expansibilidade
+                          - generic [ref=e742]:
+                            - generic [ref=e743]:
+                              - checkbox "Preservada" [ref=e744] [cursor=pointer]
+                              - generic [ref=e745]: Preservada
+                            - generic [ref=e746]:
+                              - checkbox "Diminuída" [ref=e747] [cursor=pointer]
+                              - generic [ref=e748]: Diminuída
+                            - generic [ref=e749]:
+                              - checkbox "Assimétrica" [ref=e750] [cursor=pointer]
+                              - generic [ref=e751]: Assimétrica
+                            - generic [ref=e752]:
+                              - checkbox "Simétrica" [ref=e753] [cursor=pointer]
+                              - generic [ref=e754]: Simétrica
+                        - generic [ref=e756]:
+                          - generic [ref=e758]: Tosse
+                          - generic [ref=e761]:
+                            - generic [ref=e762]:
+                              - checkbox "Ausente" [ref=e763] [cursor=pointer]
+                              - generic [ref=e764]: Ausente
+                            - generic [ref=e765]:
+                              - checkbox "Improdutiva" [ref=e766] [cursor=pointer]
+                              - generic [ref=e767]: Improdutiva
+                            - generic [ref=e768]:
+                              - checkbox "Produtiva Deglutição" [ref=e769] [cursor=pointer]
+                              - generic [ref=e770]: Produtiva Deglutição
+                            - generic [ref=e771]:
+                              - checkbox "Expectoração" [ref=e772] [cursor=pointer]
+                              - generic [ref=e773]: Expectoração
+                        - generic [ref=e775]:
+                          - generic [ref=e777]: Ausculta Pulmonar (MV, RA, localização)
+                          - textbox [ref=e778]
+                        - generic [ref=e780]:
+                          - generic [ref=e782]: Marcha
+                          - textbox [ref=e783]
+                  - generic [ref=e785]:
+                    - generic [ref=e787]: Goniometria
+                    - generic [ref=e791]:
+                      - generic [ref=e792]:
+                        - generic [ref=e793]: Articulação
+                        - generic [ref=e794]: Movimento
+                        - generic [ref=e795]: Ativa
+                        - generic [ref=e796]: Passiva
+                        - generic [ref=e797]: Direita
+                        - generic [ref=e798]: Esquerda
+                      - generic [ref=e800]:
+                        - textbox "Articulação" [ref=e801]
+                        - textbox "Movimento" [ref=e802]
+                        - textbox "Ativa" [ref=e803]
+                        - textbox "Passiva" [ref=e804]
+                        - textbox "Direita" [ref=e805]
+                        - textbox "Esquerda" [ref=e806]
+                        - button "Remover linha 1" [disabled]:
+                          - img
+                    - button "Adicionar linha" [ref=e807] [cursor=pointer]:
+                      - img
+                      - text: Adicionar linha
+                  - generic [ref=e809]:
+                    - heading "Reflexos Texto introdutório da seção." [level=3] [ref=e810]:
+                      - button "Reflexos Texto introdutório da seção." [expanded] [ref=e811] [cursor=pointer]:
+                        - generic [ref=e812]:
+                          - paragraph [ref=e813]: Reflexos
+                          - paragraph [ref=e814]: Texto introdutório da seção.
+                        - img [ref=e815]
+                    - region "Reflexos Texto introdutório da seção." [ref=e817]:
+                      - generic [ref=e819]:
+                        - generic [ref=e821]:
+                          - generic [ref=e823]: Bicipital
+                          - generic [ref=e826]:
+                            - generic [ref=e827]:
+                              - checkbox "Normorreflexia D" [ref=e828] [cursor=pointer]
+                              - generic [ref=e829]: Normorreflexia D
+                            - generic [ref=e830]:
+                              - checkbox "Normorreflexia E" [ref=e831] [cursor=pointer]
+                              - generic [ref=e832]: Normorreflexia E
+                            - generic [ref=e833]:
+                              - checkbox "Hiporreflexia D" [ref=e834] [cursor=pointer]
+                              - generic [ref=e835]: Hiporreflexia D
+                            - generic [ref=e836]:
+                              - checkbox "Hiporreflexia E" [ref=e837] [cursor=pointer]
+                              - generic [ref=e838]: Hiporreflexia E
+                            - generic [ref=e839]:
+                              - checkbox "Hiperreflexia D" [ref=e840] [cursor=pointer]
+                              - generic [ref=e841]: Hiperreflexia D
+                            - generic [ref=e842]:
+                              - checkbox "Hiperreflexia E" [ref=e843] [cursor=pointer]
+                              - generic [ref=e844]: Hiperreflexia E
+                            - generic [ref=e845]:
+                              - checkbox "Arreflexia D" [ref=e846] [cursor=pointer]
+                              - generic [ref=e847]: Arreflexia D
+                            - generic [ref=e848]:
+                              - checkbox "Arreflexia E" [ref=e849] [cursor=pointer]
+                              - generic [ref=e850]: Arreflexia E
+                        - generic [ref=e852]:
+                          - generic [ref=e854]: Tricipital
+                          - generic [ref=e857]:
+                            - generic [ref=e858]:
+                              - checkbox "Normorreflexia D" [ref=e859] [cursor=pointer]
+                              - generic [ref=e860]: Normorreflexia D
+                            - generic [ref=e861]:
+                              - checkbox "Normorreflexia E" [ref=e862] [cursor=pointer]
+                              - generic [ref=e863]: Normorreflexia E
+                            - generic [ref=e864]:
+                              - checkbox "Hiporreflexia D" [ref=e865] [cursor=pointer]
+                              - generic [ref=e866]: Hiporreflexia D
+                            - generic [ref=e867]:
+                              - checkbox "Hiporreflexia E" [ref=e868] [cursor=pointer]
+                              - generic [ref=e869]: Hiporreflexia E
+                            - generic [ref=e870]:
+                              - checkbox "Hiperreflexia D" [ref=e871] [cursor=pointer]
+                              - generic [ref=e872]: Hiperreflexia D
+                            - generic [ref=e873]:
+                              - checkbox "Hiperreflexia E" [ref=e874] [cursor=pointer]
+                              - generic [ref=e875]: Hiperreflexia E
+                            - generic [ref=e876]:
+                              - checkbox "Arreflexia D" [ref=e877] [cursor=pointer]
+                              - generic [ref=e878]: Arreflexia D
+                            - generic [ref=e879]:
+                              - checkbox "Arreflexia E" [ref=e880] [cursor=pointer]
+                              - generic [ref=e881]: Arreflexia E
+                        - generic [ref=e883]:
+                          - generic [ref=e885]: Estilo-radial
+                          - generic [ref=e888]:
+                            - generic [ref=e889]:
+                              - checkbox "Normorreflexia D" [ref=e890] [cursor=pointer]
+                              - generic [ref=e891]: Normorreflexia D
+                            - generic [ref=e892]:
+                              - checkbox "Normorreflexia E" [ref=e893] [cursor=pointer]
+                              - generic [ref=e894]: Normorreflexia E
+                            - generic [ref=e895]:
+                              - checkbox "Hiporreflexia D" [ref=e896] [cursor=pointer]
+                              - generic [ref=e897]: Hiporreflexia D
+                            - generic [ref=e898]:
+                              - checkbox "Hiporreflexia E" [ref=e899] [cursor=pointer]
+                              - generic [ref=e900]: Hiporreflexia E
+                            - generic [ref=e901]:
+                              - checkbox "Hiperreflexia D" [ref=e902] [cursor=pointer]
+                              - generic [ref=e903]: Hiperreflexia D
+                            - generic [ref=e904]:
+                              - checkbox "Hiperreflexia E" [ref=e905] [cursor=pointer]
+                              - generic [ref=e906]: Hiperreflexia E
+                            - generic [ref=e907]:
+                              - checkbox "Arreflexia D" [ref=e908] [cursor=pointer]
+                              - generic [ref=e909]: Arreflexia D
+                            - generic [ref=e910]:
+                              - checkbox "Arreflexia E" [ref=e911] [cursor=pointer]
+                              - generic [ref=e912]: Arreflexia E
+                        - generic [ref=e914]:
+                          - generic [ref=e916]: Patelar
+                          - generic [ref=e919]:
+                            - generic [ref=e920]:
+                              - checkbox "Normorreflexia D" [ref=e921] [cursor=pointer]
+                              - generic [ref=e922]: Normorreflexia D
+                            - generic [ref=e923]:
+                              - checkbox "Normorreflexia E" [ref=e924] [cursor=pointer]
+                              - generic [ref=e925]: Normorreflexia E
+                            - generic [ref=e926]:
+                              - checkbox "Hiporreflexia D" [ref=e927] [cursor=pointer]
+                              - generic [ref=e928]: Hiporreflexia D
+                            - generic [ref=e929]:
+                              - checkbox "Hiporreflexia E" [ref=e930] [cursor=pointer]
+                              - generic [ref=e931]: Hiporreflexia E
+                            - generic [ref=e932]:
+                              - checkbox "Hiperreflexia D" [ref=e933] [cursor=pointer]
+                              - generic [ref=e934]: Hiperreflexia D
+                            - generic [ref=e935]:
+                              - checkbox "Hiperreflexia E" [ref=e936] [cursor=pointer]
+                              - generic [ref=e937]: Hiperreflexia E
+                            - generic [ref=e938]:
+                              - checkbox "Arreflexia D" [ref=e939] [cursor=pointer]
+                              - generic [ref=e940]: Arreflexia D
+                            - generic [ref=e941]:
+                              - checkbox "Arreflexia E" [ref=e942] [cursor=pointer]
+                              - generic [ref=e943]: Arreflexia E
+                        - generic [ref=e945]:
+                          - generic [ref=e947]: Aquileu
+                          - generic [ref=e950]:
+                            - generic [ref=e951]:
+                              - checkbox "Normorreflexia D" [ref=e952] [cursor=pointer]
+                              - generic [ref=e953]: Normorreflexia D
+                            - generic [ref=e954]:
+                              - checkbox "Normorreflexia E" [ref=e955] [cursor=pointer]
+                              - generic [ref=e956]: Normorreflexia E
+                            - generic [ref=e957]:
+                              - checkbox "Hiporreflexia D" [ref=e958] [cursor=pointer]
+                              - generic [ref=e959]: Hiporreflexia D
+                            - generic [ref=e960]:
+                              - checkbox "Hiporreflexia E" [ref=e961] [cursor=pointer]
+                              - generic [ref=e962]: Hiporreflexia E
+                            - generic [ref=e963]:
+                              - checkbox "Hiperreflexia D" [ref=e964] [cursor=pointer]
+                              - generic [ref=e965]: Hiperreflexia D
+                            - generic [ref=e966]:
+                              - checkbox "Hiperreflexia E" [ref=e967] [cursor=pointer]
+                              - generic [ref=e968]: Hiperreflexia E
+                            - generic [ref=e969]:
+                              - checkbox "Arreflexia D" [ref=e970] [cursor=pointer]
+                              - generic [ref=e971]: Arreflexia D
+                            - generic [ref=e972]:
+                              - checkbox "Arreflexia E" [ref=e973] [cursor=pointer]
+                              - generic [ref=e974]: Arreflexia E
+                        - generic [ref=e976]:
+                          - generic [ref=e978]: Cutâneo plantar
+                          - generic [ref=e982]:
+                            - checkbox "Sinal de Babisnk" [ref=e983] [cursor=pointer]
+                            - generic [ref=e984]: Sinal de Babisnk
+                        - generic [ref=e986]:
+                          - heading "Equilíbrio" [level=3] [ref=e987]:
+                            - button "Equilíbrio" [expanded] [ref=e988] [cursor=pointer]:
+                              - paragraph [ref=e990]: Equilíbrio
+                              - img [ref=e991]
+                          - region "Equilíbrio" [ref=e993]:
+                            - generic [ref=e995]:
+                              - generic [ref=e997]:
+                                - generic [ref=e998]:
+                                  - paragraph [ref=e999]: Estático
+                                  - paragraph [ref=e1000]: Agrupe campos lado a lado com rolagem horizontal.
+                                - generic [ref=e1002]:
+                                  - textbox [ref=e1006]
+                                  - generic [ref=e1012]:
+                                    - generic [ref=e1013]:
+                                      - checkbox "Presente" [ref=e1014] [cursor=pointer]
+                                      - generic [ref=e1015]: Presente
+                                    - generic [ref=e1016]:
+                                      - checkbox "Diminuído" [ref=e1017] [cursor=pointer]
+                                      - generic [ref=e1018]: Diminuído
+                                - generic [ref=e1019]:
+                                  - button "Rolar para a esquerda" [disabled]:
+                                    - img
+                                  - button "Rolar para a direita" [disabled]:
+                                    - img
+                              - generic [ref=e1025]:
+                                - paragraph [ref=e1027]: Dinâmico
+                                - generic [ref=e1029]:
+                                  - textbox [ref=e1033]
+                                  - generic [ref=e1039]:
+                                    - generic [ref=e1040]:
+                                      - checkbox "Presente" [ref=e1041] [cursor=pointer]
+                                      - generic [ref=e1042]: Presente
+                                    - generic [ref=e1043]:
+                                      - checkbox "Diminuído" [ref=e1044] [cursor=pointer]
+                                      - generic [ref=e1045]: Diminuído
+                                    - generic [ref=e1046]:
+                                      - checkbox "Ausente" [ref=e1047] [cursor=pointer]
+                                      - generic [ref=e1048]: Ausente
+                                - generic [ref=e1049]:
+                                  - button "Rolar para a esquerda" [disabled]:
+                                    - img
+                                  - button "Rolar para a direita" [disabled]:
+                                    - img
+                  - generic [ref=e1055]:
+                    - heading "Exames Complementares" [level=3] [ref=e1056]:
+                      - button "Exames Complementares" [expanded] [ref=e1057] [cursor=pointer]:
+                        - paragraph [ref=e1059]: Exames Complementares
+                        - img [ref=e1060]
+                    - region "Exames Complementares" [ref=e1062]:
+                      - generic [ref=e1064]:
+                        - generic [ref=e1066]:
+                          - generic [ref=e1067]:
+                            - paragraph [ref=e1068]: R.X.
+                            - paragraph [ref=e1069]: Raio X
+                          - generic [ref=e1071]:
+                            - generic [ref=e1074]:
+                              - generic [ref=e1076]: Já recebeu o exame?
+                              - radiogroup [ref=e1077]:
+                                - generic [ref=e1080]:
+                                  - generic [ref=e1081]:
+                                    - radio "Sim" [ref=e1082] [cursor=pointer]
+                                    - generic [ref=e1083]: Sim
+                                  - generic [ref=e1084]:
+                                    - radio "Não" [ref=e1085] [cursor=pointer]
+                                    - generic [ref=e1086]: Não
+                            - generic [ref=e1089]:
+                              - generic [ref=e1091]: Data do exame
+                              - generic [ref=e1092]:
+                                - textbox "DD/MM/YYYY" [ref=e1093]
+                                - button "Abrir calendário" [ref=e1094] [cursor=pointer]:
+                                  - img
+                          - generic [ref=e1095]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e1101]:
+                          - generic [ref=e1102]:
+                            - paragraph [ref=e1103]: RM
+                            - paragraph [ref=e1104]: Ressonancia Magnética
+                          - generic [ref=e1106]:
+                            - generic [ref=e1109]:
+                              - generic [ref=e1111]: Já recebeu o exame?
+                              - radiogroup [ref=e1112]:
+                                - generic [ref=e1115]:
+                                  - generic [ref=e1116]:
+                                    - radio "Sim" [ref=e1117] [cursor=pointer]
+                                    - generic [ref=e1118]: Sim
+                                  - generic [ref=e1119]:
+                                    - radio "Não" [ref=e1120] [cursor=pointer]
+                                    - generic [ref=e1121]: Não
+                            - generic [ref=e1124]:
+                              - generic [ref=e1126]: Data do exame
+                              - generic [ref=e1127]:
+                                - textbox "DD/MM/YYYY" [ref=e1128]
+                                - button "Abrir calendário" [ref=e1129] [cursor=pointer]:
+                                  - img
+                          - generic [ref=e1130]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e1136]:
+                          - generic [ref=e1137]:
+                            - paragraph [ref=e1138]: U.S.
+                            - paragraph [ref=e1139]: Ultrassom
+                          - generic [ref=e1141]:
+                            - generic [ref=e1144]:
+                              - generic [ref=e1146]: Já recebeu o exame?
+                              - radiogroup [ref=e1147]:
+                                - generic [ref=e1150]:
+                                  - generic [ref=e1151]:
+                                    - radio "Sim" [ref=e1152] [cursor=pointer]
+                                    - generic [ref=e1153]: Sim
+                                  - generic [ref=e1154]:
+                                    - radio "Não" [ref=e1155] [cursor=pointer]
+                                    - generic [ref=e1156]: Não
+                            - generic [ref=e1159]:
+                              - generic [ref=e1161]: Data do exame
+                              - generic [ref=e1162]:
+                                - textbox "DD/MM/YYYY" [ref=e1163]
+                                - button "Abrir calendário" [ref=e1164] [cursor=pointer]:
+                                  - img
+                          - generic [ref=e1165]:
+                            - button "Rolar para a esquerda" [disabled]:
+                              - img
+                            - button "Rolar para a direita" [disabled]:
+                              - img
+                        - generic [ref=e1171]:
+                          - generic [ref=e1173]: Laudo - Exames
+                          - textbox [ref=e1174]
+                  - generic [ref=e1176]:
+                    - heading "Conclusão Texto introdutório da seção." [level=3] [ref=e1177]:
+                      - button "Conclusão Texto introdutório da seção." [expanded] [ref=e1178] [cursor=pointer]:
+                        - generic [ref=e1179]:
+                          - paragraph [ref=e1180]: Conclusão
+                          - paragraph [ref=e1181]: Texto introdutório da seção.
+                        - img [ref=e1182]
+                    - region "Conclusão Texto introdutório da seção." [ref=e1184]:
+                      - generic [ref=e1186]:
+                        - generic [ref=e1188]:
+                          - generic [ref=e1190]: DIAGNÓSTICO CINESIOLÓGICO FUNCIONAL
+                          - textbox [ref=e1191]
+                        - generic [ref=e1193]:
+                          - generic [ref=e1197]:
+                            - generic [ref=e1198]:
+                              - generic [ref=e1199]: OBJETIVOS DE TRATAMENTO
+                              - generic [ref=e1200]: CONDUTAS DE TRATAMENTO
+                            - generic [ref=e1202]:
+                              - textbox "OBJETIVOS DE TRATAMENTO" [ref=e1203]
+                              - textbox "CONDUTAS DE TRATAMENTO" [ref=e1204]
+                              - button "Remover linha 1" [disabled]:
+                                - img
+                          - button "Adicionar linha" [ref=e1205] [cursor=pointer]:
+                            - img
+                            - text: Adicionar linha

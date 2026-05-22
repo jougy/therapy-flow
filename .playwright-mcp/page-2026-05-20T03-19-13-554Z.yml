@@ -1,0 +1,186 @@
+- generic:
+  - generic:
+    - list
+    - region "Notifications alt+T"
+    - generic:
+      - banner:
+        - button:
+          - generic: Clínica 11111111111111
+        - generic:
+          - generic:
+            - generic: teste@email.com
+            - generic: Clínica 11111111111111
+          - generic:
+            - generic: T
+          - button:
+            - img
+          - button:
+            - img
+      - main:
+        - generic:
+          - generic:
+            - generic:
+              - button:
+                - img
+              - generic:
+                - heading [level=1]: Atendimento — 2026-05-18T16:55
+                - paragraph: Amanda Costa Rocha
+            - generic:
+              - generic: rascunho
+          - generic:
+            - button:
+              - img
+              - generic: Editar
+            - button:
+              - img
+              - generic: Excluir
+            - button:
+              - img
+              - generic: Compartilhar com colaboradores
+            - button:
+              - img
+              - generic: Iniciar Novo Atendimento a Partir Deste
+            - button:
+              - img
+              - text: Compartilhar
+            - button:
+              - img
+              - text: Imprimir
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - paragraph: Status
+                  - paragraph: rascunho
+                - generic:
+                  - paragraph: Grupo
+                  - paragraph: Grupo sem definição
+                - generic:
+                  - paragraph: Ficha complementar
+                  - paragraph: Ficha de Avaliação - Inicial (Estagiários)
+                - generic:
+                  - paragraph: Criado por
+                  - paragraph: teste@email.com
+                  - paragraph: 18/05/2026, 16:56:02
+                  - button: Ver edições (9)
+                - generic:
+                  - paragraph: Compartilhamento
+                  - paragraph: Não compartilhado
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading [level=2]: Presença
+                      - paragraph: Horário combinado e chegada do paciente.
+                    - button:
+                      - img
+                      - text: Editar presença
+                  - generic:
+                    - generic:
+                      - paragraph: Agendado
+                      - paragraph: 18/05/2026, 14:00
+                    - generic:
+                      - generic:
+                        - paragraph: Chegada
+                        - generic: "- 12min"
+                      - paragraph: 18/05/2026, 13:48
+                    - generic:
+                      - paragraph: Início do atendimento
+                      - paragraph: 18/05/2026, 16:55
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading [level=2]: Pagamento
+                      - paragraph: Valor da consulta e baixa simples do pagamento.
+                    - button:
+                      - img
+                      - text: Editar pagamento
+                  - generic:
+                    - generic:
+                      - paragraph: Status
+                      - paragraph: Crédito
+                    - generic:
+                      - paragraph: Data
+                      - paragraph: —
+                    - generic:
+                      - paragraph: Consulta
+                      - generic:
+                        - generic: R$ 20,00
+                    - generic:
+                      - paragraph: Pago
+                      - paragraph: R$ 3.000,00
+            - generic:
+              - generic:
+                - generic:
+                  - heading [level=2]: Anamnese
+                  - paragraph: Nenhuma anamnese registrada.
+            - generic:
+              - generic:
+                - generic:
+                  - heading [level=2]: Tratamento
+                  - generic: 0 bloco(s)
+                - paragraph: Nenhum bloco de tratamento registrado.
+                - generic:
+                  - paragraph: Orientações gerais e observações
+                  - paragraph: Nenhuma orientação geral registrada.
+            - generic:
+              - generic:
+                - heading [level=2]: Anotações rápidas
+                - paragraph: Nenhuma anotação rápida registrada.
+  - dialog "Editar pagamento" [ref=e119]:
+    - generic [ref=e120]:
+      - heading "Editar pagamento" [level=2] [ref=e121]
+      - paragraph [ref=e122]: Atualize status, valor original, ajuste, valor final e baixa do pagamento.
+    - generic [ref=e123]:
+      - generic [ref=e124]:
+        - text: Status de pagamento
+        - generic [ref=e125]:
+          - generic [ref=e126]:
+            - img [ref=e127]
+            - text: Pago
+          - generic [ref=e129]:
+            - button "Auto" [ref=e130] [cursor=pointer]
+            - button "Cortesia" [ref=e131] [cursor=pointer]
+      - generic [ref=e132]:
+        - text: Data do pagamento
+        - textbox "Data do pagamento" [ref=e133]
+      - generic [ref=e134]:
+        - generic [ref=e135]:
+          - text: Valor original
+          - generic [ref=e136]:
+            - generic: R$
+            - textbox "Valor original" [ref=e137]:
+              - /placeholder: 0,00
+              - text: 20,00
+        - generic [ref=e138]:
+          - text: Valor final da consulta
+          - generic [ref=e139]:
+            - generic: R$
+            - textbox "Valor final da consulta" [ref=e140]:
+              - /placeholder: 0,00
+              - text: 100,00
+      - generic [ref=e157]:
+        - generic [ref=e158]: R$ 20,00
+        - generic [ref=e159]: R$ 100,00
+        - generic [ref=e160]: +400%
+      - generic [ref=e141]:
+        - generic [ref=e142]:
+          - text: Quanto foi pago
+          - generic [ref=e143]:
+            - generic: R$
+            - textbox "Quanto foi pago" [active] [ref=e144]:
+              - /placeholder: 0,00
+              - text: 100,00
+        - generic [ref=e145]:
+          - text: Motivo do desconto/acréscimo
+          - textbox "Motivo do desconto/acréscimo" [ref=e146]:
+            - /placeholder: Opcional
+      - generic [ref=e147]: "Em aberto: R$ 0,00"
+    - generic [ref=e148]:
+      - button "Cancelar" [ref=e149] [cursor=pointer]
+      - button "Salvar pagamento" [ref=e150] [cursor=pointer]
+    - button "Close" [ref=e151] [cursor=pointer]:
+      - img [ref=e152]
+      - generic [ref=e155]: Close

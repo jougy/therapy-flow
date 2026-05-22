@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, Save, Copy, Info, Loader2, Plus, Trash2, Pencil, Share2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -30,8 +30,34 @@ import {
   buildSessionPayload,
   formatDateTimeForInput,
   getCurrentDateTimeInputValue,
+  isSessionDateTimeInputValid,
+  parseDateTimeInputValue,
+  parseOptionalDateInputValue,
+  parseOptionalDateTimeInputValue,
   type SessionFormValues,
 } from "@/lib/session-payload";
+import {
+  centsToCurrencyInput,
+  currencyDigitsToInput,
+  formatMoneyCents,
+  getArrivalDelayMinutes,
+  getPaymentAdjustmentCents,
+  getPaymentAdjustmentPercent,
+  getPaymentInstallmentLabel,
+  getPaymentMethodLabel,
+  getPaymentStatusLabel,
+  getSessionOriginalAmountCents,
+  hasPaymentAdjustment,
+  normalizeSessionPaymentStatus,
+  normalizePaymentInstallments,
+  PAYMENT_INSTALLMENT_OPTIONS,
+  PAYMENT_METHOD_OPTIONS,
+  PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH,
+  parseCurrencyToCents,
+  sanitizePaymentAdjustmentReason,
+  type SessionPaymentMethod,
+  type SessionPaymentStatus,
+} from "@/lib/session-operations";
 import {
   buildSessionDocument,
   isSessionImmutable,
@@ -43,6 +69,7 @@ import { buildSessionEditHistoryView, formatSessionAuditDateTime, getSessionPers
 import { createTreatmentBlock, formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from "@/lib/session-treatment";
 import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
 import { shouldAutoCompleteInternDraft } from "@/lib/patient-sessions-view";
+import { notifyAgendaEventsUpdated } from "@/lib/agenda-events";
 import {
   fetchClinicShareCollaborators,
   fetchSessionShareRecipients,
@@ -75,6 +102,10 @@ type ClinicDocumentSummary = Pick<
 type CollaboratorProfile = Pick<
   Database["public"]["Tables"]["profiles"]["Row"],
   "email" | "full_name" | "id" | "job_title" | "phone" | "professional_license" | "specialty"
+>;
+type PatientPaymentSession = Pick<
+  Database["public"]["Tables"]["sessions"]["Row"],
+  "amount_charged_cents" | "amount_paid_cents" | "id" | "payment_status"
 >;
 type SessionEditHistoryRow = Database["public"]["Tables"]["session_edit_history"]["Row"];
 type ErrorDetails = {
@@ -125,6 +156,155 @@ const readJsonRecord = (value: Json | null): AnamnesisFormResponse =>
 
 const readTemplateSchema = (value: Json): AnamnesisTemplateSchema =>
   Array.isArray(value) ? (value as AnamnesisTemplateSchema) : [];
+
+const formatDateTimeLabel = (value: string | null | undefined) =>
+  value
+    ? new Date(value).toLocaleString("pt-BR", {
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "—";
+
+const formatDateLabel = (value: string | null | undefined) =>
+  value
+    ? new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "—";
+
+const PAYMENT_AMOUNT_INPUT_MAX_LENGTH = 16;
+
+const getPatientAvailableCreditCents = (sessions: PatientPaymentSession[], currentSessionId: string | undefined) => {
+  const totals = sessions
+    .filter((session) => session.id !== currentSessionId && session.payment_status !== "cortesia")
+    .reduce(
+      (sum, session) => ({
+        charged: sum.charged + (session.amount_charged_cents ?? 0),
+        paid: sum.paid + (session.amount_paid_cents ?? 0),
+      }),
+      { charged: 0, paid: 0 },
+    );
+
+  return Math.max(0, totals.paid - totals.charged);
+};
+
+const paymentStatusBadgeClassNames: Record<SessionPaymentStatus, string> = {
+  nao_cobrado: "border-muted bg-muted/60 text-muted-foreground",
+  pendente: "border-warning/20 bg-warning/15 text-warning",
+  parcial: "border-destructive/20 bg-destructive/10 text-destructive",
+  pago: "border-success/20 bg-success/10 text-success",
+  credito: "border-primary/20 bg-primary/10 text-primary",
+  cortesia: "border-success/20 bg-success/10 text-success",
+};
+
+const normalizePaymentMethod = (method: string | null | undefined): SessionPaymentMethod =>
+  PAYMENT_METHOD_OPTIONS.some((option) => option.value === method)
+    ? (method as SessionPaymentMethod)
+    : "nao_informado";
+
+const PaymentStatusAutoControl = ({
+  disabled,
+  onChange,
+  saving,
+  status,
+}: {
+  disabled?: boolean;
+  onChange: (status: SessionPaymentStatus) => void;
+  saving?: boolean;
+  status: SessionPaymentStatus;
+}) => {
+  const isCourtesy = status === "cortesia";
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+      <Badge
+        variant="outline"
+        className={`w-fit gap-1.5 px-3 py-1 text-sm ${paymentStatusBadgeClassNames[status]}`}
+      >
+        {getPaymentStatusLabel(status)}
+      </Badge>
+      <label className="flex w-fit items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium">
+        <Checkbox
+          checked={isCourtesy}
+          onCheckedChange={(checked) => onChange(checked ? "cortesia" : "nao_cobrado")}
+          disabled={disabled || saving}
+          aria-label="Marcar pagamento como cortesia"
+        />
+        <span>
+          Cortesia
+        </span>
+      </label>
+    </div>
+  );
+};
+
+const PaymentCompositionChips = ({
+  creditCents,
+  paidCents,
+}: {
+  creditCents: number;
+  paidCents: number;
+}) => {
+  if (creditCents <= 0) {
+    return null;
+  }
+
+  const complementaryCents = Math.max(0, paidCents - creditCents);
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <span className="rounded-full border border-success/20 bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
+        Pago {formatMoneyCents(paidCents)}
+      </span>
+      <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+        Crédito {formatMoneyCents(creditCents)}
+      </span>
+      <span className="rounded-full border border-muted-foreground/20 bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+        Complemento {formatMoneyCents(complementaryCents)}
+      </span>
+    </div>
+  );
+};
+
+const CurrencyInput = ({
+  disabled,
+  id,
+  onChange,
+  value,
+}: {
+  disabled?: boolean;
+  id: string;
+  onChange: (value: string) => void;
+  value: string;
+}) => (
+  <div className="relative">
+    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">R$</span>
+    <Input
+      id={id}
+      className="pl-10"
+      inputMode="decimal"
+      maxLength={PAYMENT_AMOUNT_INPUT_MAX_LENGTH}
+      type="text"
+      value={value}
+      onChange={(event) => onChange(currencyDigitsToInput(event.target.value))}
+      placeholder="0,00"
+      disabled={disabled}
+    />
+  </div>
+);
+
+const formatArrivalDeltaLabel = (minutes: number | null) => {
+  if (minutes === null || minutes === 0) {
+    return null;
+  }
+
+  return `${minutes > 0 ? "+" : "-"} ${Math.abs(minutes)}min`;
+};
 
 const hasMeaningfulFormValue = (value: AnamnesisFormValue | undefined) => {
   if (Array.isArray(value)) {
@@ -396,8 +576,10 @@ const HorizontalScrollNavigator = ({
 const SessaoDetalhe = () => {
   const { id: patientId, sessionId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, clinicId, operationalRole, profile } = useAuth();
   const isNew = sessionId === "novo";
+  const newSessionState = location.state as { agendaEventId?: string; scheduledFor?: string } | null;
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -405,6 +587,7 @@ const SessaoDetalhe = () => {
   const [isEditing, setIsEditing] = useState(isNew);
   const [patientName, setPatientName] = useState("");
   const [groups, setGroups] = useState<PatientGroup[]>([]);
+  const [patientPaymentSessions, setPatientPaymentSessions] = useState<PatientPaymentSession[]>([]);
   const [collaboratorProfiles, setCollaboratorProfiles] = useState<CollaboratorProfile[]>([]);
   const [shareCollaborators, setShareCollaborators] = useState<SessionShareCollaborator[]>([]);
   const [shareRecipients, setShareRecipients] = useState<SessionShareRecipient[]>([]);
@@ -418,6 +601,10 @@ const SessaoDetalhe = () => {
   const [sessionCreatedAt, setSessionCreatedAt] = useState<string | null>(null);
   const [editHistory, setEditHistory] = useState<SessionEditHistoryRow[]>([]);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [presenceDialogOpen, setPresenceDialogOpen] = useState(false);
+  const [savingPresence, setSavingPresence] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
 
   // Form state
   const [queixa, setQueixa] = useState("");
@@ -431,6 +618,29 @@ const SessaoDetalhe = () => {
   const [notes, setNotes] = useState("");
   const [groupId, setGroupId] = useState<string | null>(null);
   const [sessionDate, setSessionDate] = useState<string>("");
+  const [scheduledStartAt, setScheduledStartAt] = useState<string>("");
+  const [patientArrivedAt, setPatientArrivedAt] = useState<string>("");
+  const [paymentStatus, setPaymentStatus] = useState<SessionPaymentStatus>("nao_cobrado");
+  const [amountCharged, setAmountCharged] = useState("");
+  const [amountOriginal, setAmountOriginal] = useState("");
+  const [amountPaid, setAmountPaid] = useState("");
+  const [paymentAdjustmentReason, setPaymentAdjustmentReason] = useState("");
+  const [paymentInstallments, setPaymentInstallments] = useState(1);
+  const [paymentMethod, setPaymentMethod] = useState<SessionPaymentMethod>("nao_informado");
+  const [paymentStatusDate, setPaymentStatusDate] = useState("");
+  const [creditAppliedCents, setCreditAppliedCents] = useState(0);
+  const [draftScheduledStartAt, setDraftScheduledStartAt] = useState("");
+  const [draftPatientArrivedAt, setDraftPatientArrivedAt] = useState("");
+  const [draftSessionDate, setDraftSessionDate] = useState("");
+  const [draftPaymentStatus, setDraftPaymentStatus] = useState<SessionPaymentStatus>("nao_cobrado");
+  const [draftAmountCharged, setDraftAmountCharged] = useState("");
+  const [draftAmountOriginal, setDraftAmountOriginal] = useState("");
+  const [draftAmountPaid, setDraftAmountPaid] = useState("");
+  const [draftPaymentAdjustmentReason, setDraftPaymentAdjustmentReason] = useState("");
+  const [draftPaymentInstallments, setDraftPaymentInstallments] = useState(1);
+  const [draftPaymentMethod, setDraftPaymentMethod] = useState<SessionPaymentMethod>("nao_informado");
+  const [draftPaymentStatusDate, setDraftPaymentStatusDate] = useState("");
+  const [draftCreditAppliedCents, setDraftCreditAppliedCents] = useState(0);
   const [anamnesisTemplateId, setAnamnesisTemplateId] = useState<string | null>(null);
   const [anamnesisFormResponse, setAnamnesisFormResponse] = useState<AnamnesisFormResponse>({});
   const [horizontalScrollState, setHorizontalScrollState] = useState<Record<string, { clientWidth: number; scrollLeft: number; scrollWidth: number }>>({});
@@ -445,7 +655,7 @@ const SessaoDetalhe = () => {
 
     setLoading(true);
 
-    const [patientRes, groupsRes, lastUsedGroupRes, templatesRes, clinicRes, profilesRes] = await Promise.all([
+    const [patientRes, groupsRes, lastUsedGroupRes, paymentSessionsRes, templatesRes, clinicRes, profilesRes] = await Promise.all([
       supabase.from("patients").select("name").eq("id", patientId).maybeSingle(),
       supabase.from("patient_groups").select("*").eq("patient_id", patientId),
       supabase
@@ -456,6 +666,10 @@ const SessaoDetalhe = () => {
         .order("session_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from("sessions")
+        .select("id, amount_charged_cents, amount_paid_cents, payment_status")
+        .eq("patient_id", patientId),
       supabase
         .from("anamnesis_form_templates")
         .select("*")
@@ -494,6 +708,8 @@ const SessaoDetalhe = () => {
     if (profilesRes.data) {
       setCollaboratorProfiles(profilesRes.data as CollaboratorProfile[]);
     }
+
+    setPatientPaymentSessions((paymentSessionsRes.data ?? []) as PatientPaymentSession[]);
 
     try {
       const collaborators = await fetchClinicShareCollaborators(clinicId);
@@ -566,6 +782,17 @@ const SessaoDetalhe = () => {
         setNotes(sessionData.notes || "");
         setGroupId(sessionData.group_id);
         setSessionDate(formatDateTimeForInput(sessionData.session_date));
+        setScheduledStartAt(formatDateTimeForInput(sessionData.scheduled_start_at));
+        setPatientArrivedAt(formatDateTimeForInput(sessionData.patient_arrived_at));
+        setPaymentStatus((sessionData.payment_status as SessionPaymentStatus | null) ?? "nao_cobrado");
+        setAmountCharged(centsToCurrencyInput(sessionData.amount_charged_cents));
+        setAmountOriginal(centsToCurrencyInput(getSessionOriginalAmountCents(sessionData)));
+        setAmountPaid(centsToCurrencyInput(sessionData.amount_paid_cents));
+        setCreditAppliedCents(0);
+        setPaymentAdjustmentReason(sessionData.payment_adjustment_reason ?? "");
+        setPaymentInstallments(normalizePaymentInstallments(sessionData.payment_installments));
+        setPaymentMethod(normalizePaymentMethod(sessionData.payment_method));
+        setPaymentStatusDate(sessionData.payment_status_date ?? "");
         setAnamnesisTemplateId(sessionData.anamnesis_template_id);
         setAnamnesisFormResponse(readJsonRecord(sessionData.anamnesis_form_response));
         setLocked(isSessionImmutable(false, sessionData.status));
@@ -585,14 +812,26 @@ const SessaoDetalhe = () => {
       setLocked(false);
       setIsEditing(true);
       setCreatedByUserId(user?.id ?? null);
-      setSessionDate(getCurrentDateTimeInputValue());
+      const scheduledFor = newSessionState?.scheduledFor ?? "";
+      setSessionDate(scheduledFor ? formatDateTimeForInput(scheduledFor) : getCurrentDateTimeInputValue());
+      setScheduledStartAt(scheduledFor ? formatDateTimeForInput(scheduledFor) : "");
+      setPatientArrivedAt("");
+      setPaymentStatus("nao_cobrado");
+      setAmountCharged("");
+      setAmountOriginal("");
+      setAmountPaid("");
+      setCreditAppliedCents(0);
+      setPaymentAdjustmentReason("");
+      setPaymentInstallments(1);
+      setPaymentMethod("nao_informado");
+      setPaymentStatusDate("");
       setSessionCreatedAt(null);
       setEditHistory([]);
       setShareRecipients([]);
     }
 
     setLoading(false);
-  }, [clinicId, isNew, navigate, operationalRole, patientId, sessionId, user?.id]);
+  }, [clinicId, isNew, navigate, newSessionState?.scheduledFor, operationalRole, patientId, sessionId, user?.id]);
 
   useEffect(() => {
     void loadSessionPage();
@@ -652,7 +891,15 @@ const SessaoDetalhe = () => {
     locked,
     notes,
     patientName,
+    patientArrivedAt,
     painScore,
+    paymentStatus,
+    amountCharged,
+    amountOriginal,
+    amountPaid,
+    paymentAdjustmentReason,
+    paymentStatusDate,
+    scheduledStartAt,
     sessionDate,
     status,
     sintomas,
@@ -841,6 +1088,9 @@ const SessaoDetalhe = () => {
   }, []);
 
   const formValues: SessionFormValues = {
+    amountCharged,
+    amountOriginal,
+    amountPaid,
     anamnesisFormResponse,
     anamnesisTemplateId,
     complexityScore: complexityScore[0],
@@ -848,11 +1098,83 @@ const SessaoDetalhe = () => {
     notes,
     observacoes,
     painScore: painScore[0],
+    patientArrivedAt,
+    paymentAdjustmentReason,
+    paymentInstallments,
+    paymentMethod,
+    paymentStatusDate,
+    paymentStatus,
     queixa,
+    scheduledStartAt,
     sintomas,
     status,
     treatmentBlocks,
     treatmentGeneralGuidance,
+  };
+  const arrivalDelayMinutes = getArrivalDelayMinutes({
+    patient_arrived_at: patientArrivedAt || null,
+    scheduled_start_at: scheduledStartAt || null,
+  });
+  const arrivalDeltaLabel = formatArrivalDeltaLabel(arrivalDelayMinutes);
+  const draftArrivalDeltaMinutes = getArrivalDelayMinutes({
+    patient_arrived_at: draftPatientArrivedAt || null,
+    scheduled_start_at: draftScheduledStartAt || null,
+  });
+  const draftArrivalDeltaLabel = formatArrivalDeltaLabel(draftArrivalDeltaMinutes);
+  const amountChargedCents = parseCurrencyToCents(amountCharged);
+  const amountOriginalCents = parseCurrencyToCents(amountOriginal) || amountChargedCents;
+  const amountPaidCents = parseCurrencyToCents(amountPaid);
+  const patientAvailableCreditCents = getPatientAvailableCreditCents(patientPaymentSessions, sessionId);
+  const effectiveCreditAppliedCents = Math.min(creditAppliedCents, patientAvailableCreditCents, amountPaidCents);
+  const remainingPatientCreditCents = Math.max(0, patientAvailableCreditCents - effectiveCreditAppliedCents);
+  const creditUsableCents = Math.min(patientAvailableCreditCents, Math.max(0, amountChargedCents - amountPaidCents));
+  const canApplyPatientCredit = !locked && creditUsableCents > 0 && paymentStatus !== "cortesia";
+  const currentPaymentSession = {
+    amount_charged_cents: amountChargedCents,
+    amount_original_cents: amountOriginalCents,
+    payment_adjustment_reason: paymentAdjustmentReason,
+  };
+  const currentPaymentAdjustmentCents = getPaymentAdjustmentCents(currentPaymentSession);
+  const currentPaymentAdjustmentPercent = getPaymentAdjustmentPercent(currentPaymentSession);
+  const currentHasPaymentAdjustment = hasPaymentAdjustment(currentPaymentSession);
+  const paymentBalanceCents = paymentStatus === "cortesia" ? 0 : Math.max(0, amountChargedCents - amountPaidCents);
+  const currentNormalizedPaymentStatus = normalizeSessionPaymentStatus({
+    amountChargedCents,
+    amountPaidCents,
+    requestedStatus: paymentStatus,
+  });
+  const draftAmountChargedCents = parseCurrencyToCents(draftAmountCharged);
+  const draftAmountOriginalCents = parseCurrencyToCents(draftAmountOriginal) || draftAmountChargedCents;
+  const draftAmountPaidCents = parseCurrencyToCents(draftAmountPaid);
+  const effectiveDraftCreditAppliedCents = Math.min(draftCreditAppliedCents, patientAvailableCreditCents, draftAmountPaidCents);
+  const remainingDraftPatientCreditCents = Math.max(0, patientAvailableCreditCents - effectiveDraftCreditAppliedCents);
+  const draftCreditUsableCents = Math.min(patientAvailableCreditCents, Math.max(0, draftAmountChargedCents - draftAmountPaidCents));
+  const canApplyDraftPatientCredit = draftCreditUsableCents > 0 && draftPaymentStatus !== "cortesia";
+  const draftPaymentSession = {
+    amount_charged_cents: draftAmountChargedCents,
+    amount_original_cents: draftAmountOriginalCents,
+  };
+  const draftPaymentAdjustmentCents = getPaymentAdjustmentCents(draftPaymentSession);
+  const draftPaymentAdjustmentPercent = getPaymentAdjustmentPercent(draftPaymentSession);
+  const draftHasPaymentAdjustment = hasPaymentAdjustment(draftPaymentSession);
+  const draftNormalizedPaymentStatus = normalizeSessionPaymentStatus({
+    amountChargedCents: draftAmountChargedCents,
+    amountPaidCents: draftAmountPaidCents,
+    requestedStatus: draftPaymentStatus,
+  });
+
+  const applyPatientCredit = () => {
+    if (!canApplyPatientCredit) return;
+
+    setAmountPaid(centsToCurrencyInput(amountPaidCents + creditUsableCents));
+    setCreditAppliedCents((current) => Math.min(patientAvailableCreditCents, current + creditUsableCents));
+  };
+
+  const applyDraftPatientCredit = () => {
+    if (!canApplyDraftPatientCredit || savingPayment) return;
+
+    setDraftAmountPaid(centsToCurrencyInput(draftAmountPaidCents + draftCreditUsableCents));
+    setDraftCreditAppliedCents((current) => Math.min(patientAvailableCreditCents, current + draftCreditUsableCents));
   };
 
   const buildCurrentSessionPayload = (clinicId: string | null, statusOverride?: string) =>
@@ -901,6 +1223,16 @@ const SessaoDetalhe = () => {
       if (error) {
         showErrorToast("Erro ao criar atendimento", error, "Criação de atendimento em rascunho");
       } else {
+        if (newSessionState?.agendaEventId) {
+          const { error: agendaDeleteError } = await supabase.from("agenda_events").delete().eq("id", newSessionState.agendaEventId);
+
+          if (agendaDeleteError) {
+            showErrorToast("Atendimento criado, mas o agendamento não foi removido", agendaDeleteError, "Remoção do agendamento de origem");
+          } else {
+            notifyAgendaEventsUpdated();
+          }
+        }
+
         toast({ title: "Atendimento criado" });
         setIsEditing(false);
         navigate(`/pacientes/${patientId}/sessao/${data.id}`, { replace: true });
@@ -957,6 +1289,144 @@ const SessaoDetalhe = () => {
     setStartingFromThis(false);
   };
 
+  const handleOpenPresenceDialog = () => {
+    setDraftScheduledStartAt(scheduledStartAt);
+    setDraftPatientArrivedAt(patientArrivedAt);
+    setDraftSessionDate(sessionDate);
+    setPresenceDialogOpen(true);
+  };
+
+  const handleSavePresenceSummary = async () => {
+    if (!sessionId || sessionId === "novo") {
+      return;
+    }
+
+    if (!isSessionDateTimeInputValid(draftSessionDate)) {
+      toast({
+        title: "Data de início inválida",
+        description: "Use uma data entre 2000 e 2100 para o início do atendimento.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (draftScheduledStartAt && !isSessionDateTimeInputValid(draftScheduledStartAt)) {
+      toast({
+        title: "Horário agendado inválido",
+        description: "Use uma data entre 2000 e 2100 ou deixe o campo vazio.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (draftPatientArrivedAt && !isSessionDateTimeInputValid(draftPatientArrivedAt)) {
+      toast({
+        title: "Horário de chegada inválido",
+        description: "Use uma data entre 2000 e 2100 ou deixe o campo vazio.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingPresence(true);
+    const nextPresence = {
+      patient_arrived_at: parseOptionalDateTimeInputValue(draftPatientArrivedAt),
+      scheduled_start_at: parseOptionalDateTimeInputValue(draftScheduledStartAt),
+      session_date: parseDateTimeInputValue(draftSessionDate),
+    };
+    const { error } = await supabase
+      .from("sessions")
+      .update(nextPresence)
+      .eq("id", sessionId);
+
+    if (error) {
+      showErrorToast("Erro ao salvar presença", error, "Atualização rápida dos horários do atendimento");
+      setSavingPresence(false);
+      return;
+    }
+
+    setScheduledStartAt(formatDateTimeForInput(nextPresence.scheduled_start_at));
+    setPatientArrivedAt(formatDateTimeForInput(nextPresence.patient_arrived_at));
+    setSessionDate(formatDateTimeForInput(nextPresence.session_date));
+    setPresenceDialogOpen(false);
+    setSavingPresence(false);
+    toast({ title: "Presença atualizada" });
+  };
+
+  const handleOpenPaymentDialog = () => {
+    setDraftPaymentStatus(paymentStatus);
+    setDraftAmountCharged(amountCharged);
+    setDraftAmountOriginal(amountOriginal || amountCharged);
+    setDraftAmountPaid(amountPaid);
+    setDraftPaymentAdjustmentReason(paymentAdjustmentReason);
+    setDraftPaymentInstallments(paymentInstallments);
+    setDraftPaymentMethod(paymentMethod);
+    setDraftPaymentStatusDate(paymentStatusDate);
+    setDraftCreditAppliedCents(0);
+    setPaymentDialogOpen(true);
+  };
+
+  const handleSavePaymentSummary = async () => {
+    if (!sessionId || sessionId === "novo") {
+      return;
+    }
+
+    setSavingPayment(true);
+    const amountChargedCents = parseCurrencyToCents(draftAmountCharged);
+    const amountOriginalCents = parseCurrencyToCents(draftAmountOriginal) || amountChargedCents;
+    const amountPaidCents = parseCurrencyToCents(draftAmountPaid);
+    const normalizedPaymentStatus = normalizeSessionPaymentStatus({
+      amountChargedCents,
+      amountPaidCents,
+      requestedStatus: draftPaymentStatus,
+    });
+    const nextPayment = {
+      amount_charged_cents: amountChargedCents,
+      amount_original_cents: amountOriginalCents,
+      amount_paid_cents: amountPaidCents,
+      payment_adjustment_reason: sanitizePaymentAdjustmentReason(draftPaymentAdjustmentReason) || null,
+      payment_installments: normalizedPaymentStatus === "cortesia" ? 1 : normalizePaymentInstallments(draftPaymentInstallments),
+      payment_method: draftPaymentStatus === "cortesia" ? "cortesia" : draftPaymentMethod,
+      payment_status_date: parseOptionalDateInputValue(draftPaymentStatusDate),
+      payment_status: normalizedPaymentStatus,
+    };
+    const { error } = await supabase
+      .from("sessions")
+      .update(nextPayment)
+      .eq("id", sessionId);
+
+    if (error) {
+      showErrorToast("Erro ao salvar pagamento", error, "Atualização rápida do pagamento do atendimento");
+      setSavingPayment(false);
+      return;
+    }
+
+    setPaymentStatus(normalizedPaymentStatus);
+    setAmountCharged(centsToCurrencyInput(nextPayment.amount_charged_cents));
+    setAmountOriginal(centsToCurrencyInput(nextPayment.amount_original_cents));
+    setAmountPaid(centsToCurrencyInput(nextPayment.amount_paid_cents));
+    setCreditAppliedCents(effectiveDraftCreditAppliedCents);
+    setPaymentAdjustmentReason(nextPayment.payment_adjustment_reason ?? "");
+    setPaymentInstallments(normalizePaymentInstallments(nextPayment.payment_installments));
+    setPaymentMethod(normalizePaymentMethod(nextPayment.payment_method));
+    setPaymentStatusDate(nextPayment.payment_status_date ?? "");
+    setPatientPaymentSessions((current) =>
+      current.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              amount_charged_cents: nextPayment.amount_charged_cents,
+              amount_paid_cents: nextPayment.amount_paid_cents,
+              payment_status: nextPayment.payment_status,
+            }
+          : session,
+      ),
+    );
+    setPaymentDialogOpen(false);
+    setSavingPayment(false);
+    toast({ title: "Pagamento atualizado" });
+  };
+
   const addTreatmentBlock = () => {
     setTreatmentBlocks((current) => [...current, createTreatmentBlock(current.length)]);
   };
@@ -980,6 +1450,8 @@ const SessaoDetalhe = () => {
   const canManageSessionSharing =
     !isNew && (canManageSessionDeletion || createdByUserId === user?.id);
   const canEditSavedDraft = !isNew && status === "rascunho";
+  const canEditPresenceSummary = !isNew && !isEditing && (canManageSessionDeletion || createdByUserId === user?.id);
+  const canEditPaymentSummary = !isNew && !isEditing && (canManageSessionDeletion || createdByUserId === user?.id);
   const canDeleteSession = !isNew && (canManageSessionDeletion || canDeleteOwnProfessionalSession);
   const treatmentSummary = formatTreatmentSummary({
     blocks: treatmentBlocks,
@@ -1640,19 +2112,6 @@ const SessaoDetalhe = () => {
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
-          <div className="space-y-1">
-            <Label htmlFor="session-date" className="text-xs text-muted-foreground">
-              Data e hora do atendimento
-            </Label>
-            <Input
-              id="session-date"
-              type="datetime-local"
-              value={sessionDate}
-              onChange={(event) => setSessionDate(event.target.value)}
-              disabled={locked}
-              className="w-[240px]"
-            />
-          </div>
           <Badge variant="outline" className={statusColors[status] || ""}>
             {status}
           </Badge>
@@ -1848,6 +2307,110 @@ const SessaoDetalhe = () => {
             </CardContent>
           </Card>
 
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardContent className="space-y-4 p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold">Presença</h2>
+                    <p className="text-sm text-muted-foreground">Horário combinado e chegada do paciente.</p>
+                  </div>
+                  {canEditPresenceSummary ? (
+                    <Button type="button" variant="outline" size="sm" onClick={handleOpenPresenceDialog}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Editar presença
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 xl:grid-cols-3">
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Agendado</p>
+                    <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(scheduledStartAt)}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Chegada</p>
+                      {arrivalDeltaLabel ? (
+                        <span className={`text-xs font-semibold ${arrivalDelayMinutes && arrivalDelayMinutes > 0 ? "text-destructive" : "text-success"}`}>
+                          {arrivalDeltaLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(patientArrivedAt)}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Início do atendimento</p>
+                    <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(sessionDate)}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="space-y-4 p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold">Pagamento</h2>
+                    <p className="text-sm text-muted-foreground">Valor da consulta e baixa simples do pagamento.</p>
+                  </div>
+                  {canEditPaymentSummary ? (
+                    <Button type="button" variant="outline" size="sm" onClick={handleOpenPaymentDialog}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Editar pagamento
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                    <p className="mt-1 text-sm font-medium">{getPaymentStatusLabel(paymentStatus)}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Data</p>
+                    <p className="mt-1 text-sm font-medium">{formatDateLabel(paymentStatusDate)}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Método</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {getPaymentMethodLabel(currentNormalizedPaymentStatus === "cortesia" ? "cortesia" : paymentMethod)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Parcelas</p>
+                    <p className="mt-1 text-sm font-medium">{getPaymentInstallmentLabel(paymentInstallments)}</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Consulta</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium">
+                      {currentHasPaymentAdjustment ? (
+                        <span className="text-muted-foreground line-through">{formatMoneyCents(amountOriginalCents)}</span>
+                      ) : null}
+                      <span>{formatMoneyCents(amountChargedCents)}</span>
+                      {currentHasPaymentAdjustment ? (
+                        <span className={`text-xs font-semibold ${currentPaymentAdjustmentCents > 0 ? "text-success" : "text-destructive"}`}>
+                          {currentPaymentAdjustmentCents > 0 ? "+" : ""}
+                          {currentPaymentAdjustmentPercent}%
+                        </span>
+                      ) : null}
+                    </div>
+                    {currentHasPaymentAdjustment && paymentAdjustmentReason ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{paymentAdjustmentReason}</p>
+                    ) : null}
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Pago</p>
+                    <p className="mt-1 text-sm font-medium">{formatMoneyCents(amountPaidCents)}</p>
+                  </div>
+                </div>
+                {paymentBalanceCents > 0 ? (
+                  <Badge variant="outline" className="border-warning/20 bg-warning/15 text-warning">
+                    Em aberto: {formatMoneyCents(paymentBalanceCents)}
+                  </Badge>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
+
           {renderBaseSliderSection("view")}
 
           <Card>
@@ -1924,6 +2487,86 @@ const SessaoDetalhe = () => {
         </div>
       ) : (
       <>
+      <div>
+        <Card>
+          <CardContent className="space-y-4 p-4 sm:p-6">
+            <div>
+              <h2 className="text-lg font-semibold">Presença</h2>
+              <p className="text-sm text-muted-foreground">Registre o horário combinado e a chegada do paciente.</p>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(260px,1.2fr)_minmax(280px,1.2fr)]">
+              <div className="space-y-1.5">
+                <Label htmlFor="scheduled-start">Horário agendado</Label>
+                <Input
+                  id="scheduled-start"
+                  max="2100-12-31T23:59"
+                  min="2000-01-01T00:00"
+                  type="datetime-local"
+                  value={scheduledStartAt}
+                  onChange={(event) => setScheduledStartAt(event.target.value)}
+                  disabled={locked}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="patient-arrived">Horário de chegada</Label>
+                  {arrivalDeltaLabel ? (
+                    <span className={`text-xs font-semibold ${arrivalDelayMinutes && arrivalDelayMinutes > 0 ? "text-destructive" : "text-success"}`}>
+                      {arrivalDeltaLabel}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="relative">
+                  <Input
+                    id="patient-arrived"
+                    className="pr-20"
+                    max="2100-12-31T23:59"
+                    min="2000-01-01T00:00"
+                    type="datetime-local"
+                    value={patientArrivedAt}
+                    onChange={(event) => setPatientArrivedAt(event.target.value)}
+                    disabled={locked}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="absolute right-1 top-1/2 h-8 -translate-y-1/2 px-3 text-xs"
+                    onClick={() => setPatientArrivedAt(getCurrentDateTimeInputValue())}
+                    disabled={locked}
+                  >
+                    Agora
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="session-date">Data e hora do início do atendimento</Label>
+                <div className="relative">
+                  <Input
+                    id="session-date"
+                    className="pr-20"
+                    max="2100-12-31T23:59"
+                    min="2000-01-01T00:00"
+                    type="datetime-local"
+                    value={sessionDate}
+                    onChange={(event) => setSessionDate(event.target.value)}
+                    disabled={locked}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="absolute right-1 top-1/2 h-8 -translate-y-1/2 px-3 text-xs"
+                    onClick={() => setSessionDate(getCurrentDateTimeInputValue())}
+                    disabled={locked}
+                  >
+                    Agora
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Notes */}
       <div>
         <Label htmlFor="notes" className="text-sm font-medium">Anotações rápidas</Label>
@@ -1940,9 +2583,10 @@ const SessaoDetalhe = () => {
 
       {/* Tabs */}
       <Tabs defaultValue="anamnese" className="w-full">
-        <TabsList className="w-full justify-start">
-          <TabsTrigger value="anamnese" className="flex-1 max-w-[200px]">Anamnese</TabsTrigger>
-          <TabsTrigger value="tratamento" className="flex-1 max-w-[200px]">Tratamento</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-3">
+          <TabsTrigger value="anamnese" className="px-2 py-2 text-xs sm:text-sm">Anamnese</TabsTrigger>
+          <TabsTrigger value="tratamento" className="px-2 py-2 text-xs sm:text-sm">Tratamento</TabsTrigger>
+          <TabsTrigger value="pagamento" className="px-2 py-2 text-xs sm:text-sm">Pagamento</TabsTrigger>
         </TabsList>
 
         <TabsContent value="anamnese" className="mt-4 space-y-4">
@@ -2094,6 +2738,145 @@ const SessaoDetalhe = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="pagamento" className="mt-4 space-y-4">
+          <Card>
+            <CardContent className="space-y-4 p-4 sm:p-6">
+              <div>
+                <h2 className="text-lg font-semibold">Pagamento</h2>
+                <p className="text-sm text-muted-foreground">Informe o status, valor da consulta e quanto já foi pago.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,0.95fr)_minmax(260px,1.05fr)_minmax(130px,0.45fr)_minmax(220px,0.8fr)]">
+                <div className="space-y-1.5">
+                  <Label>Status</Label>
+                  <PaymentStatusAutoControl
+                    status={currentNormalizedPaymentStatus}
+                    onChange={setPaymentStatus}
+                    disabled={locked}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="payment-method">Método de pagamento</Label>
+                  <Select
+                    value={paymentMethod}
+                    onValueChange={(value) => setPaymentMethod(normalizePaymentMethod(value))}
+                    disabled={locked || currentNormalizedPaymentStatus === "cortesia"}
+                  >
+                    <SelectTrigger id="payment-method">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_METHOD_OPTIONS.filter((option) => option.value !== "cortesia").map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="payment-installments">Parcelas</Label>
+                  <Select
+                    value={String(paymentInstallments)}
+                    onValueChange={(value) => setPaymentInstallments(normalizePaymentInstallments(value))}
+                    disabled={locked || currentNormalizedPaymentStatus === "cortesia"}
+                  >
+                    <SelectTrigger id="payment-installments">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_INSTALLMENT_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={String(option.value)}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="payment-status-date">Data do pagamento</Label>
+                  <Input
+                    id="payment-status-date"
+                    max="2100-12-31"
+                    min="2000-01-01"
+                    type="date"
+                    value={paymentStatusDate}
+                    onChange={(event) => setPaymentStatusDate(event.target.value)}
+                    disabled={locked}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="amount-original">Valor original</Label>
+                  <CurrencyInput
+                    id="amount-original"
+                    value={amountOriginal}
+                    onChange={setAmountOriginal}
+                    disabled={locked}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="amount-charged">Valor da consulta</Label>
+                  <CurrencyInput
+                    id="amount-charged"
+                    value={amountCharged}
+                    onChange={setAmountCharged}
+                    disabled={locked}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="amount-paid">Quanto foi pago</Label>
+                  <CurrencyInput
+                    id="amount-paid"
+                    value={amountPaid}
+                    onChange={setAmountPaid}
+                    disabled={locked}
+                  />
+                  {patientAvailableCreditCents > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      <span className="text-xs font-medium text-primary">
+                        Crédito disponível: {formatMoneyCents(remainingPatientCreditCents)}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={applyPatientCredit}
+                        disabled={!canApplyPatientCredit}
+                      >
+                        Usar crédito
+                      </Button>
+                      {effectiveCreditAppliedCents > 0 ? (
+                        <span className="text-xs text-muted-foreground">
+                          Aplicado nesta sessão: {formatMoneyCents(effectiveCreditAppliedCents)}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <PaymentCompositionChips creditCents={effectiveCreditAppliedCents} paidCents={amountPaidCents} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="payment-adjustment-reason">Motivo do desconto/acréscimo</Label>
+                <Textarea
+                  id="payment-adjustment-reason"
+                  className="min-h-20 resize-y"
+                  maxLength={PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH}
+                  value={paymentAdjustmentReason}
+                  onChange={(event) => setPaymentAdjustmentReason(event.target.value)}
+                  placeholder="Opcional"
+                  disabled={locked}
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Em aberto: {formatMoneyCents(paymentBalanceCents)}
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
       </>
       )}
@@ -2109,6 +2892,261 @@ const SessaoDetalhe = () => {
         sessionCount={1}
         sessionIds={sessionId && sessionId !== "novo" ? [sessionId] : []}
       />
+      <Dialog open={presenceDialogOpen} onOpenChange={(open) => !savingPresence && setPresenceDialogOpen(open)}>
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar presença</DialogTitle>
+            <DialogDescription>Atualize o horário agendado, chegada e início do atendimento.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="quick-scheduled-start">Horário agendado</Label>
+              <Input
+                id="quick-scheduled-start"
+                max="2100-12-31T23:59"
+                min="2000-01-01T00:00"
+                type="datetime-local"
+                value={draftScheduledStartAt}
+                onChange={(event) => setDraftScheduledStartAt(event.target.value)}
+                disabled={savingPresence}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="quick-patient-arrived">Horário de chegada</Label>
+                {draftArrivalDeltaLabel ? (
+                  <span
+                    className={`text-xs font-semibold ${draftArrivalDeltaMinutes && draftArrivalDeltaMinutes > 0 ? "text-destructive" : "text-success"}`}
+                  >
+                    {draftArrivalDeltaLabel}
+                  </span>
+                ) : null}
+              </div>
+              <div className="relative">
+                <Input
+                  id="quick-patient-arrived"
+                  className="pr-20"
+                  max="2100-12-31T23:59"
+                  min="2000-01-01T00:00"
+                  type="datetime-local"
+                  value={draftPatientArrivedAt}
+                  onChange={(event) => setDraftPatientArrivedAt(event.target.value)}
+                  disabled={savingPresence}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="absolute right-1 top-1/2 h-8 -translate-y-1/2 px-3 text-xs"
+                  onClick={() => setDraftPatientArrivedAt(getCurrentDateTimeInputValue())}
+                  disabled={savingPresence}
+                >
+                  Agora
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quick-session-date">Data e hora do início do atendimento</Label>
+              <div className="relative">
+                <Input
+                  id="quick-session-date"
+                  className="pr-20"
+                  max="2100-12-31T23:59"
+                  min="2000-01-01T00:00"
+                  type="datetime-local"
+                  value={draftSessionDate}
+                  onChange={(event) => setDraftSessionDate(event.target.value)}
+                  disabled={savingPresence}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="absolute right-1 top-1/2 h-8 -translate-y-1/2 px-3 text-xs"
+                  onClick={() => setDraftSessionDate(getCurrentDateTimeInputValue())}
+                  disabled={savingPresence}
+                >
+                  Agora
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setPresenceDialogOpen(false)} disabled={savingPresence}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={() => void handleSavePresenceSummary()} disabled={savingPresence}>
+              {savingPresence ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Salvar presença
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={paymentDialogOpen} onOpenChange={(open) => !savingPayment && setPaymentDialogOpen(open)}>
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Editar pagamento</DialogTitle>
+            <DialogDescription>Atualize status, valor original, ajuste, valor final e baixa do pagamento.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <Label>Status de pagamento</Label>
+              <PaymentStatusAutoControl
+                status={draftNormalizedPaymentStatus}
+                onChange={setDraftPaymentStatus}
+                saving={savingPayment}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quick-payment-status-date">Data do pagamento</Label>
+              <Input
+                id="quick-payment-status-date"
+                max="2100-12-31"
+                min="2000-01-01"
+                type="date"
+                value={draftPaymentStatusDate}
+                onChange={(event) => setDraftPaymentStatusDate(event.target.value)}
+                disabled={savingPayment}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+              <div className="space-y-2">
+                <Label htmlFor="quick-payment-method">Método de pagamento</Label>
+                <Select
+                  value={draftPaymentMethod}
+                  onValueChange={(value) => setDraftPaymentMethod(normalizePaymentMethod(value))}
+                  disabled={savingPayment || draftNormalizedPaymentStatus === "cortesia"}
+                >
+                  <SelectTrigger id="quick-payment-method">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_METHOD_OPTIONS.filter((option) => option.value !== "cortesia").map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quick-payment-installments">Parcelas</Label>
+                <Select
+                  value={String(draftPaymentInstallments)}
+                  onValueChange={(value) => setDraftPaymentInstallments(normalizePaymentInstallments(value))}
+                  disabled={savingPayment || draftNormalizedPaymentStatus === "cortesia"}
+                >
+                  <SelectTrigger id="quick-payment-installments">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_INSTALLMENT_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={String(option.value)}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="quick-amount-original">Valor original</Label>
+                <CurrencyInput
+                  id="quick-amount-original"
+                  value={draftAmountOriginal}
+                  onChange={setDraftAmountOriginal}
+                  disabled={savingPayment}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quick-amount-charged">Valor final da consulta</Label>
+                <CurrencyInput
+                  id="quick-amount-charged"
+                  value={draftAmountCharged}
+                  onChange={setDraftAmountCharged}
+                  disabled={savingPayment}
+                />
+              </div>
+            </div>
+            {draftHasPaymentAdjustment ? (
+              <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground line-through">{formatMoneyCents(draftAmountOriginalCents)}</span>
+                  <span className="font-medium">{formatMoneyCents(draftAmountChargedCents)}</span>
+                  <span className={`text-xs font-semibold ${draftPaymentAdjustmentCents > 0 ? "text-success" : "text-destructive"}`}>
+                    {draftPaymentAdjustmentCents > 0 ? "+" : ""}
+                    {draftPaymentAdjustmentPercent}%
+                  </span>
+                </div>
+              </div>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label htmlFor="quick-amount-paid">Quanto foi pago</Label>
+                  {patientAvailableCreditCents > 0 ? (
+                    <span className="text-xs font-medium text-primary">
+                      Crédito: {formatMoneyCents(remainingDraftPatientCreditCents)}
+                    </span>
+                  ) : null}
+                </div>
+                <CurrencyInput
+                  id="quick-amount-paid"
+                  value={draftAmountPaid}
+                  onChange={setDraftAmountPaid}
+                  disabled={savingPayment}
+                />
+                {patientAvailableCreditCents > 0 ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={applyDraftPatientCredit}
+                      disabled={!canApplyDraftPatientCredit || savingPayment}
+                    >
+                      Usar crédito
+                    </Button>
+                    {effectiveDraftCreditAppliedCents > 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        Aplicado nesta sessão: {formatMoneyCents(effectiveDraftCreditAppliedCents)}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                <PaymentCompositionChips creditCents={effectiveDraftCreditAppliedCents} paidCents={draftAmountPaidCents} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quick-payment-adjustment-reason">Motivo do desconto/acréscimo</Label>
+                <Textarea
+                  id="quick-payment-adjustment-reason"
+                  className="min-h-24 resize-y"
+                  maxLength={PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH}
+                  value={draftPaymentAdjustmentReason}
+                  onChange={(event) => setDraftPaymentAdjustmentReason(event.target.value)}
+                  placeholder="Opcional"
+                  disabled={savingPayment}
+                />
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              Em aberto: {formatMoneyCents(
+                draftPaymentStatus === "cortesia"
+                  ? 0
+                  : Math.max(0, draftAmountChargedCents - draftAmountPaidCents)
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setPaymentDialogOpen(false)} disabled={savingPayment}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={() => void handleSavePaymentSummary()} disabled={savingPayment}>
+              {savingPayment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Salvar pagamento
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={Boolean(errorDetails)} onOpenChange={(open) => !open && setErrorDetails(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

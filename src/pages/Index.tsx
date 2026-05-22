@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Activity, ArrowDown, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDollarSign, Clock3, ListFilter, Loader2, Plus, Search, TrendingDown, Users, WalletCards, X } from "lucide-react";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { ArrowDown, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronUp, ListFilter, Loader2, PieChart, Plus, Search, X } from "lucide-react";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -19,20 +18,27 @@ import AgendaWidget from "@/components/AgendaWidget";
 import PatientCard from "@/components/PatientCard";
 import {
   DEFAULT_HOME_PATIENT_SORT_KEY,
+  HOME_PATIENT_AGENDA_STATUS_OPTIONS,
+  HOME_PATIENT_PAYMENT_STATUS_OPTIONS,
   HOME_PATIENT_SORT_OPTIONS,
   HOME_PATIENT_WEEKDAY_OPTIONS,
   buildHomePatientViews,
   getActiveHomePatientFilterCount,
   hasActiveHomePatientFilters,
+  type HomeAgendaEventRecord,
+  type HomePatientAgendaFilterStatus,
   type HomeCollaboratorFilterRecord,
   type HomePatientFilters,
   type HomePatientGroupRecord,
+  type HomePatientPaymentFilterStatus,
   type HomePatientRecord,
   type HomePatientSortKey,
   type HomeSessionRecord,
 } from "@/lib/home-patients-view";
 import { getLegacyGroupHex } from "@/lib/group-colors";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
+import { AGENDA_EVENTS_UPDATED_EVENT } from "@/lib/agenda-events";
+import { MAX_SESSION_AMOUNT_CENTS, PAYMENT_METHOD_OPTIONS } from "@/lib/session-operations";
 
 type ClinicMembershipRow = Database["public"]["Tables"]["clinic_memberships"]["Row"];
 type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -52,9 +58,11 @@ const resolveGroupFilterColor = (group: PatientGroupWithColorSlot) =>
   group.clinic_group_color_slots?.color_hex ?? getLegacyGroupHex(group.color);
 
 const FILTER_SECTIONS = {
+  agenda: "agenda",
   collaborator: "collaborator",
   dates: "dates",
   groups: "groups",
+  payments: "payments",
   statuses: "statuses",
   weekdays: "weekdays",
 } as const;
@@ -71,8 +79,6 @@ const toLocalDate = (value: string) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
-const formatPercentage = (value: number) => `${Math.round(value)}%`;
-
 const getStartOfWeek = (reference: Date) => {
   const result = new Date(reference);
   const day = result.getDay();
@@ -82,14 +88,113 @@ const getStartOfWeek = (reference: Date) => {
   return result;
 };
 
+const formatPercentage = (value: number) => `${Math.round(value)}%`;
+
+const formatMoney = (cents: number) =>
+  new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(
+    Number.isFinite(cents) ? cents / 100 : 0,
+  );
+
+const sanitizeDashboardCents = (value: number | null | undefined) => {
+  if (!Number.isFinite(value ?? 0)) {
+    return 0;
+  }
+
+  return Math.min(MAX_SESSION_AMOUNT_CENTS, Math.max(0, Math.round(value ?? 0)));
+};
+
+const sanitizeDashboardSegmentValue = (value: number) => (Number.isFinite(value) && value > 0 ? value : 0);
+
+type DashboardSegment = {
+  color: string;
+  label: string;
+  value: number;
+};
+
+const dashboardColors = {
+  amber: "#f59e0b",
+  blue: "#0ea5e9",
+  cyan: "#22d3ee",
+  emerald: "#10b981",
+  green: "#22c55e",
+  lime: "#84cc16",
+  rose: "#f43f5e",
+  sky: "#38bdf8",
+  slate: "#64748b",
+  teal: "#14b8a6",
+  violet: "#8b5cf6",
+  zinc: "#a1a1aa",
+};
+
+const DashboardProportionCard = ({
+  formatSegmentValue,
+  segments,
+  subtitle,
+  title,
+  value,
+}: {
+  formatSegmentValue?: (value: number) => string;
+  segments: DashboardSegment[];
+  subtitle: string;
+  title: string;
+  value: string;
+}) => {
+  const normalizedSegments = segments
+    .map((segment) => ({ ...segment, value: sanitizeDashboardSegmentValue(segment.value) }))
+    .filter((segment) => segment.value > 0);
+  const total = normalizedSegments.reduce((sum, segment) => sum + segment.value, 0);
+  const visibleSegments = total > 0 ? normalizedSegments : [{ color: "#d6d3d1", label: "Sem dados", value: 1 }];
+  const visibleTotal = visibleSegments.reduce((sum, item) => sum + item.value, 0);
+
+  return (
+    <Card className="p-4">
+      <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">{title}</p>
+      <p className="mt-2 font-serif text-4xl leading-none text-foreground sm:text-5xl">{value}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
+      <div className="mt-4 flex h-7 overflow-hidden rounded-full bg-muted">
+        {visibleSegments.map((segment) => {
+          const width = `${Math.max(4, (segment.value / visibleTotal) * 100)}%`;
+
+          return (
+            <div
+              key={segment.label}
+              className="h-full"
+              style={{ backgroundColor: segment.color, width }}
+              title={`${segment.label}: ${segment.value}`}
+            />
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+        {normalizedSegments.length > 0 ? (
+          normalizedSegments.map((segment) => (
+            <span key={segment.label} className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: segment.color }} />
+              {segment.label}: {formatSegmentValue ? `${formatSegmentValue(segment.value)} (${formatPercentage((segment.value / total) * 100)})` : formatPercentage((segment.value / total) * 100)}
+            </span>
+          ))
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
+            Sem dados suficientes
+          </span>
+        )}
+      </div>
+    </Card>
+  );
+};
+
 const Index = () => {
   const [search, setSearch] = useState("");
   const [patients, setPatients] = useState<HomePatientRecord[]>([]);
   const [patientGroups, setPatientGroups] = useState<HomePatientGroupRecord[]>([]);
   const [collaborators, setCollaborators] = useState<HomeCollaboratorFilterRecord[]>([]);
   const [sessions, setSessions] = useState<HomeSessionRecord[]>([]);
+  const [agendaEvents, setAgendaEvents] = useState<HomeAgendaEventRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalPatients: 0, activePatients: 0, totalSessions: 0 });
+  const [selectedAgendaStatuses, setSelectedAgendaStatuses] = useState<HomePatientAgendaFilterStatus[]>([]);
+  const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<HomePatientPaymentFilterStatus[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedGroupNames, setSelectedGroupNames] = useState<string[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
@@ -97,9 +202,11 @@ const Index = () => {
   const [collaboratorQuery, setCollaboratorQuery] = useState("");
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<FilterSectionKey, boolean>>({
+    agenda: false,
     collaborator: true,
     dates: false,
     groups: true,
+    payments: false,
     statuses: true,
     weekdays: false,
   });
@@ -107,24 +214,27 @@ const Index = () => {
   const [sessionDateFrom, setSessionDateFrom] = useState("");
   const [sessionDateTo, setSessionDateTo] = useState("");
   const [sortKey, setSortKey] = useState<HomePatientSortKey>(DEFAULT_HOME_PATIENT_SORT_KEY);
-  const [summaryCardIndex, setSummaryCardIndex] = useState(0);
-  const [homePanelView, setHomePanelView] = useState<"agenda" | "resumo">("agenda");
+  const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
+  const [dashboardDialogOpen, setDashboardDialogOpen] = useState(false);
   const [toolbarFixed, setToolbarFixed] = useState(false);
   const toolbarSentinelRef = useRef<HTMLDivElement | null>(null);
   const toolbarPlaceholderRef = useRef<HTMLDivElement | null>(null);
   const toolbarStartTopRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { clinicId, user } = useAuth();
+  const { can, clinicId, user } = useAuth();
+  const canViewFinancialData = can("treasury.manage");
   const deletedPatientId =
     typeof (location.state as { deletedPatientId?: unknown } | null)?.deletedPatientId === "string"
       ? (location.state as { deletedPatientId: string }).deletedPatientId
       : null;
 
   const filters: HomePatientFilters = {
+    agendaStatuses: selectedAgendaStatuses,
     collaboratorIds: selectedCollaboratorIds,
     colors: selectedColors,
     groupNames: selectedGroupNames,
+    paymentStatuses: selectedPaymentStatuses,
     searchTerm: search,
     sessionDateFrom,
     sessionDateTo,
@@ -136,11 +246,13 @@ const Index = () => {
   const isShowingPatientList =
     search.trim().length > 0 || filtersAreActive || sortKey !== DEFAULT_HOME_PATIENT_SORT_KEY;
   const visiblePatients = buildHomePatientViews({
+    agendaEvents,
     filters,
     patientGroups,
     patients,
     sessions,
     sortKey,
+    showFinancialData: canViewFinancialData,
   });
   const availableGroups = useMemo(
     () => Array.from(new Set(patientGroups.map((group) => group.name))).sort((left, right) => left.localeCompare(right, "pt-BR")),
@@ -182,10 +294,13 @@ const Index = () => {
   }, [collaboratorQuery, collaborators]);
   const collaboratorListHeightClass = visibleCollaborators.length <= 2 ? "max-h-[128px]" : "max-h-[240px]";
   const recentPatients = buildHomePatientViews({
+    agendaEvents,
     filters: {
       collaboratorIds: [],
+      agendaStatuses: [],
       colors: [],
       groupNames: [],
+      paymentStatuses: [],
       searchTerm: "",
       sessionDateFrom: "",
       sessionDateTo: "",
@@ -196,7 +311,175 @@ const Index = () => {
     patients,
     sessions,
     sortKey: DEFAULT_HOME_PATIENT_SORT_KEY,
+    showFinancialData: canViewFinancialData,
   });
+  const dashboardData = useMemo(() => {
+    const now = new Date();
+    const today = toLocalDate(now);
+    const startOfWeek = getStartOfWeek(now);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const canceledSessions = sessions.filter((session) => session.status === "cancelado").length;
+    const activeAgendaEvents = agendaEvents.filter((event) => event.status !== "cancelado" && Number.isFinite(new Date(event.scheduled_for).getTime()));
+    const lateAgendaEvents = activeAgendaEvents.filter((event) => new Date(event.scheduled_for).getTime() < now.getTime()).length;
+    const confirmedAgendaEvents = activeAgendaEvents.filter((event) => new Date(event.scheduled_for).getTime() >= now.getTime() && event.status === "confirmado").length;
+    const awaitingAgendaEvents = activeAgendaEvents.filter((event) => new Date(event.scheduled_for).getTime() >= now.getTime() && event.status !== "confirmado").length;
+    const financialTotals = sessions.reduce(
+      (totals, session) => {
+        if (session.payment_status === "cortesia") {
+          return totals;
+        }
+
+        const charged = sanitizeDashboardCents(session.amount_charged_cents);
+        const paid = sanitizeDashboardCents(session.amount_paid_cents);
+
+        totals.paid += Math.min(paid, charged);
+        totals.credit += Math.max(0, paid - charged);
+        totals.open += Math.max(0, charged - paid);
+
+        return totals;
+      },
+      { credit: 0, open: 0, paid: 0 },
+    );
+    const forecastRevenueCents = financialTotals.paid + financialTotals.credit + financialTotals.open;
+    const paidSessions = sessions.filter((session) => {
+      const charged = sanitizeDashboardCents(session.amount_charged_cents);
+      const paid = sanitizeDashboardCents(session.amount_paid_cents);
+      return charged > 0 && paid >= charged;
+    }).length;
+    const paymentStatusCounts = sessions.reduce(
+      (counts, session) => {
+        const charged = sanitizeDashboardCents(session.amount_charged_cents);
+        const paid = sanitizeDashboardCents(session.amount_paid_cents);
+
+        if (session.payment_status === "cortesia") {
+          counts.courtesy += 1;
+        } else if (paid > charged) {
+          counts.credit += 1;
+        } else if (charged > 0 && paid > 0 && paid < charged) {
+          counts.debt += 1;
+        } else if (charged > 0 && paid <= 0) {
+          counts.pending += 1;
+        } else if (charged > 0 && paid >= charged) {
+          counts.paid += 1;
+        } else {
+          counts.notCharged += 1;
+        }
+
+        return counts;
+      },
+      { courtesy: 0, credit: 0, debt: 0, notCharged: 0, paid: 0, pending: 0 },
+    );
+    const patientStatusCounts = PATIENT_STATUS_OPTIONS.filter((statusOption) => statusOption.value !== "pagamento_pendente").map((statusOption) => ({
+      color:
+        statusOption.value === "ativo" ? dashboardColors.emerald :
+        statusOption.value === "pausado" ? dashboardColors.amber :
+        statusOption.value === "alta" ? dashboardColors.sky :
+        statusOption.value === "inativo" ? dashboardColors.slate :
+        dashboardColors.zinc,
+      label: statusOption.label,
+      value: patients.filter((patient) => patient.status === statusOption.value).length,
+    })).filter((segment) => segment.value > 0);
+    const paymentMethodCounts = sessions.reduce<Record<string, number>>((counts, session) => {
+      const method = session.payment_status === "cortesia"
+        ? "cortesia"
+        : typeof session.payment_method === "string" ? session.payment_method : "nao_informado";
+
+      counts[method] = (counts[method] ?? 0) + 1;
+      return counts;
+    }, {});
+    const paymentMethodSegments = PAYMENT_METHOD_OPTIONS.map((option) => ({
+      color:
+        option.value === "dinheiro" ? dashboardColors.emerald :
+        option.value === "pix" ? dashboardColors.blue :
+        option.value === "cartao_debito" ? dashboardColors.sky :
+        option.value === "cartao_credito" ? dashboardColors.violet :
+        option.value === "convenio" ? dashboardColors.amber :
+        option.value === "transferencia" ? dashboardColors.slate :
+        option.value === "credito_usado" ? dashboardColors.cyan :
+        option.value === "cortesia" ? dashboardColors.lime :
+        dashboardColors.zinc,
+      label: option.label,
+      value: paymentMethodCounts[option.value] ?? 0,
+    })).filter((segment) => segment.value > 0);
+
+    return {
+      cards: [
+        { detail: "atendimentos registrados", title: "Total de atendimentos", value: String(stats.totalSessions) },
+        { detail: "atendimentos quitados", title: "Pagamentos concluídos", value: String(paidSessions) },
+        {
+          detail: `${canceledSessions} cancelado${canceledSessions !== 1 ? "s" : ""}`,
+          title: "Índice de cancelamento",
+          value: stats.totalSessions > 0 ? formatPercentage((canceledSessions / stats.totalSessions) * 100) : "0%",
+        },
+      ],
+      paymentChart: {
+        formatSegmentValue: formatMoney,
+        segments: [
+          { color: dashboardColors.emerald, label: "Pago", value: financialTotals.paid },
+          { color: dashboardColors.blue, label: "Crédito", value: financialTotals.credit },
+          { color: dashboardColors.rose, label: "Em aberto", value: financialTotals.open },
+        ].filter((segment) => segment.value > 0),
+        subtitle: `Pago ${formatMoney(financialTotals.paid)} · crédito ${formatMoney(financialTotals.credit)} · em aberto ${formatMoney(financialTotals.open)}`,
+        title: "Receita registrada",
+        value: formatMoney(forecastRevenueCents),
+      },
+      patientStatusChart: {
+        segments: patientStatusCounts,
+        subtitle: `${stats.totalPatients} paciente${stats.totalPatients !== 1 ? "s" : ""} no cadastro`,
+        title: "Pacientes por status",
+        value: String(stats.totalPatients),
+      },
+      agendaChart: {
+        formatSegmentValue: (value: number) => String(value),
+        segments: [
+          { color: dashboardColors.rose, label: "Atrasado", value: lateAgendaEvents },
+          { color: dashboardColors.emerald, label: "Confirmado", value: confirmedAgendaEvents },
+          { color: dashboardColors.amber, label: "Aguardando confirmação", value: awaitingAgendaEvents },
+        ].filter((segment) => segment.value > 0),
+        subtitle: `${activeAgendaEvents.length} agendamento${activeAgendaEvents.length !== 1 ? "s" : ""} ativo${activeAgendaEvents.length !== 1 ? "s" : ""}`,
+        title: "Agenda de atendimentos",
+        value: String(activeAgendaEvents.length),
+      },
+      paymentStatusChart: {
+        formatSegmentValue: (value: number) => String(value),
+        segments: [
+          { color: dashboardColors.blue, label: "Crédito", value: paymentStatusCounts.credit },
+          { color: dashboardColors.rose, label: "Devendo", value: paymentStatusCounts.debt },
+          { color: dashboardColors.amber, label: "Pendente", value: paymentStatusCounts.pending },
+          { color: dashboardColors.emerald, label: "Pago", value: paymentStatusCounts.paid },
+          { color: dashboardColors.violet, label: "Cortesia", value: paymentStatusCounts.courtesy },
+          { color: dashboardColors.slate, label: "Não cobrado", value: paymentStatusCounts.notCharged },
+        ].filter((segment) => segment.value > 0),
+        subtitle: `${sessions.length} atendimento${sessions.length !== 1 ? "s" : ""} com status financeiro`,
+        title: "Status de pagamento",
+        value: String(sessions.length),
+      },
+      paymentMethodChart: {
+        formatSegmentValue: (value: number) => String(value),
+        segments: paymentMethodSegments,
+        subtitle: `${sessions.length} atendimento${sessions.length !== 1 ? "s" : ""} registrado${sessions.length !== 1 ? "s" : ""}`,
+        title: "Método de pagamento",
+        value: String(sessions.length),
+      },
+      volumeMetrics: [
+      {
+        detail: "atendimentos hoje",
+        title: "Quantidade por dia",
+        value: String(sessions.filter((session) => toLocalDate(session.session_date).getTime() === today.getTime()).length),
+      },
+      {
+        detail: "atendimentos nesta semana",
+        title: "Quantidade por semana",
+        value: String(sessions.filter((session) => toLocalDate(session.session_date).getTime() >= startOfWeek.getTime()).length),
+      },
+      {
+        detail: "atendimentos neste mês",
+        title: "Quantidade por mês",
+        value: String(sessions.filter((session) => toLocalDate(session.session_date).getTime() >= startOfMonth.getTime()).length),
+      },
+      ],
+    };
+  }, [agendaEvents, patients, sessions, stats.activePatients, stats.totalPatients, stats.totalSessions]);
 
   const toggleStatus = (status: string, checked: boolean | "indeterminate") => {
     setSelectedStatuses((current) => {
@@ -208,10 +491,10 @@ const Index = () => {
     });
   };
 
-  const toggleStringFilter = (
-    value: string,
+  const toggleStringFilter = <T extends string>(
+    value: T,
     checked: boolean | "indeterminate",
-    setValues: (updater: (current: string[]) => string[]) => void,
+    setValues: (updater: (current: T[]) => T[]) => void,
   ) => {
     setValues((current) => {
       if (checked === true) {
@@ -241,6 +524,8 @@ const Index = () => {
 
   const clearFilters = () => {
     setSelectedStatuses([]);
+    setSelectedAgendaStatuses([]);
+    setSelectedPaymentStatuses([]);
     setSelectedGroupNames([]);
     setSelectedColors([]);
     setSelectedCollaboratorIds([]);
@@ -250,63 +535,89 @@ const Index = () => {
     setSessionDateTo("");
   };
 
-  useEffect(() => {
+  const fetchData = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (!user) return;
-    const fetchData = async () => {
+
+    if (showLoading) {
       setLoading(true);
-      const [patientsRes, groupsRes, sessionsRes, membershipsRes, profilesRes] = await Promise.all([
-        supabase.from("patients").select("*").order("updated_at", { ascending: false }),
-        supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)"),
-        supabase.from("sessions").select("id, patient_id, provider_id, session_date, status, user_id"),
-        clinicId
-          ? supabase
-              .from("clinic_memberships")
-              .select("user_id, operational_role, is_active, membership_status")
-              .eq("clinic_id", clinicId)
-          : Promise.resolve({ data: [] }),
-        clinicId
-          ? supabase.from("profiles").select("id, full_name, email, job_title").eq("clinic_id", clinicId)
-          : Promise.resolve({ data: [] }),
-      ]);
+    }
 
-      const pats = patientsRes.data ?? [];
-      const groups = ((groupsRes.data ?? []) as PatientGroupWithColorSlot[]).map<HomePatientGroupRecord>((group) => ({
-        color: resolveGroupFilterColor(group),
-        name: group.name,
-        patient_id: group.patient_id,
-        status: group.status,
-      }));
-      const fetchedSessions = sessionsRes.data ?? [];
-      const memberships = ((membershipsRes.data ?? []) as ClinicMembershipRow[]).filter(
-        (membership) => membership.is_active && membership.membership_status === "active",
-      );
-      const profiles = (profilesRes.data ?? []) as Pick<ProfileRow, "email" | "full_name" | "id" | "job_title">[];
-      const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
-      const collaboratorRows = memberships.map<HomeCollaboratorFilterRecord>((membership) => {
-        const profile = profileMap.get(membership.user_id);
+    const [patientsRes, groupsRes, sessionsRes, agendaEventsRes, membershipsRes, profilesRes] = await Promise.all([
+      supabase.from("patients").select("*").order("updated_at", { ascending: false }),
+      supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)"),
+      supabase
+        .from("sessions")
+        .select("*"),
+      supabase
+        .from("agenda_events")
+        .select("id, patient_id, title, event_type, status, scheduled_for")
+        .neq("status", "cancelado")
+        .order("scheduled_for", { ascending: true }),
+      clinicId
+        ? supabase
+            .from("clinic_memberships")
+            .select("user_id, operational_role, is_active, membership_status")
+            .eq("clinic_id", clinicId)
+        : Promise.resolve({ data: [] }),
+      clinicId
+        ? supabase.from("profiles").select("id, full_name, email, job_title").eq("clinic_id", clinicId)
+        : Promise.resolve({ data: [] }),
+    ]);
 
-        return {
-          email: profile?.email ?? null,
-          full_name: profile?.full_name ?? null,
-          id: membership.user_id,
-          job_title: profile?.job_title ?? null,
-          operational_role: membership.operational_role,
-        };
-      });
+    const pats = patientsRes.data ?? [];
+    const groups = ((groupsRes.data ?? []) as PatientGroupWithColorSlot[]).map<HomePatientGroupRecord>((group) => ({
+      color: resolveGroupFilterColor(group),
+      name: group.name,
+      patient_id: group.patient_id,
+      status: group.status,
+    }));
+    const fetchedSessions = sessionsRes.data ?? [];
+    const fetchedAgendaEvents = agendaEventsRes.data ?? [];
+    const memberships = ((membershipsRes.data ?? []) as ClinicMembershipRow[]).filter(
+      (membership) => membership.is_active && membership.membership_status === "active",
+    );
+    const profiles = (profilesRes.data ?? []) as Pick<ProfileRow, "email" | "full_name" | "id" | "job_title">[];
+    const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
+    const collaboratorRows = memberships.map<HomeCollaboratorFilterRecord>((membership) => {
+      const profile = profileMap.get(membership.user_id);
 
-      setPatients(pats);
-      setPatientGroups(groups);
-      setSessions(fetchedSessions);
-      setCollaborators(collaboratorRows);
-      setStats({
-        totalPatients: pats.length,
-        activePatients: pats.filter((p) => p.status === "ativo").length,
-        totalSessions: fetchedSessions.length,
-      });
-      setLoading(false);
+      return {
+        email: profile?.email ?? null,
+        full_name: profile?.full_name ?? null,
+        id: membership.user_id,
+        job_title: profile?.job_title ?? null,
+        operational_role: membership.operational_role,
+      };
+    });
+
+    setPatients(pats);
+    setPatientGroups(groups);
+    setSessions(fetchedSessions);
+    setAgendaEvents(fetchedAgendaEvents);
+    setCollaborators(collaboratorRows);
+    setStats({
+      totalPatients: pats.length,
+      activePatients: pats.filter((p) => p.status === "ativo").length,
+      totalSessions: fetchedSessions.length,
+    });
+    setLoading(false);
+  }, [clinicId, user]);
+
+  useEffect(() => {
+    void fetchData();
+  }, [fetchData, location.key]);
+
+  useEffect(() => {
+    const handleAgendaEventsUpdated = () => {
+      void fetchData({ showLoading: false });
     };
-    fetchData();
-  }, [clinicId, location.key, user]);
+
+    window.addEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleAgendaEventsUpdated);
+
+    return () => {
+      window.removeEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleAgendaEventsUpdated);
+    };
+  }, [fetchData]);
 
   useEffect(() => {
     if (!deletedPatientId) {
@@ -329,92 +640,6 @@ const Index = () => {
       return current.filter((patient) => patient.id !== deletedPatientId);
     });
   }, [deletedPatientId]);
-
-  const summaryCards = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startOfWeek = getStartOfWeek(today);
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
-    const sessionsByDay = sessions.filter((session) => toLocalDate(session.session_date).getTime() === today.getTime()).length;
-    const sessionsByWeek = sessions.filter((session) => toLocalDate(session.session_date) >= startOfWeek).length;
-    const sessionsByMonth = sessions.filter((session) => toLocalDate(session.session_date) >= startOfMonth).length;
-    const cancelledSessions = sessions.filter((session) => session.status === "cancelado").length;
-    const sessionBaseCount = sessions.length || 1;
-
-    return [
-      {
-        title: "Total de pacientes",
-        value: String(stats.totalPatients),
-        detail: "Pacientes cadastrados na clínica",
-        icon: Users,
-        accent: "text-primary",
-        bgAccent: "bg-primary/10",
-      },
-      {
-        title: "Total de atendimentos",
-        value: String(stats.totalSessions),
-        detail: "Histórico total registrado",
-        icon: CalendarDays,
-        accent: "text-success",
-        bgAccent: "bg-success/10",
-      },
-      {
-        title: "Quantidade por dia",
-        value: String(sessionsByDay),
-        detail: "Atendimentos marcados para hoje",
-        icon: Clock3,
-        accent: "text-primary",
-        bgAccent: "bg-primary/10",
-      },
-      {
-        title: "Quantidade por semana",
-        value: String(sessionsByWeek),
-        detail: "Atendimentos desde o início da semana",
-        icon: Activity,
-        accent: "text-primary",
-        bgAccent: "bg-primary/10",
-      },
-      {
-        title: "Quantidade por mês",
-        value: String(sessionsByMonth),
-        detail: "Atendimentos no mês atual",
-        icon: Activity,
-        accent: "text-success",
-        bgAccent: "bg-success/10",
-      },
-      {
-        title: "Pagamentos abertos",
-        value: "Em breve",
-        detail: "Pré-definido para o fluxo financeiro",
-        icon: WalletCards,
-        accent: "text-warning",
-        bgAccent: "bg-warning/10",
-      },
-      {
-        title: "Pagamentos concluídos",
-        value: "Em breve",
-        detail: "Pré-definido para o fluxo financeiro",
-        icon: CircleDollarSign,
-        accent: "text-success",
-        bgAccent: "bg-success/10",
-      },
-      {
-        title: "Índice de cancelamento",
-        value: formatPercentage((cancelledSessions / sessionBaseCount) * 100),
-        detail: `${cancelledSessions} cancelamento(s) registrados`,
-        icon: TrendingDown,
-        accent: "text-warning",
-        bgAccent: "bg-warning/10",
-      },
-    ];
-  }, [sessions, stats.totalPatients, stats.totalSessions]);
-
-  const activeSummaryCard = summaryCards[summaryCardIndex] ?? summaryCards[0];
-  const goToPreviousSummary = () =>
-    setSummaryCardIndex((current) => (current === 0 ? summaryCards.length - 1 : current - 1));
-  const goToNextSummary = () =>
-    setSummaryCardIndex((current) => (current + 1) % summaryCards.length);
 
   useEffect(() => {
     const measureToolbarStart = () => {
@@ -464,17 +689,84 @@ const Index = () => {
       <div
         ref={toolbarPlaceholderRef}
         aria-hidden="true"
-        className={toolbarFixed ? "block h-[70px] sm:h-[62px]" : "hidden"}
+        className={toolbarFixed ? "block h-[136px] md:h-[62px]" : "hidden"}
       />
       <div
         className={
           toolbarFixed
-            ? "!mt-0 fixed left-0 right-0 top-0 z-30 border-b border-border/60 bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:px-6"
-            : "rounded-xl border border-border/60 bg-background/95 px-2 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:px-3"
+            ? "!mt-0 fixed left-0 right-0 top-0 z-30 border-b border-border/60 bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 md:px-6"
+            : "rounded-2xl border border-border/60 bg-background/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 md:rounded-xl"
         }
       >
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-lg">
+        <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
+          <div className="md:hidden">
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar paciente..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-12 rounded-2xl border-muted-foreground/20 bg-muted/20 pl-10 text-base shadow-none"
+                  aria-label="Busca mobile de pacientes"
+                />
+              </div>
+              <div className="grid grid-cols-[auto,auto,auto,auto,1fr] gap-2">
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-11 rounded-2xl px-3"
+                    aria-label={activeFilterCount > 0 ? `Ajustes da lista, ${activeFilterCount} filtros ativos` : "Ajustes da lista"}
+                  >
+                    <ListFilter className="h-4 w-4" />
+                    {activeFilterCount > 0 ? <Badge variant="secondary" className="ml-1 px-1.5">{activeFilterCount}</Badge> : null}
+                  </Button>
+                </DialogTrigger>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-2xl px-3"
+                  onClick={() => setAgendaDialogOpen(true)}
+                  aria-label="Abrir agenda"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                </Button>
+                {canViewFinancialData ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 rounded-2xl px-3"
+                    onClick={() => setDashboardDialogOpen(true)}
+                    aria-label="Abrir dashboard"
+                  >
+                    <PieChart className="h-4 w-4" />
+                  </Button>
+                ) : null}
+                <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
+                  <SelectTrigger className="h-11 w-14 rounded-2xl px-3" aria-label="Ordenar pacientes">
+                    <div className="flex w-full items-center justify-center">
+                      <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                      <span className="sr-only">
+                        <SelectValue />
+                      </span>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HOME_PATIENT_SORT_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button className="h-11 rounded-2xl px-3" onClick={() => navigate("/pacientes/novo")} aria-label="Novo paciente">
+                  <Plus className="h-4 w-4" />
+                  <span className="ml-1 max-[360px]:sr-only">Novo</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="hidden items-center gap-3 md:flex md:flex-wrap">
+          <div className="relative min-w-[200px] max-w-lg flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar paciente, CPF ou telefone..."
@@ -484,7 +776,6 @@ const Index = () => {
               aria-label="Buscar paciente por nome, CPF ou telefone"
             />
           </div>
-          <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" aria-label={activeFilterCount > 0 ? `Filtro, ${activeFilterCount} ativos` : "Filtro"}>
               <ListFilter className="h-4 w-4" />
@@ -492,16 +783,16 @@ const Index = () => {
               {activeFilterCount > 0 && <Badge variant="secondary">{activeFilterCount}</Badge>}
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl">
-            <DialogHeader>
+          <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-2xl sm:p-6">
+            <DialogHeader className="text-left">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <DialogTitle>Filtros</DialogTitle>
-                  <DialogDescription>
-                    Refine a lista por status, grupos, cores, colaborador, período e dias da semana.
+                  <DialogDescription className="text-sm">
+                    Refine a lista por status, pagamentos, agendamentos, grupos, colaborador, período e dias da semana.
                   </DialogDescription>
                 </div>
-                <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                <Button type="button" variant="ghost" size="sm" className="mr-8 shrink-0" onClick={clearFilters}>
                   Sem filtros
                 </Button>
               </div>
@@ -525,6 +816,50 @@ const Index = () => {
                         <span>{statusOption.label}</span>
                       </label>
                     ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {canViewFinancialData ? (
+                  <Collapsible open={openSections.payments} onOpenChange={() => toggleSection("payments")}>
+                    <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left">
+                      <span className="font-medium">Status de pagamento</span>
+                      {openSections.payments ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="px-2 pt-3">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {HOME_PATIENT_PAYMENT_STATUS_OPTIONS.map((statusOption) => (
+                          <label key={statusOption.value} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={selectedPaymentStatuses.includes(statusOption.value)}
+                              onCheckedChange={(checked) => toggleStringFilter(statusOption.value, checked, setSelectedPaymentStatuses)}
+                              aria-label={statusOption.label}
+                            />
+                            <span>{statusOption.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                ) : null}
+
+                <Collapsible open={openSections.agenda} onOpenChange={() => toggleSection("agenda")}>
+                  <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left">
+                    <span className="font-medium">Status de agendamento</span>
+                    {openSections.agenda ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="px-2 pt-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {HOME_PATIENT_AGENDA_STATUS_OPTIONS.map((statusOption) => (
+                        <label key={statusOption.value} className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={selectedAgendaStatuses.includes(statusOption.value)}
+                            onCheckedChange={(checked) => toggleStringFilter(statusOption.value, checked, setSelectedAgendaStatuses)}
+                            aria-label={statusOption.label}
+                          />
+                          <span>{statusOption.label}</span>
+                        </label>
+                      ))}
                     </div>
                   </CollapsibleContent>
                 </Collapsible>
@@ -731,7 +1066,6 @@ const Index = () => {
               </Button>
             </DialogFooter>
           </DialogContent>
-          </Dialog>
           <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
             <SelectTrigger className="w-[220px]" aria-label="Ordenar pacientes">
               <div className="flex items-center gap-2">
@@ -749,7 +1083,58 @@ const Index = () => {
             <Plus className="h-4 w-4 mr-2" />
             <span>Novo Paciente</span>
           </Button>
-        </div>
+          <Button type="button" variant="outline" size="icon" onClick={() => setAgendaDialogOpen(true)} aria-label="Abrir agenda">
+            <CalendarDays className="h-4 w-4" />
+          </Button>
+          {canViewFinancialData ? (
+            <Button type="button" variant="outline" size="icon" onClick={() => setDashboardDialogOpen(true)} aria-label="Abrir dashboard">
+              <PieChart className="h-4 w-4" />
+            </Button>
+          ) : null}
+          </div>
+        </Dialog>
+        <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
+          <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
+            <DialogHeader className="text-left">
+              <DialogTitle>Agenda</DialogTitle>
+              <DialogDescription>Veja e gerencie os agendamentos da clínica.</DialogDescription>
+            </DialogHeader>
+            <AgendaWidget />
+          </DialogContent>
+        </Dialog>
+        {canViewFinancialData ? (
+          <Dialog open={dashboardDialogOpen} onOpenChange={setDashboardDialogOpen}>
+            <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-4xl sm:p-6">
+              <DialogHeader className="text-left">
+                <DialogTitle>Resumo geral</DialogTitle>
+                <DialogDescription>Indicadores rápidos da clínica para acompanhar operação, atendimentos e pagamentos.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <DashboardProportionCard {...dashboardData.paymentChart} />
+                </div>
+                <DashboardProportionCard {...dashboardData.agendaChart} />
+                <DashboardProportionCard {...dashboardData.paymentStatusChart} />
+                <DashboardProportionCard {...dashboardData.patientStatusChart} />
+                <DashboardProportionCard {...dashboardData.paymentMethodChart} />
+                {dashboardData.cards.map((metric) => (
+                  <Card key={metric.title} className="p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{metric.title}</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{metric.value}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{metric.detail}</p>
+                  </Card>
+                ))}
+                {dashboardData.volumeMetrics.map((metric) => (
+                  <Card key={metric.title} className="p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{metric.title}</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{metric.value}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{metric.detail}</p>
+                  </Card>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </div>
 
       {filtersAreActive && (
@@ -769,6 +1154,16 @@ const Index = () => {
           )}
           {selectedStatuses.length > 0 && (
             <Badge variant="secondary">Status: {selectedStatuses.map((status) => PATIENT_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status).join(", ")}</Badge>
+          )}
+          {selectedPaymentStatuses.length > 0 && (
+            <Badge variant="secondary">
+              Pagamento: {HOME_PATIENT_PAYMENT_STATUS_OPTIONS.filter((option) => selectedPaymentStatuses.includes(option.value)).map((option) => option.label).join(", ")}
+            </Badge>
+          )}
+          {selectedAgendaStatuses.length > 0 && (
+            <Badge variant="secondary">
+              Agendamento: {HOME_PATIENT_AGENDA_STATUS_OPTIONS.filter((option) => selectedAgendaStatuses.includes(option.value)).map((option) => option.label).join(", ")}
+            </Badge>
           )}
           {(sessionDateFrom || sessionDateTo) && (
             <Badge variant="secondary">
@@ -805,95 +1200,6 @@ const Index = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="xl:max-w-[420px]">
-            {homePanelView === "agenda" ? (
-              <AgendaWidget
-                headerAccessory={(
-                  <ToggleGroup
-                    type="single"
-                    value={homePanelView}
-                    onValueChange={(value) => {
-                      if (value === "agenda" || value === "resumo") {
-                        setHomePanelView(value);
-                      }
-                    }}
-                    variant="outline"
-                    size="sm"
-                    className="rounded-full border bg-background/80 p-0.5"
-                    aria-label="Alternar painel da homepage"
-                  >
-                    <ToggleGroupItem value="agenda" className="h-7 rounded-full px-2.5 text-[11px]">
-                      Agenda
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="resumo" className="h-7 rounded-full px-2.5 text-[11px]">
-                      Resumo
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                )}
-              />
-            ) : (
-              <Card className="overflow-hidden border-dashed bg-card/70">
-                <CardContent className="p-3 sm:p-4">
-                  <div className="mb-3 flex items-center justify-end">
-                    <ToggleGroup
-                      type="single"
-                      value={homePanelView}
-                      onValueChange={(value) => {
-                        if (value === "agenda" || value === "resumo") {
-                          setHomePanelView(value);
-                        }
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="rounded-full border bg-background/80 p-0.5"
-                      aria-label="Alternar painel da homepage"
-                    >
-                      <ToggleGroupItem value="agenda" className="h-7 rounded-full px-2.5 text-[11px]">
-                        Agenda
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="resumo" className="h-7 rounded-full px-2.5 text-[11px]">
-                        Resumo
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  </div>
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={goToPreviousSummary} aria-label="Resumo anterior">
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Resumo geral</p>
-                      <div className="mt-2 flex min-w-0 items-center gap-2">
-                        <div className={`rounded-md p-1.5 ${activeSummaryCard.bgAccent}`}>
-                          <activeSummaryCard.icon className={`h-3.5 w-3.5 ${activeSummaryCard.accent}`} />
-                        </div>
-                        <p className="truncate text-sm font-medium text-foreground">{activeSummaryCard.title}</p>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                        <p className="text-lg font-semibold">{activeSummaryCard.value}</p>
-                        <p className="text-xs text-muted-foreground">{activeSummaryCard.detail}</p>
-                      </div>
-                    </div>
-                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={goToNextSummary} aria-label="Próximo resumo">
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="mt-3 flex justify-center gap-1.5" aria-label="Opções de resumo geral">
-                    {summaryCards.map((stat, index) => (
-                      <button
-                        key={stat.title}
-                        type="button"
-                        className={`h-1.5 rounded-full transition-all ${index === summaryCardIndex ? "w-4 bg-primary" : "w-1.5 bg-muted-foreground/30"}`}
-                        onClick={() => setSummaryCardIndex(index)}
-                        aria-label={`Mostrar ${stat.title}`}
-                        aria-current={index === summaryCardIndex ? "true" : undefined}
-                      />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
           {recentPatients.length > 0 && (
             <div>
               <h2 className="text-sm font-medium text-muted-foreground mb-3">Pacientes recentes</h2>

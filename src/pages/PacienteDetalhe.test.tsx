@@ -392,24 +392,25 @@ describe("PacienteDetalhe", () => {
   it("navigates patient summary cards in a single compact block", async () => {
     renderPage();
 
-    await screen.findByText("Resumo");
-    expect(screen.getByText("atendimento no histórico")).toBeInTheDocument();
+    await screen.findByText("Absenteísmo");
+    expect(screen.getAllByText("0 atendimentos").length).toBeGreaterThan(0);
+    expect(screen.getByText(/1 concluído/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /próximo resumo/i }));
 
-    expect(screen.getByText("Concluídos")).toBeInTheDocument();
-    expect(screen.getByText("atendimento")).toBeInTheDocument();
+    expect(screen.getByText("Mais recente")).toBeInTheDocument();
+    expect(screen.getAllByText("concluído").length).toBeGreaterThan(0);
   });
 
   it("shows the patient agenda block and opens the scheduling dialog", async () => {
     renderPage();
 
-    expect(await screen.findByText("Sem agendamentos no momento")).toBeInTheDocument();
+    expect(await screen.findByText("Sem eventos")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^agendar$/i }));
 
-    expect(await screen.findByRole("heading", { name: "Agendar atendimento" })).toBeInTheDocument();
-    expect(screen.getByText("Este agendamento usa a mesma agenda da homepage e aparecerá nos dois lugares.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /novo evento/i })).toBeInTheDocument();
+    expect(screen.getAllByText("Maria Silva").length).toBeGreaterThan(1);
 
     const confirmButton = screen.getByRole("button", { name: /confirmar/i });
     expect(confirmButton).not.toBeDisabled();
@@ -450,8 +451,14 @@ describe("PacienteDetalhe", () => {
 
     renderPage();
 
-    const statusBadge = await screen.findByText("Aguardando confirmação");
-    fireEvent.click(statusBadge.closest("button")!);
+    const nextAgendaDayButton = await screen.findByRole("button", { name: /próximo dia com agendamentos/i });
+    await waitFor(() => {
+      expect(nextAgendaDayButton).not.toBeDisabled();
+    });
+    fireEvent.click(nextAgendaDayButton);
+
+    const statusBadge = await screen.findByText(/Aguardando/i);
+    fireEvent.click(statusBadge.closest("div[role='button']")!);
 
     expect(await screen.findByText("Revise o horário, atualize o status ou inicie o atendimento a partir deste agendamento.")).toBeInTheDocument();
 
@@ -474,6 +481,53 @@ describe("PacienteDetalhe", () => {
         table: "sessions",
       });
     });
+  });
+
+  it("keeps active agenda events from today visible in the patient agenda block", async () => {
+    const today = new Date();
+    today.setHours(9, 0, 0, 0);
+    supabaseMocks.agendaEvents = [
+      {
+        clinic_id: "clinic-1",
+        created_at: "2026-05-14T12:00:00.000Z",
+        event_type: "atendimento",
+        id: "agenda-overdue-1",
+        patient_id: "patient-1",
+        scheduled_for: today.toISOString(),
+        status: "aguardando_confirmacao",
+        title: "Maria Silva",
+        updated_at: "2026-05-14T12:00:00.000Z",
+        user_id: "owner-1",
+      },
+    ];
+
+    renderPage();
+
+    expect(await screen.findByText(/Aguardando/i)).toBeInTheDocument();
+    expect(screen.queryByText("Sem eventos")).not.toBeInTheDocument();
+  });
+
+  it("jumps to future patient agenda events with the same agenda controls", async () => {
+    supabaseMocks.agendaEvents = [
+      {
+        clinic_id: "clinic-1",
+        created_at: "2026-05-14T12:00:00.000Z",
+        event_type: "atendimento",
+        id: "agenda-future-1",
+        patient_id: "patient-1",
+        scheduled_for: "2099-05-14T09:00:00.000Z",
+        status: "confirmado",
+        title: "Maria Silva",
+        updated_at: "2026-05-14T12:00:00.000Z",
+        user_id: "owner-1",
+      },
+    ];
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /próximo dia com agendamentos/i }));
+
+    expect(await screen.findByText("Confirmado")).toBeInTheDocument();
   });
 
   it("opens the patient summary popup from the compact header", async () => {

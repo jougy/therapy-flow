@@ -1,0 +1,61 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e159]:
+    - banner [ref=e160]:
+      - button "Ir para a página inicial da clínica Clínica 11111111111111" [ref=e161] [cursor=pointer]:
+        - generic [ref=e162]: Clínica 11111111111111
+      - generic [ref=e163]:
+        - generic [ref=e164]:
+          - generic [ref=e165]: teste@email.com
+          - generic [ref=e166]: Clínica 11111111111111
+        - generic [ref=e168]: T
+        - button "Configurações" [ref=e169] [cursor=pointer]:
+          - img
+        - button "Sair da conta" [ref=e170] [cursor=pointer]:
+          - img
+    - main [ref=e171]:
+      - generic [ref=e172]:
+        - generic [ref=e174]:
+          - generic [ref=e175]:
+            - img [ref=e176]
+            - textbox "Buscar paciente por nome, CPF ou telefone" [ref=e179]:
+              - /placeholder: Buscar paciente, CPF ou telefone...
+          - button "Filtro, 1 ativos" [active] [ref=e180] [cursor=pointer]:
+            - img
+            - generic [ref=e181]: Filtro
+            - generic [ref=e182]: "1"
+          - combobox "Ordenar pacientes" [ref=e183] [cursor=pointer]:
+            - generic [ref=e184]:
+              - img [ref=e185]
+              - generic: Padrão atual
+            - img [ref=e188]
+          - button "Novo Paciente" [ref=e190] [cursor=pointer]:
+            - img
+            - generic [ref=e191]: Novo Paciente
+          - button "Abrir agenda" [ref=e192] [cursor=pointer]:
+            - img
+        - generic [ref=e193]:
+          - generic [ref=e194]: "Pagamento: Crédito"
+          - button "Limpar filtros" [ref=e195] [cursor=pointer]:
+            - img
+            - text: Limpar filtros
+        - generic [ref=e196]:
+          - paragraph [ref=e197]: 1 paciente encontrado
+          - button "Ver detalhes de Amanda Costa Rocha" [ref=e199] [cursor=pointer]:
+            - generic [ref=e200]:
+              - generic [ref=e201]:
+                - generic [ref=e202]:
+                  - generic "Masculino" [ref=e203]: ♂
+                  - heading "Amanda Costa Rocha" [level=3] [ref=e204]
+                  - generic [ref=e205]: (ele/dele)
+                  - generic [ref=e206]: Ativo
+                  - 'button "Pagamento: Crédito, R$ 2.860,00" [ref=e207]': $
+                  - 'button "Agendamento: 20/05/2026, 17:00" [ref=e208]':
+                    - img [ref=e209]
+                - generic [ref=e212]:
+                  - generic [ref=e213]: "Nasc: 26/04/1987"
+                  - generic [ref=e214]: "CPF: 100.000.000-26"
+                  - generic [ref=e215]: "Último atend: 20/05/2026"
+              - img [ref=e216]
