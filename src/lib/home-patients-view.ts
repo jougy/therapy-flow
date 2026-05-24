@@ -1,5 +1,6 @@
 import { comparePatientStatusPriority } from "@/lib/patient-statuses";
 import { filterActivePatientGroups } from "@/lib/patient-groups";
+import { normalizePatientOriginType, type PatientOriginType } from "@/lib/patient-origin";
 import { buildPatientOperationalSummary, formatMoneyCents } from "@/lib/session-operations";
 
 export const DEFAULT_HOME_PATIENT_SORT_KEY = "updated_at_desc" as const;
@@ -19,6 +20,7 @@ export interface HomePatientFilters {
   collaboratorIds: string[];
   colors: string[];
   groupNames: string[];
+  originTypes: PatientOriginType[];
   paymentStatuses: HomePatientPaymentFilterStatus[];
   searchTerm: string;
   sessionDateFrom: string;
@@ -33,6 +35,7 @@ export interface HomePatientRecord {
   gender: string | null;
   id: string;
   name: string;
+  origin_type?: string | null;
   phone: string | null;
   pronoun: string | null;
   status: string;
@@ -89,6 +92,7 @@ export interface HomePatientView {
   lastSessionDate: string | null;
   missedCount: number;
   name: string;
+  originType: PatientOriginType;
   agendaFilterStatuses: HomePatientAgendaFilterStatus[];
   nextAgendaSummary: HomePatientAgendaSummary | null;
   paymentFilterStatus: HomePatientPaymentFilterStatus;
@@ -444,6 +448,7 @@ export const hasActiveHomePatientFilters = (filters: HomePatientFilters) =>
   filters.collaboratorIds.length > 0 ||
   filters.colors.length > 0 ||
   filters.groupNames.length > 0 ||
+  filters.originTypes.length > 0 ||
   filters.paymentStatuses.length > 0 ||
   filters.statuses.length > 0 ||
   filters.weekdays.length > 0 ||
@@ -455,6 +460,7 @@ export const getActiveHomePatientFilterCount = (filters: HomePatientFilters) =>
   filters.collaboratorIds.length +
   filters.colors.length +
   filters.groupNames.length +
+  filters.originTypes.length +
   filters.paymentStatuses.length +
   filters.statuses.length +
   filters.weekdays.length +
@@ -541,6 +547,7 @@ export const buildHomePatientViews = ({
         lastSessionDate: patientLastSession,
         missedCount: patientSessions.filter((session) => session.status === "cancelado").length,
         name: patient.name,
+        originType: normalizePatientOriginType(patient.origin_type),
         nextAgendaSummary: buildHomePatientAgendaSummary(agendaEventsByPatientId.get(patient.id) ?? [], nextGlobalAgendaEventId, now),
         paymentFilterStatus: showFinancialData ? buildHomePatientPaymentFilterStatus(patientSessions) : "no_financial_record",
         paymentSummary: showFinancialData ? buildHomePatientPaymentSummary(patientSessions) : null,
@@ -562,6 +569,10 @@ export const buildHomePatientViews = ({
       }
 
       if (filters.statuses.length > 0 && !filters.statuses.includes(patient.status)) {
+        return false;
+      }
+
+      if (filters.originTypes.length > 0 && !filters.originTypes.includes(patient.originType)) {
         return false;
       }
 

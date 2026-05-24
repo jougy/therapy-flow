@@ -1,6 +1,7 @@
 import type { Database } from "@/integrations/supabase/types";
 import type { PatientClinicalProfile, PatientEmergencyContact } from "@/lib/patient-clinical-profile";
 import { buildClinicalProfilePayload, buildEmergencyContactPayload } from "@/lib/patient-clinical-profile";
+import { buildPatientOriginPayload, type PatientOriginFormValues } from "@/lib/patient-origin";
 
 export const extractCpfDigits = (value: string | null | undefined) => (value ?? "").replace(/\D/g, "");
 
@@ -19,7 +20,7 @@ export const buildPatientRegistrationUrl = (origin: string, token: string) =>
 
 type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
 
-export interface PatientRegistrationFormValues {
+export interface PatientRegistrationFormValues extends PatientOriginFormValues {
   addressComplement: string;
   addressNumber: string;
   allergies: string;
@@ -109,6 +110,7 @@ export const buildPatientRegistrationPutPayload = (
     gender: trimToNull(formValues.gender),
     name: normalizedName ?? patient.name,
     neighborhood: trimToNull(formValues.neighborhood),
+    ...buildPatientOriginPayload(formValues),
     phone: digitsToNull(formValues.phone),
     profession: trimToNull(formValues.profession),
     pronoun: trimToNull(formValues.pronoun),

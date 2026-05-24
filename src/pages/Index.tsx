@@ -37,6 +37,7 @@ import {
 } from "@/lib/home-patients-view";
 import { getLegacyGroupHex } from "@/lib/group-colors";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
+import { PATIENT_ORIGIN_OPTIONS, type PatientOriginType } from "@/lib/patient-origin";
 import { AGENDA_EVENTS_UPDATED_EVENT } from "@/lib/agenda-events";
 import { MAX_SESSION_AMOUNT_CENTS, PAYMENT_METHOD_OPTIONS } from "@/lib/session-operations";
 
@@ -62,6 +63,7 @@ const FILTER_SECTIONS = {
   collaborator: "collaborator",
   dates: "dates",
   groups: "groups",
+  origins: "origins",
   payments: "payments",
   statuses: "statuses",
   weekdays: "weekdays",
@@ -197,6 +199,7 @@ const Index = () => {
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<HomePatientPaymentFilterStatus[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedGroupNames, setSelectedGroupNames] = useState<string[]>([]);
+  const [selectedOriginTypes, setSelectedOriginTypes] = useState<PatientOriginType[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [selectedCollaboratorIds, setSelectedCollaboratorIds] = useState<string[]>([]);
   const [collaboratorQuery, setCollaboratorQuery] = useState("");
@@ -206,6 +209,7 @@ const Index = () => {
     collaborator: true,
     dates: false,
     groups: true,
+    origins: false,
     payments: false,
     statuses: true,
     weekdays: false,
@@ -234,6 +238,7 @@ const Index = () => {
     collaboratorIds: selectedCollaboratorIds,
     colors: selectedColors,
     groupNames: selectedGroupNames,
+    originTypes: selectedOriginTypes,
     paymentStatuses: selectedPaymentStatuses,
     searchTerm: search,
     sessionDateFrom,
@@ -300,6 +305,7 @@ const Index = () => {
       agendaStatuses: [],
       colors: [],
       groupNames: [],
+      originTypes: [],
       paymentStatuses: [],
       searchTerm: "",
       sessionDateFrom: "",
@@ -527,6 +533,7 @@ const Index = () => {
     setSelectedAgendaStatuses([]);
     setSelectedPaymentStatuses([]);
     setSelectedGroupNames([]);
+    setSelectedOriginTypes([]);
     setSelectedColors([]);
     setSelectedCollaboratorIds([]);
     setCollaboratorQuery("");
@@ -789,7 +796,7 @@ const Index = () => {
                 <div>
                   <DialogTitle>Filtros</DialogTitle>
                   <DialogDescription className="text-sm">
-                    Refine a lista por status, pagamentos, agendamentos, grupos, colaborador, período e dias da semana.
+                    Refine a lista por status, origem, pagamentos, agendamentos, grupos, colaborador, período e dias da semana.
                   </DialogDescription>
                 </div>
                 <Button type="button" variant="ghost" size="sm" className="mr-8 shrink-0" onClick={clearFilters}>
@@ -816,6 +823,27 @@ const Index = () => {
                         <span>{statusOption.label}</span>
                       </label>
                     ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                <Collapsible open={openSections.origins} onOpenChange={() => toggleSection("origins")}>
+                  <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left">
+                    <span className="font-medium">Origem do paciente</span>
+                    {openSections.origins ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="px-2 pt-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {PATIENT_ORIGIN_OPTIONS.map((originOption) => (
+                        <label key={originOption.value} className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={selectedOriginTypes.includes(originOption.value)}
+                            onCheckedChange={(checked) => toggleStringFilter(originOption.value, checked, setSelectedOriginTypes)}
+                            aria-label={originOption.label}
+                          />
+                          <span>{originOption.label}</span>
+                        </label>
+                      ))}
                     </div>
                   </CollapsibleContent>
                 </Collapsible>
@@ -1154,6 +1182,11 @@ const Index = () => {
           )}
           {selectedStatuses.length > 0 && (
             <Badge variant="secondary">Status: {selectedStatuses.map((status) => PATIENT_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status).join(", ")}</Badge>
+          )}
+          {selectedOriginTypes.length > 0 && (
+            <Badge variant="secondary">
+              Origem: {PATIENT_ORIGIN_OPTIONS.filter((option) => selectedOriginTypes.includes(option.value)).map((option) => option.label).join(", ")}
+            </Badge>
           )}
           {selectedPaymentStatuses.length > 0 && (
             <Badge variant="secondary">

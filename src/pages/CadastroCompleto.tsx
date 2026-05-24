@@ -33,6 +33,14 @@ import {
   buildPatientClinicalSnapshotState,
   diffPatientClinicalSnapshotStates,
 } from "@/lib/patient-clinical-snapshots";
+import {
+  PATIENT_ORIGIN_OPTIONS,
+  DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION,
+  DEFAULT_PATIENT_ORIGIN_OTHER_NAME,
+  DEFAULT_PATIENT_ORIGIN_TYPE,
+  normalizePatientOriginType,
+  type PatientOriginType,
+} from "@/lib/patient-origin";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
@@ -68,6 +76,13 @@ const CadastroCompleto = () => {
   const [bloodType, setBloodType] = useState("");
   const [pronoun, setPronoun] = useState("");
   const [profession, setProfession] = useState("");
+  const [originType, setOriginType] = useState<PatientOriginType>(DEFAULT_PATIENT_ORIGIN_TYPE);
+  const [originReferrerName, setOriginReferrerName] = useState("");
+  const [originInsuranceProvider, setOriginInsuranceProvider] = useState("");
+  const [originInsurancePlan, setOriginInsurancePlan] = useState("");
+  const [originInsuranceMemberId, setOriginInsuranceMemberId] = useState("");
+  const [originOtherName, setOriginOtherName] = useState("");
+  const [originOtherDescription, setOriginOtherDescription] = useState("");
 
   // Endereço
   const [cep, setCep] = useState("");
@@ -118,6 +133,13 @@ const CadastroCompleto = () => {
     setBloodType(patient.blood_type ?? "");
     setPronoun(patient.pronoun ?? "");
     setProfession(patient.profession ?? "");
+    setOriginType(normalizePatientOriginType(patient.origin_type));
+    setOriginReferrerName(patient.origin_referrer_name ?? "");
+    setOriginInsuranceProvider(patient.origin_insurance_provider ?? "");
+    setOriginInsurancePlan(patient.origin_insurance_plan ?? "");
+    setOriginInsuranceMemberId(patient.origin_insurance_member_id ?? "");
+    setOriginOtherName(patient.origin_other_name ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME);
+    setOriginOtherDescription(patient.origin_other_description ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION);
     setCep(formatCep(patient.cep ?? ""));
     setCountry(patient.country ?? "Brasil");
     setState(patient.state ?? "");
@@ -205,6 +227,13 @@ const CadastroCompleto = () => {
         gender,
         name,
         neighborhood,
+        originInsuranceMemberId,
+        originInsurancePlan,
+        originInsuranceProvider,
+        originOtherDescription,
+        originOtherName,
+        originReferrerName,
+        originType,
         phone,
         profession,
         pronoun,
@@ -369,6 +398,90 @@ const CadastroCompleto = () => {
                 <Label htmlFor="profession">Profissão</Label>
                 <Input id="profession" value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="Ex: Engenheiro(a)" />
               </div>
+              <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Origem do paciente</h3>
+                  <p className="text-xs text-muted-foreground">Registre como o paciente chegou até a clínica.</p>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="origin-type">Origem</Label>
+                    <Select value={originType} onValueChange={(value) => setOriginType(normalizePatientOriginType(value))}>
+                      <SelectTrigger id="origin-type"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                      <SelectContent>
+                        {PATIENT_ORIGIN_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {originType === "indicacao" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="origin-referrer-name">Nome de quem indicou</Label>
+                      <Input
+                        id="origin-referrer-name"
+                        value={originReferrerName}
+                        onChange={(event) => setOriginReferrerName(event.target.value.slice(0, 120))}
+                        placeholder="Nome da pessoa ou profissional"
+                      />
+                    </div>
+                  ) : null}
+                  {originType === "convenio" ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="origin-insurance-provider">Convênio</Label>
+                        <Input
+                          id="origin-insurance-provider"
+                          value={originInsuranceProvider}
+                          onChange={(event) => setOriginInsuranceProvider(event.target.value.slice(0, 120))}
+                          placeholder="Nome do convênio"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="origin-insurance-plan">Plano</Label>
+                        <Input
+                          id="origin-insurance-plan"
+                          value={originInsurancePlan}
+                          onChange={(event) => setOriginInsurancePlan(event.target.value.slice(0, 120))}
+                          placeholder="Ex: enfermaria, executivo, empresarial"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="origin-insurance-member-id">Nº da carteirinha</Label>
+                        <Input
+                          id="origin-insurance-member-id"
+                          value={originInsuranceMemberId}
+                          onChange={(event) => setOriginInsuranceMemberId(event.target.value.slice(0, 80))}
+                          placeholder="Opcional"
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                  {originType === "outros" ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="origin-other-name">Nome da origem</Label>
+                        <Input
+                          id="origin-other-name"
+                          value={originOtherName}
+                          onChange={(event) => setOriginOtherName(event.target.value.slice(0, 120))}
+                          placeholder="Ex: campanha, empresa, evento"
+                        />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="origin-other-description">Descrição</Label>
+                        <Textarea
+                          id="origin-other-description"
+                          value={originOtherDescription}
+                          onChange={(event) => setOriginOtherDescription(event.target.value.slice(0, 500))}
+                          placeholder="Opcional"
+                          rows={3}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </section>
             </CardContent>
           </Card>
         </TabsContent>
