@@ -73,6 +73,7 @@ import {
   parseClinicalProfile,
   parseEmergencyContact,
 } from "@/lib/patient-clinical-profile";
+import { formatPatientOriginDetails, getPatientOriginLabel } from "@/lib/patient-origin";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -222,7 +223,7 @@ const getAgendaStatusLabel = (status: AgendaEventStatus) =>
 const SummaryField = ({ label, value }: { label: string; value?: string | null }) => (
   <div className="min-w-0 rounded-lg bg-muted/25 px-3 py-2">
     <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-    <p className="mt-1 truncate text-sm font-medium text-foreground">{value?.trim() || "—"}</p>
+    <p className="mt-1 whitespace-pre-line break-words text-sm font-medium text-foreground">{value?.trim() || "—"}</p>
   </div>
 );
 
@@ -552,6 +553,7 @@ const PacienteDetalhe = () => {
   const canDeletePatient = can("clinic_profile.manage");
   const parsedClinicalProfile = useMemo(() => parseClinicalProfile(patient?.clinical_profile), [patient?.clinical_profile]);
   const parsedEmergencyContact = useMemo(() => parseEmergencyContact(patient?.emergency_contact), [patient?.emergency_contact]);
+  const patientOriginDetails = useMemo(() => patient ? formatPatientOriginDetails(patient) : null, [patient]);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -2226,6 +2228,7 @@ const PacienteDetalhe = () => {
               <SummaryField label="Telefone" value={patient.phone} />
               <SummaryField label="E-mail" value={patient.email} />
               <SummaryField label="CPF" value={patient.cpf} />
+              <SummaryField label="Origem" value={[getPatientOriginLabel(patient.origin_type), patientOriginDetails].filter(Boolean).join("\n")} />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">

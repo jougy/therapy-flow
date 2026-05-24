@@ -14,6 +14,7 @@ const patients = [
     gender: null,
     id: "patient-1",
     name: "Alice Araujo",
+    origin_type: "indicacao",
     phone: "11999990001",
     pronoun: null,
     status: "ativo",
@@ -25,6 +26,7 @@ const patients = [
     gender: null,
     id: "patient-2",
     name: "Bruno Braga",
+    origin_type: "convenio",
     phone: "11999990002",
     pronoun: null,
     status: "pausado",
@@ -36,6 +38,7 @@ const patients = [
     gender: null,
     id: "patient-3",
     name: "Carla Campos",
+    origin_type: null,
     phone: null,
     pronoun: null,
     status: "alta",
@@ -116,6 +119,7 @@ const defaultFilters: HomePatientFilters = {
   collaboratorIds: [],
   colors: [],
   groupNames: [],
+  originTypes: [],
   paymentStatuses: [],
   searchTerm: "",
   sessionDateFrom: "",
@@ -206,6 +210,7 @@ describe("home patients view", () => {
         collaboratorIds: [],
         colors: [],
         groupNames: [],
+        originTypes: [],
         paymentStatuses: [],
         sessionDateFrom: "2026-04-12",
         sessionDateTo: "2026-04-13",
@@ -287,6 +292,7 @@ describe("home patients view", () => {
         collaboratorIds: ["collab-1"],
         colors: ["lavender"],
         groupNames: ["Coluna"],
+        originTypes: [],
         paymentStatuses: [],
         searchTerm: "",
         sessionDateFrom: "",
@@ -347,6 +353,28 @@ describe("home patients view", () => {
         sortKey: "name_asc",
       }).map((patient) => patient.name),
     ).toEqual(["Bruno Braga", "Carla Campos"]);
+  });
+
+  it("filters by patient origin", () => {
+    expect(
+      buildHomePatientViews({
+        filters: { ...defaultFilters, originTypes: ["indicacao"] },
+        patientGroups,
+        patients,
+        sessions,
+        sortKey: "name_asc",
+      }).map((patient) => patient.name),
+    ).toEqual(["Alice Araujo"]);
+
+    expect(
+      buildHomePatientViews({
+        filters: { ...defaultFilters, originTypes: ["outros"] },
+        patientGroups,
+        patients,
+        sessions,
+        sortKey: "name_asc",
+      }).map((patient) => patient.name),
+    ).toEqual(["Carla Campos"]);
   });
 
   it("supports all requested sort orders with stable tie-breakers", () => {
@@ -427,6 +455,7 @@ describe("home patients view", () => {
       collaboratorIds: ["collab-1"],
       colors: ["lavender"],
       groupNames: ["Coluna"],
+      originTypes: ["indicacao"],
       paymentStatuses: ["debt"],
       searchTerm: "",
       sessionDateFrom: "2026-04-12",
@@ -436,6 +465,6 @@ describe("home patients view", () => {
     };
 
     expect(hasActiveHomePatientFilters(filters)).toBe(true);
-    expect(getActiveHomePatientFilterCount(filters)).toBe(9);
+    expect(getActiveHomePatientFilterCount(filters)).toBe(10);
   });
 });

@@ -21,6 +21,14 @@ import {
   type PatientClinicalProfile,
   type PatientEmergencyContact,
 } from "@/lib/patient-clinical-profile";
+import {
+  PATIENT_ORIGIN_OPTIONS,
+  DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION,
+  DEFAULT_PATIENT_ORIGIN_OTHER_NAME,
+  DEFAULT_PATIENT_ORIGIN_TYPE,
+  normalizePatientOriginType,
+  type PatientOriginType,
+} from "@/lib/patient-origin";
 import { SubstanceUseClinicalSection } from "@/components/patients/SubstanceUseClinicalSection";
 import { useParams } from "react-router-dom";
 
@@ -49,6 +57,13 @@ interface SharedPatientFormData {
   blood_type: string | null;
   pronoun: string | null;
   profession: string | null;
+  origin_type: string | null;
+  origin_referrer_name: string | null;
+  origin_insurance_provider: string | null;
+  origin_insurance_plan: string | null;
+  origin_insurance_member_id: string | null;
+  origin_other_name: string | null;
+  origin_other_description: string | null;
   cep: string | null;
   country: string | null;
   state: string | null;
@@ -123,6 +138,13 @@ const CadastroPacienteCompartilhado = () => {
   const [bloodType, setBloodType] = useState("");
   const [pronoun, setPronoun] = useState("");
   const [profession, setProfession] = useState("");
+  const [originType, setOriginType] = useState<PatientOriginType>(DEFAULT_PATIENT_ORIGIN_TYPE);
+  const [originReferrerName, setOriginReferrerName] = useState("");
+  const [originInsuranceProvider, setOriginInsuranceProvider] = useState("");
+  const [originInsurancePlan, setOriginInsurancePlan] = useState("");
+  const [originInsuranceMemberId, setOriginInsuranceMemberId] = useState("");
+  const [originOtherName, setOriginOtherName] = useState("");
+  const [originOtherDescription, setOriginOtherDescription] = useState("");
   const [cep, setCep] = useState("");
   const [country, setCountry] = useState("Brasil");
   const [state, setState] = useState("");
@@ -154,6 +176,13 @@ const CadastroPacienteCompartilhado = () => {
     setBloodType(data.blood_type ?? "");
     setPronoun(data.pronoun ?? "");
     setProfession(data.profession ?? "");
+    setOriginType(normalizePatientOriginType(data.origin_type));
+    setOriginReferrerName(data.origin_referrer_name ?? "");
+    setOriginInsuranceProvider(data.origin_insurance_provider ?? "");
+    setOriginInsurancePlan(data.origin_insurance_plan ?? "");
+    setOriginInsuranceMemberId(data.origin_insurance_member_id ?? "");
+    setOriginOtherName(data.origin_other_name ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME);
+    setOriginOtherDescription(data.origin_other_description ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION);
     setCep(formatCep(data.cep ?? ""));
     setCountry(data.country ?? "Brasil");
     setState(data.state ?? "");
@@ -257,6 +286,13 @@ const CadastroPacienteCompartilhado = () => {
         gender,
         name,
         neighborhood,
+        origin_insurance_member_id: originInsuranceMemberId,
+        origin_insurance_plan: originInsurancePlan,
+        origin_insurance_provider: originInsuranceProvider,
+        origin_other_description: originOtherDescription,
+        origin_other_name: originOtherName,
+        origin_referrer_name: originReferrerName,
+        origin_type: originType,
         phone,
         profession,
         pronoun,
@@ -405,6 +441,85 @@ const CadastroPacienteCompartilhado = () => {
                         <Input id="profession" value={profession} onChange={(event) => setProfession(event.target.value)} />
                       </div>
                     </div>
+                    <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+                      <div>
+                        <h3 className="text-sm font-semibold">Origem</h3>
+                        <p className="text-xs text-muted-foreground">Como você chegou até a clínica.</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="origin-type">Origem</Label>
+                          <Select value={originType} onValueChange={(value) => setOriginType(normalizePatientOriginType(value))}>
+                            <SelectTrigger id="origin-type"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                            <SelectContent>
+                              {PATIENT_ORIGIN_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {originType === "indicacao" ? (
+                          <div className="space-y-2">
+                            <Label htmlFor="origin-referrer-name">Nome de quem indicou</Label>
+                            <Input
+                              id="origin-referrer-name"
+                              value={originReferrerName}
+                              onChange={(event) => setOriginReferrerName(event.target.value.slice(0, 120))}
+                            />
+                          </div>
+                        ) : null}
+                        {originType === "convenio" ? (
+                          <>
+                            <div className="space-y-2">
+                              <Label htmlFor="origin-insurance-provider">Convênio</Label>
+                              <Input
+                                id="origin-insurance-provider"
+                                value={originInsuranceProvider}
+                                onChange={(event) => setOriginInsuranceProvider(event.target.value.slice(0, 120))}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="origin-insurance-plan">Plano</Label>
+                              <Input
+                                id="origin-insurance-plan"
+                                value={originInsurancePlan}
+                                onChange={(event) => setOriginInsurancePlan(event.target.value.slice(0, 120))}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="origin-insurance-member-id">Nº da carteirinha</Label>
+                              <Input
+                                id="origin-insurance-member-id"
+                                value={originInsuranceMemberId}
+                                onChange={(event) => setOriginInsuranceMemberId(event.target.value.slice(0, 80))}
+                              />
+                            </div>
+                          </>
+                        ) : null}
+                        {originType === "outros" ? (
+                          <>
+                            <div className="space-y-2">
+                              <Label htmlFor="origin-other-name">Nome da origem</Label>
+                              <Input
+                                id="origin-other-name"
+                                value={originOtherName}
+                                onChange={(event) => setOriginOtherName(event.target.value.slice(0, 120))}
+                              />
+                            </div>
+                            <div className="space-y-2 sm:col-span-2">
+                              <Label htmlFor="origin-other-description">Descrição</Label>
+                              <Textarea
+                                id="origin-other-description"
+                                value={originOtherDescription}
+                                onChange={(event) => setOriginOtherDescription(event.target.value.slice(0, 500))}
+                                placeholder="Opcional"
+                                rows={3}
+                              />
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                    </section>
                   </CardContent>
                 </Card>
               </TabsContent>

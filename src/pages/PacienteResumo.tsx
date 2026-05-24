@@ -18,6 +18,7 @@ import {
   parseEmergencyContact,
 } from "@/lib/patient-clinical-profile";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
+import { formatPatientOriginDetails, getPatientOriginLabel } from "@/lib/patient-origin";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientClinicalSnapshot = Database["public"]["Tables"]["patient_clinical_snapshots"]["Row"];
@@ -248,6 +249,7 @@ const PacienteResumo = () => {
   const parsedClinicalProfile = useMemo(() => parseClinicalProfile(patient?.clinical_profile), [patient?.clinical_profile]);
   const parsedEmergencyContact = useMemo(() => parseEmergencyContact(patient?.emergency_contact), [patient?.emergency_contact]);
   const currentClinicalState = useMemo(() => patient ? buildPatientClinicalSnapshotState(patient) : null, [patient]);
+  const patientOriginDetails = useMemo(() => patient ? formatPatientOriginDetails(patient) : null, [patient]);
 
   const profileNameById = useMemo(
     () => new Map(profiles.map((profile) => [profile.id, profile.full_name?.trim() || profile.email?.trim() || "Colaborador"])),
@@ -418,6 +420,7 @@ const PacienteResumo = () => {
               { label: "Gênero", value: patient.gender },
               { label: "Pronome", value: patient.pronoun },
               { label: "Profissão", value: patient.profession },
+              { label: "Origem", value: [getPatientOriginLabel(patient.origin_type), patientOriginDetails].filter(Boolean).join("\n") },
               { label: "Status", value: patient.status },
             ]}
           />

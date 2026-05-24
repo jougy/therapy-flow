@@ -482,6 +482,13 @@ export type Database = {
           id: string
           name: string
           neighborhood: string | null
+          origin_insurance_member_id: string | null
+          origin_insurance_plan: string | null
+          origin_insurance_provider: string | null
+          origin_other_description: string | null
+          origin_other_name: string | null
+          origin_referrer_name: string | null
+          origin_type: string
           phone: string | null
           profession: string | null
           pronoun: string | null
@@ -517,6 +524,13 @@ export type Database = {
           id?: string
           name: string
           neighborhood?: string | null
+          origin_insurance_member_id?: string | null
+          origin_insurance_plan?: string | null
+          origin_insurance_provider?: string | null
+          origin_other_description?: string | null
+          origin_other_name?: string | null
+          origin_referrer_name?: string | null
+          origin_type?: string
           phone?: string | null
           profession?: string | null
           pronoun?: string | null
@@ -552,6 +566,13 @@ export type Database = {
           id?: string
           name?: string
           neighborhood?: string | null
+          origin_insurance_member_id?: string | null
+          origin_insurance_plan?: string | null
+          origin_insurance_provider?: string | null
+          origin_other_description?: string | null
+          origin_other_name?: string | null
+          origin_referrer_name?: string | null
+          origin_type?: string
           phone?: string | null
           profession?: string | null
           pronoun?: string | null
