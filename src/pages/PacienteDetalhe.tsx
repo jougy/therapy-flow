@@ -3,11 +3,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock,
-  Pencil, Trash2, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight
+  Pencil, Trash2, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -74,6 +75,14 @@ import {
   parseEmergencyContact,
 } from "@/lib/patient-clinical-profile";
 import { formatPatientOriginDetails, getPatientOriginLabel } from "@/lib/patient-origin";
+import {
+  DEFAULT_PATIENT_RECURRENCE_TIME,
+  PATIENT_RECURRENCE_WEEKDAY_OPTIONS,
+  formatPatientRecurringWeekdays,
+  getNextPatientRecurrenceDateTime,
+  normalizePatientRecurringTime,
+  normalizePatientRecurringWeekdays,
+} from "@/lib/patient-recurrence";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -533,6 +542,11 @@ const PacienteDetalhe = () => {
   const [selectedAgendaDate, setSelectedAgendaDate] = useState(() => getDefaultAgendaInputs().date);
   const [selectedAgendaTime, setSelectedAgendaTime] = useState("09:00");
   const [savingAgendaDetails, setSavingAgendaDetails] = useState(false);
+  const [recurrenceDialogOpen, setRecurrenceDialogOpen] = useState(false);
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
+  const [recurrenceWeekdays, setRecurrenceWeekdays] = useState<number[]>([]);
+  const [recurrenceTime, setRecurrenceTime] = useState(DEFAULT_PATIENT_RECURRENCE_TIME);
+  const [savingRecurrence, setSavingRecurrence] = useState(false);
   const [generatingShareLink, setGeneratingShareLink] = useState(false);
   const [shareLink, setShareLink] = useState("");
   const [sharePassword, setSharePassword] = useState("");
@@ -554,6 +568,16 @@ const PacienteDetalhe = () => {
   const parsedClinicalProfile = useMemo(() => parseClinicalProfile(patient?.clinical_profile), [patient?.clinical_profile]);
   const parsedEmergencyContact = useMemo(() => parseEmergencyContact(patient?.emergency_contact), [patient?.emergency_contact]);
   const patientOriginDetails = useMemo(() => patient ? formatPatientOriginDetails(patient) : null, [patient]);
+
+  useEffect(() => {
+    if (!patient) {
+      return;
+    }
+
+    setRecurrenceEnabled(Boolean(patient.is_recurring));
+    setRecurrenceWeekdays(normalizePatientRecurringWeekdays(patient.recurring_weekdays));
+    setRecurrenceTime(normalizePatientRecurringTime(patient.recurring_time));
+  }, [patient]);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -1346,6 +1370,11 @@ const PacienteDetalhe = () => {
   const activeSummaryCard = summaryCards[summaryCardIndex] ?? summaryCards[0];
   const goToPreviousSummary = () => setSummaryCardIndex((current) => (current === 0 ? summaryCards.length - 1 : current - 1));
   const goToNextSummary = () => setSummaryCardIndex((current) => (current + 1) % summaryCards.length);
+  const patientRecurringWeekdays = normalizePatientRecurringWeekdays(patient.recurring_weekdays);
+  const patientRecurringTime = normalizePatientRecurringTime(patient.recurring_time);
+  const patientRecurrenceLabel = patient.is_recurring && patientRecurringWeekdays.length > 0
+    ? `${formatPatientRecurringWeekdays(patientRecurringWeekdays)} · ${patientRecurringTime}`
+    : "Recorrência";
   const handleOpenPatientAgendaDialog = () => {
     const nextDefaults = getDefaultAgendaInputs();
     setAgendaDate(nextDefaults.date);
@@ -1396,6 +1425,111 @@ const PacienteDetalhe = () => {
       toast({ title: "Erro ao salvar agendamento", description: message, variant: "destructive" });
     } finally {
       setSavingAgendaEvent(false);
+    }
+  };
+  const toggleRecurrenceWeekday = (weekday: number, checked: boolean | "indeterminate") => {
+    setRecurrenceWeekdays((current) => {
+      if (checked === true) {
+        return current.includes(weekday) ? current : [...current, weekday].sort((left, right) => left - right);
+      }
+
+      return current.filter((value) => value !== weekday);
+    });
+  };
+  const handleSaveRecurrence = async () => {
+    if (!user || !patient) {
+      return;
+    }
+
+    const normalizedWeekdays = recurrenceEnabled ? normalizePatientRecurringWeekdays(recurrenceWeekdays) : [];
+    const normalizedTime = normalizePatientRecurringTime(recurrenceTime);
+
+    if (recurrenceEnabled && normalizedWeekdays.length === 0) {
+      toast({
+        title: "Escolha pelo menos um dia",
+        description: "Para paciente recorrente, marque os dias da semana programados.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSavingRecurrence(true);
+
+      const { data: updatedPatient, error: patientError } = await supabase
+        .from("patients")
+        .update({
+          is_recurring: recurrenceEnabled,
+          recurring_time: normalizedTime,
+          recurring_weekdays: normalizedWeekdays,
+        })
+        .eq("id", patient.id)
+        .select("*")
+        .single();
+
+      if (patientError) {
+        throw patientError;
+      }
+
+      const now = new Date();
+      const { error: deleteError } = await supabase
+        .from("agenda_events")
+        .delete()
+        .eq("patient_id", patient.id)
+        .eq("generated_by_recurring_patient", true)
+        .gte("scheduled_for", now.toISOString());
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      if (recurrenceEnabled) {
+        const nextDateTime = getNextPatientRecurrenceDateTime({
+          now,
+          time: normalizedTime,
+          weekdays: normalizedWeekdays,
+        });
+
+        if (nextDateTime) {
+          const alreadyHasManualEvent = agendaEvents.some((event) => {
+            const eventTime = new Date(event.scheduled_for).getTime();
+            return (
+              event.patient_id === patient.id &&
+              !event.generated_by_recurring_patient &&
+              getAgendaEventStatus(event) !== "cancelado" &&
+              eventTime === nextDateTime.getTime()
+            );
+          });
+
+          if (!alreadyHasManualEvent) {
+            const { error: insertError } = await supabase.from("agenda_events").insert({
+              clinic_id: clinicId,
+              event_type: "atendimento",
+              generated_by_recurring_patient: true,
+              patient_id: patient.id,
+              scheduled_for: nextDateTime.toISOString(),
+              status: "lembrete",
+              title: patient.name,
+              user_id: user.id,
+            });
+
+            if (insertError) {
+              throw insertError;
+            }
+          }
+        }
+      }
+
+      setPatient(updatedPatient as Patient);
+      await fetchPatientAgendaEvents();
+      notifyAgendaEventsUpdated();
+      setRecurrenceDialogOpen(false);
+      toast({ title: "Recorrência atualizada" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Não foi possível salvar a recorrência.";
+      toast({ title: "Erro ao salvar recorrência", description: message, variant: "destructive" });
+    } finally {
+      setSavingRecurrence(false);
     }
   };
   const handleApplyAgendaStatus = async () => {
@@ -1639,7 +1773,22 @@ const PacienteDetalhe = () => {
           </div>
         </div>
 
-        <AgendaWidget fixedPatient={{ id: patient.id, name: patient.name }} />
+        <AgendaWidget
+          fixedPatient={{ id: patient.id, name: patient.name }}
+          headerAccessory={
+            <Button
+              type="button"
+              variant={patient.is_recurring ? "default" : "outline"}
+              size="sm"
+              className="h-9 max-w-[180px] gap-1.5 rounded-xl px-2 text-xs"
+              onClick={() => setRecurrenceDialogOpen(true)}
+              title={patient.is_recurring ? `Recorrente: ${patientRecurrenceLabel}` : "Configurar recorrência"}
+            >
+              <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{patientRecurrenceLabel}</span>
+            </Button>
+          }
+        />
       </div>
 
       {/* Group management toolbar */}
@@ -2048,6 +2197,89 @@ const PacienteDetalhe = () => {
             <Button variant="destructive" onClick={() => void handleDeletePatient()} disabled={deletingPatient}>
               {deletingPatient ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={recurrenceDialogOpen}
+        onOpenChange={(open) => {
+          setRecurrenceDialogOpen(open);
+          if (open) {
+            setRecurrenceEnabled(Boolean(patient.is_recurring));
+            setRecurrenceWeekdays(normalizePatientRecurringWeekdays(patient.recurring_weekdays));
+            setRecurrenceTime(normalizePatientRecurringTime(patient.recurring_time));
+          }
+        }}
+      >
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
+          <DialogHeader>
+            <DialogTitle>Recorrência do paciente</DialogTitle>
+            <DialogDescription>
+              Defina os dias programados para gerar um lembrete da próxima sessão na agenda.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            <label className="flex items-center gap-3 rounded-xl border bg-muted/20 px-4 py-3 text-sm">
+              <Checkbox
+                checked={recurrenceEnabled}
+                onCheckedChange={(checked) => setRecurrenceEnabled(checked === true)}
+                aria-label="Paciente recorrente"
+              />
+              <span>
+                <span className="block font-medium">Paciente recorrente</span>
+                <span className="text-xs text-muted-foreground">Mantém um lembrete automático para a próxima sessão.</span>
+              </span>
+            </label>
+
+            <div className="space-y-2">
+              <Label>Dias programados</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {PATIENT_RECURRENCE_WEEKDAY_OPTIONS.map((weekday) => (
+                  <label
+                    key={weekday.value}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${recurrenceEnabled ? "bg-background" : "bg-muted/20 text-muted-foreground"}`}
+                  >
+                    <Checkbox
+                      checked={recurrenceWeekdays.includes(weekday.value)}
+                      disabled={!recurrenceEnabled}
+                      onCheckedChange={(checked) => toggleRecurrenceWeekday(weekday.value, checked)}
+                      aria-label={weekday.label}
+                    />
+                    <span>{weekday.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="patient-recurrence-time">Horário padrão</Label>
+              <Input
+                id="patient-recurrence-time"
+                type="time"
+                value={recurrenceTime}
+                disabled={!recurrenceEnabled}
+                onChange={(event) => setRecurrenceTime(event.target.value)}
+              />
+            </div>
+
+            {recurrenceEnabled ? (
+              <div className="rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Ao salvar, o lembrete automático anterior será substituído pelo próximo horário recorrente futuro.
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={savingRecurrence}>Cancelar</Button>
+            </DialogClose>
+            <Button
+              onClick={() => void handleSaveRecurrence()}
+              disabled={savingRecurrence || (recurrenceEnabled && recurrenceWeekdays.length === 0)}
+            >
+              {savingRecurrence ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Salvar recorrência
             </Button>
           </DialogFooter>
         </DialogContent>

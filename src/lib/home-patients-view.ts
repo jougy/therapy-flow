@@ -1,6 +1,7 @@
 import { comparePatientStatusPriority } from "@/lib/patient-statuses";
 import { filterActivePatientGroups } from "@/lib/patient-groups";
 import { normalizePatientOriginType, type PatientOriginType } from "@/lib/patient-origin";
+import { normalizePatientRecurringWeekdays } from "@/lib/patient-recurrence";
 import { buildPatientOperationalSummary, formatMoneyCents } from "@/lib/session-operations";
 
 export const DEFAULT_HOME_PATIENT_SORT_KEY = "updated_at_desc" as const;
@@ -22,6 +23,8 @@ export interface HomePatientFilters {
   groupNames: string[];
   originTypes: PatientOriginType[];
   paymentStatuses: HomePatientPaymentFilterStatus[];
+  recurrenceStatuses: HomePatientRecurrenceFilterStatus[];
+  recurringWeekdays: number[];
   searchTerm: string;
   sessionDateFrom: string;
   sessionDateTo: string;
@@ -34,10 +37,13 @@ export interface HomePatientRecord {
   date_of_birth: string | null;
   gender: string | null;
   id: string;
+  is_recurring?: boolean | null;
   name: string;
   origin_type?: string | null;
   phone: string | null;
   pronoun: string | null;
+  recurring_time?: string | null;
+  recurring_weekdays?: number[] | null;
   status: string;
   updated_at: string;
 }
@@ -99,6 +105,8 @@ export interface HomePatientView {
   paymentSummary: HomePatientPaymentSummary | null;
   phone: string | null;
   pronoun: string | null;
+  recurrenceFilterStatus: HomePatientRecurrenceFilterStatus;
+  recurringWeekdays: number[];
   searchableText: string;
   sessionCount: number;
   sessionWeekdays: number[];
@@ -138,6 +146,8 @@ export type HomePatientAgendaFilterStatus =
   | "unconfirmed"
   | "no_agenda";
 
+export type HomePatientRecurrenceFilterStatus = "recurring" | "not_recurring";
+
 export const HOME_PATIENT_PAYMENT_STATUS_OPTIONS: { label: string; value: HomePatientPaymentFilterStatus }[] = [
   { label: "Crédito", value: "credit" },
   { label: "Devendo", value: "debt" },
@@ -154,6 +164,11 @@ export const HOME_PATIENT_AGENDA_STATUS_OPTIONS: { label: string; value: HomePat
   { label: "Confirmado", value: "confirmed" },
   { label: "Aguardando confirmação", value: "unconfirmed" },
   { label: "Sem agendamento", value: "no_agenda" },
+];
+
+export const HOME_PATIENT_RECURRENCE_STATUS_OPTIONS: { label: string; value: HomePatientRecurrenceFilterStatus }[] = [
+  { label: "Pacientes recorrentes", value: "recurring" },
+  { label: "Sem recorrência", value: "not_recurring" },
 ];
 
 export const HOME_PATIENT_WEEKDAY_OPTIONS = [
@@ -450,6 +465,8 @@ export const hasActiveHomePatientFilters = (filters: HomePatientFilters) =>
   filters.groupNames.length > 0 ||
   filters.originTypes.length > 0 ||
   filters.paymentStatuses.length > 0 ||
+  filters.recurrenceStatuses.length > 0 ||
+  filters.recurringWeekdays.length > 0 ||
   filters.statuses.length > 0 ||
   filters.weekdays.length > 0 ||
   filters.sessionDateFrom.length > 0 ||
@@ -462,6 +479,8 @@ export const getActiveHomePatientFilterCount = (filters: HomePatientFilters) =>
   filters.groupNames.length +
   filters.originTypes.length +
   filters.paymentStatuses.length +
+  filters.recurrenceStatuses.length +
+  filters.recurringWeekdays.length +
   filters.statuses.length +
   filters.weekdays.length +
   (filters.sessionDateFrom ? 1 : 0) +
@@ -553,6 +572,8 @@ export const buildHomePatientViews = ({
         paymentSummary: showFinancialData ? buildHomePatientPaymentSummary(patientSessions) : null,
         phone: patient.phone,
         pronoun: patient.pronoun,
+        recurrenceFilterStatus: patient.is_recurring ? "recurring" : "not_recurring",
+        recurringWeekdays: normalizePatientRecurringWeekdays(patient.recurring_weekdays),
         searchableText: buildSearchableText(patient),
         sessionCount: patientSessions.length,
         sessionWeekdays,
@@ -581,6 +602,14 @@ export const buildHomePatientViews = ({
       }
 
       if (filters.agendaStatuses.length > 0 && !patient.agendaFilterStatuses.some((status) => filters.agendaStatuses.includes(status))) {
+        return false;
+      }
+
+      if (filters.recurrenceStatuses.length > 0 && !filters.recurrenceStatuses.includes(patient.recurrenceFilterStatus)) {
+        return false;
+      }
+
+      if (filters.recurringWeekdays.length > 0 && !patient.recurringWeekdays.some((weekday) => filters.recurringWeekdays.includes(weekday))) {
         return false;
       }
 

@@ -7,6 +7,7 @@ import type { SyntheticEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { getPatientStatusMeta } from "@/lib/patient-statuses";
 import { getLegacyGroupHex, getReadableTextColor, toRgbaString } from "@/lib/group-colors";
+import { PATIENT_RECURRENCE_WEEKDAY_OPTIONS } from "@/lib/patient-recurrence";
 import { cn } from "@/lib/utils";
 
 export interface PatientCardData {
@@ -14,6 +15,7 @@ export interface PatientCardData {
   name: string;
   gender: string | null;
   pronoun: string | null;
+  recurringWeekdays?: number[];
   date_of_birth: string | null;
   cpf: string | null;
   status: string;
@@ -57,11 +59,15 @@ const agendaToneClassNames: Record<NonNullable<PatientCardData["nextAgendaSummar
   unconfirmed: "border-sky-500/25 bg-sky-500/10 text-sky-700 hover:bg-sky-500/15",
 };
 
+const recurrenceWeekdayLetters = ["D", "S", "T", "Q", "Q", "S", "S"] as const;
+
 const stopCardNavigation = (event: SyntheticEvent) => event.stopPropagation();
 
 const PatientCard = ({ patient }: { patient: PatientCardData }) => {
   const navigate = useNavigate();
   const statusMeta = getPatientStatusMeta(patient.status);
+  const recurringWeekdaySet = new Set(patient.recurringWeekdays ?? []);
+  const hasRecurrence = recurringWeekdaySet.size > 0;
 
   return (
     <Card
@@ -176,6 +182,33 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
                   <p className="text-xs leading-relaxed text-muted-foreground">{patient.nextAgendaSummary.description}</p>
                 </PopoverContent>
               </Popover>
+            )}
+            {hasRecurrence && (
+              <div
+                className="inline-flex h-6 shrink-0 items-center gap-0.5 rounded-full border border-primary/20 bg-primary/5 px-1"
+                aria-label={`Recorrência: ${PATIENT_RECURRENCE_WEEKDAY_OPTIONS
+                  .filter((weekday) => recurringWeekdaySet.has(weekday.value))
+                  .map((weekday) => weekday.label)
+                  .join(", ")}`}
+                title="Dias recorrentes do paciente"
+              >
+                {PATIENT_RECURRENCE_WEEKDAY_OPTIONS.map((weekday) => {
+                  const isActive = recurringWeekdaySet.has(weekday.value);
+
+                  return (
+                    <span
+                      key={weekday.value}
+                      className={cn(
+                        "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none",
+                        isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground/45",
+                      )}
+                      title={weekday.label}
+                    >
+                      {recurrenceWeekdayLetters[weekday.value]}
+                    </span>
+                  );
+                })}
+              </div>
             )}
           </div>
 

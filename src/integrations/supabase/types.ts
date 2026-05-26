@@ -39,6 +39,7 @@ export type Database = {
           clinic_id: string | null
           created_at: string
           event_type: string
+          generated_by_recurring_patient: boolean
           id: string
           patient_id: string | null
           scheduled_for: string
@@ -51,6 +52,7 @@ export type Database = {
           clinic_id?: string | null
           created_at?: string
           event_type: string
+          generated_by_recurring_patient?: boolean
           id?: string
           patient_id?: string | null
           scheduled_for: string
@@ -63,6 +65,7 @@ export type Database = {
           clinic_id?: string | null
           created_at?: string
           event_type?: string
+          generated_by_recurring_patient?: boolean
           id?: string
           patient_id?: string | null
           scheduled_for?: string
@@ -480,6 +483,7 @@ export type Database = {
           emergency_contact: Json | null
           gender: string | null
           id: string
+          is_recurring: boolean
           name: string
           neighborhood: string | null
           origin_insurance_member_id: string | null
@@ -493,6 +497,8 @@ export type Database = {
           profession: string | null
           pronoun: string | null
           registration_complete: boolean
+          recurring_time: string
+          recurring_weekdays: number[]
           rg: string | null
           state: string | null
           status: string
@@ -522,6 +528,7 @@ export type Database = {
           emergency_contact?: Json | null
           gender?: string | null
           id?: string
+          is_recurring?: boolean
           name: string
           neighborhood?: string | null
           origin_insurance_member_id?: string | null
@@ -535,6 +542,8 @@ export type Database = {
           profession?: string | null
           pronoun?: string | null
           registration_complete?: boolean
+          recurring_time?: string
+          recurring_weekdays?: number[]
           rg?: string | null
           state?: string | null
           status?: string
@@ -564,6 +573,7 @@ export type Database = {
           emergency_contact?: Json | null
           gender?: string | null
           id?: string
+          is_recurring?: boolean
           name?: string
           neighborhood?: string | null
           origin_insurance_member_id?: string | null
@@ -577,6 +587,8 @@ export type Database = {
           profession?: string | null
           pronoun?: string | null
           registration_complete?: boolean
+          recurring_time?: string
+          recurring_weekdays?: number[]
           rg?: string | null
           state?: string | null
           status?: string

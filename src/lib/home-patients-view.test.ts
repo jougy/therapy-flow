@@ -13,10 +13,13 @@ const patients = [
     date_of_birth: "1990-01-10",
     gender: null,
     id: "patient-1",
+    is_recurring: true,
     name: "Alice Araujo",
     origin_type: "indicacao",
     phone: "11999990001",
     pronoun: null,
+    recurring_time: "09:00",
+    recurring_weekdays: [1, 3],
     status: "ativo",
     updated_at: "2026-04-14T10:00:00.000Z",
   },
@@ -25,10 +28,13 @@ const patients = [
     date_of_birth: "2000-02-02",
     gender: null,
     id: "patient-2",
+    is_recurring: false,
     name: "Bruno Braga",
     origin_type: "convenio",
     phone: "11999990002",
     pronoun: null,
+    recurring_time: "09:00",
+    recurring_weekdays: [],
     status: "pausado",
     updated_at: "2026-04-15T10:00:00.000Z",
   },
@@ -37,10 +43,13 @@ const patients = [
     date_of_birth: null,
     gender: null,
     id: "patient-3",
+    is_recurring: false,
     name: "Carla Campos",
     origin_type: null,
     phone: null,
     pronoun: null,
+    recurring_time: "09:00",
+    recurring_weekdays: [],
     status: "alta",
     updated_at: "2026-04-13T10:00:00.000Z",
   },
@@ -121,6 +130,8 @@ const defaultFilters: HomePatientFilters = {
   groupNames: [],
   originTypes: [],
   paymentStatuses: [],
+  recurrenceStatuses: [],
+  recurringWeekdays: [],
   searchTerm: "",
   sessionDateFrom: "",
   sessionDateTo: "",
@@ -212,6 +223,8 @@ describe("home patients view", () => {
         groupNames: [],
         originTypes: [],
         paymentStatuses: [],
+        recurrenceStatuses: [],
+        recurringWeekdays: [],
         sessionDateFrom: "2026-04-12",
         sessionDateTo: "2026-04-13",
         statuses: ["ativo", "pausado"],
@@ -294,6 +307,8 @@ describe("home patients view", () => {
         groupNames: ["Coluna"],
         originTypes: [],
         paymentStatuses: [],
+        recurrenceStatuses: [],
+        recurringWeekdays: [],
         searchTerm: "",
         sessionDateFrom: "",
         sessionDateTo: "",
@@ -377,6 +392,28 @@ describe("home patients view", () => {
     ).toEqual(["Carla Campos"]);
   });
 
+  it("filters by patient recurrence and programmed weekdays", () => {
+    expect(
+      buildHomePatientViews({
+        filters: { ...defaultFilters, recurrenceStatuses: ["recurring"] },
+        patientGroups,
+        patients,
+        sessions,
+        sortKey: "name_asc",
+      }).map((patient) => patient.name),
+    ).toEqual(["Alice Araujo"]);
+
+    expect(
+      buildHomePatientViews({
+        filters: { ...defaultFilters, recurringWeekdays: [3] },
+        patientGroups,
+        patients,
+        sessions,
+        sortKey: "name_asc",
+      }).map((patient) => patient.name),
+    ).toEqual(["Alice Araujo"]);
+  });
+
   it("supports all requested sort orders with stable tie-breakers", () => {
     expect(
       buildHomePatientViews({
@@ -457,6 +494,8 @@ describe("home patients view", () => {
       groupNames: ["Coluna"],
       originTypes: ["indicacao"],
       paymentStatuses: ["debt"],
+      recurrenceStatuses: ["recurring"],
+      recurringWeekdays: [1],
       searchTerm: "",
       sessionDateFrom: "2026-04-12",
       sessionDateTo: "",
@@ -465,6 +504,6 @@ describe("home patients view", () => {
     };
 
     expect(hasActiveHomePatientFilters(filters)).toBe(true);
-    expect(getActiveHomePatientFilterCount(filters)).toBe(10);
+    expect(getActiveHomePatientFilterCount(filters)).toBe(12);
   });
 });

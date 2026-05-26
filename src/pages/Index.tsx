@@ -20,6 +20,7 @@ import {
   DEFAULT_HOME_PATIENT_SORT_KEY,
   HOME_PATIENT_AGENDA_STATUS_OPTIONS,
   HOME_PATIENT_PAYMENT_STATUS_OPTIONS,
+  HOME_PATIENT_RECURRENCE_STATUS_OPTIONS,
   HOME_PATIENT_SORT_OPTIONS,
   HOME_PATIENT_WEEKDAY_OPTIONS,
   buildHomePatientViews,
@@ -31,6 +32,7 @@ import {
   type HomePatientFilters,
   type HomePatientGroupRecord,
   type HomePatientPaymentFilterStatus,
+  type HomePatientRecurrenceFilterStatus,
   type HomePatientRecord,
   type HomePatientSortKey,
   type HomeSessionRecord,
@@ -65,6 +67,7 @@ const FILTER_SECTIONS = {
   groups: "groups",
   origins: "origins",
   payments: "payments",
+  recurrence: "recurrence",
   statuses: "statuses",
   weekdays: "weekdays",
 } as const;
@@ -200,6 +203,7 @@ const Index = () => {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedGroupNames, setSelectedGroupNames] = useState<string[]>([]);
   const [selectedOriginTypes, setSelectedOriginTypes] = useState<PatientOriginType[]>([]);
+  const [selectedRecurrenceStatuses, setSelectedRecurrenceStatuses] = useState<HomePatientRecurrenceFilterStatus[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [selectedCollaboratorIds, setSelectedCollaboratorIds] = useState<string[]>([]);
   const [collaboratorQuery, setCollaboratorQuery] = useState("");
@@ -211,10 +215,12 @@ const Index = () => {
     groups: true,
     origins: false,
     payments: false,
+    recurrence: false,
     statuses: true,
     weekdays: false,
   });
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
+  const [selectedRecurringWeekdays, setSelectedRecurringWeekdays] = useState<number[]>([]);
   const [sessionDateFrom, setSessionDateFrom] = useState("");
   const [sessionDateTo, setSessionDateTo] = useState("");
   const [sortKey, setSortKey] = useState<HomePatientSortKey>(DEFAULT_HOME_PATIENT_SORT_KEY);
@@ -240,6 +246,8 @@ const Index = () => {
     groupNames: selectedGroupNames,
     originTypes: selectedOriginTypes,
     paymentStatuses: selectedPaymentStatuses,
+    recurrenceStatuses: selectedRecurrenceStatuses,
+    recurringWeekdays: selectedRecurringWeekdays,
     searchTerm: search,
     sessionDateFrom,
     sessionDateTo,
@@ -307,6 +315,8 @@ const Index = () => {
       groupNames: [],
       originTypes: [],
       paymentStatuses: [],
+      recurrenceStatuses: [],
+      recurringWeekdays: [],
       searchTerm: "",
       sessionDateFrom: "",
       sessionDateTo: "",
@@ -521,6 +531,16 @@ const Index = () => {
     });
   };
 
+  const toggleRecurringWeekday = (weekday: number, checked: boolean | "indeterminate") => {
+    setSelectedRecurringWeekdays((current) => {
+      if (checked === true) {
+        return current.includes(weekday) ? current : [...current, weekday];
+      }
+
+      return current.filter((value) => value !== weekday);
+    });
+  };
+
   const toggleSection = (section: FilterSectionKey) => {
     setOpenSections((current) => ({
       ...current,
@@ -532,6 +552,8 @@ const Index = () => {
     setSelectedStatuses([]);
     setSelectedAgendaStatuses([]);
     setSelectedPaymentStatuses([]);
+    setSelectedRecurrenceStatuses([]);
+    setSelectedRecurringWeekdays([]);
     setSelectedGroupNames([]);
     setSelectedOriginTypes([]);
     setSelectedColors([]);
@@ -796,7 +818,7 @@ const Index = () => {
                 <div>
                   <DialogTitle>Filtros</DialogTitle>
                   <DialogDescription className="text-sm">
-                    Refine a lista por status, origem, pagamentos, agendamentos, grupos, colaborador, período e dias da semana.
+                    Refine a lista por status, origem, pagamentos, agendamentos, recorrência, grupos, colaborador e período.
                   </DialogDescription>
                 </div>
                 <Button type="button" variant="ghost" size="sm" className="mr-8 shrink-0" onClick={clearFilters}>
@@ -888,6 +910,42 @@ const Index = () => {
                           <span>{statusOption.label}</span>
                         </label>
                       ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                <Collapsible open={openSections.recurrence} onOpenChange={() => toggleSection("recurrence")}>
+                  <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left">
+                    <span className="font-medium">Recorrência programada</span>
+                    {openSections.recurrence ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-4 px-2 pt-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {HOME_PATIENT_RECURRENCE_STATUS_OPTIONS.map((statusOption) => (
+                        <label key={statusOption.value} className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={selectedRecurrenceStatuses.includes(statusOption.value)}
+                            onCheckedChange={(checked) => toggleStringFilter(statusOption.value, checked, setSelectedRecurrenceStatuses)}
+                            aria-label={statusOption.label}
+                          />
+                          <span>{statusOption.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Dias programados</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {HOME_PATIENT_WEEKDAY_OPTIONS.map((weekday) => (
+                          <label key={weekday.value} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={selectedRecurringWeekdays.includes(weekday.value)}
+                              onCheckedChange={(checked) => toggleRecurringWeekday(weekday.value, checked)}
+                              aria-label={`Recorrência em ${weekday.label}`}
+                            />
+                            <span>{weekday.label}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </CollapsibleContent>
                 </Collapsible>
@@ -1066,7 +1124,7 @@ const Index = () => {
 
                 <Collapsible open={openSections.weekdays} onOpenChange={() => toggleSection("weekdays")}>
                   <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left">
-                    <span className="font-medium">Dias da semana</span>
+                    <span className="font-medium">Dias dos atendimentos</span>
                     {openSections.weekdays ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pt-3">
@@ -1198,6 +1256,16 @@ const Index = () => {
               Agendamento: {HOME_PATIENT_AGENDA_STATUS_OPTIONS.filter((option) => selectedAgendaStatuses.includes(option.value)).map((option) => option.label).join(", ")}
             </Badge>
           )}
+          {selectedRecurrenceStatuses.length > 0 && (
+            <Badge variant="secondary">
+              Recorrência: {HOME_PATIENT_RECURRENCE_STATUS_OPTIONS.filter((option) => selectedRecurrenceStatuses.includes(option.value)).map((option) => option.label).join(", ")}
+            </Badge>
+          )}
+          {selectedRecurringWeekdays.length > 0 && (
+            <Badge variant="secondary">
+              Dias recorrentes: {HOME_PATIENT_WEEKDAY_OPTIONS.filter((weekday) => selectedRecurringWeekdays.includes(weekday.value)).map((weekday) => weekday.label).join(", ")}
+            </Badge>
+          )}
           {(sessionDateFrom || sessionDateTo) && (
             <Badge variant="secondary">
               Período: {sessionDateFrom || "início"} até {sessionDateTo || "hoje"}
@@ -1205,7 +1273,7 @@ const Index = () => {
           )}
           {selectedWeekdays.length > 0 && (
             <Badge variant="secondary">
-              Dias: {HOME_PATIENT_WEEKDAY_OPTIONS.filter((weekday) => selectedWeekdays.includes(weekday.value)).map((weekday) => weekday.label).join(", ")}
+              Dias dos atendimentos: {HOME_PATIENT_WEEKDAY_OPTIONS.filter((weekday) => selectedWeekdays.includes(weekday.value)).map((weekday) => weekday.label).join(", ")}
             </Badge>
           )}
           <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
