@@ -1,5 +1,7 @@
 import type { Database } from "@/integrations/supabase/types";
 import type { AnamnesisFormResponse } from "@/lib/anamnesis-forms";
+import { sanitizeAnamnesisFormResponse } from "@/lib/anamnesis-forms";
+import { INPUT_LIMITS, sanitizeMultilineInput } from "@/lib/input-security";
 import {
   normalizePaymentInstallments,
   normalizeSessionPaymentStatus,
@@ -139,7 +141,7 @@ export const buildSessionPayload = ({
   });
 
   return {
-    anamnesis_form_response: values.anamnesisFormResponse,
+    anamnesis_form_response: sanitizeAnamnesisFormResponse(values.anamnesisFormResponse),
     anamnesis_template_id: values.anamnesisTemplateId,
     patient_id: patientId,
     user_id: creatorUserId,
@@ -158,13 +160,13 @@ export const buildSessionPayload = ({
     payment_method: normalizedPaymentStatus === "cortesia" ? "cortesia" : values.paymentMethod,
     payment_status_date: parseOptionalDateInputValue(values.paymentStatusDate),
     status: statusOverride ?? values.status,
-    notes: values.notes || null,
+    notes: sanitizeMultilineInput(values.notes, INPUT_LIMITS.clinicalLongText).trim() || null,
     group_id: values.groupId || null,
     provider_id: creatorUserId,
     anamnesis: {
-      observacoes: values.observacoes,
-      queixa: values.queixa,
-      sintomas: values.sintomas,
+      observacoes: sanitizeMultilineInput(values.observacoes, INPUT_LIMITS.clinicalLongText),
+      queixa: sanitizeMultilineInput(values.queixa, INPUT_LIMITS.clinicalLongText),
+      sintomas: sanitizeMultilineInput(values.sintomas, INPUT_LIMITS.clinicalLongText),
     },
     treatment: buildTreatmentPayload({
       blocks: values.treatmentBlocks,

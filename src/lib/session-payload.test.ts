@@ -143,6 +143,55 @@ describe("buildSessionPayload", () => {
     expect(payload.payment_status_date).toBeNull();
   });
 
+  it("sanitizes hostile clinical text and dynamic anamnesis responses", () => {
+    const hostileText = ` Café\u0301 😀\u0000\u202E\n${"x".repeat(3_000)}`;
+    const payload = buildSessionPayload({
+      clinicId: "clinic-1",
+      patientId: "patient-1",
+      creatorUserId: "creator-123",
+      values: {
+        amountCharged: "100",
+        amountOriginal: "",
+        amountPaid: "0",
+        anamnesisFormResponse: {
+          [`field\u202E${"a".repeat(200)}`]: hostileText,
+          checklist: ["ok", `bad\u0000\u202E${"x".repeat(500)}`],
+          invalidNumber: Number.POSITIVE_INFINITY,
+          table: Array.from({ length: 80 }, (_, index) => ({
+            [`column-${index}\u202E`]: hostileText,
+          })),
+        },
+        anamnesisTemplateId: null,
+        complexityScore: 4,
+        groupId: null,
+        notes: hostileText,
+        observacoes: hostileText,
+        painScore: 7,
+        patientArrivedAt: "",
+        paymentAdjustmentReason: "",
+        paymentInstallments: 1,
+        paymentMethod: "pix",
+        paymentStatusDate: "",
+        paymentStatus: "pendente",
+        queixa: hostileText,
+        scheduledStartAt: "",
+        sintomas: hostileText,
+        status: "rascunho",
+        treatmentBlocks: [],
+        treatmentGeneralGuidance: "",
+      },
+    });
+
+    expect(payload.notes?.length).toBeLessThanOrEqual(2_000);
+    expect(payload.notes).not.toContain("\u0000");
+    expect(payload.notes).not.toContain("\u202E");
+    expect(Array.from((payload.anamnesis as { queixa: string }).queixa)).toHaveLength(2_000);
+    expect(payload.anamnesis_form_response.invalidNumber).toBeNull();
+    expect((payload.anamnesis_form_response.checklist as string[])[1]).toHaveLength(120);
+    expect(payload.anamnesis_form_response.table as unknown[]).toHaveLength(50);
+    expect(Object.keys(payload.anamnesis_form_response).every((key) => !key.includes("\u202E"))).toBe(true);
+  });
+
   it("normalizes payment status when building payloads", () => {
     const payload = buildSessionPayload({
       clinicId: "clinic-1",

@@ -164,6 +164,94 @@ describe("patient registration helpers", () => {
     });
   });
 
+  it("sanitizes absurd patient registration payloads before persistence", () => {
+    const hostileText = `  <img src=x onerror=alert(1)> Café\u0301 😀\u0000\u202E\n${"界".repeat(3_000)}  `;
+    const payload = buildPatientRegistrationPutPayload(basePatient(), {
+      addressComplement: hostileText,
+      addressNumber: hostileText,
+      allergies: hostileText,
+      bloodType: hostileText,
+      cep: "１２３45-678<script>",
+      clinicalProfile: {
+        addiction_records: [],
+        clinical_alerts: hostileText,
+        congenital_genetic_conditions: hostileText,
+        diagnoses: hostileText,
+        falls_history: hostileText,
+        family_history: hostileText,
+        functional_independence: "dependente",
+        has_addictions: false,
+        implants_devices: hostileText,
+        lifestyle_notes: hostileText,
+        mobility_aids: hostileText,
+        substance_use_records: [
+          {
+            dependency_level: "dependencia_provavel",
+            frequency: hostileText,
+            id: hostileText,
+            is_illicit: true,
+            motivation: hostileText,
+            name: hostileText,
+            notes: hostileText,
+            started_at: hostileText,
+          },
+        ],
+        substance_use_history: hostileText,
+        uses_substances: true,
+      },
+      chronicConditions: hostileText,
+      city: hostileText,
+      clinicalNotes: hostileText,
+      continuousMedications: hostileText,
+      country: hostileText,
+      cpf: "abc123.456.789-01<script>",
+      dateOfBirth: "2026-01-01",
+      email: `${"a".repeat(300)}@example.com\u0000`,
+      emergencyContact: {
+        name: hostileText,
+        phone: hostileText,
+        relationship: hostileText,
+      },
+      gender: hostileText,
+      name: hostileText,
+      neighborhood: hostileText,
+      originInsuranceMemberId: hostileText,
+      originInsurancePlan: hostileText,
+      originInsuranceProvider: hostileText,
+      originOtherDescription: hostileText,
+      originOtherName: hostileText,
+      originReferrerName: hostileText,
+      originType: "outros",
+      phone: "+55 (11) 99999-8888 ramal <script>",
+      profession: hostileText,
+      pronoun: hostileText,
+      rg: hostileText,
+      state: hostileText,
+      street: hostileText,
+      surgeries: hostileText,
+    });
+
+    expect(Array.from(payload.name)).toHaveLength(160);
+    expect(payload.name).toContain("Café");
+    expect(payload.name).not.toContain("😀");
+    expect(payload.name).not.toContain("\u0000");
+    expect(payload.name).not.toContain("\u202E");
+    expect(payload.clinical_notes?.length).toBeLessThanOrEqual(2_000);
+    expect(payload.email?.length).toBeLessThanOrEqual(254);
+    expect(payload.cpf).toBe("12345678901");
+    expect(payload.phone).toBe("5511999998888");
+    expect(payload.origin_other_name?.length).toBeLessThanOrEqual(120);
+    expect(payload.origin_other_description?.length).toBeLessThanOrEqual(500);
+    expect(payload.clinical_profile).toMatchObject({
+      functional_independence: "dependente",
+      uses_substances: true,
+    });
+    const clinicalProfile = payload.clinical_profile as { clinical_alerts: string; substance_use_records: Array<{ name: string; notes: string }> };
+    expect(clinicalProfile.clinical_alerts.length).toBeLessThanOrEqual(2_000);
+    expect(clinicalProfile.substance_use_records[0].name.length).toBeLessThanOrEqual(240);
+    expect(clinicalProfile.substance_use_records[0].notes.length).toBeLessThanOrEqual(2_000);
+  });
+
   it("uses PUT against the patient REST resource", async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
 

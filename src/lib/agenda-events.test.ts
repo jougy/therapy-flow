@@ -50,6 +50,22 @@ describe("agenda event helpers", () => {
     });
   });
 
+  it("sanitizes hostile titles before saving agenda events", () => {
+    const payload = buildAgendaEventPayload({
+      clinicId: "clinic-1",
+      eventType: "evento",
+      selectedDate: new Date("2099-03-24T00:00:00.000Z"),
+      selectedPatient: null,
+      time: "14:00",
+      title: `Consulta\u202e\n<script>${"x".repeat(300)}`,
+      userId: "user-1",
+    });
+
+    expect(payload.title).not.toContain("\u202e");
+    expect(payload.title).not.toContain("\n");
+    expect(Array.from(payload.title).length).toBeLessThanOrEqual(160);
+  });
+
   it("matches a patient by exact name in the search field", () => {
     const patient = resolvePatientSelection("ana clara", [
       { id: "patient-1", name: "Ana Clara" },

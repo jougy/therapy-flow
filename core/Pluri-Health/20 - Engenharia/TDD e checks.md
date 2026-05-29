@@ -255,3 +255,11 @@ Ao longo do tempo, este arquivo deve virar:
 - [[Ambiente e operacao]]
 - [[Inventario de inputs]]
 - [[Prompt - Homepage filtro e ordenacao de pacientes]]
+
+
+## 2026-05-28 - Limpeza de warnings do tdd-check
+
+- `eslint.config.js` passou a permitir explicitamente exports auxiliares conhecidos dos componentes shadcn/ui (`buttonVariants`, `badgeVariants`, `toggleVariants`, `useFormField`, `useSidebar`, etc.), eliminando warnings de Fast Refresh sem desativar a regra global.
+- `src/pages/Index.tsx` removeu `stats.activePatients` de uma lista de dependencias onde nao era usado.
+- `src/App.tsx` passou a carregar paginas por `lazy`/`Suspense`, reduzindo o bundle principal e removendo o warning de chunk maior que 500 kB.
+- Validado com `sh scripts/ops/control.sh --run tdd-check`: testes, build e lint finalizaram sem warnings novos. O log de `render crash` continua esperado pelo teste do ErrorBoundary.

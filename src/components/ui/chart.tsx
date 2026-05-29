@@ -5,6 +5,9 @@ import { cn } from "@/lib/utils";
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const;
+const CSS_IDENTIFIER_REPLACEMENT = "_";
+const SAFE_CSS_COLOR_PATTERN =
+  /^(#[0-9a-fA-F]{3,8}|(?:rgb|rgba|hsl|hsla)\([\d\s.,%+-]+\)|var\(--[a-zA-Z0-9_-]+\)|[a-zA-Z]+)$/;
 
 export type ChartConfig = {
   [k in string]: {
@@ -65,18 +68,23 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
+  const escapedChartId = escapeCssAttributeValue(id);
+
   return (
     <style
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart="${escapedChartId}"] {
 ${colorConfig
   .map(([key, itemConfig]) => {
     const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
+    const safeVariableName = sanitizeCssVariableName(key);
+    const safeColor = sanitizeCssColor(color);
+    return safeVariableName && safeColor ? `  --color-${safeVariableName}: ${safeColor};` : null;
   })
+  .filter(Boolean)
   .join("\n")}
 }
 `,
@@ -86,6 +94,18 @@ ${colorConfig
     />
   );
 };
+
+const sanitizeCssVariableName = (value: string) => {
+  const normalized = value.normalize("NFKC").replace(/[^a-zA-Z0-9_-]/g, CSS_IDENTIFIER_REPLACEMENT);
+  return normalized && !/^\d/.test(normalized) ? normalized : null;
+};
+
+const sanitizeCssColor = (value: string | undefined) => {
+  const color = value?.trim();
+  return color && SAFE_CSS_COLOR_PATTERN.test(color) ? color : null;
+};
+
+const escapeCssAttributeValue = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
 

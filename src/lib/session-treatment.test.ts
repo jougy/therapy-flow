@@ -96,6 +96,30 @@ describe("buildTreatmentPayload", () => {
       general_guidance: "Suspender se houver piora",
     });
   });
+
+  it("limits and sanitizes hostile treatment payloads", () => {
+    const hostileText = ` Café\u0301 😀\u0000\u202E\n${"x".repeat(3_000)}`;
+    const payload = buildTreatmentPayload({
+      blocks: Array.from({ length: 25 }, (_, index) => ({
+        duration: hostileText,
+        frequency: hostileText,
+        id: `block-${index}\u202E${"x".repeat(200)}`,
+        instructions: hostileText,
+        name: hostileText,
+        repetitions: hostileText,
+        series: hostileText,
+      })),
+      generalGuidance: hostileText,
+    });
+
+    expect(payload?.blocks).toHaveLength(20);
+    expect(payload?.blocks[0].name.length).toBeLessThanOrEqual(160);
+    expect(payload?.blocks[0].instructions.length).toBeLessThanOrEqual(1_500);
+    expect(payload?.blocks[0].name).not.toContain("\u0000");
+    expect(payload?.blocks[0].name).not.toContain("\u202E");
+    expect(payload?.blocks[0].name).not.toContain("😀");
+    expect(payload?.general_guidance.length).toBeLessThanOrEqual(2_000);
+  });
 });
 
 describe("formatTreatmentSummary", () => {

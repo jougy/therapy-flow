@@ -18,4 +18,29 @@ describe("deploy config", () => {
   it("does not ship a catch-all _redirects file when Workers handles SPA fallback", () => {
     expect(fs.existsSync(path.join(repoRoot, "public/_redirects"))).toBe(false);
   });
+
+  it("ships baseline browser security headers for static deploys", () => {
+    const headersFile = fs.readFileSync(path.join(repoRoot, "public/_headers"), "utf8");
+    const vercelJson = fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8");
+
+    for (const expectedHeader of [
+      "Content-Security-Policy",
+      "frame-ancestors 'none'",
+      "Referrer-Policy",
+      "Permissions-Policy",
+      "X-Content-Type-Options",
+      "X-Frame-Options",
+    ]) {
+      expect(headersFile).toContain(expectedHeader);
+      expect(vercelJson).toContain(expectedHeader);
+    }
+  });
+
+  it("marks the app shell as not translatable by browser translators", () => {
+    const indexHtml = fs.readFileSync(path.join(repoRoot, "index.html"), "utf8");
+
+    expect(indexHtml).toContain('<html lang="pt-BR" translate="no" class="notranslate">');
+    expect(indexHtml).toContain('<meta name="google" content="notranslate" />');
+    expect(indexHtml).toContain('<div id="root" translate="no" class="notranslate"></div>');
+  });
 });

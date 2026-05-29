@@ -18,7 +18,13 @@ import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import {
+  ANAMNESIS_OPTION_LIMIT,
   ANAMNESIS_FIELD_LIBRARY,
+  ANAMNESIS_RAW_OPTIONS_INPUT_LIMIT,
+  ANAMNESIS_SCHEMA_FIELD_LIMIT,
+  ANAMNESIS_SLIDER_MAX,
+  ANAMNESIS_SLIDER_MIN,
+  ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES,
   buildTemplateLayout,
   parseAnamnesisTemplateExchangePayload,
   createAnamnesisField,
@@ -32,10 +38,13 @@ import {
   isAnamnesisTemplateSchema,
   isSelectionChoiceFieldType,
   normalizeOptions,
+  normalizeAnamnesisSliderRange,
+  sanitizeAnamnesisTemplateSchema,
   type AnamnesisField,
   type TemplateLayoutItem,
   type AnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
+import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 
 type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 const FormularioEditor = () => {
@@ -80,7 +89,7 @@ const FormularioEditor = () => {
 
         setTemplateName("Bloco padrão universal");
         setTemplateDescription("Primeira parte obrigatória aplicada em todas as fichas da clínica.");
-        setTemplateFields(isAnamnesisTemplateSchema(data.anamnesis_base_schema) ? data.anamnesis_base_schema : createDefaultTemplateSchema());
+        setTemplateFields(isAnamnesisTemplateSchema(data.anamnesis_base_schema) ? sanitizeAnamnesisTemplateSchema(data.anamnesis_base_schema) : createDefaultTemplateSchema());
         setLoading(false);
       };
 
@@ -109,9 +118,9 @@ const FormularioEditor = () => {
       }
 
       setTemplate(data);
-      setTemplateName(data.name);
-      setTemplateDescription(data.description ?? "");
-      setTemplateFields(isAnamnesisTemplateSchema(data.schema) ? data.schema : createDefaultTemplateSchema());
+      setTemplateName(sanitizeSingleLineInput(data.name, INPUT_LIMITS.formTemplateName).trim());
+      setTemplateDescription(sanitizeMultilineInput(data.description ?? "", INPUT_LIMITS.formDescription).trim());
+      setTemplateFields(isAnamnesisTemplateSchema(data.schema) ? sanitizeAnamnesisTemplateSchema(data.schema) : createDefaultTemplateSchema());
       setLoading(false);
     };
 
@@ -153,6 +162,33 @@ const FormularioEditor = () => {
 
   const sectionOptions = useMemo(() => getSectionSelectorOptions(templateFields), [templateFields]);
   const groupedLayout = useMemo(() => buildTemplateLayout(templateFields), [templateFields]);
+  const fieldLimitReached = templateFields.length >= ANAMNESIS_SCHEMA_FIELD_LIMIT;
+
+  const updateTemplateName = (value: string) => {
+    setTemplateName(sanitizeSingleLineInput(value, INPUT_LIMITS.formTemplateName));
+  };
+
+  const updateTemplateDescription = (value: string) => {
+    setTemplateDescription(sanitizeMultilineInput(value, INPUT_LIMITS.formDescription));
+  };
+
+  const sanitizeFieldChanges = (changes: Partial<AnamnesisField>): Partial<AnamnesisField> => {
+    const next = { ...changes };
+
+    if (typeof next.label === "string") {
+      next.label = sanitizeSingleLineInput(next.label, INPUT_LIMITS.formFieldLabel);
+    }
+
+    if (typeof next.helpText === "string") {
+      next.helpText = sanitizeMultilineInput(next.helpText, INPUT_LIMITS.formHelpText);
+    }
+
+    if (typeof next.placeholder === "string") {
+      next.placeholder = sanitizeSingleLineInput(next.placeholder, INPUT_LIMITS.formPlaceholder);
+    }
+
+    return next;
+  };
 
   const blockMenuContent = (
     <Card className="border-border/70">
@@ -167,6 +203,7 @@ const FormularioEditor = () => {
             variant="outline"
             className="justify-start"
             onClick={() => handleAddField(item.type)}
+            disabled={fieldLimitReached}
           >
             <Plus className="h-4 w-4 mr-2" />
             {item.label}
@@ -182,11 +219,31 @@ const FormularioEditor = () => {
   );
 
   const handleAddField = (type: AnamnesisField["type"]) => {
-    setTemplateFields((current) => [...current, createAnamnesisField(type, current.length)]);
+    setTemplateFields((current) =>
+      current.length >= ANAMNESIS_SCHEMA_FIELD_LIMIT ? current : sanitizeAnamnesisTemplateSchema([...current, createAnamnesisField(type, current.length)])
+    );
   };
 
   const updateField = (fieldId: string, changes: Partial<AnamnesisField>) => {
-    setTemplateFields((current) => current.map((field) => (field.id === fieldId ? { ...field, ...changes } : field)));
+    setTemplateFields((current) =>
+      sanitizeAnamnesisTemplateSchema(
+        current.map((field) => {
+          if (field.id !== fieldId) {
+            return field;
+          }
+
+          const nextField = { ...field, ...sanitizeFieldChanges(changes) };
+
+          if (nextField.type === "slider" || typeof changes.min === "number" || typeof changes.max === "number") {
+            const range = normalizeAnamnesisSliderRange(nextField.min, nextField.max);
+            nextField.min = range.min;
+            nextField.max = range.max;
+          }
+
+          return nextField;
+        })
+      )
+    );
   };
 
   const removeField = (fieldId: string) => {
@@ -194,14 +251,18 @@ const FormularioEditor = () => {
   };
 
   const duplicateField = (field: AnamnesisField) => {
-    setTemplateFields((current) => [
-      ...current,
-      {
-        ...field,
-        id: `${field.id}_copy_${current.length}`,
-        label: `${field.label} (cópia)`,
-      },
-    ]);
+    setTemplateFields((current) =>
+      current.length >= ANAMNESIS_SCHEMA_FIELD_LIMIT
+        ? current
+        : sanitizeAnamnesisTemplateSchema([
+            ...current,
+            {
+              ...field,
+              id: `${field.id}_copy_${current.length}`,
+              label: `${field.label} (cópia)`,
+            },
+          ])
+    );
   };
 
   const moveField = (sourceId: string, targetId: string) => {
@@ -227,13 +288,17 @@ const FormularioEditor = () => {
   };
 
   const handleSave = async () => {
-    if (!clinicId || !user || !templateName.trim()) return;
+    const safeTemplateName = sanitizeSingleLineInput(templateName, INPUT_LIMITS.formTemplateName).trim();
+    const safeTemplateDescription = sanitizeMultilineInput(templateDescription, INPUT_LIMITS.formDescription).trim();
+    const safeTemplateFields = sanitizeAnamnesisTemplateSchema(templateFields);
+
+    if (!clinicId || !user || !safeTemplateName || safeTemplateFields.length === 0) return;
     setSaving(true);
 
     if (isBase) {
       const { error } = await supabase
         .from("clinics")
-        .update({ anamnesis_base_schema: templateFields })
+        .update({ anamnesis_base_schema: safeTemplateFields })
         .eq("id", clinicId);
 
       if (error) {
@@ -250,11 +315,11 @@ const FormularioEditor = () => {
 
     const payload = {
       clinic_id: clinicId,
-      description: templateDescription.trim() || null,
+      description: safeTemplateDescription || null,
       is_active: true,
       is_system_default: false,
-      name: templateName.trim(),
-      schema: templateFields,
+      name: safeTemplateName,
+      schema: safeTemplateFields,
       user_id: user.id,
     };
 
@@ -284,12 +349,16 @@ const FormularioEditor = () => {
     }
 
     try {
+      if (file.size > ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES) {
+        throw new Error("Arquivo de modelo muito grande");
+      }
+
       const raw = await file.text();
       const imported = parseAnamnesisTemplateExchangePayload(raw);
 
       if (!isBase) {
-        setTemplateName(imported.template.name);
-        setTemplateDescription(imported.template.description);
+        updateTemplateName(imported.template.name);
+        updateTemplateDescription(imported.template.description);
       }
 
       setTemplateFields(imported.template.schema);
@@ -391,18 +460,20 @@ const FormularioEditor = () => {
                 <Label>{isBase ? "Nome da estrutura" : "Nome da ficha"}</Label>
                 <Input
                   value={templateName}
-                  onChange={(event) => setTemplateName(event.target.value)}
+                  onChange={(event) => updateTemplateName(event.target.value)}
                   placeholder="Ex: Ficha ortopédica inicial"
                   disabled={isBase}
+                  maxLength={INPUT_LIMITS.formTemplateName}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Descrição</Label>
                 <Input
                   value={templateDescription}
-                  onChange={(event) => setTemplateDescription(event.target.value)}
+                  onChange={(event) => updateTemplateDescription(event.target.value)}
                   placeholder="Ex: triagem inicial para dor lombar"
                   disabled={isBase}
+                  maxLength={INPUT_LIMITS.formDescription}
                 />
               </div>
             </CardContent>
@@ -454,7 +525,7 @@ const FormularioEditor = () => {
                           </div>
                           <div className="flex items-center gap-2">
                             {!isBase && (
-                              <Button type="button" variant="ghost" size="icon" onClick={() => duplicateField(field)}>
+                              <Button type="button" variant="ghost" size="icon" onClick={() => duplicateField(field)} disabled={fieldLimitReached}>
                                 <Copy className="h-4 w-4" />
                               </Button>
                             )}
@@ -469,11 +540,19 @@ const FormularioEditor = () => {
                         <div className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-2">
                             <Label>Rótulo</Label>
-                            <Input value={field.label} onChange={(event) => updateField(field.id, { label: event.target.value })} />
+                            <Input
+                              value={field.label}
+                              onChange={(event) => updateField(field.id, { label: event.target.value })}
+                              maxLength={INPUT_LIMITS.formFieldLabel}
+                            />
                           </div>
                           <div className="space-y-2">
                             <Label>Ajuda</Label>
-                            <Input value={field.helpText ?? ""} onChange={(event) => updateField(field.id, { helpText: event.target.value })} />
+                            <Input
+                              value={field.helpText ?? ""}
+                              onChange={(event) => updateField(field.id, { helpText: event.target.value })}
+                              maxLength={INPUT_LIMITS.formHelpText}
+                            />
                           </div>
                         </div>
 
@@ -503,7 +582,11 @@ const FormularioEditor = () => {
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="space-y-2">
                               <Label>Placeholder</Label>
-                              <Input value={field.placeholder ?? ""} onChange={(event) => updateField(field.id, { placeholder: event.target.value })} />
+                              <Input
+                                value={field.placeholder ?? ""}
+                                onChange={(event) => updateField(field.id, { placeholder: event.target.value })}
+                                maxLength={INPUT_LIMITS.formPlaceholder}
+                              />
                             </div>
                             <div className="space-y-2">
                               <Label>Agrupar no contêiner</Label>
@@ -595,16 +678,19 @@ const FormularioEditor = () => {
                             {hasScrollableOptionEditor(field.type) ? (
                               <OptionMatrixEditor
                                 options={field.options}
+                                maxOptions={ANAMNESIS_OPTION_LIMIT}
                                 onChange={(options) => updateField(field.id, { options })}
                               />
                             ) : hasTableColumnEditor(field.type) ? (
                               <OptionListEditor
                                 options={field.options}
+                                maxOptions={ANAMNESIS_OPTION_LIMIT}
                                 onChange={(options) => updateField(field.id, { options })}
                               />
                             ) : hasVerticalOptionEditor(field.type) ? (
                               <OptionListEditor
                                 options={field.options}
+                                maxOptions={ANAMNESIS_OPTION_LIMIT}
                                 onChange={(options) => updateField(field.id, { options })}
                               />
                             ) : (
@@ -613,6 +699,7 @@ const FormularioEditor = () => {
                                 value={(field.options ?? []).map((option) => option.label).join("\n")}
                                 onChange={(event) => updateField(field.id, { options: normalizeOptions(event.target.value) })}
                                 placeholder="Uma opção por linha"
+                                maxLength={ANAMNESIS_RAW_OPTIONS_INPUT_LIMIT}
                               />
                             )}
                           </div>
@@ -626,6 +713,9 @@ const FormularioEditor = () => {
                                 type="number"
                                 value={field.min ?? 0}
                                 onChange={(event) => updateField(field.id, { min: Number(event.target.value) })}
+                                min={ANAMNESIS_SLIDER_MIN}
+                                max={ANAMNESIS_SLIDER_MAX - 1}
+                                step={1}
                               />
                             </div>
                             <div className="space-y-2">
@@ -634,6 +724,9 @@ const FormularioEditor = () => {
                                 type="number"
                                 value={field.max ?? 10}
                                 onChange={(event) => updateField(field.id, { max: Number(event.target.value) })}
+                                min={ANAMNESIS_SLIDER_MIN + 1}
+                                max={ANAMNESIS_SLIDER_MAX}
+                                step={1}
                               />
                             </div>
                           </div>

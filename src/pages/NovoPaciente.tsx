@@ -10,6 +10,7 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getPatientRegistrationPassword } from "@/lib/patient-registration";
+import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 
 const NovoPaciente = () => {
   const navigate = useNavigate();
@@ -48,7 +49,8 @@ const NovoPaciente = () => {
   };
 
   const sharePassword = getPatientRegistrationPassword(cpf);
-  const canSubmit = nome.trim().length > 0;
+  const normalizedName = sanitizeSingleLineInput(nome, INPUT_LIMITS.name).trim();
+  const canSubmit = normalizedName.length > 0;
 
   const handleSubmit = async (shareWithPatient = false) => {
     if (!user || !canSubmit || !clinicId) return;
@@ -57,12 +59,12 @@ const NovoPaciente = () => {
     const { data, error } = await supabase.from("patients").insert({
       user_id: user.id,
       clinic_id: clinicId,
-      name: nome.trim(),
+      name: normalizedName,
       date_of_birth: dataNascimento || null,
       age: calculateAge(dataNascimento),
       cpf: cpf.replace(/\D/g, "") || null,
       phone: telefone.replace(/\D/g, "") || null,
-      email: email.trim() || null,
+      email: sanitizeSingleLineInput(email, INPUT_LIMITS.email).trim() || null,
       status: "ativo",
       registration_complete: false,
     }).select("id").single();
@@ -73,8 +75,8 @@ const NovoPaciente = () => {
       toast({
         title: "Paciente cadastrado",
         description: shareWithPatient
-          ? `${nome} foi adicionado(a). Gere o link e compartilhe com o paciente.`
-          : `${nome} foi adicionado(a). Complete o cadastro para mais detalhes.`,
+          ? `${normalizedName} foi adicionado(a). Gere o link e compartilhe com o paciente.`
+          : `${normalizedName} foi adicionado(a). Complete o cadastro para mais detalhes.`,
       });
       navigate(`/pacientes/${data.id}`, {
         state: shareWithPatient ? { openShareDialog: true } : undefined,

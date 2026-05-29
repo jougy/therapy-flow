@@ -302,7 +302,22 @@ const escapeHtml = (value: string) =>
   value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const sanitizeDocumentImageUrl = (value: string | null) => {
+  if (!value?.trim()) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    return ["https:", "http:", "blob:"].includes(url.protocol) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+};
 
 const kindLabels: Record<SessionDocumentKind, string> = {
   anamnesis: "anamnese",
@@ -556,7 +571,7 @@ export const buildSessionDocumentFileName = (kind: SessionDocumentKind, data: Se
   `${kindLabels[kind]}-${sanitizeFilenameSegment(data.patientName)}-${sanitizeFilenameSegment(data.sessionDate)}.pdf`;
 
 export const buildSessionDocumentModel = (kind: SessionDocumentKind, data: SessionDocumentData): SessionDocumentModel => ({
-  brandLogoUrl: data.clinic.logoUrl,
+  brandLogoUrl: sanitizeDocumentImageUrl(data.clinic.logoUrl),
   brandSubtitle: data.appName,
   brandTitle: data.clinic.name.trim() || data.appName,
   clinicFacts: buildClinicFacts(data),

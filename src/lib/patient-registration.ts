@@ -1,4 +1,5 @@
 import type { Database } from "@/integrations/supabase/types";
+import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 import type { PatientClinicalProfile, PatientEmergencyContact } from "@/lib/patient-clinical-profile";
 import { buildClinicalProfilePayload, buildEmergencyContactPayload } from "@/lib/patient-clinical-profile";
 import { buildPatientOriginPayload, type PatientOriginFormValues } from "@/lib/patient-origin";
@@ -49,7 +50,17 @@ export interface PatientRegistrationFormValues extends PatientOriginFormValues {
 }
 
 const trimToNull = (value: string | null | undefined) => {
-  const trimmed = (value ?? "").trim();
+  const trimmed = sanitizeSingleLineInput(value ?? "", INPUT_LIMITS.shortText).trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const trimSingleLineToNull = (value: string | null | undefined, maxLength: number) => {
+  const trimmed = sanitizeSingleLineInput(value ?? "", maxLength).trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const trimMultilineToNull = (value: string | null | undefined, maxLength = INPUT_LIMITS.clinicalLongText) => {
+  const trimmed = sanitizeMultilineInput(value ?? "", maxLength).trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
@@ -91,34 +102,34 @@ export const buildPatientRegistrationPutPayload = (
 
   return {
     ...patient,
-    address_complement: trimToNull(formValues.addressComplement),
-    address_number: trimToNull(formValues.addressNumber),
+    address_complement: trimSingleLineToNull(formValues.addressComplement, INPUT_LIMITS.addressComplement),
+    address_number: trimSingleLineToNull(formValues.addressNumber, INPUT_LIMITS.addressNumber),
     age: calculatePatientAge(normalizedBirthDate),
-    allergies: trimToNull(formValues.allergies),
-    blood_type: trimToNull(formValues.bloodType),
+    allergies: trimMultilineToNull(formValues.allergies),
+    blood_type: trimSingleLineToNull(formValues.bloodType, 8),
     cep: digitsToNull(formValues.cep),
     clinical_profile: buildClinicalProfilePayload(formValues.clinicalProfile),
-    chronic_conditions: trimToNull(formValues.chronicConditions),
-    city: trimToNull(formValues.city),
-    clinical_notes: trimToNull(formValues.clinicalNotes),
-    continuous_medications: trimToNull(formValues.continuousMedications),
-    country: trimToNull(formValues.country) ?? "Brasil",
+    chronic_conditions: trimMultilineToNull(formValues.chronicConditions),
+    city: trimSingleLineToNull(formValues.city, INPUT_LIMITS.city),
+    clinical_notes: trimMultilineToNull(formValues.clinicalNotes),
+    continuous_medications: trimMultilineToNull(formValues.continuousMedications),
+    country: trimSingleLineToNull(formValues.country, INPUT_LIMITS.country) ?? "Brasil",
     cpf: digitsToNull(formValues.cpf),
     date_of_birth: normalizedBirthDate,
-    email: trimToNull(formValues.email),
+    email: trimSingleLineToNull(formValues.email, INPUT_LIMITS.email),
     emergency_contact: buildEmergencyContactPayload(formValues.emergencyContact),
-    gender: trimToNull(formValues.gender),
-    name: normalizedName ?? patient.name,
-    neighborhood: trimToNull(formValues.neighborhood),
+    gender: trimSingleLineToNull(formValues.gender, INPUT_LIMITS.shortText),
+    name: trimSingleLineToNull(normalizedName, INPUT_LIMITS.name) ?? patient.name,
+    neighborhood: trimSingleLineToNull(formValues.neighborhood, INPUT_LIMITS.shortText),
     ...buildPatientOriginPayload(formValues),
     phone: digitsToNull(formValues.phone),
-    profession: trimToNull(formValues.profession),
-    pronoun: trimToNull(formValues.pronoun),
+    profession: trimSingleLineToNull(formValues.profession, INPUT_LIMITS.profession),
+    pronoun: trimSingleLineToNull(formValues.pronoun, INPUT_LIMITS.shortText),
     registration_complete: true,
-    rg: trimToNull(formValues.rg),
-    state: trimToNull(formValues.state),
-    street: trimToNull(formValues.street),
-    surgeries: trimToNull(formValues.surgeries),
+    rg: trimSingleLineToNull(formValues.rg, INPUT_LIMITS.patientDocument),
+    state: trimSingleLineToNull(formValues.state, INPUT_LIMITS.state),
+    street: trimSingleLineToNull(formValues.street, INPUT_LIMITS.street),
+    surgeries: trimMultilineToNull(formValues.surgeries),
   };
 };
 

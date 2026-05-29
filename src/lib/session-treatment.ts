@@ -1,4 +1,5 @@
 import type { Json } from "@/integrations/supabase/types";
+import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 
 export interface TreatmentBlock {
   duration: string;
@@ -45,6 +46,8 @@ const blockHasMeaningfulContent = (block: TreatmentBlock) =>
   );
 
 const joinNonEmpty = (parts: string[]) => parts.filter(Boolean).join("\n\n");
+const sanitizeTreatmentShort = (value: string) => sanitizeSingleLineInput(value, INPUT_LIMITS.treatmentShortText).trim();
+const sanitizeTreatmentLong = (value: string) => sanitizeMultilineInput(value, INPUT_LIMITS.treatmentInstruction).trim();
 
 export const createTreatmentBlock = (index: number): TreatmentBlock => ({
   duration: "",
@@ -97,18 +100,19 @@ export const readTreatmentState = (value: Json | null): TreatmentState => {
 
 export const buildTreatmentPayload = ({ blocks, generalGuidance }: TreatmentState) => {
   const normalizedBlocks = blocks
+    .slice(0, 20)
     .map((block, index) => ({
-      duration: block.duration.trim(),
-      frequency: block.frequency.trim(),
-      id: block.id || `treatment-block-${index + 1}`,
-      instructions: block.instructions.trim(),
-      name: block.name.trim(),
-      repetitions: block.repetitions.trim(),
-      series: block.series.trim(),
+      duration: sanitizeTreatmentShort(block.duration),
+      frequency: sanitizeTreatmentShort(block.frequency),
+      id: sanitizeSingleLineInput(block.id || `treatment-block-${index + 1}`, INPUT_LIMITS.id),
+      instructions: sanitizeTreatmentLong(block.instructions),
+      name: sanitizeTreatmentShort(block.name),
+      repetitions: sanitizeTreatmentShort(block.repetitions),
+      series: sanitizeTreatmentShort(block.series),
     }))
     .filter(blockHasMeaningfulContent);
 
-  const normalizedGuidance = generalGuidance.trim();
+  const normalizedGuidance = sanitizeMultilineInput(generalGuidance, INPUT_LIMITS.clinicalLongText).trim();
 
   if (normalizedBlocks.length === 0 && !normalizedGuidance) {
     return null;

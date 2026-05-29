@@ -495,7 +495,7 @@ const Index = () => {
       },
       ],
     };
-  }, [agendaEvents, patients, sessions, stats.activePatients, stats.totalPatients, stats.totalSessions]);
+  }, [agendaEvents, patients, sessions, stats.totalPatients, stats.totalSessions]);
 
   const toggleStatus = (status: string, checked: boolean | "indeterminate") => {
     setSelectedStatuses((current) => {
