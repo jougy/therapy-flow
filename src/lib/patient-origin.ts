@@ -1,4 +1,5 @@
 import type { Database } from "@/integrations/supabase/types";
+import { sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 
 type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
 
@@ -29,7 +30,12 @@ export interface PatientOriginFormValues {
 }
 
 const trimLimit = (value: string | null | undefined, limit: number) => {
-  const trimmed = (value ?? "").trim().slice(0, limit);
+  const trimmed = sanitizeSingleLineInput(value ?? "", limit).trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const trimMultilineLimit = (value: string | null | undefined, limit: number) => {
+  const trimmed = sanitizeMultilineInput(value ?? "", limit).trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
@@ -49,7 +55,7 @@ export const buildPatientOriginPayload = (values: PatientOriginFormValues) => {
     origin_insurance_provider: originType === "convenio" ? trimLimit(values.originInsuranceProvider, 120) : null,
     origin_other_description:
       originType === "outros"
-        ? trimLimit(values.originOtherDescription, 500) ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION
+        ? trimMultilineLimit(values.originOtherDescription, 500) ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION
         : null,
     origin_other_name:
       originType === "outros" ? trimLimit(values.originOtherName, 120) ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME : null,

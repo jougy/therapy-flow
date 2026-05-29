@@ -574,7 +574,7 @@ describe("Configuracoes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Perfil da clínica" }));
     const clinicNameInput = await screen.findByDisplayValue("Clinica Aurora");
     fireEvent.change(clinicNameInput, { target: { value: `Clinica ${"😀".repeat(300)}` } });
-    expect(Array.from((clinicNameInput as HTMLInputElement).value)).toHaveLength(120);
+    expect((clinicNameInput as HTMLInputElement).value).toBe("Clinica ");
 
     fireEvent.click(screen.getAllByRole("button", { name: /suporte/i })[0]);
     const supportMessage = await screen.findByPlaceholderText("Descreva o problema, a dúvida ou a melhoria sugerida.");

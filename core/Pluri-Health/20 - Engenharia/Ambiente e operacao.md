@@ -95,6 +95,26 @@ O [scripts/ops/control.sh](/Users/jougy/Documents/programacao/Prontuario/therapy
 
 Esse atalho unifica a experiencia local sem manter dois fluxos separados para o resto da operacao.
 
+## Debug visual com Brave CDP e mobile
+
+Os scripts em `scripts/dev` padronizam a checagem visual local sem depender da memoria do operador.
+
+### Brave com CDP
+
+- `scripts/dev/brave-cdp-start.sh [porta] [url]`: abre o Brave com `--remote-debugging-port`, usando perfil isolado em `~/.cache/brave-codex-profile` e log em `~/.cache/brave-codex.log`.
+- Padrao: porta `9222` e URL `http://localhost:8080`.
+- `scripts/dev/brave-cdp-info.sh [porta]`: consulta `http://127.0.0.1:<porta>/json/version` para confirmar que o CDP esta ativo.
+
+### Preview mobile com scrcpy
+
+- `scripts/dev/mobile-preview-start.sh [app_port] [supabase_port]`: encontra um Android autorizado via ADB, cria `adb reverse` para o app e para o Supabase local, e abre `scrcpy`.
+- Padrao: app `8080`, Supabase API `54321`, `SCRCPY_MAX_SIZE=1600`.
+- No celular, abrir `http://localhost:8080` no navegador depois que os reverses estiverem ativos.
+- `scripts/dev/mobile-preview-status.sh`: lista dispositivos ADB e reverses ativos.
+- `scripts/dev/mobile-preview-stop.sh [app_port] [supabase_port]`: remove os reverses dos dispositivos ativos.
+
+Use esse fluxo sempre que a tarefa tocar UI/UX, responsividade, bugs visuais, formulários ou comportamento mobile.
+
 ## Trabalhando com migrations
 
 Fluxo sugerido:

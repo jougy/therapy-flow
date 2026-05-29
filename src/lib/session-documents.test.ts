@@ -168,4 +168,24 @@ describe("buildSessionDocument", () => {
     expect(anamnesisTitleIndex).toBeGreaterThan(-1);
     expect(firstIndicatorIndex).toBeGreaterThan(anamnesisTitleIndex);
   });
+
+  it("escapes html attributes and drops unsafe logo urls", () => {
+    const html = renderSessionDocumentHtml(
+      buildSessionDocumentModel("combined", {
+        ...baseData,
+        patientName: `Maria "><script>alert(1)</script>`,
+        clinic: {
+          ...baseData.clinic,
+          logoUrl: `javascript:alert(1)" onerror="alert(2)`,
+          name: `Clínica "><img src=x onerror=alert(1)>`,
+        },
+      })
+    );
+
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<img src=x");
+    expect(html).not.toContain("javascript:alert");
+    expect(html).not.toContain('class="brand-logo"');
+    expect(html).toContain("&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
 });

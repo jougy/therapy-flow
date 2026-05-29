@@ -1,4 +1,5 @@
 import type { Json } from "@/integrations/supabase/types";
+import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 
 export const FUNCTIONAL_INDEPENDENCE_OPTIONS = [
   { label: "Independente", value: "independente" },
@@ -97,8 +98,18 @@ const readDependencyLevel = (value: Json | undefined): DependencyLevelValue | ""
     : "";
 };
 
+const normalizeFunctionalIndependence = (value: string): FunctionalIndependenceValue | "" =>
+  FUNCTIONAL_INDEPENDENCE_OPTIONS.some((option) => option.value === value)
+    ? value as FunctionalIndependenceValue
+    : "";
+
 const trimToNull = (value: string) => {
-  const trimmed = value.trim();
+  const trimmed = sanitizeMultilineInput(value, INPUT_LIMITS.clinicalLongText).trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const trimSingleLineToNull = (value: string, maxLength = INPUT_LIMITS.shortText) => {
+  const trimmed = sanitizeSingleLineInput(value, maxLength).trim();
   return trimmed.length > 0 ? trimmed : null;
 };
 
@@ -138,15 +149,16 @@ const readUseRecords = (value: Json | undefined, prefix: string) =>
 
 const normalizeUseRecordsForPayload = (records: Array<PatientSubstanceUseRecord | PatientAddictionRecord>, prefix: string) =>
   (records ?? [])
+    .slice(0, 20)
     .map((record, index) => ({
-      dependency_level: "dependency_level" in record ? record.dependency_level : "",
-      frequency: record.frequency.trim(),
-      id: record.id || `${prefix}-${index + 1}`,
+      dependency_level: "dependency_level" in record ? readDependencyLevel(record.dependency_level) : "",
+      frequency: trimSingleLineToNull(record.frequency) ?? "",
+      id: sanitizeSingleLineInput(record.id || `${prefix}-${index + 1}`, INPUT_LIMITS.id),
       is_illicit: "is_illicit" in record ? record.is_illicit : false,
-      motivation: record.motivation.trim(),
-      name: record.name.trim(),
-      notes: record.notes.trim(),
-      started_at: record.started_at.trim(),
+      motivation: trimSingleLineToNull(record.motivation) ?? "",
+      name: trimSingleLineToNull(record.name) ?? "",
+      notes: trimToNull(record.notes) ?? "",
+      started_at: trimSingleLineToNull(record.started_at) ?? "",
     }))
     .filter(hasRecordContent);
 
@@ -224,10 +236,7 @@ export const parseClinicalProfile = (value: Json | null | undefined): PatientCli
     return EMPTY_CLINICAL_PROFILE;
   }
 
-  const functionalIndependence = readString(value.functional_independence);
-  const isKnownFunctionalIndependence = FUNCTIONAL_INDEPENDENCE_OPTIONS.some(
-    (option) => option.value === functionalIndependence,
-  );
+  const functionalIndependence = normalizeFunctionalIndependence(readString(value.functional_independence));
   const legacySubstanceUseHistory = readString(value.substance_use_history);
   const substanceUseRecords = readUseRecords(value.substance_use_records, "substance-use");
   const addictionRecords = readUseRecords(value.addiction_records, "addiction");
@@ -254,9 +263,7 @@ export const parseClinicalProfile = (value: Json | null | undefined): PatientCli
     diagnoses: readString(value.diagnoses),
     falls_history: readString(value.falls_history),
     family_history: readString(value.family_history),
-    functional_independence: isKnownFunctionalIndependence
-      ? (functionalIndependence as FunctionalIndependenceValue)
-      : "",
+    functional_independence: functionalIndependence,
     implants_devices: readString(value.implants_devices),
     lifestyle_notes: readString(value.lifestyle_notes),
     mobility_aids: readString(value.mobility_aids),
@@ -299,7 +306,7 @@ export const buildClinicalProfilePayload = (profile: PatientClinicalProfile): Js
     diagnoses: trimToNull(profile.diagnoses),
     falls_history: trimToNull(profile.falls_history),
     family_history: trimToNull(profile.family_history),
-    functional_independence: trimToNull(profile.functional_independence),
+    functional_independence: trimSingleLineToNull(normalizeFunctionalIndependence(profile.functional_independence)),
     has_addictions: hasAddictions ? true : null,
     implants_devices: trimToNull(profile.implants_devices),
     lifestyle_notes: trimToNull(profile.lifestyle_notes),
@@ -314,9 +321,9 @@ export const buildClinicalProfilePayload = (profile: PatientClinicalProfile): Js
 
 export const buildEmergencyContactPayload = (contact: PatientEmergencyContact): Json | null => {
   const payload = {
-    name: trimToNull(contact.name),
-    phone: trimToNull(contact.phone),
-    relationship: trimToNull(contact.relationship),
+    name: trimSingleLineToNull(contact.name, INPUT_LIMITS.name),
+    phone: trimSingleLineToNull(contact.phone, INPUT_LIMITS.phone),
+    relationship: trimSingleLineToNull(contact.relationship, INPUT_LIMITS.shortText),
   };
 
   return Object.values(payload).some(Boolean) ? payload : null;

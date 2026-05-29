@@ -8,10 +8,385 @@ area: engenharia
 aliases:
   - Inventario de inputs
   - INVENTARIO_INPUTS
+updated: '2026-05-28'
 ---
 # Inventario de Inputs do Therapy Flow
 
-Gerado em `2026-04-18` a partir de uma varredura manual no código em `src/`.
+Atualizado em `2026-05-28` a partir de varredura em `src/`.
+
+## Escopo desta varredura
+
+Comando-base usado para localizar campos:
+
+```bash
+rg -n "(<Input|<Textarea|<Select\b|<Checkbox\b|<RadioGroup\b|<Switch\b|<CommandInput\b|<input\b|<textarea\b|<select\b|<Slider\b|DateFieldInput)" src --glob '*.{ts,tsx}' --glob '!**/*.test.*' --glob '!src/components/ui/**'
+```
+
+- Inclui paginas e componentes que renderizam campos reais de entrada de dados.
+- Inclui campos dinamicos gerados por schema quando o componente renderiza o controle final.
+- Exclui testes.
+- Exclui wrappers genericos em `src/components/ui/*`.
+- Linhas sao referencias atuais aproximadas da varredura, uteis para retomar auditoria.
+
+## Resumo de areas com entrada de dados
+
+- Autenticacao: documento do owner, email, senha.
+- Home/lista de pacientes: busca, ordenacao, filtros por status, origem, pagamento, agenda, recorrencia, grupos, colaborador, periodo e dias da semana.
+- Agenda: selecao/criacao de evento, data/hora, alteracao de status.
+- Cadastro de paciente: dados pessoais, origem, contato, endereco, alertas, historico clinico, emergencia, funcionalidade e observacoes.
+- Cadastro compartilhado: senha numerica do link, cadastro do paciente e campos clinicos equivalentes ao cadastro completo.
+- Detalhe do paciente: status, filtros de atendimentos, acoes em massa, grupo, recorrencia, agenda e link de compartilhamento.
+- Sessao/atendimento: ficha dinamica, presenca, pagamento, tratamento, compartilhamento e documentos.
+- Configuracoes: perfil proprio, clinica, colaboradores, desenvolvimento da equipe, seguranca, suporte e importacao de formularios.
+- Editor de formularios: metadados do template, campos dinamicos, opcoes, obrigatoriedade, importacao JSON.
+- Componentes de apoio: seletor de cores de grupos, compartilhamento de sessao, uso de substancias, input de data normalizada e editores de opcoes.
+
+## `src/pages/Auth.tsx`
+
+- `93` `owner-document`: `Input`; CPF/CNPJ do owner; usa `formatOwnerDocument(...)`; `required`; `autoFocus`; sem `maxLength` explicito.
+- `107` `email`: `Input type="email"`; `required`; placeholder `seu@email.com`; sem `maxLength` explicito.
+- `120` `password`: `Input` alterna `password`/`text`; `required`; `minLength={6}`; sem `maxLength` explicito.
+
+## `src/pages/Index.tsx`
+
+- `735` busca mobile: `Input`; `value={search}`; placeholder `Buscar paciente...`; `aria-label` especifico.
+- `774` ordenacao mobile: `Select`; `value={sortKey}`; opcoes `HOME_PATIENT_SORT_OPTIONS`.
+- `800` busca desktop: `Input`; `value={search}`; placeholder `Buscar paciente, CPF ou telefone...`.
+- `840` status de atividade: `Checkbox` por `PATIENT_STATUS_OPTIONS`.
+- `861` origem do paciente: `Checkbox` por `PATIENT_ORIGIN_OPTIONS`.
+- `883` status de pagamento: `Checkbox` por `HOME_PATIENT_PAYMENT_STATUS_OPTIONS`; condicionado a permissao financeira.
+- `905` status de agendamento: `Checkbox` por `HOME_PATIENT_AGENDA_STATUS_OPTIONS`.
+- `926` recorrencia programada: `Checkbox` por `HOME_PATIENT_RECURRENCE_STATUS_OPTIONS`.
+- `940` dias de recorrencia: `Checkbox` por `HOME_PATIENT_WEEKDAY_OPTIONS`.
+- `1006` grupos: `Checkbox` visual dentro de botoes por grupo; selecao tambem usa botoes de cor.
+- `1037` colaborador: `Input`; `value={collaboratorQuery}`; placeholder `Buscar por nome, email, função ou cargo`.
+- `1062` colaboradores: `Checkbox` visual dentro de botoes por colaborador.
+- `1105` `home-session-date-from`: `Input type="date"`; data inicial dos atendimentos.
+- `1114` `home-session-date-to`: `Input type="date"`; data final dos atendimentos.
+- `1134` dias dos atendimentos: `Checkbox` por `HOME_PATIENT_WEEKDAY_OPTIONS`.
+- `1155` ordenacao desktop: `Select`; `value={sortKey}`; opcoes `HOME_PATIENT_SORT_OPTIONS`.
+
+## `src/components/AgendaWidget.tsx`
+
+- `705` `patientQuery`: `CommandInput`; busca/selecao de paciente; placeholder `Buscar paciente...`.
+- `742` `newTitle`: `Input`; titulo livre para evento sem paciente.
+- `752` `newTime`: `Input type="time"`; horario do novo evento.
+- `798` `selectedStatusAction`: `Select`; acao de status do evento, incluindo opcao destrutiva quando aplicavel.
+- `825` `homepage-agenda-date`: `Input type="date"`; edicao de data do evento selecionado.
+- `834` `homepage-agenda-time`: `Input type="time"`; edicao de hora do evento selecionado.
+
+## `src/pages/NovoPaciente.tsx`
+
+- `106` `nome`: `Input`; nome do paciente; `autoFocus`; sem `maxLength`.
+- `110` `nascimento`: `Input type="date"`; data de nascimento.
+- `114` `cpf`: `Input`; usa `formatCpf(...)`; placeholder `000.000.000-00`; `maxLength={14}`.
+- `118` `telefone`: `Input type="tel"`; usa `formatPhone(...)`; placeholder `(00) 00000-0000`; `maxLength={15}`.
+- `122` `email`: `Input type="email"`; placeholder `paciente@email.com`; sem `maxLength`.
+
+## `src/pages/CadastroCompleto.tsx`
+
+### Identificacao e origem
+
+- `350` `name`: `Input`; nome completo; aplica `capitalizeWords(...)`; sem `maxLength`.
+- `357` `date-of-birth`: `Input type="date"`.
+- `361` `cpf`: `Input`; `formatCpf(...)`; `maxLength={14}`.
+- `367` `gender`: `Select`; genero.
+- `380` `pronoun`: `Select`; pronome.
+- `394` `rg`: `Input`; placeholder `0000000-0`; sem formatacao automatica.
+- `399` `profession`: `Input`; profissao.
+- `409` `originType`: `Select`; tipo de origem normalizado por `normalizePatientOriginType(...)`.
+- `421` `originReferrerName`: `Input`; origem por indicacao.
+- `433` `originInsuranceProvider`: `Input`; convenio.
+- `442` `originInsurancePlan`: `Input`; plano.
+- `451` `originInsuranceMemberId`: `Input`; carteirinha/identificador.
+- `464` `originOtherName`: `Input`; origem livre.
+- `473` `originOtherDescription`: `Textarea`; descricao da origem livre.
+- `504` `bloodType`: `Select`; tipo sanguineo.
+
+### Alertas, contato e endereco
+
+- `515` `clinicalProfile.clinical_alerts`: `Textarea`; alertas clinicos.
+- `573` `phone`: `Input`; `formatPhone(...)`; `maxLength={15}`.
+- `577` `email`: `Input type="email"`.
+- `590` `emergencyContact.name`: `Input`; contato de emergencia.
+- `599` `emergencyContact.relationship`: `Input`; relacao.
+- `609` `emergencyContact.phone`: `Input`; telefone de emergencia.
+- `632` `cep`: `Input`; `handleCepLookup(...)`; `maxLength={9}`.
+- `639` `country`: `Input`.
+- `643` `state`: `Input`; placeholder `UF`.
+- `647` `city`: `Input`.
+- `652` `neighborhood`: `Input`.
+- `656` `street`: `Input`.
+- `661` `addressNumber`: `Input`.
+- `665` `addressComplement`: `Input`.
+
+### Historico clinico
+
+- `526` `chronicConditions`: `Textarea`; condicoes cronicas.
+- `530` `allergies`: `Textarea`; alergias.
+- `534` `clinicalProfile.congenital_genetic_conditions`: `Textarea`.
+- `544` `clinicalProfile.family_history`: `Textarea`.
+- `686` `clinicalProfile.diagnoses`: `Textarea`.
+- `696` `surgeries`: `Textarea`.
+- `700` `clinicalProfile.implants_devices`: `Textarea`.
+- `710` `clinicalProfile.falls_history`: `Textarea`.
+- `720` `continuousMedications`: `Textarea`.
+- `725` `clinicalProfile.functional_independence`: `Select`.
+- `739` `clinicalProfile.mobility_aids`: `Textarea`.
+- `754` `clinicalNotes`: `Textarea`.
+- `758` `snapshotNote`: `Textarea`; nota para snapshot clinico.
+- O componente `SubstanceUseClinicalSection` tambem pode ser renderizado nesta tela para registros de uso de substancias.
+
+## `src/pages/CadastroPacienteCompartilhado.tsx`
+
+- `337` `registration-password`: `Input type="password"`; `inputMode="numeric"`; `maxLength={6}`; aceita apenas digitos via `.replace(/\D/g, "").slice(0, 6)`.
+- `400` `name`: `Input`; nome completo.
+- `404` `date-of-birth`: `Input type="date"`.
+- `408` `cpf`: `Input`; `disabled` e `readOnly`.
+- `412` `gender`: `Select`.
+- `425` `pronoun`: `Select`.
+- `437` `rg`: `Input`.
+- `441` `profession`: `Input`.
+- `452` `originType`: `Select`.
+- `464` `originReferrerName`: `Input`.
+- `475` `originInsuranceProvider`: `Input`.
+- `483` `originInsurancePlan`: `Input`.
+- `491` `originInsuranceMemberId`: `Input`.
+- `503` `originOtherName`: `Input`.
+- `511` `originOtherDescription`: `Textarea`.
+- `542` `bloodType`: `Select`.
+- `553` `clinicalProfile.clinical_alerts`: `Textarea`.
+- `558` `chronicConditions`: `Textarea`.
+- `562` `allergies`: `Textarea`.
+- `566` `clinicalProfile.congenital_genetic_conditions`: `Textarea`.
+- `570` `clinicalProfile.family_history`: `Textarea`.
+- `592` `phone`: `Input`; usa `formatPhone(...)`, mas sem `maxLength` explicito nesta tela.
+- `596` `email`: `Input type="email"`.
+- `609` `emergencyContact.name`: `Input`.
+- `613` `emergencyContact.relationship`: `Input`.
+- `618` `emergencyContact.phone`: `Input`.
+- `640` `cep`: `Input`; `handleCepLookup(...)`; `maxLength={9}`.
+- `647` `country`: `Input`.
+- `651` `state`: `Input`.
+- `655` `city`: `Input`.
+- `660` `neighborhood`: `Input`.
+- `664` `street`: `Input`.
+- `669` `addressNumber`: `Input`.
+- `673` `addressComplement`: `Input`.
+- `694` `clinicalProfile.diagnoses`: `Textarea`.
+- `698` `surgeries`: `Textarea`.
+- `702` `clinicalProfile.implants_devices`: `Textarea`.
+- `707` `clinicalProfile.falls_history`: `Textarea`.
+- `712` `continuousMedications`: `Textarea`.
+- `717` `clinicalProfile.functional_independence`: `Select`.
+- `731` `clinicalProfile.mobility_aids`: `Textarea`.
+- `740` `clinicalNotes`: `Textarea`.
+
+## `src/pages/PacienteDetalhe.tsx`
+
+- `1721` `patient.status`: `Select`; status do paciente; pode incluir opcao destrutiva de exclusao.
+- `1812` `sessions-search`: `Input`; busca por grupo/atendimento; sem `maxLength`.
+- `1823` `sessionStatusFilter`: `Select`; filtro de status de atendimento.
+- `1837` `groupStatusFilter`: `Select`; filtro de status de grupo.
+- `1856` `bulkMove`: `Select`; mover atendimentos selecionados para grupo; `disabled` sem selecao.
+- `1867` `bulkStatusUpdate`: `Select`; alterar status em massa; `disabled` sem selecao.
+- `2072` `groupName`: `CommandInput`; busca/criacao de grupo; placeholder `Buscar ou criar grupo...`.
+- `2129` `groupStatus`: `Select`; status do grupo.
+- `2225` recorrencia ativa: `Checkbox`; liga/desliga recorrencia do paciente.
+- `2244` dias da semana recorrentes: `Checkbox`; pode ficar `disabled` conforme estado.
+- `2258` `patient-recurrence-time`: `Input type="time"`; horario da recorrencia; pode ficar `disabled`.
+- `2304` `patient-agenda-date`: `Input type="date"`; data de agenda.
+- `2313` `patient-agenda-time`: `Input type="time"`; hora de agenda.
+- `2369` `selectedAgendaStatusAction`: `Select`; acao/status de agenda.
+- `2396` `selected-agenda-date`: `Input type="date"`; edicao de agenda selecionada.
+- `2405` `selected-agenda-time`: `Input type="time"`; edicao de agenda selecionada.
+- `2549` `shareLink`: `Input readOnly`; link de compartilhamento do cadastro.
+
+## `src/pages/SessaoDetalhe.tsx`
+
+### Componentes auxiliares internos
+
+- `232` `PaymentStatusAutoControl`: `Checkbox`; marca pagamento como cortesia.
+- `287` `CurrencyInput`: `Input type="text"`; `inputMode="decimal"`; `maxLength={PAYMENT_AMOUNT_INPUT_MAX_LENGTH}`; normaliza com `currencyDigitsToInput(...)`.
+
+### Ficha dinamica de anamnese
+
+- `1580` `queixa`: `Textarea`; `rows={3}`; `disabled={locked}`.
+- `1596` `sintomas`: `Textarea`; `rows={2}`; `disabled={locked}`.
+- `1615` `pain_score`: `Slider`; `max={10}`; `step={1}`; `disabled={locked}`.
+- `1627` `complexity_score`: `Slider`; `max={10}`; `step={1}`; `disabled={locked}`.
+- `1636` `observacoes`: `Textarea`; `rows={4}`; `disabled={locked}`.
+- `1663` `short_text`: `Input`; valor em `anamnesisFormResponse[field.id]`; placeholder vem do schema; `disabled={locked}`.
+- `1677` `long_text`: `Textarea`; `rows={4}`; placeholder vem do schema; `disabled={locked}`.
+- `1692` `number`: `Input type="number"`; converte vazio para `null` e valor para `Number(...)`; `disabled={locked}`.
+- `1707` `date`: `DateFieldInput`; data normalizada em componente proprio; `disabled={locked}`.
+- `1725` `slider`: `Slider`; usa `field.min`/`field.max`; `step={1}`; `disabled={locked}`.
+- `1741` `select`: `Select`; opcoes de `field.options`; `disabled={locked}`.
+- `1783` `table`: `Input` por celula; placeholder usa nome da coluna; `disabled={locked}`.
+- `1819` `multiple_choice`: `RadioGroup`; opcoes de matriz; itens respeitam `locked`.
+- `1860` `checklist`: `Checkbox` por opcao; valor array de strings; itens respeitam `locked`.
+- `1904` `section_selector`: `Switch` por opcao; controla array de secoes ativas; respeita `locked`.
+- `2057` campos dinamicos de escala em pre-visualizacao/documento: `Slider`.
+
+### Metadados, presenca, tratamento e pagamento
+
+- `2155` `status`: `Select`; `rascunho`, `concluído`, `cancelado`; `disabled={locked}`.
+- `2166` `groupId`: `Select`; grupo da sessao; inclui `none`; `disabled={locked}`.
+- `2179` `anamnesisTemplateId`: `Select`; ficha complementar; troca limpa `anamnesisFormResponse`.
+- `2500` `scheduled-start`: `Input type="datetime-local"`; min `2000-01-01T00:00`, max `2100-12-31T23:59`.
+- `2520` `patient-arrived`: `Input type="datetime-local"`; possui botao `Agora`.
+- `2544` `session-date`: `Input type="datetime-local"`; inicio do atendimento.
+- `2573` `notes`: `Textarea`; anotacoes rapidas.
+- `2662` `treatmentBlocks[].name`: `Input`.
+- `2671` `treatmentBlocks[].frequency`: `Input`.
+- `2680` `treatmentBlocks[].duration`: `Input`.
+- `2690` `treatmentBlocks[].series`: `Input`.
+- `2699` `treatmentBlocks[].repetitions`: `Input`.
+- `2711` `treatmentBlocks[].instructions`: `Textarea`; `rows={3}`.
+- `2728` `treatmentGeneralGuidance`: `Textarea`; `rows={5}`.
+- `2760` `paymentMethod`: `Select`; opcoes `PAYMENT_METHOD_OPTIONS`, exceto cortesia no fluxo normal.
+- `2779` `paymentInstallments`: `Select`; opcoes `PAYMENT_INSTALLMENT_OPTIONS`.
+- `2798` `payment-status-date`: `Input type="date"`; min `2000-01-01`, max `2100-12-31`.
+- `2864` `paymentAdjustmentReason`: `Textarea`; `maxLength={PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH}`.
+
+### Dialogs rapidos
+
+- `2904` `quick-scheduled-start`: `Input type="datetime-local"`; edicao rapida de presenca.
+- `2926` `quick-patient-arrived`: `Input type="datetime-local"`; possui botao `Agora`.
+- `2950` `quick-session-date`: `Input type="datetime-local"`; possui botao `Agora`.
+- `3000` `quick-payment-status-date`: `Input type="date"`.
+- `3013` `draftPaymentMethod`: `Select`.
+- `3032` `draftPaymentInstallments`: `Select`.
+- `quick-amount-original`, `quick-amount-charged`, `quick-amount-paid`: `CurrencyInput`; campos monetarios normalizados.
+- `3120` `draftPaymentAdjustmentReason`: `Textarea`; `maxLength={PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH}`.
+
+## `src/components/SessionShareDialog.tsx`
+
+- `141` `query`: `Input`; busca colaboradores por nome, email, funcao ou cargo.
+- `163` colaboradores: `Checkbox` visual por colaborador; desabilita usuarios ja compartilhados.
+
+## `src/pages/FormularioEditor.tsx`
+
+- `322` `templateImportInputRef`: `input type="file"`; `accept="application/json,.json"`; `className="sr-only"`.
+- `392` `templateName`: `Input`; nome do template; `disabled={isBase}`.
+- `401` `templateDescription`: `Input`; descricao do template; `disabled={isBase}`.
+- `472` `field.label`: `Input`; rotulo do campo.
+- `476` `field.helpText`: `Input`; texto de ajuda.
+- `484` `field.type`: `Select`; tipo do campo.
+- `506` `field.placeholder`: `Input`; placeholder.
+- `510` `field.groupKey`: `Select`; container/grupo do campo.
+- `531` `field.groupKey`: `Select`; secao pai para containers.
+- `551` `field.sectionKey`: `Select`; visibilidade condicional.
+- `570` `field.required`: `Checkbox`; obrigatoriedade.
+- `581` `field.showInPatientList`: `Checkbox`; exibicao na lista de atendimentos.
+- `611` `field.options`: `Textarea`; modo texto, uma opcao por linha.
+- `625` `field.min`: `Input type="number"`; minimo de slider.
+- `633` `field.max`: `Input type="number"`; maximo de slider.
+- Usa `OptionListEditor` e `OptionMatrixEditor` para opcoes estruturadas.
+
+## `src/pages/Configuracoes.tsx`
+
+### Perfil proprio
+
+- `1839` toggle de bloqueio/edicao de perfil: `Switch`.
+- `1857` `ownProfileForm.email`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.email}`.
+- `1880` `ownProfileForm.fullName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.personName}`.
+- `1889` `ownProfileForm.socialName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.socialName}`.
+- `1898` `ownProfileForm.birthDate`: `Input type="date"`.
+- `1907` `ownProfileForm.cpf`: `Input`; `formatCpf(...)`; `maxLength={14}`.
+- `1916` `ownProfileForm.phone`: `Input`; `formatPhone(...)`; `maxLength={15}`.
+- `1925` `ownProfileForm.professionalLicense`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.professionalLicense}`.
+- `1949` `ownProfileForm.address.cep`: `Input`; `maxLength={9}`.
+- `1958` a `2003` endereco proprio: `Input` para rua, numero, complemento, bairro, cidade e estado; limites em `ADDRESS_FIELD_LIMITS`.
+
+### Clinica
+
+- `2077` `clinicName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.clinicName}`.
+- `2085` `clinicLogoUrl`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.clinicLogoUrl}`.
+- `2094` `clinicEmail`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.clinicEmail}`.
+- `2102` `clinicPhone`: `Input`; `formatPhone(...)`; `maxLength={15}`.
+- `2122` `clinicLegalName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.clinicLegalName}`.
+- `2130` `clinic.cnpj`: `Input disabled`.
+- `2134` `clinic.subscription_plan`: `Input disabled`.
+- `2139` `clinicBusinessHours.summary`: `Textarea`; `maxLength={SETTINGS_TEXT_LIMITS.businessHours}`.
+- `2162` a `2210` endereco da clinica: `Input` para CEP, rua, numero, complemento, bairro, cidade e estado; limites em `ADDRESS_FIELD_LIMITS`.
+
+### Colaboradores e acessos
+
+- `2296` `newSubaccountName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.personName}`.
+- `2304` `newSubaccountEmail`: `Input type="email"`; `maxLength={SETTINGS_TEXT_LIMITS.email}`.
+- `2313` `newSubaccountPassword`: `Input type="text"`; `maxLength={SETTINGS_TEXT_LIMITS.password}`; criacao exige minimo de 6 caracteres.
+- `2342` `newSubaccountRole`: `Select`; `admin`, `professional`, `assistant`, `estagiario`.
+- `2359` `newSubaccountJobTitle`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.jobTitle}`.
+- `2367` `newSubaccountSpecialty`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.specialty}`.
+- `2403` `team-search`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.searchTerm}`.
+- `2413` `teamRoleFilter`: `Select`.
+- `2428` `teamStatusFilter`: `Select`.
+- `2441` `teamSortKey`: `Select`.
+- `2571` a `2636` edicao de colaborador: `Input` para nome, nome social, email, nascimento, CPF, registro profissional, telefone, especialidade e cargo.
+- `2644` `editingSubaccount.operationalRole`: `Select`; pode depender da permissao `subaccounts_roles.manage`.
+- `2662` `editingSubaccount.membershipStatus`: `Select`; `active`, `inactive`, `suspended`.
+- `2678` `editingSubaccount.resetPassword`: `Input type="text"`; `maxLength={SETTINGS_TEXT_LIMITS.password}`.
+- `2690` `editingSubaccount.workingHours`: `Textarea`; `maxLength={SETTINGS_TEXT_LIMITS.workingHours}`.
+- `2700` a `2748` endereco do colaborador: `Input` para CEP, rua, numero, complemento, bairro, cidade e estado.
+
+### Desenvolvimento, seguranca e suporte
+
+- `3031` `form.developmentStatus`: `Select`; opcoes de `DEVELOPMENT_STATUS_OPTIONS`.
+- `3049` `form.internalLevel`: `Select`; opcoes de `DEVELOPMENT_LEVEL_OPTIONS`.
+- `3067` `form.nextReviewAt`: `Input type="date"`.
+- `3082` `form.onboardingFlowRead`: `Switch`.
+- `3094` `form.onboardingInitialTraining`: `Switch`.
+- `3181` `securityPassword`: `Input type="password"`; `maxLength={SETTINGS_TEXT_LIMITS.password}`.
+- `3191` `securityPasswordConfirm`: `Input type="password"`; `maxLength={SETTINGS_TEXT_LIMITS.password}`.
+- `3334` `securitySettings[...]`: `Switch` para alertas de senha, novo login, encerramento de sessoes e mudanca de acesso.
+- `3513` `supportForm.category`: `Select`.
+- `3536` `supportForm.subject`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.supportSubject}`.
+- `3547` `supportForm.message`: `Textarea`; `maxLength={SETTINGS_TEXT_LIMITS.supportMessage}`.
+- `3563` `supportForm.includeContext`: `Switch`.
+- `3645` `templateImportInputRef`: `input type="file"`; importacao JSON de modelos de formulario.
+
+## `src/components/GroupColorPaletteField.tsx`
+
+- `335` opacidade: `input type="range"`; `min={0}`, `max={100}`.
+- `368` `codeMode`: `Select`; alterna `hex`, `rgb`, `cmyk`.
+- `385` `group-color-hex`: `Input`; `maxLength={6}`; normaliza HEX.
+- `407` canais RGB: `Input`; `inputMode="numeric"`; limite logico `255` em `parseNumberInput(...)`.
+- `430` canais CMYK: `Input`; `inputMode="decimal"`; limite logico `100`.
+- `455` `group-color-alpha`: `Input`; `inputMode="numeric"`; limite logico `100`.
+
+## `src/components/patients/SubstanceUseClinicalSection.tsx`
+
+- `67` `record.name`: `Input`; substancia/comportamento.
+- `75` `record.started_at`: `Input`; inicio.
+- Controle de ilicitude: botoes segmentados `Sim`/`Nao`, nao aparece como `Input` no grep.
+- `94` `record.dependency_level`: `Select`; opcoes `DEPENDENCY_LEVEL_OPTIONS`.
+- `112` `record.frequency`: `Input`.
+- `120` `record.motivation`: `Input`.
+- `130` `record.notes`: `Textarea`; `rows={3}`.
+
+## Componentes dinamicos de apoio
+
+### `src/components/anamnesis/DateFieldInput.tsx`
+
+- `25` `normalizedValue`: `Input type="text"`; `inputMode="numeric"`; normaliza com `normalizeDateInput(...)`; integra `Calendar` via `Popover`.
+
+### `src/components/anamnesis/OptionListEditor.tsx`
+
+- `27` `option.label`: `Input`; label de opcao vertical; sem `maxLength`.
+
+### `src/components/anamnesis/OptionMatrixEditor.tsx`
+
+- `33` `option.label`: `Input`; label de opcao em matriz; sem `maxLength`.
+
+## Observacoes gerais
+
+- `Configuracoes.tsx` continua sendo a area mais endurecida: muitos campos usam limites (`SETTINGS_TEXT_LIMITS`, `ADDRESS_FIELD_LIMITS`) e sanitizacao em handlers auxiliares.
+- Cadastros de paciente, cadastro compartilhado, editor de formularios, `SessaoDetalhe.tsx`, `PacienteDetalhe.tsx`, `AgendaWidget.tsx` e buscas/filtros ainda concentram campos livres sem `maxLength` explicito.
+- Campos clinicos longos talvez devam ter limites de backend/frontend por tipo de dado, especialmente historico, observacoes, tratamentos e respostas dinamicas de ficha.
+- Campos monetarios em `SessaoDetalhe.tsx` usam `CurrencyInput` com normalizacao e `PAYMENT_AMOUNT_INPUT_MAX_LENGTH`, uma boa referencia para padronizar entradas numericas sensiveis.
+- Datas de presenca/pagamento em `SessaoDetalhe.tsx` ja possuem intervalos min/max fixos em varios pontos.
+- Existem entradas interativas fora de `<Input>` que tambem merecem auditoria de UX/acessibilidade: botoes de cor na Home, botoes de ilicitude no componente de substancias, botoes de selecao em listas e calendario em `DateFieldInput`.
 
 ## Notas relacionadas
 
@@ -19,263 +394,3 @@ Gerado em `2026-04-18` a partir de uma varredura manual no código em `src/`.
 - [[Core do projeto]]
 - [[TDD e checks]]
 - [[Prompt - Homepage filtro e ordenacao de pacientes]]
-
-## Escopo desta varredura
-
-- Inclui páginas e componentes que renderizam campos reais de entrada de dados.
-- Inclui campos dinâmicos gerados por schema, quando o componente renderiza o controle final.
-- Exclui testes.
-- Exclui componentes base genéricos de UI em `src/components/ui/*` quando eles são apenas wrappers reutilizáveis e não uma tela de negócio.
-- Em cada item, as "configurações básicas" priorizam: tipo do controle, `value`/binding, formatação, `maxLength`, `required`, `disabled`, `readOnly`, placeholder e observações relevantes.
-
-## `src/pages/Auth.tsx`
-
-- `src/pages/Auth.tsx:93` `owner-document`: `Input` de texto para CPF/CNPJ do owner; usa `formatOwnerDocument(...)`; `required`; `autoFocus`; placeholder de CPF/CNPJ; sem `maxLength` explícito.
-- `src/pages/Auth.tsx:107` `email`: `Input` `type="email"`; `required`; placeholder `seu@email.com`; sem `maxLength` explícito.
-- `src/pages/Auth.tsx:120` `password`: `Input` com `type` alternando entre `password` e `text`; `required`; `minLength={6}`; placeholder visual de senha; sem `maxLength` explícito.
-
-## `src/pages/Index.tsx`
-
-- `src/pages/Index.tsx:132` `search`: `Input` de busca de paciente; placeholder `Buscar paciente...`; `aria-label` para acessibilidade; sem `maxLength` explícito; usado como filtro local.
-
-## `src/components/AgendaWidget.tsx`
-
-- `src/components/AgendaWidget.tsx:277` `patientQuery`: `Input` com `list="agenda-patients"`; funciona como busca + seleção via `datalist`; placeholder `Busque e selecione um paciente`; sem `maxLength`.
-- `src/components/AgendaWidget.tsx:297` `newTitle`: `Input` de título livre para eventos que não são atendimento; placeholder `Digite o título do evento`; sem `maxLength`.
-- `src/components/AgendaWidget.tsx:307` `newTime`: `Input` `type="time"`; controla o horário do evento.
-
-## `src/pages/NovoPaciente.tsx`
-
-- `src/pages/NovoPaciente.tsx:106` `nome`: `Input` de nome completo; `autoFocus`; placeholder `Nome do paciente`; sem `maxLength`.
-- `src/pages/NovoPaciente.tsx:110` `nascimento`: `Input` `type="date"` para data de nascimento.
-- `src/pages/NovoPaciente.tsx:114` `cpf`: `Input` com `formatCpf(...)`; placeholder `000.000.000-00`; `maxLength={14}`.
-- `src/pages/NovoPaciente.tsx:118` `telefone`: `Input` `type="tel"` com `formatPhone(...)`; placeholder `(00) 00000-0000`; `maxLength={15}`.
-- `src/pages/NovoPaciente.tsx:122` `email`: `Input` `type="email"`; placeholder `paciente@email.com`; sem `maxLength`.
-
-## `src/pages/CadastroCompleto.tsx`
-
-- `src/pages/CadastroCompleto.tsx:255` `name`: `Input` de nome completo; obrigatório visual (`*` no label); sem `maxLength` explícito.
-- `src/pages/CadastroCompleto.tsx:262` `date-of-birth`: `Input` `type="date"` para data de nascimento.
-- `src/pages/CadastroCompleto.tsx:266` `cpf`: `Input` com `formatCpf(...)`; placeholder `000.000.000-00`; `maxLength={14}`.
-- `src/pages/CadastroCompleto.tsx:270` `phone`: `Input` com `formatPhone(...)`; placeholder `(00) 00000-0000`; `maxLength={15}`.
-- `src/pages/CadastroCompleto.tsx:274` `email`: `Input` `type="email"`; placeholder `paciente@email.com`; sem `maxLength` explícito.
-- `src/pages/CadastroCompleto.tsx:279` `gender`: `Select`; opções fechadas de gênero; placeholder `Selecione`.
-- `src/pages/CadastroCompleto.tsx:292` `pronoun`: `Select`; opções fechadas de pronome; placeholder `Selecione`.
-- `src/pages/CadastroCompleto.tsx:306` `rg`: `Input` de RG; placeholder `0000000-0`; sem formatação automática.
-- `src/pages/CadastroCompleto.tsx:310` `bloodType`: `Select`; usa `BLOOD_TYPES`.
-- `src/pages/CadastroCompleto.tsx:322` `profession`: `Input` de profissão; placeholder `Ex: Engenheiro(a)`; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:339` `cep`: `Input` com `handleCepLookup(...)`; placeholder `00000-000`; `maxLength={9}`.
-- `src/pages/CadastroCompleto.tsx:346` `country`: `Input` livre de país; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:350` `state`: `Input` livre de estado; placeholder `UF`; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:354` `city`: `Input` livre de cidade; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:359` `neighborhood`: `Input` livre de bairro; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:363` `street`: `Input` livre de rua; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:368` `addressNumber`: `Input` livre; placeholder `Ex: 123`; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:372` `addressComplement`: `Input` livre; placeholder `Apt, Bloco, etc.`; sem `maxLength`.
-- `src/pages/CadastroCompleto.tsx:388` `chronic`: `Textarea`; placeholder de problemas crônicos; `rows={3}`.
-- `src/pages/CadastroCompleto.tsx:392` `surgeries`: `Textarea`; placeholder de cirurgias; `rows={3}`.
-- `src/pages/CadastroCompleto.tsx:396` `meds`: `Textarea`; placeholder de medicamentos; `rows={3}`.
-- `src/pages/CadastroCompleto.tsx:400` `allergies`: `Textarea`; placeholder de alergias; `rows={2}`.
-- `src/pages/CadastroCompleto.tsx:404` `clinicalNotes`: `Textarea`; placeholder de observações clínicas; `rows={3}`.
-
-## `src/pages/CadastroPacienteCompartilhado.tsx`
-
-- `src/pages/CadastroPacienteCompartilhado.tsx:272` `registration-password`: `Input` `type="password"`; `inputMode="numeric"`; `maxLength={6}`; sanitiza para apenas dígitos com `.replace(/\D/g, "").slice(0, 6)`; `disabled` quando o cadastro já está liberado ou vinculado.
-- `src/pages/CadastroPacienteCompartilhado.tsx:321` `name`: `Input` de nome completo; sem `maxLength`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:325` `date-of-birth`: `Input` `type="date"`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:329` `cpf`: `Input` somente leitura; `disabled` e `readOnly`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:333` `phone`: `Input` com `formatPhone(...)`; sem `maxLength` explícito.
-- `src/pages/CadastroPacienteCompartilhado.tsx:337` `email`: `Input` `type="email"`; sem `maxLength`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:341` `gender`: `Select`; opções fixas; placeholder `Selecione`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:354` `pronoun`: `Select`; opções fixas; placeholder `Selecione`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:366` `rg`: `Input` livre; sem formatação.
-- `src/pages/CadastroPacienteCompartilhado.tsx:370` `blood-type`: `Select`; usa `BLOOD_TYPES`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:381` `profession`: `Input` livre; sem `maxLength`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:398` `cep`: `Input` com `handleCepLookup(...)`; placeholder `00000-000`; `maxLength={9}`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:405` `country`: `Input` livre.
-- `src/pages/CadastroPacienteCompartilhado.tsx:409` `state`: `Input` livre.
-- `src/pages/CadastroPacienteCompartilhado.tsx:413` `city`: `Input` livre.
-- `src/pages/CadastroPacienteCompartilhado.tsx:418` `neighborhood`: `Input` livre.
-- `src/pages/CadastroPacienteCompartilhado.tsx:422` `street`: `Input` livre.
-- `src/pages/CadastroPacienteCompartilhado.tsx:427` `address-number`: `Input` livre.
-- `src/pages/CadastroPacienteCompartilhado.tsx:431` `address-complement`: `Input` livre.
-- `src/pages/CadastroPacienteCompartilhado.tsx:447` `chronic`: `Textarea`; `rows={3}`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:451` `surgeries`: `Textarea`; `rows={3}`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:455` `medications`: `Textarea`; `rows={3}`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:459` `allergies`: `Textarea`; `rows={3}`.
-- `src/pages/CadastroPacienteCompartilhado.tsx:463` `clinical-notes`: `Textarea`; `rows={4}`.
-
-## `src/pages/PacienteDetalhe.tsx`
-
-- `src/pages/PacienteDetalhe.tsx:736` `patient.status`: `Select` de status do paciente; pode incluir opção destrutiva de exclusão quando permitido; `disabled` durante atualização/remoção.
-- `src/pages/PacienteDetalhe.tsx:887` `sessions-search`: `Input` de busca por grupo ou atendimento; placeholder `Ex: lombar, rascunho, 18/03/2026`; sem `maxLength`.
-- `src/pages/PacienteDetalhe.tsx:898` `sessionStatusFilter`: `Select` para filtrar atendimentos por status.
-- `src/pages/PacienteDetalhe.tsx:912` `groupStatusFilter`: `Select` para filtrar grupos por status.
-- `src/pages/PacienteDetalhe.tsx:931` `bulkMove`: `Select` de ação em massa para mover atendimentos para grupo; `disabled` sem seleção.
-- `src/pages/PacienteDetalhe.tsx:942` `bulkStatusUpdate`: `Select` de ação em massa para alterar status; `disabled` sem seleção.
-- `src/pages/PacienteDetalhe.tsx:1114` `groupName`: `Input` de nome do grupo; placeholder `Ex: Lombalgia crônica`; sem `maxLength`.
-- `src/pages/PacienteDetalhe.tsx:1118` `groupStatus`: `Select` de status do grupo.
-- `src/pages/PacienteDetalhe.tsx:1131` `groupColor`: `Select` de cor do grupo.
-- `src/pages/PacienteDetalhe.tsx:1213` `shareLink`: `Input` `readOnly` para link de compartilhamento do cadastro.
-
-## `src/pages/SessaoDetalhe.tsx`
-
-- `src/pages/SessaoDetalhe.tsx:608` `queixa`: `Textarea`; `rows={3}`; placeholder da queixa principal; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:624` `sintomas`: `Textarea`; `rows={2}`; placeholder de sintomas; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:664` `observacoes`: `Textarea`; `rows={4}`; placeholder de observações da anamnese; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:691` `short_text` dinamico: `Input` textual; valor vem de `anamnesisFormResponse[field.id]`; placeholder configurável por schema; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:705` `long_text` dinamico: `Textarea`; `rows={4}`; placeholder por schema; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:720` `number` dinamico: `Input` `type="number"`; converte vazio para `null` e valor para `Number(...)`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:769` `select` dinamico: `Select`; opções vêm de `field.options`; placeholder `Selecione`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:811` `table` dinamico: `Input` textual por célula da tabela; placeholder usa o nome da coluna; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:848` `multiple_choice` dinamico: `RadioGroup`; opções renderizadas em matriz rolável; `disabled={locked}` por item.
-- `src/pages/SessaoDetalhe.tsx:881` `checklist` dinamico: `Checkbox` por opção; seleciona array de `string`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:916` `section_selector` dinamico: `Switch` por opção; controla array de seções ativas; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1096` `status`: `Select` do atendimento; opções `rascunho`, `concluído`, `cancelado`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1107` `groupId`: `Select` de grupo; inclui opção `none`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1120` `anamnesisTemplateId`: `Select` de ficha complementar; limpa `anamnesisFormResponse` ao trocar; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1307` `notes`: `Textarea` de anotações rápidas; `rows={2}`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1395` `treatmentBlocks[].name`: `Input` de nome do tratamento; placeholder `Ex: Alongamento lombar`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1404` `treatmentBlocks[].frequency`: `Input` de frequência; placeholder `Ex: a cada 8h`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1413` `treatmentBlocks[].duration`: `Input` de duração; placeholder `Ex: por 15 dias`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1423` `treatmentBlocks[].series`: `Input` textual; placeholder `Opcional`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1432` `treatmentBlocks[].repetitions`: `Input` textual; placeholder `Opcional`; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1444` `treatmentBlocks[].instructions`: `Textarea`; `rows={3}`; placeholder de instruções adicionais; `disabled={locked}`.
-- `src/pages/SessaoDetalhe.tsx:1461` `treatmentGeneralGuidance`: `Textarea`; `rows={5}`; placeholder de orientações gerais; `disabled={locked}`.
-- Controle associado, sem linha no `rg`: `DateFieldInput` e `Slider` tambem são usados aqui para campos dinamicos `date`, `slider`, `pain_score` e `complexity_score`.
-
-## `src/pages/FormularioEditor.tsx`
-
-- `src/pages/FormularioEditor.tsx:321` `templateImportInputRef`: `input` nativo `type="file"`; `accept="application/json,.json"`; `className="sr-only"`; usado para importar modelo.
-- `src/pages/FormularioEditor.tsx:391` `templateName`: `Input` textual do nome da ficha/estrutura; placeholder `Ex: Ficha ortopédica inicial`; `disabled={isBase}`.
-- `src/pages/FormularioEditor.tsx:400` `templateDescription`: `Input` textual de descrição; placeholder `Ex: triagem inicial para dor lombar`; `disabled={isBase}`.
-- `src/pages/FormularioEditor.tsx:471` `field.label`: `Input` textual do rótulo do campo.
-- `src/pages/FormularioEditor.tsx:475` `field.helpText`: `Input` textual de ajuda do campo.
-- `src/pages/FormularioEditor.tsx:483` `field.placeholder`: `Input` textual de placeholder do campo.
-- `src/pages/FormularioEditor.tsx:487` `field.groupKey`: `Select` para agrupar campo em contêiner; placeholder `Sem contêiner`.
-- `src/pages/FormularioEditor.tsx:508` `field.groupKey` para contêineres: `Select` de seção pai; placeholder `Sem seção pai`.
-- `src/pages/FormularioEditor.tsx:528` `field.sectionKey`: `Select` de vinculação condicional; placeholder `Sempre visível`.
-- `src/pages/FormularioEditor.tsx:547` `field.required`: `Checkbox` de obrigatoriedade.
-- `src/pages/FormularioEditor.tsx:558` `field.showInPatientList`: `Checkbox`; aparece apenas no bloco base; controla exibição na lista de atendimentos.
-- `src/pages/FormularioEditor.tsx:588` `field.options` em modo texto: `Textarea`; `rows={4}`; uma opção por linha.
-- `src/pages/FormularioEditor.tsx:602` `field.min`: `Input` `type="number"`; mínimo de slider.
-- `src/pages/FormularioEditor.tsx:610` `field.max`: `Input` `type="number"`; máximo de slider.
-- `src/pages/FormularioEditor.tsx` tambem usa `OptionListEditor` e `OptionMatrixEditor` para opções estruturadas, em vez de `Textarea`, dependendo do tipo do campo.
-- Os componentes `OptionListEditor` e `OptionMatrixEditor` possuem inputs de texto internos para edição de `label` de cada opção, que são disparados via `onChange` para atualizar o array de `options` do campo no editor.
-
-## `src/pages/Configuracoes.tsx`
-
-### Perfil proprio
-
-- `src/pages/Configuracoes.tsx:1818` `ownProfileForm.email`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.email}`; atualiza por `updateOwnProfileField(...)`, que aplica sanitização frontend.
-- `src/pages/Configuracoes.tsx:1837` `ownProfileForm.fullName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.personName}`; pode estar `disabled` por lock de preenchimento único; passa por sanitização.
-- `src/pages/Configuracoes.tsx:1846` `ownProfileForm.socialName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.socialName}`; pode estar `disabled`; passa por sanitização.
-- `src/pages/Configuracoes.tsx:1855` `ownProfileForm.birthDate`: `Input` `type="date"`; pode estar `disabled`.
-- `src/pages/Configuracoes.tsx:1864` `ownProfileForm.cpf`: `Input`; usa `formatCpf(...)`; `maxLength={14}`; pode estar `disabled`.
-- `src/pages/Configuracoes.tsx:1873` `ownProfileForm.phone`: `Input`; usa `formatPhone(...)`; `maxLength={15}`; pode estar `disabled`.
-- `src/pages/Configuracoes.tsx:1882` `ownProfileForm.professionalLicense`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.professionalLicense}`; pode estar `disabled`; passa por sanitização.
-- `src/pages/Configuracoes.tsx:1902` `ownProfileForm.address.cep`: `Input`; usa `formatCep(...)`; `maxLength={9}`; pode estar `disabled`.
-- `src/pages/Configuracoes.tsx:1911` `ownProfileForm.address.street`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.street}`; pode estar `disabled`; passa por sanitização.
-- `src/pages/Configuracoes.tsx:1920` `ownProfileForm.address.number`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.number}`; pode estar `disabled`; passa por sanitização.
-- `src/pages/Configuracoes.tsx:1929` `ownProfileForm.address.complement`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.complement}`; pode estar `disabled`; passa por sanitização.
-- `src/pages/Configuracoes.tsx:1938` `ownProfileForm.address.neighborhood`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.neighborhood}`; pode estar `disabled`; passa por sanitização.
-- `src/pages/Configuracoes.tsx:1947` `ownProfileForm.address.city`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.city}`; pode estar `disabled`; passa por sanitização.
-- `src/pages/Configuracoes.tsx:1956` `ownProfileForm.address.state`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.state}`; pode estar `disabled`; passa por sanitização.
-
-### Perfil da clinica
-
-- `src/pages/Configuracoes.tsx:2030` `clinicName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.clinicName}`; passa por `updateClinicField(...)` com sanitização.
-- `src/pages/Configuracoes.tsx:2038` `clinicLogoUrl`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.clinicLogoUrl}`; placeholder `https://...`; sanitizado.
-- `src/pages/Configuracoes.tsx:2047` `clinicEmail`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.clinicEmail}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2055` `clinicPhone`: `Input`; usa `formatPhone(...)`; `maxLength={15}`.
-- `src/pages/Configuracoes.tsx:2075` `clinicLegalName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.clinicLegalName}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2083` `clinic.cnpj`: `Input` `disabled`.
-- `src/pages/Configuracoes.tsx:2087` `clinic.subscription_plan`: `Input` `disabled`.
-- `src/pages/Configuracoes.tsx:2092` `clinicBusinessHours.summary`: `Textarea`; `maxLength={SETTINGS_TEXT_LIMITS.businessHours}`; usa `sanitizeMultilineInput(...)`; placeholder de horario de funcionamento.
-- `src/pages/Configuracoes.tsx:2115` `clinicAddress.cep`: `Input`; usa `formatCep(...)`; `maxLength={9}`.
-- `src/pages/Configuracoes.tsx:2123` `clinicAddress.street`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.street}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2131` `clinicAddress.number`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.number}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2139` `clinicAddress.complement`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.complement}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2147` `clinicAddress.neighborhood`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.neighborhood}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2155` `clinicAddress.city`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.city}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2163` `clinicAddress.state`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.state}`; sanitizado.
-
-### Colaboradores e acessos
-
-- `src/pages/Configuracoes.tsx:2249` `newSubaccountName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.personName}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2257` `newSubaccountEmail`: `Input` `type="email"`; `maxLength={SETTINGS_TEXT_LIMITS.email}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2266` `newSubaccountPassword`: `Input` `type="text"`; `maxLength={SETTINGS_TEXT_LIMITS.password}`; sanitizado; criação exige pelo menos 6 caracteres.
-- `src/pages/Configuracoes.tsx:2295` `newSubaccountRole`: `Select` de papel operacional; opções `admin`, `professional`, `assistant`, `estagiario`.
-- `src/pages/Configuracoes.tsx:2312` `newSubaccountJobTitle`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.jobTitle}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2320` `newSubaccountSpecialty`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.specialty}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2356` `teamSearchTerm`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.searchTerm}`; placeholder `Nome, e-mail, cargo ou papel`; sanitizado.
-- `src/pages/Configuracoes.tsx:2366` `teamRoleFilter`: `Select` de filtro por papel.
-- `src/pages/Configuracoes.tsx:2381` `teamStatusFilter`: `Select` de filtro por status.
-- `src/pages/Configuracoes.tsx:2394` `teamSortKey`: `Select` de ordenação.
-- `src/pages/Configuracoes.tsx:2524` `editingSubaccount.fullName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.personName}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2532` `editingSubaccount.socialName`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.socialName}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2540` `editingSubaccount.email`: `Input` `type="email"`; `maxLength={SETTINGS_TEXT_LIMITS.email}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2549` `editingSubaccount.birthDate`: `Input` `type="date"`.
-- `src/pages/Configuracoes.tsx:2557` `editingSubaccount.cpf`: `Input`; usa `formatCpf(...)`; `maxLength={14}`.
-- `src/pages/Configuracoes.tsx:2565` `editingSubaccount.professionalLicense`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.professionalLicense}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2573` `editingSubaccount.phone`: `Input`; usa `formatPhone(...)`; `maxLength={15}`.
-- `src/pages/Configuracoes.tsx:2581` `editingSubaccount.specialty`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.specialty}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2589` `editingSubaccount.jobTitle`: `Input`; `maxLength={SETTINGS_TEXT_LIMITS.jobTitle}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2597` `editingSubaccount.operationalRole`: `Select`; `disabled` sem permissão `subaccounts_roles.manage`.
-- `src/pages/Configuracoes.tsx:2615` `editingSubaccount.membershipStatus`: `Select`; opções `active`, `inactive`, `suspended`.
-- `src/pages/Configuracoes.tsx:2631` `editingSubaccount.resetPassword`: `Input` `type="text"`; `maxLength={SETTINGS_TEXT_LIMITS.password}`; placeholder `Deixe em branco para manter`.
-- `src/pages/Configuracoes.tsx:2643` `editingSubaccount.workingHours`: `Textarea`; `maxLength={SETTINGS_TEXT_LIMITS.workingHours}`; placeholder de jornada; sanitizado.
-- `src/pages/Configuracoes.tsx:2653` `editingSubaccount.address.cep`: `Input`; usa `formatCep(...)`; `maxLength={9}`.
-- `src/pages/Configuracoes.tsx:2661` `editingSubaccount.address.street`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.street}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2669` `editingSubaccount.address.number`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.number}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2677` `editingSubaccount.address.complement`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.complement}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2685` `editingSubaccount.address.neighborhood`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.neighborhood}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2693` `editingSubaccount.address.city`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.city}`; sanitizado.
-- `src/pages/Configuracoes.tsx:2701` `editingSubaccount.address.state`: `Input`; `maxLength={ADDRESS_FIELD_LIMITS.state}`; sanitizado.
-
-### Desenvolvimento da equipe
-
-- `src/pages/Configuracoes.tsx:2984` `teamDevelopmentForm.developmentStatus`: `Select`; opções de `DEVELOPMENT_STATUS_OPTIONS`; label exibido por `getDevelopmentStatusMeta(...)`.
-- `src/pages/Configuracoes.tsx:3002` `teamDevelopmentForm.internalLevel`: `Select`; opções de `DEVELOPMENT_LEVEL_OPTIONS`; label exibido por `getDevelopmentLevelMeta(...)`.
-- `src/pages/Configuracoes.tsx:3020` `teamDevelopmentForm.nextReviewAt`: `Input` `type="date"`.
-- `src/pages/Configuracoes.tsx:3035` `teamDevelopmentForm.onboardingFlowRead`: `Switch` booleano.
-- `src/pages/Configuracoes.tsx:3047` `teamDevelopmentForm.onboardingInitialTraining`: `Switch` booleano.
-
-### Seguranca
-
-- `src/pages/Configuracoes.tsx:3134` `securityPassword`: `Input` `type="password"`; placeholder `Mínimo de 6 caracteres`; `maxLength={SETTINGS_TEXT_LIMITS.password}`; sanitizado.
-- `src/pages/Configuracoes.tsx:3144` `securityPasswordConfirm`: `Input` `type="password"`; placeholder `Repita a nova senha`; `maxLength={SETTINGS_TEXT_LIMITS.password}`; sanitizado.
-- `src/pages/Configuracoes.tsx:3287` `securitySettings[...]`: `Switch` repetido para `alertPasswordChanged`, `alertNewLogin`, `alertOtherSessionsEnded`, `alertAccessChange`.
-
-### Suporte
-
-- `src/pages/Configuracoes.tsx:3466` `supportForm.category`: `Select`; categoria do contato de suporte.
-- `src/pages/Configuracoes.tsx:3489` `supportForm.subject`: `Input`; placeholder `Ex: erro ao salvar atendimento`; `maxLength={SETTINGS_TEXT_LIMITS.supportSubject}`; sanitizado.
-- `src/pages/Configuracoes.tsx:3500` `supportForm.message`: `Textarea`; placeholder de descrição do problema; `maxLength={SETTINGS_TEXT_LIMITS.supportMessage}`; sanitizado por `updateSupportFormField(...)`.
-- `src/pages/Configuracoes.tsx:3516` `supportForm.includeContext`: `Switch` booleano para incluir contexto automatico na mensagem.
-
-### Formularios
-
-- `src/pages/Configuracoes.tsx:3598` `templateImportInputRef`: `input` nativo `type="file"`; `accept="application/json,.json"`; `className="sr-only"`; usado para importar modelos de ficha.
-
-## Componentes dinamicos de apoio
-
-### `src/components/anamnesis/DateFieldInput.tsx`
-
-- `src/components/anamnesis/DateFieldInput.tsx:24` `value`: `Input` `type="text"` para data normalizada; `inputMode="numeric"`; placeholder configurável; usa `normalizeDateInput(...)`; pode ficar `disabled`.
-- O componente integra um `Calendar` via `Popover` (linha 48), que ao selecionar uma data dispara `onChange` com `formatDateValue(date)`, atualizando o valor do input.
-
-### `src/components/anamnesis/OptionListEditor.tsx`
-
-- `src/components/anamnesis/OptionListEditor.tsx:27` `option.label`: `Input` textual para lista vertical de opções; placeholder `Opção inicial` ou `Nova opção`; sem `maxLength`.
-
-### `src/components/anamnesis/OptionMatrixEditor.tsx`
-
-- `src/components/anamnesis/OptionMatrixEditor.tsx:32` `option.label`: `Input` textual para matriz de opções; placeholder `Opção inicial` ou `Nova opção`; sem `maxLength`.
-
-## Observacoes gerais
-
-- `Configuracoes.tsx` e utilitários associados hoje são a área mais endurecida no frontend: vários campos já passam por sanitização e limites explícitos via `SETTINGS_TEXT_LIMITS`, `ADDRESS_FIELD_LIMITS`, `sanitizeSingleLineInput(...)` e `sanitizeMultilineInput(...)`.
-- `NovoPaciente.tsx`, `CadastroCompleto.tsx`, `CadastroPacienteCompartilhado.tsx`, `PacienteDetalhe.tsx`, `SessaoDetalhe.tsx`, `Auth.tsx`, `AgendaWidget.tsx` e partes do `FormularioEditor.tsx` ainda têm vários campos livres sem `maxLength` explícito.
-- Há bastante uso de `Select`, `Checkbox`, `Switch` e `RadioGroup` para entradas estruturadas, o que reduz superfície de texto livre em algumas áreas.
-- Para uma segunda passada de endurecimento, os melhores candidatos são: autenticacao, cadastros de paciente, tratamentos em `SessaoDetalhe`, busca/filtros textuais e editor de formularios.

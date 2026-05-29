@@ -5,6 +5,9 @@ import {
   addOptionToVerticalList,
   addTableRow,
   ANAMNESIS_FIELD_LIBRARY,
+  ANAMNESIS_OPTION_LIMIT,
+  ANAMNESIS_SCHEMA_FIELD_LIMIT,
+  ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES,
   buildAnamnesisTemplateExchangeFileName,
   buildAnamnesisTemplateExchangePayload,
   buildTemplateLayout,
@@ -21,11 +24,14 @@ import {
   getVisibleTemplateFields,
   isAnamnesisTemplateSchema,
   isSelectionChoiceFieldType,
+  normalizeAnamnesisSliderRange,
   parseAnamnesisTemplateExchangePayload,
   normalizeOptions,
   removeOptionFromMatrix,
   removeOptionFromVerticalList,
   removeTableRow,
+  sanitizeAnamnesisFormResponse,
+  sanitizeAnamnesisTemplateSchema,
   updateTableCellValue,
   updateOptionMatrixLabel,
   updateVerticalOptionLabel,
@@ -91,6 +97,106 @@ describe("anamnesis forms helpers", () => {
     ]);
   });
 
+  it("sanitizes imported template schemas and option labels", () => {
+    const hostileText = `Cafe\u0301 😀\u0000\u202E${"x".repeat(500)}`;
+    const schema = sanitizeAnamnesisTemplateSchema([
+      {
+        helpText: hostileText,
+        id: hostileText,
+        label: hostileText,
+        options: Array.from({ length: 150 }, (_, index) => ({
+          id: `option-${index}\u202E`,
+          label: hostileText,
+          row: 999,
+        })),
+        placeholder: hostileText,
+        type: "select",
+      },
+    ]);
+
+    expect(Array.from(schema[0].label)).toHaveLength(160);
+    expect(schema[0].label).toContain("Café");
+    expect(schema[0].label).not.toContain("\u0000");
+    expect(schema[0].label).not.toContain("\u202E");
+    expect(schema[0].options).toHaveLength(100);
+    expect(Array.from(schema[0].options?.[0].label ?? "")).toHaveLength(120);
+    expect(schema[0].options?.[0].row).toBe(99);
+    expect(Array.from(normalizeOptions(`${hostileText};${"界".repeat(500)}`)[0].label)).toHaveLength(120);
+  });
+
+  it("caps hostile schemas and normalizes malformed field metadata", () => {
+    const oversizedOptions = Array.from({ length: ANAMNESIS_OPTION_LIMIT + 50 }, (_, index) => ({
+      id: index === 0 ? "dup" : `option_${index}`,
+      label: `Opção ${index} 😀\u202E`,
+      row: 10_000,
+    }));
+    const schema = sanitizeAnamnesisTemplateSchema([
+      { id: "section", label: "Seção", type: "section" },
+      {
+        groupKey: "missing-section",
+        id: "dup",
+        label: "Campo 😀",
+        options: oversizedOptions,
+        sectionKey: "missing-option",
+        systemKey: "patient_name",
+        type: "select",
+        unknown: "<script>",
+      },
+      {
+        id: "dup",
+        label: "\u0000",
+        max: Number.POSITIVE_INFINITY,
+        min: -10_000,
+        type: "slider",
+      },
+      ...Array.from({ length: ANAMNESIS_SCHEMA_FIELD_LIMIT + 20 }, (_, index) => ({
+        id: `extra_${index}`,
+        label: `Extra ${index}`,
+        type: "short_text",
+      })),
+    ]);
+
+    expect(schema).toHaveLength(ANAMNESIS_SCHEMA_FIELD_LIMIT);
+    expect(schema[1]?.id).toBe("dup");
+    expect(schema[1]?.label).toBe("Campo");
+    expect(schema[1]?.groupKey).toBeNull();
+    expect(schema[1]?.sectionKey).toBeNull();
+    expect(schema[1]?.options).toHaveLength(ANAMNESIS_OPTION_LIMIT);
+    expect(schema[1]?.options?.[0]).toEqual(expect.objectContaining({ id: "dup", label: "Opção 0", row: 99 }));
+    expect("unknown" in (schema[1] as Record<string, unknown>)).toBe(false);
+    expect(schema[2]?.id).not.toBe("dup");
+    expect(schema[2]).toEqual(expect.objectContaining({ min: 0, max: 10, type: "slider" }));
+  });
+
+  it("normalizes slider ranges into finite safe bounds", () => {
+    expect(normalizeAnamnesisSliderRange(Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY)).toEqual({
+      max: 10,
+      min: 0,
+    });
+    expect(normalizeAnamnesisSliderRange(80, 20)).toEqual({ max: 81, min: 80 });
+    expect(normalizeAnamnesisSliderRange(250, 500)).toEqual({ max: 100, min: 99 });
+  });
+
+  it("sanitizes dynamic response payloads with absurd values", () => {
+    const hostileText = `Linha\u0000\u202E\n${"x".repeat(3_000)}`;
+    const response = sanitizeAnamnesisFormResponse({
+      field: hostileText,
+      many: Array.from({ length: 80 }, () => hostileText),
+      number: Number.NaN,
+      table: Array.from({ length: 80 }, (_, index) => ({
+        [`column-${index}\u202E`]: hostileText,
+      })),
+    });
+
+    expect(response.field as string).toHaveLength(2_000);
+    expect(response.field as string).not.toContain("\u0000");
+    expect(response.field as string).not.toContain("\u202E");
+    expect(response.number).toBeNull();
+    expect(response.many as string[]).toHaveLength(50);
+    expect((response.many as string[])[0].length).toBeLessThanOrEqual(120);
+    expect(response.table as unknown[]).toHaveLength(50);
+  });
+
   it("builds a default template schema for new forms", () => {
     const schema = createDefaultTemplateSchema();
 
@@ -137,6 +243,12 @@ describe("anamnesis forms helpers", () => {
   it("rejects invalid imported template models", () => {
     expect(() => parseAnamnesisTemplateExchangePayload(JSON.stringify({ foo: "bar" }))).toThrow(
       "Arquivo de modelo inválido"
+    );
+  });
+
+  it("rejects imported template models larger than the accepted envelope", () => {
+    expect(() => parseAnamnesisTemplateExchangePayload("x".repeat(ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES + 1))).toThrow(
+      "Arquivo de modelo muito grande"
     );
   });
 

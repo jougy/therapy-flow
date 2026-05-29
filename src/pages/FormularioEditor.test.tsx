@@ -4,8 +4,9 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import FormularioEditor from "@/pages/FormularioEditor";
 import { useAuth } from "@/hooks/useAuth";
-import { buildAnamnesisTemplateExchangePayload } from "@/lib/anamnesis-forms";
+import { buildAnamnesisTemplateExchangePayload, ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES } from "@/lib/anamnesis-forms";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: vi.fn(),
@@ -200,18 +201,45 @@ describe("FormularioEditor", () => {
 
     expect(updateSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        schema: [
+        schema: expect.arrayContaining([
           expect.objectContaining({
             id: "field_1",
             label: "Sintomas",
             type: "multiple_choice",
             options: [
-              { id: "option_1", label: "Dor" },
-              { id: "option_2", label: "Rigidez" },
+              expect.objectContaining({ id: "option_1", label: "Dor" }),
+              expect.objectContaining({ id: "option_2", label: "Rigidez" }),
             ],
           }),
-        ],
+        ]),
       })
     );
+  });
+
+  it("rejects oversized template imports before reading the file", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes/formularios/novo"]}>
+        <Routes>
+          <Route path="/configuracoes/formularios/:templateId" element={<FormularioEditor />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Nova ficha")).toBeInTheDocument());
+
+    const file = new File(["{}"], "modelo-grande.json", { type: "application/json" });
+    const textSpy = vi.fn(async () => "{}");
+    Object.defineProperties(file, {
+      size: { value: ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES + 1 },
+      text: { value: textSpy },
+    });
+
+    const input = document.querySelector('input[type="file"][accept="application/json,.json"]') as HTMLInputElement | null;
+
+    expect(input).not.toBeNull();
+    fireEvent.change(input!, { target: { files: [file] } });
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" })));
+    expect(textSpy).not.toHaveBeenCalled();
   });
 });

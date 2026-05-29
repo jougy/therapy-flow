@@ -50,6 +50,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import {
   ANAMNESIS_FIELD_LIBRARY,
+  ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES,
   buildAnamnesisTemplateExchangeFileName,
   buildAnamnesisTemplateExchangePayload,
   countTemplateQuestionFields,
@@ -1606,6 +1607,10 @@ const Configuracoes = () => {
       }
 
       try {
+        if (file.size > ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES) {
+          throw new Error("Arquivo de modelo muito grande");
+        }
+
         const raw = await file.text();
         const imported = parseAnamnesisTemplateExchangePayload(raw);
 
@@ -1801,7 +1806,7 @@ const Configuracoes = () => {
           <CardContent>{renderSettingsMenu()}</CardContent>
         </Card>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {activeSection === "profile" && (
             <Card>
               <CardHeader>
@@ -3649,19 +3654,19 @@ const Configuracoes = () => {
                 className="sr-only"
                 onChange={(event) => void handleImportTemplateFile(event)}
               />
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
                   <h2 className="text-xl font-semibold tracking-tight">Gerenciar formulários</h2>
                   <p className="text-sm text-muted-foreground mt-1">
                     Edite o bloco-base universal da anamnese e mantenha as fichas extras usadas nos atendimentos.
                   </p>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Button variant="outline" onClick={() => templateImportInputRef.current?.click()}>
+                <div className="grid gap-2 sm:flex sm:items-center">
+                  <Button variant="outline" className="w-full sm:w-auto" onClick={() => templateImportInputRef.current?.click()}>
                     <Upload className="h-4 w-4 mr-2" />
                     Importar modelo
                   </Button>
-                  <Button onClick={() => navigate("/configuracoes/formularios/novo")}>
+                  <Button className="w-full sm:w-auto" onClick={() => navigate("/configuracoes/formularios/novo")}>
                     <Plus className="h-4 w-4 mr-2" />
                     Nova ficha
                   </Button>
@@ -3669,17 +3674,18 @@ const Configuracoes = () => {
               </div>
 
               <Card>
-                <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-                  <div>
+                <CardHeader className="flex flex-col gap-4 space-y-0 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <CardTitle className="text-base">Bloco padrão universal</CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
                       Esta é a primeira parte obrigatória da anamnese, aplicada em todas as fichas da clínica.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="grid gap-2 sm:flex sm:shrink-0 sm:items-center">
                     <Button
                       variant="outline"
                       size="sm"
+                      className="w-full sm:w-auto"
                       onClick={() =>
                         handleExportTemplateModel({
                           description: "Primeira parte obrigatória aplicada em todas as fichas da clínica.",
@@ -3692,7 +3698,7 @@ const Configuracoes = () => {
                       <Download className="h-4 w-4 mr-2" />
                       Exportar modelo
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => navigate("/configuracoes/formularios/base")}>
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => navigate("/configuracoes/formularios/base")}>
                       <Pencil className="h-4 w-4 mr-2" />
                       Editar bloco padrão
                     </Button>
@@ -3750,17 +3756,18 @@ const Configuracoes = () => {
               {selectedTemplate ? (
                 <>
                   <Card>
-                    <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-                      <div>
+                    <CardHeader className="flex flex-col gap-4 space-y-0 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
                         <CardTitle className="text-xl">{selectedTemplate.name}</CardTitle>
                         <p className="text-sm text-muted-foreground mt-1">
                           {selectedTemplate.description || "Sem descrição cadastrada."}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="grid gap-2 sm:flex sm:shrink-0 sm:items-center">
                         <Button
                           variant="outline"
                           size="sm"
+                          className="w-full sm:w-auto"
                           onClick={() =>
                             handleExportTemplateModel({
                               description: selectedTemplate.description,
@@ -3773,11 +3780,11 @@ const Configuracoes = () => {
                           <Download className="h-4 w-4 mr-2" />
                           Exportar modelo
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => navigate(`/configuracoes/formularios/${selectedTemplate.id}`)}>
+                        <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => navigate(`/configuracoes/formularios/${selectedTemplate.id}`)}>
                           <Pencil className="h-4 w-4 mr-2" />
                           Editar
                         </Button>
-                        <Button variant="destructive" size="sm" onClick={() => void handleDeleteTemplate(selectedTemplate)}>
+                        <Button variant="destructive" size="sm" className="w-full sm:w-auto" onClick={() => void handleDeleteTemplate(selectedTemplate)}>
                           <Trash2 className="h-4 w-4 mr-2" />
                           Excluir
                         </Button>

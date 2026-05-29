@@ -4,20 +4,25 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import type { AnamnesisFieldOption } from "@/lib/anamnesis-forms";
 import {
+  ANAMNESIS_OPTION_LIMIT,
   addOptionMatrixRow,
   addOptionToMatrixRow,
   getOptionMatrixRows,
   removeOptionFromMatrix,
   updateOptionMatrixLabel,
 } from "@/lib/anamnesis-forms";
+import { INPUT_LIMITS } from "@/lib/input-security";
 
 interface OptionMatrixEditorProps {
+  maxOptions?: number;
   onChange: (options: AnamnesisFieldOption[]) => void;
   options?: AnamnesisFieldOption[];
 }
 
-export const OptionMatrixEditor = ({ onChange, options = [] }: OptionMatrixEditorProps) => {
+export const OptionMatrixEditor = ({ maxOptions = ANAMNESIS_OPTION_LIMIT, onChange, options = [] }: OptionMatrixEditorProps) => {
   const rows = getOptionMatrixRows(options);
+  const optionCount = rows.flatMap((row) => row.items).length;
+  const optionLimitReached = optionCount >= maxOptions;
 
   return (
     <div className="space-y-3">
@@ -35,6 +40,7 @@ export const OptionMatrixEditor = ({ onChange, options = [] }: OptionMatrixEdito
                       onChange={(event) => onChange(updateOptionMatrixLabel(rows.flatMap((row) => row.items), option.id, event.target.value))}
                       placeholder={isFirstOption ? "Opção inicial" : "Nova opção"}
                       className="min-w-0"
+                      maxLength={INPUT_LIMITS.formOptionLabel}
                     />
                     {!isFirstOption ? (
                       <Button
@@ -64,6 +70,7 @@ export const OptionMatrixEditor = ({ onChange, options = [] }: OptionMatrixEdito
               size="sm"
               className="shrink-0"
               onClick={() => onChange(addOptionToMatrixRow(rows.flatMap((row) => row.items), rowIndex))}
+              disabled={optionLimitReached}
             >
               <Plus className="mr-2 h-4 w-4" />
               Adicionar à direita
@@ -73,7 +80,7 @@ export const OptionMatrixEditor = ({ onChange, options = [] }: OptionMatrixEdito
         </ScrollArea>
       ))}
 
-      <Button type="button" variant="outline" size="sm" onClick={() => onChange(addOptionMatrixRow(rows.flatMap((row) => row.items)))}>
+      <Button type="button" variant="outline" size="sm" onClick={() => onChange(addOptionMatrixRow(rows.flatMap((row) => row.items)))} disabled={optionLimitReached}>
         <Plus className="mr-2 h-4 w-4" />
         Adicionar linha
       </Button>
