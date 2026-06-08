@@ -4,7 +4,6 @@ import { ArrowLeft, CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole, Mail, UserR
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -100,7 +99,6 @@ const CadastroContaAlfa = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(false);
@@ -109,7 +107,7 @@ const CadastroContaAlfa = () => {
   const cleanCnpj = useMemo(() => onlyDigits(cnpj), [cnpj]);
   const cleanPhone = useMemo(() => onlyDigits(phone), [phone]);
   const clinicDocument = cleanCnpj || cleanCpf;
-  const hasStartedForm = Boolean(ownerName || clinicName || cpf || cnpj || birthDate || phone || email || password || passwordConfirmation || acceptedTerms);
+  const hasStartedForm = Boolean(ownerName || clinicName || cpf || cnpj || birthDate || phone || email || password || passwordConfirmation);
   const formErrors = useMemo(() => {
     const errors: string[] = [];
     if (ownerName && normalizeName(ownerName).length < 3) errors.push("Nome precisa ter pelo menos 3 caracteres.");
@@ -120,9 +118,8 @@ const CadastroContaAlfa = () => {
     if (email && !isValidEmail(normalizeEmail(email))) errors.push("E-mail inválido.");
     if (password && !isStrongEnoughPassword(password)) errors.push("Senha precisa ter pelo menos 8 caracteres, com letras e números.");
     if (passwordConfirmation && password !== passwordConfirmation) errors.push("Confirmação de senha não confere.");
-    if (!acceptedTerms) errors.push("Aceite os termos e condições de uso.");
     return errors;
-  }, [acceptedTerms, birthDate, cleanPhone.length, cnpj, cpf, email, ownerName, password, passwordConfirmation, phone]);
+  }, [birthDate, cleanPhone.length, cnpj, cpf, email, ownerName, password, passwordConfirmation, phone]);
 
   const canSubmit =
     normalizeName(ownerName).length >= 3 &&
@@ -132,8 +129,7 @@ const CadastroContaAlfa = () => {
     isValidBirthDate(birthDate) &&
     [10, 11].includes(cleanPhone.length) &&
     isStrongEnoughPassword(password) &&
-    password === passwordConfirmation &&
-    acceptedTerms;
+    password === passwordConfirmation;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -151,7 +147,6 @@ const CadastroContaAlfa = () => {
         options: {
           emailRedirectTo: `${window.location.origin}/auth`,
           data: {
-            accepted_terms_version: "alpha-2026-06",
             birth_date: birthDate,
             cnpj: cleanCnpj || null,
             cpf: cleanCpf,
@@ -221,9 +216,6 @@ const CadastroContaAlfa = () => {
         <div className="mb-6">
           <p className="text-sm text-muted-foreground">Pluri-Health</p>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Criar conta alfa</h1>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            Cadastro fechado por link para contas liberadas durante a fase alfa. O acesso é gratuito nesta etapa.
-          </p>
         </div>
 
         <Card>
@@ -254,7 +246,7 @@ const CadastroContaAlfa = () => {
             ) : (
               <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
+                  <div className="space-y-2">
                     <Label htmlFor="owner-name">Seu nome</Label>
                     <div className="relative">
                       <UserRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -267,17 +259,6 @@ const CadastroContaAlfa = () => {
                         required
                       />
                     </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="clinic-name">Nome da clínica</Label>
-                    <Input
-                      id="clinic-name"
-                      value={clinicName}
-                      onChange={(event) => setClinicName(sanitizeText(event.target.value, 120))}
-                      maxLength={120}
-                      placeholder="Opcional"
-                    />
                   </div>
 
                   <div className="space-y-2">
@@ -294,6 +275,17 @@ const CadastroContaAlfa = () => {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="clinic-name">Nome da clínica</Label>
+                    <Input
+                      id="clinic-name"
+                      value={clinicName}
+                      onChange={(event) => setClinicName(sanitizeText(event.target.value, 120))}
+                      maxLength={120}
+                      placeholder="Opcional"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="clinic-cnpj">CNPJ da clínica</Label>
                     <Input
                       id="clinic-cnpj"
@@ -302,17 +294,6 @@ const CadastroContaAlfa = () => {
                       inputMode="numeric"
                       maxLength={32}
                       placeholder="Opcional"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="birth-date">Data de nascimento</Label>
-                    <Input
-                      id="birth-date"
-                      type="date"
-                      value={birthDate}
-                      onChange={(event) => setBirthDate(event.target.value)}
-                      required
                     />
                   </div>
 
@@ -330,16 +311,14 @@ const CadastroContaAlfa = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Tipo de conta</Label>
-                    <Select value={plan} onValueChange={(value) => setPlan(value as "clinic" | "solo")}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="clinic">Clínica com equipe</SelectItem>
-                        <SelectItem value="solo">Profissional solo</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="birth-date">Data de nascimento</Label>
+                    <Input
+                      id="birth-date"
+                      type="date"
+                      value={birthDate}
+                      onChange={(event) => setBirthDate(event.target.value)}
+                      required
+                    />
                   </div>
 
                   <div className="space-y-2">
@@ -356,6 +335,19 @@ const CadastroContaAlfa = () => {
                         required
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Tipo de conta</Label>
+                    <Select value={plan} onValueChange={(value) => setPlan(value as "clinic" | "solo")}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="clinic">Clínica com equipe</SelectItem>
+                        <SelectItem value="solo">Profissional solo</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
@@ -397,18 +389,6 @@ const CadastroContaAlfa = () => {
                   </div>
                 </div>
 
-                <div className="flex gap-3 rounded-lg border bg-muted/30 p-3 text-sm">
-                  <Checkbox
-                    id="terms"
-                    checked={acceptedTerms}
-                    onCheckedChange={(value) => setAcceptedTerms(value === true)}
-                    className="mt-1"
-                  />
-                  <Label htmlFor="terms" className="cursor-pointer font-normal leading-relaxed text-muted-foreground">
-                    Aceito os termos e condições de uso da versão alfa. Os termos ainda serão formalizados, mas este aceite registra a concordância com o uso fechado e gratuito nesta etapa.
-                  </Label>
-                </div>
-
                 {hasStartedForm && formErrors.length > 0 && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
                     <p className="font-medium">Pendências para criar a conta</p>
@@ -419,10 +399,6 @@ const CadastroContaAlfa = () => {
                     </ul>
                   </div>
                 )}
-
-                <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                  Esta página não fica visível no login enquanto o produto estiver em alfa. A confirmação por e-mail usa a configuração de Auth do Supabase.
-                </div>
 
                 <Button type="submit" className="w-full sm:w-auto" disabled={loading || !canSubmit}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

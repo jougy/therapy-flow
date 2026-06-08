@@ -48,11 +48,12 @@ import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@
 
 type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 const FormularioEditor = () => {
-  const { templateId } = useParams();
+  const { clinicKey, templateId } = useParams();
   const navigate = useNavigate();
   const { can, clinic, clinicId, user } = useAuth();
-  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
-  const clinicSettingsPath = `${clinicHomePath}/configuracoes`;
+  const routeClinicKey = clinicKey ?? clinic?.route_key;
+  const clinicSettingsPath = routeClinicKey ? `/clinica/${routeClinicKey}/configuracoes` : "/configuracoes";
+  const clinicFormsManagerPath = `${clinicSettingsPath}?secao=forms`;
   const isNew = templateId === "novo";
   const isBase = templateId === "base";
   const canManageForms = can("forms.manage");
@@ -69,11 +70,12 @@ const FormularioEditor = () => {
   const templateImportInputRef = useRef<HTMLInputElement | null>(null);
   const [desktopMenuTop, setDesktopMenuTop] = useState(128);
   const [desktopMenuMaxHeight, setDesktopMenuMaxHeight] = useState(480);
+  const [showFloatingSave, setShowFloatingSave] = useState(false);
 
   useEffect(() => {
     if (!canManageForms) {
       toast({ title: "Acesso restrito", description: "Seu perfil não pode gerenciar formulários.", variant: "destructive" });
-      navigate(clinicSettingsPath);
+      navigate(clinicFormsManagerPath);
       return;
     }
 
@@ -85,7 +87,7 @@ const FormularioEditor = () => {
 
         if (error || !data) {
           toast({ title: "Clínica não encontrada", description: error?.message, variant: "destructive" });
-          navigate(clinicSettingsPath);
+          navigate(clinicFormsManagerPath);
           return;
         }
 
@@ -115,7 +117,7 @@ const FormularioEditor = () => {
 
       if (error || !data) {
         toast({ title: "Formulário não encontrado", description: error?.message, variant: "destructive" });
-        navigate(clinicSettingsPath);
+        navigate(clinicFormsManagerPath);
         return;
       }
 
@@ -127,7 +129,7 @@ const FormularioEditor = () => {
     };
 
     void fetchTemplate();
-  }, [canManageForms, clinicId, clinicSettingsPath, isBase, isNew, navigate, templateId]);
+  }, [canManageForms, clinicFormsManagerPath, clinicId, isBase, isNew, navigate, templateId]);
 
   useEffect(() => {
     const updateDesktopMenuBounds = () => {
@@ -139,6 +141,7 @@ const FormularioEditor = () => {
 
       setDesktopMenuTop(topOffset);
       setDesktopMenuMaxHeight(maxHeight);
+      setShowFloatingSave(window.scrollY > 140);
     };
 
     updateDesktopMenuBounds();
@@ -311,7 +314,7 @@ const FormularioEditor = () => {
 
       toast({ title: "Bloco padrão atualizado" });
       setSaving(false);
-      navigate(clinicSettingsPath);
+      navigate(clinicFormsManagerPath);
       return;
     }
 
@@ -399,7 +402,7 @@ const FormularioEditor = () => {
       />
       <div ref={headerRef} className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(clinicSettingsPath)} aria-label="Voltar para configurações">
+          <Button variant="ghost" size="icon" onClick={() => navigate(clinicFormsManagerPath)} aria-label="Voltar para gerenciar formulários">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -444,6 +447,21 @@ const FormularioEditor = () => {
           <div className="mt-6">{blockMenuContent}</div>
         </SheetContent>
       </Sheet>
+
+      {showFloatingSave && (
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-3 z-50 sm:bottom-5 sm:right-5 lg:bottom-6 lg:right-6">
+          <Button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving || !templateName.trim()}
+            className="h-11 rounded-full px-5 shadow-lg shadow-primary/20"
+            aria-label="Salvar ficha pelo botão fixo"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            Salvar ficha
+          </Button>
+        </div>
+      )}
 
       <div className="space-y-6 lg:relative">
         <div className="hidden lg:block lg:w-[260px]">

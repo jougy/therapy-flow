@@ -1,11 +1,13 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Building2,
   ClipboardList,
+  FileText,
   Gauge,
   Loader2,
+  Pencil,
   Plus,
   Search,
   ShieldCheck,
@@ -69,6 +71,23 @@ type PlatformClinicDetail = {
   counts?: Record<string, number>;
   memberships?: Array<Record<string, unknown>>;
   owner?: Record<string, unknown> | null;
+};
+
+type PlatformClinicFormsSummary = {
+  base?: {
+    field_count?: number;
+    section_count?: number;
+    updated_at?: string | null;
+  };
+  templates?: Array<{
+    description?: string | null;
+    field_count?: number;
+    id: string;
+    name: string;
+    section_count?: number;
+    updated_at?: string | null;
+    usage_count?: number;
+  }>;
 };
 
 type FeatureFlag = {
@@ -152,14 +171,39 @@ const metadataNumber = (metadata: Record<string, unknown> | null | undefined, ke
   return typeof value === "number" ? value : 0;
 };
 
-const toRoute = (item: Pick<PlatformDirectoryItem, "item_id" | "item_type">) => {
-  if (item.item_type === "clinic") return `/platform/clinicas/${item.item_id}`;
+const metadataString = (metadata: Record<string, unknown> | null | undefined, key: string) => {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : "";
+};
+
+const PLATFORM_SELECTED_CLINIC_KEY = "pluri-health.platform.selectedClinicKey";
+const PLATFORM_CLINIC_DETAIL_ROUTE = "/platform/clinicas/detalhes";
+
+const storePlatformClinicKey = (clinicKey: string) => {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(PLATFORM_SELECTED_CLINIC_KEY, clinicKey);
+};
+
+const readStoredPlatformClinicKey = () => {
+  if (typeof window === "undefined") return "";
+  return window.sessionStorage.getItem(PLATFORM_SELECTED_CLINIC_KEY) ?? "";
+};
+
+const clinicMaskedRouteKey = (item: Pick<PlatformDirectoryItem, "item_id" | "item_type" | "metadata">) =>
+  metadataString(item.metadata, "route_key");
+
+const toRoute = (item: Pick<PlatformDirectoryItem, "item_id" | "item_type" | "metadata">) => {
+  if (item.item_type === "clinic") {
+    const routeKey = clinicMaskedRouteKey(item);
+    return routeKey ? PLATFORM_CLINIC_DETAIL_ROUTE : "/platform";
+  }
   if (item.item_type === "account") return `/platform/usuarios/${item.item_id}`;
   return `/platform/pacientes/${item.item_id}`;
 };
 
 const PlatformAdmin = () => {
   const params = useParams();
+  const location = useLocation();
   const detailKind = useMemo<DetailKind | null>(() => {
     if (params["*"]?.startsWith("clinicas/")) return "clinic";
     if (params["*"]?.startsWith("usuarios/")) return "account";
@@ -170,7 +214,14 @@ const PlatformAdmin = () => {
 
   if (detailKind && detailId) {
     if (detailKind === "clinic") {
-      return <PlatformClinicDetailPage clinicId={detailId} />;
+      const locationState = location.state as { clinicKey?: string } | null;
+      const clinicKey = detailId === "detalhes"
+        ? locationState?.clinicKey || readStoredPlatformClinicKey()
+        : detailId;
+
+      if (!clinicKey) return <PlatformDirectoryPage />;
+
+      return <PlatformClinicDetailPage clinicKey={clinicKey} shouldMaskUrl={detailId !== "detalhes"} />;
     }
     return <PlatformPersonDetailPage itemType={detailKind} itemId={detailId} />;
   }
@@ -218,6 +269,26 @@ const PlatformDirectoryPage = () => {
   const [createClinicOpen, setCreateClinicOpen] = useState(false);
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const navigate = useNavigate();
+
+  const openDirectoryItem = useCallback((item: PlatformDirectoryItem) => {
+    if (item.item_type === "clinic") {
+      const clinicKey = clinicMaskedRouteKey(item);
+      if (!clinicKey) {
+        toast({
+          title: "Rota mascarada indisponível",
+          description: "Esta clínica ainda não possui uma rota segura para abrir no painel master.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      storePlatformClinicKey(clinicKey);
+      navigate(PLATFORM_CLINIC_DETAIL_ROUTE, { state: { clinicKey } });
+      return;
+    }
+
+    navigate(toRoute(item));
+  }, [navigate]);
 
   const loadDirectory = useCallback(async () => {
     setLoading(true);
@@ -323,7 +394,7 @@ const PlatformDirectoryPage = () => {
                 <DirectoryCard
                   key={`${item.item_type}-${item.item_id}`}
                   item={item}
-                  onClick={() => navigate(toRoute(item))}
+                  onClick={() => openDirectoryItem(item)}
                 />
               ))}
             </div>
@@ -334,9 +405,10 @@ const PlatformDirectoryPage = () => {
       <CreateClinicDialog
         open={createClinicOpen}
         onOpenChange={setCreateClinicOpen}
-        onCreated={(clinicId) => {
+        onCreated={(clinicRouteKey) => {
           setCreateClinicOpen(false);
-          navigate(`/platform/clinicas/${clinicId}`);
+          storePlatformClinicKey(clinicRouteKey);
+          navigate(PLATFORM_CLINIC_DETAIL_ROUTE, { state: { clinicKey: clinicRouteKey } });
         }}
       />
       <CreateAccountDialog
@@ -351,12 +423,13 @@ const PlatformDirectoryPage = () => {
   );
 };
 
-const PlatformClinicDetailPage = ({ clinicId }: { clinicId: string }) => {
+const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinicKey: string; shouldMaskUrl?: boolean }) => {
   const navigate = useNavigate();
   const { startPlatformClinicAccess } = useAuth();
   const [detail, setDetail] = useState<PlatformClinicDetail | null>(null);
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEvent[]>([]);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
+  const [formsSummary, setFormsSummary] = useState<PlatformClinicFormsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [supportReason, setSupportReason] = useState("");
   const [supportRole, setSupportRole] = useState<SupportRole>("owner");
@@ -370,23 +443,39 @@ const PlatformClinicDetailPage = ({ clinicId }: { clinicId: string }) => {
   const clinic = detail?.clinic ?? null;
   const clinicName = String(clinic?.name ?? "Clínica");
   const routeKey = String(clinic?.route_key ?? "");
+  const resolvedClinicId = String(clinic?.id ?? "");
+
+  useEffect(() => {
+    storePlatformClinicKey(clinicKey);
+    if (shouldMaskUrl) {
+      navigate(PLATFORM_CLINIC_DETAIL_ROUTE, { replace: true, state: { clinicKey } });
+    }
+  }, [clinicKey, navigate, shouldMaskUrl]);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
     try {
-      const [detailRes, auditRes, flagsRes] = await Promise.all([
-        callRpc("get_platform_clinic_detail", { _clinic_id: clinicId }),
-        callRpc("list_platform_audit_events", { _clinic_id: clinicId, _limit: 80 }),
-        callRpc("list_feature_flags", { _clinic_id: clinicId }),
+      const detailRes = await callRpc("get_platform_clinic_detail_by_route_key", { _route_key: clinicKey });
+      if (detailRes.error) throw detailRes.error;
+
+      const loadedDetail = (detailRes.data ?? null) as PlatformClinicDetail | null;
+      const loadedClinicId = String(loadedDetail?.clinic?.id ?? "");
+      if (!loadedClinicId) throw new Error("Clínica não encontrada para esta rota mascarada.");
+
+      const [auditRes, flagsRes, formsRes] = await Promise.all([
+        callRpc("list_platform_audit_events", { _clinic_id: loadedClinicId, _limit: 80 }),
+        callRpc("list_feature_flags", { _clinic_id: loadedClinicId }),
+        callRpc("get_platform_clinic_forms_summary_by_route_key", { _route_key: clinicKey }),
       ]);
 
-      if (detailRes.error) throw detailRes.error;
       if (auditRes.error) throw auditRes.error;
       if (flagsRes.error) throw flagsRes.error;
+      if (formsRes.error) throw formsRes.error;
 
-      setDetail((detailRes.data ?? null) as PlatformClinicDetail | null);
+      setDetail(loadedDetail);
       setAuditEvents((auditRes.data ?? []) as PlatformAuditEvent[]);
       setFeatureFlags((flagsRes.data ?? []) as FeatureFlag[]);
+      setFormsSummary((formsRes.data ?? null) as PlatformClinicFormsSummary | null);
     } catch (error) {
       toast({
         title: "Detalhe da clínica indisponível",
@@ -396,7 +485,7 @@ const PlatformClinicDetailPage = ({ clinicId }: { clinicId: string }) => {
     } finally {
       setLoading(false);
     }
-  }, [clinicId]);
+  }, [clinicKey]);
 
   useEffect(() => {
     void loadDetail();
@@ -404,14 +493,33 @@ const PlatformClinicDetailPage = ({ clinicId }: { clinicId: string }) => {
 
   const handleStartSupport = async () => {
     if (!startPlatformClinicAccess) return;
+    if (!resolvedClinicId) return;
 
     setStartingSupport(true);
     try {
-      const access = await startPlatformClinicAccess(clinicId, supportReason.trim(), supportRole);
+      const access = await startPlatformClinicAccess(resolvedClinicId, supportReason.trim(), supportRole);
       navigate(`/clinica/${access.clinic.route_key}`);
     } catch (error) {
       toast({
         title: "Não foi possível acessar a clínica",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setStartingSupport(false);
+    }
+  };
+
+  const handleOpenClinicTool = async (path: string) => {
+    if (!startPlatformClinicAccess || !resolvedClinicId || !routeKey) return;
+
+    setStartingSupport(true);
+    try {
+      await startPlatformClinicAccess(resolvedClinicId, supportReason.trim(), supportRole);
+      navigate(`/clinica/${routeKey}${path}`);
+    } catch (error) {
+      toast({
+        title: "Não foi possível abrir a ferramenta",
         description: getErrorMessage(error),
         variant: "destructive",
       });
@@ -435,7 +543,7 @@ const PlatformClinicDetailPage = ({ clinicId }: { clinicId: string }) => {
       }
 
       const { error } = await callRpc("upsert_feature_flag", {
-        _clinic_id: clinicId,
+        _clinic_id: resolvedClinicId,
         _description: flagDescription,
         _key: flagKey,
         _reason: flagReason,
@@ -529,7 +637,7 @@ const PlatformClinicDetailPage = ({ clinicId }: { clinicId: string }) => {
               </CardHeader>
               <CardContent className="space-y-2">
                 <PlatformAccountOperations
-                  clinicId={clinicId}
+                  clinicId={resolvedClinicId}
                   compact
                   onDone={() => void loadDetail()}
                   title="Ações do gerenciamento de contas"
@@ -553,15 +661,125 @@ const PlatformClinicDetailPage = ({ clinicId }: { clinicId: string }) => {
 
           <TabsContent value="forms">
             <Card>
-              <CardHeader><CardTitle>Gerenciamento de formulários</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Atalho master para validar fichas, bloco-base universal e templates da clínica. A edição real acontece dentro do contexto da clínica para reaproveitar o editor atual.
-                </p>
-                <Button disabled={!routeKey} onClick={() => navigate(`/clinica/${routeKey}/configuracoes`)}>
-                  <ClipboardList className="mr-2 h-4 w-4" />
-                  Abrir configurações da clínica
-                </Button>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>Gerenciamento de formulários</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Revise modelos, abra edições e ajude a clínica a montar fichas de anamnese.
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:flex sm:items-center">
+                  <Button
+                    disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
+                    variant="outline"
+                    onClick={() => void handleOpenClinicTool("/configuracoes?secao=forms")}
+                  >
+                    <ClipboardList className="mr-2 h-4 w-4" />
+                    Gerenciar na clínica
+                  </Button>
+                  <Button
+                    disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
+                    onClick={() => void handleOpenClinicTool("/configuracoes/formularios/novo")}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nova ficha
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <Label htmlFor="forms-support-reason" className="text-amber-950">Motivo do suporte</Label>
+                  <Textarea
+                    id="forms-support-reason"
+                    className="mt-2 bg-background text-foreground"
+                    value={supportReason}
+                    onChange={(event) => setSupportReason(event.target.value)}
+                    maxLength={1000}
+                    placeholder="Ex: owner solicitou ajuda para montar ficha de avaliação ortopédica"
+                  />
+                  <p className="mt-2 text-xs">
+                    Para editar formulários como suporte, o acesso entra no modo plataforma e fica registrado na auditoria master.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Bloco padrão</p>
+                    <p className="mt-2 text-2xl font-semibold">{formsSummary?.base?.field_count ?? 0}</p>
+                    <p className="text-sm text-muted-foreground">campos cadastrados</p>
+                  </div>
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Seções do bloco</p>
+                    <p className="mt-2 text-2xl font-semibold">{formsSummary?.base?.section_count ?? 0}</p>
+                    <p className="text-sm text-muted-foreground">agrupamentos</p>
+                  </div>
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Fichas extras</p>
+                    <p className="mt-2 text-2xl font-semibold">{formsSummary?.templates?.length ?? 0}</p>
+                    <p className="text-sm text-muted-foreground">modelos disponíveis</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-4">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div>
+                      <p className="font-medium text-foreground">Bloco padrão universal</p>
+                      <p className="text-sm text-muted-foreground">
+                        Estrutura obrigatória aplicada antes das fichas extras em todos os atendimentos.
+                      </p>
+                    </div>
+                    <Button
+                      disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
+                      variant="outline"
+                      onClick={() => void handleOpenClinicTool("/configuracoes/formularios/base")}
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Editar bloco
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <p className="font-medium text-foreground">Fichas extras</p>
+                  </div>
+                  {(formsSummary?.templates ?? []).length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                      Nenhuma ficha extra criada nesta clínica.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {(formsSummary?.templates ?? []).map((template) => (
+                        <div
+                          key={template.id}
+                          className="grid gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate font-medium text-foreground">{template.name}</p>
+                              <Badge variant="outline">{template.usage_count ?? 0} uso(s)</Badge>
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                              {template.description || "Sem descrição cadastrada."}
+                            </p>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              {template.field_count ?? 0} campo(s) • {template.section_count ?? 0} seção(ões)
+                            </p>
+                          </div>
+                          <Button
+                            disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
+                            variant="outline"
+                            onClick={() => void handleOpenClinicTool(`/configuracoes/formularios/${template.id}`)}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Editar
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -637,7 +855,7 @@ const PlatformClinicDetailPage = ({ clinicId }: { clinicId: string }) => {
                     </p>
                   </div>
                 </div>
-                <Button disabled={startingSupport || supportReason.trim().length < 8} onClick={() => void handleStartSupport()}>
+                <Button disabled={startingSupport || !resolvedClinicId || supportReason.trim().length < 8} onClick={() => void handleStartSupport()}>
                   {startingSupport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
                   Entrar na clínica com super menu
                 </Button>
@@ -663,6 +881,20 @@ const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "account" | 
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+
+  const openClinicDetail = useCallback((clinicRouteKey: unknown) => {
+    if (typeof clinicRouteKey !== "string" || !clinicRouteKey.trim()) {
+      toast({
+        title: "Rota mascarada indisponível",
+        description: "Não foi possível abrir esta clínica pelo painel master.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    storePlatformClinicKey(clinicRouteKey);
+    navigate(PLATFORM_CLINIC_DETAIL_ROUTE, { state: { clinicKey: clinicRouteKey } });
+  }, [navigate]);
 
   useEffect(() => {
     const load = async () => {
@@ -732,8 +964,8 @@ const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "account" | 
                       ["Rascunhos", String(detail?.counts?.drafts ?? 0)],
                     ]}
                   />
-                  {detail?.clinic?.id && (
-                    <Button className="w-full" onClick={() => navigate(`/platform/clinicas/${String(detail.clinic?.id)}`)}>
+                  {detail?.clinic?.route_key && (
+                    <Button className="w-full" onClick={() => openClinicDetail(detail.clinic?.route_key)}>
                       Abrir clínica
                     </Button>
                   )}
@@ -746,7 +978,8 @@ const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "account" | 
                       key={String(membership.membership_id)}
                       type="button"
                       className="w-full rounded-lg border p-3 text-left hover:border-primary/50 hover:bg-accent/40"
-                      onClick={() => navigate(`/platform/clinicas/${String(membership.clinic_id)}`)}
+                      onClick={() => openClinicDetail(membership.clinic_route_key)}
+                      disabled={!membership.clinic_route_key}
                     >
                       <p className="font-medium">{String(membership.clinic_name ?? "Clínica")}</p>
                       <p className="text-sm text-muted-foreground">
@@ -833,7 +1066,7 @@ const CreateClinicDialog = ({
   onOpenChange,
   open,
 }: {
-  onCreated: (clinicId: string) => void;
+  onCreated: (clinicRouteKey: string) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) => {
@@ -853,10 +1086,10 @@ const CreateClinicDialog = ({
         _subscription_plan: "clinic",
       });
       if (error) throw error;
-      const result = (data ?? {}) as { clinic_id?: string };
-      if (!result.clinic_id) throw new Error("A clínica foi criada, mas o retorno não trouxe ID.");
+      const result = (data ?? {}) as { clinic_id?: string; route_key?: string };
+      if (!result.route_key) throw new Error("A clínica foi criada, mas o retorno não trouxe rota mascarada.");
       toast({ title: "Clínica criada", description: "A criação foi registrada na auditoria master." });
-      onCreated(result.clinic_id);
+      onCreated(result.route_key);
       setName("");
       setCnpj("");
       setReason("");
