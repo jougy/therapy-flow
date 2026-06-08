@@ -505,7 +505,8 @@ const PacienteDetalhe = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { can, clinicId, operationalRole, user } = useAuth();
+  const { can, clinic, clinicId, operationalRole, user } = useAuth();
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
   const canViewFinancialData = can("treasury.manage");
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
@@ -1027,7 +1028,7 @@ const PacienteDetalhe = () => {
     toast({ title: "Paciente excluído" });
     setDeletePatientDialogOpen(false);
     setDeletingPatient(false);
-    navigate("/", {
+    navigate(clinicHomePath, {
       replace: true,
       state: {
         deletedPatientId: patient.id,
@@ -1301,6 +1302,7 @@ const PacienteDetalhe = () => {
   const isSelectedAgendaDateTimePast = selectedAgendaDateTime ? isAgendaEventDateTimeInPast(selectedAgendaDateTime) : false;
   const canceledSessionsCount = sessions.filter((session) => session.status === "cancelado").length;
   const draftSessionsCount = sessions.filter((session) => session.status === "rascunho").length;
+  const totalSessionsCount = sessions.length;
   const scheduledSessionsCount = sessions.filter((session) => session.scheduled_start_at).length;
   const absentSessionsCount = operationalSummary.absences;
   const delayedSessionsCount = sessions.filter((session) => {
@@ -1334,7 +1336,7 @@ const PacienteDetalhe = () => {
         </span>
       ),
       label: "Absenteísmo",
-      value: `${scheduledSessionsCount} atendimento${scheduledSessionsCount !== 1 ? "s" : ""}`,
+      value: `${totalSessionsCount} atendimento${totalSessionsCount !== 1 ? "s" : ""}`,
       chart: <SummaryInlineChart segments={patientAbsenteeismChartSegments} />,
     },
     {
@@ -1667,7 +1669,7 @@ const PacienteDetalhe = () => {
             <Button
               variant="outline"
               size="icon"
-              onClick={() => navigate("/")}
+              onClick={() => navigate(clinicHomePath)}
               aria-label="Voltar"
               className="mt-1 shrink-0 rounded-full bg-background/80"
             >

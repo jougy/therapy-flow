@@ -11,6 +11,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist__permission_backup_*/
 
 # Local-only config
 *.local
@@ -50,6 +51,7 @@ core/Pluri-Health/
 # Deploy/tool state
 .vercel
 .wrangler
+.playwright-mcp/
 supabase/.temp
 supabase/.branches
 
@@ -66,8 +68,15 @@ supabase/.branches
 
 core
 scripts
+
 control.py
 core
 core
 core/Pluri-Health
 core/Pluri-Health/.obsidian
+scripts
+
+# Versioned local security harness
+!scripts/
+!scripts/security/
+!scripts/security/**

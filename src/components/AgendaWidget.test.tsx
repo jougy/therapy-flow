@@ -277,6 +277,7 @@ describe("AgendaWidget", () => {
       operationalRole: "owner",
       profile: null,
       refreshAuthState: vi.fn(async () => {}),
+      selectClinicByRouteKey: vi.fn(async () => {}),
       session: null,
       signOut: vi.fn(async () => {}),
       subscriptionPlan: "clinic",

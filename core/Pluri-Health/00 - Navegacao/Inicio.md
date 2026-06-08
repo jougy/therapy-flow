@@ -14,6 +14,7 @@ Esta vault concentra a documentacao de produto, operacao e implementacao do proj
 
 ## Comece por aqui
 
+- [[Bootstrap para novos chats Codex]]
 - [[Mapa da vault]]
 - [[Visao geral do produto]]
 - [[Core do projeto]]

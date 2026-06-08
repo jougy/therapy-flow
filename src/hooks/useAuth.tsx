@@ -38,6 +38,7 @@ type Profile = Pick<
 >;
 
 type Membership = Database["public"]["Tables"]["clinic_memberships"]["Row"];
+type PlatformSupportRole = NonNullable<OperationalRole>;
 type ClinicSummary = Pick<
   Database["public"]["Tables"]["clinics"]["Row"],
   | "account_owner_user_id"
@@ -45,25 +46,56 @@ type ClinicSummary = Pick<
   | "id"
   | "logo_url"
   | "name"
+  | "route_key"
   | "subaccount_limit"
   | "subscription_plan"
 >;
 
+export interface AccessibleClinic {
+  membership: Membership;
+  clinic: ClinicSummary;
+  activeAccessCount: number;
+  activeAccessUsers: Array<{
+    device_label?: string | null;
+    email?: string | null;
+    full_name?: string | null;
+    last_seen_at?: string | null;
+    user_id: string;
+  }>;
+}
+
+export interface PlatformClinicAccess {
+  clinic: ClinicSummary;
+  reason: string;
+  simulatedRole: PlatformSupportRole;
+}
+
 interface AuthContextType {
   accountRole: AccountRole;
+  accessibleClinics: AccessibleClinic[];
   can: (capability: AccessCapability) => boolean;
   capabilities: Record<AccessCapability, boolean>;
   clinic: ClinicSummary | null;
   clinicId: string | null;
+  endPlatformClinicAccess?: () => Promise<void>;
   isSuperAdmin: boolean;
+  isPlatformOwner?: boolean;
+  platformMfaVerified?: boolean;
   loading: boolean;
   membership: Membership | null;
   membershipStatus: MembershipStatus | null;
   operationalRole: OperationalRole;
+  platformAccess?: PlatformClinicAccess | null;
+  setPlatformSupportRole?: (role: PlatformSupportRole) => Promise<void>;
   profile: Profile | null;
+  leaveClinic: () => Promise<void>;
+  refreshMfaAssurance: () => Promise<void>;
   refreshAuthState: () => Promise<void>;
+  selectClinic: (clinicId: string) => Promise<void>;
+  selectClinicByRouteKey: (routeKey: string) => Promise<void>;
   session: Session | null;
   signOut: () => Promise<void>;
+  startPlatformClinicAccess?: (clinicId: string, reason: string, simulatedRole?: PlatformSupportRole) => Promise<PlatformClinicAccess>;
   subscriptionPlan: SubscriptionPlan | null;
   user: User | null;
 }
@@ -76,6 +108,7 @@ const DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN: Record<SubscriptionPlan, number> 
   clinic: 4,
   solo: 1,
 };
+const ACTIVE_CLINIC_STORAGE_KEY = "therapy-flow.activeClinicId";
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -100,6 +133,14 @@ const isForcedSignOutError = (error: unknown) => {
   return message.includes("sessao encerrada") || message.includes("sessão encerrada");
 };
 
+const isDuplicateSecuritySessionError = (error: unknown) => {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes("duplicate key value") &&
+    message.includes("user_security_sessions_session_key_key")
+  );
+};
+
 const deriveConcurrentAccessLimit = (clinicSummary: {
   subaccount_limit: number | null;
   subscription_plan: SubscriptionPlan;
@@ -116,19 +157,32 @@ const deriveConcurrentAccessLimit = (clinicSummary: {
 
 const AuthContext = createContext<AuthContextType>({
   accountRole: null,
+  accessibleClinics: [],
   can: () => false,
   capabilities: emptyCapabilities,
   clinic: null,
   clinicId: null,
+  endPlatformClinicAccess: async () => {},
   isSuperAdmin: false,
+  isPlatformOwner: false,
+  platformMfaVerified: false,
   loading: true,
   membership: null,
   membershipStatus: null,
   operationalRole: null,
+  platformAccess: null,
   profile: null,
+  leaveClinic: async () => {},
+  refreshMfaAssurance: async () => {},
   refreshAuthState: async () => {},
+  selectClinic: async () => {},
+  selectClinicByRouteKey: async () => {},
   session: null,
   signOut: async () => {},
+  setPlatformSupportRole: async () => {},
+  startPlatformClinicAccess: async () => {
+    throw new Error("Acesso de plataforma indisponivel.");
+  },
   subscriptionPlan: null,
   user: null,
 });
@@ -141,8 +195,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [clinic, setClinic] = useState<ClinicSummary | null>(null);
+  const [accessibleClinics, setAccessibleClinics] = useState<AccessibleClinic[]>([]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isPlatformOwner, setIsPlatformOwner] = useState(false);
+  const [platformMfaVerified, setPlatformMfaVerified] = useState(false);
+  const [platformAccess, setPlatformAccess] = useState<PlatformClinicAccess | null>(null);
   const currentSecuritySessionKeyRef = useRef<string | null>(null);
+
+  const getStoredActiveClinicId = () => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    return window.sessionStorage.getItem(ACTIVE_CLINIC_STORAGE_KEY);
+  };
+
+  const setStoredActiveClinicId = (clinicId: string | null) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (clinicId) {
+      window.sessionStorage.setItem(ACTIVE_CLINIC_STORAGE_KEY, clinicId);
+      return;
+    }
+
+    window.sessionStorage.removeItem(ACTIVE_CLINIC_STORAGE_KEY);
+  };
 
   const endCurrentSecuritySession = useCallback(async (options?: { keepalive?: boolean; session?: Session | null }) => {
     const nextSession = options?.session ?? session;
@@ -193,48 +272,64 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     if (error) {
+      if (isDuplicateSecuritySessionError(error)) {
+        return;
+      }
+
       throw error;
     }
   }, []);
 
-  const fetchClinicSummary = useCallback(async (clinicId: string) => {
-    const primaryRes = await supabase
-      .from("clinics")
-      .select("account_owner_user_id, concurrent_access_limit, id, logo_url, name, subaccount_limit, subscription_plan")
-      .eq("id", clinicId)
-      .maybeSingle();
+  const fetchAccessibleClinics = useCallback(async (userId: string): Promise<AccessibleClinic[]> => {
+    const { data, error } = await supabase.rpc("list_current_user_clinics");
 
-    if (!primaryRes.error) {
-      return primaryRes.data ?? null;
+    if (error) {
+      logRuntimeError("auth.list_current_user_clinics", error);
+      return [];
     }
 
-    logRuntimeError("auth.fetchClinicSummary.primary", primaryRes.error, {
-      clinicId,
-      note: "Falling back to legacy clinic query without concurrent_access_limit.",
+    return (data ?? []).map((row) => {
+      const subscriptionPlan = row.clinic_subscription_plan as SubscriptionPlan;
+      const subaccountLimit = row.clinic_subaccount_limit ?? DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN[subscriptionPlan];
+
+      return {
+        clinic: {
+          account_owner_user_id: row.clinic_account_owner_user_id,
+          concurrent_access_limit:
+            row.clinic_concurrent_access_limit ??
+            deriveConcurrentAccessLimit({
+              subaccount_limit: subaccountLimit,
+              subscription_plan: subscriptionPlan,
+            }),
+          id: row.clinic_id,
+          logo_url: row.clinic_logo_url,
+          name: row.clinic_name,
+          route_key: row.clinic_route_key,
+          subaccount_limit: subaccountLimit,
+          subscription_plan: subscriptionPlan,
+        },
+        activeAccessCount: row.clinic_active_access_count ?? 0,
+        activeAccessUsers: Array.isArray(row.clinic_active_access_users)
+          ? row.clinic_active_access_users.filter((item): item is AccessibleClinic["activeAccessUsers"][number] => {
+              return !!item && typeof item === "object" && "user_id" in item && typeof item.user_id === "string";
+            })
+          : [],
+        membership: {
+          account_role: row.account_role,
+          clinic_id: row.clinic_id,
+          created_at: row.joined_at,
+          ended_at: null,
+          id: row.membership_id,
+          invited_by: null,
+          is_active: row.is_active,
+          joined_at: row.joined_at,
+          membership_status: row.membership_status,
+          operational_role: row.operational_role,
+          updated_at: row.joined_at,
+          user_id: userId,
+        },
+      };
     });
-
-    const fallbackRes = await supabase
-      .from("clinics")
-      .select("account_owner_user_id, id, logo_url, name, subaccount_limit, subscription_plan")
-      .eq("id", clinicId)
-      .maybeSingle();
-
-    if (fallbackRes.error) {
-      logRuntimeError("auth.fetchClinicSummary.fallback", fallbackRes.error, { clinicId });
-      return null;
-    }
-
-    if (!fallbackRes.data) {
-      return null;
-    }
-
-    return {
-      ...fallbackRes.data,
-      concurrent_access_limit: deriveConcurrentAccessLimit({
-        subaccount_limit: fallbackRes.data.subaccount_limit,
-        subscription_plan: fallbackRes.data.subscription_plan as SubscriptionPlan,
-      }),
-    };
   }, []);
 
   const fetchAuthState = useCallback(async (userId: string, nextSession?: Session | null) => {
@@ -243,27 +338,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", userId);
 
-    try {
-      if (nextSession?.access_token) {
-        await registerSecuritySession(nextSession);
+    const platformOwnerRequest = async () => {
+      try {
+        return await supabase.rpc("is_platform_owner" as never, { _user_id: userId } as never) as {
+          data: unknown;
+          error: unknown;
+        };
+      } catch {
+        return { data: false, error: null };
       }
-    } catch (error) {
-      logRuntimeError("auth.register_current_security_session", error, { userId });
+    };
 
-      if (isSimultaneousAccessLimitError(error) || isForcedSignOutError(error)) {
-        const message = getErrorMessage(error);
-
-        await supabase.auth.signOut();
-        toast({
-          title: isForcedSignOutError(error) ? "Sessão encerrada" : "Acesso simultaneo indisponivel",
-          description: message,
-          variant: "destructive",
-        });
-        throw error;
-      }
-    }
-
-    const [profileRes, roleRes, membershipRes] = await Promise.all([
+    const [profileRes, roleRes, clinicOptions, platformOwnerRes] = await Promise.all([
       supabase
         .from("profiles")
         .select(
@@ -272,31 +358,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .eq("id", userId)
         .maybeSingle(),
       supabase.from("user_roles").select("role").eq("user_id", userId),
-      supabase
-        .from("clinic_memberships")
-        .select("*")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .eq("membership_status", "active")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
+      fetchAccessibleClinics(userId),
+      platformOwnerRequest(),
     ]);
 
     const nextProfile = profileRes.data ?? null;
-    const nextMembership = membershipRes.data ?? null;
-    const nextClinicId = nextMembership?.clinic_id ?? nextProfile?.clinic_id ?? null;
+    const nextIsPlatformOwner = platformOwnerRes.data === true;
+    let nextPlatformMfaVerified = false;
+
+    if (nextIsPlatformOwner) {
+      try {
+        const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        nextPlatformMfaVerified = data.currentLevel === "aal2";
+      } catch {
+        nextPlatformMfaVerified = false;
+      }
+    }
 
     setProfile(nextProfile);
-    setMembership(nextMembership);
+    setAccessibleClinics(clinicOptions);
+    setMembership(null);
+    setClinic(null);
     setIsSuperAdmin((roleRes.data ?? []).some((role) => role.role === "super_admin"));
-
-    if (nextClinicId) {
-      setClinic(await fetchClinicSummary(nextClinicId));
-    } else {
-      setClinic(null);
-    }
-  }, [fetchClinicSummary, registerSecuritySession]);
+    setIsPlatformOwner(nextIsPlatformOwner);
+    setPlatformMfaVerified(nextPlatformMfaVerified);
+    setPlatformAccess(null);
+  }, [fetchAccessibleClinics]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -313,7 +400,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setProfile(null);
         setMembership(null);
         setClinic(null);
+        setAccessibleClinics([]);
+        setStoredActiveClinicId(null);
         setIsSuperAdmin(false);
+        setIsPlatformOwner(false);
+        setPlatformMfaVerified(false);
+        setPlatformAccess(null);
         setLoading(false);
       }
     });
@@ -334,7 +426,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [fetchAuthState]);
 
   useEffect(() => {
-    if (!session?.user || !session.access_token) {
+    if (!session?.user || !session.access_token || !clinic) {
       return;
     }
 
@@ -383,7 +475,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);
     };
-  }, [endCurrentSecuritySession, registerSecuritySession, session]);
+  }, [clinic, endCurrentSecuritySession, registerSecuritySession, session]);
 
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {
@@ -409,6 +501,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     await endCurrentSecuritySession({ session });
+    setStoredActiveClinicId(null);
+    setPlatformAccess(null);
+    setPlatformMfaVerified(false);
     await supabase.auth.signOut();
   };
 
@@ -421,25 +516,207 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await fetchAuthState(nextUserId, session);
   };
 
+  const refreshMfaAssurance = async () => {
+    if (!session?.user || !isPlatformOwner) {
+      setPlatformMfaVerified(false);
+      return;
+    }
+
+    const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+    if (error) {
+      throw error;
+    }
+
+    setPlatformMfaVerified(data.currentLevel === "aal2");
+  };
+
   const can = (capability: AccessCapability) => capabilities[capability];
+
+  const leaveClinic = async () => {
+    await endCurrentSecuritySession({ session });
+    setStoredActiveClinicId(null);
+    setPlatformAccess(null);
+    setMembership(null);
+    setClinic(null);
+  };
+
+  const activateClinic = async (
+    selectedClinic: AccessibleClinic | undefined,
+    activate: () => Promise<{ error: unknown }>
+  ) => {
+    if (!selectedClinic) {
+      throw new Error("Clinica indisponivel para este usuario.");
+    }
+
+    const { error } = await activate();
+
+    if (error) {
+      throw error;
+    }
+
+    setStoredActiveClinicId(selectedClinic.clinic.id);
+    setMembership(selectedClinic.membership);
+    setClinic(selectedClinic.clinic);
+
+    if (session) {
+      try {
+        await registerSecuritySession(session);
+      } catch (error) {
+        logRuntimeError("auth.register_current_security_session", error, {
+          userId: session.user.id,
+        });
+
+        if (isSimultaneousAccessLimitError(error) || isForcedSignOutError(error)) {
+          const message = getErrorMessage(error);
+
+          await supabase.auth.signOut();
+          toast({
+            title: isForcedSignOutError(error) ? "Sessão encerrada" : "Acesso simultaneo indisponivel",
+            description: message,
+            variant: "destructive",
+          });
+          throw error;
+        }
+      }
+    }
+  };
+
+  const selectClinic = async (clinicId: string) => {
+    const selectedClinic = accessibleClinics.find((option) => option.clinic.id === clinicId);
+
+    await activateClinic(selectedClinic, () =>
+      supabase.rpc("set_current_user_active_clinic", {
+        _clinic_id: clinicId,
+      })
+    );
+  };
+
+  const selectClinicByRouteKey = async (routeKey: string) => {
+    const selectedClinic = accessibleClinics.find((option) => option.clinic.route_key === routeKey);
+
+    await activateClinic(selectedClinic, () =>
+      supabase.rpc("set_current_user_active_clinic_by_route_key", {
+        _route_key: routeKey,
+      })
+    );
+  };
+
+  const buildPlatformMembership = (userId: string, clinicId: string, role: PlatformSupportRole): Membership => ({
+    account_role: role === "owner" ? "account_owner" : null,
+    clinic_id: clinicId,
+    created_at: new Date().toISOString(),
+    ended_at: null,
+    id: `platform-${clinicId}`,
+    invited_by: null,
+    is_active: true,
+    joined_at: new Date().toISOString(),
+    membership_status: "active",
+    operational_role: role,
+    updated_at: new Date().toISOString(),
+    user_id: userId,
+  });
+
+  const startPlatformClinicAccess = async (
+    clinicId: string,
+    reason: string,
+    simulatedRole: PlatformSupportRole = "owner"
+  ) => {
+    const { data, error } = await supabase.rpc("start_platform_clinic_access" as never, {
+      _clinic_id: clinicId,
+      _reason: `${reason} | visão simulada: ${simulatedRole}`,
+    } as never) as {
+      data: { clinic?: ClinicSummary; reason?: string } | null;
+      error: unknown;
+    };
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data?.clinic || !session?.user.id) {
+      throw new Error("Acesso de plataforma indisponivel.");
+    }
+
+    const nextAccess = {
+      clinic: data.clinic,
+      reason,
+      simulatedRole,
+    };
+
+    setStoredActiveClinicId(data.clinic.id);
+    setMembership(buildPlatformMembership(session.user.id, data.clinic.id, simulatedRole));
+    setClinic(data.clinic);
+    setPlatformAccess(nextAccess);
+
+    return nextAccess;
+  };
+
+  const setPlatformSupportRole = async (role: PlatformSupportRole) => {
+    if (!platformAccess || !session?.user.id) {
+      return;
+    }
+
+    setMembership(buildPlatformMembership(session.user.id, platformAccess.clinic.id, role));
+    setPlatformAccess({ ...platformAccess, simulatedRole: role });
+
+    try {
+      await supabase.rpc("log_platform_audit_event" as never, {
+        _clinic_id: platformAccess.clinic.id,
+        _event_type: "platform_support_view_changed",
+        _metadata: {
+          simulated_role: role,
+        },
+        _reason: platformAccess.reason,
+      } as never);
+    } catch {
+      // Best-effort audit logging: the support UI should not break if telemetry fails locally.
+    }
+  };
+
+  const endPlatformClinicAccess = async () => {
+    const { error } = await supabase.rpc("end_platform_clinic_access" as never, undefined as never) as {
+      error: unknown;
+    };
+
+    if (error) {
+      throw error;
+    }
+
+    setStoredActiveClinicId(null);
+    setPlatformAccess(null);
+    setMembership(null);
+    setClinic(null);
+  };
 
   return (
     <AuthContext.Provider
       value={{
         accountRole: (membership?.account_role as AccountRole) ?? null,
+        accessibleClinics,
         can,
         capabilities,
         clinic,
-        clinicId: clinic?.id ?? profile?.clinic_id ?? null,
+        clinicId: clinic?.id ?? null,
+        endPlatformClinicAccess,
         isSuperAdmin,
+        isPlatformOwner,
+        platformMfaVerified,
         loading,
         membership,
         membershipStatus: (membership?.membership_status as MembershipStatus) ?? null,
         operationalRole: (membership?.operational_role as OperationalRole) ?? null,
+        platformAccess,
         profile,
+        leaveClinic,
+        refreshMfaAssurance,
         refreshAuthState,
+        selectClinic,
+        selectClinicByRouteKey,
         session,
         signOut,
+        setPlatformSupportRole,
+        startPlatformClinicAccess,
         subscriptionPlan: (clinic?.subscription_plan as SubscriptionPlan) ?? null,
         user: session?.user ?? null,
       }}

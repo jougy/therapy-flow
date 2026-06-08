@@ -14,7 +14,8 @@ import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 
 const NovoPaciente = () => {
   const navigate = useNavigate();
-  const { clinicId, user } = useAuth();
+  const { clinic, clinicId, user } = useAuth();
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
   const [submitting, setSubmitting] = useState(false);
 
   const [nome, setNome] = useState("");
@@ -88,7 +89,7 @@ const NovoPaciente = () => {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="max-w-lg mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/")} aria-label="Voltar">
+        <Button variant="ghost" size="icon" onClick={() => navigate(clinicHomePath)} aria-label="Voltar">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
@@ -127,7 +128,7 @@ const NovoPaciente = () => {
       </Card>
 
       <div className="flex items-center justify-between pb-8">
-        <Button variant="outline" onClick={() => navigate("/")}>
+        <Button variant="outline" onClick={() => navigate(clinicHomePath)}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Cancelar
         </Button>

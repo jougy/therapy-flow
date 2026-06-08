@@ -75,9 +75,6 @@ import {
   formatCpf,
   formatPhone,
   getProfilePublicCodeLabel,
-  isSelfServiceProfileAddressLocked,
-  isSelfServiceProfileDateLocked,
-  isSelfServiceProfileFieldLocked,
   readProfileAddress,
   type ProfileAddress,
 } from "@/lib/profile-settings";
@@ -232,6 +229,38 @@ type SettingsSection =
   | "support"
   | "forms"
   | "signout";
+
+type SettingsSpace = "clinic" | "personal";
+
+const PERSONAL_SETTINGS_SECTION_IDS: SettingsSection[] = [
+  "profile",
+  "security",
+  "support",
+  "signout",
+];
+
+const CLINIC_SETTINGS_SECTION_IDS: SettingsSection[] = [
+  "clinic",
+  "team",
+  "billing",
+  "treasury",
+  "analytics",
+  "forms",
+];
+
+const SETTINGS_SECTION_IDS: SettingsSection[] = [...PERSONAL_SETTINGS_SECTION_IDS, ...CLINIC_SETTINGS_SECTION_IDS];
+
+const getSettingsSpaceForSection = (section: SettingsSection): SettingsSpace =>
+  CLINIC_SETTINGS_SECTION_IDS.includes(section) ? "clinic" : "personal";
+
+const readSettingsStateFromSearch = (search: string): { section: SettingsSection; space: SettingsSpace } => {
+  const section = new URLSearchParams(search).get("secao");
+  const parsedSection = SETTINGS_SECTION_IDS.includes(section as SettingsSection) ? (section as SettingsSection) : "profile";
+  return {
+    section: parsedSection,
+    space: getSettingsSpaceForSection(parsedSection),
+  };
+};
 
 const OPERATIONAL_ROLE_LABELS: Record<SubaccountOperationalRole | "owner", string> = {
   admin: "Admin",
@@ -478,11 +507,10 @@ const areEditableStatesEqual = (left: unknown, right: unknown) => JSON.stringify
 const Configuracoes = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const isPersonalOriginSettings = new URLSearchParams(location.search).get("origem") === "pessoal";
   const { resolvedTheme, setTheme } = useTheme();
   const { accountRole, can, clinic: authClinic, clinicId, operationalRole, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
-  const isClinicOwner = accountRole === "account_owner" || operationalRole === "owner";
-  const isClinicAdmin = operationalRole === "admin";
-  const canSelfManageManagedProfileFields = isClinicOwner || isClinicAdmin;
+  const clinicHomePath = authClinic?.route_key ? `/clinica/${authClinic.route_key}` : "/clinicas";
   const isDarkTheme = resolvedTheme === "dark";
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
@@ -492,7 +520,8 @@ const Configuracoes = () => {
   const [teamDevelopmentProfiles, setTeamDevelopmentProfiles] = useState<TeamDevelopmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<SettingsSection>("profile");
+  const [activeSpace, setActiveSpace] = useState<SettingsSpace>(() => readSettingsStateFromSearch(location.search).space);
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() => readSettingsStateFromSearch(location.search).section);
   const [mobileDescriptionSection, setMobileDescriptionSection] = useState<SettingsSection | null>(null);
   const [savingClinic, setSavingClinic] = useState(false);
   const [savingMembershipId, setSavingMembershipId] = useState<string | null>(null);
@@ -557,7 +586,94 @@ const Configuracoes = () => {
   const templateImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!clinicId || !user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
+    if (!clinicId) {
+      setLoading(true);
+      try {
+        const [securitySettingsRes, securitySessionsRes, securityEventsRes] = await Promise.all([
+          supabase
+            .from("user_security_settings")
+            .select("*")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("user_security_sessions")
+            .select("*")
+            .eq("user_id", user.id)
+            .order("last_seen_at", { ascending: false })
+            .limit(8),
+          supabase
+            .from("security_events")
+            .select("*")
+            .or(`actor_user_id.eq.${user.id},target_user_id.eq.${user.id}`)
+            .order("created_at", { ascending: false })
+            .limit(12),
+        ]);
+
+        setClinic(null);
+        setTemplates([]);
+        setSessions([]);
+        setMemberships([]);
+        setProfiles([]);
+        setTeamDevelopmentProfiles([]);
+        setTeamDevelopmentForms({});
+        setSecuritySettings({
+          alertAccessChange: securitySettingsRes.data?.alert_access_change ?? false,
+          alertNewLogin: securitySettingsRes.data?.alert_new_login ?? true,
+          alertOtherSessionsEnded: securitySettingsRes.data?.alert_other_sessions_ended ?? true,
+          alertPasswordChanged: securitySettingsRes.data?.alert_password_changed ?? true,
+        });
+        setSecuritySessions(securitySessionsRes.data ?? []);
+        setSecurityEvents(securityEventsRes.data ?? []);
+        setAdminSecurityEvents([]);
+        setTeamConcurrentAccessOverview(null);
+        setInitialClinicForm(buildEditableClinicState(null));
+        setClinicName("");
+        setClinicLegalName("");
+        setClinicEmail("");
+        setClinicPhone("");
+        setClinicLogoUrl("");
+        setClinicAddress(readProfileAddress(null));
+        setClinicBusinessHours({ summary: "" });
+
+        const ownProfileRow: TeamProfileRow = {
+          address: profile?.address ?? null,
+          birth_date: profile?.birth_date ?? null,
+          cpf: profile?.cpf ?? null,
+          email: profile?.email ?? user.email ?? null,
+          full_name: profile?.full_name ?? null,
+          id: user.id,
+          job_title: profile?.job_title ?? null,
+          last_password_changed_at: profile?.last_password_changed_at ?? null,
+          last_seen_at: profile?.last_seen_at ?? null,
+          password_temporary: profile?.password_temporary ?? false,
+          phone: profile?.phone ?? null,
+          professional_license: profile?.professional_license ?? null,
+          public_code: profile?.public_code ?? null,
+          social_name: profile?.social_name ?? null,
+          specialty: profile?.specialty ?? null,
+          working_hours: profile?.working_hours ?? null,
+        };
+        const nextOwnProfileForm = buildEditableOwnProfileState(ownProfileRow, user.email);
+        setInitialOwnProfileForm(nextOwnProfileForm);
+        setOwnProfileForm(nextOwnProfileForm);
+        setSelectedTemplateId(null);
+      } catch (error) {
+        logRuntimeError("settings.fetchData.personal.unhandled", error, { userId: user.id });
+        toast({
+          title: "Erro ao carregar configurações pessoais",
+          description: "Confira o console do navegador para mais detalhes.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     setLoading(true);
     try {
@@ -688,11 +804,17 @@ const Configuracoes = () => {
     } finally {
       setLoading(false);
     }
-  }, [can, clinicId, subscriptionPlan, user?.email, user?.id]);
+  }, [can, clinicId, profile, subscriptionPlan, user?.email, user?.id]);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const nextSettingsState = readSettingsStateFromSearch(location.search);
+    setActiveSpace(nextSettingsState.space);
+    setActiveSection(nextSettingsState.section);
+  }, [location.search]);
 
   useEffect(() => {
     if (!session?.access_token) {
@@ -904,10 +1026,10 @@ const Configuracoes = () => {
     () =>
       [
         {
-          description: "Veja os dados básicos da sua conta dentro da clínica.",
+          description: "Dados pessoais da sua identidade global.",
           icon: UserRound,
           id: "profile" as const,
-          title: "Editar perfil",
+          title: "Perfil pessoal",
         },
         can("clinic_profile.manage") && {
           description: "Edite os dados institucionais e o plano atual da clínica.",
@@ -934,7 +1056,7 @@ const Configuracoes = () => {
           title: "Tesouraria",
         },
         {
-          description: "Ajustes de acesso e orientações de proteção da conta.",
+          description: "Senha, sessões e proteções da sua conta.",
           icon: Shield,
           id: "security" as const,
           title: "Segurança",
@@ -960,6 +1082,11 @@ const Configuracoes = () => {
       ]
         .filter(Boolean)
         .filter((section) =>
+          activeSpace === "clinic"
+            ? CLINIC_SETTINGS_SECTION_IDS.includes((section as { id: SettingsSection }).id)
+            : PERSONAL_SETTINGS_SECTION_IDS.includes((section as { id: SettingsSection }).id)
+        )
+        .filter((section) =>
           operationalRole === "estagiario"
             ? ["profile", "security", "signout"].includes((section as { id: SettingsSection }).id)
             : true
@@ -969,7 +1096,7 @@ const Configuracoes = () => {
         id: SettingsSection;
         title: string;
       }>,
-    [can, operationalRole, subscriptionPlan]
+    [activeSpace, can, operationalRole, subscriptionPlan]
   );
 
   useEffect(() => {
@@ -1013,29 +1140,15 @@ const Configuracoes = () => {
     };
   }, [clearMobileLongPress]);
 
-  const ownProfileLocks = useMemo(
-    () =>
-      canSelfManageManagedProfileFields
-        ? {
-            address: false,
-            birthDate: false,
-            cpf: false,
-            fullName: false,
-            phone: false,
-            professionalLicense: false,
-            socialName: false,
-          }
-        : {
-            address: isSelfServiceProfileAddressLocked(profile?.address),
-            birthDate: isSelfServiceProfileDateLocked(profile?.birth_date),
-            cpf: isSelfServiceProfileFieldLocked(profile?.cpf),
-            fullName: isSelfServiceProfileFieldLocked(profile?.full_name),
-            phone: isSelfServiceProfileFieldLocked(profile?.phone),
-            professionalLicense: isSelfServiceProfileFieldLocked(profile?.professional_license),
-            socialName: isSelfServiceProfileFieldLocked(profile?.social_name),
-          },
-    [canSelfManageManagedProfileFields, profile]
-  );
+  const ownProfileLocks = {
+    address: false,
+    birthDate: false,
+    cpf: false,
+    fullName: false,
+    phone: false,
+    professionalLicense: false,
+    socialName: false,
+  };
 
   const activeSecuritySessions = useMemo(
     () => securitySessions.filter((securitySession) => isSecuritySessionActive(securitySession)),
@@ -1739,28 +1852,34 @@ const Configuracoes = () => {
 
   const renderSettingsMenu = (onSelect?: () => void) => (
     <div className="space-y-3">
-      {availableSections.map((item) => (
-        <button
-          key={item.id}
-          className={`w-full rounded-lg border p-3 text-left transition-colors ${
-            activeSection === item.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"
-          }`}
-          onClick={() => {
-            setActiveSection(item.id);
-            onSelect?.();
-          }}
-        >
-          <div className="flex items-start gap-3">
-            <div className="rounded-md bg-muted p-2">
-              <item.icon className="h-4 w-4" />
+      {availableSections.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          Nenhuma opção disponível neste espaço para o seu acesso atual.
+        </div>
+      ) : (
+        availableSections.map((item) => (
+          <button
+            key={item.id}
+            className={`w-full rounded-lg border p-3 text-left transition-colors ${
+              activeSection === item.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"
+            }`}
+            onClick={() => {
+              setActiveSection(item.id);
+              onSelect?.();
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-md bg-muted p-2">
+                <item.icon className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-medium text-sm">{item.title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="font-medium text-sm">{item.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
-            </div>
-          </div>
-        </button>
-      ))}
+          </button>
+        ))
+      )}
     </div>
   );
 
@@ -1776,8 +1895,8 @@ const Configuracoes = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/")}
-            aria-label="Voltar para a página inicial"
+            onClick={() => navigate(isPersonalOriginSettings ? "/clinicas" : clinicHomePath)}
+            aria-label={isPersonalOriginSettings ? "Voltar para o espaço pessoal" : "Voltar para a página inicial"}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -1800,7 +1919,7 @@ const Configuracoes = () => {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              Opções
+              {activeSpace === "clinic" ? "Clínica" : "Espaço pessoal"}
             </CardTitle>
           </CardHeader>
           <CardContent>{renderSettingsMenu()}</CardContent>
@@ -1810,7 +1929,7 @@ const Configuracoes = () => {
           {activeSection === "profile" && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-xl">Editar perfil</CardTitle>
+                <CardTitle className="text-xl">Perfil pessoal</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3">
@@ -1823,9 +1942,15 @@ const Configuracoes = () => {
                     <p className="mt-2 font-medium">{formatLastSeenAt(profile?.last_seen_at ?? null)}</p>
                   </div>
                   <div className="rounded-lg border p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Clínica</p>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Contexto atual</p>
                     <p className="mt-2 font-medium">{authClinic?.name || "Não identificada"}</p>
                   </div>
+                </div>
+
+                <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-4 text-sm text-sky-900">
+                  Estes dados pertencem à sua conta pessoal. A clínica pode criar o primeiro acesso e manter dados
+                  operacionais do vínculo, mas alterações nos seus dados pessoais e de segurança ficam sob seu controle.
+                  Compartilhamentos mais sensíveis com clínicas serão tratados em um fluxo próprio de consentimento e LGPD.
                 </div>
 
                 <div className="rounded-lg border p-4">
@@ -1853,7 +1978,7 @@ const Configuracoes = () => {
                   <div>
                     <p className="font-medium">Dados de acesso</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Ajuste o e-mail principal da conta. A troca de senha fica centralizada na subpagina `Seguranca`.
+                      Ajuste o e-mail principal da sua identidade global. A troca de senha fica centralizada em Segurança.
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
@@ -1872,11 +1997,7 @@ const Configuracoes = () => {
                   <div>
                     <p className="font-medium">Dados pessoais</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {isClinicOwner
-                        ? "Como owner da clínica, você pode ajustar seus dados cadastrais sempre que precisar."
-                        : isClinicAdmin
-                          ? "Como administrador da clínica, você pode ajustar seus dados cadastrais sempre que precisar."
-                          : "Você pode completar seus dados cadastrais uma vez. Depois disso, qualquer ajuste fica restrito à administração da clínica."}
+                      Mantenha aqui os dados cadastrais que pertencem à sua pessoa, independentemente da clínica selecionada.
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1941,11 +2062,7 @@ const Configuracoes = () => {
                   <div>
                     <p className="font-medium">Endereço</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {isClinicOwner
-                        ? "Como owner da clínica, você pode manter seu endereço atualizado sempre que precisar."
-                        : isClinicAdmin
-                          ? "Como administrador da clínica, você pode manter seu endereço atualizado sempre que precisar."
-                          : "Depois de preenchido, o endereço passa a ser gerenciado pela administração da clínica."}
+                      O endereço pertence ao seu perfil pessoal. Futuramente, qualquer compartilhamento com clínicas deverá passar por consentimento explícito.
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -2016,9 +2133,9 @@ const Configuracoes = () => {
                 </div>
                 <div className="rounded-lg border p-4 space-y-4">
                   <div>
-                    <p className="font-medium">Campos administrados pela clínica</p>
+                    <p className="font-medium">Dados operacionais do vínculo com a clínica</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Cargo, especialidade e horário de trabalho são mantidos pela administração em Colaboradores e acessos.
+                      Cargo, especialidade e horário de trabalho descrevem sua atuação neste workspace e ficam em Colaboradores e acessos.
                     </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-3">
@@ -3666,7 +3783,7 @@ const Configuracoes = () => {
                     <Upload className="h-4 w-4 mr-2" />
                     Importar modelo
                   </Button>
-                  <Button className="w-full sm:w-auto" onClick={() => navigate("/configuracoes/formularios/novo")}>
+                  <Button className="w-full sm:w-auto" onClick={() => navigate(`${clinicHomePath}/configuracoes/formularios/novo`)}>
                     <Plus className="h-4 w-4 mr-2" />
                     Nova ficha
                   </Button>
@@ -3698,7 +3815,7 @@ const Configuracoes = () => {
                       <Download className="h-4 w-4 mr-2" />
                       Exportar modelo
                     </Button>
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => navigate("/configuracoes/formularios/base")}>
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => navigate(`${clinicHomePath}/configuracoes/formularios/base`)}>
                       <Pencil className="h-4 w-4 mr-2" />
                       Editar bloco padrão
                     </Button>
@@ -3780,7 +3897,7 @@ const Configuracoes = () => {
                           <Download className="h-4 w-4 mr-2" />
                           Exportar modelo
                         </Button>
-                        <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => navigate(`/configuracoes/formularios/${selectedTemplate.id}`)}>
+                        <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => navigate(`${clinicHomePath}/configuracoes/formularios/${selectedTemplate.id}`)}>
                           <Pencil className="h-4 w-4 mr-2" />
                           Editar
                         </Button>

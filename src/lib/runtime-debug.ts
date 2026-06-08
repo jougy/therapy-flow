@@ -1,4 +1,4 @@
-const RUNTIME_DEBUG_PREFIX = "[Pronto runtime]";
+const RUNTIME_DEBUG_PREFIX = "[Pluri-Health runtime]";
 const GLOBAL_RUNTIME_DEBUG_FLAG = "__PRONTO_RUNTIME_DEBUG_INSTALLED__";
 
 type RuntimeDebugContext = Record<string, unknown> | undefined;

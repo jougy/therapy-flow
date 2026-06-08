@@ -57,7 +57,8 @@ interface AddressData {
 const CadastroCompleto = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { session, user } = useAuth();
+  const { clinic, session, user } = useAuth();
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [patientName, setPatientName] = useState("");
@@ -115,7 +116,7 @@ const CadastroCompleto = () => {
 
     if (error || !data) {
       toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
-      navigate("/");
+      navigate(clinicHomePath);
       return;
     }
 
@@ -156,7 +157,7 @@ const CadastroCompleto = () => {
     setClinicalProfile(parseClinicalProfile(patient.clinical_profile));
     setEmergencyContact(parseEmergencyContact(patient.emergency_contact));
     setLoading(false);
-  }, [id, navigate]);
+  }, [clinicHomePath, id, navigate]);
 
   useEffect(() => { fetchPatient(); }, [fetchPatient]);
 

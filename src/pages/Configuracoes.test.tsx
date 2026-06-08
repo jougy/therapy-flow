@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Configuracoes from "@/pages/Configuracoes";
 import { useAuth } from "@/hooks/useAuth";
@@ -145,6 +145,7 @@ vi.mock("@/integrations/supabase/client", () => {
             logo_url: null,
             name: "Clinica Aurora",
             phone: "11999999999",
+            route_key: "clinic-route-1",
             subaccount_limit: 4,
           };
         case "anamnesis_form_templates":
@@ -242,6 +243,7 @@ const buildUseAuthMock = (overrides = {}) => ({
     id: "clinic-1",
     logo_url: null,
     name: "Clinica Aurora",
+    route_key: "clinic-route-1",
     concurrent_access_limit: 4,
     subaccount_limit: 4,
     subscription_plan: "clinic",
@@ -281,6 +283,7 @@ const buildUseAuthMock = (overrides = {}) => ({
     working_hours: null,
   },
   refreshAuthState: vi.fn(async () => {}),
+  selectClinicByRouteKey: vi.fn(async () => {}),
   session: {
     access_token: "token",
   } as never,
@@ -342,9 +345,102 @@ describe("Configuracoes", () => {
     expect(screen.getByText("jougy@gmx.com")).toBeInTheDocument();
   });
 
+  it("opens the requested settings section from the URL", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Perfil da clínica" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Perfil pessoal" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Clínica" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Perfil pessoal" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Segurança" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Suporte" })).not.toBeInTheDocument();
+  });
+
+  it("keeps personal settings in a separate menu", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes?secao=profile"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Espaço pessoal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Perfil pessoal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Segurança" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Perfil da clínica" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Colaboradores e acessos" })).not.toBeInTheDocument();
+  });
+
+  it("returns to the personal space when profile settings were opened from there", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes?secao=profile&origem=pessoal"]}>
+        <Routes>
+          <Route path="/configuracoes" element={<Configuracoes />} />
+          <Route path="/clinicas" element={<div>Espaço pessoal aberto</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /voltar para o espaço pessoal/i }));
+
+    expect(screen.getByText("Espaço pessoal aberto")).toBeInTheDocument();
+  });
+
+  it("loads personal profile settings for a platform owner without clinic access", async () => {
+    vi.mocked(useAuth).mockReturnValue(buildUseAuthMock({
+      clinic: null,
+      clinicId: null,
+      isPlatformOwner: true,
+      platformMfaVerified: true,
+      profile: {
+        address: null,
+        avatar_url: null,
+        bio: null,
+        birth_date: null,
+        clinic_id: null,
+        cpf: null,
+        email: "master@example.com",
+        full_name: "Master User",
+        job_title: null,
+        last_password_changed_at: null,
+        last_seen_at: null,
+        password_temporary: false,
+        phone: null,
+        professional_license: null,
+        public_code: "001",
+        social_name: null,
+        specialty: null,
+        working_hours: null,
+      },
+      subscriptionPlan: null,
+      user: {
+        email: "master@example.com",
+        id: "master-user",
+      } as never,
+    }) as ReturnType<typeof useAuth>);
+
+    render(
+      <MemoryRouter initialEntries={["/configuracoes?secao=profile&origem=pessoal"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Espaço pessoal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Perfil pessoal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Segurança" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Perfil da clínica" })).not.toBeInTheDocument();
+  });
+
   it("shows simultaneous access language for clinic team settings", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -372,7 +468,7 @@ describe("Configuracoes", () => {
     });
 
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -387,7 +483,7 @@ describe("Configuracoes", () => {
 
   it("shows estagiario role help and operational role controls for team admins", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -402,7 +498,7 @@ describe("Configuracoes", () => {
 
   it("shows import and export controls in manage forms", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -417,7 +513,7 @@ describe("Configuracoes", () => {
 
   it("does not list stale security sessions as other open sessions", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=profile"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -435,7 +531,7 @@ describe("Configuracoes", () => {
 
   it("shows fixed profile actions only after editing and allows canceling changes", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=profile"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -457,14 +553,15 @@ describe("Configuracoes", () => {
 
   it("keeps prefilled own profile fields editable for the clinic owner", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=profile"]}>
         <Configuracoes />
       </MemoryRouter>
     );
 
     await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
 
-    expect(screen.getByText(/como owner da clínica, você pode ajustar seus dados cadastrais/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mantenha aqui os dados cadastrais que pertencem à sua pessoa/i)).toBeInTheDocument();
+    expect(screen.getByText(/Compartilhamentos mais sensíveis com clínicas serão tratados/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue("Alice")).not.toBeDisabled();
     expect(screen.getByDisplayValue("Alice Aurora")).not.toBeDisabled();
     expect(screen.getByDisplayValue("1990-01-01")).not.toBeDisabled();
@@ -491,7 +588,7 @@ describe("Configuracoes", () => {
 
     await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
 
-    expect(screen.getByText(/como owner da clínica, você pode ajustar seus dados cadastrais/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mantenha aqui os dados cadastrais que pertencem à sua pessoa/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue("Alice")).not.toBeDisabled();
     expect(screen.getByDisplayValue("Av. Paulista")).not.toBeDisabled();
   });
@@ -512,14 +609,14 @@ describe("Configuracoes", () => {
 
     await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
 
-    expect(screen.getByText(/como administrador da clínica, você pode ajustar seus dados cadastrais/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mantenha aqui os dados cadastrais que pertencem à sua pessoa/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue("Alice")).not.toBeDisabled();
     expect(screen.getByDisplayValue("Av. Paulista")).not.toBeDisabled();
   });
 
   it("shows fixed clinic actions only after editing and allows canceling changes", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -541,7 +638,7 @@ describe("Configuracoes", () => {
 
   it("shows fixed collaborator actions only after editing and allows canceling the draft", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -562,9 +659,9 @@ describe("Configuracoes", () => {
     expect(screen.queryByRole("region", { name: /ações de edição/i })).not.toBeInTheDocument();
   });
 
-  it("limits oversized clinic and support text inputs before they become payloads", async () => {
+  it("limits oversized clinic text inputs before they become payloads", async () => {
     render(
-      <MemoryRouter initialEntries={["/configuracoes"]}>
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
         <Configuracoes />
       </MemoryRouter>
     );
@@ -575,7 +672,16 @@ describe("Configuracoes", () => {
     const clinicNameInput = await screen.findByDisplayValue("Clinica Aurora");
     fireEvent.change(clinicNameInput, { target: { value: `Clinica ${"😀".repeat(300)}` } });
     expect((clinicNameInput as HTMLInputElement).value).toBe("Clinica ");
+  });
 
+  it("limits oversized support text inputs before they become payloads", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes?secao=profile"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
     fireEvent.click(screen.getAllByRole("button", { name: /suporte/i })[0]);
     const supportMessage = await screen.findByPlaceholderText("Descreva o problema, a dúvida ou a melhoria sugerida.");
     fireEvent.change(supportMessage, { target: { value: `Linha 1\u0000\r\n${"A".repeat(5000)}` } });

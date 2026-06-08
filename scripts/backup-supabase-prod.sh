@@ -21,6 +21,9 @@ Options:
 
 Environment:
   SUPABASE_DB_PASSWORD  Optional remote Postgres password for Supabase db dump.
+  THERAPY_FLOW_BACKUP_NATIVE_PG
+                        Use local pg_dump/pg_dumpall instead of the Supabase
+                        CLI Docker helper. Values: auto, 1, 0. Default: auto.
 
 Examples:
   npm run backup:prod
@@ -85,6 +88,14 @@ run_supabase() {
   fi
 }
 
+native_pg_dump_mode="${THERAPY_FLOW_BACKUP_NATIVE_PG:-auto}"
+
+can_use_native_pg_dump() {
+  [ "$TARGET" = "prod" ] || return 1
+  command -v pg_dump >/dev/null 2>&1 || return 1
+  command -v pg_dumpall >/dev/null 2>&1 || return 1
+}
+
 if [ "$TARGET" = "local" ]; then
   target_flag="--local"
 else
@@ -102,6 +113,20 @@ run_dump() {
   shift 2
 
   echo "Creating $description: $file"
+
+  if [ "$native_pg_dump_mode" = "1" ] || { [ "$native_pg_dump_mode" = "auto" ] && can_use_native_pg_dump; }; then
+    dry_run_output="$(run_supabase db dump $target_flag $password_args "$@" --dry-run --file "$file")"
+    generated_script="$(printf '%s\n' "$dry_run_output" | sed -n '/^#!\/usr\/bin\/env bash/,$p')"
+
+    if [ -z "$generated_script" ]; then
+      echo "Nao foi possivel extrair o script nativo de pg_dump gerado pelo Supabase CLI." >&2
+      return 1
+    fi
+
+    printf '%s\n' "$generated_script" | bash > "$file"
+    return
+  fi
+
   # shellcheck disable=SC2086
   run_supabase db dump $target_flag $password_args "$@" --file "$file"
 }

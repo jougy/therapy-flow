@@ -207,6 +207,7 @@ export type Database = {
           logo_url: string | null
           name: string
           phone: string | null
+          route_key: string
           subaccount_limit: number
           subscription_plan: Database["public"]["Enums"]["subscription_plan"]
           theme: Json | null
@@ -227,6 +228,7 @@ export type Database = {
           logo_url?: string | null
           name?: string
           phone?: string | null
+          route_key?: string
           subaccount_limit?: number
           subscription_plan?: Database["public"]["Enums"]["subscription_plan"]
           theme?: Json | null
@@ -247,6 +249,7 @@ export type Database = {
           logo_url?: string | null
           name?: string
           phone?: string | null
+          route_key?: string
           subaccount_limit?: number
           subscription_plan?: Database["public"]["Enums"]["subscription_plan"]
           theme?: Json | null
@@ -1393,6 +1396,39 @@ export type Database = {
       }
       validate_user_clinic: {
         Args: { _cnpj: string; _user_id: string }
+        Returns: boolean
+      }
+      list_current_user_clinics: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          account_role: Database["public"]["Enums"]["account_role_type"] | null
+          clinic_active_access_count: number
+          clinic_active_access_users: Json
+          clinic_account_owner_user_id: string | null
+          clinic_concurrent_access_limit: number | null
+          clinic_id: string
+          clinic_logo_url: string | null
+          clinic_name: string
+          clinic_route_key: string
+          clinic_subaccount_limit: number
+          clinic_subscription_plan: Database["public"]["Enums"]["subscription_plan"]
+          is_active: boolean
+          joined_at: string
+          membership_id: string
+          membership_status: Database["public"]["Enums"]["membership_status_type"]
+          operational_role: Database["public"]["Enums"]["operational_role_type"]
+        }[]
+      }
+      set_current_user_active_clinic: {
+        Args: { _clinic_id: string }
+        Returns: Json
+      }
+      set_current_user_active_clinic_by_route_key: {
+        Args: { _route_key: string }
+        Returns: Json
+      }
+      user_has_active_clinic_membership: {
+        Args: { _clinic_id: string; _user_id: string }
         Returns: boolean
       }
     }

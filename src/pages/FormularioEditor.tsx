@@ -50,7 +50,9 @@ type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row
 const FormularioEditor = () => {
   const { templateId } = useParams();
   const navigate = useNavigate();
-  const { can, clinicId, user } = useAuth();
+  const { can, clinic, clinicId, user } = useAuth();
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
+  const clinicSettingsPath = `${clinicHomePath}/configuracoes`;
   const isNew = templateId === "novo";
   const isBase = templateId === "base";
   const canManageForms = can("forms.manage");
@@ -71,7 +73,7 @@ const FormularioEditor = () => {
   useEffect(() => {
     if (!canManageForms) {
       toast({ title: "Acesso restrito", description: "Seu perfil não pode gerenciar formulários.", variant: "destructive" });
-      navigate("/configuracoes");
+      navigate(clinicSettingsPath);
       return;
     }
 
@@ -83,7 +85,7 @@ const FormularioEditor = () => {
 
         if (error || !data) {
           toast({ title: "Clínica não encontrada", description: error?.message, variant: "destructive" });
-          navigate("/configuracoes");
+          navigate(clinicSettingsPath);
           return;
         }
 
@@ -113,7 +115,7 @@ const FormularioEditor = () => {
 
       if (error || !data) {
         toast({ title: "Formulário não encontrado", description: error?.message, variant: "destructive" });
-        navigate("/configuracoes");
+        navigate(clinicSettingsPath);
         return;
       }
 
@@ -125,7 +127,7 @@ const FormularioEditor = () => {
     };
 
     void fetchTemplate();
-  }, [canManageForms, clinicId, isBase, isNew, navigate, templateId]);
+  }, [canManageForms, clinicId, clinicSettingsPath, isBase, isNew, navigate, templateId]);
 
   useEffect(() => {
     const updateDesktopMenuBounds = () => {
@@ -309,7 +311,7 @@ const FormularioEditor = () => {
 
       toast({ title: "Bloco padrão atualizado" });
       setSaving(false);
-      navigate("/configuracoes");
+      navigate(clinicSettingsPath);
       return;
     }
 
@@ -337,7 +339,7 @@ const FormularioEditor = () => {
 
     toast({ title: isNew ? "Formulário criado" : "Formulário atualizado" });
     setSaving(false);
-    navigate(`/configuracoes/formularios/${data.id}`);
+    navigate(`${clinicSettingsPath}/formularios/${data.id}`);
   };
 
   const handleImportDraftModel = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -397,7 +399,7 @@ const FormularioEditor = () => {
       />
       <div ref={headerRef} className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/configuracoes")} aria-label="Voltar para configurações">
+          <Button variant="ghost" size="icon" onClick={() => navigate(clinicSettingsPath)} aria-label="Voltar para configurações">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
