@@ -50,6 +50,7 @@ export interface HomePatientRecord {
 
 export interface HomePatientGroupRecord {
   color: string;
+  id?: string;
   name: string;
   patient_id: string;
   status: string | null;
@@ -58,6 +59,7 @@ export interface HomePatientGroupRecord {
 export interface HomeSessionRecord {
   amount_charged_cents?: number | null;
   amount_paid_cents?: number | null;
+  group_id?: string | null;
   id: string;
   patient_id: string;
   payment_method?: string | null;

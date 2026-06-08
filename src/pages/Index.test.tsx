@@ -171,6 +171,7 @@ describe("Index", () => {
       operationalRole: "owner",
       profile: null,
       refreshAuthState: vi.fn(async () => {}),
+      selectClinicByRouteKey: vi.fn(async () => {}),
       session: null,
       signOut: vi.fn(async () => {}),
       subscriptionPlan: "clinic",
@@ -221,6 +222,25 @@ describe("Index", () => {
     expect(screen.getByText("Bruno Costa")).toBeInTheDocument();
     expect(screen.getByText("Daniela Rocha")).toBeInTheDocument();
     expect(screen.getByText("Eduardo Alves")).toBeInTheDocument();
+  });
+
+  it("switches from patients to a global sessions list", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Index />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Maria Silva");
+
+    fireEvent.click(screen.getAllByRole("tab", { name: /atendimentos/i })[0]);
+
+    expect(await screen.findByText("4 atendimentos encontrados")).toBeInTheDocument();
+    expect(screen.getByText("João Souza")).toBeInTheDocument();
+    expect(screen.getByText("Carla Lima")).toBeInTheDocument();
+    expect(screen.getAllByText(/concluído/i).length).toBeGreaterThan(0);
   });
 
   it("shows the patient list when a status filter is applied", async () => {
@@ -353,6 +373,7 @@ describe("Index", () => {
       operationalRole: "owner",
       profile: null,
       refreshAuthState: vi.fn(async () => {}),
+      selectClinicByRouteKey: vi.fn(async () => {}),
       session: null,
       signOut: vi.fn(async () => {}),
       subscriptionPlan: "clinic",

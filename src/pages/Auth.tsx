@@ -1,56 +1,29 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Building2, Eye, EyeOff, Loader2, LogIn, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, Loader2, LogIn, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
-import { formatOwnerDocument, getOwnerDocumentDigits, isOwnerDocumentValid } from "@/lib/owner-document";
 
 const Auth = () => {
-  const [ownerDocument, setOwnerDocument] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const ownerDocumentDigits = getOwnerDocumentDigits(ownerDocument);
-  const isOwnerDocumentAccepted = isOwnerDocumentValid(ownerDocument);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!isOwnerDocumentAccepted) {
-      toast({
-        title: "Documento inválido",
-        description: "Informe um CPF com 11 dígitos ou um CNPJ com 14 dígitos.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       toast({ title: "Erro ao entrar", description: error.message, variant: "destructive" });
       setLoading(false);
       return;
-    }
-
-    const { data: valid } = await supabase.rpc("validate_user_clinic", {
-      _cnpj: ownerDocumentDigits,
-      _user_id: data.user.id,
-    });
-
-    if (!valid) {
-      await supabase.auth.signOut();
-      toast({
-        title: "Documento incorreto",
-        description: "Este CPF ou CNPJ não corresponde à sua conta.",
-        variant: "destructive",
-      });
     }
 
     setLoading(false);
@@ -65,53 +38,32 @@ const Auth = () => {
         className="w-full max-w-sm"
       >
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Pronto Health - Fisio</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Pluri-Health</h1>
           <p className="text-sm text-muted-foreground mt-1">Gestão clínica simplificada</p>
         </div>
 
         <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">Entrar</CardTitle>
-            <CardDescription>Acesso restrito. As contas são liberadas internamente pelo administrador.</CardDescription>
+            <CardDescription>Use seu e-mail e senha. A clínica será escolhida na próxima etapa.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                <div className="space-y-1">
-                  <p className="font-medium text-foreground">Cadastro público desativado</p>
-                  <p>Se você ainda não tem acesso, a liberação precisa ser feita internamente pelo administrador da plataforma.</p>
-                </div>
-              </div>
-            </div>
-
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="owner-document">CPF ou CNPJ do owner</Label>
+                <Label htmlFor="email">E-mail</Label>
                 <div className="relative">
-                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="owner-document"
-                    value={ownerDocument}
-                    onChange={(e) => setOwnerDocument(formatOwnerDocument(e.target.value))}
-                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu@email.com"
                     required
                     className="pl-9"
                     autoFocus
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">E-mail</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  required
-                />
               </div>
 
               <div className="space-y-2">
@@ -137,7 +89,7 @@ const Auth = () => {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading || !isOwnerDocumentAccepted}>
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (

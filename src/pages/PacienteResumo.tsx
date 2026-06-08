@@ -211,7 +211,8 @@ const ClinicalHistoryNavigator = ({
 const PacienteResumo = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { clinicId, user } = useAuth();
+  const { clinic, clinicId, user } = useAuth();
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
@@ -232,7 +233,7 @@ const PacienteResumo = () => {
 
     if (patientRes.error || !patientRes.data) {
       toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
-      navigate("/");
+      navigate(clinicHomePath);
       return;
     }
 
@@ -240,7 +241,7 @@ const PacienteResumo = () => {
     setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
     setClinicalSnapshots((snapshotsRes.data ?? []) as PatientClinicalSnapshot[]);
     setLoading(false);
-  }, [clinicId, id, navigate]);
+  }, [clinicHomePath, clinicId, id, navigate]);
 
   useEffect(() => {
     void fetchData();

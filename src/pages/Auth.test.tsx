@@ -5,17 +5,13 @@ import Auth from "@/pages/Auth";
 
 const supabaseMocks = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
-  signOut: vi.fn(),
-  rpc: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: {
       signInWithPassword: supabaseMocks.signInWithPassword,
-      signOut: supabaseMocks.signOut,
     },
-    rpc: supabaseMocks.rpc,
   },
 }));
 
@@ -24,12 +20,11 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 describe("Auth", () => {
-  it("accepts CPF as owner document for login validation", async () => {
+  it("authenticates with email and password before clinic selection", async () => {
     supabaseMocks.signInWithPassword.mockResolvedValue({
       data: { user: { id: "user-1" } },
       error: null,
     });
-    supabaseMocks.rpc.mockResolvedValue({ data: true, error: null });
 
     render(
       <MemoryRouter initialEntries={["/auth"]}>
@@ -37,7 +32,6 @@ describe("Auth", () => {
       </MemoryRouter>
     );
 
-    fireEvent.change(screen.getByLabelText(/cpf ou cnpj/i), { target: { value: "12345678901" } });
     fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: "owner@example.com" } });
     fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: /entrar/i }));
@@ -48,11 +42,6 @@ describe("Auth", () => {
         password: "123456",
       });
     });
-
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith("validate_user_clinic", {
-      _cnpj: "12345678901",
-      _user_id: "user-1",
-    });
   });
 
   it("renders a closed-access login screen without signup or demo accounts", () => {
@@ -62,10 +51,11 @@ describe("Auth", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Pronto Health - Fisio")).toBeInTheDocument();
+    expect(screen.getByText("Pluri-Health")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument();
-    expect(screen.getByText(/acesso restrito/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/cpf ou cnpj/i)).toBeInTheDocument();
+    expect(screen.getByText(/próxima etapa/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/e-mail/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/cpf ou cnpj/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/criar conta/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/cadastre-se/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/logins de teste locais/i)).not.toBeInTheDocument();

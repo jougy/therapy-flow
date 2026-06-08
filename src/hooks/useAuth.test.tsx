@@ -88,6 +88,7 @@ const supabaseMocks = vi.hoisted(() => {
                   id: "clinic-1",
                   logo_url: null,
                   name: "Clinica Example",
+                  route_key: "clinic-route-1",
                   subaccount_limit: 4,
                   subscription_plan: "clinic",
                 })
@@ -126,12 +127,39 @@ const supabaseMocks = vi.hoisted(() => {
       };
     }),
     rpc: vi.fn((fn: string) => {
-      if (fn === "register_current_security_session") {
-        return createQueryResult(null, { message: "function public.register_current_security_session does not exist" });
-      }
+    if (fn === "register_current_security_session") {
+      return createQueryResult(null, { message: "function public.register_current_security_session does not exist" });
+    }
 
-      throw new Error(`Unexpected rpc "${fn}"`);
-    }),
+    if (fn === "list_current_user_clinics") {
+      return createQueryResult([
+        {
+          account_role: "account_owner",
+          clinic_active_access_count: 0,
+          clinic_active_access_users: [],
+          clinic_account_owner_user_id: "user-1",
+          clinic_concurrent_access_limit: null,
+          clinic_id: "clinic-1",
+          clinic_logo_url: null,
+          clinic_name: "Clinica Example",
+          clinic_route_key: "clinic-route-1",
+          clinic_subaccount_limit: 4,
+          clinic_subscription_plan: "clinic",
+          is_active: true,
+          joined_at: "2026-03-31T00:00:00.000Z",
+          membership_id: "membership-1",
+          membership_status: "active",
+          operational_role: "owner",
+        },
+      ]);
+    }
+
+    if (fn === "set_current_user_active_clinic") {
+      return createQueryResult({ clinic_id: "clinic-1" });
+    }
+
+    throw new Error(`Unexpected rpc "${fn}"`);
+  }),
     signOut: vi.fn(() => createQueryResult(null)),
   };
 });
@@ -153,13 +181,14 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 const AuthStateProbe = () => {
-  const { clinic, loading, session } = useAuth();
+  const { accessibleClinics, clinic, loading, session } = useAuth();
 
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="session">{session ? "signed-in" : "signed-out"}</span>
       <span data-testid="limit">{clinic?.concurrent_access_limit ?? "missing"}</span>
+      <span data-testid="clinics">{accessibleClinics.length}</span>
     </div>
   );
 };
@@ -167,9 +196,10 @@ const AuthStateProbe = () => {
 describe("useAuth runtime resilience", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.setItem("therapy-flow.activeClinicId", "clinic-1");
   });
 
-  it("does not crash or sign out when the backend is still on the old schema", async () => {
+  it("loads accessible clinics without restoring an active clinic implicitly", async () => {
     render(
       <AuthProvider>
         <AuthStateProbe />
@@ -181,7 +211,8 @@ describe("useAuth runtime resilience", () => {
     });
 
     expect(screen.getByTestId("session")).toHaveTextContent("signed-in");
-    expect(screen.getByTestId("limit")).toHaveTextContent("4");
+    expect(screen.getByTestId("clinics")).toHaveTextContent("1");
+    expect(screen.getByTestId("limit")).toHaveTextContent("missing");
     expect(supabaseMocks.signOut).not.toHaveBeenCalled();
   });
 });

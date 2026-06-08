@@ -353,7 +353,16 @@ describe("PacienteDetalhe", () => {
       accountRole: "account_owner",
       can: (capability) => capability !== "treasury.manage",
       capabilities: {} as never,
-      clinic: null,
+      clinic: {
+        account_owner_user_id: "owner-1",
+        concurrent_access_limit: 4,
+        id: "clinic-1",
+        logo_url: null,
+        name: "Clinica Aurora",
+        route_key: "clinic-route-1",
+        subaccount_limit: 4,
+        subscription_plan: "clinic",
+      },
       clinicId: "clinic-1",
       isSuperAdmin: false,
       loading: false,
@@ -362,6 +371,7 @@ describe("PacienteDetalhe", () => {
       operationalRole: "owner",
       profile: null,
       refreshAuthState: vi.fn(async () => {}),
+      selectClinicByRouteKey: vi.fn(async () => {}),
       session: null,
       signOut: vi.fn(async () => {}),
       subscriptionPlan: "clinic",
@@ -548,7 +558,16 @@ describe("PacienteDetalhe", () => {
       accountRole: null,
       can: () => false,
       capabilities: {} as never,
-      clinic: null,
+      clinic: {
+        account_owner_user_id: "owner-1",
+        concurrent_access_limit: 4,
+        id: "clinic-1",
+        logo_url: null,
+        name: "Clinica Aurora",
+        route_key: "clinic-route-1",
+        subaccount_limit: 4,
+        subscription_plan: "clinic",
+      },
       clinicId: "clinic-1",
       isSuperAdmin: false,
       loading: false,
@@ -557,6 +576,7 @@ describe("PacienteDetalhe", () => {
       operationalRole: "professional",
       profile: null,
       refreshAuthState: vi.fn(async () => {}),
+      selectClinicByRouteKey: vi.fn(async () => {}),
       session: null,
       signOut: vi.fn(async () => {}),
       subscriptionPlan: "clinic",
@@ -594,7 +614,7 @@ describe("PacienteDetalhe", () => {
       ]);
     });
 
-    expect(navigateMock).toHaveBeenCalledWith("/", {
+    expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1", {
       replace: true,
       state: {
         deletedPatientId: "patient-1",

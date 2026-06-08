@@ -10,7 +10,7 @@ import {
 } from "@/lib/session-documents";
 
 const baseData: SessionDocumentData = {
-  appName: "Pronto Health - Fisio",
+  appName: "Pluri-Health",
   patientName: "Maria Souza",
   sessionDate: "25/03/2026",
   generatedAt: "26/03/2026 16:10",
@@ -150,7 +150,7 @@ describe("buildSessionDocument", () => {
     const firstIndicatorIndex = html.indexOf('class="indicator-grid"');
 
     expect(html).toContain("Ins. Guardians of the Amazon");
-    expect(html).toContain("Pronto Health - Fisio");
+    expect(html).toContain("Pluri-Health");
     expect(html).toContain("Instituto Guardians of the Amazon");
     expect(html).toContain("CREFITO 12345");
     expect(html).toContain("Maria Souza");

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronUp, ListFilter, Loader2, PieChart, Plus, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, FileText, ListFilter, Loader2, PieChart, Plus, Search, UsersRound, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,9 +39,9 @@ import {
 } from "@/lib/home-patients-view";
 import { getLegacyGroupHex } from "@/lib/group-colors";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
-import { PATIENT_ORIGIN_OPTIONS, type PatientOriginType } from "@/lib/patient-origin";
+import { normalizePatientOriginType, PATIENT_ORIGIN_OPTIONS, type PatientOriginType } from "@/lib/patient-origin";
 import { AGENDA_EVENTS_UPDATED_EVENT } from "@/lib/agenda-events";
-import { MAX_SESSION_AMOUNT_CENTS, PAYMENT_METHOD_OPTIONS } from "@/lib/session-operations";
+import { formatMoneyCents, getPaymentMethodLabel, getPaymentStatusLabel, MAX_SESSION_AMOUNT_CENTS, PAYMENT_METHOD_OPTIONS } from "@/lib/session-operations";
 
 type ClinicMembershipRow = Database["public"]["Tables"]["clinic_memberships"]["Row"];
 type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -49,6 +49,7 @@ type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type PatientGroupWithColorSlot = PatientGroupRow & {
   clinic_group_color_slots?: { color_hex: string | null } | null;
 };
+type HomeListMode = "patients" | "sessions";
 
 const normalize = (value: string | null | undefined) =>
   (value ?? "")
@@ -99,6 +100,26 @@ const formatMoney = (cents: number) =>
   new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(
     Number.isFinite(cents) ? cents / 100 : 0,
   );
+
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) {
+    return "Sem data";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Data inválida";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+};
 
 const sanitizeDashboardCents = (value: number | null | undefined) => {
   if (!Number.isFinite(value ?? 0)) {
@@ -224,6 +245,7 @@ const Index = () => {
   const [sessionDateFrom, setSessionDateFrom] = useState("");
   const [sessionDateTo, setSessionDateTo] = useState("");
   const [sortKey, setSortKey] = useState<HomePatientSortKey>(DEFAULT_HOME_PATIENT_SORT_KEY);
+  const [listMode, setListMode] = useState<HomeListMode>("patients");
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [dashboardDialogOpen, setDashboardDialogOpen] = useState(false);
   const [toolbarFixed, setToolbarFixed] = useState(false);
@@ -329,6 +351,149 @@ const Index = () => {
     sortKey: DEFAULT_HOME_PATIENT_SORT_KEY,
     showFinancialData: canViewFinancialData,
   });
+  const patientById = useMemo(() => new Map(patients.map((patient) => [patient.id, patient])), [patients]);
+  const groupById = useMemo(
+    () => new Map(patientGroups.filter((group) => group.id).map((group) => [group.id as string, group])),
+    [patientGroups],
+  );
+  const patientGroupsByPatientId = useMemo(() => {
+    const map = new Map<string, HomePatientGroupRecord[]>();
+
+    patientGroups.forEach((group) => {
+      map.set(group.patient_id, [...(map.get(group.patient_id) ?? []), group]);
+    });
+
+    return map;
+  }, [patientGroups]);
+  const visibleSessions = useMemo(() => {
+    const normalizedSearch = normalize(search);
+    const dateFrom = sessionDateFrom ? new Date(`${sessionDateFrom}T00:00:00`) : null;
+    const dateTo = sessionDateTo ? new Date(`${sessionDateTo}T23:59:59`) : null;
+
+    return sessions
+      .filter((session) => {
+        const patient = patientById.get(session.patient_id);
+        const sessionDate = new Date(session.session_date);
+        const hasValidDate = !Number.isNaN(sessionDate.getTime());
+        const sessionGroup = session.group_id ? groupById.get(session.group_id) : null;
+        const patientGroupsForSession = patientGroupsByPatientId.get(session.patient_id) ?? [];
+        const groupsToSearch = sessionGroup ? [sessionGroup] : patientGroupsForSession;
+
+        if (normalizedSearch) {
+          const searchable = normalize([
+            patient?.name,
+            patient?.cpf,
+            patient?.phone,
+            session.status,
+            getPaymentStatusLabel(session.payment_status),
+            getPaymentMethodLabel(session.payment_method),
+            formatDateTime(session.session_date),
+            ...groupsToSearch.map((group) => group.name),
+          ].filter(Boolean).join(" "));
+
+          if (!searchable.includes(normalizedSearch)) {
+            return false;
+          }
+        }
+
+        if (selectedStatuses.length > 0 && (!patient || !selectedStatuses.includes(patient.status))) {
+          return false;
+        }
+
+        if (selectedOriginTypes.length > 0 && (!patient || !selectedOriginTypes.includes(normalizePatientOriginType(patient.origin_type)))) {
+          return false;
+        }
+
+        if (selectedRecurrenceStatuses.length > 0) {
+          const hasRecurrence = (patient?.recurring_weekdays ?? []).length > 0;
+          if (selectedRecurrenceStatuses.includes("recurring") && !hasRecurrence) {
+            return false;
+          }
+          if (selectedRecurrenceStatuses.includes("not_recurring") && hasRecurrence) {
+            return false;
+          }
+        }
+
+        if (selectedRecurringWeekdays.length > 0) {
+          const recurringWeekdays = patient?.recurring_weekdays ?? [];
+          if (!selectedRecurringWeekdays.some((weekday) => recurringWeekdays.includes(weekday))) {
+            return false;
+          }
+        }
+
+        if (selectedCollaboratorIds.length > 0) {
+          const collaboratorIds = [session.provider_id, session.user_id].filter(Boolean);
+          if (!collaboratorIds.some((id) => selectedCollaboratorIds.includes(id as string))) {
+            return false;
+          }
+        }
+
+        if (selectedGroupNames.length > 0 && !groupsToSearch.some((group) => selectedGroupNames.includes(group.name))) {
+          return false;
+        }
+
+        if (selectedColors.length > 0 && !groupsToSearch.some((group) => selectedColors.includes(group.color))) {
+          return false;
+        }
+
+        if (canViewFinancialData && selectedPaymentStatuses.length > 0) {
+          const charged = sanitizeDashboardCents(session.amount_charged_cents);
+          const paid = sanitizeDashboardCents(session.amount_paid_cents);
+          const balance = Math.max(0, charged - paid);
+          const credit = Math.max(0, paid - charged);
+          const status =
+            session.payment_status === "cortesia" ? "courtesy" :
+            charged <= 0 && paid <= 0 ? "not_charged" :
+            credit > 0 ? "credit" :
+            balance > 0 && paid > 0 ? "debt" :
+            balance > 0 ? "pending" :
+            "paid";
+
+          if (!selectedPaymentStatuses.includes(status as HomePatientPaymentFilterStatus)) {
+            return false;
+          }
+        }
+
+        if (dateFrom && (!hasValidDate || sessionDate < dateFrom)) {
+          return false;
+        }
+
+        if (dateTo && (!hasValidDate || sessionDate > dateTo)) {
+          return false;
+        }
+
+        if (selectedWeekdays.length > 0 && (!hasValidDate || !selectedWeekdays.includes(sessionDate.getDay()))) {
+          return false;
+        }
+
+        return true;
+      })
+      .sort((left, right) => {
+        const leftTime = new Date(left.session_date).getTime();
+        const rightTime = new Date(right.session_date).getTime();
+        const normalizedLeftTime = Number.isNaN(leftTime) ? 0 : leftTime;
+        const normalizedRightTime = Number.isNaN(rightTime) ? 0 : rightTime;
+        return normalizedRightTime - normalizedLeftTime;
+      });
+  }, [
+    canViewFinancialData,
+    groupById,
+    patientById,
+    patientGroupsByPatientId,
+    search,
+    selectedCollaboratorIds,
+    selectedColors,
+    selectedGroupNames,
+    selectedOriginTypes,
+    selectedPaymentStatuses,
+    selectedRecurrenceStatuses,
+    selectedRecurringWeekdays,
+    selectedStatuses,
+    selectedWeekdays,
+    sessionDateFrom,
+    sessionDateTo,
+    sessions,
+  ]);
   const dashboardData = useMemo(() => {
     const now = new Date();
     const today = toLocalDate(now);
@@ -596,6 +761,7 @@ const Index = () => {
     const pats = patientsRes.data ?? [];
     const groups = ((groupsRes.data ?? []) as PatientGroupWithColorSlot[]).map<HomePatientGroupRecord>((group) => ({
       color: resolveGroupFilterColor(group),
+      id: group.id,
       name: group.name,
       patient_id: group.patient_id,
       status: group.status,
@@ -704,6 +870,115 @@ const Index = () => {
     };
   }, [toolbarFixed]);
 
+  const renderListModeSwitch = (compact = false) => (
+    <div
+      className={`inline-flex rounded-2xl border bg-muted/30 p-1 ${compact ? "h-11 w-24" : "h-10"}`}
+      role="tablist"
+      aria-label="Alternar lista da homepage"
+    >
+      <button
+        type="button"
+        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors ${
+          listMode === "patients" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+        }`}
+        onClick={() => setListMode("patients")}
+        role="tab"
+        aria-selected={listMode === "patients"}
+      >
+        <UsersRound className="h-4 w-4" />
+        <span className={compact ? "sr-only" : undefined}>Pacientes</span>
+      </button>
+      <button
+        type="button"
+        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors ${
+          listMode === "sessions" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+        }`}
+        onClick={() => setListMode("sessions")}
+        role="tab"
+        aria-selected={listMode === "sessions"}
+      >
+        <FileText className="h-4 w-4" />
+        <span className={compact ? "sr-only" : undefined}>Atendimentos</span>
+      </button>
+    </div>
+  );
+
+  const renderSessionCard = (session: HomeSessionRecord) => {
+    const patient = patientById.get(session.patient_id);
+    const group = session.group_id ? groupById.get(session.group_id) : null;
+    const patientGroupsForSession = patientGroupsByPatientId.get(session.patient_id) ?? [];
+    const fallbackGroup = patientGroupsForSession[0] ?? null;
+    const charged = sanitizeDashboardCents(session.amount_charged_cents);
+    const paid = sanitizeDashboardCents(session.amount_paid_cents);
+    const balance = Math.max(0, charged - paid);
+    const credit = Math.max(0, paid - charged);
+    const sessionPath = `/pacientes/${session.patient_id}/sessao/${session.id}`;
+    const patientPath = `/pacientes/${session.patient_id}`;
+
+    return (
+      <Card
+        key={session.id}
+        className="cursor-pointer p-4 transition-shadow duration-150 hover:shadow-md"
+        onClick={() => navigate(sessionPath)}
+        role="button"
+        tabIndex={0}
+        aria-label={`Abrir atendimento de ${patient?.name ?? "paciente sem nome"}`}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            navigate(sessionPath);
+          }
+        }}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Clock3 className="h-4 w-4 text-muted-foreground" />
+              <span className="font-semibold text-sm">{formatDateTime(session.session_date)}</span>
+              <Badge variant="outline" className="capitalize">{session.status || "sem status"}</Badge>
+              {group || fallbackGroup ? (
+                <Badge
+                  variant="secondary"
+                  className="max-w-[180px] gap-1.5 truncate text-muted-foreground"
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: (group ?? fallbackGroup)?.color }}
+                  />
+                  {(group ?? fallbackGroup)?.name}
+                </Badge>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+              <button
+                type="button"
+                className="font-medium text-foreground hover:underline"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigate(patientPath);
+                }}
+              >
+                {patient?.name ?? "Paciente não encontrado"}
+              </button>
+              <span>{getPaymentMethodLabel(session.payment_method)}</span>
+              {canViewFinancialData ? (
+                <span>{getPaymentStatusLabel(session.payment_status)}</span>
+              ) : null}
+            </div>
+            {canViewFinancialData ? (
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>Cobrado {formatMoneyCents(charged)}</span>
+                <span>Pago {formatMoneyCents(paid)}</span>
+                {balance > 0 ? <span className="text-destructive">Em aberto {formatMoneyCents(balance)}</span> : null}
+                {credit > 0 ? <span className="text-primary">Crédito {formatMoneyCents(credit)}</span> : null}
+              </div>
+            ) : null}
+          </div>
+          <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+        </div>
+      </Card>
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -718,7 +993,7 @@ const Index = () => {
       <div
         ref={toolbarPlaceholderRef}
         aria-hidden="true"
-        className={toolbarFixed ? "block h-[136px] md:h-[62px]" : "hidden"}
+        className={toolbarFixed ? "block h-[190px] md:h-[62px]" : "hidden"}
       />
       <div
         className={
@@ -733,14 +1008,14 @@ const Index = () => {
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar paciente..."
+                  placeholder={listMode === "patients" ? "Buscar paciente..." : "Buscar atendimento..."}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="h-12 rounded-2xl border-muted-foreground/20 bg-muted/20 pl-10 text-base shadow-none"
-                  aria-label="Busca mobile de pacientes"
+                  aria-label={listMode === "patients" ? "Busca mobile de pacientes" : "Busca mobile de atendimentos"}
                 />
               </div>
-              <div className="grid grid-cols-[auto,auto,auto,auto,1fr] gap-2">
+              <div className="flex gap-2">
                 <DialogTrigger asChild>
                   <Button
                     variant="outline"
@@ -771,26 +1046,29 @@ const Index = () => {
                     <PieChart className="h-4 w-4" />
                   </Button>
                 ) : null}
-                <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
-                  <SelectTrigger className="h-11 w-14 rounded-2xl px-3" aria-label="Ordenar pacientes">
-                    <div className="flex w-full items-center justify-center">
-                      <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-                      <span className="sr-only">
-                        <SelectValue />
-                      </span>
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {HOME_PATIENT_SORT_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button className="h-11 rounded-2xl px-3" onClick={() => navigate("/pacientes/novo")} aria-label="Novo paciente">
+                {listMode === "patients" ? (
+                  <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
+                    <SelectTrigger className="h-11 w-14 rounded-2xl px-3" aria-label="Ordenar pacientes">
+                      <div className="flex w-full items-center justify-center">
+                        <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                        <span className="sr-only">
+                          <SelectValue />
+                        </span>
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HOME_PATIENT_SORT_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+                <Button className="h-11 flex-1 rounded-2xl px-3" onClick={() => navigate("/pacientes/novo")} aria-label="Novo paciente">
                   <Plus className="h-4 w-4" />
                   <span className="ml-1 max-[360px]:sr-only">Novo</span>
                 </Button>
               </div>
+              {renderListModeSwitch(true)}
             </div>
           </div>
 
@@ -798,11 +1076,11 @@ const Index = () => {
           <div className="relative min-w-[200px] max-w-lg flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar paciente, CPF ou telefone..."
+              placeholder={listMode === "patients" ? "Buscar paciente, CPF ou telefone..." : "Buscar atendimento, paciente, status ou data..."}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
-              aria-label="Buscar paciente por nome, CPF ou telefone"
+              aria-label={listMode === "patients" ? "Buscar paciente por nome, CPF ou telefone" : "Buscar atendimento por paciente, status ou data"}
             />
           </div>
           <DialogTrigger asChild>
@@ -1152,19 +1430,21 @@ const Index = () => {
               </Button>
             </DialogFooter>
           </DialogContent>
-          <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
-            <SelectTrigger className="w-[220px]" aria-label="Ordenar pacientes">
-              <div className="flex items-center gap-2">
-                <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-                <SelectValue />
-              </div>
-            </SelectTrigger>
-            <SelectContent>
-              {HOME_PATIENT_SORT_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {listMode === "patients" ? (
+            <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
+              <SelectTrigger className="w-[220px]" aria-label="Ordenar pacientes">
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                  <SelectValue />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {HOME_PATIENT_SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Button onClick={() => navigate("/pacientes/novo")}>
             <Plus className="h-4 w-4 mr-2" />
             <span>Novo Paciente</span>
@@ -1177,6 +1457,9 @@ const Index = () => {
               <PieChart className="h-4 w-4" />
             </Button>
           ) : null}
+          <div className="ml-auto shrink-0">
+            {renderListModeSwitch()}
+          </div>
           </div>
         </Dialog>
         <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
@@ -1283,7 +1566,26 @@ const Index = () => {
         </div>
       )}
 
-      {isShowingPatientList ? (
+      {listMode === "sessions" ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium text-muted-foreground">Atendimentos</h2>
+            <p className="text-sm text-muted-foreground">
+              {visibleSessions.length} atendimento{visibleSessions.length !== 1 ? "s" : ""} encontrado{visibleSessions.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          {visibleSessions.map((session) => (
+            <motion.div key={session.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
+              {renderSessionCard(session)}
+            </motion.div>
+          ))}
+          {visibleSessions.length === 0 && (
+            <Card className="p-8 text-center">
+              <p className="text-muted-foreground">Nenhum atendimento encontrado.</p>
+            </Card>
+          )}
+        </div>
+      ) : isShowingPatientList ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
             {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado{visiblePatients.length !== 1 ? "s" : ""}

@@ -1,7 +1,8 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "pluri-health",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.0-alfa-26.06.07-1",
+  "releaseVersion": "alfa-26.06.07-1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,6 +21,7 @@
     "supabase:status": "npx supabase status",
     "supabase:reset": "npx supabase db reset",
     "supabase:env:local": "sh scripts/write-supabase-env.sh",
+    "security:attack:local": "node scripts/security/run-local-attack-suite.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

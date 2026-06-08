@@ -20,7 +20,7 @@ describe("clinic settings helpers", () => {
 
   it("prefers clinic name over product fallback", () => {
     expect(getClinicBrandName("Clinica Aurora")).toBe("Clinica Aurora");
-    expect(getClinicBrandName(null)).toBe("Pronto Health - Fisio");
-    expect(getClinicBrandName({} as never)).toBe("Pronto Health - Fisio");
+    expect(getClinicBrandName(null)).toBe("Pluri-Health");
+    expect(getClinicBrandName({} as never)).toBe("Pluri-Health");
   });
 });
