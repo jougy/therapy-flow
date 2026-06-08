@@ -68,7 +68,6 @@ describe("CadastroContaAlfa", () => {
     fireEvent.change(screen.getByLabelText(/^e-mail$/i), { target: { value: "alpha@example.com" } });
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "teste1234" } });
     fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "teste1234" } });
-    fireEvent.click(screen.getByLabelText(/aceito os termos/i));
     fireEvent.click(screen.getByRole("button", { name: /criar conta alfa/i }));
 
     await waitFor(() => {
@@ -78,7 +77,6 @@ describe("CadastroContaAlfa", () => {
         options: {
           emailRedirectTo: "http://localhost:3000/auth",
           data: {
-            accepted_terms_version: "alpha-2026-06",
             birth_date: "1990-01-20",
             cnpj: "04252011000110",
             cpf: "52998224725",
@@ -112,7 +110,6 @@ describe("CadastroContaAlfa", () => {
     fireEvent.change(screen.getByLabelText(/^e-mail$/i), { target: { value: "alpha@example.com" } });
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "abcdefg" } });
     fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "abcdefg" } });
-    fireEvent.click(screen.getByLabelText(/aceito os termos/i));
 
     expect(screen.getByRole("button", { name: /criar conta alfa/i })).toBeDisabled();
     expect(supabaseMocks.signUp).not.toHaveBeenCalled();
