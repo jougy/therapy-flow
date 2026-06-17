@@ -504,6 +504,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [clinic, endCurrentSecuritySession, registerSecuritySession, session]);
 
+  useEffect(() => {
+    if (!session?.user || !clinic?.id) {
+      return;
+    }
+
+    const refreshRoleCapabilityOverrides = () => {
+      void fetchRoleCapabilityOverrides(clinic.id).then(setRoleCapabilityOverrides);
+    };
+
+    const channel = supabase
+      .channel(`clinic-role-capabilities:${clinic.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "clinic_operational_role_capabilities",
+          filter: `clinic_id=eq.${clinic.id}`,
+        },
+        refreshRoleCapabilityOverrides,
+      )
+      .subscribe((status, error) => {
+        if (error) {
+          logRuntimeError("auth.clinic_operational_role_capabilities.realtime", error, {
+            clinicId: clinic.id,
+            status,
+          });
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [clinic?.id, fetchRoleCapabilityOverrides, session?.user?.id]);
+
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {
       return emptyCapabilities;
