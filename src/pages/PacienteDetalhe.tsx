@@ -1844,7 +1844,7 @@ const PacienteDetalhe = () => {
             </Button>
             <Button variant="outline" onClick={() => setPatientInfoDialogOpen(true)} className="w-full sm:w-auto">
               <MoreHorizontal className="h-4 w-4 mr-2" />
-              Resumo Clínico
+              Ver mais
             </Button>
             <Select
               value={patient.status}
@@ -2632,7 +2632,7 @@ const PacienteDetalhe = () => {
                 }}
               >
                 <FileText className="h-4 w-4 mr-2" />
-                Ver todos os dados
+                Resumo Clínico
               </Button>
               <Button
                 variant="outline"
