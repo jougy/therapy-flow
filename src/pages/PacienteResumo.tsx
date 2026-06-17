@@ -212,7 +212,7 @@ const PacienteResumo = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { clinic, clinicId, user } = useAuth();
-  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);

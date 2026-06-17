@@ -9,13 +9,38 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { getPatientRegistrationPassword } from "@/lib/patient-registration";
+import {
+  formatPatientCpf,
+  formatPatientPhone,
+  getPatientRegistrationPassword,
+  normalizePatientNameKey,
+  validatePatientPreRegistration,
+} from "@/lib/patient-registration";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
+
+type EnsurePatientResponse = {
+  id: string;
+  matched_by: "cpf" | "name" | "created";
+  status: "existing" | "created";
+};
+
+const isEnsurePatientResponse = (value: unknown): value is EnsurePatientResponse => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const data = value as Record<string, unknown>;
+  return (
+    typeof data.id === "string" &&
+    (data.status === "existing" || data.status === "created") &&
+    (data.matched_by === "cpf" || data.matched_by === "name" || data.matched_by === "created")
+  );
+};
 
 const NovoPaciente = () => {
   const navigate = useNavigate();
   const { clinic, clinicId, user } = useAuth();
-  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const [submitting, setSubmitting] = useState(false);
 
   const [nome, setNome] = useState("");
@@ -24,63 +49,55 @@ const NovoPaciente = () => {
   const [telefone, setTelefone] = useState("");
   const [email, setEmail] = useState("");
 
-  const formatCpf = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 11);
-    return digits
-      .replace(/(\d{3})(\d)/, "$1.$2")
-      .replace(/(\d{3})(\d)/, "$1.$2")
-      .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-  };
-
-  const formatPhone = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 11);
-    if (digits.length <= 2) return digits;
-    if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-  };
-
-  const calculateAge = (birthDate: string): number | null => {
-    if (!birthDate) return null;
-    const today = new Date();
-    const birth = new Date(birthDate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-    return age;
-  };
-
   const sharePassword = getPatientRegistrationPassword(cpf);
-  const normalizedName = sanitizeSingleLineInput(nome, INPUT_LIMITS.name).trim();
-  const canSubmit = normalizedName.length > 0;
+  const validation = validatePatientPreRegistration({
+    cpf,
+    dateOfBirth: dataNascimento,
+    email,
+    name: nome,
+    phone: telefone,
+  });
+  const canSubmit = validation.isValid;
 
   const handleSubmit = async (shareWithPatient = false) => {
-    if (!user || !canSubmit || !clinicId) return;
+    if (!user || !clinicId) return;
+
+    if (!validation.isValid) {
+      const firstError = Object.values(validation.errors)[0] ?? "Revise os campos obrigatórios.";
+      toast({ title: "Pré-cadastro incompleto", description: firstError, variant: "destructive" });
+      return;
+    }
+
     setSubmitting(true);
 
-    const { data, error } = await supabase.from("patients").insert({
-      user_id: user.id,
-      clinic_id: clinicId,
-      name: normalizedName,
-      date_of_birth: dataNascimento || null,
-      age: calculateAge(dataNascimento),
-      cpf: cpf.replace(/\D/g, "") || null,
-      phone: telefone.replace(/\D/g, "") || null,
-      email: sanitizeSingleLineInput(email, INPUT_LIMITS.email).trim() || null,
-      status: "ativo",
-      registration_complete: false,
-    }).select("id").single();
+    const { data, error } = await supabase.rpc("ensure_clinic_patient", {
+      _clinic_id: clinicId,
+      _cpf: validation.values.cpf,
+      _date_of_birth: validation.values.dateOfBirth,
+      _email: validation.values.email,
+      _name: validation.values.name,
+      _name_key: normalizePatientNameKey(validation.values.name),
+      _phone: validation.values.phone,
+    });
 
-    if (error) {
-      toast({ title: "Erro ao cadastrar", description: error.message, variant: "destructive" });
-    } else {
+    if (error || !isEnsurePatientResponse(data)) {
       toast({
-        title: "Paciente cadastrado",
-        description: shareWithPatient
-          ? `${normalizedName} foi adicionado(a). Gere o link e compartilhe com o paciente.`
-          : `${normalizedName} foi adicionado(a). Complete o cadastro para mais detalhes.`,
+        title: "Erro ao cadastrar",
+        description: error?.message ?? "Não foi possível confirmar se o paciente já existe.",
+        variant: "destructive",
       });
-      navigate(`/pacientes/${data.id}`, {
-        state: shareWithPatient ? { openShareDialog: true } : undefined,
+    } else {
+      const alreadyExisted = data.status === "existing";
+      toast({
+        title: alreadyExisted ? "Paciente já cadastrado" : "Paciente cadastrado",
+        description: alreadyExisted
+          ? `Abrindo o cadastro existente encontrado por ${data.matched_by === "cpf" ? "CPF" : "nome"}.`
+          : shareWithPatient
+            ? `${validation.values.name} foi adicionado(a). Gere o link e compartilhe com o paciente.`
+            : `${validation.values.name} foi adicionado(a). Complete o cadastro para mais detalhes.`,
+      });
+      navigate(`/pacientes/${data.id}/cadastro`, {
+        state: shareWithPatient && !alreadyExisted ? { openShareDialog: true } : undefined,
       });
     }
     setSubmitting(false);
@@ -101,28 +118,44 @@ const NovoPaciente = () => {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Dados Básicos</CardTitle>
-          <CardDescription>Preencha o essencial para criar o paciente. O cadastro completo pode ser feito depois.</CardDescription>
+          <CardDescription>Preencha todos os dados obrigatórios para criar o paciente e seguir para o cadastro completo.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="nome">Nome completo *</Label>
-            <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do paciente" autoFocus />
+            <Input
+              id="nome"
+              value={nome}
+              onChange={(e) => setNome(sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.name))}
+              placeholder="Nome do paciente"
+              maxLength={INPUT_LIMITS.name}
+              required
+              autoFocus
+            />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="nascimento">Data de nascimento</Label>
-            <Input id="nascimento" type="date" value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} />
+            <Label htmlFor="nascimento">Data de nascimento *</Label>
+            <Input id="nascimento" type="date" value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cpf">CPF</Label>
-            <Input id="cpf" value={cpf} onChange={(e) => setCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" maxLength={14} />
+            <Label htmlFor="cpf">CPF *</Label>
+            <Input id="cpf" value={cpf} onChange={(e) => setCpf(formatPatientCpf(e.target.value))} placeholder="000.000.000-00" maxLength={14} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="telefone">Número de contato</Label>
-            <Input id="telefone" type="tel" value={telefone} onChange={(e) => setTelefone(formatPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={15} />
+            <Label htmlFor="telefone">Número de contato *</Label>
+            <Input id="telefone" type="tel" value={telefone} onChange={(e) => setTelefone(formatPatientPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={15} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">E-mail</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="paciente@email.com" />
+            <Label htmlFor="email">E-mail *</Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.email))}
+              placeholder="paciente@email.com"
+              maxLength={INPUT_LIMITS.email}
+              required
+            />
           </div>
         </CardContent>
       </Card>

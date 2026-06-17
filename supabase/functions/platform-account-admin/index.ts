@@ -31,6 +31,7 @@ type Action =
   | "create_subaccount"
   | "update_owner_access"
   | "update_subaccount_access"
+  | "update_clinic_access"
   | "delete_clinic_package"
   | "delete_subaccount"
   | "create_patient"
@@ -153,6 +154,25 @@ const getAccountProfile = async (identifier: unknown) => {
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Conta não encontrada.");
   return data;
+};
+
+const getClinicOwnerProfile = async (clinicIdOrDocument: unknown) => {
+  const clinic = await getClinic(clinicIdOrDocument);
+  if (!clinic.account_owner_user_id) throw new Error("Owner da clínica não encontrado.");
+  const { data, error } = await admin
+    .from("profiles")
+    .select("id, clinic_id, email, full_name")
+    .eq("id", clinic.account_owner_user_id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Perfil do owner não encontrado.");
+  return data;
+};
+
+const getOwnerProfile = async (payload: Record<string, unknown>) => {
+  const identifier = String(payload.identifier ?? "").trim();
+  if (identifier) return getAccountProfile(identifier);
+  return getClinicOwnerProfile(payload.clinicId ?? payload.clinic);
 };
 
 const setAdminStatus = async (userId: string, status: string) => {
@@ -279,7 +299,7 @@ const createSubaccount = async (payload: Record<string, unknown>) => {
 };
 
 const updateOwnerAccess = async (payload: Record<string, unknown>) => {
-  const account = await getAccountProfile(payload.identifier);
+  const account = await getOwnerProfile(payload);
   if (normalizeText(payload.cnpj, 18) && account.clinic_id) {
     const { error } = await admin.from("clinics").update({ cnpj: normalizeDocument(payload.cnpj) }).eq("id", account.clinic_id);
     if (error) throw new Error(error.message);
@@ -290,7 +310,15 @@ const updateOwnerAccess = async (payload: Record<string, unknown>) => {
     if (error) throw new Error(error.message);
   }
   await updateAuthAccess(account.id, { email: payload.newEmail, password: payload.password });
-  if (payload.status !== undefined) await setAdminStatus(account.id, normalizeStatus(payload.status));
+  if (payload.status !== undefined) {
+    const status = normalizeStatus(payload.status);
+    await setAdminStatus(account.id, status);
+    const { error } = await admin.from("clinic_memberships").update({
+      is_active: boolFromStatus(status),
+      membership_status: toMembershipStatus(status),
+    }).eq("user_id", account.id);
+    if (error) throw new Error(error.message);
+  }
   return { user_id: account.id, clinic_id: account.clinic_id };
 };
 
@@ -320,6 +348,52 @@ const updateSubaccountAccess = async (payload: Record<string, unknown>) => {
   return { user_id: account.id, clinic_id: membership.clinic_id };
 };
 
+const updateClinicAccess = async (payload: Record<string, unknown>) => {
+  const rawStatus = String(payload.status ?? "").trim();
+  if (rawStatus === "delete") return deleteClinicPackage(payload);
+  const status = normalizeStatus(rawStatus);
+
+  const clinic = await getClinic(payload.clinicId ?? payload.clinic ?? payload.identifier);
+  const membershipStatus = toMembershipStatus(status);
+  const isActive = boolFromStatus(status);
+
+  const clinicUpdate: Record<string, unknown> = {
+    access_status: status,
+  };
+
+  if (payload.concurrentAccessLimit !== undefined) {
+    const limit = normalizeLimit(payload.concurrentAccessLimit, 4);
+    clinicUpdate.concurrent_access_limit = limit;
+    clinicUpdate.subaccount_limit = Math.max(limit, clinic.subscription_plan === "clinic" ? 4 : 0);
+  }
+
+  if (payload.subaccountLimit !== undefined) {
+    clinicUpdate.subaccount_limit = normalizeLimit(payload.subaccountLimit, clinic.subaccount_limit ?? 4);
+  }
+
+  const { error: clinicError } = await admin.from("clinics").update(clinicUpdate).eq("id", clinic.id);
+  if (clinicError) throw new Error(clinicError.message);
+
+  const { error: membershipError } = await admin.from("clinic_memberships").update({
+    is_active: isActive,
+    membership_status: membershipStatus,
+  }).eq("clinic_id", clinic.id);
+  if (membershipError) throw new Error(membershipError.message);
+
+  const { data: memberships, error: membersError } = await admin
+    .from("clinic_memberships")
+    .select("user_id")
+    .eq("clinic_id", clinic.id);
+  if (membersError) throw new Error(membersError.message);
+
+  const userIds = [...new Set([clinic.account_owner_user_id, ...(memberships ?? []).map((row) => row.user_id)].filter(Boolean))];
+  for (const userId of userIds) {
+    await setAdminStatus(String(userId), status);
+  }
+
+  return { clinic_id: clinic.id, status, affected_users: userIds.length };
+};
+
 const deleteClinicPackage = async (payload: Record<string, unknown>) => {
   const clinic = await getClinic(payload.clinicId ?? payload.clinic ?? payload.identifier);
   const { data: memberships, error: membersError } = await admin
@@ -340,7 +414,17 @@ const deleteClinicPackage = async (payload: Record<string, unknown>) => {
 
 const deleteSubaccount = async (payload: Record<string, unknown>) => {
   const account = await getAccountProfile(payload.identifier);
-  await admin.auth.admin.deleteUser(account.id);
+  const { data: membership, error: membershipLookupError } = await admin
+    .from("clinic_memberships")
+    .select("account_role")
+    .eq("user_id", account.id)
+    .maybeSingle();
+  if (membershipLookupError) throw new Error(membershipLookupError.message);
+  if (membership?.account_role === "account_owner") {
+    throw new Error("Owner deve ser removido em Editar acesso da clínica > Excluir definitivamente.");
+  }
+  const { error } = await admin.auth.admin.deleteUser(account.id);
+  if (error) throw new Error(error.message);
   return { user_id: account.id, clinic_id: account.clinic_id };
 };
 
@@ -398,6 +482,7 @@ const deletePatient = async (payload: Record<string, unknown>) => {
 const handlers: Record<Action, (payload: Record<string, unknown>) => Promise<Record<string, unknown>>> = {
   create_owner_account: createOwnerAccount,
   create_subaccount: createSubaccount,
+  update_clinic_access: updateClinicAccess,
   update_owner_access: updateOwnerAccess,
   update_subaccount_access: updateSubaccountAccess,
   delete_clinic_package: deleteClinicPackage,
@@ -421,7 +506,9 @@ Deno.serve(async (request) => {
     if (!reason || reason.length < 8) throw new Error("Informe um motivo com pelo menos 8 caracteres.");
 
     const result = await handlers[action](payload);
-    await logAudit(userClient, `platform_account_admin_${action}`, String(result.clinic_id ?? payload.clinicId ?? "") || null, reason, {
+    const deletedClinic = action === "delete_clinic_package" || (action === "update_clinic_access" && payload.status === "delete");
+    const auditClinicId = deletedClinic ? null : String(result.clinic_id ?? payload.clinicId ?? "") || null;
+    await logAudit(userClient, `platform_account_admin_${action}`, auditClinicId, reason, {
       action,
       result,
     });

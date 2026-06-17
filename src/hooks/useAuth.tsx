@@ -7,7 +7,7 @@ import { logRuntimeError } from "@/lib/runtime-debug";
 import { clearSecuritySessionKey, createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
-  hasCapability,
+  buildCapabilitiesForContext,
   type AccessCapability,
   type AccountRole,
   type MembershipStatus,
@@ -110,6 +110,12 @@ const DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN: Record<SubscriptionPlan, number> 
 };
 const ACTIVE_CLINIC_STORAGE_KEY = "therapy-flow.activeClinicId";
 
+type RoleCapabilityOverride = {
+  capability: AccessCapability;
+  enabled: boolean;
+  operational_role: NonNullable<OperationalRole>;
+};
+
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
     return error.message;
@@ -200,6 +206,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isPlatformOwner, setIsPlatformOwner] = useState(false);
   const [platformMfaVerified, setPlatformMfaVerified] = useState(false);
   const [platformAccess, setPlatformAccess] = useState<PlatformClinicAccess | null>(null);
+  const [roleCapabilityOverrides, setRoleCapabilityOverrides] = useState<RoleCapabilityOverride[]>([]);
   const currentSecuritySessionKeyRef = useRef<string | null>(null);
 
   const getStoredActiveClinicId = () => {
@@ -332,6 +339,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const fetchRoleCapabilityOverrides = useCallback(async (clinicId: string) => {
+    const { data, error } = await supabase
+      .from("clinic_operational_role_capabilities")
+      .select("operational_role, capability, enabled")
+      .eq("clinic_id", clinicId) as {
+        data: RoleCapabilityOverride[] | null;
+        error: { message?: string } | null;
+      };
+
+    if (error) {
+      logRuntimeError("auth.clinic_operational_role_capabilities", error, { clinicId });
+      return [];
+    }
+
+    return (data ?? []).filter((row): row is RoleCapabilityOverride =>
+      ACCESS_CAPABILITIES.includes(row.capability)
+    );
+  }, []);
+
   const fetchAuthState = useCallback(async (userId: string, nextSession?: Session | null) => {
     await supabase
       .from("profiles")
@@ -401,6 +427,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setMembership(null);
         setClinic(null);
         setAccessibleClinics([]);
+        setRoleCapabilityOverrides([]);
         setStoredActiveClinicId(null);
         setIsSuperAdmin(false);
         setIsPlatformOwner(false);
@@ -482,22 +509,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return emptyCapabilities;
     }
 
-    return Object.fromEntries(
-      ACCESS_CAPABILITIES.map((capability) => [
-        capability,
-        hasCapability(
-          {
-            accountRole: membership.account_role as AccountRole,
-            isActive: membership.is_active,
-            membershipStatus: membership.membership_status as MembershipStatus,
-            operationalRole: membership.operational_role as OperationalRole,
-            subscriptionPlan: clinic.subscription_plan as SubscriptionPlan,
-          },
-          capability
-        ),
-      ])
-    ) as Record<AccessCapability, boolean>;
-  }, [clinic, membership]);
+    const roleOverrides = Object.fromEntries(
+      roleCapabilityOverrides
+        .filter((row) => row.operational_role === membership.operational_role)
+        .map((row) => [row.capability, row.enabled]),
+    ) as Partial<Record<AccessCapability, boolean>>;
+
+    return buildCapabilitiesForContext(
+      {
+        accountRole: membership.account_role as AccountRole,
+        isActive: membership.is_active,
+        membershipStatus: membership.membership_status as MembershipStatus,
+        operationalRole: membership.operational_role as OperationalRole,
+        subscriptionPlan: clinic.subscription_plan as SubscriptionPlan,
+      },
+      roleOverrides,
+    );
+  }, [clinic, membership, roleCapabilityOverrides]);
 
   const signOut = async () => {
     await endCurrentSecuritySession({ session });
@@ -539,6 +567,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setPlatformAccess(null);
     setMembership(null);
     setClinic(null);
+    setRoleCapabilityOverrides([]);
   };
 
   const activateClinic = async (
@@ -558,6 +587,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setStoredActiveClinicId(selectedClinic.clinic.id);
     setMembership(selectedClinic.membership);
     setClinic(selectedClinic.clinic);
+    setRoleCapabilityOverrides(await fetchRoleCapabilityOverrides(selectedClinic.clinic.id));
 
     if (session) {
       try {

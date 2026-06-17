@@ -15,6 +15,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 
 interface AppLayoutProps {
@@ -37,7 +38,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     .toUpperCase();
 
   const clinicBrandName = getClinicBrandName(clinic?.name);
-  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const isPlatformSupportMode = Boolean(platformAccess);
   const platformRoleLabels = {
     admin: "Administrador",
@@ -53,7 +54,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         <button
           type="button"
           className="flex items-center gap-3 text-left"
-          onClick={() => navigate(isPersonalOriginSettings ? "/clinicas" : clinicHomePath)}
+          onClick={() => navigate(isPersonalOriginSettings ? "/espacopessoal" : clinicHomePath)}
           aria-label={isPersonalOriginSettings ? "Ir para o espaço pessoal" : `Ir para a página inicial da clínica ${clinicBrandName}`}
         >
           {clinic?.logo_url ? (
@@ -135,7 +136,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                       const exitAccess = isPlatformSupportMode && endPlatformClinicAccess
                         ? endPlatformClinicAccess
                         : leaveClinic;
-                      void exitAccess().finally(() => navigate(isPlatformSupportMode ? "/platform" : "/clinicas"));
+                      void exitAccess().finally(() => navigate(isPlatformSupportMode ? "/platform" : "/espacopessoal"));
                     }}
                   >
                     {isPlatformSupportMode ? "Voltar ao painel global" : "Voltar e liberar acesso"}
@@ -188,9 +189,10 @@ const AppLayout = ({ children }: AppLayoutProps) => {
           </Button>
         </div>
       )}
-      <main className="flex-1 overflow-auto p-4 sm:p-6">
+      <main className="min-w-0 flex-1 p-4 sm:p-6">
         {children}
       </main>
+      <ReleaseNotesDialog />
     </div>
   );
 };

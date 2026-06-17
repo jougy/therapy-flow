@@ -115,7 +115,7 @@ describe("AppLayout", () => {
     expect(screen.queryByRole("button", { name: /voltar ao painel pessoal/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /ir para o espaço pessoal/i }));
-    expect(navigateMock).toHaveBeenCalledWith("/clinicas");
+    expect(navigateMock).toHaveBeenCalledWith("/espacopessoal");
 
     fireEvent.click(screen.getByRole("button", { name: /sair da conta/i }));
     expect(signOut).toHaveBeenCalled();
@@ -136,7 +136,7 @@ describe("AppLayout", () => {
 
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     expect(screen.getByText(/libera a vaga de acesso simultâneo/i)).toBeInTheDocument();
-    expect(navigateMock).not.toHaveBeenCalledWith("/clinicas");
+    expect(navigateMock).not.toHaveBeenCalledWith("/espacopessoal");
 
     fireEvent.click(screen.getByRole("button", { name: /voltar e liberar acesso/i }));
     expect(leaveClinic).toHaveBeenCalled();

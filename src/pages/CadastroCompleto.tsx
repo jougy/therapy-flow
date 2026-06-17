@@ -22,12 +22,21 @@ import {
   type PatientClinicalProfile,
   type PatientEmergencyContact,
 } from "@/lib/patient-clinical-profile";
-import { formatCep, formatCpf, formatPhone } from "@/lib/profile-settings";
+import { formatCep } from "@/lib/profile-settings";
 import {
   buildPatientRegistrationPutPayload,
+  extractCpfDigits,
+  formatPatientCpf,
+  formatPatientPhone,
+  isValidCpfDigits,
+  isValidPatientBirthDate,
+  isValidPatientEmail,
+  normalizePatientPhoneDigits,
   putPatientRegistration,
 } from "@/lib/patient-registration";
+import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { SubstanceUseClinicalSection } from "@/components/patients/SubstanceUseClinicalSection";
+import { PatientRiskFlagsChecklist } from "@/components/patients/PatientRiskFlagsChecklist";
 import {
   buildClinicalSnapshotSummaryPayload,
   buildPatientClinicalSnapshotState,
@@ -58,7 +67,7 @@ const CadastroCompleto = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { clinic, session, user } = useAuth();
-  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [patientName, setPatientName] = useState("");
@@ -126,8 +135,8 @@ const CadastroCompleto = () => {
     setPatientName(patient.name);
     setName(patient.name);
     setDateOfBirth(patient.date_of_birth ?? "");
-    setCpf(formatCpf(patient.cpf ?? ""));
-    setPhone(formatPhone(patient.phone ?? ""));
+    setCpf(formatPatientCpf(patient.cpf ?? ""));
+    setPhone(formatPatientPhone(patient.phone ?? ""));
     setEmail(patient.email ?? "");
     setGender(patient.gender ?? "");
     setRg(patient.rg ?? "");
@@ -201,8 +210,33 @@ const CadastroCompleto = () => {
       return;
     }
 
-    if (!name.trim()) {
+    const normalizedName = sanitizeSingleLineInput(name, INPUT_LIMITS.name).trim();
+    const normalizedCpf = extractCpfDigits(cpf);
+    const normalizedPhone = normalizePatientPhoneDigits(phone);
+    const normalizedEmail = sanitizeSingleLineInput(email, INPUT_LIMITS.email).trim().toLowerCase();
+
+    if (normalizedName.length < 3) {
       toast({ title: "Nome obrigatório", description: "Informe o nome completo do paciente.", variant: "destructive" });
+      return;
+    }
+
+    if (dateOfBirth && !isValidPatientBirthDate(dateOfBirth)) {
+      toast({ title: "Data inválida", description: "Informe uma data de nascimento válida.", variant: "destructive" });
+      return;
+    }
+
+    if (normalizedCpf && !isValidCpfDigits(normalizedCpf)) {
+      toast({ title: "CPF inválido", description: "Confira os dígitos do CPF antes de salvar.", variant: "destructive" });
+      return;
+    }
+
+    if (normalizedPhone && !/^\d{10,11}$/.test(normalizedPhone)) {
+      toast({ title: "Telefone inválido", description: "Informe um telefone com DDD.", variant: "destructive" });
+      return;
+    }
+
+    if (normalizedEmail && !isValidPatientEmail(normalizedEmail)) {
+      toast({ title: "E-mail inválido", description: "Informe um e-mail válido.", variant: "destructive" });
       return;
     }
 
@@ -226,7 +260,7 @@ const CadastroCompleto = () => {
         email,
         emergencyContact,
         gender,
-        name,
+        name: normalizedName,
         neighborhood,
         originInsuranceMemberId,
         originInsurancePlan,
@@ -359,7 +393,7 @@ const CadastroCompleto = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="cpf">CPF</Label>
-                  <Input id="cpf" value={cpf} onChange={(e) => setCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" maxLength={14} />
+                  <Input id="cpf" value={cpf} onChange={(e) => setCpf(formatPatientCpf(e.target.value))} placeholder="000.000.000-00" maxLength={14} />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -551,6 +585,10 @@ const CadastroCompleto = () => {
                   />
                 </div>
               </section>
+              <PatientRiskFlagsChecklist
+                value={clinicalProfile.risk_flags}
+                onChange={(value) => updateClinicalProfile("risk_flags", value)}
+              />
 
             </CardContent>
           </Card>
@@ -571,7 +609,7 @@ const CadastroCompleto = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="phone">Telefone</Label>
-                    <Input id="phone" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={15} />
+                    <Input id="phone" value={phone} onChange={(e) => setPhone(formatPatientPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={15} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">E-mail</Label>
@@ -610,7 +648,7 @@ const CadastroCompleto = () => {
                   <Input
                     id="emergencyContactPhone"
                     value={emergencyContact.phone}
-                    onChange={(e) => updateEmergencyContact("phone", formatPhone(e.target.value))}
+                    onChange={(e) => updateEmergencyContact("phone", formatPatientPhone(e.target.value))}
                     placeholder="(00) 00000-0000"
                     maxLength={15}
                   />

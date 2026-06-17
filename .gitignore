@@ -29,6 +29,10 @@ dist__permission_backup_*/
 .local-tools
 backups/
 
+# Local-only visual experiments
+/designlab/
+/src/designlab/
+
 # Local admin and ops entrypoints that should stay out of Git
 account-admin-local.sh
 account-admin-prod.sh

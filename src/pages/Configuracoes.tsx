@@ -8,6 +8,7 @@ import {
   Building2,
   CircleHelp,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Clock3,
   ClipboardList,
@@ -21,6 +22,7 @@ import {
   LogOut,
   MoonStar,
   Pencil,
+  Pin,
   Plus,
   Settings,
   Shield,
@@ -36,6 +38,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import ThemeModeSwitch from "@/components/ThemeModeSwitch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -59,6 +63,13 @@ import {
   isAnamnesisTemplateSchema,
   parseAnamnesisTemplateExchangePayload,
 } from "@/lib/anamnesis-forms";
+import {
+  ACCESS_CAPABILITIES,
+  ACCESS_CAPABILITY_LABELS,
+  buildCapabilitiesForContext,
+  hasDefaultCapability,
+  type AccessCapability,
+} from "@/lib/rbac";
 import {
   buildVisibleTeamMembershipRows,
   formatLastSeenAt,
@@ -115,6 +126,19 @@ type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row
 type SessionRow = Database["public"]["Tables"]["sessions"]["Row"];
 type ClinicRow = Database["public"]["Tables"]["clinics"]["Row"];
 type MembershipRow = Database["public"]["Tables"]["clinic_memberships"]["Row"];
+type RoleCapabilityRow = Database["public"]["Tables"]["clinic_operational_role_capabilities"]["Row"];
+type ClinicOperationalRoleDefinition = {
+  base_operational_role: SubaccountOperationalRole | "owner";
+  clinic_id: string;
+  created_at?: string;
+  description: string | null;
+  id?: string;
+  is_system: boolean;
+  label: string;
+  role_key: SubaccountOperationalRole | "owner" | string;
+  sort_order: number;
+  updated_at?: string;
+};
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type SecurityEventRow = Database["public"]["Tables"]["security_events"]["Row"];
 type SecuritySessionRow = Database["public"]["Tables"]["user_security_sessions"]["Row"];
@@ -276,6 +300,33 @@ const OPERATIONAL_ROLE_DESCRIPTIONS: Record<SubaccountOperationalRole, string> =
   estagiario: "Acesso mais restrito. Atua apenas no próprio fluxo de atendimentos e só vê/edita atendimentos criados por ele.",
   professional: "Fluxo clínico completo para pacientes e atendimentos, sem poderes administrativos da clínica.",
 };
+
+const OPERATIONAL_ROLE_MANAGEMENT_ORDER: Array<SubaccountOperationalRole | "owner"> = [
+  "owner",
+  "admin",
+  "professional",
+  "assistant",
+  "estagiario",
+];
+
+const SYSTEM_OPERATIONAL_ROLE_DEFINITIONS: ClinicOperationalRoleDefinition[] = OPERATIONAL_ROLE_MANAGEMENT_ORDER.map((role, index) => ({
+  base_operational_role: role,
+  clinic_id: "",
+  description: role === "owner" ? "Conta principal da clínica. Permissões sempre habilitadas." : OPERATIONAL_ROLE_DESCRIPTIONS[role],
+  is_system: true,
+  label: OPERATIONAL_ROLE_LABELS[role],
+  role_key: role,
+  sort_order: index * 10,
+}));
+
+const MANAGEABLE_OPERATIONAL_ROLES: SubaccountOperationalRole[] = [
+  "admin",
+  "professional",
+  "assistant",
+  "estagiario",
+];
+
+const RESERVED_CAPABILITIES = new Set<AccessCapability>(["subscription_billing.manage"]);
 
 const TEAM_STATUS_FILTER_OPTIONS = [
   { label: "Todos os status", value: "all" },
@@ -507,10 +558,14 @@ const areEditableStatesEqual = (left: unknown, right: unknown) => JSON.stringify
 const Configuracoes = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const isDesignLabRoute = location.pathname.startsWith("/designlab") || location.pathname.startsWith("/designlabs");
+  const isDesignLabExperience = true;
   const isPersonalOriginSettings = new URLSearchParams(location.search).get("origem") === "pessoal";
   const { resolvedTheme, setTheme } = useTheme();
   const { accountRole, can, clinic: authClinic, clinicId, operationalRole, profile, refreshAuthState, session, signOut, subscriptionPlan, user } = useAuth();
-  const clinicHomePath = authClinic?.route_key ? `/clinica/${authClinic.route_key}` : "/clinicas";
+  const clinicHomePath = authClinic?.route_key
+    ? `${isDesignLabRoute ? "/designlab" : ""}/clinica/${authClinic.route_key}`
+    : "/espacopessoal";
   const isDarkTheme = resolvedTheme === "dark";
   const [clinic, setClinic] = useState<ClinicRow | null>(null);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
@@ -522,11 +577,20 @@ const Configuracoes = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [activeSpace, setActiveSpace] = useState<SettingsSpace>(() => readSettingsStateFromSearch(location.search).space);
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => readSettingsStateFromSearch(location.search).section);
+  const [designLabSettingsMenuPinned, setDesignLabSettingsMenuPinned] = useState(false);
   const [mobileDescriptionSection, setMobileDescriptionSection] = useState<SettingsSection | null>(null);
   const [savingClinic, setSavingClinic] = useState(false);
   const [savingMembershipId, setSavingMembershipId] = useState<string | null>(null);
   const [savingOwnProfile, setSavingOwnProfile] = useState(false);
   const [creatingSubaccount, setCreatingSubaccount] = useState(false);
+  const [roleManagementOpen, setRoleManagementOpen] = useState(false);
+  const [roleHelpOpen, setRoleHelpOpen] = useState(false);
+  const [selectedOperationalRole, setSelectedOperationalRole] = useState<string>("admin");
+  const [operationalRoleDefinitions, setOperationalRoleDefinitions] = useState<ClinicOperationalRoleDefinition[]>(SYSTEM_OPERATIONAL_ROLE_DEFINITIONS);
+  const [editingRoleLabel, setEditingRoleLabel] = useState("");
+  const [savingRoleDefinition, setSavingRoleDefinition] = useState(false);
+  const [roleCapabilityOverrides, setRoleCapabilityOverrides] = useState<RoleCapabilityRow[]>([]);
+  const [savingRoleCapabilityKey, setSavingRoleCapabilityKey] = useState<string | null>(null);
   const [expandedSubaccountIds, setExpandedSubaccountIds] = useState<string[]>([]);
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
   const [editingSubaccount, setEditingSubaccount] = useState<EditableSubaccountState | null>(null);
@@ -618,6 +682,8 @@ const Configuracoes = () => {
         setTemplates([]);
         setSessions([]);
         setMemberships([]);
+        setOperationalRoleDefinitions(SYSTEM_OPERATIONAL_ROLE_DEFINITIONS);
+        setRoleCapabilityOverrides([]);
         setProfiles([]);
         setTeamDevelopmentProfiles([]);
         setTeamDevelopmentForms({});
@@ -677,7 +743,7 @@ const Configuracoes = () => {
 
     setLoading(true);
     try {
-      const [clinicRes, templatesRes, sessionsRes, membershipsRes, profilesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes, concurrentAccessRes] = await Promise.all([
+      const [clinicRes, templatesRes, sessionsRes, membershipsRes, roleDefinitionsRes, roleCapabilitiesRes, profilesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes, concurrentAccessRes] = await Promise.all([
         supabase.from("clinics").select("*").eq("id", clinicId).single(),
         supabase
           .from("anamnesis_form_templates")
@@ -694,6 +760,15 @@ const Configuracoes = () => {
           .select("*")
           .eq("clinic_id", clinicId)
           .order("created_at", { ascending: true }),
+        supabase
+          .from("clinic_operational_roles")
+          .select("*")
+          .eq("clinic_id", clinicId)
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("clinic_operational_role_capabilities")
+          .select("*")
+          .eq("clinic_id", clinicId),
         supabase
           .from("profiles")
           .select("address, birth_date, cpf, email, full_name, id, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours")
@@ -752,6 +827,20 @@ const Configuracoes = () => {
       setTemplates(templatesRes.data ?? []);
       setSessions(sessionsRes.data ?? []);
       setMemberships(membershipsRes.data ?? []);
+      setOperationalRoleDefinitions([
+        ...SYSTEM_OPERATIONAL_ROLE_DEFINITIONS.map((role) => ({
+          ...role,
+          clinic_id: clinicId,
+          ...(Array.isArray(roleDefinitionsRes.data)
+            ? (roleDefinitionsRes.data as ClinicOperationalRoleDefinition[]).find((row) => row.role_key === role.role_key)
+            : null),
+          is_system: true,
+        })),
+        ...(Array.isArray(roleDefinitionsRes.data)
+          ? (roleDefinitionsRes.data as ClinicOperationalRoleDefinition[]).filter((row) => !OPERATIONAL_ROLE_MANAGEMENT_ORDER.includes(row.role_key as SubaccountOperationalRole | "owner"))
+          : []),
+      ].sort((a, b) => a.sort_order - b.sort_order));
+      setRoleCapabilityOverrides(roleCapabilitiesRes.data ?? []);
       setProfiles(profilesRes.data ?? []);
       setTeamDevelopmentProfiles(teamDevelopmentRes.data ?? []);
       setTeamDevelopmentForms(
@@ -1020,6 +1109,70 @@ const Configuracoes = () => {
         }))
       ),
     [developmentRows]
+  );
+  const roleCapabilityMap = useMemo(() => {
+    const map = new Map<string, RoleCapabilityRow>();
+
+    roleCapabilityOverrides.forEach((row) => {
+      map.set(`${row.operational_role}:${row.capability}`, row);
+    });
+
+    return map;
+  }, [roleCapabilityOverrides]);
+  const sortedOperationalRoleDefinitions = useMemo(
+    () => [...operationalRoleDefinitions].sort((a, b) => a.sort_order - b.sort_order),
+    [operationalRoleDefinitions]
+  );
+  const selectedRoleDefinition = useMemo(
+    () =>
+      sortedOperationalRoleDefinitions.find((role) => role.role_key === selectedOperationalRole) ??
+      sortedOperationalRoleDefinitions.find((role) => role.role_key === "admin") ??
+      SYSTEM_OPERATIONAL_ROLE_DEFINITIONS[1],
+    [selectedOperationalRole, sortedOperationalRoleDefinitions]
+  );
+  useEffect(() => {
+    setEditingRoleLabel(selectedRoleDefinition?.label ?? "");
+  }, [selectedRoleDefinition?.label, selectedRoleDefinition?.role_key]);
+  const selectedRoleCapabilities = useMemo(() => {
+    const subscription = subscriptionPlan ?? "clinic";
+
+    if (selectedRoleDefinition.role_key === "owner") {
+      return Object.fromEntries(ACCESS_CAPABILITIES.map((capability) => [capability, true])) as Record<AccessCapability, boolean>;
+    }
+
+    const defaults = buildCapabilitiesForContext({
+      accountRole: null,
+      isActive: true,
+      membershipStatus: "active",
+      operationalRole: selectedRoleDefinition.base_operational_role,
+      subscriptionPlan: subscription,
+    });
+    const overrides = Object.fromEntries(
+      roleCapabilityOverrides
+        .filter((row) => row.operational_role === selectedRoleDefinition.role_key)
+        .filter((row): row is RoleCapabilityRow & { capability: AccessCapability } =>
+          ACCESS_CAPABILITIES.includes(row.capability as AccessCapability)
+        )
+        .map((row) => [row.capability, row.enabled]),
+    ) as Partial<Record<AccessCapability, boolean>>;
+
+    return {
+      ...defaults,
+      ...overrides,
+      "subscription_billing.manage": false,
+    };
+  }, [roleCapabilityOverrides, selectedRoleDefinition, subscriptionPlan]);
+  const roleUsageCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        sortedOperationalRoleDefinitions.map((role) => [
+          role.role_key,
+          OPERATIONAL_ROLE_MANAGEMENT_ORDER.includes(role.role_key as SubaccountOperationalRole | "owner")
+            ? allTeamMemberships.filter((membershipRow) => membershipRow.operational_role === role.role_key).length
+            : 0,
+        ]),
+      ) as Record<string, number>,
+    [allTeamMemberships, sortedOperationalRoleDefinitions],
   );
 
   const availableSections = useMemo(
@@ -1549,6 +1702,211 @@ const Configuracoes = () => {
     setEditingSubaccount(null);
   };
 
+  const getDefaultRoleCapability = (role: SubaccountOperationalRole | "owner", capability: AccessCapability) =>
+    hasDefaultCapability(
+      {
+        accountRole: null,
+        isActive: true,
+        membershipStatus: "active",
+        operationalRole: role === "owner" ? "owner" : role,
+        subscriptionPlan: subscriptionPlan ?? "clinic",
+      },
+      capability,
+    );
+
+  const saveRoleDefinition = async (nextRole: ClinicOperationalRoleDefinition) => {
+    if (!clinicId || !can("subaccounts_roles.manage")) return null;
+
+    const payload = {
+      base_operational_role: nextRole.base_operational_role === "owner" ? "admin" : nextRole.base_operational_role,
+      clinic_id: clinicId,
+      description: nextRole.description,
+      is_system: nextRole.is_system,
+      label: nextRole.label.trim(),
+      role_key: nextRole.role_key,
+      sort_order: nextRole.sort_order,
+    };
+
+    const { data, error } = await supabase
+      .from("clinic_operational_roles")
+      .upsert(payload, { onConflict: "clinic_id,role_key" })
+      .select("*")
+      .single();
+
+    if (error) {
+      toast({ title: "Erro ao salvar papel", description: error.message, variant: "destructive" });
+      return null;
+    }
+
+    return data as ClinicOperationalRoleDefinition;
+  };
+
+  const handleCreateOperationalRole = async () => {
+    if (!clinicId || savingRoleDefinition) return;
+    const existingCustomCount = operationalRoleDefinitions.filter((role) => !role.is_system).length;
+    const roleKey = `papel_${Date.now().toString(36)}`;
+    const nextRole: ClinicOperationalRoleDefinition = {
+      base_operational_role: "professional",
+      clinic_id: clinicId,
+      description: "Papel personalizado da clínica.",
+      is_system: false,
+      label: `Novo papel ${existingCustomCount + 1}`,
+      role_key: roleKey,
+      sort_order: Math.max(...operationalRoleDefinitions.map((role) => role.sort_order), 0) + 10,
+    };
+
+    setSavingRoleDefinition(true);
+    const saved = await saveRoleDefinition(nextRole);
+    setSavingRoleDefinition(false);
+    if (!saved) return;
+
+    setOperationalRoleDefinitions((current) => [...current, saved].sort((a, b) => a.sort_order - b.sort_order));
+    setSelectedOperationalRole(saved.role_key);
+    toast({ title: "Papel criado" });
+  };
+
+  const handleSaveSelectedRoleLabel = async () => {
+    if (!selectedRoleDefinition || selectedRoleDefinition.role_key === "owner") return;
+    const label = sanitizeSingleLineInput(editingRoleLabel, 40);
+    if (label.length < 2) {
+      toast({ title: "Nome muito curto", description: "Use pelo menos 2 caracteres.", variant: "destructive" });
+      return;
+    }
+
+    setSavingRoleDefinition(true);
+    const saved = await saveRoleDefinition({ ...selectedRoleDefinition, label });
+    setSavingRoleDefinition(false);
+    if (!saved) return;
+
+    setOperationalRoleDefinitions((current) =>
+      current.map((role) => role.role_key === saved.role_key ? { ...role, ...saved } : role).sort((a, b) => a.sort_order - b.sort_order)
+    );
+    toast({ title: "Papel renomeado" });
+  };
+
+  const handleDeleteSelectedRole = async () => {
+    if (!clinicId || selectedRoleDefinition.is_system || selectedRoleDefinition.role_key === "owner") return;
+    if ((roleUsageCounts[selectedRoleDefinition.role_key] ?? 0) > 0) {
+      toast({ title: "Papel em uso", description: "Remova colaboradores deste papel antes de excluir.", variant: "destructive" });
+      return;
+    }
+
+    setSavingRoleDefinition(true);
+    const { error } = await supabase
+      .from("clinic_operational_roles")
+      .delete()
+      .eq("clinic_id", clinicId)
+      .eq("role_key", selectedRoleDefinition.role_key);
+
+    if (!error) {
+      await supabase
+        .from("clinic_operational_role_capabilities")
+        .delete()
+        .eq("clinic_id", clinicId)
+        .eq("operational_role", selectedRoleDefinition.role_key);
+    }
+
+    setSavingRoleDefinition(false);
+    if (error) {
+      toast({ title: "Erro ao excluir papel", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setOperationalRoleDefinitions((current) => current.filter((role) => role.role_key !== selectedRoleDefinition.role_key));
+    setRoleCapabilityOverrides((current) => current.filter((row) => row.operational_role !== selectedRoleDefinition.role_key));
+    setSelectedOperationalRole("admin");
+    toast({ title: "Papel excluído" });
+  };
+
+  const handleMoveSelectedRole = async (direction: "up" | "down") => {
+    const index = sortedOperationalRoleDefinitions.findIndex((role) => role.role_key === selectedRoleDefinition.role_key);
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    const target = sortedOperationalRoleDefinitions[targetIndex];
+    if (index < 0 || !target || selectedRoleDefinition.role_key === "owner") return;
+
+    const first = { ...selectedRoleDefinition, sort_order: target.sort_order };
+    const second = { ...target, sort_order: selectedRoleDefinition.sort_order };
+    setSavingRoleDefinition(true);
+    const [savedFirst, savedSecond] = await Promise.all([saveRoleDefinition(first), saveRoleDefinition(second)]);
+    setSavingRoleDefinition(false);
+    if (!savedFirst || !savedSecond) return;
+
+    setOperationalRoleDefinitions((current) =>
+      current.map((role) => {
+        if (role.role_key === savedFirst.role_key) return { ...role, ...savedFirst };
+        if (role.role_key === savedSecond.role_key) return { ...role, ...savedSecond };
+        return role;
+      }).sort((a, b) => a.sort_order - b.sort_order)
+    );
+  };
+
+  const handleToggleRoleCapability = async (capability: AccessCapability, enabled: boolean) => {
+    if (!clinicId || selectedRoleDefinition.role_key === "owner" || !can("subaccounts_roles.manage")) {
+      return;
+    }
+
+    if (RESERVED_CAPABILITIES.has(capability)) {
+      toast({
+        title: "Permissão reservada",
+        description: "Assinatura e cobrança continuam reservadas ao owner da conta.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const role = selectedRoleDefinition.role_key;
+    const defaultEnabled = getDefaultRoleCapability(selectedRoleDefinition.base_operational_role, capability);
+    const key = `${role}:${capability}`;
+    setSavingRoleCapabilityKey(key);
+
+    if (enabled === defaultEnabled) {
+      const { error } = await supabase
+        .from("clinic_operational_role_capabilities")
+        .delete()
+        .eq("clinic_id", clinicId)
+        .eq("operational_role", role)
+        .eq("capability", capability);
+
+      if (error) {
+        toast({ title: "Erro ao atualizar papel", description: error.message, variant: "destructive" });
+        setSavingRoleCapabilityKey(null);
+        return;
+      }
+
+      setRoleCapabilityOverrides((current) =>
+        current.filter((row) => !(row.operational_role === role && row.capability === capability))
+      );
+      setSavingRoleCapabilityKey(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("clinic_operational_role_capabilities")
+      .upsert(
+        {
+          capability,
+          clinic_id: clinicId,
+          enabled,
+          operational_role: role,
+        },
+        { onConflict: "clinic_id,operational_role,capability" },
+      )
+      .select("*")
+      .single();
+
+    if (error) {
+      toast({ title: "Erro ao atualizar papel", description: error.message, variant: "destructive" });
+      setSavingRoleCapabilityKey(null);
+      return;
+    }
+
+    setRoleCapabilityOverrides((current) => [
+      ...current.filter((row) => !(row.operational_role === role && row.capability === capability)),
+      data,
+    ]);
+    setSavingRoleCapabilityKey(null);
+  };
+
   const handleCreateSubaccount = async () => {
     if (!clinicId || !can("subaccounts.manage")) {
       return;
@@ -1851,36 +2209,101 @@ const Configuracoes = () => {
   }
 
   const renderSettingsMenu = (onSelect?: () => void) => (
-    <div className="space-y-3">
+    <div className={isDesignLabExperience ? "space-y-3 overflow-visible" : "space-y-3"}>
       {availableSections.length === 0 ? (
         <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           Nenhuma opção disponível neste espaço para o seu acesso atual.
         </div>
       ) : (
-        availableSections.map((item) => (
-          <button
-            key={item.id}
-            className={`w-full rounded-lg border p-3 text-left transition-colors ${
-              activeSection === item.id ? "border-primary bg-primary/5" : "hover:bg-muted/40"
-            }`}
-            onClick={() => {
-              setActiveSection(item.id);
-              onSelect?.();
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="rounded-md bg-muted p-2">
-                <item.icon className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-medium text-sm">{item.title}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
-              </div>
-            </div>
-          </button>
-        ))
+        availableSections.map((item) => {
+          const isActive = activeSection === item.id;
+
+          return (
+            <button
+              key={item.id}
+              className={
+                isDesignLabExperience
+                  ? `designlab-settings-menu-item group relative flex rounded-xl p-[1px] text-left transition-[transform,filter] duration-300 ease-out hover:-translate-y-0.5 focus-visible:-translate-y-0.5 ${
+                      "h-[74px] w-full"
+                    } ${isActive ? "is-active" : ""}`
+                  : `w-full rounded-lg border p-3 text-left transition-colors ${
+                      isActive ? "border-primary bg-primary/5" : "hover:bg-muted/40"
+                    }`
+              }
+              onClick={() => {
+                setActiveSection(item.id);
+                onSelect?.();
+              }}
+            >
+              {isDesignLabExperience ? (
+                <div
+                  className={`designlab-settings-menu-surface flex h-full w-full items-center gap-3 rounded-[0.68rem] border px-3 transition-colors duration-300 ${
+                    isActive ? "border-primary/45 bg-primary/8 text-primary" : "border-border/80 bg-card text-foreground"
+                  }`}
+                >
+                  <div className={`designlab-settings-menu-icon grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-colors duration-300 ${
+                    isActive ? "bg-primary/12 text-primary" : "bg-muted text-foreground"
+                  }`}>
+                    <item.icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1 opacity-100">
+                    <p className="truncate text-sm font-medium">{item.title}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3">
+                  <div className="rounded-md bg-muted p-2">
+                    <item.icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">{item.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+                  </div>
+                </div>
+              )}
+            </button>
+          );
+        })
       )}
     </div>
+  );
+
+  const renderSettingsSideCard = (floating = false) => (
+    <Card
+      className={`hidden lg:block ${
+        isDesignLabExperience
+          ? `overflow-visible transition-all duration-500 ease-out ${
+              floating
+                ? "pointer-events-auto w-80 shadow-2xl shadow-primary/10"
+                : ""
+            }`
+          : ""
+      }`}
+    >
+      <CardHeader className={isDesignLabExperience ? "pb-4" : undefined}>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            {activeSpace === "clinic" ? "Clínica" : "Espaço pessoal"}
+          </CardTitle>
+          {isDesignLabExperience ? (
+            <Button
+              type="button"
+              variant={designLabSettingsMenuPinned ? "default" : "outline"}
+              size="icon"
+              className="designlab-settings-collapse-button h-9 w-9 rounded-xl"
+              onClick={() => setDesignLabSettingsMenuPinned((current) => !current)}
+              aria-label={designLabSettingsMenuPinned ? "Desafixar menu de configurações" : "Fixar menu de configurações"}
+              aria-pressed={designLabSettingsMenuPinned}
+            >
+              <Pin className={`h-4 w-4 ${designLabSettingsMenuPinned ? "fill-current" : ""}`} />
+            </Button>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className={isDesignLabExperience ? "overflow-visible" : undefined}>{renderSettingsMenu()}</CardContent>
+    </Card>
   );
 
   return (
@@ -1895,7 +2318,7 @@ const Configuracoes = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate(isPersonalOriginSettings ? "/clinicas" : clinicHomePath)}
+            onClick={() => navigate(isPersonalOriginSettings ? "/espacopessoal" : clinicHomePath)}
             aria-label={isPersonalOriginSettings ? "Voltar para o espaço pessoal" : "Voltar para a página inicial"}
           >
             <ArrowLeft className="h-4 w-4" />
@@ -1914,16 +2337,25 @@ const Configuracoes = () => {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
-        <Card className="hidden lg:block">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              {activeSpace === "clinic" ? "Clínica" : "Espaço pessoal"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>{renderSettingsMenu()}</CardContent>
-        </Card>
+      {isDesignLabExperience && !designLabSettingsMenuPinned ? (
+        <div className="group/designlab-settings-drawer pointer-events-none fixed bottom-0 left-0 top-28 z-40 hidden w-[356px] lg:block">
+          <div className="pointer-events-auto absolute inset-y-0 left-0 w-8" aria-hidden="true" />
+          <div className="absolute left-4 top-20 -translate-x-[calc(100%+1.25rem)] opacity-0 transition-all duration-500 ease-out group-hover/designlab-settings-drawer:translate-x-0 group-hover/designlab-settings-drawer:opacity-100 group-focus-within/designlab-settings-drawer:translate-x-0 group-focus-within/designlab-settings-drawer:opacity-100">
+            {renderSettingsSideCard(true)}
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className={`grid gap-6 transition-[grid-template-columns] duration-500 ease-out ${
+          isDesignLabExperience
+            ? designLabSettingsMenuPinned
+              ? "lg:grid-cols-[320px,1fr]"
+              : "lg:grid-cols-[1fr]"
+            : "lg:grid-cols-[320px,1fr]"
+        }`}
+      >
+        {isDesignLabExperience && !designLabSettingsMenuPinned ? null : renderSettingsSideCard()}
 
         <div className="min-w-0 space-y-6">
           {activeSection === "profile" && (
@@ -1954,7 +2386,7 @@ const Configuracoes = () => {
                 </div>
 
                 <div className="rounded-lg border p-4">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-start gap-3">
                       <div className="rounded-full bg-primary/10 p-2 text-primary">
                         <MoonStar className="h-4 w-4" />
@@ -1966,8 +2398,9 @@ const Configuracoes = () => {
                         </p>
                       </div>
                     </div>
-                    <Switch
+                    <ThemeModeSwitch
                       checked={isDarkTheme}
+                      className="self-end sm:self-auto"
                       onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
                       aria-label="Ativar tema noturno"
                     />
@@ -2344,8 +2777,158 @@ const Configuracoes = () => {
 
           {activeSection === "team" && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-xl">Colaboradores e acessos</CardTitle>
+              <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-xl">Colaboradores e acessos</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Gerencie subcontas, sessões ativas e poderes operacionais da equipe.
+                  </p>
+                </div>
+                {can("subaccounts_roles.manage") && shouldShowTeamSettingsSection(subscriptionPlan) ? (
+                  <Dialog open={roleManagementOpen} onOpenChange={setRoleManagementOpen}>
+                    <DialogTrigger asChild>
+                      <Button type="button" variant="outline" className="gap-2">
+                        <ShieldCheck className="h-4 w-4" />
+                        Gerenciar papéis operacionais
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-hidden p-0 sm:max-w-5xl">
+                      <DialogHeader className="border-b p-5 text-left">
+                        <div className="flex items-center gap-2 pr-10">
+                          <DialogTitle>Gerenciar papéis operacionais</DialogTitle>
+                          <Popover open={roleHelpOpen} onOpenChange={setRoleHelpOpen}>
+                            <div onMouseEnter={() => setRoleHelpOpen(true)} onMouseLeave={() => setRoleHelpOpen(false)}>
+                              <PopoverTrigger asChild>
+                                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" aria-label="Ajuda sobre papéis operacionais">
+                                  <CircleHelp className="h-4 w-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent align="end" className="w-80 text-sm leading-relaxed">
+                                Este painel ajuda a definir como cada pessoa da equipe pode atuar na clínica. Use os papéis para organizar níveis de acesso, liberar apenas as ferramentas necessárias e manter a rotina da equipe mais clara e segura.
+                              </PopoverContent>
+                            </div>
+                          </Popover>
+                        </div>
+                        <DialogDescription className="sr-only">
+                          Painel para configurar papéis operacionais e permissões da equipe da clínica.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid max-h-[calc(100dvh-9rem)] overflow-y-auto md:grid-cols-[280px_1fr]">
+                        <aside className="border-b bg-muted/20 p-4 md:border-b-0 md:border-r">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold">Hierarquias</p>
+                            <Button type="button" size="sm" variant="outline" className="gap-1" onClick={() => void handleCreateOperationalRole()} disabled={savingRoleDefinition}>
+                              <Plus className="h-3.5 w-3.5" />
+                              Novo papel
+                            </Button>
+                          </div>
+                          <div className="space-y-2">
+                            {sortedOperationalRoleDefinitions.map((role) => {
+                              const isSelected = selectedOperationalRole === role.role_key;
+                              const isOwnerRole = role.role_key === "owner";
+
+                              return (
+                                <button
+                                  key={role.role_key}
+                                  type="button"
+                                  className={`flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left text-sm transition-colors ${
+                                    isSelected ? "border-primary bg-primary/10 text-primary" : "bg-background hover:bg-muted/60"
+                                  }`}
+                                  onClick={() => setSelectedOperationalRole(role.role_key)}
+                                >
+                                  <span className="min-w-0">
+                                    <span className="block truncate font-medium">{role.label}</span>
+                                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                                      {roleUsageCounts[role.role_key] ?? 0} pessoa{roleUsageCounts[role.role_key] === 1 ? "" : "s"}
+                                    </span>
+                                  </span>
+                                  {isOwnerRole ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </aside>
+                        <section className="p-4">
+                          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <Input
+                                  className="h-9 max-w-xs font-semibold"
+                                  value={editingRoleLabel}
+                                  maxLength={40}
+                                  disabled={selectedRoleDefinition.role_key === "owner" || savingRoleDefinition}
+                                  onChange={(event) => setEditingRoleLabel(event.target.value)}
+                                  onBlur={() => void handleSaveSelectedRoleLabel()}
+                                />
+                                <div className="flex gap-1">
+                                  <Button type="button" size="icon" variant="outline" disabled={savingRoleDefinition || selectedRoleDefinition.role_key === "owner"} onClick={() => void handleMoveSelectedRole("up")} aria-label="Subir papel na hierarquia">
+                                    <ChevronUp className="h-4 w-4" />
+                                  </Button>
+                                  <Button type="button" size="icon" variant="outline" disabled={savingRoleDefinition || selectedRoleDefinition.role_key === "owner"} onClick={() => void handleMoveSelectedRole("down")} aria-label="Descer papel na hierarquia">
+                                    <ChevronDown className="h-4 w-4" />
+                                  </Button>
+                                  <Button type="button" size="icon" variant="outline" disabled={savingRoleDefinition || selectedRoleDefinition.is_system || selectedRoleDefinition.role_key === "owner"} onClick={() => void handleDeleteSelectedRole()} aria-label="Excluir papel">
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                                {selectedRoleDefinition.role_key === "owner"
+                                  ? "Conta principal da clínica. Este papel permanece com todos os poderes."
+                                  : selectedRoleDefinition.description ?? "Papel operacional da clínica."}
+                              </p>
+                            </div>
+                            {selectedRoleDefinition.role_key === "owner" ? (
+                              <Badge className="w-fit" variant="secondary">Protegido</Badge>
+                            ) : null}
+                          </div>
+                          <div className="space-y-2">
+                            {ACCESS_CAPABILITIES.map((capability) => {
+                              const meta = ACCESS_CAPABILITY_LABELS[capability];
+                              const isOwnerRole = selectedRoleDefinition.role_key === "owner";
+                              const isReserved = RESERVED_CAPABILITIES.has(capability);
+                              const defaultEnabled =
+                                selectedRoleDefinition.role_key !== "owner"
+                                  ? getDefaultRoleCapability(selectedRoleDefinition.base_operational_role, capability)
+                                  : true;
+                              const overrideRow =
+                                selectedRoleDefinition.role_key !== "owner"
+                                  ? roleCapabilityMap.get(`${selectedRoleDefinition.role_key}:${capability}`)
+                                  : null;
+                              const hasOverride = !!overrideRow;
+                              const checked = selectedRoleCapabilities[capability];
+                              const disabled = isOwnerRole || isReserved || savingRoleCapabilityKey === `${selectedRoleDefinition.role_key}:${capability}`;
+
+                              return (
+                                <div key={capability} className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="font-medium">{meta.label}</p>
+                                      {hasOverride ? <Badge variant="outline">Personalizado</Badge> : null}
+                                      {isReserved ? <Badge variant="secondary">Reservado</Badge> : null}
+                                    </div>
+                                    <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
+                                    {!isOwnerRole && !isReserved ? (
+                                      <p className="mt-1 text-xs text-muted-foreground">
+                                        Padrão do papel: {defaultEnabled ? "habilitado" : "desabilitado"}.
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  <Switch
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onCheckedChange={(nextChecked) => void handleToggleRoleCapability(capability, nextChecked)}
+                                    aria-label={`${checked ? "Desabilitar" : "Habilitar"} ${meta.label}`}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                ) : null}
               </CardHeader>
               <CardContent className="space-y-4">
                 {!shouldShowTeamSettingsSection(subscriptionPlan) ? (
@@ -3020,7 +3603,7 @@ const Configuracoes = () => {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">{canReadTeamDevelopment ? "Dashboard da equipe" : "Meu dashboard"}</CardTitle>
+                  <CardTitle className="text-lg">{canReadTeamDevelopment ? "Estatísticas da equipe" : "Minhas estatísticas"}</CardTitle>
                   <p className="text-sm text-muted-foreground">
                     Cada card mostra o estágio geral do colaborador, o andamento do onboarding e sinais operacionais simples dos últimos 30 dias.
                   </p>
@@ -3135,7 +3718,7 @@ const Configuracoes = () => {
                                   <div>
                                     <p className="font-medium">Atualização rápida</p>
                                     <p className="mt-1 text-sm text-muted-foreground">
-                                      Somente o necessário para manter o dashboard atualizado.
+                                      Somente o necessário para manter as estatísticas atualizadas.
                                     </p>
                                   </div>
                                   <Button
@@ -3232,7 +3815,7 @@ const Configuracoes = () => {
                                     ) : (
                                       <Save className="h-4 w-4 mr-2" />
                                     )}
-                                    Atualizar dashboard
+                                    Atualizar estatísticas
                                   </Button>
                                 </div>
                               </div>
@@ -3985,8 +4568,14 @@ const Configuracoes = () => {
         </div>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90 lg:hidden">
-        <div className="mx-auto max-w-screen-sm px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+      <div
+        className={
+          isDesignLabExperience
+            ? "designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t bg-background/94 backdrop-blur supports-[backdrop-filter]:bg-background/88 lg:hidden"
+            : "fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90 lg:hidden"
+        }
+      >
+        <div className="mx-auto max-w-screen-sm px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
           {mobileDescriptionSection && (
             <div className="mb-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
               <p className="text-xs font-medium">{availableSections.find((item) => item.id === mobileDescriptionSection)?.title}</p>
@@ -3995,7 +4584,7 @@ const Configuracoes = () => {
               </p>
             </div>
           )}
-          <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {availableSections.map((item) => {
               const isActive = activeSection === item.id;
 
@@ -4003,9 +4592,15 @@ const Configuracoes = () => {
                 <button
                   key={item.id}
                   type="button"
-                  className={`flex min-w-[88px] shrink-0 snap-start flex-col items-center justify-center rounded-xl border px-3 py-2 text-center transition-colors ${
-                    isActive ? "border-primary bg-primary/8 text-primary" : "bg-background text-muted-foreground"
-                  }`}
+                  className={
+                    isDesignLabExperience
+                      ? `designlab-settings-mobile-item group relative flex min-w-[78px] flex-1 shrink-0 snap-start flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-300 ease-out active:translate-y-0.5 ${
+                          isActive ? "is-active" : ""
+                        }`
+                      : `flex min-w-[88px] shrink-0 snap-start flex-col items-center justify-center rounded-xl border px-3 py-2 text-center transition-colors ${
+                          isActive ? "border-primary bg-primary/8 text-primary" : "bg-background text-muted-foreground"
+                        }`
+                  }
                   onPointerDown={() => {
                     mobileLongPressTriggeredRef.current = false;
                     clearMobileLongPress();
@@ -4027,8 +4622,29 @@ const Configuracoes = () => {
                     setActiveSection(item.id);
                   }}
                 >
-                  <item.icon className="h-4 w-4" />
-                  <span className="mt-1 text-[11px] font-medium leading-tight">{item.title}</span>
+                  {isDesignLabExperience ? (
+                    <span
+                      className={`designlab-settings-mobile-surface flex h-full min-h-[58px] w-full flex-col items-center justify-center rounded-[0.68rem] border px-2 py-2 transition-colors duration-300 ${
+                        isActive
+                          ? "border-primary/45 bg-primary/10 text-primary"
+                          : "border-border/80 bg-card/92 text-muted-foreground"
+                      }`}
+                    >
+                      <span
+                        className={`designlab-settings-mobile-icon grid h-7 w-7 place-items-center rounded-lg transition-colors duration-300 ${
+                          isActive ? "bg-primary/14 text-primary" : "bg-muted/70 text-foreground"
+                        }`}
+                      >
+                        <item.icon className="h-4 w-4" />
+                      </span>
+                      <span className="mt-1 line-clamp-2 max-w-full text-[10px] font-medium leading-[1.08]">{item.title}</span>
+                    </span>
+                  ) : (
+                    <>
+                      <item.icon className="h-4 w-4" />
+                      <span className="mt-1 text-[11px] font-medium leading-tight">{item.title}</span>
+                    </>
+                  )}
                 </button>
               );
             })}

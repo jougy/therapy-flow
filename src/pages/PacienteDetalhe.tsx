@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } fro
 import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
-  ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock,
+  AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock,
   Pencil, Trash2, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,7 @@ import {
 } from "@/lib/group-colors";
 import {
   getFunctionalIndependenceLabel,
+  getPatientRiskFlagLabel,
   parseClinicalProfile,
   parseEmergencyContact,
 } from "@/lib/patient-clinical-profile";
@@ -142,6 +143,86 @@ const WhatsAppLogo = ({ className }: { className?: string }) => (
     <path d="M16.02 3.2c-7.04 0-12.76 5.72-12.76 12.76 0 2.25.59 4.45 1.71 6.38L3.16 28.8l6.61-1.73a12.68 12.68 0 0 0 6.25 1.64h.01c7.04 0 12.76-5.72 12.76-12.76S23.06 3.2 16.02 3.2Zm0 23.35h-.01c-1.95 0-3.86-.52-5.53-1.51l-.4-.24-3.92 1.03 1.05-3.82-.26-.39a10.55 10.55 0 0 1-1.62-5.66c0-5.89 4.8-10.69 10.7-10.69 2.86 0 5.54 1.11 7.56 3.13a10.64 10.64 0 0 1 3.14 7.56c0 5.9-4.8 10.69-10.71 10.69Zm5.86-8.01c-.32-.16-1.9-.94-2.19-1.04-.29-.11-.5-.16-.71.16-.21.32-.82 1.04-1 1.25-.18.21-.37.24-.69.08-.32-.16-1.36-.5-2.59-1.6-.96-.85-1.6-1.91-1.79-2.23-.19-.32-.02-.49.14-.65.14-.14.32-.37.48-.56.16-.18.21-.32.32-.53.11-.21.05-.4-.03-.56-.08-.16-.71-1.71-.97-2.34-.26-.62-.52-.54-.71-.55h-.61c-.21 0-.56.08-.85.4-.29.32-1.12 1.09-1.12 2.66s1.15 3.09 1.31 3.3c.16.21 2.26 3.45 5.48 4.84.77.33 1.36.53 1.83.68.77.24 1.47.21 2.02.13.62-.09 1.9-.78 2.17-1.52.27-.75.27-1.39.19-1.52-.08-.14-.29-.22-.61-.38Z" />
   </svg>
 );
+
+const splitClinicalAlertItems = (value: string | null | undefined) =>
+  (value ?? "")
+    .split(/\n|;|,/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item) {
+        return false;
+      }
+
+      const normalized = item
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLocaleLowerCase("pt-BR");
+
+      return !/^(nao|não|nenhuma?|sem|nega|desconhece|n\/a|na)$/i.test(normalized) &&
+        !normalized.startsWith("sem alerg") &&
+        !normalized.startsWith("sem queda") &&
+        !normalized.startsWith("nao possui") &&
+        !normalized.startsWith("não possui");
+    });
+
+interface PatientHeaderAlertProps {
+  icon: ReactNode;
+  items: string[];
+  tone: "amber" | "rose";
+  title: string;
+}
+
+const PatientHeaderAlert = ({ icon, items, tone, title }: PatientHeaderAlertProps) => {
+  const [open, setOpen] = useState(false);
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  const toneClassName =
+    tone === "rose"
+      ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+      : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onBlur={() => setOpen(false)}
+          onFocus={() => setOpen(true)}
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium shadow-sm transition hover:-translate-y-0.5 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${toneClassName}`}
+          aria-label={title}
+        >
+          {icon}
+          <span>{title}</span>
+          <Badge variant="secondary" className="ml-0.5 h-5 min-w-5 justify-center rounded-full px-1 text-[11px]">
+            {items.length}
+          </Badge>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-72"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        <div className="space-y-3">
+          <p className="text-sm font-semibold">{title}</p>
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            {items.map((item, index) => (
+              <li key={`${item}-${index}`} className="rounded-md bg-muted/40 px-3 py-2">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 const groupStatusBadgeStyles: Record<PatientGroupStatus, string> = {
   em_andamento: "bg-primary/10 text-primary border-primary/20",
@@ -506,7 +587,7 @@ const PacienteDetalhe = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { can, clinic, clinicId, operationalRole, user } = useAuth();
-  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/clinicas";
+  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const canViewFinancialData = can("treasury.manage");
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
@@ -1284,6 +1365,21 @@ const PacienteDetalhe = () => {
       : 0;
   const hasPaymentSummaryAdjustment = operationalSummary.originalChargedCents > 0 && paymentSummaryAdjustmentCents !== 0;
   const patientRegistrationStatus = patient.registration_complete ? "Cadastro concluído" : "Cadastro pendente";
+  const allergyAlertItems = splitClinicalAlertItems(patient.allergies);
+  const fallRiskAlertItems = [
+    ...(parsedClinicalProfile.risk_flags.includes("fall_risk") ? ["Risco marcado no cadastro"] : []),
+    ...splitClinicalAlertItems(parsedClinicalProfile.falls_history),
+    ...(parsedClinicalProfile.functional_independence === "parcialmente_dependente" || parsedClinicalProfile.functional_independence === "dependente"
+      ? [`Contexto funcional: ${getFunctionalIndependenceLabel(parsedClinicalProfile.functional_independence)}`]
+      : []),
+  ];
+  const structuredRiskAlertItems = parsedClinicalProfile.risk_flags
+    .filter((risk) => risk !== "fall_risk" && risk !== "allergy")
+    .map(getPatientRiskFlagLabel);
+  const allAllergyAlertItems = [
+    ...(parsedClinicalProfile.risk_flags.includes("allergy") ? ["Alergia marcada no cadastro"] : []),
+    ...allergyAlertItems,
+  ];
   const activeAgendaEvents = agendaEvents.filter((event) => getAgendaEventStatus(event) !== "cancelado");
   const nowTimestamp = Date.now();
   const overdueAgendaEvents = activeAgendaEvents
@@ -1693,15 +1789,45 @@ const PacienteDetalhe = () => {
                     {patient.phone}
                   </span>
                 ) : null}
-                <span className="inline-flex items-center gap-1 rounded-full border bg-background/80 px-3 py-1">
-                  {patient.registration_complete ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <FileText className="h-3.5 w-3.5" />}
+                <button
+                  type="button"
+                  onClick={() => navigate(`/pacientes/${patient.id}/cadastro`)}
+                  title="Editar cadastro completo"
+                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-left transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    patient.registration_complete
+                      ? "bg-success/10 text-success hover:bg-success/15"
+                      : "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                  }`}
+                >
+                  {patient.registration_complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
                   {patientRegistrationStatus}
-                </span>
+                </button>
               </div>
               <p className="max-w-2xl text-sm text-muted-foreground">
                 Acesse rapidamente contato, cadastro, status e novo atendimento sem sair da ficha do paciente.
               </p>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 xl:flex-1 xl:justify-center">
+            <PatientHeaderAlert
+              icon={<AlertTriangle className="h-4 w-4" />}
+              items={allAllergyAlertItems}
+              title="Alergias"
+              tone="rose"
+            />
+            <PatientHeaderAlert
+              icon={<AlertTriangle className="h-4 w-4" />}
+              items={fallRiskAlertItems}
+              title="Risco de queda"
+              tone="amber"
+            />
+            <PatientHeaderAlert
+              icon={<AlertTriangle className="h-4 w-4" />}
+              items={structuredRiskAlertItems}
+              title="Riscos"
+              tone="amber"
+            />
           </div>
 
           <div className="grid gap-3 rounded-2xl border bg-background/70 p-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:grid-cols-[auto,auto,minmax(0,160px)] xl:shrink-0">
@@ -1718,7 +1844,7 @@ const PacienteDetalhe = () => {
             </Button>
             <Button variant="outline" onClick={() => setPatientInfoDialogOpen(true)} className="w-full sm:w-auto">
               <MoreHorizontal className="h-4 w-4 mr-2" />
-              Ver mais
+              Resumo Clínico
             </Button>
             <Select
               value={patient.status}
@@ -2506,7 +2632,7 @@ const PacienteDetalhe = () => {
                 }}
               >
                 <FileText className="h-4 w-4 mr-2" />
-                Resumo clínico
+                Ver todos os dados
               </Button>
               <Button
                 variant="outline"

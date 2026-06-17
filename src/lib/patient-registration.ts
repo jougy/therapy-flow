@@ -6,6 +6,125 @@ import { buildPatientOriginPayload, type PatientOriginFormValues } from "@/lib/p
 
 export const extractCpfDigits = (value: string | null | undefined) => (value ?? "").replace(/\D/g, "");
 
+export const normalizePatientPhoneDigits = (value: string | null | undefined) => {
+  const digits = (value ?? "").replace(/\D/g, "");
+  const withoutBrazilPrefix = digits.length > 11 && digits.startsWith("55") ? digits.slice(2) : digits;
+  return withoutBrazilPrefix.slice(0, 11);
+};
+
+export const formatPatientCpf = (value: string) => {
+  const digits = extractCpfDigits(value).slice(0, 11);
+  return digits
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+};
+
+export const formatPatientPhone = (value: string) => {
+  const digits = normalizePatientPhoneDigits(value);
+
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+};
+
+export const isValidCpfDigits = (digits: string) => {
+  if (!/^\d{11}$/.test(digits) || /^(\d)\1{10}$/.test(digits)) {
+    return false;
+  }
+
+  const calculateDigit = (base: string, factor: number) => {
+    const sum = Array.from(base).reduce((total, digit) => {
+      const nextTotal = total + Number(digit) * factor;
+      factor -= 1;
+      return nextTotal;
+    }, 0);
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+
+  return calculateDigit(digits.slice(0, 9), 10) === Number(digits[9]) &&
+    calculateDigit(digits.slice(0, 10), 11) === Number(digits[10]);
+};
+
+export const isValidPatientBirthDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const birth = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(birth.getTime())) {
+    return false;
+  }
+
+  const [year, month, day] = value.split("-").map(Number);
+  if (birth.getFullYear() !== year || birth.getMonth() + 1 !== month || birth.getDate() !== day) {
+    return false;
+  }
+
+  const today = new Date();
+  const oldest = new Date(today.getFullYear() - 130, today.getMonth(), today.getDate());
+
+  return birth <= today && birth >= oldest;
+};
+
+export const isValidPatientEmail = (value: string) =>
+  value.length <= INPUT_LIMITS.email &&
+  /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/.test(value);
+
+export const normalizePatientNameKey = (value: string) =>
+  sanitizeSingleLineInput(value, INPUT_LIMITS.name)
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "")
+    .toLocaleLowerCase("pt-BR");
+
+export interface PatientPreRegistrationValues {
+  cpf: string;
+  dateOfBirth: string;
+  email: string;
+  name: string;
+  phone: string;
+}
+
+export const validatePatientPreRegistration = (values: PatientPreRegistrationValues) => {
+  const normalized = {
+    cpf: extractCpfDigits(values.cpf).slice(0, 11),
+    dateOfBirth: sanitizeSingleLineInput(values.dateOfBirth, 10).trim(),
+    email: sanitizeSingleLineInput(values.email, INPUT_LIMITS.email).trim().toLowerCase(),
+    name: sanitizeSingleLineInput(values.name, INPUT_LIMITS.name).trim(),
+    phone: normalizePatientPhoneDigits(values.phone),
+  };
+  const errors: Partial<Record<keyof PatientPreRegistrationValues, string>> = {};
+
+  if (normalized.name.length < 3) {
+    errors.name = "Informe o nome completo do paciente.";
+  }
+
+  if (!isValidPatientBirthDate(normalized.dateOfBirth)) {
+    errors.dateOfBirth = "Informe uma data de nascimento válida.";
+  }
+
+  if (!isValidCpfDigits(normalized.cpf)) {
+    errors.cpf = "Informe um CPF válido com 11 dígitos.";
+  }
+
+  if (!/^\d{10,11}$/.test(normalized.phone)) {
+    errors.phone = "Informe um telefone com DDD.";
+  }
+
+  if (!isValidPatientEmail(normalized.email)) {
+    errors.email = "Informe um e-mail válido.";
+  }
+
+  return {
+    errors,
+    isValid: Object.keys(errors).length === 0,
+    values: normalized,
+  };
+};
+
 export const getPatientRegistrationPassword = (cpf: string | null | undefined) => {
   const digits = extractCpfDigits(cpf);
 
@@ -69,6 +188,11 @@ const digitsToNull = (value: string | null | undefined) => {
   return digits.length > 0 ? digits : null;
 };
 
+const phoneDigitsToNull = (value: string | null | undefined) => {
+  const digits = normalizePatientPhoneDigits(value);
+  return digits.length > 0 ? digits : null;
+};
+
 export const calculatePatientAge = (birthDate: string | null | undefined) => {
   const normalizedBirthDate = trimToNull(birthDate);
 
@@ -122,7 +246,7 @@ export const buildPatientRegistrationPutPayload = (
     name: trimSingleLineToNull(normalizedName, INPUT_LIMITS.name) ?? patient.name,
     neighborhood: trimSingleLineToNull(formValues.neighborhood, INPUT_LIMITS.shortText),
     ...buildPatientOriginPayload(formValues),
-    phone: digitsToNull(formValues.phone),
+    phone: phoneDigitsToNull(formValues.phone),
     profession: trimSingleLineToNull(formValues.profession, INPUT_LIMITS.profession),
     pronoun: trimSingleLineToNull(formValues.pronoun, INPUT_LIMITS.shortText),
     registration_complete: true,

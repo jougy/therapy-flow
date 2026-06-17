@@ -66,6 +66,11 @@ vi.mock("@/integrations/supabase/client", () => ({
 describe("FormularioEditor", () => {
   beforeEach(() => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
+    global.ResizeObserver = class ResizeObserver {
+      disconnect = vi.fn();
+      observe = vi.fn();
+      unobserve = vi.fn();
+    };
     vi.mocked(useAuth).mockReturnValue({
       accountRole: "account_owner",
       can: (capability) => capability === "forms.manage",
@@ -109,6 +114,24 @@ describe("FormularioEditor", () => {
 
     await waitFor(() => expect(screen.getByText("Blocos disponíveis")).toBeInTheDocument());
     expect(screen.getAllByRole("button", { name: "Data" })).not.toHaveLength(0);
+  });
+
+  it("switches from editing to the final form preview", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes/formularios/novo"]}>
+        <Routes>
+          <Route path="/configuracoes/formularios/:templateId" element={<FormularioEditor />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Blocos disponíveis")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Visualizar" }));
+
+    expect(screen.getByText("Ficha sem nome")).toBeInTheDocument();
+    expect(screen.getByText("Queixa principal")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Texto curto" })).toBeDisabled();
   });
 
   it("imports a template file directly into the current draft editor", async () => {

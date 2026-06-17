@@ -19,6 +19,26 @@ export const DEPENDENCY_LEVEL_OPTIONS = [
 
 export type DependencyLevelValue = (typeof DEPENDENCY_LEVEL_OPTIONS)[number]["value"];
 
+export const PATIENT_RISK_FLAG_OPTIONS = [
+  { label: "Risco de queda", value: "fall_risk" },
+  { label: "Alergia", value: "allergy" },
+  { label: "Gestante", value: "pregnant" },
+  { label: "Gestante de alto risco", value: "high_risk_pregnancy" },
+  { label: "Idoso", value: "elderly" },
+  { label: "Agressivo", value: "aggressive" },
+  { label: "Risco de evasão", value: "escape_risk" },
+  { label: "Pediátrico", value: "pediatric" },
+  { label: "Lesão por pressão", value: "pressure_injury" },
+  { label: "Preservação de membro", value: "limb_preservation" },
+  { label: "Risco de infecção", value: "infection_risk" },
+  { label: "Diabetes", value: "diabetes" },
+  { label: "Neuropata", value: "neuropathy" },
+  { label: "Risco de convulsão", value: "seizure_risk" },
+  { label: "Dificuldade de fala", value: "speech_difficulty" },
+] as const;
+
+export type PatientRiskFlagValue = (typeof PATIENT_RISK_FLAG_OPTIONS)[number]["value"];
+
 export interface PatientSubstanceUseRecord {
   dependency_level: DependencyLevelValue | "";
   frequency: string;
@@ -49,6 +69,7 @@ export interface PatientClinicalProfile {
   implants_devices: string;
   lifestyle_notes: string;
   mobility_aids: string;
+  risk_flags: PatientRiskFlagValue[];
   addiction_records: PatientAddictionRecord[];
   has_addictions: boolean;
   substance_use_records: PatientSubstanceUseRecord[];
@@ -72,6 +93,7 @@ export const EMPTY_CLINICAL_PROFILE: PatientClinicalProfile = {
   implants_devices: "",
   lifestyle_notes: "",
   mobility_aids: "",
+  risk_flags: [],
   addiction_records: [],
   has_addictions: false,
   substance_use_records: [],
@@ -90,6 +112,14 @@ const isPlainObject = (value: Json | null | undefined): value is Record<string, 
 
 const readString = (value: Json | undefined) => (typeof value === "string" ? value : "");
 const readBoolean = (value: Json | undefined) => (typeof value === "boolean" ? value : false);
+const readRiskFlags = (value: Json | undefined): PatientRiskFlagValue[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const validValues = new Set(PATIENT_RISK_FLAG_OPTIONS.map((option) => option.value));
+  return [...new Set(value.filter((item): item is PatientRiskFlagValue => typeof item === "string" && validValues.has(item as PatientRiskFlagValue)))];
+};
 const readDependencyLevel = (value: Json | undefined): DependencyLevelValue | "" => {
   const dependencyLevel = readString(value);
 
@@ -267,6 +297,7 @@ export const parseClinicalProfile = (value: Json | null | undefined): PatientCli
     implants_devices: readString(value.implants_devices),
     lifestyle_notes: readString(value.lifestyle_notes),
     mobility_aids: readString(value.mobility_aids),
+    risk_flags: readRiskFlags(value.risk_flags),
     addiction_records: addictionRecords,
     has_addictions: readBoolean(value.has_addictions) || addictionRecords.some(hasRecordContent),
     substance_use_records: unifiedSubstanceUseRecords,
@@ -311,6 +342,7 @@ export const buildClinicalProfilePayload = (profile: PatientClinicalProfile): Js
     implants_devices: trimToNull(profile.implants_devices),
     lifestyle_notes: trimToNull(profile.lifestyle_notes),
     mobility_aids: trimToNull(profile.mobility_aids),
+    risk_flags: profile.risk_flags.length > 0 ? profile.risk_flags.filter((flag) => PATIENT_RISK_FLAG_OPTIONS.some((option) => option.value === flag)) : null,
     substance_use_history: trimToNull(substanceUseSummary),
     substance_use_records: substanceUseRecords.length > 0 ? substanceUseRecords : null,
     uses_substances: usesSubstances ? true : null,
@@ -331,3 +363,6 @@ export const buildEmergencyContactPayload = (contact: PatientEmergencyContact): 
 
 export const getFunctionalIndependenceLabel = (value: string | null | undefined) =>
   FUNCTIONAL_INDEPENDENCE_OPTIONS.find((option) => option.value === value)?.label ?? value ?? "";
+
+export const getPatientRiskFlagLabel = (value: string) =>
+  PATIENT_RISK_FLAG_OPTIONS.find((option) => option.value === value)?.label ?? value;

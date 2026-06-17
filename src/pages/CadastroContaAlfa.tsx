@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole, Mail, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -79,8 +79,28 @@ const isValidEmail = (value: string) => /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,2
 
 const isStrongEnoughPassword = (value: string) => /^(?=.*[A-Za-z])(?=.*\d).{8,128}$/.test(value);
 
+const getSignupRateLimitSeconds = (message: string) => {
+  const match = message.match(/after\s+(\d+)\s+seconds/i);
+  return match ? Number(match[1]) : null;
+};
+
 const getErrorMessage = (error: unknown) => {
-  if (error instanceof Error) return error.message;
+  const message = error instanceof Error
+    ? error.message
+    : error && typeof error === "object" && "message" in error
+      ? String((error as { message?: unknown }).message)
+      : "";
+
+  const rateLimitSeconds = getSignupRateLimitSeconds(message);
+  if (rateLimitSeconds !== null) {
+    return `Por segurança, o Supabase bloqueou uma nova tentativa muito rápida. Aguarde ${rateLimitSeconds} segundos e tente novamente.`;
+  }
+
+  if (/already registered|already exists|user already/i.test(message)) {
+    return "Este e-mail já possui uma conta. Tente entrar pelo login ou use outro e-mail.";
+  }
+
+  if (message) return message;
   if (error && typeof error === "object" && "message" in error) {
     return String((error as { message?: unknown }).message);
   }
@@ -102,6 +122,18 @@ const CadastroContaAlfa = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(false);
+  const [signupCooldown, setSignupCooldown] = useState(0);
+  const submitLockRef = useRef(false);
+
+  useEffect(() => {
+    if (signupCooldown <= 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setSignupCooldown((current) => Math.max(current - 1, 0));
+    }, 1_000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [signupCooldown]);
 
   const cleanCpf = useMemo(() => onlyDigits(cpf), [cpf]);
   const cleanCnpj = useMemo(() => onlyDigits(cnpj), [cnpj]);
@@ -122,6 +154,7 @@ const CadastroContaAlfa = () => {
   }, [birthDate, cleanPhone.length, cnpj, cpf, email, ownerName, password, passwordConfirmation, phone]);
 
   const canSubmit =
+    signupCooldown === 0 &&
     normalizeName(ownerName).length >= 3 &&
     isValidEmail(normalizeEmail(email)) &&
     isValidCpf(cpf) &&
@@ -133,8 +166,9 @@ const CadastroContaAlfa = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || submitLockRef.current) return;
 
+    submitLockRef.current = true;
     setLoading(true);
     try {
       const nextEmail = normalizeEmail(email);
@@ -149,6 +183,7 @@ const CadastroContaAlfa = () => {
           data: {
             birth_date: birthDate,
             cnpj: cleanCnpj || null,
+            clinic_name: nextClinicName || null,
             cpf: cleanCpf,
             full_name: nextOwnerName,
             phone: cleanPhone,
@@ -163,6 +198,7 @@ const CadastroContaAlfa = () => {
 
       const { data: rpcData, error: rpcError } = await supabase.rpc("handle_signup", {
         _cnpj: clinicDocument,
+        _clinic_name: nextClinicName || null,
         _email: nextEmail,
         _full_name: nextOwnerName,
         _subscription_plan: plan,
@@ -190,12 +226,21 @@ const CadastroContaAlfa = () => {
         description: "Seu acesso alfa foi criado. Você já pode escolher sua clínica.",
       });
     } catch (error) {
+      const message = getErrorMessage(error);
+      const rateLimitSeconds = getSignupRateLimitSeconds(getErrorMessage(error)) ??
+        getSignupRateLimitSeconds(error instanceof Error ? error.message : error && typeof error === "object" && "message" in error ? String((error as { message?: unknown }).message) : "");
+
+      if (rateLimitSeconds !== null) {
+        setSignupCooldown(rateLimitSeconds);
+      }
+
       toast({
         title: "Erro ao criar conta",
-        description: getErrorMessage(error),
+        description: message,
         variant: "destructive",
       });
     } finally {
+      submitLockRef.current = false;
       setLoading(false);
     }
   };
@@ -239,7 +284,7 @@ const CadastroContaAlfa = () => {
                     </div>
                   </div>
                 </div>
-                <Button className="w-full sm:w-auto" onClick={() => navigate("/clinicas", { replace: true })}>
+                <Button className="w-full sm:w-auto" onClick={() => navigate("/espacopessoal", { replace: true })}>
                   Ir para minhas clínicas
                 </Button>
               </div>
@@ -400,9 +445,15 @@ const CadastroContaAlfa = () => {
                   </div>
                 )}
 
+                {signupCooldown > 0 && (
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+                    Aguarde {signupCooldown}s para tentar criar a conta novamente. Isso evita bloqueios do provedor de autenticação.
+                  </div>
+                )}
+
                 <Button type="submit" className="w-full sm:w-auto" disabled={loading || !canSubmit}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Criar conta alfa
+                  {signupCooldown > 0 ? `Aguarde ${signupCooldown}s` : "Criar conta alfa"}
                 </Button>
               </form>
             )}

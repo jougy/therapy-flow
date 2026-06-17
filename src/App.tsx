@@ -15,6 +15,7 @@ const Auth = lazy(() => import("./pages/Auth"));
 const CadastroCompleto = lazy(() => import("./pages/CadastroCompleto"));
 const CadastroContaAlfa = lazy(() => import("./pages/CadastroContaAlfa"));
 const CadastroPacienteCompartilhado = lazy(() => import("./pages/CadastroPacienteCompartilhado"));
+const ClinicDashboard = lazy(() => import("./pages/ClinicDashboard"));
 const Configuracoes = lazy(() => import("./pages/Configuracoes"));
 const FormularioEditor = lazy(() => import("./pages/FormularioEditor"));
 const Index = lazy(() => import("./pages/Index"));
@@ -26,6 +27,10 @@ const SelecionarClinica = lazy(() => import("./pages/SelecionarClinica"));
 const SessaoDetalhe = lazy(() => import("./pages/SessaoDetalhe"));
 const PlatformAdmin = lazy(() => import("./pages/PlatformAdmin"));
 const PlatformMfa = lazy(() => import("./pages/PlatformMfa"));
+const designLabModulePath = "/designlab/DesignLabApp.tsx";
+const DesignLabApp = lazy(() =>
+  import(/* @vite-ignore */ designLabModulePath).catch(() => import("./pages/NotFound"))
+);
 
 const LoadingScreen = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -75,7 +80,7 @@ const ClinicRoute = ({ children }: { children: ReactNode }) => {
   }
   if (!session) return <Navigate to="/auth" replace />;
   if (isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
-  if (!clinicKey || deniedRouteKey === clinicKey) return <Navigate to="/clinicas" replace />;
+  if (!clinicKey || deniedRouteKey === clinicKey) return <Navigate to="/espacopessoal" replace />;
   if (validatingRouteKey || clinic?.route_key !== clinicKey) return <LoadingScreen />;
   return <>{children}</>;
 };
@@ -87,7 +92,7 @@ const PlatformRoute = ({ children }: { children: ReactNode }) => {
     return <LoadingScreen />;
   }
   if (!session) return <Navigate to="/auth" replace />;
-  if (!isPlatformOwner) return <Navigate to="/clinicas" replace />;
+  if (!isPlatformOwner) return <Navigate to="/espacopessoal" replace />;
   if (!platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
   return <>{children}</>;
 };
@@ -99,7 +104,7 @@ const PlatformMfaRoute = ({ children }: { children: ReactNode }) => {
     return <LoadingScreen />;
   }
   if (!session) return <Navigate to="/auth" replace />;
-  if (!isPlatformOwner) return <Navigate to="/clinicas" replace />;
+  if (!isPlatformOwner) return <Navigate to="/espacopessoal" replace />;
   if (platformMfaVerified) return <Navigate to="/platform" replace />;
   return <>{children}</>;
 };
@@ -114,7 +119,7 @@ const LegacyClinicRoute = () => {
 
   if (!session) return <Navigate to="/auth" replace />;
   if (isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
-  if (!clinic?.route_key) return <Navigate to="/clinicas" replace />;
+  if (!clinic?.route_key) return <Navigate to="/espacopessoal" replace />;
 
   return <Navigate to={`/clinica/${clinic.route_key}${location.pathname}${location.search}`} replace />;
 };
@@ -126,7 +131,7 @@ const AuthRoute = ({ children }: { children: ReactNode }) => {
   }
   if (session && isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
   if (session && isPlatformOwner && platformMfaVerified) return <Navigate to="/platform" replace />;
-  if (session) return <Navigate to="/clinicas" replace />;
+  if (session) return <Navigate to="/espacopessoal" replace />;
   return <>{children}</>;
 };
 
@@ -142,14 +147,17 @@ const App = () => (
               <AuthProvider>
                 <Suspense fallback={<LoadingScreen />}>
                   <Routes>
+                    <Route path="/designlab/*" element={<DesignLabApp />} />
+                    <Route path="/designlabs/*" element={<DesignLabApp />} />
                     <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
                     <Route path="/cadastro/conta-alfa" element={<AuthRoute><CadastroContaAlfa /></AuthRoute>} />
                     <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
-                    <Route path="/clinicas" element={<ProtectedRoute><SelecionarClinica /></ProtectedRoute>} />
+                    <Route path="/espacopessoal" element={<ProtectedRoute><SelecionarClinica /></ProtectedRoute>} />
+                    <Route path="/clinicas" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                     <Route path="/platform/mfa" element={<PlatformMfaRoute><PlatformMfa /></PlatformMfaRoute>} />
                     <Route path="/platform/*" element={<PlatformRoute><PlatformAdmin /></PlatformRoute>} />
                     <Route path="/configuracoes" element={<ProtectedRoute><AppLayout><Configuracoes /></AppLayout></ProtectedRoute>} />
-                    <Route path="/" element={<ProtectedRoute><Navigate to="/clinicas" replace /></ProtectedRoute>} />
+                    <Route path="/" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                     <Route
                       path="/clinica/:clinicKey/*"
                       element={
@@ -157,6 +165,7 @@ const App = () => (
                           <AppLayout>
                             <Routes>
                               <Route index element={<Index />} />
+                              <Route path="dashboard" element={<ClinicDashboard />} />
                               <Route path="configuracoes" element={<Configuracoes />} />
                               <Route path="configuracoes/formularios/:templateId" element={<FormularioEditor />} />
                               <Route path="pacientes/novo" element={<NovoPaciente />} />

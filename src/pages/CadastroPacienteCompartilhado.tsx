@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
+import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 import {
   EMPTY_CLINICAL_PROFILE,
   EMPTY_EMERGENCY_CONTACT,
@@ -30,7 +31,15 @@ import {
   type PatientOriginType,
 } from "@/lib/patient-origin";
 import { SubstanceUseClinicalSection } from "@/components/patients/SubstanceUseClinicalSection";
+import { PatientRiskFlagsChecklist } from "@/components/patients/PatientRiskFlagsChecklist";
 import { useParams } from "react-router-dom";
+import {
+  formatPatientCpf,
+  formatPatientPhone,
+  isValidPatientBirthDate,
+  isValidPatientEmail,
+  normalizePatientPhoneDigits,
+} from "@/lib/patient-registration";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const COMPLETED_MESSAGE =
@@ -98,25 +107,32 @@ const isSharedPatientResponse = (value: unknown): value is SharedPatientResponse
   return typeof data.completed === "boolean" && !!patient && typeof patient === "object" && !Array.isArray(patient);
 };
 
-const formatCpf = (value: string) => {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-  return digits
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-};
-
-const formatPhone = (value: string) => {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-};
-
 const formatCep = (value: string) => {
   const digits = value.replace(/\D/g, "").slice(0, 8);
   return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+};
+
+const sanitizeLine = (value: string, maxLength = INPUT_LIMITS.shortText) =>
+  sanitizeSingleLineInput(value, maxLength).trim();
+
+const sanitizeLineOrNull = (value: string, maxLength = INPUT_LIMITS.shortText) => {
+  const normalized = sanitizeLine(value, maxLength);
+  return normalized.length > 0 ? normalized : null;
+};
+
+const sanitizeLongOrNull = (value: string, maxLength = INPUT_LIMITS.clinicalLongText) => {
+  const normalized = sanitizeMultilineInput(value, maxLength).trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const digitsOrNull = (value: string, maxLength: number) => {
+  const digits = value.replace(/\D/g, "").slice(0, maxLength);
+  return digits.length > 0 ? digits : null;
+};
+
+const phoneDigitsOrNull = (value: string) => {
+  const digits = normalizePatientPhoneDigits(value);
+  return digits.length > 0 ? digits : null;
 };
 
 const CadastroPacienteCompartilhado = () => {
@@ -161,21 +177,53 @@ const CadastroPacienteCompartilhado = () => {
   const [clinicalProfile, setClinicalProfile] = useState<PatientClinicalProfile>(EMPTY_CLINICAL_PROFILE);
   const [emergencyContact, setEmergencyContact] = useState<PatientEmergencyContact>(EMPTY_EMERGENCY_CONTACT);
 
-  const canSubmit = useMemo(() => name.trim().length > 0 && !locked, [name, locked]);
+  const formValidation = useMemo(() => {
+    const normalizedName = sanitizeLine(name, INPUT_LIMITS.name);
+    const normalizedEmail = sanitizeLine(email, INPUT_LIMITS.email).toLowerCase();
+    const normalizedPhone = normalizePatientPhoneDigits(phone);
+    const errors: string[] = [];
+
+    if (normalizedName.length < 3) {
+      errors.push("Informe seu nome completo.");
+    }
+
+    if (dateOfBirth && !isValidPatientBirthDate(dateOfBirth)) {
+      errors.push("Informe uma data de nascimento válida.");
+    }
+
+    if (normalizedPhone && !/^\d{10,11}$/.test(normalizedPhone)) {
+      errors.push("Informe um telefone com DDD.");
+    }
+
+    if (normalizedEmail && !isValidPatientEmail(normalizedEmail)) {
+      errors.push("Informe um e-mail válido.");
+    }
+
+    return {
+      errors,
+      isValid: errors.length === 0,
+      values: {
+        email: normalizedEmail,
+        name: normalizedName,
+        phone: normalizedPhone,
+      },
+    };
+  }, [dateOfBirth, email, name, phone]);
+  const canSubmit = formValidation.isValid && !locked;
   const canUnlock = password.replace(/\D/g, "").length >= 6;
 
   const fillForm = (data: SharedPatientFormData) => {
     setPatientId(data.id);
-    setName(data.name ?? "");
-    setCpf(formatCpf(data.cpf ?? ""));
+    setName(sanitizeLine(data.name ?? "", INPUT_LIMITS.name));
+    setCpf(formatPatientCpf(data.cpf ?? ""));
     setDateOfBirth(data.date_of_birth ?? "");
-    setPhone(formatPhone(data.phone ?? ""));
-    setEmail(data.email ?? "");
+    setPhone(formatPatientPhone(data.phone ?? ""));
+    setEmail(sanitizeLine(data.email ?? "", INPUT_LIMITS.email));
     setGender(data.gender ?? "");
-    setRg(data.rg ?? "");
+    setRg(sanitizeLine(data.rg ?? "", INPUT_LIMITS.patientDocument));
     setBloodType(data.blood_type ?? "");
     setPronoun(data.pronoun ?? "");
-    setProfession(data.profession ?? "");
+    setProfession(sanitizeLine(data.profession ?? "", INPUT_LIMITS.profession));
     setOriginType(normalizePatientOriginType(data.origin_type));
     setOriginReferrerName(data.origin_referrer_name ?? "");
     setOriginInsuranceProvider(data.origin_insurance_provider ?? "");
@@ -184,18 +232,18 @@ const CadastroPacienteCompartilhado = () => {
     setOriginOtherName(data.origin_other_name ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME);
     setOriginOtherDescription(data.origin_other_description ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION);
     setCep(formatCep(data.cep ?? ""));
-    setCountry(data.country ?? "Brasil");
-    setState(data.state ?? "");
-    setCity(data.city ?? "");
-    setNeighborhood(data.neighborhood ?? "");
-    setStreet(data.street ?? "");
-    setAddressNumber(data.address_number ?? "");
-    setAddressComplement(data.address_complement ?? "");
-    setChronicConditions(data.chronic_conditions ?? "");
-    setSurgeries(data.surgeries ?? "");
-    setContinuousMedications(data.continuous_medications ?? "");
-    setAllergies(data.allergies ?? "");
-    setClinicalNotes(data.clinical_notes ?? "");
+    setCountry(sanitizeLine(data.country ?? "Brasil", INPUT_LIMITS.country) || "Brasil");
+    setState(sanitizeLine(data.state ?? "", INPUT_LIMITS.state));
+    setCity(sanitizeLine(data.city ?? "", INPUT_LIMITS.city));
+    setNeighborhood(sanitizeLine(data.neighborhood ?? ""));
+    setStreet(sanitizeLine(data.street ?? "", INPUT_LIMITS.street));
+    setAddressNumber(sanitizeLine(data.address_number ?? "", INPUT_LIMITS.addressNumber));
+    setAddressComplement(sanitizeLine(data.address_complement ?? "", INPUT_LIMITS.addressComplement));
+    setChronicConditions(sanitizeMultilineInput(data.chronic_conditions ?? "", INPUT_LIMITS.clinicalLongText));
+    setSurgeries(sanitizeMultilineInput(data.surgeries ?? "", INPUT_LIMITS.clinicalLongText));
+    setContinuousMedications(sanitizeMultilineInput(data.continuous_medications ?? "", INPUT_LIMITS.clinicalLongText));
+    setAllergies(sanitizeMultilineInput(data.allergies ?? "", INPUT_LIMITS.clinicalLongText));
+    setClinicalNotes(sanitizeMultilineInput(data.clinical_notes ?? "", INPUT_LIMITS.clinicalLongText));
     setClinicalProfile(parseClinicalProfile(data.clinical_profile));
     setEmergencyContact(parseEmergencyContact(data.emergency_contact));
   };
@@ -231,6 +279,8 @@ const CadastroPacienteCompartilhado = () => {
     if (data.completed) {
       setLocked(true);
       setCompletedMessage(data.message ?? COMPLETED_MESSAGE);
+    } else {
+      setLocked(false);
     }
     setUnlocking(false);
   };
@@ -245,12 +295,13 @@ const CadastroPacienteCompartilhado = () => {
     setFetchingCep(true);
     try {
       const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      if (!res.ok) return;
       const data: AddressData = await res.json();
       if (!data.erro) {
-        setStreet(data.logradouro || "");
-        setNeighborhood(data.bairro || "");
-        setCity(data.localidade || "");
-        setState(data.uf || "");
+        setStreet(sanitizeLine(data.logradouro || "", INPUT_LIMITS.street));
+        setNeighborhood(sanitizeLine(data.bairro || ""));
+        setCity(sanitizeLine(data.localidade || "", INPUT_LIMITS.city));
+        setState(sanitizeLine(data.uf || "", INPUT_LIMITS.state));
         setCountry("Brasil");
       }
     } catch {
@@ -260,46 +311,68 @@ const CadastroPacienteCompartilhado = () => {
   };
 
   const handleSubmit = async () => {
-    if (!token || !canSubmit) return;
+    if (!token) return;
+
+    if (!canSubmit) {
+      toast({
+        title: "Revise o cadastro",
+        description: formValidation.errors[0] ?? "Corrija os campos destacados antes de enviar.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSubmitting(true);
 
     const { data, error } = await supabase.rpc("submit_patient_registration_form", {
       _password: password,
       _payload: {
-        address_complement: addressComplement,
-        address_number: addressNumber,
-        allergies: allergies,
+        address_complement: sanitizeLineOrNull(addressComplement, INPUT_LIMITS.addressComplement),
+        address_number: sanitizeLineOrNull(addressNumber, INPUT_LIMITS.addressNumber),
+        allergies: sanitizeLongOrNull(allergies),
         blood_type: bloodType,
-        cep,
-        chronic_conditions: chronicConditions,
-        city,
-        clinical_notes: clinicalNotes,
-        clinical_profile: clinicalProfile,
-        continuous_medications: continuousMedications,
-        country,
+        cep: digitsOrNull(cep, 8),
+        chronic_conditions: sanitizeLongOrNull(chronicConditions),
+        city: sanitizeLineOrNull(city, INPUT_LIMITS.city),
+        clinical_notes: sanitizeLongOrNull(clinicalNotes),
+        clinical_profile: {
+          ...clinicalProfile,
+          clinical_alerts: sanitizeLongOrNull(clinicalProfile.clinical_alerts),
+          congenital_genetic_conditions: sanitizeLongOrNull(clinicalProfile.congenital_genetic_conditions),
+          diagnoses: sanitizeLongOrNull(clinicalProfile.diagnoses),
+          family_history: sanitizeLongOrNull(clinicalProfile.family_history),
+          falls_history: sanitizeLongOrNull(clinicalProfile.falls_history),
+          implants_devices: sanitizeLongOrNull(clinicalProfile.implants_devices),
+          mobility_aids: sanitizeLongOrNull(clinicalProfile.mobility_aids),
+          risk_flags: clinicalProfile.risk_flags,
+        },
+        continuous_medications: sanitizeLongOrNull(continuousMedications),
+        country: sanitizeLineOrNull(country, INPUT_LIMITS.country) ?? "Brasil",
         date_of_birth: dateOfBirth || null,
-        email,
+        email: formValidation.values.email || null,
         emergency_contact: {
           ...emergencyContact,
-          phone: emergencyContact.phone.replace(/\D/g, ""),
+          name: sanitizeLineOrNull(emergencyContact.name, INPUT_LIMITS.name),
+          phone: phoneDigitsOrNull(emergencyContact.phone),
+          relationship: sanitizeLineOrNull(emergencyContact.relationship, INPUT_LIMITS.shortText),
         },
         gender,
-        name,
-        neighborhood,
-        origin_insurance_member_id: originInsuranceMemberId,
-        origin_insurance_plan: originInsurancePlan,
-        origin_insurance_provider: originInsuranceProvider,
-        origin_other_description: originOtherDescription,
-        origin_other_name: originOtherName,
-        origin_referrer_name: originReferrerName,
+        name: formValidation.values.name,
+        neighborhood: sanitizeLineOrNull(neighborhood),
+        origin_insurance_member_id: sanitizeLineOrNull(originInsuranceMemberId, 80),
+        origin_insurance_plan: sanitizeLineOrNull(originInsurancePlan, 120),
+        origin_insurance_provider: sanitizeLineOrNull(originInsuranceProvider, 120),
+        origin_other_description: sanitizeLongOrNull(originOtherDescription, 500),
+        origin_other_name: sanitizeLineOrNull(originOtherName, 120),
+        origin_referrer_name: sanitizeLineOrNull(originReferrerName, 120),
         origin_type: originType,
-        phone,
-        profession,
+        phone: formValidation.values.phone || null,
+        profession: sanitizeLineOrNull(profession, INPUT_LIMITS.profession),
         pronoun,
-        rg,
-        state,
-        street,
-        surgeries,
+        rg: sanitizeLineOrNull(rg, INPUT_LIMITS.patientDocument),
+        state: sanitizeLineOrNull(state, INPUT_LIMITS.state),
+        street: sanitizeLineOrNull(street, INPUT_LIMITS.street),
+        surgeries: sanitizeLongOrNull(surgeries),
       },
       _token: token,
     });
@@ -397,7 +470,13 @@ const CadastroPacienteCompartilhado = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2 sm:col-span-2">
                         <Label htmlFor="name">Nome completo *</Label>
-                        <Input id="name" value={name} onChange={(event) => setName(event.target.value)} />
+                        <Input
+                          id="name"
+                          value={name}
+                          maxLength={INPUT_LIMITS.name}
+                          aria-invalid={!!formValidation.errors.find((error) => error.includes("nome"))}
+                          onChange={(event) => setName(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.name))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="date-of-birth">Data de nascimento</Label>
@@ -434,11 +513,11 @@ const CadastroPacienteCompartilhado = () => {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="rg">RG</Label>
-                        <Input id="rg" value={rg} onChange={(event) => setRg(event.target.value)} />
+                        <Input id="rg" value={rg} maxLength={INPUT_LIMITS.patientDocument} onChange={(event) => setRg(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.patientDocument))} />
                       </div>
                       <div className="space-y-2 sm:col-span-2">
                         <Label htmlFor="profession">Profissão</Label>
-                        <Input id="profession" value={profession} onChange={(event) => setProfession(event.target.value)} />
+                        <Input id="profession" value={profession} maxLength={INPUT_LIMITS.profession} onChange={(event) => setProfession(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.profession))} />
                       </div>
                     </div>
                     <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
@@ -464,7 +543,8 @@ const CadastroPacienteCompartilhado = () => {
                             <Input
                               id="origin-referrer-name"
                               value={originReferrerName}
-                              onChange={(event) => setOriginReferrerName(event.target.value.slice(0, 120))}
+                              maxLength={120}
+                              onChange={(event) => setOriginReferrerName(sanitizeSingleLineInput(event.target.value, 120))}
                             />
                           </div>
                         ) : null}
@@ -475,7 +555,8 @@ const CadastroPacienteCompartilhado = () => {
                               <Input
                                 id="origin-insurance-provider"
                                 value={originInsuranceProvider}
-                                onChange={(event) => setOriginInsuranceProvider(event.target.value.slice(0, 120))}
+                                maxLength={120}
+                                onChange={(event) => setOriginInsuranceProvider(sanitizeSingleLineInput(event.target.value, 120))}
                               />
                             </div>
                             <div className="space-y-2">
@@ -483,7 +564,8 @@ const CadastroPacienteCompartilhado = () => {
                               <Input
                                 id="origin-insurance-plan"
                                 value={originInsurancePlan}
-                                onChange={(event) => setOriginInsurancePlan(event.target.value.slice(0, 120))}
+                                maxLength={120}
+                                onChange={(event) => setOriginInsurancePlan(sanitizeSingleLineInput(event.target.value, 120))}
                               />
                             </div>
                             <div className="space-y-2">
@@ -491,7 +573,8 @@ const CadastroPacienteCompartilhado = () => {
                               <Input
                                 id="origin-insurance-member-id"
                                 value={originInsuranceMemberId}
-                                onChange={(event) => setOriginInsuranceMemberId(event.target.value.slice(0, 80))}
+                                maxLength={80}
+                                onChange={(event) => setOriginInsuranceMemberId(sanitizeSingleLineInput(event.target.value, 80))}
                               />
                             </div>
                           </>
@@ -503,7 +586,8 @@ const CadastroPacienteCompartilhado = () => {
                               <Input
                                 id="origin-other-name"
                                 value={originOtherName}
-                                onChange={(event) => setOriginOtherName(event.target.value.slice(0, 120))}
+                                maxLength={120}
+                                onChange={(event) => setOriginOtherName(sanitizeSingleLineInput(event.target.value, 120))}
                               />
                             </div>
                             <div className="space-y-2 sm:col-span-2">
@@ -511,7 +595,8 @@ const CadastroPacienteCompartilhado = () => {
                               <Textarea
                                 id="origin-other-description"
                                 value={originOtherDescription}
-                                onChange={(event) => setOriginOtherDescription(event.target.value.slice(0, 500))}
+                                maxLength={500}
+                                onChange={(event) => setOriginOtherDescription(sanitizeMultilineInput(event.target.value, 500))}
                                 placeholder="Opcional"
                                 rows={3}
                               />
@@ -520,6 +605,10 @@ const CadastroPacienteCompartilhado = () => {
                         ) : null}
                       </div>
                     </section>
+                    <PatientRiskFlagsChecklist
+                      value={clinicalProfile.risk_flags}
+                      onChange={(value) => updateClinicalProfile("risk_flags", value)}
+                    />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -550,24 +639,24 @@ const CadastroPacienteCompartilhado = () => {
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="alerts">Alertas e restrições importantes</Label>
-                          <Textarea id="alerts" value={clinicalProfile.clinical_alerts} onChange={(event) => updateClinicalProfile("clinical_alerts", event.target.value)} rows={3} />
+                          <Textarea id="alerts" value={clinicalProfile.clinical_alerts} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => updateClinicalProfile("clinical_alerts", sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="chronic">Problemas crônicos</Label>
-                        <Textarea id="chronic" value={chronicConditions} onChange={(event) => setChronicConditions(event.target.value)} rows={3} />
+                        <Textarea id="chronic" value={chronicConditions} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => setChronicConditions(sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="allergies">Alergias</Label>
-                        <Textarea id="allergies" value={allergies} onChange={(event) => setAllergies(event.target.value)} rows={3} />
+                        <Textarea id="allergies" value={allergies} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => setAllergies(sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="congenital-genetic-conditions">Deficiências congênitas ou condições genéticas</Label>
-                        <Textarea id="congenital-genetic-conditions" value={clinicalProfile.congenital_genetic_conditions} onChange={(event) => updateClinicalProfile("congenital_genetic_conditions", event.target.value)} rows={3} />
+                        <Textarea id="congenital-genetic-conditions" value={clinicalProfile.congenital_genetic_conditions} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => updateClinicalProfile("congenital_genetic_conditions", sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="family-history">Histórico familiar relevante</Label>
-                        <Textarea id="family-history" value={clinicalProfile.family_history} onChange={(event) => updateClinicalProfile("family_history", event.target.value)} rows={3} />
+                        <Textarea id="family-history" value={clinicalProfile.family_history} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => updateClinicalProfile("family_history", sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                       </div>
                     </section>
                   </CardContent>
@@ -589,11 +678,11 @@ const CadastroPacienteCompartilhado = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="phone">Telefone</Label>
-                          <Input id="phone" value={phone} onChange={(event) => setPhone(formatPhone(event.target.value))} />
+                          <Input id="phone" value={phone} maxLength={15} onChange={(event) => setPhone(formatPatientPhone(event.target.value))} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="email">E-mail</Label>
-                          <Input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+                          <Input id="email" type="email" value={email} maxLength={INPUT_LIMITS.email} onChange={(event) => setEmail(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.email))} />
                         </div>
                       </div>
                     </section>
@@ -606,11 +695,11 @@ const CadastroPacienteCompartilhado = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="space-y-2 sm:col-span-2">
                           <Label htmlFor="emergency-contact-name">Nome</Label>
-                          <Input id="emergency-contact-name" value={emergencyContact.name} onChange={(event) => updateEmergencyContact("name", event.target.value)} />
+                          <Input id="emergency-contact-name" value={emergencyContact.name} maxLength={INPUT_LIMITS.name} onChange={(event) => updateEmergencyContact("name", sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.name))} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="emergency-contact-relationship">Parentesco ou vínculo</Label>
-                          <Input id="emergency-contact-relationship" value={emergencyContact.relationship} onChange={(event) => updateEmergencyContact("relationship", event.target.value)} />
+                          <Input id="emergency-contact-relationship" value={emergencyContact.relationship} maxLength={INPUT_LIMITS.shortText} onChange={(event) => updateEmergencyContact("relationship", sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.shortText))} />
                         </div>
                       </div>
                       <div className="space-y-2 max-w-xs">
@@ -618,7 +707,7 @@ const CadastroPacienteCompartilhado = () => {
                         <Input
                           id="emergency-contact-phone"
                           value={emergencyContact.phone}
-                          onChange={(event) => updateEmergencyContact("phone", formatPhone(event.target.value))}
+                          onChange={(event) => updateEmergencyContact("phone", formatPatientPhone(event.target.value))}
                           maxLength={15}
                         />
                       </div>
@@ -644,33 +733,33 @@ const CadastroPacienteCompartilhado = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="country">País</Label>
-                        <Input id="country" value={country} onChange={(event) => setCountry(event.target.value)} />
+                        <Input id="country" value={country} maxLength={INPUT_LIMITS.country} onChange={(event) => setCountry(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.country))} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="state">Estado</Label>
-                        <Input id="state" value={state} onChange={(event) => setState(event.target.value)} />
+                        <Input id="state" value={state} maxLength={INPUT_LIMITS.state} onChange={(event) => setState(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.state))} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="city">Cidade</Label>
-                        <Input id="city" value={city} onChange={(event) => setCity(event.target.value)} />
+                        <Input id="city" value={city} maxLength={INPUT_LIMITS.city} onChange={(event) => setCity(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.city))} />
                       </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="neighborhood">Bairro</Label>
-                      <Input id="neighborhood" value={neighborhood} onChange={(event) => setNeighborhood(event.target.value)} />
+                      <Input id="neighborhood" value={neighborhood} maxLength={INPUT_LIMITS.shortText} onChange={(event) => setNeighborhood(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.shortText))} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="street">Rua</Label>
-                      <Input id="street" value={street} onChange={(event) => setStreet(event.target.value)} />
+                      <Input id="street" value={street} maxLength={INPUT_LIMITS.street} onChange={(event) => setStreet(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.street))} />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="address-number">Número</Label>
-                        <Input id="address-number" value={addressNumber} onChange={(event) => setAddressNumber(event.target.value)} />
+                        <Input id="address-number" value={addressNumber} maxLength={INPUT_LIMITS.addressNumber} onChange={(event) => setAddressNumber(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.addressNumber))} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="address-complement">Complemento</Label>
-                        <Input id="address-complement" value={addressComplement} onChange={(event) => setAddressComplement(event.target.value)} />
+                        <Input id="address-complement" value={addressComplement} maxLength={INPUT_LIMITS.addressComplement} onChange={(event) => setAddressComplement(sanitizeSingleLineInput(event.target.value, INPUT_LIMITS.addressComplement))} />
                       </div>
                     </div>
                   </CardContent>
@@ -691,25 +780,25 @@ const CadastroPacienteCompartilhado = () => {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="diagnoses">Diagnósticos prévios</Label>
-                        <Textarea id="diagnoses" value={clinicalProfile.diagnoses} onChange={(event) => updateClinicalProfile("diagnoses", event.target.value)} rows={3} />
+                        <Textarea id="diagnoses" value={clinicalProfile.diagnoses} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => updateClinicalProfile("diagnoses", sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="surgeries">Cirurgias e internações</Label>
-                        <Textarea id="surgeries" value={surgeries} onChange={(event) => setSurgeries(event.target.value)} rows={3} />
+                        <Textarea id="surgeries" value={surgeries} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => setSurgeries(sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="implants-devices">Implantes, próteses ou dispositivos</Label>
-                        <Textarea id="implants-devices" value={clinicalProfile.implants_devices} onChange={(event) => updateClinicalProfile("implants_devices", event.target.value)} rows={2} />
+                        <Textarea id="implants-devices" value={clinicalProfile.implants_devices} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => updateClinicalProfile("implants_devices", sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={2} />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="falls-history">Histórico de quedas</Label>
-                          <Textarea id="falls-history" value={clinicalProfile.falls_history} onChange={(event) => updateClinicalProfile("falls_history", event.target.value)} rows={3} />
+                          <Textarea id="falls-history" value={clinicalProfile.falls_history} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => updateClinicalProfile("falls_history", sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="medications">Medicamentos de uso contínuo</Label>
-                        <Textarea id="medications" value={continuousMedications} onChange={(event) => setContinuousMedications(event.target.value)} rows={3} />
+                        <Textarea id="medications" value={continuousMedications} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => setContinuousMedications(sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -728,7 +817,7 @@ const CadastroPacienteCompartilhado = () => {
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="mobility-aids">Dispositivos de apoio em uso</Label>
-                          <Textarea id="mobility-aids" value={clinicalProfile.mobility_aids} onChange={(event) => updateClinicalProfile("mobility_aids", event.target.value)} rows={3} />
+                          <Textarea id="mobility-aids" value={clinicalProfile.mobility_aids} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => updateClinicalProfile("mobility_aids", sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={3} />
                         </div>
                       </div>
                       <SubstanceUseClinicalSection
@@ -737,7 +826,7 @@ const CadastroPacienteCompartilhado = () => {
                       />
                       <div className="space-y-2">
                         <Label htmlFor="clinical-notes">Observações clínicas</Label>
-                        <Textarea id="clinical-notes" value={clinicalNotes} onChange={(event) => setClinicalNotes(event.target.value)} rows={4} />
+                        <Textarea id="clinical-notes" value={clinicalNotes} maxLength={INPUT_LIMITS.clinicalLongText} onChange={(event) => setClinicalNotes(sanitizeMultilineInput(event.target.value, INPUT_LIMITS.clinicalLongText))} rows={4} />
                       </div>
                     </section>
 
