@@ -20,6 +20,7 @@ describe("patient clinical profile helpers", () => {
         implants_devices: "Prótese",
         lifestyle_notes: "Ativo",
         mobility_aids: "Nenhum",
+        risk_flags: ["fall_risk", "allergy", "unknown"],
         substance_use_history: "Tabagismo passado",
       }),
     ).toMatchObject({
@@ -27,6 +28,7 @@ describe("patient clinical profile helpers", () => {
       congenital_genetic_conditions: "Síndrome genética",
       diagnoses: "Lombalgia",
       functional_independence: "independente",
+      risk_flags: ["fall_risk", "allergy"],
       substance_use_history: "Tabagismo passado",
     });
 
@@ -57,6 +59,7 @@ describe("patient clinical profile helpers", () => {
         implants_devices: "",
         lifestyle_notes: "",
         mobility_aids: "",
+        risk_flags: [],
         substance_use_records: [],
         substance_use_history: "",
         uses_substances: false,
@@ -76,6 +79,7 @@ describe("patient clinical profile helpers", () => {
         implants_devices: "",
         lifestyle_notes: "",
         mobility_aids: "",
+        risk_flags: ["fall_risk", "diabetes"],
         substance_use_records: [],
         substance_use_history: "",
         uses_substances: false,
@@ -92,6 +96,7 @@ describe("patient clinical profile helpers", () => {
       implants_devices: null,
       lifestyle_notes: null,
       mobility_aids: null,
+      risk_flags: ["fall_risk", "diabetes"],
       substance_use_history: null,
       substance_use_records: null,
       uses_substances: null,

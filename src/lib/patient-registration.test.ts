@@ -4,8 +4,15 @@ import {
   buildPatientRegistrationPutPayload,
   calculatePatientAge,
   extractCpfDigits,
+  formatPatientCpf,
+  formatPatientPhone,
   getPatientRegistrationPassword,
+  isValidCpfDigits,
+  isValidPatientBirthDate,
+  isValidPatientEmail,
+  normalizePatientNameKey,
   putPatientRegistration,
+  validatePatientPreRegistration,
 } from "@/lib/patient-registration";
 
 type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
@@ -62,6 +69,63 @@ describe("patient registration helpers", () => {
     expect(getPatientRegistrationPassword("123")).toBeNull();
   });
 
+  it("formats and validates required pre-registration fields", () => {
+    expect(formatPatientCpf("52998224725<script>")).toBe("529.982.247-25");
+    expect(formatPatientPhone("+55 (11) 98765-4321 ramal 999")).toBe("(11) 98765-4321");
+    expect(isValidCpfDigits("52998224725")).toBe(true);
+    expect(isValidCpfDigits("11111111111")).toBe(false);
+    expect(isValidCpfDigits("52998224724")).toBe(false);
+    expect(isValidPatientBirthDate("2026-02-31")).toBe(false);
+    expect(isValidPatientBirthDate("2100-01-01")).toBe(false);
+    expect(isValidPatientBirthDate("2000-04-20")).toBe(true);
+    expect(isValidPatientEmail("paciente@example.com")).toBe(true);
+    expect(isValidPatientEmail("bad <script>@example.com")).toBe(false);
+  });
+
+  it("builds stable patient name keys for idempotency", () => {
+    expect(normalizePatientNameKey(" Ana  Maria da-Silva ")).toBe("anamariadasilva");
+    expect(normalizePatientNameKey("Ána Maria da Silva")).toBe("anamariadasilva");
+    expect(normalizePatientNameKey("Ana\u202E Maria 😀 da Silva")).toBe("anamariadasilva");
+  });
+
+  it("requires every pre-registration field and normalizes hostile values", () => {
+    const invalid = validatePatientPreRegistration({
+      cpf: "111.111.111-11",
+      dateOfBirth: "2100-01-01",
+      email: "bad <script>@example.com",
+      name: "A",
+      phone: "123",
+    });
+
+    expect(invalid.isValid).toBe(false);
+    expect(invalid.errors).toMatchObject({
+      cpf: expect.any(String),
+      dateOfBirth: expect.any(String),
+      email: expect.any(String),
+      name: expect.any(String),
+      phone: expect.any(String),
+    });
+
+    const valid = validatePatientPreRegistration({
+      cpf: "529.982.247-25<script>",
+      dateOfBirth: "2000-04-20",
+      email: " PACIENTE@EXAMPLE.COM\u202E ",
+      name: "  Ana\u0000 Maria 😀  ",
+      phone: "(11) 98765-4321",
+    });
+
+    expect(valid).toMatchObject({
+      isValid: true,
+      values: {
+        cpf: "52998224725",
+        dateOfBirth: "2000-04-20",
+        email: "paciente@example.com",
+        name: "Ana Maria",
+        phone: "11987654321",
+      },
+    });
+  });
+
   it("calculates patient age from the birth date", () => {
     expect(calculatePatientAge("2000-04-20")).toBe(26);
     expect(calculatePatientAge("")).toBeNull();
@@ -86,6 +150,7 @@ describe("patient registration helpers", () => {
         implants_devices: " Prótese de joelho ",
         lifestyle_notes: " Sedentaria ",
         mobility_aids: " Bengala ",
+        risk_flags: ["fall_risk", "diabetes"],
         substance_use_records: [],
         substance_use_history: " Tabagismo social no passado ",
         uses_substances: false,
@@ -132,6 +197,7 @@ describe("patient registration helpers", () => {
         implants_devices: "Prótese de joelho",
         lifestyle_notes: "Sedentaria",
         mobility_aids: "Bengala",
+        risk_flags: ["fall_risk", "diabetes"],
         substance_use_history: "Observações anteriores:\nTabagismo social no passado",
       },
       cpf: "98765432100",
@@ -184,6 +250,7 @@ describe("patient registration helpers", () => {
         implants_devices: hostileText,
         lifestyle_notes: hostileText,
         mobility_aids: hostileText,
+        risk_flags: ["allergy", "infection_risk"],
         substance_use_records: [
           {
             dependency_level: "dependencia_provavel",
@@ -239,7 +306,7 @@ describe("patient registration helpers", () => {
     expect(payload.clinical_notes?.length).toBeLessThanOrEqual(2_000);
     expect(payload.email?.length).toBeLessThanOrEqual(254);
     expect(payload.cpf).toBe("12345678901");
-    expect(payload.phone).toBe("5511999998888");
+    expect(payload.phone).toBe("11999998888");
     expect(payload.origin_other_name?.length).toBeLessThanOrEqual(120);
     expect(payload.origin_other_description?.length).toBeLessThanOrEqual(500);
     expect(payload.clinical_profile).toMatchObject({

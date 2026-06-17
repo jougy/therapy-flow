@@ -381,7 +381,7 @@ describe("Configuracoes", () => {
       <MemoryRouter initialEntries={["/configuracoes?secao=profile&origem=pessoal"]}>
         <Routes>
           <Route path="/configuracoes" element={<Configuracoes />} />
-          <Route path="/clinicas" element={<div>Espaço pessoal aberto</div>} />
+          <Route path="/espacopessoal" element={<div>Espaço pessoal aberto</div>} />
         </Routes>
       </MemoryRouter>
     );

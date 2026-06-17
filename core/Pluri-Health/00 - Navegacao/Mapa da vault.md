@@ -68,6 +68,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Ambiente e operacao]]: ambiente local, fluxo tecnico e deploy.
 - [[TDD e checks]]: estrategia de protecao contra regressao.
 - [[Plano de seguranca - hub]]: plano de auditoria, vulnerabilidades e subplanos por camada.
+- [[Mapa de skills do Codex]]: indice das skills disponiveis, gatilhos de uso e notas individuais por habilidade.
 
 ## Notas por tema
 

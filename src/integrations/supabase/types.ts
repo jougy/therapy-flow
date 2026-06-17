@@ -191,9 +191,95 @@ export type Database = {
           },
         ]
       }
+      clinic_operational_role_capabilities: {
+        Row: {
+          capability: string
+          clinic_id: string
+          created_at: string
+          enabled: boolean
+          id: string
+          operational_role: string
+          updated_at: string
+        }
+        Insert: {
+          capability: string
+          clinic_id: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          operational_role: string
+          updated_at?: string
+        }
+        Update: {
+          capability?: string
+          clinic_id?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          operational_role?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_operational_role_capabilities_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clinic_operational_roles: {
+        Row: {
+          base_operational_role: Database["public"]["Enums"]["operational_role_type"]
+          clinic_id: string
+          created_at: string
+          description: string | null
+          id: string
+          is_system: boolean
+          label: string
+          role_key: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          base_operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          clinic_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_system?: boolean
+          label: string
+          role_key: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          base_operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          clinic_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_system?: boolean
+          label?: string
+          role_key?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_operational_roles_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinics: {
         Row: {
           account_owner_user_id: string | null
+          access_status: string
           concurrent_access_limit: number
           address: Json
           anamnesis_base_schema: Json
@@ -215,6 +301,7 @@ export type Database = {
         }
         Insert: {
           account_owner_user_id?: string | null
+          access_status?: string
           concurrent_access_limit?: number
           address?: Json
           anamnesis_base_schema?: Json
@@ -236,6 +323,7 @@ export type Database = {
         }
         Update: {
           account_owner_user_id?: string | null
+          access_status?: string
           concurrent_access_limit?: number
           address?: Json
           anamnesis_base_schema?: Json
@@ -1057,6 +1145,80 @@ export type Database = {
           },
         ]
       }
+      platform_release_note_items: {
+        Row: {
+          body: string | null
+          category: Database["public"]["Enums"]["platform_release_note_category"]
+          created_at: string
+          id: string
+          release_id: string
+          sort_order: number
+          title: string
+        }
+        Insert: {
+          body?: string | null
+          category: Database["public"]["Enums"]["platform_release_note_category"]
+          created_at?: string
+          id?: string
+          release_id: string
+          sort_order?: number
+          title: string
+        }
+        Update: {
+          body?: string | null
+          category?: Database["public"]["Enums"]["platform_release_note_category"]
+          created_at?: string
+          id?: string
+          release_id?: string
+          sort_order?: number
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_release_note_items_release_id_fkey"
+            columns: ["release_id"]
+            isOneToOne: false
+            referencedRelation: "platform_releases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_releases: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          published_at: string
+          summary: string | null
+          title: string
+          updated_at: string
+          version: string
+          version_order: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          published_at?: string
+          summary?: string | null
+          title: string
+          updated_at?: string
+          version: string
+          version_order: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          published_at?: string
+          summary?: string | null
+          title?: string
+          updated_at?: string
+          version?: string
+          version_order?: number
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -1074,6 +1236,41 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_release_note_states: {
+        Row: {
+          created_at: string
+          last_seen_at: string
+          last_seen_release_id: string | null
+          last_seen_release_order: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          last_seen_at?: string
+          last_seen_release_id?: string | null
+          last_seen_release_order?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          last_seen_at?: string
+          last_seen_release_id?: string | null
+          last_seen_release_order?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_release_note_states_last_seen_release_id_fkey"
+            columns: ["last_seen_release_id"]
+            isOneToOne: false
+            referencedRelation: "platform_releases"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_security_sessions: {
         Row: {
@@ -1189,6 +1386,10 @@ export type Database = {
         }
         Returns: Json
       }
+      acknowledge_current_user_release_notes: {
+        Args: { _release_id?: string }
+        Returns: Json
+      }
       get_clinic_concurrent_access_overview: {
         Args: { _clinic_id?: string }
         Returns: Json
@@ -1233,6 +1434,18 @@ export type Database = {
         Args: { _clinic_id: string; _user_id: string }
         Returns: string
       }
+      ensure_clinic_patient: {
+        Args: {
+          _clinic_id: string
+          _cpf: string
+          _date_of_birth: string
+          _email: string
+          _name: string
+          _name_key: string
+          _phone: string
+        }
+        Returns: Json
+      }
       generate_profile_public_code: { Args: never; Returns: string }
       generate_profile_public_code_for_clinic: {
         Args: { _clinic_id: string }
@@ -1240,6 +1453,10 @@ export type Database = {
       }
       get_clinic_share_collaborators: {
         Args: { _clinic_id?: string }
+        Returns: Json
+      }
+      get_current_user_pending_release_notes: {
+        Args: Record<PropertyKey, never>
         Returns: Json
       }
       get_patient_registration_form: {
@@ -1275,6 +1492,17 @@ export type Database = {
             }
             Returns: Json
           }
+        | {
+            Args: {
+              _clinic_name?: string | null
+              _cnpj: string
+              _email: string
+              _full_name?: string | null
+              _subscription_plan?: Database["public"]["Enums"]["subscription_plan"]
+              _user_id: string
+            }
+            Returns: Json
+          }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1291,6 +1519,10 @@ export type Database = {
           _target_user_id: string
           _visibility_scope?: string
         }
+        Returns: string
+      }
+      normalize_patient_name_key: {
+        Args: { _value: string }
         Returns: string
       }
       register_current_security_session: {
@@ -1437,6 +1669,7 @@ export type Database = {
       app_role: "super_admin" | "clinic_admin" | "user"
       membership_status_type: "invited" | "active" | "inactive" | "suspended"
       operational_role_type: "owner" | "admin" | "professional" | "assistant" | "estagiario"
+      platform_release_note_category: "fixed" | "added" | "changed" | "removed"
       subscription_plan: "solo" | "clinic"
     }
     CompositeTypes: {
@@ -1572,6 +1805,7 @@ export const Constants = {
       app_role: ["super_admin", "clinic_admin", "user"],
       membership_status_type: ["invited", "active", "inactive", "suspended"],
       operational_role_type: ["owner", "admin", "professional", "assistant", "estagiario"],
+      platform_release_note_category: ["fixed", "added", "changed", "removed"],
       subscription_plan: ["solo", "clinic"],
     },
   },

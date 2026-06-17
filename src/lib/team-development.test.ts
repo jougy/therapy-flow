@@ -117,7 +117,7 @@ describe("team development helpers", () => {
     });
   });
 
-  it("provides compact dashboard scores and tones", () => {
+  it("provides compact statistics scores and tones", () => {
     expect(getDevelopmentStatusScore("onboarding")).toBe(30);
     expect(getDevelopmentStatusScore("consolidado")).toBe(100);
     expect(getDevelopmentDashboardTone("precisa_supervisao")).toBe("warning");

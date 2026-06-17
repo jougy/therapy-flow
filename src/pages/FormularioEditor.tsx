@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, ChevronRight, Copy, GripVertical, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Copy, GripVertical, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { OptionListEditor } from "@/components/anamnesis/OptionListEditor";
 import { OptionMatrixEditor } from "@/components/anamnesis/OptionMatrixEditor";
 import { supabase } from "@/integrations/supabase/client";
@@ -71,6 +74,7 @@ const FormularioEditor = () => {
   const [desktopMenuTop, setDesktopMenuTop] = useState(128);
   const [desktopMenuMaxHeight, setDesktopMenuMaxHeight] = useState(480);
   const [showFloatingSave, setShowFloatingSave] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
 
   useEffect(() => {
     if (!canManageForms) {
@@ -195,9 +199,42 @@ const FormularioEditor = () => {
     return next;
   };
 
+  const viewModeControl = (
+    <div className="rounded-lg border bg-background p-3">
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="form-editor-preview-mode" className="text-sm font-medium">
+          {previewMode ? "Visualizar" : "Editar"}
+        </Label>
+        <Switch
+          id="form-editor-preview-mode"
+          checked={previewMode}
+          onCheckedChange={setPreviewMode}
+          aria-label="Alternar entre editar e visualizar ficha"
+        />
+      </div>
+      <div className="mt-2 grid grid-cols-2 rounded-md bg-muted p-1 text-xs font-medium">
+        <button
+          type="button"
+          className={`rounded px-2 py-1.5 transition ${!previewMode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+          onClick={() => setPreviewMode(false)}
+        >
+          Editar
+        </button>
+        <button
+          type="button"
+          className={`rounded px-2 py-1.5 transition ${previewMode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
+          onClick={() => setPreviewMode(true)}
+        >
+          Visualizar
+        </button>
+      </div>
+    </div>
+  );
+
   const blockMenuContent = (
     <Card className="border-border/70">
       <CardHeader>
+        <div className="mb-4">{viewModeControl}</div>
         <CardTitle className="text-base">Blocos disponíveis</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-2">
@@ -208,7 +245,7 @@ const FormularioEditor = () => {
             variant="outline"
             className="justify-start"
             onClick={() => handleAddField(item.type)}
-            disabled={fieldLimitReached}
+            disabled={fieldLimitReached || previewMode}
           >
             <Plus className="h-4 w-4 mr-2" />
             {item.label}
@@ -276,6 +313,22 @@ const FormularioEditor = () => {
       const targetIndex = current.findIndex((field) => field.id === targetId);
 
       if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+        return current;
+      }
+
+      const next = [...current];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const moveFieldByOffset = (fieldId: string, offset: -1 | 1) => {
+    setTemplateFields((current) => {
+      const sourceIndex = current.findIndex((field) => field.id === fieldId);
+      const targetIndex = sourceIndex + offset;
+
+      if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= current.length) {
         return current;
       }
 
@@ -383,6 +436,232 @@ const FormularioEditor = () => {
     }
   };
 
+  const renderPreviewField = (field: AnamnesisField): ReactNode => {
+    if (field.type === "short_text") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <Label>
+            {field.label}
+            {field.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <Input placeholder={field.placeholder} disabled />
+        </div>
+      );
+    }
+
+    if (field.type === "long_text") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <Label>
+            {field.label}
+            {field.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <Textarea placeholder={field.placeholder} disabled rows={4} />
+        </div>
+      );
+    }
+
+    if (field.type === "date") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <Label>
+            {field.label}
+            {field.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <Input type="date" disabled />
+        </div>
+      );
+    }
+
+    if (field.type === "number") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <Label>
+            {field.label}
+            {field.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <Input type="number" placeholder={field.placeholder} disabled />
+        </div>
+      );
+    }
+
+    if (field.type === "select") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <Label>
+            {field.label}
+            {field.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <Select disabled>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione" />
+            </SelectTrigger>
+            <SelectContent>
+              {(field.options ?? []).map((option) => (
+                <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      );
+    }
+
+    if (field.type === "slider") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label>
+              {field.label}
+              {field.required && <span className="ml-1 text-destructive">*</span>}
+            </Label>
+            <span className="text-sm font-semibold">{field.min ?? 0}</span>
+          </div>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <Slider value={[field.min ?? 0]} min={field.min ?? 0} max={field.max ?? 10} step={1} disabled />
+        </div>
+      );
+    }
+
+    if (field.type === "multiple_choice") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <Label>
+            {field.label}
+            {field.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <RadioGroup>
+            <div className="flex flex-wrap gap-3">
+              {(field.options ?? []).map((option) => (
+                <div key={option.id} className="inline-flex max-w-full items-start gap-2 rounded-md border px-3 py-2">
+                  <RadioGroupItem value={option.id} id={`preview_${field.id}_${option.id}`} disabled className="mt-0.5" />
+                  <Label htmlFor={`preview_${field.id}_${option.id}`} className="break-words leading-snug">{option.label}</Label>
+                </div>
+              ))}
+            </div>
+          </RadioGroup>
+        </div>
+      );
+    }
+
+    if (field.type === "checklist") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <Label>
+            {field.label}
+            {field.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <div className="flex flex-wrap gap-3">
+            {(field.options ?? []).map((option) => (
+              <div key={option.id} className="inline-flex max-w-full items-start gap-2 rounded-md border px-3 py-2">
+                <Checkbox id={`preview_${field.id}_${option.id}`} disabled className="mt-0.5" />
+                <Label htmlFor={`preview_${field.id}_${option.id}`} className="break-words leading-snug">{option.label}</Label>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (field.type === "section_selector") {
+      return (
+        <div key={field.id} className="space-y-3 rounded-lg border p-4">
+          <div>
+            <Label>{field.label}</Label>
+            {field.helpText && <p className="mt-1 text-sm text-muted-foreground">{field.helpText}</p>}
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {(field.options ?? []).map((option) => (
+              <div key={option.id} className="inline-flex max-w-full items-center gap-3 rounded-md border px-3 py-2">
+                <span className="text-sm font-medium">{option.label}</span>
+                <Switch disabled />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (field.type === "table") {
+      const columns = field.options ?? [];
+      return (
+        <div key={field.id} className="space-y-2">
+          <Label>
+            {field.label}
+            {field.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
+          <div className="overflow-x-auto rounded-md border">
+            <div
+              className="grid min-w-max gap-3 border-b bg-muted/40 p-3 text-sm font-medium text-muted-foreground"
+              style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(180px, 1fr))` }}
+            >
+              {columns.length > 0 ? columns.map((option) => <span key={option.id}>{option.label}</span>) : <span>Coluna</span>}
+            </div>
+            <div
+              className="grid min-w-max gap-3 p-3"
+              style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(180px, 1fr))` }}
+            >
+              {(columns.length > 0 ? columns : [{ id: "preview_column", label: "Coluna" }]).map((option) => (
+                <Input key={option.id} placeholder={option.label} disabled />
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const renderPreviewLayout = (layout: TemplateLayoutItem[]): ReactNode => (
+    <div className="space-y-4">
+      {layout.map((item) => {
+        if (item.type === "field") {
+          return <div key={item.field.id}>{renderPreviewField(item.field)}</div>;
+        }
+
+        if (item.type === "horizontal_section") {
+          return (
+            <Card key={item.field.id} className="border-dashed">
+              <CardContent className="space-y-4 p-4">
+                <div>
+                  <p className="font-medium">{item.field.label}</p>
+                  {item.field.helpText && <p className="mt-1 text-sm text-muted-foreground">{item.field.helpText}</p>}
+                </div>
+                <div className="flex gap-4 overflow-x-auto pb-2">
+                  {item.items.map((child) => (
+                    <div key={child.field.id} className="min-w-[280px] flex-1 rounded-lg border bg-muted/10 p-4">
+                      {child.type === "field" ? renderPreviewField(child.field) : renderPreviewLayout([child])}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        }
+
+        return (
+          <Card key={item.field.id}>
+            <CardContent className="space-y-4 p-4">
+              <div>
+                <p className="font-medium">{item.field.label}</p>
+                {item.field.helpText && <p className="mt-1 text-sm text-muted-foreground">{item.field.helpText}</p>}
+              </div>
+              {renderPreviewLayout(item.items)}
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -392,7 +671,7 @@ const FormularioEditor = () => {
   }
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6 pb-20 lg:pb-0">
       <input
         ref={templateImportInputRef}
         type="file"
@@ -432,7 +711,7 @@ const FormularioEditor = () => {
         type="button"
         variant="secondary"
         size="icon"
-        className="fixed left-3 top-1/2 z-40 h-11 w-11 -translate-y-1/2 rounded-full shadow-lg lg:hidden"
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 z-10 h-11 w-11 rounded-full shadow-lg lg:hidden"
         aria-label="Abrir blocos disponíveis"
         onClick={() => setMobileMenuOpen(true)}
       >
@@ -449,7 +728,7 @@ const FormularioEditor = () => {
       </Sheet>
 
       {showFloatingSave && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-3 z-50 sm:bottom-5 sm:right-5 lg:bottom-6 lg:right-6">
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-3 z-50 hidden sm:block sm:bottom-5 sm:right-5 lg:bottom-6 lg:right-6">
           <Button
             type="button"
             onClick={() => void handleSave()}
@@ -501,6 +780,17 @@ const FormularioEditor = () => {
 
           <Separator />
 
+          {previewMode ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{templateName.trim() || (isBase ? "Bloco padrão universal" : "Ficha sem nome")}</CardTitle>
+                {templateDescription.trim() && (
+                  <p className="text-sm text-muted-foreground">{templateDescription.trim()}</p>
+                )}
+              </CardHeader>
+              <CardContent>{renderPreviewLayout(groupedLayout)}</CardContent>
+            </Card>
+          ) : (
           <div className="space-y-3">
             {groupedLayout.map((layoutItem) => {
               const renderEditorItem = (item: TemplateLayoutItem, depth = 0): ReactNode => {
@@ -508,6 +798,7 @@ const FormularioEditor = () => {
                 const assignableContainers = getAssignableContainerFields(templateFields, field.id);
                 const isNested = depth > 0;
                 const isContainer = isContainerField(field);
+                const fieldIndex = templateFields.findIndex((templateField) => templateField.id === field.id);
 
                 return (
                   <Card
@@ -535,15 +826,37 @@ const FormularioEditor = () => {
                         </p>
                       )}
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <GripVertical className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="font-medium text-sm">{ANAMNESIS_FIELD_LIBRARY.find((entry) => entry.type === field.type)?.label || field.type}</p>
-                              <p className="text-xs text-muted-foreground">{field.id}</p>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{ANAMNESIS_FIELD_LIBRARY.find((entry) => entry.type === field.type)?.label || field.type}</p>
+                              <p className="truncate text-xs text-muted-foreground">{field.id}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+                            <div className="flex items-center gap-1 lg:hidden">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Mover ${field.label} para cima`}
+                                onClick={() => moveFieldByOffset(field.id, -1)}
+                                disabled={fieldIndex <= 0}
+                              >
+                                <ArrowUp className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Mover ${field.label} para baixo`}
+                                onClick={() => moveFieldByOffset(field.id, 1)}
+                                disabled={fieldIndex < 0 || fieldIndex >= templateFields.length - 1}
+                              >
+                                <ArrowDown className="h-4 w-4" />
+                              </Button>
+                            </div>
                             {!isBase && (
                               <Button type="button" variant="ghost" size="icon" onClick={() => duplicateField(field)} disabled={fieldLimitReached}>
                                 <Copy className="h-4 w-4" />
@@ -782,6 +1095,7 @@ const FormularioEditor = () => {
               return renderEditorItem(layoutItem);
             })}
           </div>
+          )}
         </div>
       </div>
     </motion.div>

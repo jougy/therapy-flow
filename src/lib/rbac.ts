@@ -38,6 +38,69 @@ export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "session.delete_draft",
 ];
 
+export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: string; label: string }> = {
+  "agenda.delete_events": {
+    description: "Pode excluir eventos da agenda da clínica.",
+    label: "Excluir eventos da agenda",
+  },
+  "clinic_profile.manage": {
+    description: "Pode editar dados institucionais, marca e preferências da clínica.",
+    label: "Gerenciar perfil da clínica",
+  },
+  "forms.manage": {
+    description: "Pode criar, editar, importar e remover modelos de formulários.",
+    label: "Gerenciar formulários",
+  },
+  "patients.read": {
+    description: "Pode visualizar pacientes e suas informações cadastrais.",
+    label: "Visualizar pacientes",
+  },
+  "patients.write": {
+    description: "Pode criar e editar cadastros, grupos e dados operacionais de pacientes.",
+    label: "Editar pacientes",
+  },
+  "schedule.read": {
+    description: "Pode visualizar agenda e compromissos da clínica.",
+    label: "Visualizar agenda",
+  },
+  "schedule.write": {
+    description: "Pode criar e editar eventos da agenda.",
+    label: "Editar agenda",
+  },
+  "session.delete_draft": {
+    description: "Pode excluir rascunhos de atendimentos.",
+    label: "Excluir rascunhos de atendimento",
+  },
+  "sessions.read": {
+    description: "Pode visualizar atendimentos, evolução e fichas clínicas.",
+    label: "Visualizar atendimentos",
+  },
+  "sessions.write": {
+    description: "Pode criar e editar atendimentos e registros clínicos.",
+    label: "Editar atendimentos",
+  },
+  "subaccounts.manage": {
+    description: "Pode criar, editar, suspender e deslogar colaboradores.",
+    label: "Gerenciar colaboradores",
+  },
+  "subaccounts_analytics.read": {
+    description: "Pode visualizar analytics e desenvolvimento da equipe.",
+    label: "Ver analytics da equipe",
+  },
+  "subaccounts_roles.manage": {
+    description: "Pode alterar hierarquias e poderes dos papéis operacionais.",
+    label: "Gerenciar papéis operacionais",
+  },
+  "subscription_billing.manage": {
+    description: "Pode ver e alterar assinatura, cobrança e limites comerciais.",
+    label: "Gerenciar assinatura",
+  },
+  "treasury.manage": {
+    description: "Pode visualizar e gerenciar dados financeiros e tesouraria.",
+    label: "Gerenciar tesouraria",
+  },
+};
+
 export interface MembershipContext {
   accountRole: AccountRole;
   isActive: boolean;
@@ -56,7 +119,7 @@ const hasOperationalRole = (context: MembershipContext, roles: OperationalRole[]
 
 export const canHaveSubaccounts = (plan: SubscriptionPlan) => plan === "clinic";
 
-export const hasCapability = (context: MembershipContext, capability: AccessCapability) => {
+export const hasDefaultCapability = (context: MembershipContext, capability: AccessCapability) => {
   if (!isMembershipUsable(context)) {
     return false;
   }
@@ -99,3 +162,35 @@ export const hasCapability = (context: MembershipContext, capability: AccessCapa
       return false;
   }
 };
+
+export const applyCapabilityOverrides = (
+  defaults: Record<AccessCapability, boolean>,
+  overrides: Partial<Record<AccessCapability, boolean>>,
+) =>
+  Object.fromEntries(
+    ACCESS_CAPABILITIES.map((capability) => [
+      capability,
+      overrides[capability] ?? defaults[capability],
+    ]),
+  ) as Record<AccessCapability, boolean>;
+
+export const buildCapabilitiesForContext = (
+  context: MembershipContext,
+  overrides: Partial<Record<AccessCapability, boolean>> = {},
+) => {
+  const defaults = Object.fromEntries(
+    ACCESS_CAPABILITIES.map((capability) => [capability, hasDefaultCapability(context, capability)]),
+  ) as Record<AccessCapability, boolean>;
+
+  if (!isMembershipUsable(context) || isAccountOwner(context)) {
+    return defaults;
+  }
+
+  return applyCapabilityOverrides(defaults, overrides);
+};
+
+export const hasCapability = (
+  context: MembershipContext,
+  capability: AccessCapability,
+  overrides: Partial<Record<AccessCapability, boolean>> = {},
+) => buildCapabilitiesForContext(context, overrides)[capability];

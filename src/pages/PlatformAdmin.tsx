@@ -71,6 +71,7 @@ type PlatformClinicDetail = {
   counts?: Record<string, number>;
   memberships?: Array<Record<string, unknown>>;
   owner?: Record<string, unknown> | null;
+  patients?: Array<Record<string, unknown>>;
 };
 
 type PlatformClinicFormsSummary = {
@@ -123,13 +124,23 @@ const callPlatformAccountAdmin = async (action: string, payload: Record<string, 
   const token = sessionData.session?.access_token;
   if (!token) throw new Error("Sessão master indisponível.");
 
-  const { data, error } = await supabase.functions.invoke("platform-account-admin", {
-    body: { action, payload, reason },
-    headers: { Authorization: `Bearer ${token}` },
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/platform-account-admin`, {
+    body: JSON.stringify({ action, payload, reason }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    },
+    method: "POST",
   });
-  if (error) throw error;
-  const result = (data ?? {}) as { data?: unknown; error?: string };
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const result = (contentType.includes("application/json")
+    ? await response.json()
+    : { error: await response.text() }) as { data?: unknown; error?: string };
+
   if (result.error) throw new Error(result.error);
+  if (!response.ok) throw new Error(`Operação falhou com status ${response.status}.`);
   return result.data;
 };
 
@@ -142,6 +153,23 @@ const formatDateTime = (value: string | null | undefined) => {
 };
 
 const compactDocument = (value: string | null | undefined) => value || "Sem documento";
+
+const clinicAccessStatusLabels: Record<string, string> = {
+  active: "Ativa",
+  banned: "Bloqueada",
+  payment_pending: "Pagamento pendente",
+  temporarily_paused: "Pausada temporariamente",
+};
+
+const formatClinicAccessStatus = (value: string) => clinicAccessStatusLabels[value] ?? value;
+
+const getMembershipOperationScope = (memberships: Array<Record<string, unknown>>): AccountOperation[] => {
+  const firstMembership = memberships[0];
+  if (firstMembership?.account_role === "account_owner" || firstMembership?.operational_role === "owner") {
+    return ["update_owner_access"];
+  }
+  return ["update_subaccount_access", "delete_subaccount"];
+};
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message;
@@ -252,7 +280,7 @@ const PlatformShell = ({
           <div className="flex flex-wrap items-center gap-2">
             <Badge className="bg-primary/10 text-primary hover:bg-primary/10">platform_owner</Badge>
             <Button variant="outline" onClick={() => navigate("/platform")}>Painel mestre</Button>
-            <Button variant="outline" onClick={() => navigate("/clinicas")}>Espaço pessoal</Button>
+            <Button variant="outline" onClick={() => navigate("/espacopessoal")}>Espaço pessoal</Button>
           </div>
         </div>
       </header>
@@ -444,6 +472,7 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
   const clinicName = String(clinic?.name ?? "Clínica");
   const routeKey = String(clinic?.route_key ?? "");
   const resolvedClinicId = String(clinic?.id ?? "");
+  const patients = detail?.patients ?? [];
 
   useEffect(() => {
     storePlatformClinicKey(clinicKey);
@@ -583,11 +612,12 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
         </div>
       ) : (
         <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList className="flex h-auto w-full justify-start overflow-x-auto p-1 lg:grid lg:grid-cols-7">
+          <TabsList className="flex h-auto w-full justify-start overflow-x-auto p-1 lg:grid lg:grid-cols-8">
             <TabsTrigger className="shrink-0" value="overview">Visão geral</TabsTrigger>
             <TabsTrigger className="shrink-0" value="accounts">Contas</TabsTrigger>
+            <TabsTrigger className="shrink-0" value="patients">Pacientes</TabsTrigger>
             <TabsTrigger className="shrink-0" value="forms">Formulários</TabsTrigger>
-            <TabsTrigger className="shrink-0" value="dashboard">Dashboard</TabsTrigger>
+            <TabsTrigger className="shrink-0" value="dashboard">Estatísticas</TabsTrigger>
             <TabsTrigger className="shrink-0" value="flags">Flags</TabsTrigger>
             <TabsTrigger className="shrink-0" value="support">Suporte</TabsTrigger>
             <TabsTrigger className="shrink-0" value="audit">Auditoria master</TabsTrigger>
@@ -603,6 +633,7 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                       ["Nome", String(clinic?.name ?? "-")],
                       ["CNPJ", String(clinic?.cnpj ?? "-")],
                       ["Plano", String(clinic?.subscription_plan ?? "-")],
+                      ["Status", formatClinicAccessStatus(String(clinic?.access_status ?? "active"))],
                       ["Rota", routeKey || "-"],
                       ["E-mail", String(clinic?.email ?? "-")],
                       ["Telefone", String(clinic?.phone ?? "-")],
@@ -624,6 +655,18 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                 </CardContent>
               </Card>
             </div>
+            <div className="mt-4">
+              <PlatformAccountOperations
+                allowedOperations={["update_clinic_access"]}
+                clinicId={resolvedClinicId}
+                clinicAccessStatus={String(clinic?.access_status ?? "active")}
+                concurrentAccessLimit={String(clinic?.concurrent_access_limit ?? clinic?.subaccount_limit ?? 4)}
+                compact
+                onDone={() => void loadDetail()}
+                subaccountLimit={String(clinic?.subaccount_limit ?? 4)}
+                title="Acesso da clínica"
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="accounts">
@@ -637,13 +680,22 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
               </CardHeader>
               <CardContent className="space-y-2">
                 <PlatformAccountOperations
+                  allowedOperations={["create_subaccount", "update_owner_access", "update_subaccount_access", "delete_subaccount"]}
                   clinicId={resolvedClinicId}
+                  clinicAccessStatus={String(clinic?.access_status ?? "active")}
+                  concurrentAccessLimit={String(clinic?.concurrent_access_limit ?? clinic?.subaccount_limit ?? 4)}
                   compact
                   onDone={() => void loadDetail()}
+                  subaccountLimit={String(clinic?.subaccount_limit ?? 4)}
                   title="Ações do gerenciamento de contas"
                 />
                 {(detail?.memberships ?? []).map((member) => (
-                  <div key={String(member.id)} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <button
+                    key={String(member.id)}
+                    type="button"
+                    className="grid w-full gap-2 rounded-lg border p-3 text-left transition-colors hover:border-primary/50 hover:bg-accent/40 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                    onClick={() => navigate(`/platform/usuarios/${String(member.user_id)}`)}
+                  >
                     <div className="min-w-0">
                       <p className="truncate font-medium text-foreground">{String(member.full_name ?? member.email ?? "Usuário")}</p>
                       <p className="text-sm text-muted-foreground">{String(member.email ?? "Sem e-mail")}</p>
@@ -653,8 +705,58 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                       <Badge variant="outline">{String(member.operational_role ?? "-")}</Badge>
                       <Badge>{String(member.membership_status ?? "-")}</Badge>
                     </div>
-                  </div>
+                  </button>
                 ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="patients">
+            <Card>
+              <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle>Pacientes da clínica</CardTitle>
+                <Badge variant="secondary">
+                  <Stethoscope className="mr-2 h-4 w-4" />
+                  {patients.length} paciente(s)
+                </Badge>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <PlatformAccountOperations
+                  allowedOperations={["create_patient"]}
+                  clinicId={resolvedClinicId}
+                  compact
+                  onDone={() => void loadDetail()}
+                  title="Criar paciente"
+                />
+                {patients.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-6 text-center">
+                    <Stethoscope className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+                    <p className="font-medium text-foreground">Nenhum paciente cadastrado</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Crie um paciente pela ação acima ou acesse um paciente pelo diretório master.</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-2">
+                    {patients.map((patient) => (
+                      <button
+                        key={String(patient.id)}
+                        type="button"
+                        className="grid w-full gap-2 rounded-lg border p-3 text-left transition-colors hover:border-primary/50 hover:bg-accent/40 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        onClick={() => navigate(`/platform/pacientes/${String(patient.id)}`)}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-foreground">{String(patient.name ?? "Paciente")}</p>
+                          <p className="truncate text-sm text-muted-foreground">{String(patient.email ?? patient.phone ?? "Sem contato")}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant={patient.registration_complete ? "secondary" : "outline"}>
+                            {patient.registration_complete ? "completo" : "pendente"}
+                          </Badge>
+                          <Badge>{String(patient.status ?? "-")}</Badge>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -993,9 +1095,15 @@ const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "account" | 
           </Card>
           <div className="lg:col-span-2">
             <PlatformAccountOperations
+              allowedOperations={itemType === "account" ? getMembershipOperationScope(memberships) : ["update_patient", "delete_patient"]}
               clinicId={String(detail?.clinic?.id ?? entity?.clinic_id ?? memberships[0]?.clinic_id ?? "") || undefined}
+              clinicAccessStatus={String(detail?.clinic?.access_status ?? "active")}
+              concurrentAccessLimit={String(detail?.clinic?.concurrent_access_limit ?? detail?.clinic?.subaccount_limit ?? 4)}
               compact
+              defaultIdentifier={itemType === "account" ? String(entity?.email ?? entity?.id ?? "") : undefined}
+              defaultPatientId={itemType === "patient" ? itemId : undefined}
               onDone={() => setReloadKey((value) => value + 1)}
+              subaccountLimit={String(detail?.clinic?.subaccount_limit ?? 4)}
               title={itemType === "account" ? "Operações master desta conta" : "Operações master deste paciente"}
             />
           </div>
@@ -1264,10 +1372,10 @@ const CreateAccountDialog = ({
 
 type AccountOperation =
   | "create_subaccount"
+  | "update_clinic_access"
   | "update_owner_access"
   | "update_subaccount_access"
   | "delete_subaccount"
-  | "delete_clinic_package"
   | "create_patient"
   | "update_patient"
   | "delete_patient";
@@ -1275,57 +1383,89 @@ type AccountOperation =
 const accountOperationLabels: Record<AccountOperation, string> = {
   create_patient: "Criar paciente",
   create_subaccount: "Criar subconta",
-  delete_clinic_package: "Excluir pacote da clínica",
   delete_patient: "Excluir paciente",
   delete_subaccount: "Excluir subconta",
+  update_clinic_access: "Editar acesso da clínica",
   update_owner_access: "Editar acesso do owner",
   update_patient: "Editar paciente",
   update_subaccount_access: "Editar acesso da subconta",
 };
 
-const destructiveOperations = new Set<AccountOperation>(["delete_clinic_package", "delete_patient", "delete_subaccount"]);
+const destructiveOperations = new Set<AccountOperation>(["delete_patient", "delete_subaccount"]);
 
 const PlatformAccountOperations = ({
+  allowedOperations,
   clinicId,
+  clinicAccessStatus = "active",
+  concurrentAccessLimit = "4",
   compact = false,
+  defaultIdentifier = "",
+  defaultPatientId = "",
   onDone,
+  subaccountLimit = "4",
   title,
 }: {
+  allowedOperations?: AccountOperation[];
   clinicId?: string;
+  clinicAccessStatus?: string;
+  concurrentAccessLimit?: string;
   compact?: boolean;
+  defaultIdentifier?: string;
+  defaultPatientId?: string;
   onDone: () => void;
+  subaccountLimit?: string;
   title: string;
 }) => {
-  const [operation, setOperation] = useState<AccountOperation>("create_subaccount");
+  const operations = allowedOperations?.length ? allowedOperations : (Object.keys(accountOperationLabels) as AccountOperation[]);
+  const [operation, setOperation] = useState<AccountOperation>(operations[0] ?? "create_subaccount");
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [form, setForm] = useState<Record<string, string>>({
     clinicId: clinicId ?? "",
-    concurrentAccessLimit: "4",
+    concurrentAccessLimit,
     cpf: "",
     dateOfBirth: "",
     email: "",
     fullName: "",
-    identifier: "",
+    identifier: defaultIdentifier,
     name: "",
     newEmail: "",
     password: "",
-    patientId: "",
+    patientId: defaultPatientId,
     phone: "",
     role: "professional",
-    status: "active",
+    status: clinicAccessStatus,
+    subaccountLimit,
   });
 
   const updateField = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
+  const updateOperation = (value: AccountOperation) => {
+    setOperation(value);
+    setConfirmation("");
+    setForm((current) => ({
+      ...current,
+      status: value === "update_clinic_access" ? clinicAccessStatus : current.status === "delete" ? "active" : current.status,
+    }));
+  };
+
   const effectiveClinicId = form.clinicId || clinicId || "";
-  const isDestructive = destructiveOperations.has(operation);
+  const isDeletingClinic = operation === "update_clinic_access" && form.status === "delete";
+  const isDestructive = destructiveOperations.has(operation) || isDeletingClinic;
 
   const buildPayload = () => {
     const base = { clinicId: effectiveClinicId };
     if (operation === "create_subaccount") {
       return { ...base, email: form.email, fullName: form.fullName, password: form.password, role: form.role, status: form.status };
+    }
+    if (operation === "update_clinic_access") {
+      return {
+        ...base,
+        concurrentAccessLimit: form.concurrentAccessLimit,
+        status: form.status,
+        subaccountLimit: form.subaccountLimit,
+      };
     }
     if (operation === "update_owner_access") {
       return {
@@ -1341,7 +1481,6 @@ const PlatformAccountOperations = ({
       return { identifier: form.identifier, newEmail: form.newEmail, password: form.password, role: form.role, status: form.status };
     }
     if (operation === "delete_subaccount") return { identifier: form.identifier };
-    if (operation === "delete_clinic_package") return { clinicId: effectiveClinicId };
     if (operation === "create_patient") {
       return { ...base, cpf: form.cpf, dateOfBirth: form.dateOfBirth, email: form.email, name: form.name, phone: form.phone, status: form.status };
     }
@@ -1378,10 +1517,10 @@ const PlatformAccountOperations = ({
       <div className={`grid gap-3 ${compact ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
         <div className="space-y-1">
           <Label>Ação</Label>
-          <Select value={operation} onValueChange={(value) => setOperation(value as AccountOperation)}>
+          <Select value={operation} onValueChange={(value) => updateOperation(value as AccountOperation)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              {(Object.keys(accountOperationLabels) as AccountOperation[]).map((key) => (
+              {operations.map((key) => (
                 <SelectItem key={key} value={key}>{accountOperationLabels[key]}</SelectItem>
               ))}
             </SelectContent>
@@ -1437,8 +1576,10 @@ const PlatformAccountOperations = ({
         )}
         {(operation === "create_subaccount" || operation.startsWith("update_") || operation === "create_patient") && (
           <div className="space-y-1">
-            <Label>Status</Label>
-            {operation === "create_patient" || operation === "update_patient" ? (
+            <Label>{operation === "update_clinic_access" ? "Status da clínica" : "Status"}</Label>
+            {operation === "update_clinic_access" ? (
+              <ClinicAccessStatusSelect value={form.status} onValueChange={(value) => updateField("status", value)} />
+            ) : operation === "create_patient" || operation === "update_patient" ? (
               <Input value={form.status} onChange={(event) => updateField("status", event.target.value)} maxLength={50} />
             ) : (
               <AccountStatusSelect value={form.status} onValueChange={(value) => updateField("status", value)} />
@@ -1463,10 +1604,16 @@ const PlatformAccountOperations = ({
             </div>
           </>
         )}
-        {operation === "update_owner_access" && (
+        {(operation === "update_owner_access" || operation === "update_clinic_access") && (
           <div className="space-y-1">
             <Label>Acessos simultâneos</Label>
             <Input value={form.concurrentAccessLimit} onChange={(event) => updateField("concurrentAccessLimit", event.target.value)} inputMode="numeric" maxLength={3} />
+          </div>
+        )}
+        {operation === "update_clinic_access" && (
+          <div className="space-y-1">
+            <Label>Limite de subcontas</Label>
+            <Input value={form.subaccountLimit} onChange={(event) => updateField("subaccountLimit", event.target.value)} inputMode="numeric" maxLength={3} />
           </div>
         )}
       </div>
@@ -1502,6 +1649,19 @@ const AccountStatusSelect = ({ onValueChange, value }: { onValueChange: (value: 
       <SelectItem value="payment_pending">Pagamento pendente</SelectItem>
       <SelectItem value="temporarily_paused">Pausada temporariamente</SelectItem>
       <SelectItem value="banned">Bloqueada</SelectItem>
+    </SelectContent>
+  </Select>
+);
+
+const ClinicAccessStatusSelect = ({ onValueChange, value }: { onValueChange: (value: string) => void; value: string }) => (
+  <Select value={value} onValueChange={onValueChange}>
+    <SelectTrigger><SelectValue /></SelectTrigger>
+    <SelectContent>
+      <SelectItem value="active">Ativa</SelectItem>
+      <SelectItem value="payment_pending">Pagamento pendente</SelectItem>
+      <SelectItem value="temporarily_paused">Pausada temporariamente</SelectItem>
+      <SelectItem value="banned">Bloqueada</SelectItem>
+      <SelectItem value="delete">Excluir definitivamente</SelectItem>
     </SelectContent>
   </Select>
 );

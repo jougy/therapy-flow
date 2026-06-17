@@ -207,7 +207,7 @@ describe("Index", () => {
     expect(screen.getByText("João Souza")).toBeInTheDocument();
   });
 
-  it("shows all recent patients instead of limiting the dashboard list to five", async () => {
+  it("shows all recent patients instead of limiting the statistics list to five", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
@@ -359,7 +359,7 @@ describe("Index", () => {
     expect(screen.getByText("Agenda mock")).toBeVisible();
   });
 
-  it("renders the dashboard without unsafe values from malformed financial records", async () => {
+  it("renders the statistics without unsafe values from malformed financial records", async () => {
     vi.mocked(useAuth).mockReturnValue({
       accountRole: "account_owner",
       can: (capability) => capability === "treasury.manage",
@@ -391,10 +391,10 @@ describe("Index", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: /abrir dashboard/i }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: /abrir estatísticas/i }).length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: /abrir dashboard/i })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /abrir estatísticas/i })[0]);
 
     expect(await screen.findByRole("dialog", { name: "Resumo geral" })).toBeInTheDocument();
     expect(screen.getByText("Receita registrada")).toBeInTheDocument();

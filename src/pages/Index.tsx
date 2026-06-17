@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, FileText, ListFilter, Loader2, PieChart, Plus, Search, UsersRound, X } from "lucide-react";
+import { ArrowDown, ArrowUpDown, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, FileText, ListFilter, Loader2, Plus, Search, UsersRound, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,9 @@ import {
   type HomePatientRecurrenceFilterStatus,
   type HomePatientRecord,
   type HomePatientSortKey,
+  DEFAULT_HOME_SESSION_SORT_KEY,
+  HOME_SESSION_SORT_OPTIONS,
+  type HomeSessionSortKey,
   type HomeSessionRecord,
 } from "@/lib/home-patients-view";
 import { getLegacyGroupHex } from "@/lib/group-colors";
@@ -245,15 +248,18 @@ const Index = () => {
   const [sessionDateFrom, setSessionDateFrom] = useState("");
   const [sessionDateTo, setSessionDateTo] = useState("");
   const [sortKey, setSortKey] = useState<HomePatientSortKey>(DEFAULT_HOME_PATIENT_SORT_KEY);
+  const [sessionSortKey, setSessionSortKey] = useState<HomeSessionSortKey>(DEFAULT_HOME_SESSION_SORT_KEY);
   const [listMode, setListMode] = useState<HomeListMode>("patients");
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [dashboardDialogOpen, setDashboardDialogOpen] = useState(false);
+  const [mobileSearchFocused, setMobileSearchFocused] = useState(false);
   const [toolbarFixed, setToolbarFixed] = useState(false);
   const toolbarSentinelRef = useRef<HTMLDivElement | null>(null);
   const toolbarPlaceholderRef = useRef<HTMLDivElement | null>(null);
   const toolbarStartTopRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const isDesignLabExperience = true;
   const { can, clinicId, user } = useAuth();
   const canViewFinancialData = can("treasury.manage");
   const deletedPatientId =
@@ -289,6 +295,8 @@ const Index = () => {
     sortKey,
     showFinancialData: canViewFinancialData,
   });
+  const selectedPatientSortLabel =
+    HOME_PATIENT_SORT_OPTIONS.find((option) => option.value === sortKey)?.label ?? "Pacientes recentes";
   const availableGroups = useMemo(
     () => Array.from(new Set(patientGroups.map((group) => group.name))).sort((left, right) => left.localeCompare(right, "pt-BR")),
     [patientGroups],
@@ -469,11 +477,28 @@ const Index = () => {
         return true;
       })
       .sort((left, right) => {
-        const leftTime = new Date(left.session_date).getTime();
-        const rightTime = new Date(right.session_date).getTime();
-        const normalizedLeftTime = Number.isNaN(leftTime) ? 0 : leftTime;
-        const normalizedRightTime = Number.isNaN(rightTime) ? 0 : rightTime;
-        return normalizedRightTime - normalizedLeftTime;
+        const leftDate = new Date(left.session_date);
+        const rightDate = new Date(right.session_date);
+        const leftTime = Number.isNaN(leftDate.getTime()) ? 0 : leftDate.getTime();
+        const rightTime = Number.isNaN(rightDate.getTime()) ? 0 : rightDate.getTime();
+        const leftPatientName = patientById.get(left.patient_id)?.name ?? "";
+        const rightPatientName = patientById.get(right.patient_id)?.name ?? "";
+
+        switch (sessionSortKey) {
+          case "session_date_asc":
+            return leftTime - rightTime;
+          case "status_asc":
+            return (left.status ?? "").localeCompare(right.status ?? "", "pt-BR") || rightTime - leftTime;
+          case "patient_name_asc":
+            return leftPatientName.localeCompare(rightPatientName, "pt-BR", { sensitivity: "base" }) || rightTime - leftTime;
+          case "amount_charged_desc":
+            return (right.amount_charged_cents ?? 0) - (left.amount_charged_cents ?? 0) || rightTime - leftTime;
+          case "amount_paid_desc":
+            return (right.amount_paid_cents ?? 0) - (left.amount_paid_cents ?? 0) || rightTime - leftTime;
+          case "session_date_desc":
+          default:
+            return rightTime - leftTime;
+        }
       });
   }, [
     canViewFinancialData,
@@ -492,6 +517,7 @@ const Index = () => {
     selectedWeekdays,
     sessionDateFrom,
     sessionDateTo,
+    sessionSortKey,
     sessions,
   ]);
   const dashboardData = useMemo(() => {
@@ -870,38 +896,184 @@ const Index = () => {
     };
   }, [toolbarFixed]);
 
-  const renderListModeSwitch = (compact = false) => (
-    <div
-      className={`inline-flex rounded-2xl border bg-muted/30 p-1 ${compact ? "h-11 w-24" : "h-10"}`}
-      role="tablist"
-      aria-label="Alternar lista da homepage"
-    >
-      <button
-        type="button"
-        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors ${
-          listMode === "patients" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-        }`}
-        onClick={() => setListMode("patients")}
-        role="tab"
-        aria-selected={listMode === "patients"}
+  const designLabActionButtonClass =
+    "group/design-action w-10 justify-center gap-0 overflow-hidden px-0 transition-[width,gap,padding,box-shadow,border-color,background-color,transform] duration-700 ease-in-out hover:justify-start hover:gap-2 hover:px-3.5 focus-visible:justify-start focus-visible:gap-2 focus-visible:px-3.5 hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.10),0_10px_22px_hsl(var(--primary)/0.10)]";
+  const designLabPrimaryActionButtonClass =
+    "group/design-action w-10 justify-center gap-0 overflow-hidden px-0 transition-[width,gap,padding,box-shadow,transform,background-color] duration-700 ease-in-out hover:w-[168px] hover:justify-start hover:gap-2 hover:px-3.5 hover:-translate-y-0.5 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.16),0_10px_22px_hsl(var(--primary)/0.16)] focus-visible:w-[168px] focus-visible:justify-start focus-visible:gap-2 focus-visible:px-3.5";
+  const designLabIconClass = "h-4 w-4 shrink-0 group-hover/design-action:animate-[designlab-icon-dance_0.7s_ease-in-out]";
+  const designLabLabelClass =
+    "ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[9rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[9rem] group-focus-visible/design-action:opacity-100";
+
+  const renderListModeSwitch = (compact = false) => {
+    const liquidListMode = true;
+    const patientsSelected = listMode === "patients";
+    const patientsButtonStateClass = patientsSelected
+      ? liquidListMode
+        ? `text-primary-foreground shadow-sm hover:bg-primary focus-visible:bg-primary ${compact ? "bg-primary" : ""}`
+        : "bg-background text-foreground shadow-sm"
+      : "text-muted-foreground hover:text-foreground";
+    const sessionsButtonStateClass = listMode === "sessions"
+      ? liquidListMode
+        ? `text-primary-foreground shadow-sm hover:bg-primary focus-visible:bg-primary ${compact ? "bg-primary" : ""}`
+        : "bg-background text-foreground shadow-sm"
+      : "text-muted-foreground hover:text-foreground";
+    const designLabPatientsModeClass = isDesignLabExperience && !compact
+      ? patientsSelected
+        ? "group/design-action w-10 flex-none overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,color] duration-700 ease-in-out hover:w-[126px] hover:px-4 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.10),0_8px_18px_hsl(var(--primary)/0.10)] focus-visible:w-[126px] focus-visible:px-4"
+        : "group/design-action w-10 flex-none overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,color] duration-700 ease-in-out hover:w-[126px] hover:px-4 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.08),0_8px_18px_hsl(var(--primary)/0.08)] focus-visible:w-[126px] focus-visible:px-4"
+      : "flex-1 gap-2 px-3 transition-colors";
+    const designLabSessionsModeClass = isDesignLabExperience && !compact
+      ? !patientsSelected
+        ? "group/design-action w-10 flex-none overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,color] duration-700 ease-in-out hover:w-[154px] hover:px-4 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.10),0_8px_18px_hsl(var(--primary)/0.10)] focus-visible:w-[154px] focus-visible:px-4"
+        : "group/design-action w-10 flex-none overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,color] duration-700 ease-in-out hover:w-[154px] hover:px-4 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.08),0_8px_18px_hsl(var(--primary)/0.08)] focus-visible:w-[154px] focus-visible:px-4"
+      : "flex-1 gap-2 px-3 transition-colors";
+    const designLabPatientsLabelClass = compact && isDesignLabExperience
+      ? "relative z-10"
+      : compact
+        ? "sr-only"
+        : isDesignLabExperience && !patientsSelected
+        ? "relative z-10 ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[6rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[6rem] group-focus-visible/design-action:opacity-100"
+        : isDesignLabExperience
+          ? "relative z-10 ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[6rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[6rem] group-focus-visible/design-action:opacity-100"
+          : "relative z-10";
+    const designLabSessionsLabelClass = compact && isDesignLabExperience
+      ? "relative z-10"
+      : compact
+        ? "sr-only"
+        : isDesignLabExperience && patientsSelected
+        ? "relative z-10 ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[8rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[8rem] group-focus-visible/design-action:opacity-100"
+        : isDesignLabExperience
+          ? "relative z-10 ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[8rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[8rem] group-focus-visible/design-action:opacity-100"
+          : "relative z-10";
+
+    return (
+      <div
+        className={`inline-flex rounded-2xl border bg-muted/30 p-1 ${compact && isDesignLabExperience ? "h-10 w-full" : compact ? "h-11 w-24" : isDesignLabExperience ? "h-10 overflow-visible" : "h-10"}`}
+        role="tablist"
+        aria-label="Alternar lista da homepage"
       >
-        <UsersRound className="h-4 w-4" />
-        <span className={compact ? "sr-only" : undefined}>Pacientes</span>
-      </button>
-      <button
-        type="button"
-        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium transition-colors ${
-          listMode === "sessions" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-        }`}
-        onClick={() => setListMode("sessions")}
-        role="tab"
-        aria-selected={listMode === "sessions"}
-      >
-        <FileText className="h-4 w-4" />
-        <span className={compact ? "sr-only" : undefined}>Atendimentos</span>
-      </button>
-    </div>
-  );
+        <button
+          type="button"
+          className={`relative z-10 inline-flex items-center justify-center rounded-xl text-sm font-medium duration-700 ease-in-out ${patientsButtonStateClass} ${designLabPatientsModeClass}`}
+          onClick={() => setListMode("patients")}
+          role="tab"
+          aria-selected={patientsSelected}
+        >
+          {patientsSelected && (
+            <motion.span
+              layoutId="list-mode-indicator"
+              aria-hidden="true"
+              className="designlab-liquid-toggle-indicator pointer-events-none absolute inset-0 z-0 rounded-xl bg-primary shadow-[0_8px_18px_hsl(var(--primary)/0.20),inset_0_0_0_1px_hsl(var(--primary-foreground)/0.22)]"
+              transition={{
+                type: "spring",
+                stiffness: 260,
+                damping: 28,
+                mass: 1.4
+              }}
+              style={{ originX: 0.5, originY: 0.5 }}
+            />
+          )}
+          <UsersRound className={`relative z-10 h-4 w-4 shrink-0 transition-transform duration-700 ${isDesignLabExperience && !compact ? "group-hover/design-action:animate-[designlab-icon-dance_0.7s_ease-in-out]" : ""}`} />
+          <span className={designLabPatientsLabelClass}>Pacientes</span>
+        </button>
+        <button
+          type="button"
+          className={`relative z-10 inline-flex items-center justify-center rounded-xl text-sm font-medium duration-700 ease-in-out ${sessionsButtonStateClass} ${designLabSessionsModeClass}`}
+          onClick={() => setListMode("sessions")}
+          role="tab"
+          aria-selected={!patientsSelected}
+        >
+          {!patientsSelected && (
+            <motion.span
+              layoutId="list-mode-indicator"
+              aria-hidden="true"
+              className="designlab-liquid-toggle-indicator pointer-events-none absolute inset-0 z-0 rounded-xl bg-primary shadow-[0_8px_18px_hsl(var(--primary)/0.20),inset_0_0_0_1px_hsl(var(--primary-foreground)/0.22)]"
+              transition={{
+                type: "spring",
+                stiffness: 260,
+                damping: 28,
+                mass: 1.4
+              }}
+              style={{ originX: 0.5, originY: 0.5 }}
+            />
+          )}
+          <FileText className={`relative z-10 h-4 w-4 shrink-0 transition-transform duration-700 ${isDesignLabExperience && !compact ? "group-hover/design-action:animate-[designlab-icon-dance_0.7s_ease-in-out]" : ""}`} />
+          <span className={designLabSessionsLabelClass}>Atendimentos</span>
+        </button>
+      </div>
+    );
+  };
+
+  const renderPatientSortSelect = (compact = false) => {
+    const designLabTriggerClass =
+      "group/design-action w-10 flex-none justify-center overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,transform] duration-700 ease-in-out hover:w-[104px] hover:justify-start hover:px-3.5 hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.10),0_10px_22px_hsl(var(--primary)/0.10)] focus-visible:w-[104px] focus-visible:justify-start focus-visible:px-3.5 [&>svg:last-child]:hidden [&>svg:last-child]:w-0";
+    const mobileDesignLabTriggerClass =
+      "h-10 min-w-0 flex-1 rounded-xl px-3 [&>svg:last-child]:hidden";
+
+    return (
+      <div className="flex items-center">
+        <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
+          <SelectTrigger
+            className={
+              compact && isDesignLabExperience
+                ? mobileDesignLabTriggerClass
+                : compact
+                ? "h-11 min-w-[112px] flex-1 rounded-2xl px-3"
+                : isDesignLabExperience
+                  ? designLabTriggerClass
+                  : "w-[140px]"
+            }
+            aria-label="Ordem dos pacientes"
+          >
+            <div className={isDesignLabExperience && !compact ? "flex min-w-0 items-center gap-0 transition-[gap] duration-700 ease-in-out group-hover/design-action:gap-2 group-focus-visible/design-action:gap-2" : compact && isDesignLabExperience ? "flex min-w-0 items-center justify-center gap-2" : "flex min-w-0 items-center gap-2"}>
+              <ArrowUpDown className={`h-4 w-4 shrink-0 text-muted-foreground ${isDesignLabExperience && !compact ? "group-hover/design-action:animate-[designlab-icon-dance_0.7s_ease-in-out]" : ""}`} />
+              <span className={compact && isDesignLabExperience ? "shrink-0 text-sm" : isDesignLabExperience && !compact ? "ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[7rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[7rem] group-focus-visible/design-action:opacity-100" : "shrink-0"}>Ordem</span>
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            {HOME_PATIENT_SORT_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+  const renderSessionSortSelect = (compact = false) => {
+    const designLabTriggerClass =
+      "group/design-action w-10 flex-none justify-center overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,transform] duration-700 ease-in-out hover:w-[104px] hover:justify-start hover:px-3.5 hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.10),0_10px_22px_hsl(var(--primary)/0.10)] focus-visible:w-[104px] focus-visible:justify-start focus-visible:px-3.5 [&>svg:last-child]:hidden [&>svg:last-child]:w-0";
+    const mobileDesignLabTriggerClass =
+      "h-10 min-w-0 flex-1 rounded-xl px-3 [&>svg:last-child]:hidden";
+
+    return (
+      <div className="flex items-center">
+        <Select value={sessionSortKey} onValueChange={(value) => setSessionSortKey(value as HomeSessionSortKey)}>
+          <SelectTrigger
+            className={
+              compact && isDesignLabExperience
+                ? mobileDesignLabTriggerClass
+                : compact
+                ? "h-11 min-w-[112px] flex-1 rounded-2xl px-3"
+                : isDesignLabExperience
+                  ? designLabTriggerClass
+                  : "w-[140px]"
+            }
+            aria-label="Ordem dos atendimentos"
+          >
+            <div className={isDesignLabExperience && !compact ? "flex min-w-0 items-center gap-0 transition-[gap] duration-700 ease-in-out group-hover/design-action:gap-2 group-focus-visible/design-action:gap-2" : compact && isDesignLabExperience ? "flex min-w-0 items-center justify-center gap-2" : "flex min-w-0 items-center gap-2"}>
+              <ArrowUpDown className={`h-4 w-4 shrink-0 text-muted-foreground ${isDesignLabExperience && !compact ? "group-hover/design-action:animate-[designlab-icon-dance_0.7s_ease-in-out]" : ""}`} />
+              <span className={compact && isDesignLabExperience ? "shrink-0 text-sm" : isDesignLabExperience && !compact ? "ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[7rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[7rem] group-focus-visible/design-action:opacity-100" : "shrink-0"}>Ordem</span>
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            {HOME_SESSION_SORT_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
 
   const renderSessionCard = (session: HomeSessionRecord) => {
     const patient = patientById.get(session.patient_id);
@@ -988,108 +1160,158 @@ const Index = () => {
   }
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
+    <motion.div variants={container} initial="hidden" animate="show" className={isDesignLabExperience ? "space-y-4 pb-20 md:space-y-6 md:pb-0" : "space-y-6"}>
       <div ref={toolbarSentinelRef} aria-hidden="true" className="h-0" />
       <div
         ref={toolbarPlaceholderRef}
         aria-hidden="true"
-        className={toolbarFixed ? "block h-[190px] md:h-[62px]" : "hidden"}
+        className={toolbarFixed ? isDesignLabExperience ? "block h-[64px] md:h-[62px]" : "block h-[190px] md:h-[62px]" : "hidden"}
       />
       <div
         className={
           toolbarFixed
             ? "!mt-0 fixed left-0 right-0 top-0 z-30 border-b border-border/60 bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 md:px-6"
-            : "rounded-2xl border border-border/60 bg-background/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 md:rounded-xl"
+            : isDesignLabExperience
+              ? "rounded-2xl border border-border/60 bg-background/95 p-2.5 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 md:rounded-xl md:p-3"
+              : "rounded-2xl border border-border/60 bg-background/95 p-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85 md:rounded-xl"
         }
       >
         <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
           <div className="md:hidden">
-            <div className="space-y-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={listMode === "patients" ? "Buscar paciente..." : "Buscar atendimento..."}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-12 rounded-2xl border-muted-foreground/20 bg-muted/20 pl-10 text-base shadow-none"
-                  aria-label={listMode === "patients" ? "Busca mobile de pacientes" : "Busca mobile de atendimentos"}
-                />
+            {isDesignLabExperience ? (
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1 transition-[flex-basis,width] duration-200 ease-out">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder={listMode === "patients" ? "Buscar paciente..." : "Buscar atendimento..."}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onFocus={() => setMobileSearchFocused(true)}
+                    onBlur={() => setMobileSearchFocused(false)}
+                    className="h-10 rounded-xl border-muted-foreground/20 bg-muted/20 pl-10 text-[16px] shadow-none"
+                    aria-label={listMode === "patients" ? "Busca mobile de pacientes" : "Busca mobile de atendimentos"}
+                  />
+                </div>
+                {!mobileSearchFocused ? (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="relative h-10 w-10 rounded-xl px-0"
+                        aria-label={activeFilterCount > 0 ? `Ajustes da lista, ${activeFilterCount} filtros ativos` : "Ajustes da lista"}
+                      >
+                        <ListFilter className="h-4 w-4" />
+                        {activeFilterCount > 0 ? (
+                          <Badge variant="secondary" className="absolute -right-1 -top-1 h-5 min-w-5 justify-center px-1 text-[10px]">
+                            {activeFilterCount}
+                          </Badge>
+                        ) : null}
+                      </Button>
+                    </DialogTrigger>
+                    <Select
+                      value={listMode === "patients" ? sortKey : sessionSortKey}
+                      onValueChange={(value) => {
+                        if (listMode === "patients") {
+                          setSortKey(value as HomePatientSortKey);
+                          return;
+                        }
+                        setSessionSortKey(value as HomeSessionSortKey);
+                      }}
+                    >
+                      <SelectTrigger
+                        className="h-10 w-10 justify-center rounded-xl px-0 [&>svg:last-child]:hidden [&>svg:last-child]:w-0"
+                        aria-label={listMode === "patients" ? "Ordem dos pacientes" : "Ordem dos atendimentos"}
+                      >
+                        <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(listMode === "patients" ? HOME_PATIENT_SORT_OPTIONS : HOME_SESSION_SORT_OPTIONS).map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
               </div>
-              <div className="flex gap-2">
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="h-11 rounded-2xl px-3"
-                    aria-label={activeFilterCount > 0 ? `Ajustes da lista, ${activeFilterCount} filtros ativos` : "Ajustes da lista"}
-                  >
-                    <ListFilter className="h-4 w-4" />
-                    {activeFilterCount > 0 ? <Badge variant="secondary" className="ml-1 px-1.5">{activeFilterCount}</Badge> : null}
+            ) : (
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder={listMode === "patients" ? "Buscar paciente..." : "Buscar atendimento..."}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="h-12 rounded-2xl border-muted-foreground/20 bg-muted/20 pl-10 text-base shadow-none"
+                    aria-label={listMode === "patients" ? "Busca mobile de pacientes" : "Busca mobile de atendimentos"}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="h-11 flex-1 rounded-2xl px-3"
+                      aria-label={activeFilterCount > 0 ? `Ajustes da lista, ${activeFilterCount} filtros ativos` : "Ajustes da lista"}
+                    >
+                      <ListFilter className="h-4 w-4" />
+                      <span>Filtro</span>
+                      {activeFilterCount > 0 ? <Badge variant="secondary" className="ml-1 px-1.5">{activeFilterCount}</Badge> : null}
+                    </Button>
+                  </DialogTrigger>
+                  {listMode === "patients" ? renderPatientSortSelect(true) : renderSessionSortSelect(true)}
+                </div>
+                <div className="flex gap-2">
+                  <Button className="h-11 flex-1 rounded-2xl px-3" onClick={() => navigate("/pacientes/novo")} aria-label="Novo paciente">
+                    <Plus className="h-4 w-4" />
+                    <span className="ml-1 max-[360px]:sr-only">Novo</span>
                   </Button>
-                </DialogTrigger>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 rounded-2xl px-3"
-                  onClick={() => setAgendaDialogOpen(true)}
-                  aria-label="Abrir agenda"
-                >
-                  <CalendarDays className="h-4 w-4" />
-                </Button>
-                {canViewFinancialData ? (
                   <Button
                     type="button"
                     variant="outline"
                     className="h-11 rounded-2xl px-3"
-                    onClick={() => setDashboardDialogOpen(true)}
-                    aria-label="Abrir dashboard"
+                    onClick={() => setAgendaDialogOpen(true)}
+                    aria-label="Abrir agenda"
                   >
-                    <PieChart className="h-4 w-4" />
+                    <CalendarDays className="h-4 w-4" />
                   </Button>
-                ) : null}
-                {listMode === "patients" ? (
-                  <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
-                    <SelectTrigger className="h-11 w-14 rounded-2xl px-3" aria-label="Ordenar pacientes">
-                      <div className="flex w-full items-center justify-center">
-                        <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-                        <span className="sr-only">
-                          <SelectValue />
-                        </span>
-                      </div>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {HOME_PATIENT_SORT_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : null}
-                <Button className="h-11 flex-1 rounded-2xl px-3" onClick={() => navigate("/pacientes/novo")} aria-label="Novo paciente">
-                  <Plus className="h-4 w-4" />
-                  <span className="ml-1 max-[360px]:sr-only">Novo</span>
-                </Button>
+                  {canViewFinancialData ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-2xl px-3"
+                      onClick={() => setDashboardDialogOpen(true)}
+                      aria-label="Abrir estatísticas"
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                </div>
+                {renderListModeSwitch(true)}
               </div>
-              {renderListModeSwitch(true)}
-            </div>
+            )}
           </div>
 
           <div className="hidden items-center gap-3 md:flex md:flex-wrap">
-          <div className="relative min-w-[200px] max-w-lg flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder={listMode === "patients" ? "Buscar paciente, CPF ou telefone..." : "Buscar atendimento, paciente, status ou data..."}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-              aria-label={listMode === "patients" ? "Buscar paciente por nome, CPF ou telefone" : "Buscar atendimento por paciente, status ou data"}
-            />
-          </div>
-          <DialogTrigger asChild>
-            <Button variant="outline" aria-label={activeFilterCount > 0 ? `Filtro, ${activeFilterCount} ativos` : "Filtro"}>
-              <ListFilter className="h-4 w-4" />
-              <span>Filtro</span>
-              {activeFilterCount > 0 && <Badge variant="secondary">{activeFilterCount}</Badge>}
-            </Button>
-          </DialogTrigger>
+            <div className="relative min-w-[200px] max-w-lg flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={listMode === "patients" ? "Buscar paciente, CPF ou telefone..." : "Buscar atendimento, paciente, status ou data..."}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+                aria-label={listMode === "patients" ? "Buscar paciente por nome, CPF ou telefone" : "Buscar atendimento por paciente, status ou data"}
+              />
+            </div>
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                className={isDesignLabExperience ? `${designLabActionButtonClass} hover:w-[108px] focus-visible:w-[108px]` : undefined}
+                aria-label={activeFilterCount > 0 ? `Filtro, ${activeFilterCount} ativos` : "Filtro"}
+              >
+                <ListFilter className={isDesignLabExperience ? designLabIconClass : "h-4 w-4"} />
+                <span className={isDesignLabExperience ? designLabLabelClass : undefined}>Filtro</span>
+                {activeFilterCount > 0 && <Badge variant="secondary">{activeFilterCount}</Badge>}
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-2xl sm:p-6">
             <DialogHeader className="text-left">
               <div className="flex items-start justify-between gap-4">
@@ -1430,35 +1652,43 @@ const Index = () => {
               </Button>
             </DialogFooter>
           </DialogContent>
-          {listMode === "patients" ? (
-            <Select value={sortKey} onValueChange={(value) => setSortKey(value as HomePatientSortKey)}>
-              <SelectTrigger className="w-[220px]" aria-label="Ordenar pacientes">
-                <div className="flex items-center gap-2">
-                  <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-                  <SelectValue />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                {HOME_PATIENT_SORT_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
-          <Button onClick={() => navigate("/pacientes/novo")}>
-            <Plus className="h-4 w-4 mr-2" />
-            <span>Novo Paciente</span>
+          {listMode === "patients" ? renderPatientSortSelect() : renderSessionSortSelect()}
+          <div className="shrink-0">
+            {renderListModeSwitch()}
+          </div>
+          <Button
+            className={isDesignLabExperience ? designLabPrimaryActionButtonClass : "gap-2"}
+            onClick={() => navigate("/pacientes/novo")}
+            aria-label="Novo Paciente"
+          >
+            <Plus className={isDesignLabExperience ? designLabIconClass : "h-4 w-4"} />
+            <span className={isDesignLabExperience ? designLabLabelClass : undefined}>Novo Paciente</span>
           </Button>
-          <Button type="button" variant="outline" size="icon" onClick={() => setAgendaDialogOpen(true)} aria-label="Abrir agenda">
-            <CalendarDays className="h-4 w-4" />
+          <div className="ml-auto flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size={isDesignLabExperience ? "default" : "icon"}
+            className={isDesignLabExperience ? `${designLabActionButtonClass} hover:w-[116px] focus-visible:w-[116px]` : undefined}
+            onClick={() => setAgendaDialogOpen(true)}
+            aria-label="Abrir agenda"
+          >
+            <CalendarDays className={isDesignLabExperience ? designLabIconClass : "h-4 w-4"} />
+            {isDesignLabExperience ? <span className={designLabLabelClass}>Agenda</span> : null}
           </Button>
           {canViewFinancialData ? (
-            <Button type="button" variant="outline" size="icon" onClick={() => setDashboardDialogOpen(true)} aria-label="Abrir dashboard">
-              <PieChart className="h-4 w-4" />
+            <Button
+              type="button"
+              variant="outline"
+              size={isDesignLabExperience ? "default" : "icon"}
+              className={isDesignLabExperience ? `${designLabActionButtonClass} hover:w-[144px] focus-visible:w-[144px]` : undefined}
+              onClick={() => setDashboardDialogOpen(true)}
+              aria-label="Abrir estatísticas"
+            >
+              <BarChart3 className={isDesignLabExperience ? designLabIconClass : "h-4 w-4"} />
+              {isDesignLabExperience ? <span className={designLabLabelClass}>Estatísticas</span> : null}
             </Button>
           ) : null}
-          <div className="ml-auto shrink-0">
-            {renderListModeSwitch()}
           </div>
           </div>
         </Dialog>
@@ -1474,9 +1704,23 @@ const Index = () => {
         {canViewFinancialData ? (
           <Dialog open={dashboardDialogOpen} onOpenChange={setDashboardDialogOpen}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-4xl sm:p-6">
-              <DialogHeader className="text-left">
-                <DialogTitle>Resumo geral</DialogTitle>
-                <DialogDescription>Indicadores rápidos da clínica para acompanhar operação, atendimentos e pagamentos.</DialogDescription>
+              <DialogHeader className="gap-3 text-left sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <DialogTitle>Resumo geral</DialogTitle>
+                  <DialogDescription>Indicadores rápidos da clínica para acompanhar operação, atendimentos e pagamentos.</DialogDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-fit gap-2"
+                  onClick={() => {
+                    setDashboardDialogOpen(false);
+                    navigate("dashboard");
+                  }}
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  Estatísticas completas
+                </Button>
               </DialogHeader>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
@@ -1505,6 +1749,92 @@ const Index = () => {
           </Dialog>
         ) : null}
       </div>
+
+      {isDesignLabExperience ? (
+        <nav
+          className="designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/94 px-2 pb-[calc(env(safe-area-inset-bottom)+0.35rem)] pt-1.5 backdrop-blur supports-[backdrop-filter]:bg-background/88 md:hidden"
+          aria-label="Navegação principal da clínica"
+        >
+          <div className="mx-auto grid w-full max-w-md grid-cols-5 gap-1.5">
+            <button
+              type="button"
+              className={`designlab-settings-mobile-item group relative flex min-w-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-300 ease-out active:translate-y-0.5 ${
+                listMode === "patients" ? "is-active" : ""
+              }`}
+              onClick={() => setListMode("patients")}
+              aria-label="Pacientes"
+              aria-pressed={listMode === "patients"}
+            >
+              <span className="designlab-settings-mobile-surface flex h-14 w-full items-center justify-center rounded-[0.68rem] border border-border/80 bg-card/92 text-muted-foreground transition-colors duration-300 group-[.is-active]:border-primary/45 group-[.is-active]:bg-primary/10 group-[.is-active]:text-primary">
+                <span className="designlab-settings-mobile-icon grid h-8 w-8 place-items-center rounded-lg bg-muted/70 text-foreground transition-colors duration-300 group-[.is-active]:bg-primary/14 group-[.is-active]:text-primary">
+                  <UsersRound className="h-[clamp(1.05rem,5vw,1.35rem)] w-[clamp(1.05rem,5vw,1.35rem)]" />
+                </span>
+              </span>
+              <span className="sr-only">Pacientes</span>
+            </button>
+            <button
+              type="button"
+              className={`designlab-settings-mobile-item group relative flex min-w-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-300 ease-out active:translate-y-0.5 ${
+                listMode === "sessions" ? "is-active" : ""
+              }`}
+              onClick={() => setListMode("sessions")}
+              aria-label="Atendimentos"
+              aria-pressed={listMode === "sessions"}
+            >
+              <span className="designlab-settings-mobile-surface flex h-14 w-full items-center justify-center rounded-[0.68rem] border border-border/80 bg-card/92 text-muted-foreground transition-colors duration-300 group-[.is-active]:border-primary/45 group-[.is-active]:bg-primary/10 group-[.is-active]:text-primary">
+                <span className="designlab-settings-mobile-icon grid h-8 w-8 place-items-center rounded-lg bg-muted/70 text-foreground transition-colors duration-300 group-[.is-active]:bg-primary/14 group-[.is-active]:text-primary">
+                  <FileText className="h-[clamp(1.05rem,5vw,1.35rem)] w-[clamp(1.05rem,5vw,1.35rem)]" />
+                </span>
+              </span>
+              <span className="sr-only">Atendimentos</span>
+            </button>
+            <button
+              type="button"
+              className="designlab-settings-mobile-item is-primary group relative flex min-w-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-300 ease-out active:translate-y-0.5"
+              onClick={() => navigate("/pacientes/novo")}
+              aria-label="Novo paciente"
+            >
+              <span className="designlab-settings-mobile-surface flex h-14 w-full items-center justify-center rounded-[0.68rem] border border-primary/45 bg-primary/10 text-primary transition-colors duration-300">
+                <span className="designlab-settings-mobile-icon grid h-8 w-8 place-items-center rounded-lg bg-primary/14 text-primary transition-colors duration-300">
+                  <Plus className="h-[clamp(1.15rem,5.6vw,1.5rem)] w-[clamp(1.15rem,5.6vw,1.5rem)]" />
+                </span>
+              </span>
+              <span className="sr-only">Novo paciente</span>
+            </button>
+            <button
+              type="button"
+              className="designlab-settings-mobile-item group relative flex min-w-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-300 ease-out active:translate-y-0.5"
+              onClick={() => setAgendaDialogOpen(true)}
+              aria-label="Agenda"
+            >
+              <span className="designlab-settings-mobile-surface flex h-14 w-full items-center justify-center rounded-[0.68rem] border border-border/80 bg-card/92 text-muted-foreground transition-colors duration-300">
+                <span className="designlab-settings-mobile-icon grid h-8 w-8 place-items-center rounded-lg bg-muted/70 text-foreground transition-colors duration-300">
+                  <CalendarDays className="h-[clamp(1.05rem,5vw,1.35rem)] w-[clamp(1.05rem,5vw,1.35rem)]" />
+                </span>
+              </span>
+              <span className="sr-only">Agenda</span>
+            </button>
+            <button
+              type="button"
+              className="designlab-settings-mobile-item group relative flex min-w-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-300 ease-out active:translate-y-0.5 disabled:opacity-45"
+              onClick={() => {
+                if (canViewFinancialData) {
+                  setDashboardDialogOpen(true);
+                }
+              }}
+              disabled={!canViewFinancialData}
+              aria-label="Estatísticas"
+            >
+              <span className="designlab-settings-mobile-surface flex h-14 w-full items-center justify-center rounded-[0.68rem] border border-border/80 bg-card/92 text-muted-foreground transition-colors duration-300">
+                <span className="designlab-settings-mobile-icon grid h-8 w-8 place-items-center rounded-lg bg-muted/70 text-foreground transition-colors duration-300">
+                  <BarChart3 className="h-[clamp(1.05rem,5vw,1.35rem)] w-[clamp(1.05rem,5vw,1.35rem)]" />
+                </span>
+              </span>
+              <span className="sr-only">Estatísticas</span>
+            </button>
+          </div>
+        </nav>
+      ) : null}
 
       {filtersAreActive && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -1587,9 +1917,12 @@ const Index = () => {
         </div>
       ) : isShowingPatientList ? (
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado{visiblePatients.length !== 1 ? "s" : ""}
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium text-muted-foreground">{selectedPatientSortLabel}</h2>
+            <p className="text-sm text-muted-foreground">
+              {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado{visiblePatients.length !== 1 ? "s" : ""}
+            </p>
+          </div>
           {visiblePatients.map((patient) => (
             <motion.div key={patient.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
               <PatientCard patient={patient} />
@@ -1605,7 +1938,12 @@ const Index = () => {
         <div className="space-y-6">
           {recentPatients.length > 0 && (
             <div>
-              <h2 className="text-sm font-medium text-muted-foreground mb-3">Pacientes recentes</h2>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-sm font-medium text-muted-foreground">Pacientes recentes</h2>
+                <p className="text-sm text-muted-foreground">
+                  {recentPatients.length} paciente{recentPatients.length !== 1 ? "s" : ""} encontrado{recentPatients.length !== 1 ? "s" : ""}
+                </p>
+              </div>
               <div className="space-y-2">
                 {recentPatients.map((patient) => (
                   <PatientCard key={patient.id} patient={patient} />

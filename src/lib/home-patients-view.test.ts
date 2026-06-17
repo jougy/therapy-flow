@@ -431,6 +431,16 @@ describe("home patients view", () => {
         patientGroups,
         patients,
         sessions,
+        sortKey: "updated_at_asc",
+      }).map((patient) => patient.name),
+    ).toEqual(["Carla Campos", "Alice Araujo", "Bruno Braga"]);
+
+    expect(
+      buildHomePatientViews({
+        filters: defaultFilters,
+        patientGroups,
+        patients,
+        sessions,
         sortKey: "birth_date_asc",
       }).map((patient) => patient.name),
     ).toEqual(["Alice Araujo", "Bruno Braga", "Carla Campos"]);

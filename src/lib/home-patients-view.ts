@@ -6,8 +6,11 @@ import { buildPatientOperationalSummary, formatMoneyCents } from "@/lib/session-
 
 export const DEFAULT_HOME_PATIENT_SORT_KEY = "updated_at_desc" as const;
 
+export const DEFAULT_HOME_SESSION_SORT_KEY = "session_date_desc" as const;
+
 export type HomePatientSortKey =
   | typeof DEFAULT_HOME_PATIENT_SORT_KEY
+  | "updated_at_asc"
   | "name_asc"
   | "birth_date_asc"
   | "last_session_desc"
@@ -15,6 +18,15 @@ export type HomePatientSortKey =
   | "session_count_desc"
   | "missed_count_desc"
   | "status_priority";
+
+export type HomeSessionSortKey =
+  | typeof DEFAULT_HOME_SESSION_SORT_KEY
+  | "session_date_asc"
+  | "status_asc"
+  | "patient_name_asc"
+  | "amount_charged_desc"
+  | "amount_paid_desc";
+
 
 export interface HomePatientFilters {
   agendaStatuses: HomePatientAgendaFilterStatus[];
@@ -184,7 +196,8 @@ export const HOME_PATIENT_WEEKDAY_OPTIONS = [
 ] as const;
 
 export const HOME_PATIENT_SORT_OPTIONS: { label: string; value: HomePatientSortKey }[] = [
-  { label: "Padrão atual", value: DEFAULT_HOME_PATIENT_SORT_KEY },
+  { label: "Pacientes mais recentes", value: DEFAULT_HOME_PATIENT_SORT_KEY },
+  { label: "Pacientes mais antigos", value: "updated_at_asc" },
   { label: "Nome", value: "name_asc" },
   { label: "Data de nascimento", value: "birth_date_asc" },
   { label: "Atendimento mais recente", value: "last_session_desc" },
@@ -193,6 +206,16 @@ export const HOME_PATIENT_SORT_OPTIONS: { label: string; value: HomePatientSortK
   { label: "Quantidade de faltas", value: "missed_count_desc" },
   { label: "Status de atividade", value: "status_priority" },
 ];
+
+export const HOME_SESSION_SORT_OPTIONS: { label: string; value: HomeSessionSortKey }[] = [
+  { label: "Mais recentes", value: DEFAULT_HOME_SESSION_SORT_KEY },
+  { label: "Mais antigos", value: "session_date_asc" },
+  { label: "Status", value: "status_asc" },
+  { label: "Paciente (A-Z)", value: "patient_name_asc" },
+  { label: "Valor cobrado", value: "amount_charged_desc" },
+  { label: "Valor pago", value: "amount_paid_desc" },
+];
+
 
 const toDigits = (value: string | null | undefined) => value?.replace(/\D/g, "") ?? "";
 
@@ -454,6 +477,8 @@ const comparePatientsForSort = (sortKey: HomePatientSortKey, left: HomePatientVi
       return right.missedCount - left.missedCount || compareByName(left, right);
     case "status_priority":
       return comparePatientStatusPriority(left.status, right.status) || compareByName(left, right);
+    case "updated_at_asc":
+      return left.updatedAt.localeCompare(right.updatedAt) || compareByName(left, right);
     case DEFAULT_HOME_PATIENT_SORT_KEY:
     default:
       return compareByDefault(left, right);
