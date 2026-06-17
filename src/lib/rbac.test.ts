@@ -110,4 +110,16 @@ describe("hasCapability", () => {
       hasCapability({ ...adminContext, membershipStatus: "suspended" }, "schedule.read")
     ).toBe(false);
   });
+
+  it("applies clinic role capability overrides to subaccount roles", () => {
+    expect(hasCapability(internContext, "schedule.read")).toBe(false);
+    expect(hasCapability(internContext, "schedule.read", { "schedule.read": true })).toBe(true);
+
+    expect(hasCapability(assistantContext, "schedule.write")).toBe(true);
+    expect(hasCapability(assistantContext, "schedule.write", { "schedule.write": false })).toBe(false);
+  });
+
+  it("does not apply role overrides to account owners", () => {
+    expect(hasCapability(ownerContext, "forms.manage", { "forms.manage": false })).toBe(true);
+  });
 });
