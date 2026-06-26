@@ -11,14 +11,10 @@
             "id": "1ea62beb38fffc82",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "core/Pluri-Health/90 - Legal e LGPD/Prompts por documento - Termos Privacidade Paciente DPA.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "Prompts por documento - Termos Privacidade Paciente DPA"
+              "title": "Nova aba"
             }
           }
         ]

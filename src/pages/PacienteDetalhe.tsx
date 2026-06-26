@@ -319,8 +319,10 @@ const SummaryField = ({ label, value }: { label: string; value?: string | null }
 
 const SummaryInlineChart = ({
   segments,
+  valueFormatter,
 }: {
   segments: { color: string; label: string; value: number }[];
+  valueFormatter?: (value: number) => string;
 }) => {
   const normalizedSegments = segments.filter((segment) => Number.isFinite(segment.value) && segment.value > 0);
   const total = normalizedSegments.reduce((sum, segment) => sum + segment.value, 0);
@@ -336,22 +338,30 @@ const SummaryInlineChart = ({
   return (
     <div className="mx-auto mt-3 w-full max-w-[40rem] space-y-2.5 md:mt-3.5 md:max-w-[28rem]">
       <div className="flex h-2.5 overflow-hidden rounded-full bg-muted md:h-2">
-        {normalizedSegments.map((segment) => (
-          <div
-            key={segment.label}
-            className="h-full"
-            style={{ backgroundColor: segment.color, width: `${Math.max(6, (segment.value / total) * 100)}%` }}
-            title={`${segment.label}: ${segment.value}`}
-          />
-        ))}
+        {normalizedSegments.map((segment) => {
+          const formattedValue = valueFormatter ? valueFormatter(segment.value) : String(segment.value);
+
+          return (
+            <div
+              key={segment.label}
+              className="h-full"
+              style={{ backgroundColor: segment.color, width: `${Math.max(6, (segment.value / total) * 100)}%` }}
+              title={`${segment.label}: ${formattedValue}`}
+            />
+          );
+        })}
       </div>
       <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground md:gap-x-2.5">
-        {normalizedSegments.map((segment) => (
-          <span key={segment.label} className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: segment.color }} />
-            {segment.label}: {segment.value} ({Math.round((segment.value / total) * 100)}%)
-          </span>
-        ))}
+        {normalizedSegments.map((segment) => {
+          const formattedValue = valueFormatter ? valueFormatter(segment.value) : String(segment.value);
+
+          return (
+            <span key={segment.label} className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: segment.color }} />
+              {segment.label}: {formattedValue} ({Math.round((segment.value / total) * 100)}%)
+            </span>
+          );
+        })}
       </div>
     </div>
   );
@@ -412,6 +422,7 @@ const formatOperationalTime = (value: string | null | undefined) =>
 const SessionCard = ({
   baseSchema,
   borderColor,
+  canViewFinancialData,
   creatorName,
   creatorIsIntern,
   isSelected,
@@ -426,6 +437,7 @@ const SessionCard = ({
 }: {
   baseSchema: AnamnesisTemplateSchema;
   borderColor?: string;
+  canViewFinancialData: boolean;
   creatorName: string;
   creatorIsIntern: boolean;
   isSelected: boolean;
@@ -446,9 +458,10 @@ const SessionCard = ({
   const adjustmentCents = getPaymentAdjustmentCents(session);
   const adjustmentPercent = getPaymentAdjustmentPercent(session);
   const sessionHasPaymentAdjustment = hasPaymentAdjustment(session);
+  const hasPaymentInfo =
+    session.payment_status !== "nao_cobrado" || Boolean(session.amount_charged_cents || session.amount_paid_cents);
   const hasOperationalInfo =
-    Boolean(session.scheduled_start_at || session.patient_arrived_at || session.amount_charged_cents || session.amount_paid_cents) ||
-    session.payment_status !== "nao_cobrado";
+    Boolean(session.scheduled_start_at || session.patient_arrived_at) || (canViewFinancialData && hasPaymentInfo);
 
   return (
     <Card
@@ -520,7 +533,7 @@ const SessionCard = ({
                     {delayMinutes && delayMinutes > 0 ? ` · atraso ${delayMinutes}min` : ""}
                   </span>
                 ) : null}
-                {session.payment_status !== "nao_cobrado" || session.amount_charged_cents || session.amount_paid_cents ? (
+                {canViewFinancialData && hasPaymentInfo ? (
                   <span className="rounded-full bg-muted px-2 py-1">
                     {getPaymentStatusLabel(session.payment_status)} · {formatMoneyCents(session.amount_paid_cents)} de{" "}
                     {sessionHasPaymentAdjustment ? (
@@ -588,6 +601,7 @@ const PacienteDetalhe = () => {
   const location = useLocation();
   const { can, clinic, clinicId, operationalRole, user } = useAuth();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
+  const canViewPatientContact = can("patients.manage");
   const canViewFinancialData = can("treasury.manage");
   const [patient, setPatient] = useState<Patient | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
@@ -1406,13 +1420,14 @@ const PacienteDetalhe = () => {
     return delay !== null && delay > 0;
   }).length;
   const onTimeSessionsCount = Math.max(scheduledSessionsCount - absentSessionsCount - delayedSessionsCount, 0);
+  const settledPaymentCents = Math.min(operationalSummary.paidCents, operationalSummary.chargedCents);
   const patientPaymentChartSegments = [
-    { color: dashboardColors.emerald, label: "Pago", value: sessions.filter((session) => getSessionBalanceCents(session) === 0 && (session.amount_charged_cents ?? 0) > 0 && (session.amount_paid_cents ?? 0) === (session.amount_charged_cents ?? 0)).length },
-    { color: dashboardColors.blue, label: "Crédito", value: sessions.filter((session) => getSessionBalanceCents(session) === 0 && getSessionOriginalAmountCents(session) > 0 && (session.amount_paid_cents ?? 0) > (session.amount_charged_cents ?? 0)).length },
-    { color: dashboardColors.rose, label: "Devendo", value: sessions.filter((session) => getSessionBalanceCents(session) > 0 && (session.amount_paid_cents ?? 0) > 0).length },
-    { color: dashboardColors.amber, label: "Pendente", value: sessions.filter((session) => getSessionBalanceCents(session) > 0 && (session.amount_paid_cents ?? 0) <= 0).length },
-    { color: dashboardColors.slate, label: "Não cobrado", value: sessions.filter((session) => (session.amount_charged_cents ?? 0) <= 0 && session.payment_status !== "cortesia").length },
+    { color: dashboardColors.emerald, label: "Acertado", value: settledPaymentCents },
+    { color: dashboardColors.blue, label: "Crédito", value: operationalSummary.creditCents },
+    { color: dashboardColors.amber, label: "Em aberto", value: operationalSummary.grossOpenBalanceCents },
+    { color: dashboardColors.rose, label: "Devendo", value: operationalSummary.openBalanceCents },
   ];
+  const paymentChartTotalCents = patientPaymentChartSegments.reduce((sum, segment) => sum + segment.value, 0);
   const patientAbsenteeismChartSegments = [
     { color: dashboardColors.rose, label: "Faltou", value: absentSessionsCount },
     { color: dashboardColors.amber, label: "Atrasou", value: delayedSessionsCount },
@@ -1444,7 +1459,7 @@ const PacienteDetalhe = () => {
       ? [{
           detail: (
             <>
-              Pago {formatMoneyCents(operationalSummary.paidCents)} · cobrado{" "}
+              Acertado {formatMoneyCents(settledPaymentCents)} · cobrado{" "}
               {hasPaymentSummaryAdjustment ? (
                 <>
                   <span className="line-through">{formatMoneyCents(operationalSummary.originalChargedCents)}</span>{" "}
@@ -1460,8 +1475,8 @@ const PacienteDetalhe = () => {
             </>
           ),
           label: "Pagamentos",
-          value: operationalSummary.creditCents > 0 ? `${formatMoneyCents(operationalSummary.creditCents)} crédito` : formatMoneyCents(operationalSummary.openBalanceCents),
-          chart: <SummaryInlineChart segments={patientPaymentChartSegments} />,
+          value: formatMoneyCents(paymentChartTotalCents),
+          chart: <SummaryInlineChart segments={patientPaymentChartSegments} valueFormatter={formatMoneyCents} />,
         }]
       : []),
   ];
@@ -1783,7 +1798,7 @@ const PacienteDetalhe = () => {
                     {patient.age} anos
                   </span>
                 ) : null}
-                {patient.phone ? (
+                {canViewPatientContact && patient.phone ? (
                   <span className="inline-flex items-center gap-1 rounded-full border bg-background/80 px-3 py-1">
                     <Phone className="h-3.5 w-3.5" />
                     {patient.phone}
@@ -1804,7 +1819,9 @@ const PacienteDetalhe = () => {
                 </button>
               </div>
               <p className="max-w-2xl text-sm text-muted-foreground">
-                Acesse rapidamente contato, cadastro, status e novo atendimento sem sair da ficha do paciente.
+                {canViewPatientContact
+                  ? "Acesse rapidamente contato, cadastro, status e novo atendimento sem sair da ficha do paciente."
+                  : "Acesse rapidamente cadastro, status e novo atendimento sem sair da ficha do paciente."}
               </p>
             </div>
           </div>
@@ -1831,17 +1848,19 @@ const PacienteDetalhe = () => {
           </div>
 
           <div className="grid gap-3 rounded-2xl border bg-background/70 p-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:grid-cols-[auto,auto,minmax(0,160px)] xl:shrink-0">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => patientWhatsAppHref && window.open(patientWhatsAppHref, "_blank", "noopener,noreferrer")}
-              disabled={!patientWhatsAppHref}
-              aria-label="Abrir WhatsApp do paciente"
-              title="Abrir WhatsApp"
-              className="border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success"
-            >
-              <WhatsAppLogo className="h-5 w-5" />
-            </Button>
+            {canViewPatientContact ? (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => patientWhatsAppHref && window.open(patientWhatsAppHref, "_blank", "noopener,noreferrer")}
+                disabled={!patientWhatsAppHref}
+                aria-label="Abrir WhatsApp do paciente"
+                title="Abrir WhatsApp"
+                className="border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success"
+              >
+                <WhatsAppLogo className="h-5 w-5" />
+              </Button>
+            ) : null}
             <Button variant="outline" onClick={() => setPatientInfoDialogOpen(true)} className="w-full sm:w-auto">
               <MoreHorizontal className="h-4 w-4 mr-2" />
               Ver mais
@@ -2087,6 +2106,7 @@ const PacienteDetalhe = () => {
                     <SessionCard
                       key={session.id}
                       baseSchema={baseSchema}
+                      canViewFinancialData={canViewFinancialData}
                       creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
                       creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
                       session={session}
@@ -2139,6 +2159,7 @@ const PacienteDetalhe = () => {
                     <SessionCard
                       key={session.id}
                       baseSchema={baseSchema}
+                      canViewFinancialData={canViewFinancialData}
                       creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
                       creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
                       session={session}
@@ -2585,7 +2606,7 @@ const PacienteDetalhe = () => {
               <SummaryField label="Nome" value={patient.name} />
               <SummaryField label="Status" value={patient.status} />
               <SummaryField label="Cadastro" value={patientRegistrationStatus} />
-              <SummaryField label="Telefone" value={patient.phone} />
+              {canViewPatientContact ? <SummaryField label="Telefone" value={patient.phone} /> : null}
               <SummaryField label="E-mail" value={patient.email} />
               <SummaryField label="CPF" value={patient.cpf} />
               <SummaryField label="Origem" value={[getPatientOriginLabel(patient.origin_type), patientOriginDetails].filter(Boolean).join("\n")} />

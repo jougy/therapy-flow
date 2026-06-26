@@ -17,12 +17,15 @@ const CadastroContaAlfa = lazy(() => import("./pages/CadastroContaAlfa"));
 const CadastroPacienteCompartilhado = lazy(() => import("./pages/CadastroPacienteCompartilhado"));
 const ClinicDashboard = lazy(() => import("./pages/ClinicDashboard"));
 const Configuracoes = lazy(() => import("./pages/Configuracoes"));
+const ContaConfirmada = lazy(() => import("./pages/ContaConfirmada"));
+const ConviteClinica = lazy(() => import("./pages/ConviteClinica"));
 const FormularioEditor = lazy(() => import("./pages/FormularioEditor"));
 const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const NovoPaciente = lazy(() => import("./pages/NovoPaciente"));
 const PacienteDetalhe = lazy(() => import("./pages/PacienteDetalhe"));
 const PacienteResumo = lazy(() => import("./pages/PacienteResumo"));
+const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
 const SelecionarClinica = lazy(() => import("./pages/SelecionarClinica"));
 const SessaoDetalhe = lazy(() => import("./pages/SessaoDetalhe"));
 const PlatformAdmin = lazy(() => import("./pages/PlatformAdmin"));
@@ -150,6 +153,9 @@ const App = () => (
                     <Route path="/designlab/*" element={<DesignLabApp />} />
                     <Route path="/designlabs/*" element={<DesignLabApp />} />
                     <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
+                    <Route path="/auth/confirmado" element={<ContaConfirmada />} />
+                    <Route path="/auth/redefinir-senha" element={<RedefinirSenha />} />
+                    <Route path="/convite/clinica/:token" element={<ConviteClinica />} />
                     <Route path="/cadastro/conta-alfa" element={<AuthRoute><CadastroContaAlfa /></AuthRoute>} />
                     <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
                     <Route path="/espacopessoal" element={<ProtectedRoute><SelecionarClinica /></ProtectedRoute>} />

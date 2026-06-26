@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { Activity, Building2, CalendarDays, CheckCircle2, LayoutDashboard, Loader2, LogOut, Megaphone, PlusCircle, RefreshCw, Settings, ShieldCheck, Tags, Trash2, UserRound, UsersRound } from "lucide-react";
+import { Activity, Building2, CalendarDays, CheckCircle2, LayoutDashboard, Loader2, LogOut, Megaphone, PlusCircle, RefreshCw, Settings, ShieldCheck, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
 import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
 import {
   AlertDialog,
@@ -14,12 +14,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
+import ProfileAccountButton from "@/components/ProfileAccountButton";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
@@ -76,6 +77,20 @@ interface GroupCount {
   key: string;
   name: string;
   total: number;
+}
+
+interface ClinicInvitation {
+  clinic_id: string;
+  clinic_logo_url: string | null;
+  clinic_name: string;
+  clinic_route_key: string;
+  created_at: string;
+  expires_at: string;
+  invitation_id: string;
+  invited_by_name: string | null;
+  job_title: string | null;
+  operational_role: string;
+  specialty: string | null;
 }
 
 const roleLabel: Record<string, string> = {
@@ -190,7 +205,7 @@ const formatShortDay = (date: Date) => `${weekdayLabels[date.getDay()]} ${String
 const isCompletedAttendance = (session: DashboardSession) => session.status !== "rascunho" && session.status !== "cancelado";
 
 const SelecionarClinica = () => {
-  const { accessibleClinics, isPlatformOwner, profile, selectClinic, signOut, user } = useAuth();
+  const { accessibleClinics, isPlatformOwner, profile, refreshAuthState, selectClinic, signOut, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isDesignLabRoute = location.pathname.startsWith("/designlab") || location.pathname.startsWith("/designlabs");
@@ -204,9 +219,99 @@ const SelecionarClinica = () => {
   const [dashboardGroups, setDashboardGroups] = useState<DashboardGroup[]>([]);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [attendanceRange, setAttendanceRange] = useState<AttendanceRange>("week");
+  const [clinicInvitations, setClinicInvitations] = useState<ClinicInvitation[]>([]);
+  const [loadingInvitations, setLoadingInvitations] = useState(false);
+  const [actingInvitationId, setActingInvitationId] = useState<string | null>(null);
+  const [leavingClinicId, setLeavingClinicId] = useState<string | null>(null);
+  const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
+  const [mobileDockPressedSection, setMobileDockPressedSection] = useState<PersonalSection | null>(null);
+  const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
+  const [mobileDockTooltip, setMobileDockTooltip] = useState<{ title: string; x: number } | null>(null);
+  const mobileDockScrollResetTimerRef = useRef<number | null>(null);
 
   const displayName = profile?.full_name || profile?.email || user?.email || "Usuário";
   const initials = getInitials(displayName || "U");
+
+  useEffect(() => {
+    if (!user?.id) {
+      setClinicInvitations([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchInvitations = async () => {
+      if (typeof supabase.rpc !== "function") {
+        setClinicInvitations([]);
+        return;
+      }
+
+      setLoadingInvitations(true);
+      const { data, error } = await supabase.rpc("list_current_user_clinic_invitations");
+
+      if (cancelled) {
+        return;
+      }
+
+      setLoadingInvitations(false);
+
+      if (error) {
+        logRuntimeError("personal_space.clinic_invitations", error, { userId: user.id });
+        setClinicInvitations([]);
+        return;
+      }
+
+      setClinicInvitations((data ?? []) as ClinicInvitation[]);
+    };
+
+    void fetchInvitations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const handleAcceptInvitation = async (invitationId: string) => {
+    setActingInvitationId(invitationId);
+    const { error } = await supabase.rpc("accept_current_user_clinic_invitation", {
+      _invitation_id: invitationId,
+    });
+
+    if (error) {
+      toast({ title: "Erro ao aceitar convite", description: error.message, variant: "destructive" });
+      setActingInvitationId(null);
+      return;
+    }
+
+    toast({ title: "Convite aceito", description: "O acesso da clínica foi liberado no seu espaço pessoal." });
+    const acceptedInvitation = clinicInvitations.find((invite) => invite.invitation_id === invitationId);
+    setClinicInvitations((current) => current.filter((invite) => invite.invitation_id !== invitationId));
+    await refreshAuthState();
+    if (acceptedInvitation?.clinic_route_key) {
+      await supabase.rpc("set_current_user_active_clinic_by_route_key", {
+        _route_key: acceptedInvitation.clinic_route_key,
+      });
+      navigate(`/clinica/${acceptedInvitation.clinic_route_key}`);
+    }
+    setActingInvitationId(null);
+  };
+
+  const handleDeclineInvitation = async (invitationId: string) => {
+    setActingInvitationId(invitationId);
+    const { error } = await supabase.rpc("decline_current_user_clinic_invitation", {
+      _invitation_id: invitationId,
+    });
+
+    if (error) {
+      toast({ title: "Erro ao recusar convite", description: error.message, variant: "destructive" });
+      setActingInvitationId(null);
+      return;
+    }
+
+    toast({ title: "Convite recusado", description: "Removemos o convite da sua lista." });
+    setClinicInvitations((current) => current.filter((invite) => invite.invitation_id !== invitationId));
+    setActingInvitationId(null);
+  };
 
   useEffect(() => {
     if (activeSection === "settings") {
@@ -493,14 +598,86 @@ const SelecionarClinica = () => {
     }
   };
 
-  const personalNav = (
-    <nav
-      className={
-        isDesignLabExperience
-          ? "flex w-full min-w-0 max-w-full gap-1.5 overflow-x-auto pb-1 lg:grid lg:gap-2 lg:overflow-visible lg:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          : "flex w-full min-w-0 max-w-full gap-2 overflow-x-auto pb-1 lg:grid lg:gap-2 lg:overflow-visible lg:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+  const handleLeaveClinic = async (clinicOption: AccessibleClinic) => {
+    setLeavingClinicId(clinicOption.clinic.id);
+    const { error } = await supabase.rpc("leave_current_user_clinic", {
+      _clinic_id: clinicOption.clinic.id,
+    });
+
+    if (error) {
+      toast({ title: "Erro ao sair da clínica", description: error.message, variant: "destructive" });
+      setLeavingClinicId(null);
+      return;
+    }
+
+    toast({
+      title: "Acesso removido",
+      description: `Você saiu de ${getClinicBrandName(clinicOption.clinic.name)}. Seus dados pessoais continuam no seu espaço pessoal.`,
+    });
+    setLeavingClinicId(null);
+    await refreshAuthState();
+  };
+
+  const updateMobileDockTooltipForButton = (button: HTMLButtonElement, title: string) => {
+    const rect = button.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.right;
+    const safeInset = 68;
+    const x = Math.min(Math.max(rect.left + rect.width / 2, safeInset), Math.max(safeInset, viewportWidth - safeInset));
+    setMobileDockTooltip({ title, x });
+  };
+
+  const finishMobileDockInteraction = () => {
+    setMobileDockPointerActive(false);
+    setMobileDockExpanded(true);
+    setMobileDockPressedSection(null);
+    setMobileDockTooltip(null);
+  };
+
+  const updateMobileDockPressedSectionFromPoint = (clientX: number, clientY: number) => {
+    if (!mobileDockPointerActive) {
+      return;
+    }
+
+    const element = document.elementFromPoint(clientX, clientY);
+    const button = element?.closest<HTMLButtonElement>("[data-personal-mobile-section]");
+    const sectionId = button?.dataset.personalMobileSection as PersonalSection | undefined;
+    const section = sectionItems.find((item) => item.value === sectionId);
+
+    if (!button || !section) {
+      return;
+    }
+
+    setMobileDockPressedSection(section.value);
+    updateMobileDockTooltipForButton(button, section.label);
+  };
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (mobileDockScrollResetTimerRef.current !== null) {
+        window.clearTimeout(mobileDockScrollResetTimerRef.current);
       }
-    >
+
+      mobileDockScrollResetTimerRef.current = window.setTimeout(() => {
+        setMobileDockExpanded(false);
+        setMobileDockPressedSection(null);
+        setMobileDockPointerActive(false);
+        setMobileDockTooltip(null);
+        mobileDockScrollResetTimerRef.current = null;
+      }, 80);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+
+      if (mobileDockScrollResetTimerRef.current !== null) {
+        window.clearTimeout(mobileDockScrollResetTimerRef.current);
+      }
+    };
+  }, []);
+
+  const personalDesktopNav = (
+    <nav className="grid w-full min-w-0 max-w-full gap-2">
       {sectionItems.map((item) => {
         const Icon = item.icon;
         const isActive = activeSection === item.value;
@@ -509,50 +686,119 @@ const SelecionarClinica = () => {
           <button
             key={item.value}
             type="button"
-            className={
-              isDesignLabExperience
-                ? cn(
-                    "designlab-settings-mobile-item group relative flex min-w-[78px] flex-1 shrink-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-300 ease-out active:translate-y-0.5 lg:min-w-0",
-                    isActive && "is-active"
-                  )
-                : cn(
-                    "flex min-w-[104px] shrink-0 flex-col items-center justify-center rounded-xl border px-3 py-2 text-center text-sm font-medium transition-colors lg:h-11 lg:min-w-0 lg:flex-row lg:justify-start lg:rounded-lg lg:py-0 lg:text-left",
-                    isActive
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-background text-muted-foreground hover:bg-background hover:text-foreground lg:border-transparent lg:bg-background/70"
-                  )
-            }
+            className={cn(
+              "group flex h-12 w-full min-w-0 items-center gap-2 rounded-xl border px-3 text-left text-sm font-medium shadow-sm transition-[border-color,background-color,box-shadow,color,transform] duration-200 ease-out active:translate-y-px",
+              isActive
+                ? "border-primary/55 bg-card text-primary shadow-[0_0_28px_hsl(198_93%_60%/0.16)]"
+                : "border-border/80 bg-card/92 text-muted-foreground hover:border-primary/35 hover:text-foreground hover:shadow-[0_0_22px_hsl(198_93%_60%/0.1)]"
+            )}
             onClick={() => setActiveSection(item.value)}
           >
-            {isDesignLabExperience ? (
-              <span
-                className={cn(
-                  "designlab-settings-mobile-surface flex h-full min-h-[58px] w-full flex-col items-center justify-center rounded-[0.68rem] border px-2 py-2 transition-colors duration-300 lg:min-h-[44px] lg:flex-row lg:justify-start lg:gap-2 lg:px-3",
-                  isActive ? "border-primary/45 bg-primary/10 text-primary" : "border-border/80 bg-card/92 text-muted-foreground"
-                )}
-              >
-                <span
-                  className={cn(
-                    "designlab-settings-mobile-icon grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors duration-300",
-                    isActive ? "bg-primary/14 text-primary" : "bg-muted/70 text-foreground"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                </span>
-                <span className="mt-1 line-clamp-2 max-w-full text-[9px] font-medium leading-[1.08] [overflow-wrap:anywhere] lg:mt-0 lg:text-xs">
-                  {item.label}
-                </span>
-              </span>
-            ) : (
-              <>
-                <Icon className="h-4 w-4" />
-                <span className="mt-1 text-[11px] leading-tight lg:mt-0 lg:text-sm">{item.label}</span>
-              </>
-            )}
+            <span
+              className={cn(
+                "grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors duration-200",
+                isActive ? "bg-primary/14 text-primary" : "bg-muted/70 text-foreground group-hover:bg-primary/10 group-hover:text-primary"
+              )}
+            >
+              <Icon className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1 truncate leading-tight">{item.label}</span>
           </button>
         );
       })}
     </nav>
+  );
+
+  const personalMobileNav = (
+    <div
+      className="designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t bg-background/94 backdrop-blur supports-[backdrop-filter]:bg-background/88 lg:hidden"
+      data-dock-state={mobileDockExpanded ? "medium" : "compact"}
+      data-dock-pressing={mobileDockPointerActive ? "true" : "false"}
+    >
+      <div className="mx-auto max-w-screen-sm px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+        {mobileDockTooltip && (
+          <span
+            className="designlab-settings-mobile-floating-tooltip"
+            style={{ "--mobile-dock-tooltip-x": `${mobileDockTooltip.x}px` } as CSSProperties}
+          >
+            {mobileDockTooltip.title}
+          </span>
+        )}
+        <div
+          className="designlab-settings-mobile-dock flex justify-center gap-1.5 overflow-visible pb-1"
+          onPointerMove={(event) => updateMobileDockPressedSectionFromPoint(event.clientX, event.clientY)}
+          onTouchMove={(event) => {
+            const touch = event.touches[0];
+            if (touch) {
+              updateMobileDockPressedSectionFromPoint(touch.clientX, touch.clientY);
+            }
+          }}
+          onPointerUp={finishMobileDockInteraction}
+          onPointerCancel={finishMobileDockInteraction}
+          onTouchEnd={finishMobileDockInteraction}
+          onTouchCancel={finishMobileDockInteraction}
+          onPointerLeave={() => {
+            if (mobileDockPointerActive) {
+              finishMobileDockInteraction();
+            }
+          }}
+        >
+          {sectionItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeSection === item.value;
+            const isPressed = mobileDockPressedSection === item.value;
+
+            return (
+              <button
+                key={item.value}
+                type="button"
+                aria-label={item.label}
+                data-personal-mobile-section={item.value}
+                className={cn(
+                  "designlab-settings-mobile-item group relative flex shrink-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-150 ease-out active:translate-y-0.5",
+                  isActive && "is-active",
+                  isPressed && "is-pressed"
+                )}
+                onPointerDown={(event) => {
+                  setMobileDockExpanded(true);
+                  setMobileDockPointerActive(true);
+                  setMobileDockPressedSection(item.value);
+                  updateMobileDockTooltipForButton(event.currentTarget, item.label);
+                }}
+                onTouchStart={(event) => {
+                  const touch = event.touches[0];
+                  if (!touch) {
+                    return;
+                  }
+
+                  setMobileDockExpanded(true);
+                  setMobileDockPointerActive(true);
+                  setMobileDockPressedSection(item.value);
+                  updateMobileDockTooltipForButton(event.currentTarget, item.label);
+                }}
+                onClick={() => setActiveSection(item.value)}
+              >
+                <span
+                  className={cn(
+                    "designlab-settings-mobile-surface flex h-full w-full flex-col items-center justify-center rounded-[0.68rem] border px-2 py-2 transition-colors duration-300",
+                    isActive ? "border-primary/45 bg-primary/10 text-primary" : "border-border/80 bg-card/92 text-muted-foreground"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "designlab-settings-mobile-icon grid h-7 w-7 place-items-center rounded-lg transition-colors duration-300",
+                      isActive ? "bg-primary/14 text-primary" : "bg-muted/70 text-foreground"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 
   const renderDashboard = () => (
@@ -821,33 +1067,97 @@ const SelecionarClinica = () => {
           </CardContent>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <CardHeader className="px-4 sm:px-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-base">Escolha a clínica</CardTitle>
-              <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 sm:px-6">
-            {accessibleClinics.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-center">
-                <UserRound className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                <p className="font-medium text-foreground">Nenhuma clínica ativa encontrada</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Seu acesso ainda precisa ser liberado pelo administrador da clínica.
-                </p>
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                {accessibleClinics.map((clinicOption) => {
-                  const clinicName = getClinicBrandName(clinicOption.clinic.name);
-                  const isSelecting = selectingClinicId === clinicOption.clinic.id;
+        <div className="space-y-4">
+          {(loadingInvitations || clinicInvitations.length > 0) && (
+            <Card className="overflow-hidden border-primary/30 bg-primary/5">
+              <CardHeader className="px-4 sm:px-6">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <CardTitle className="text-base">Convites pendentes</CardTitle>
+                  {clinicInvitations.length > 0 && <Badge variant="secondary" className="w-fit">{clinicInvitations.length}</Badge>}
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 sm:px-6">
+                {loadingInvitations ? (
+                  <div className="flex items-center gap-2 rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    Buscando convites...
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {clinicInvitations.map((invitation) => {
+                      const isActing = actingInvitationId === invitation.invitation_id;
+                      const clinicName = getClinicBrandName(invitation.clinic_name);
 
-                  return (
-                    <div
-                      key={clinicOption.clinic.id}
-                      className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-lg border bg-card p-2 transition-colors hover:border-primary/50 hover:bg-accent/40 sm:gap-3"
-                    >
+                      return (
+                        <div key={invitation.invitation_id} className="grid gap-3 rounded-lg border bg-background p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                              {invitation.clinic_logo_url ? (
+                                <img src={invitation.clinic_logo_url} alt="" className="h-9 w-9 rounded object-contain" />
+                              ) : (
+                                <Building2 className="h-5 w-5" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-foreground">{clinicName}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {roleLabel[invitation.operational_role] ?? invitation.operational_role}
+                                {invitation.job_title ? ` · ${invitation.job_title}` : ""}
+                                {invitation.specialty ? ` · ${invitation.specialty}` : ""}
+                              </p>
+                              {invitation.invited_by_name && (
+                                <p className="text-xs text-muted-foreground">Convite enviado por {invitation.invited_by_name}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-2 sm:flex-row md:justify-end">
+                            <Button size="sm" onClick={() => void handleAcceptInvitation(invitation.invitation_id)} disabled={!!actingInvitationId}>
+                              {isActing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                              Confirmar e entrar
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => void handleDeclineInvitation(invitation.invitation_id)} disabled={!!actingInvitationId}>
+                              <XCircle className="mr-2 h-4 w-4" />
+                              Recusar convite
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="overflow-hidden">
+            <CardHeader className="px-4 sm:px-6">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="text-base">Escolha a clínica</CardTitle>
+                <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="px-4 sm:px-6">
+              {accessibleClinics.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-6 text-center">
+                  <UserRound className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+                  <p className="font-medium text-foreground">Nenhuma clínica ativa encontrada</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Seu acesso ainda precisa ser liberado pelo administrador da clínica.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {accessibleClinics.map((clinicOption) => {
+                    const clinicName = getClinicBrandName(clinicOption.clinic.name);
+                    const isSelecting = selectingClinicId === clinicOption.clinic.id;
+                    const canLeaveClinic = clinicOption.membership.account_role !== "account_owner" && clinicOption.membership.operational_role !== "owner";
+                    const isLeavingClinic = leavingClinicId === clinicOption.clinic.id;
+
+                    return (
+                      <div
+                        key={clinicOption.clinic.id}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-lg border bg-card p-2 transition-colors hover:border-primary/50 hover:bg-accent/40 sm:gap-3"
+                      >
                       <button
                         type="button"
                         className="flex min-w-0 items-center gap-3 rounded-md p-2 text-left disabled:cursor-wait disabled:opacity-70"
@@ -909,14 +1219,50 @@ const SelecionarClinica = () => {
                         ) : (
                           <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
                         )}
+                        {canLeaveClinic && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 px-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                disabled={!!selectingClinicId || !!leavingClinicId}
+                                aria-label={`Sair da clínica ${clinicName}`}
+                              >
+                                {isLeavingClinic ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Sair de {clinicName}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Você deixará de acessar pacientes, atendimentos, agenda e configurações desta clínica.
+                                  Seu espaço pessoal e seus dados próprios continuam existindo. Para voltar, a clínica precisará enviar um novo convite.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => void handleLeaveClinic(clinicOption)}
+                                  disabled={!!leavingClinicId}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Sair da clínica
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </>
   );
@@ -936,32 +1282,14 @@ const SelecionarClinica = () => {
             <h1 className="text-xl font-semibold tracking-tight text-foreground">Espaço pessoal</h1>
           </div>
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              className="hidden min-w-0 items-center gap-3 rounded-xl border bg-background/70 px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:flex"
+            <PersonalNotificationsButton />
+            <ProfileAccountButton
+              displayName={displayName}
+              subtitle={profile?.email || user?.email || "Conta pessoal"}
+              avatarUrl={profile?.avatar_url}
+              initials={initials}
               onClick={() => navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes?secao=profile&origem=pessoal`)}
-              aria-label="Abrir configurações pessoais"
-            >
-              <Avatar className="h-9 w-9">
-                {profile?.avatar_url ? <AvatarImage src={profile.avatar_url} alt={displayName} /> : null}
-                <AvatarFallback className="bg-primary/10 text-sm font-semibold text-primary">{initials}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="max-w-[180px] truncate text-sm font-medium text-foreground">{displayName}</p>
-                <p className="max-w-[180px] truncate text-xs text-muted-foreground">{profile?.email || user?.email}</p>
-              </div>
-            </button>
-            <button
-              type="button"
-              className="rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:hidden"
-              onClick={() => navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes?secao=profile&origem=pessoal`)}
-              aria-label="Abrir configurações pessoais"
-            >
-              <Avatar className="h-10 w-10">
-                {profile?.avatar_url ? <AvatarImage src={profile.avatar_url} alt={displayName} /> : null}
-                <AvatarFallback className="bg-primary/10 text-sm font-semibold text-primary">{initials}</AvatarFallback>
-              </Avatar>
-            </button>
+            />
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" size="sm" className="shrink-0">
@@ -991,15 +1319,9 @@ const SelecionarClinica = () => {
 
       <main className="mx-auto w-full max-w-5xl overflow-hidden px-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-4 sm:p-6">
         <div className="grid min-w-0 gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
-          <aside
-            className={
-              isDesignLabExperience
-                ? "designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t bg-background/94 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 backdrop-blur supports-[backdrop-filter]:bg-background/88 lg:static lg:z-auto lg:min-w-0 lg:border-t-0 lg:bg-transparent lg:p-0 lg:pt-1 lg:backdrop-blur-none"
-                : "fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 backdrop-blur supports-[backdrop-filter]:bg-background/90 lg:static lg:z-auto lg:min-w-0 lg:border-t-0 lg:bg-transparent lg:p-0 lg:pt-1 lg:backdrop-blur-none"
-            }
-          >
+          <aside className="hidden min-w-0 pt-1 lg:block">
             <div className="mx-auto max-w-screen-sm lg:max-w-none">
-              {personalNav}
+              {personalDesktopNav}
             </div>
           </aside>
           <section className="min-w-0">
@@ -1007,6 +1329,7 @@ const SelecionarClinica = () => {
           </section>
         </div>
       </main>
+      {personalMobileNav}
     </div>
   );
 };

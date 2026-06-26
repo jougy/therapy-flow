@@ -117,6 +117,31 @@ export const sortMembershipsForDisplay = (memberships: MembershipLike[]) =>
     return left.created_at.localeCompare(right.created_at);
   });
 
+export const formatClinicMemberCode = (index: number) =>
+  String(index + 1).padStart(3, "0");
+
+export const buildClinicMemberCodeMap = (memberships: MembershipLike[]) =>
+  new Map(
+    [...memberships]
+      .sort((left, right) => {
+        if (left.account_role === "account_owner" && right.account_role !== "account_owner") {
+          return -1;
+        }
+
+        if (right.account_role === "account_owner" && left.account_role !== "account_owner") {
+          return 1;
+        }
+
+        const createdAtDelta = left.created_at.localeCompare(right.created_at);
+        if (createdAtDelta !== 0) {
+          return createdAtDelta;
+        }
+
+        return left.id.localeCompare(right.id);
+      })
+      .map((membership, index) => [membership.id, formatClinicMemberCode(index)])
+  );
+
 export const getMembershipStatusMeta = (status: MembershipLike["membership_status"] | string | null | undefined) =>
   (status ? MEMBERSHIP_STATUS_META[status as MembershipLike["membership_status"]] : null) ?? UNKNOWN_MEMBERSHIP_STATUS_META;
 

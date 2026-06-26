@@ -2,14 +2,29 @@ project_id = "ggytwbnintrftgzvjczs"
 
 [auth]
 site_url = "http://localhost:8080"
-additional_redirect_urls = ["http://localhost:8080", "http://127.0.0.1:8080"]
+additional_redirect_urls = ["http://localhost:8080", "http://localhost:8080/auth/confirmado", "http://localhost:8080/auth/redefinir-senha", "http://127.0.0.1:8080", "http://127.0.0.1:8080/auth/confirmado", "http://127.0.0.1:8080/auth/redefinir-senha"]
 
 [auth.email]
 enable_confirmations = false
+
+[auth.email.template.confirmation]
+subject = "Confirme sua conta Pluri-Health"
+content_path = "./supabase/templates/confirm-signup.html"
+
+[auth.email.template.recovery]
+subject = "Recupere sua senha Pluri-Health"
+content_path = "./supabase/templates/recover-password.html"
+
+[auth.email.template.invite]
+subject = "Convite para acessar a Pluri-Health"
+content_path = "./supabase/templates/invite-collaborator.html"
 
 [auth.mfa.totp]
 enroll_enabled = true
 verify_enabled = true
 
 [analytics]
+enabled = false
+
+[storage.vector]
 enabled = false

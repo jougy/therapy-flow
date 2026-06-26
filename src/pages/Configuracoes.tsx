@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import { motion } from "framer-motion";
 import { useTheme } from "next-themes";
 import {
@@ -12,8 +12,11 @@ import {
   ChevronUp,
   Clock3,
   ClipboardList,
+  Copy,
   CreditCard,
   Download,
+  Eye,
+  EyeOff,
   KeyRound,
   Laptop,
   Loader2,
@@ -38,6 +41,17 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ThemeModeSwitch from "@/components/ThemeModeSwitch";
 import { Input } from "@/components/ui/input";
@@ -47,6 +61,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -65,12 +80,13 @@ import {
 } from "@/lib/anamnesis-forms";
 import {
   ACCESS_CAPABILITIES,
-  ACCESS_CAPABILITY_LABELS,
   buildCapabilitiesForContext,
   hasDefaultCapability,
   type AccessCapability,
 } from "@/lib/rbac";
+import { cn } from "@/lib/utils";
 import {
+  buildClinicMemberCodeMap,
   buildVisibleTeamMembershipRows,
   formatLastSeenAt,
   getCollaboratorActivityStatusMeta,
@@ -249,7 +265,8 @@ type SettingsSection =
   | "billing"
   | "treasury"
   | "analytics"
-  | "security"
+  | "personal-security"
+  | "clinic-security"
   | "support"
   | "forms"
   | "signout";
@@ -258,7 +275,7 @@ type SettingsSpace = "clinic" | "personal";
 
 const PERSONAL_SETTINGS_SECTION_IDS: SettingsSection[] = [
   "profile",
-  "security",
+  "personal-security",
   "support",
   "signout",
 ];
@@ -269,6 +286,7 @@ const CLINIC_SETTINGS_SECTION_IDS: SettingsSection[] = [
   "billing",
   "treasury",
   "analytics",
+  "clinic-security",
   "forms",
 ];
 
@@ -279,7 +297,8 @@ const getSettingsSpaceForSection = (section: SettingsSection): SettingsSpace =>
 
 const readSettingsStateFromSearch = (search: string): { section: SettingsSection; space: SettingsSpace } => {
   const section = new URLSearchParams(search).get("secao");
-  const parsedSection = SETTINGS_SECTION_IDS.includes(section as SettingsSection) ? (section as SettingsSection) : "profile";
+  const normalizedSection = section === "security" ? "personal-security" : section;
+  const parsedSection = SETTINGS_SECTION_IDS.includes(normalizedSection as SettingsSection) ? (normalizedSection as SettingsSection) : "profile";
   return {
     section: parsedSection,
     space: getSettingsSpaceForSection(parsedSection),
@@ -327,6 +346,186 @@ const MANAGEABLE_OPERATIONAL_ROLES: SubaccountOperationalRole[] = [
 ];
 
 const RESERVED_CAPABILITIES = new Set<AccessCapability>(["subscription_billing.manage"]);
+
+type RolePermissionItem = {
+  category: RolePermissionCategoryId;
+  description: string;
+  details: string;
+  editCapability?: AccessCapability;
+  key: string;
+  title: string;
+  viewCapability?: AccessCapability;
+};
+
+type RolePermissionCategoryId = "all" | "clinical" | "agenda" | "team" | "admin" | "finance";
+
+const ROLE_PERMISSION_CATEGORIES: Array<{ id: RolePermissionCategoryId; label: string }> = [
+  { id: "all", label: "Todas" },
+  { id: "clinical", label: "Clínico" },
+  { id: "agenda", label: "Agenda" },
+  { id: "team", label: "Equipe" },
+  { id: "admin", label: "Administração" },
+  { id: "finance", label: "Financeiro" },
+];
+
+const ROLE_PERMISSION_ITEMS: RolePermissionItem[] = [
+  {
+    category: "clinical",
+    description: "Cadastro, contato, grupos e dados operacionais dos pacientes.",
+    details: "Controla acesso à lista de pacientes, ficha cadastral, contato, grupos e informações operacionais do paciente. A edição permite criar pacientes, alterar cadastro e reorganizar grupos.",
+    editCapability: "patients.write",
+    key: "patients",
+    title: "Pacientes",
+    viewCapability: "patients.read",
+  },
+  {
+    category: "clinical",
+    description: "Evolução, fichas clínicas, registros e histórico de atendimentos.",
+    details: "Controla o histórico clínico do paciente, registros de evolução, fichas preenchidas e atendimentos. A edição permite criar, iniciar e alterar registros clínicos.",
+    editCapability: "sessions.write",
+    key: "sessions",
+    title: "Atendimentos",
+    viewCapability: "sessions.read",
+  },
+  {
+    category: "clinical",
+    description: "Remoção de rascunhos de atendimentos.",
+    details: "Controla a exclusão de rascunhos de atendimento. Visualmente fica perto de atendimentos, mas usa a mesma permissão já existente para remover rascunhos.",
+    editCapability: "session.delete_draft",
+    viewCapability: "session.delete_draft",
+    key: "session-drafts",
+    title: "Rascunhos de atendimento",
+  },
+  {
+    category: "agenda",
+    description: "Agenda, compromissos e eventos da clínica.",
+    details: "Controla a visualização da agenda, horários e eventos da clínica. A edição permite criar e alterar agendamentos.",
+    editCapability: "schedule.write",
+    key: "schedule",
+    title: "Agenda",
+    viewCapability: "schedule.read",
+  },
+  {
+    category: "agenda",
+    description: "Exclusão de eventos já criados na agenda.",
+    details: "Controla especificamente a remoção de eventos da agenda. Esta opção usa a permissão já existente de exclusão, apenas reorganizada junto das demais opções da agenda.",
+    editCapability: "agenda.delete_events",
+    viewCapability: "agenda.delete_events",
+    key: "agenda-delete",
+    title: "Exclusão da agenda",
+  },
+  {
+    category: "team",
+    description: "Convites, suspensão, desligamento e edição operacional da equipe.",
+    details: "Controla a lista de colaboradores, status de acesso e dados operacionais da equipe. Usa a permissão já existente de gerenciar colaboradores.",
+    editCapability: "subaccounts.manage",
+    viewCapability: "subaccounts.manage",
+    key: "subaccounts",
+    title: "Colaboradores",
+  },
+  {
+    category: "team",
+    description: "Hierarquias e poderes dos papéis operacionais.",
+    details: "Controla a visualização e alteração dos papéis operacionais. Usa a permissão já existente de gerenciar papéis operacionais.",
+    editCapability: "subaccounts_roles.manage",
+    viewCapability: "subaccounts_roles.manage",
+    key: "roles",
+    title: "Papéis operacionais",
+  },
+  {
+    category: "team",
+    description: "Indicadores e desenvolvimento operacional da equipe.",
+    details: "Controla dashboards e indicadores de desenvolvimento dos colaboradores, como atividade, produção e sinais operacionais da equipe.",
+    key: "team-analytics",
+    title: "Analytics da equipe",
+    viewCapability: "subaccounts_analytics.read",
+  },
+  {
+    category: "admin",
+    description: "Dados institucionais, marca e preferências da clínica.",
+    details: "Controla nome, marca, dados institucionais e preferências gerais da clínica. Usa a permissão já existente de gerenciar perfil da clínica.",
+    editCapability: "clinic_profile.manage",
+    viewCapability: "clinic_profile.manage",
+    key: "clinic-profile",
+    title: "Perfil da clínica",
+  },
+  {
+    category: "admin",
+    description: "Modelos, importação e manutenção das fichas de anamnese.",
+    details: "Controla o acesso aos modelos de formulários e fichas de anamnese. Usa a permissão já existente de gerenciar formulários.",
+    editCapability: "forms.manage",
+    viewCapability: "forms.manage",
+    key: "forms",
+    title: "Formulários",
+  },
+  {
+    category: "finance",
+    description: "Dados financeiros, cobranças, créditos e tesouraria.",
+    details: "Controla valores cobrados, pagos, créditos, pendências, indicadores financeiros e a área de tesouraria. Usa a permissão já existente de gerenciar tesouraria.",
+    editCapability: "treasury.manage",
+    viewCapability: "treasury.manage",
+    key: "treasury",
+    title: "Tesouraria",
+  },
+  {
+    category: "finance",
+    description: "Assinatura, cobrança e limites comerciais do plano.",
+    details: "Controla assinatura, cobrança e limites comerciais da clínica. Por segurança, a edição continua reservada ao dono da conta.",
+    editCapability: "subscription_billing.manage",
+    viewCapability: "subscription_billing.manage",
+    key: "billing",
+    title: "Assinatura",
+  },
+];
+
+const RolePermissionSwitch = ({
+  checked,
+  disabled,
+  kind,
+  label,
+  onToggle,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  kind: "edit" | "view";
+  label: string;
+  onToggle: (checked: boolean) => void;
+}) => {
+  const isView = kind === "view";
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      data-kind={kind}
+      data-state={checked ? "checked" : "unchecked"}
+      className={cn(
+        "role-permission-switch",
+        checked && "role-permission-switch--checked",
+        disabled && "role-permission-switch--disabled",
+      )}
+      onClick={() => onToggle(!checked)}
+    >
+      <span className="role-permission-switch__track" aria-hidden="true" />
+      <span className="role-permission-switch__label" aria-hidden="true">
+        {isView ? "Ver" : "Editar"}
+      </span>
+      <span className="role-permission-switch__thumb" aria-hidden="true">
+        {isView ? (
+          <>
+            <EyeOff className="role-permission-switch__icon role-permission-switch__icon--off" />
+            <Eye className="role-permission-switch__icon role-permission-switch__icon--on" />
+          </>
+        ) : (
+          <Pencil className="role-permission-switch__icon role-permission-switch__icon--edit" />
+        )}
+      </span>
+    </button>
+  );
+};
 
 const TEAM_STATUS_FILTER_OPTIONS = [
   { label: "Todos os status", value: "all" },
@@ -578,7 +777,10 @@ const Configuracoes = () => {
   const [activeSpace, setActiveSpace] = useState<SettingsSpace>(() => readSettingsStateFromSearch(location.search).space);
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => readSettingsStateFromSearch(location.search).section);
   const [designLabSettingsMenuPinned, setDesignLabSettingsMenuPinned] = useState(false);
-  const [mobileDescriptionSection, setMobileDescriptionSection] = useState<SettingsSection | null>(null);
+  const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
+  const [mobileDockPressedSection, setMobileDockPressedSection] = useState<SettingsSection | null>(null);
+  const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
+  const [mobileDockTooltip, setMobileDockTooltip] = useState<{ title: string; x: number } | null>(null);
   const [savingClinic, setSavingClinic] = useState(false);
   const [savingMembershipId, setSavingMembershipId] = useState<string | null>(null);
   const [savingOwnProfile, setSavingOwnProfile] = useState(false);
@@ -586,11 +788,11 @@ const Configuracoes = () => {
   const [roleManagementOpen, setRoleManagementOpen] = useState(false);
   const [roleHelpOpen, setRoleHelpOpen] = useState(false);
   const [selectedOperationalRole, setSelectedOperationalRole] = useState<string>("admin");
+  const [rolePermissionCategory, setRolePermissionCategory] = useState<RolePermissionCategoryId>("all");
   const [operationalRoleDefinitions, setOperationalRoleDefinitions] = useState<ClinicOperationalRoleDefinition[]>(SYSTEM_OPERATIONAL_ROLE_DEFINITIONS);
   const [editingRoleLabel, setEditingRoleLabel] = useState("");
   const [savingRoleDefinition, setSavingRoleDefinition] = useState(false);
   const [roleCapabilityOverrides, setRoleCapabilityOverrides] = useState<RoleCapabilityRow[]>([]);
-  const [savingRoleCapabilityKey, setSavingRoleCapabilityKey] = useState<string | null>(null);
   const [expandedSubaccountIds, setExpandedSubaccountIds] = useState<string[]>([]);
   const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
   const [editingSubaccount, setEditingSubaccount] = useState<EditableSubaccountState | null>(null);
@@ -633,21 +835,33 @@ const Configuracoes = () => {
     message: "",
     subject: "",
   });
-  const [newSubaccountName, setNewSubaccountName] = useState("");
   const [newSubaccountEmail, setNewSubaccountEmail] = useState("");
-  const [newSubaccountPassword, setNewSubaccountPassword] = useState("123456");
   const [newSubaccountJobTitle, setNewSubaccountJobTitle] = useState("");
   const [newSubaccountSpecialty, setNewSubaccountSpecialty] = useState("");
   const [newSubaccountRole, setNewSubaccountRole] = useState<SubaccountOperationalRole>("professional");
+  const [newSubaccountInviteUrl, setNewSubaccountInviteUrl] = useState("");
+  const [newSubaccountInviteEmail, setNewSubaccountInviteEmail] = useState("");
+  const [newSubaccountInviteMode, setNewSubaccountInviteMode] = useState<"internal" | "email" | "fallback" | null>(null);
   const [teamSearchTerm, setTeamSearchTerm] = useState("");
   const [teamRoleFilter, setTeamRoleFilter] = useState<SubaccountOperationalRole | "all">("all");
   const [teamStatusFilter, setTeamStatusFilter] = useState<MembershipRow["membership_status"] | "all" | "online">("all");
   const [teamSortKey, setTeamSortKey] = useState<"created_at_desc" | "last_seen_desc" | "name_asc" | "role_priority">("role_priority");
   const [signingOutMembershipId, setSigningOutMembershipId] = useState<string | null>(null);
+  const [revokingMembershipId, setRevokingMembershipId] = useState<string | null>(null);
   const mobileLongPressTimerRef = useRef<number | null>(null);
   const mobileLongPressTriggeredRef = useRef(false);
-  const mobileDescriptionTimerRef = useRef<number | null>(null);
+  const mobileDockScrollResetTimerRef = useRef<number | null>(null);
+  const mobileDockAutoScrollFrameRef = useRef<number | null>(null);
+  const mobileDockGestureRef = useRef<{
+    button: HTMLButtonElement;
+    clientX: number;
+    clientY: number;
+    pointerId: number;
+    sectionId: SettingsSection;
+    title: string;
+  } | null>(null);
   const templateImportInputRef = useRef<HTMLInputElement | null>(null);
+  const canManageSubaccountsForFetch = can("subaccounts.manage");
 
   const fetchData = useCallback(async () => {
     if (!user?.id) {
@@ -743,7 +957,7 @@ const Configuracoes = () => {
 
     setLoading(true);
     try {
-      const [clinicRes, templatesRes, sessionsRes, membershipsRes, roleDefinitionsRes, roleCapabilitiesRes, profilesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes, concurrentAccessRes] = await Promise.all([
+      const [clinicRes, templatesRes, sessionsRes, membershipsRes, roleDefinitionsRes, roleCapabilitiesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes, concurrentAccessRes] = await Promise.all([
         supabase.from("clinics").select("*").eq("id", clinicId).single(),
         supabase
           .from("anamnesis_form_templates")
@@ -770,10 +984,6 @@ const Configuracoes = () => {
           .select("*")
           .eq("clinic_id", clinicId),
         supabase
-          .from("profiles")
-          .select("address, birth_date, cpf, email, full_name, id, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours")
-          .eq("clinic_id", clinicId),
-        supabase
           .from("team_development_profiles")
           .select("*")
           .eq("clinic_id", clinicId),
@@ -794,7 +1004,7 @@ const Configuracoes = () => {
           .or(`actor_user_id.eq.${user.id},target_user_id.eq.${user.id}`)
           .order("created_at", { ascending: false })
           .limit(12),
-        shouldShowAdminSecuritySection(subscriptionPlan, can("subaccounts.manage"))
+        shouldShowAdminSecuritySection(subscriptionPlan, canManageSubaccountsForFetch)
           ? supabase
               .from("security_events")
               .select("*")
@@ -802,7 +1012,7 @@ const Configuracoes = () => {
               .order("created_at", { ascending: false })
               .limit(12)
           : Promise.resolve({ data: [], error: null }),
-        shouldShowTeamSettingsSection(subscriptionPlan) && can("subaccounts.manage")
+        shouldShowTeamSettingsSection(subscriptionPlan) && canManageSubaccountsForFetch
           ? supabase.rpc("get_clinic_concurrent_access_overview", { _clinic_id: clinicId })
           : Promise.resolve({ data: null, error: null }),
       ]);
@@ -822,11 +1032,23 @@ const Configuracoes = () => {
 
       const nextClinic = clinicRes.data ?? null;
       const nextClinicForm = buildEditableClinicState(nextClinic);
+      const nextMemberships = membershipsRes.data ?? [];
+      const membershipUserIds = Array.from(new Set(nextMemberships.map((membershipRow) => membershipRow.user_id).filter(Boolean)));
+      const profilesRes = membershipUserIds.length > 0
+        ? await supabase
+            .from("profiles")
+            .select("address, birth_date, cpf, email, full_name, id, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours")
+            .in("id", membershipUserIds)
+        : { data: [], error: null };
+
+      if (profilesRes.error) {
+        logRuntimeError("settings.fetchData.team_profiles", profilesRes.error, { clinicId, membershipUserIds });
+      }
 
       setClinic(clinicRes.data ?? null);
       setTemplates(templatesRes.data ?? []);
       setSessions(sessionsRes.data ?? []);
-      setMemberships(membershipsRes.data ?? []);
+      setMemberships(nextMemberships);
       setOperationalRoleDefinitions([
         ...SYSTEM_OPERATIONAL_ROLE_DEFINITIONS.map((role) => ({
           ...role,
@@ -893,11 +1115,60 @@ const Configuracoes = () => {
     } finally {
       setLoading(false);
     }
-  }, [can, clinicId, profile, subscriptionPlan, user?.email, user?.id]);
+  }, [canManageSubaccountsForFetch, clinicId, profile, subscriptionPlan, user?.email, user?.id]);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!clinicId) {
+      return;
+    }
+
+    if (typeof supabase.channel !== "function") {
+      return;
+    }
+
+    const refreshRoleCapabilityOverrides = () => {
+      void supabase
+        .from("clinic_operational_role_capabilities")
+        .select("*")
+        .eq("clinic_id", clinicId)
+        .then(({ data, error }) => {
+          if (error) {
+            logRuntimeError("settings.role_capabilities.realtime", error, { clinicId });
+            return;
+          }
+
+          setRoleCapabilityOverrides(data ?? []);
+        });
+    };
+
+    const channel = supabase
+      .channel(`settings-role-capabilities:${clinicId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "clinic_operational_role_capabilities",
+          filter: `clinic_id=eq.${clinicId}`,
+        },
+        refreshRoleCapabilityOverrides,
+      )
+      .subscribe((status, error) => {
+        if (error) {
+          logRuntimeError("settings.role_capabilities.subscription", error, { clinicId, status });
+        }
+      });
+
+    return () => {
+      if (typeof supabase.removeChannel === "function") {
+        void supabase.removeChannel(channel);
+      }
+    };
+  }, [clinicId]);
 
   useEffect(() => {
     const nextSettingsState = readSettingsStateFromSearch(location.search);
@@ -958,12 +1229,17 @@ const Configuracoes = () => {
     [memberships]
   );
 
+  const canViewTeam = can("subaccounts.manage") || can("subaccounts_roles.manage");
   const canManageTeam = can("subaccounts.manage") || can("subaccounts_roles.manage");
   const canViewAdminSecurity = shouldShowAdminSecuritySection(subscriptionPlan, canManageTeam);
   const canReadTeamDevelopment = can("subaccounts_analytics.read");
   const allTeamMemberships = useMemo(
     () => (subscriptionPlan === "clinic" ? sortedMemberships : []),
     [sortedMemberships, subscriptionPlan]
+  );
+  const clinicMemberCodeMap = useMemo(
+    () => buildClinicMemberCodeMap(allTeamMemberships),
+    [allTeamMemberships]
   );
   const teamDevelopmentMap = useMemo(
     () => new Map(teamDevelopmentProfiles.map((row) => [row.user_id, row])),
@@ -1174,6 +1450,25 @@ const Configuracoes = () => {
       ) as Record<string, number>,
     [allTeamMemberships, sortedOperationalRoleDefinitions],
   );
+  const rolePermissionCategoryCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        ROLE_PERMISSION_CATEGORIES.map((category) => [
+          category.id,
+          category.id === "all"
+            ? ROLE_PERMISSION_ITEMS.length
+            : ROLE_PERMISSION_ITEMS.filter((item) => item.category === category.id).length,
+        ]),
+      ) as Record<RolePermissionCategoryId, number>,
+    [],
+  );
+  const visibleRolePermissionItems = useMemo(
+    () =>
+      rolePermissionCategory === "all"
+        ? ROLE_PERMISSION_ITEMS
+        : ROLE_PERMISSION_ITEMS.filter((item) => item.category === rolePermissionCategory),
+    [rolePermissionCategory],
+  );
 
   const availableSections = useMemo(
     () =>
@@ -1196,6 +1491,12 @@ const Configuracoes = () => {
           id: "team" as const,
           title: "Colaboradores e acessos",
         },
+        canViewAdminSecurity && {
+          description: "Monitore sessões, senhas provisórias e eventos sensíveis da equipe.",
+          icon: ShieldCheck,
+          id: "clinic-security" as const,
+          title: "Segurança da clínica",
+        },
         can("subscription_billing.manage") && {
           description: "Assinatura, cobrança e limites do plano contratado.",
           icon: CreditCard,
@@ -1211,8 +1512,8 @@ const Configuracoes = () => {
         {
           description: "Senha, sessões e proteções da sua conta.",
           icon: Shield,
-          id: "security" as const,
-          title: "Segurança",
+          id: "personal-security" as const,
+          title: "Segurança pessoal",
         },
         {
           description: "Fale com o suporte por e-mail ou WhatsApp com contexto básico da sua conta.",
@@ -1241,7 +1542,7 @@ const Configuracoes = () => {
         )
         .filter((section) =>
           operationalRole === "estagiario"
-            ? ["profile", "security", "signout"].includes((section as { id: SettingsSection }).id)
+            ? ["profile", "personal-security", "signout"].includes((section as { id: SettingsSection }).id)
             : true
         ) as Array<{
         description: string;
@@ -1249,7 +1550,7 @@ const Configuracoes = () => {
         id: SettingsSection;
         title: string;
       }>,
-    [activeSpace, can, operationalRole, subscriptionPlan]
+    [activeSpace, can, canViewAdminSecurity, operationalRole, subscriptionPlan]
   );
 
   useEffect(() => {
@@ -1270,28 +1571,156 @@ const Configuracoes = () => {
     }
   }, []);
 
-  const showMobileDescription = useCallback((sectionId: SettingsSection) => {
-    setMobileDescriptionSection(sectionId);
+  const stopMobileDockAutoScroll = useCallback(() => {
+    if (mobileDockAutoScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(mobileDockAutoScrollFrameRef.current);
+      mobileDockAutoScrollFrameRef.current = null;
+    }
+  }, []);
 
-    if (mobileDescriptionTimerRef.current !== null) {
-      window.clearTimeout(mobileDescriptionTimerRef.current);
+  const updateMobileDockTooltipForButton = useCallback((button: HTMLButtonElement, title: string) => {
+    const rect = button.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.right;
+    const safeInset = 68;
+    const x = Math.min(Math.max(rect.left + rect.width / 2, safeInset), Math.max(safeInset, viewportWidth - safeInset));
+    setMobileDockTooltip({ title, x });
+  }, []);
+
+  const beginMobileDockSelection = useCallback(() => {
+    const gesture = mobileDockGestureRef.current;
+    if (!gesture) {
+      return;
     }
 
-    mobileDescriptionTimerRef.current = window.setTimeout(() => {
-      setMobileDescriptionSection((current) => (current === sectionId ? null : current));
-      mobileDescriptionTimerRef.current = null;
-    }, 2200);
-  }, []);
+    mobileLongPressTriggeredRef.current = true;
+    setMobileDockPointerActive(true);
+    setMobileDockExpanded(true);
+    setMobileDockPressedSection(gesture.sectionId);
+    updateMobileDockTooltipForButton(gesture.button, gesture.title);
+  }, [updateMobileDockTooltipForButton]);
+
+  const startMobileDockGesture = useCallback(
+    (button: HTMLButtonElement, sectionId: SettingsSection, title: string, clientX: number, clientY: number, pointerId = -1) => {
+      mobileLongPressTriggeredRef.current = false;
+      clearMobileLongPress();
+      mobileDockGestureRef.current = {
+        button,
+        clientX,
+        clientY,
+        pointerId,
+        sectionId,
+        title,
+      };
+      mobileLongPressTimerRef.current = window.setTimeout(() => {
+        beginMobileDockSelection();
+      }, 240);
+    },
+    [beginMobileDockSelection, clearMobileLongPress]
+  );
+
+  const updateMobileDockPressedSectionFromPoint = useCallback((clientX: number, clientY: number) => {
+    const element = document.elementFromPoint(clientX, clientY);
+    const button = element?.closest<HTMLButtonElement>("[data-settings-mobile-section]");
+    const sectionId = button?.dataset.settingsMobileSection as SettingsSection | undefined;
+
+    if (sectionId && availableSections.some((section) => section.id === sectionId)) {
+      const section = availableSections.find((item) => item.id === sectionId);
+      setMobileDockPressedSection(sectionId);
+      if (section) {
+        updateMobileDockTooltipForButton(button, section.title);
+      }
+    }
+  }, [availableSections, updateMobileDockTooltipForButton]);
+
+  const updateMobileDockAutoScroll = useCallback((clientX: number, clientY: number) => {
+    stopMobileDockAutoScroll();
+
+    const dock = document.querySelector<HTMLElement>(".designlab-settings-mobile-dock");
+    if (!dock) {
+      return;
+    }
+
+    const rect = dock.getBoundingClientRect();
+    const edgeSize = Math.min(92, Math.max(48, rect.width * 0.2));
+    const leftPressure = Math.max(0, edgeSize - (clientX - rect.left));
+    const rightPressure = Math.max(0, edgeSize - (rect.right - clientX));
+    const direction = rightPressure > 0 ? 1 : leftPressure > 0 ? -1 : 0;
+    const pressure = direction > 0 ? rightPressure : leftPressure;
+
+    if (!direction || pressure <= 0) {
+      return;
+    }
+
+    const step = () => {
+      dock.scrollLeft += direction * Math.min(18, 4 + pressure * 0.16);
+      updateMobileDockPressedSectionFromPoint(clientX, clientY);
+      mobileDockAutoScrollFrameRef.current = window.requestAnimationFrame(step);
+    };
+
+    mobileDockAutoScrollFrameRef.current = window.requestAnimationFrame(step);
+  }, [stopMobileDockAutoScroll, updateMobileDockPressedSectionFromPoint]);
+
+  const moveMobileDockGesture = useCallback(
+    (clientX: number, clientY: number) => {
+      if (mobileDockPointerActive) {
+        updateMobileDockPressedSectionFromPoint(clientX, clientY);
+        updateMobileDockAutoScroll(clientX, clientY);
+        return true;
+      }
+
+      const gesture = mobileDockGestureRef.current;
+      if (gesture && Math.hypot(clientX - gesture.clientX, clientY - gesture.clientY) > 10) {
+        clearMobileLongPress();
+        mobileDockGestureRef.current = null;
+      }
+
+      return false;
+    },
+    [clearMobileLongPress, mobileDockPointerActive, updateMobileDockAutoScroll, updateMobileDockPressedSectionFromPoint]
+  );
+
+  const finishMobileDockInteraction = useCallback(() => {
+    clearMobileLongPress();
+    stopMobileDockAutoScroll();
+    mobileDockGestureRef.current = null;
+    setMobileDockPointerActive(false);
+    setMobileDockExpanded(true);
+    setMobileDockPressedSection(null);
+    setMobileDockTooltip(null);
+  }, [clearMobileLongPress, stopMobileDockAutoScroll]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (mobileDockScrollResetTimerRef.current !== null) {
+        window.clearTimeout(mobileDockScrollResetTimerRef.current);
+      }
+
+      mobileDockScrollResetTimerRef.current = window.setTimeout(() => {
+        setMobileDockExpanded(false);
+        setMobileDockPressedSection(null);
+        setMobileDockPointerActive(false);
+        setMobileDockTooltip(null);
+        stopMobileDockAutoScroll();
+        mobileDockScrollResetTimerRef.current = null;
+      }, 80);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+
+      if (mobileDockScrollResetTimerRef.current !== null) {
+        window.clearTimeout(mobileDockScrollResetTimerRef.current);
+      }
+    };
+  }, [stopMobileDockAutoScroll]);
 
   useEffect(() => {
     return () => {
       clearMobileLongPress();
-
-      if (mobileDescriptionTimerRef.current !== null) {
-        window.clearTimeout(mobileDescriptionTimerRef.current);
-      }
+      stopMobileDockAutoScroll();
     };
-  }, [clearMobileLongPress]);
+  }, [clearMobileLongPress, stopMobileDockAutoScroll]);
 
   const ownProfileLocks = {
     address: false,
@@ -1459,23 +1888,7 @@ const Configuracoes = () => {
     setEditingSubaccount((current) => (current ? { ...current, [key]: sanitizeSubaccountFieldValue(key, value) } : current));
   };
 
-  const updateEditingSubaccountAddressField = (key: keyof ProfileAddress, value: string) => {
-    setEditingSubaccount((current) =>
-      current
-        ? {
-            ...current,
-            address: {
-              ...current.address,
-              [key]: sanitizeAddressField(key, value),
-            },
-          }
-        : current
-    );
-  };
-
-  const updateNewSubaccountName = (value: string) => setNewSubaccountName(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.personName));
   const updateNewSubaccountEmail = (value: string) => setNewSubaccountEmail(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.email));
-  const updateNewSubaccountPassword = (value: string) => setNewSubaccountPassword(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.password));
   const updateNewSubaccountJobTitle = (value: string) => setNewSubaccountJobTitle(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.jobTitle));
   const updateNewSubaccountSpecialty = (value: string) => setNewSubaccountSpecialty(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.specialty));
   const updateTeamSearchTerm = (value: string) => setTeamSearchTerm(sanitizeSingleLineInput(value, SETTINGS_TEXT_LIMITS.searchTerm));
@@ -1840,12 +2253,78 @@ const Configuracoes = () => {
     );
   };
 
-  const handleToggleRoleCapability = async (capability: AccessCapability, enabled: boolean) => {
+  const buildOptimisticRoleCapabilityRow = (
+    role: string,
+    capability: AccessCapability,
+    enabled: boolean,
+  ): RoleCapabilityRow => {
+    const now = new Date().toISOString();
+
+    return {
+      capability,
+      clinic_id: clinicId ?? "",
+      created_at: now,
+      enabled,
+      id: `optimistic-${role}-${capability}`,
+      operational_role: role,
+      updated_at: now,
+    };
+  };
+
+  const restoreRoleCapability = (
+    role: string,
+    capability: AccessCapability,
+    previousCapabilityRow: RoleCapabilityRow | null,
+  ) => {
+    setRoleCapabilityOverrides((current) => {
+      const withoutCapability = current.filter((row) => !(row.operational_role === role && row.capability === capability));
+      return previousCapabilityRow ? [...withoutCapability, previousCapabilityRow] : withoutCapability;
+    });
+  };
+
+  const persistRoleCapability = async (
+    role: string,
+    capability: AccessCapability,
+    enabled: boolean,
+    defaultEnabled: boolean,
+    previousCapabilityRow: RoleCapabilityRow | null,
+  ) => {
+    if (!clinicId) return;
+
+    const result = enabled === defaultEnabled
+      ? await supabase
+          .from("clinic_operational_role_capabilities")
+          .delete()
+          .eq("clinic_id", clinicId)
+          .eq("operational_role", role)
+          .eq("capability", capability)
+      : await supabase
+          .from("clinic_operational_role_capabilities")
+          .upsert(
+            {
+              capability,
+              clinic_id: clinicId,
+              enabled,
+              operational_role: role,
+            },
+            { onConflict: "clinic_id,operational_role,capability" },
+          );
+
+    if (result.error) {
+      restoreRoleCapability(role, capability, previousCapabilityRow);
+      toast({ title: "Erro ao atualizar papel", description: result.error.message, variant: "destructive" });
+    }
+  };
+
+  const handleToggleRoleCapabilities = (
+    updates: Array<{ capability: AccessCapability; enabled: boolean }>,
+  ) => {
     if (!clinicId || selectedRoleDefinition.role_key === "owner" || !can("subaccounts_roles.manage")) {
       return;
     }
 
-    if (RESERVED_CAPABILITIES.has(capability)) {
+    const reservedCapability = updates.find(({ capability }) => RESERVED_CAPABILITIES.has(capability));
+    if (reservedCapability) {
       toast({
         title: "Permissão reservada",
         description: "Assinatura e cobrança continuam reservadas ao owner da conta.",
@@ -1855,89 +2334,146 @@ const Configuracoes = () => {
     }
 
     const role = selectedRoleDefinition.role_key;
-    const defaultEnabled = getDefaultRoleCapability(selectedRoleDefinition.base_operational_role, capability);
-    const key = `${role}:${capability}`;
-    setSavingRoleCapabilityKey(key);
+    const uniqueUpdates = Array.from(new Map(updates.map((update) => [update.capability, update])).values());
+    const previousCapabilityRows = new Map(
+      uniqueUpdates.map(({ capability }) => [
+        capability,
+        roleCapabilityMap.get(`${role}:${capability}`) ?? null,
+      ]),
+    );
 
-    if (enabled === defaultEnabled) {
-      const { error } = await supabase
-        .from("clinic_operational_role_capabilities")
-        .delete()
-        .eq("clinic_id", clinicId)
-        .eq("operational_role", role)
-        .eq("capability", capability);
+    setRoleCapabilityOverrides((current) => {
+      let next = current;
 
-      if (error) {
-        toast({ title: "Erro ao atualizar papel", description: error.message, variant: "destructive" });
-        setSavingRoleCapabilityKey(null);
-        return;
-      }
+      uniqueUpdates.forEach(({ capability, enabled }) => {
+        const defaultEnabled = getDefaultRoleCapability(selectedRoleDefinition.base_operational_role, capability);
+        next = next.filter((row) => !(row.operational_role === role && row.capability === capability));
 
-      setRoleCapabilityOverrides((current) =>
-        current.filter((row) => !(row.operational_role === role && row.capability === capability))
+        if (enabled !== defaultEnabled) {
+          next = [...next, buildOptimisticRoleCapabilityRow(role, capability, enabled)];
+        }
+      });
+
+      return next;
+    });
+
+    uniqueUpdates.forEach(({ capability, enabled }) => {
+      const defaultEnabled = getDefaultRoleCapability(selectedRoleDefinition.base_operational_role, capability);
+      void persistRoleCapability(
+        role,
+        capability,
+        enabled,
+        defaultEnabled,
+        previousCapabilityRows.get(capability) ?? null,
       );
-      setSavingRoleCapabilityKey(null);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("clinic_operational_role_capabilities")
-      .upsert(
-        {
-          capability,
-          clinic_id: clinicId,
-          enabled,
-          operational_role: role,
-        },
-        { onConflict: "clinic_id,operational_role,capability" },
-      )
-      .select("*")
-      .single();
-
-    if (error) {
-      toast({ title: "Erro ao atualizar papel", description: error.message, variant: "destructive" });
-      setSavingRoleCapabilityKey(null);
-      return;
-    }
-
-    setRoleCapabilityOverrides((current) => [
-      ...current.filter((row) => !(row.operational_role === role && row.capability === capability)),
-      data,
-    ]);
-    setSavingRoleCapabilityKey(null);
+    });
   };
 
-  const handleCreateSubaccount = async () => {
+  const handleToggleRolePermission = (
+    item: RolePermissionItem,
+    kind: "edit" | "view",
+    enabled: boolean,
+  ) => {
+    const capability = kind === "view" ? item.viewCapability : item.editCapability;
+    if (!capability) return;
+
+    const updates: Array<{ capability: AccessCapability; enabled: boolean }> = [];
+
+    if (
+      kind === "edit" &&
+      enabled &&
+      item.viewCapability &&
+      item.viewCapability !== capability &&
+      !selectedRoleCapabilities[item.viewCapability]
+    ) {
+      updates.push({ capability: item.viewCapability, enabled: true });
+    }
+
+    if (
+      kind === "view" &&
+      !enabled &&
+      item.editCapability &&
+      item.editCapability !== capability &&
+      selectedRoleCapabilities[item.editCapability]
+    ) {
+      updates.push({ capability: item.editCapability, enabled: false });
+    }
+
+    updates.push({ capability, enabled });
+    handleToggleRoleCapabilities(updates);
+  };
+
+  const handleInviteSubaccount = async () => {
     if (!clinicId || !can("subaccounts.manage")) {
       return;
     }
 
     setCreatingSubaccount(true);
-    const { error } = await supabase.rpc("create_clinic_subaccount", {
+    setNewSubaccountInviteUrl("");
+    setNewSubaccountInviteMode(null);
+    const { data, error } = await supabase.rpc("invite_clinic_collaborator", {
       _clinic_id: clinicId,
       _email: newSubaccountEmail,
-      _full_name: newSubaccountName,
       _job_title: newSubaccountJobTitle || null,
       _operational_role: newSubaccountRole,
-      _password: newSubaccountPassword,
       _specialty: newSubaccountSpecialty || null,
     });
 
     if (error) {
-      toast({ title: "Erro ao criar subconta", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao preparar convite", description: error.message, variant: "destructive" });
       setCreatingSubaccount(false);
       return;
     }
 
-    toast({ title: "Subconta criada", description: "A nova conta já pode entrar com o e-mail e a senha informados." });
-    setNewSubaccountName("");
+    const invitePath = typeof data === "object" && data && "path" in data ? String(data.path) : "";
+    const inviteEmail = typeof data === "object" && data && "email" in data ? String(data.email) : newSubaccountEmail;
+    const inviteToken = typeof data === "object" && data && "token" in data ? String(data.token) : "";
+    const existingUser = typeof data === "object" && data && "existing_user" in data ? Boolean(data.existing_user) : false;
+    const inviteUrl = invitePath ? `${window.location.origin}${invitePath}` : "";
+    setNewSubaccountInviteEmail(inviteEmail);
+
+    if (existingUser) {
+      setNewSubaccountInviteMode("internal");
+      toast({
+        title: "Convite enviado no espaço pessoal",
+        description: "O colaborador verá o convite ao entrar na Pluri-Health.",
+      });
+    } else {
+      const { error: inviteEmailError } = await supabase.functions.invoke("send-clinic-invitation", {
+        body: { inviteUrl, token: inviteToken },
+      });
+
+      if (inviteEmailError) {
+        setNewSubaccountInviteUrl(inviteUrl);
+        setNewSubaccountInviteMode("fallback");
+        toast({
+          title: "Convite preparado",
+          description: "Não foi possível enviar automaticamente. Use o link de fallback para enviar o convite.",
+          variant: "destructive",
+        });
+      } else {
+        setNewSubaccountInviteMode("email");
+        toast({
+          title: "Convite enviado por e-mail",
+          description: "O colaborador receberá o link para completar o cadastro.",
+        });
+      }
+    }
     setNewSubaccountEmail("");
-    setNewSubaccountPassword("123456");
     setNewSubaccountJobTitle("");
     setNewSubaccountSpecialty("");
     setNewSubaccountRole("professional");
     setCreatingSubaccount(false);
     void fetchData();
+  };
+
+  const handleCopySubaccountInvite = async () => {
+    if (!newSubaccountInviteUrl) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(newSubaccountInviteUrl);
+    toast({ title: "Link copiado", description: "O convite foi copiado para a área de transferência." });
   };
 
   const handleSaveSubaccount = async (membershipRow: MembershipRow) => {
@@ -1946,22 +2482,13 @@ const Configuracoes = () => {
     }
 
     setSavingMembershipId(membershipRow.id);
-    const { error } = await supabase.rpc("update_clinic_subaccount_profile", {
-      _address: buildProfileAddress(editingSubaccount.address),
-      _birth_date: editingSubaccount.birthDate || null,
+    const { error } = await supabase.rpc("update_clinic_member_operational_fields", {
+      _job_title: editingSubaccount.jobTitle || "",
       _membership_id: membershipRow.id,
-      _cpf: editingSubaccount.cpf || null,
-      _email: editingSubaccount.email,
-      _full_name: editingSubaccount.fullName,
-      _job_title: editingSubaccount.jobTitle || null,
       _membership_status: editingSubaccount.membershipStatus,
-      _new_password: editingSubaccount.resetPassword || null,
       _operational_role: editingSubaccount.operationalRole,
-      _phone: editingSubaccount.phone || null,
-      _professional_license: editingSubaccount.professionalLicense || null,
-      _social_name: editingSubaccount.socialName || null,
-      _specialty: editingSubaccount.specialty || null,
-      _working_hours: editingSubaccount.workingHours || null,
+      _specialty: editingSubaccount.specialty || "",
+      _working_hours: editingSubaccount.workingHours || "",
     });
 
     if (error) {
@@ -1970,8 +2497,33 @@ const Configuracoes = () => {
       return;
     }
 
-    toast({ title: "Subconta atualizada" });
+    toast({ title: "Dados operacionais atualizados" });
     setSavingMembershipId(null);
+    cancelEditingSubaccount();
+    void fetchData();
+  };
+
+  const handleRevokeMemberAccess = async (membershipRow: MembershipRow) => {
+    if (!can("subaccounts.manage")) {
+      return;
+    }
+
+    setRevokingMembershipId(membershipRow.id);
+    const { error } = await supabase.rpc("revoke_clinic_member_access", {
+      _membership_id: membershipRow.id,
+    });
+
+    if (error) {
+      toast({ title: "Erro ao remover acesso", description: error.message, variant: "destructive" });
+      setRevokingMembershipId(null);
+      return;
+    }
+
+    toast({
+      title: "Acesso removido",
+      description: "O colaborador perdeu o acesso à clínica e sessões ativas foram encerradas.",
+    });
+    setRevokingMembershipId(null);
     cancelEditingSubaccount();
     void fetchData();
   };
@@ -2339,7 +2891,19 @@ const Configuracoes = () => {
 
       {isDesignLabExperience && !designLabSettingsMenuPinned ? (
         <div className="group/designlab-settings-drawer pointer-events-none fixed bottom-0 left-0 top-28 z-40 hidden w-[356px] lg:block">
-          <div className="pointer-events-auto absolute inset-y-0 left-0 w-8" aria-hidden="true" />
+          <button
+            type="button"
+            className="designlab-settings-drawer-handle pointer-events-auto absolute left-0 top-1/2 z-10 flex h-36 w-10 -translate-y-1/2 items-center justify-center rounded-r-2xl p-[1px] text-primary focus-visible:outline-none"
+            onClick={() => setDesignLabSettingsMenuPinned(true)}
+            aria-label="Abrir e fixar menu lateral de configurações"
+            title="Abrir menu lateral"
+          >
+            <span className="designlab-settings-drawer-handle-surface flex h-full w-full flex-col items-center justify-center gap-2 rounded-r-[0.9rem] border border-sky-200/70 bg-card/95 text-primary backdrop-blur">
+              <ChevronRight className="h-4 w-4" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.22em] [writing-mode:vertical-rl]">Menu</span>
+            </span>
+          </button>
+          <div className="pointer-events-auto absolute inset-y-0 left-10 z-0 w-2" aria-hidden="true" />
           <div className="absolute left-4 top-20 -translate-x-[calc(100%+1.25rem)] opacity-0 transition-all duration-500 ease-out group-hover/designlab-settings-drawer:translate-x-0 group-hover/designlab-settings-drawer:opacity-100 group-focus-within/designlab-settings-drawer:translate-x-0 group-focus-within/designlab-settings-drawer:opacity-100">
             {renderSettingsSideCard(true)}
           </div>
@@ -2883,43 +3447,116 @@ const Configuracoes = () => {
                             ) : null}
                           </div>
                           <div className="space-y-2">
-                            {ACCESS_CAPABILITIES.map((capability) => {
-                              const meta = ACCESS_CAPABILITY_LABELS[capability];
+                            <div className="mb-3 flex flex-wrap gap-2 rounded-lg border bg-background/70 p-2">
+                              {ROLE_PERMISSION_CATEGORIES.map((category) => {
+                                const isActive = rolePermissionCategory === category.id;
+
+                                return (
+                                  <button
+                                    key={category.id}
+                                    type="button"
+                                    onClick={() => setRolePermissionCategory(category.id)}
+                                    className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm transition-colors ${
+                                      isActive
+                                        ? "border-primary bg-primary/10 text-primary"
+                                        : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                                    }`}
+                                  >
+                                    {category.label}
+                                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-foreground">
+                                      {rolePermissionCategoryCounts[category.id]}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="hidden grid-cols-[minmax(0,1fr),auto,auto] gap-3 px-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:grid">
+                              <span>Função</span>
+                              <span className="w-[5.5rem] text-center">Ver</span>
+                              <span className="w-[5.5rem] text-center">Editar</span>
+                            </div>
+                            {visibleRolePermissionItems.map((item) => {
                               const isOwnerRole = selectedRoleDefinition.role_key === "owner";
-                              const isReserved = RESERVED_CAPABILITIES.has(capability);
-                              const defaultEnabled =
-                                selectedRoleDefinition.role_key !== "owner"
-                                  ? getDefaultRoleCapability(selectedRoleDefinition.base_operational_role, capability)
-                                  : true;
-                              const overrideRow =
-                                selectedRoleDefinition.role_key !== "owner"
-                                  ? roleCapabilityMap.get(`${selectedRoleDefinition.role_key}:${capability}`)
-                                  : null;
-                              const hasOverride = !!overrideRow;
-                              const checked = selectedRoleCapabilities[capability];
-                              const disabled = isOwnerRole || isReserved || savingRoleCapabilityKey === `${selectedRoleDefinition.role_key}:${capability}`;
+                              const capabilities = [item.viewCapability, item.editCapability].filter(Boolean) as AccessCapability[];
+                              const isReserved = capabilities.some((capability) => RESERVED_CAPABILITIES.has(capability));
+                              const hasOverride =
+                                selectedRoleDefinition.role_key !== "owner" &&
+                                capabilities.some((capability) => roleCapabilityMap.has(`${selectedRoleDefinition.role_key}:${capability}`));
+                              const viewChecked = item.viewCapability ? selectedRoleCapabilities[item.viewCapability] : false;
+                              const editChecked = item.editCapability ? selectedRoleCapabilities[item.editCapability] : false;
+                              const viewDefaultEnabled =
+                                !isOwnerRole && item.viewCapability
+                                  ? getDefaultRoleCapability(selectedRoleDefinition.base_operational_role, item.viewCapability)
+                                  : isOwnerRole;
+                              const editDefaultEnabled =
+                                !isOwnerRole && item.editCapability
+                                  ? getDefaultRoleCapability(selectedRoleDefinition.base_operational_role, item.editCapability)
+                                  : isOwnerRole;
+                              const viewDisabled = isOwnerRole || isReserved || !item.viewCapability;
+                              const editDisabled = isOwnerRole || isReserved || !item.editCapability;
 
                               return (
-                                <div key={capability} className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                                <div key={item.key} className="grid gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr),auto,auto] sm:items-center">
                                   <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <p className="font-medium">{meta.label}</p>
+                                      <p className="font-medium">{item.title}</p>
+                                      <TooltipProvider delayDuration={150}>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              type="button"
+                                              className="inline-flex h-6 w-6 items-center justify-center rounded-full border bg-background text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                              aria-label={`Explicar permissão ${item.title}`}
+                                            >
+                                              <CircleHelp className="h-3.5 w-3.5" />
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent className="max-w-xs text-sm leading-relaxed" side="top" align="start">
+                                            {item.details}
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
                                       {hasOverride ? <Badge variant="outline">Personalizado</Badge> : null}
                                       {isReserved ? <Badge variant="secondary">Reservado</Badge> : null}
                                     </div>
-                                    <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
-                                    {!isOwnerRole && !isReserved ? (
+                                    <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                                    {!isOwnerRole && !isReserved && capabilities.length > 0 ? (
                                       <p className="mt-1 text-xs text-muted-foreground">
-                                        Padrão do papel: {defaultEnabled ? "habilitado" : "desabilitado"}.
+                                        Padrão:{" "}
+                                        {item.viewCapability ? `ver ${viewDefaultEnabled ? "habilitado" : "desabilitado"}` : "ver sem chave separada"}
+                                        {" · "}
+                                        {item.editCapability ? `editar ${editDefaultEnabled ? "habilitado" : "desabilitado"}` : "editar sem chave separada"}.
                                       </p>
                                     ) : null}
                                   </div>
-                                  <Switch
-                                    checked={checked}
-                                    disabled={disabled}
-                                    onCheckedChange={(nextChecked) => void handleToggleRoleCapability(capability, nextChecked)}
-                                    aria-label={`${checked ? "Desabilitar" : "Habilitar"} ${meta.label}`}
-                                  />
+                                  <div className="flex items-center justify-between gap-3 sm:block">
+                                    <span className="text-xs font-medium text-muted-foreground sm:hidden">Ver</span>
+                                    <RolePermissionSwitch
+                                      checked={viewChecked}
+                                      disabled={viewDisabled}
+                                      kind="view"
+                                      label={
+                                        item.viewCapability
+                                          ? `${viewChecked ? "Desabilitar" : "Habilitar"} visualização de ${item.title}`
+                                          : `Visualização de ${item.title} sem permissão separada`
+                                      }
+                                      onToggle={(nextChecked) => void handleToggleRolePermission(item, "view", nextChecked)}
+                                    />
+                                  </div>
+                                  <div className="flex items-center justify-between gap-3 sm:block">
+                                    <span className="text-xs font-medium text-muted-foreground sm:hidden">Editar</span>
+                                    <RolePermissionSwitch
+                                      checked={editChecked}
+                                      disabled={editDisabled}
+                                      kind="edit"
+                                      label={
+                                        item.editCapability
+                                          ? `${editChecked ? "Desabilitar" : "Habilitar"} edição de ${item.title}`
+                                          : `Edição de ${item.title} sem permissão separada`
+                                      }
+                                      onToggle={(nextChecked) => void handleToggleRolePermission(item, "edit", nextChecked)}
+                                    />
+                                  </div>
                                 </div>
                               );
                             })}
@@ -2937,7 +3574,7 @@ const Configuracoes = () => {
                   </div>
                 ) : (
                   <>
-                    {canManageTeam && (
+                    {canViewTeam && (
                       <>
                         <div className="rounded-lg border p-4 text-sm">
                           <p className="font-medium">Limite atual de acessos simultâneos</p>
@@ -2990,20 +3627,12 @@ const Configuracoes = () => {
                     {can("subaccounts.manage") && (
                       <div className="rounded-lg border p-4 space-y-4">
                         <div>
-                          <p className="font-medium">Criar nova subconta</p>
+                          <p className="font-medium">Convidar colaborador</p>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            Use esta área para criar acessos adicionais do plano clinic e já definir o papel operacional inicial.
+                            Informe o e-mail e o papel inicial. Se a conta já existir, ela recebe o convite para entrar na clínica; se ainda não existir, o link abre o cadastro guiado.
                           </p>
                         </div>
                         <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label>Nome completo</Label>
-                            <Input
-                              value={newSubaccountName}
-                              maxLength={SETTINGS_TEXT_LIMITS.personName}
-                              onChange={(event) => updateNewSubaccountName(event.target.value)}
-                            />
-                          </div>
                           <div className="space-y-2">
                             <Label>E-mail</Label>
                             <Input
@@ -3011,15 +3640,6 @@ const Configuracoes = () => {
                               value={newSubaccountEmail}
                               maxLength={SETTINGS_TEXT_LIMITS.email}
                               onChange={(event) => updateNewSubaccountEmail(event.target.value)}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Senha inicial</Label>
-                            <Input
-                              type="text"
-                              value={newSubaccountPassword}
-                              maxLength={SETTINGS_TEXT_LIMITS.password}
-                              onChange={(event) => updateNewSubaccountPassword(event.target.value)}
                             />
                           </div>
                           <div className="space-y-2">
@@ -3076,21 +3696,58 @@ const Configuracoes = () => {
                             />
                           </div>
                         </div>
+                        {newSubaccountInviteMode && (
+                          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-3">
+                            <div>
+                              <p className="text-sm font-medium">
+                                {newSubaccountInviteMode === "internal" ? "Convite disponível no espaço pessoal" : "Convite enviado"}
+                              </p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {newSubaccountInviteMode === "internal"
+                                  ? "A conta já existe. O colaborador verá a solicitação ao entrar no espaço pessoal e poderá aceitar ou recusar por lá."
+                                  : newSubaccountInviteMode === "email"
+                                    ? `Enviamos um e-mail automático para ${newSubaccountInviteEmail} com o link para completar o cadastro.`
+                                    : "O envio automático falhou. Use este link de fallback para enviar o convite manualmente."}
+                              </p>
+                            </div>
+                            {newSubaccountInviteMode === "fallback" && newSubaccountInviteUrl && (
+                              <div className="flex flex-col gap-2 md:flex-row">
+                                <Input value={newSubaccountInviteUrl} readOnly className="font-mono text-xs" />
+                                <div className="flex gap-2">
+                                  <Button type="button" variant="outline" onClick={() => void handleCopySubaccountInvite()}>
+                                    <Copy className="h-4 w-4 mr-2" />
+                                    Copiar
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    asChild
+                                  >
+                                    <a
+                                      href={`mailto:${encodeURIComponent(newSubaccountInviteEmail)}?subject=${encodeURIComponent("Convite para acessar a Pluri-Health")}&body=${encodeURIComponent(`Olá!\n\nVocê recebeu um convite para acessar a clínica na Pluri-Health.\n\nAbra este link para aceitar o acesso ou completar seu cadastro:\n${newSubaccountInviteUrl}\n\nEste convite expira em 14 dias.`)}`}
+                                    >
+                                      <Mail className="h-4 w-4 mr-2" />
+                                      E-mail
+                                    </a>
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div className="flex items-center justify-between gap-4 flex-wrap">
                           <p className="text-sm text-muted-foreground">
-                            A subconta já nasce ativa. O limite comercial da clínica é controlado pelos acessos simultâneos, não pela quantidade de subcontas.
+                            O acesso só fica ativo depois que o colaborador aceitar o convite. O limite comercial continua sendo controlado pelos acessos simultâneos em uso.
                           </p>
                           <Button
-                            onClick={() => void handleCreateSubaccount()}
+                            onClick={() => void handleInviteSubaccount()}
                             disabled={
                               creatingSubaccount ||
-                              !newSubaccountName.trim() ||
-                              !newSubaccountEmail.trim() ||
-                              newSubaccountPassword.trim().length < 6
+                              !newSubaccountEmail.trim()
                             }
                           >
-                            {creatingSubaccount ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                            Criar subconta
+                            {creatingSubaccount ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
+                            Preparar convite
                           </Button>
                         </div>
                       </div>
@@ -3164,6 +3821,8 @@ const Configuracoes = () => {
                         const isEditing = editingMembershipId === membershipRow.id && editingSubaccount !== null;
                         const canEditMembershipRow = canManageTeam && membershipRow.account_role !== "account_owner";
                         const canForceSignOut = canManageTeam && row.isOnline && membershipRow.user_id !== user?.id;
+                        const canRevokeMembershipRow = can("subaccounts.manage") && membershipRow.account_role !== "account_owner" && membershipRow.user_id !== user?.id && membershipRow.membership_status !== "inactive";
+                        const collaboratorDisplayName = relatedProfile?.full_name || relatedProfile?.email || membershipRow.user_id;
 
                         return (
                           <div key={membershipRow.id} className="rounded-lg border p-4 space-y-4">
@@ -3181,11 +3840,12 @@ const Configuracoes = () => {
                                 </div>
                               </div>
                               {canManageTeam && (
-                                <div className="flex items-center gap-2">
+                                <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
                                   {canForceSignOut && (
                                     <Button
                                       variant="outline"
                                       size="sm"
+                                      className="w-full sm:w-auto"
                                       onClick={() => void handleForceSignOutCollaborator(membershipRow)}
                                       disabled={signingOutMembershipId === membershipRow.id}
                                     >
@@ -3197,15 +3857,49 @@ const Configuracoes = () => {
                                       Deslogar
                                     </Button>
                                   )}
-                                  <Button variant="outline" size="sm" onClick={() => toggleExpandedSubaccount(membershipRow.id)}>
+                                  <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => toggleExpandedSubaccount(membershipRow.id)}>
                                     {isExpanded ? <ChevronUp className="h-4 w-4 mr-2" /> : <ChevronDown className="h-4 w-4 mr-2" />}
                                     Ver mais
                                   </Button>
                                   {canEditMembershipRow && (
-                                    <Button variant="outline" size="sm" onClick={() => startEditingSubaccount(membershipRow)}>
+                                    <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => startEditingSubaccount(membershipRow)}>
                                       <Pencil className="h-4 w-4 mr-2" />
                                       Editar campos
                                     </Button>
+                                  )}
+                                  {canRevokeMembershipRow && (
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button variant="outline" size="sm" className="col-span-2 w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:col-span-1 sm:w-auto">
+                                          {revokingMembershipId === membershipRow.id ? (
+                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                          ) : (
+                                            <Trash2 className="h-4 w-4 mr-2" />
+                                          )}
+                                          Remover acesso
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Remover acesso de {collaboratorDisplayName}?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Esta ação encerra o vínculo deste colaborador com a clínica, remove o acesso às telas da clínica
+                                            e encerra sessões ativas. A conta pessoal, os dados próprios do usuário e o histórico já registrado
+                                            não serão apagados. O colaborador poderá voltar apenas por um novo convite.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => void handleRevokeMemberAccess(membershipRow)}
+                                            disabled={!!revokingMembershipId}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                            Remover acesso
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
                                   )}
                                 </div>
                               )}
@@ -3215,7 +3909,7 @@ const Configuracoes = () => {
                               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                 <div className="rounded-lg bg-muted/30 p-3">
                                   <p className="text-xs uppercase tracking-wide text-muted-foreground">ID</p>
-                                  <p className="mt-2 text-sm">{getProfilePublicCodeLabel(relatedProfile?.public_code ?? null)}</p>
+                                  <p className="mt-2 text-sm">{clinicMemberCodeMap.get(membershipRow.id) ?? "Não informado"}</p>
                                 </div>
                                 <div className="rounded-lg bg-muted/30 p-3">
                                   <p className="text-xs uppercase tracking-wide text-muted-foreground">E-mail</p>
@@ -3270,62 +3964,20 @@ const Configuracoes = () => {
 
                             {canEditMembershipRow && isEditing && editingSubaccount && (
                               <div className="rounded-lg border bg-muted/20 p-4 space-y-4">
+                                <div>
+                                  <p className="text-sm font-medium">Campos gerenciados pela clínica</p>
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    Nome, e-mail, CPF, telefone, conselho regional, senha e endereço pertencem ao espaço pessoal do colaborador.
+                                  </p>
+                                </div>
+
                                 <div className="grid gap-4 md:grid-cols-2">
                                   <div className="space-y-2">
-                                    <Label>Nome</Label>
+                                    <Label>Cargo</Label>
                                     <Input
-                                      value={editingSubaccount.fullName}
-                                      maxLength={SETTINGS_TEXT_LIMITS.personName}
-                                      onChange={(event) => updateEditingSubaccountField("fullName", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Nome social</Label>
-                                    <Input
-                                      value={editingSubaccount.socialName}
-                                      maxLength={SETTINGS_TEXT_LIMITS.socialName}
-                                      onChange={(event) => updateEditingSubaccountField("socialName", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>E-mail</Label>
-                                    <Input
-                                      type="email"
-                                      value={editingSubaccount.email}
-                                      maxLength={SETTINGS_TEXT_LIMITS.email}
-                                      onChange={(event) => updateEditingSubaccountField("email", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Data de nascimento</Label>
-                                    <Input
-                                      type="date"
-                                      value={editingSubaccount.birthDate}
-                                      onChange={(event) => updateEditingSubaccountField("birthDate", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>CPF</Label>
-                                    <Input
-                                      value={editingSubaccount.cpf}
-                                      maxLength={14}
-                                      onChange={(event) => updateEditingSubaccountField("cpf", formatCpf(event.target.value))}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Número do conselho regional</Label>
-                                    <Input
-                                      value={editingSubaccount.professionalLicense}
-                                      maxLength={SETTINGS_TEXT_LIMITS.professionalLicense}
-                                      onChange={(event) => updateEditingSubaccountField("professionalLicense", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Telefone de contato</Label>
-                                    <Input
-                                      value={editingSubaccount.phone}
-                                      maxLength={15}
-                                      onChange={(event) => updateEditingSubaccountField("phone", formatPhone(event.target.value))}
+                                      value={editingSubaccount.jobTitle}
+                                      maxLength={SETTINGS_TEXT_LIMITS.jobTitle}
+                                      onChange={(event) => updateEditingSubaccountField("jobTitle", event.target.value)}
                                     />
                                   </div>
                                   <div className="space-y-2">
@@ -3337,15 +3989,7 @@ const Configuracoes = () => {
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Cargo</Label>
-                                    <Input
-                                      value={editingSubaccount.jobTitle}
-                                      maxLength={SETTINGS_TEXT_LIMITS.jobTitle}
-                                      onChange={(event) => updateEditingSubaccountField("jobTitle", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Hierarquia na plataforma</Label>
+                                    <Label>Papel operacional</Label>
                                     <Select
                                       value={editingSubaccount.operationalRole}
                                       onValueChange={(value) => updateEditingSubaccountField("operationalRole", value as SubaccountOperationalRole)}
@@ -3378,16 +4022,6 @@ const Configuracoes = () => {
                                       </SelectContent>
                                     </Select>
                                   </div>
-                                  <div className="space-y-2">
-                                    <Label>Resetar senha</Label>
-                                    <Input
-                                      type="text"
-                                      value={editingSubaccount.resetPassword}
-                                      maxLength={SETTINGS_TEXT_LIMITS.password}
-                                      placeholder="Deixe em branco para manter"
-                                      onChange={(event) => updateEditingSubaccountField("resetPassword", event.target.value)}
-                                    />
-                                  </div>
                                 </div>
 
                                 <div className="space-y-2">
@@ -3398,64 +4032,6 @@ const Configuracoes = () => {
                                     onChange={(event) => updateEditingSubaccountField("workingHours", event.target.value)}
                                     placeholder="Ex.: seg-sex 08h-18h; sábado 08h-12h"
                                   />
-                                </div>
-                                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                  <div className="space-y-2">
-                                    <Label>CEP</Label>
-                                    <Input
-                                      value={editingSubaccount.address.cep}
-                                      maxLength={9}
-                                      onChange={(event) => updateEditingSubaccountAddressField("cep", formatCep(event.target.value))}
-                                    />
-                                  </div>
-                                  <div className="space-y-2 xl:col-span-2">
-                                    <Label>Rua</Label>
-                                    <Input
-                                      value={editingSubaccount.address.street}
-                                      maxLength={ADDRESS_FIELD_LIMITS.street}
-                                      onChange={(event) => updateEditingSubaccountAddressField("street", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Número</Label>
-                                    <Input
-                                      value={editingSubaccount.address.number}
-                                      maxLength={ADDRESS_FIELD_LIMITS.number}
-                                      onChange={(event) => updateEditingSubaccountAddressField("number", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Complemento</Label>
-                                    <Input
-                                      value={editingSubaccount.address.complement}
-                                      maxLength={ADDRESS_FIELD_LIMITS.complement}
-                                      onChange={(event) => updateEditingSubaccountAddressField("complement", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Bairro</Label>
-                                    <Input
-                                      value={editingSubaccount.address.neighborhood}
-                                      maxLength={ADDRESS_FIELD_LIMITS.neighborhood}
-                                      onChange={(event) => updateEditingSubaccountAddressField("neighborhood", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Cidade</Label>
-                                    <Input
-                                      value={editingSubaccount.address.city}
-                                      maxLength={ADDRESS_FIELD_LIMITS.city}
-                                      onChange={(event) => updateEditingSubaccountAddressField("city", event.target.value)}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Estado</Label>
-                                    <Input
-                                      value={editingSubaccount.address.state}
-                                      maxLength={ADDRESS_FIELD_LIMITS.state}
-                                      onChange={(event) => updateEditingSubaccountAddressField("state", event.target.value)}
-                                    />
-                                  </div>
                                 </div>
 
                               </div>
@@ -3830,11 +4406,11 @@ const Configuracoes = () => {
             </>
           )}
 
-          {activeSection === "security" && (
+          {activeSection === "personal-security" && (
             <>
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-xl">Segurança</CardTitle>
+                  <CardTitle className="text-xl">Segurança pessoal</CardTitle>
                   <p className="text-sm text-muted-foreground">
                     Proteja sua conta, acompanhe as sessões abertas e revise eventos sensíveis sem misturar isso com dados cadastrais ou gestão de subcontas.
                   </p>
@@ -4093,106 +4669,118 @@ const Configuracoes = () => {
                 </CardContent>
               </Card>
 
-              {canViewAdminSecurity && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <ShieldCheck className="h-5 w-5" />
-                      Visão administrativa de segurança
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div className="rounded-lg border p-4">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Equipe monitorada</p>
-                        <p className="mt-2 text-2xl font-semibold">{teamSecurityRows.length}</p>
-                      </div>
-                      <div className="rounded-lg border p-4">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Senhas provisórias</p>
-                        <p className="mt-2 text-2xl font-semibold">{temporaryPasswordCount}</p>
-                      </div>
-                      <div className="rounded-lg border p-4">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Acessos desatualizados</p>
-                        <p className="mt-2 text-2xl font-semibold">{staleTeamSecurityCount}</p>
-                      </div>
-                    </div>
+            </>
+          )}
 
-                    <div className="rounded-lg border p-4 space-y-3">
-                      <div>
-                        <p className="font-medium">Sinais de atenção na equipe</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Esta área é apenas de observação. A gestão de subcontas continua em `Colaboradores e acessos`.
-                        </p>
+          {activeSection === "clinic-security" && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl">Segurança da clínica</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Monitore sinais sensíveis da equipe, sessões e eventos administrativos sem misturar isso com a segurança da sua conta pessoal.
+                  </p>
+                </CardHeader>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5" />
+                    Visão administrativa de segurança
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-lg border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Equipe monitorada</p>
+                      <p className="mt-2 text-2xl font-semibold">{teamSecurityRows.length}</p>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Senhas provisórias</p>
+                      <p className="mt-2 text-2xl font-semibold">{temporaryPasswordCount}</p>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Acessos desatualizados</p>
+                      <p className="mt-2 text-2xl font-semibold">{staleTeamSecurityCount}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div>
+                      <p className="font-medium">Sinais de atenção na equipe</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Esta área é apenas de observação. A gestão de subcontas continua em Colaboradores e acessos.
+                      </p>
+                    </div>
+                    {teamSecurityRows.length === 0 ? (
+                      <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                        Nenhum colaborador encontrado para esta clínica.
                       </div>
-                      {teamSecurityRows.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                          Nenhum colaborador encontrado para esta clínica.
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {teamSecurityRows.map((row) => (
-                            <div key={row.membership.id} className="rounded-lg border p-3">
-                              <div className="flex items-start justify-between gap-4 flex-wrap">
-                                <div>
-                                  <p className="font-medium">{row.profile?.full_name || row.profile?.email || row.membership.user_id}</p>
-                                  <p className="mt-1 text-sm text-muted-foreground">
-                                    {OPERATIONAL_ROLE_LABELS[row.membership.operational_role]} • Último acesso: {formatLastSeenAt(row.profile?.last_seen_at ?? null)}
-                                  </p>
-                                </div>
-                                <Badge variant="outline" className={SECURITY_TONE_BADGE_CLASSNAMES[row.posture.tone]}>
-                                  {row.posture.label}
-                                </Badge>
+                    ) : (
+                      <div className="space-y-3">
+                        {teamSecurityRows.map((row) => (
+                          <div key={row.membership.id} className="rounded-lg border p-3">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div>
+                                <p className="font-medium">{row.profile?.full_name || row.profile?.email || row.membership.user_id}</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {OPERATIONAL_ROLE_LABELS[row.membership.operational_role]} • Último acesso: {formatLastSeenAt(row.profile?.last_seen_at ?? null)}
+                                </p>
                               </div>
-                              <p className="mt-3 text-sm text-muted-foreground">{row.posture.description}</p>
+                              <Badge variant="outline" className={SECURITY_TONE_BADGE_CLASSNAMES[row.posture.tone]}>
+                                {row.posture.label}
+                              </Badge>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="rounded-lg border p-4 space-y-3">
-                      <div>
-                        <p className="font-medium">Eventos administrativos recentes</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Eventos críticos ligados a acessos e contas da equipe.
-                        </p>
+                            <p className="mt-3 text-sm text-muted-foreground">{row.posture.description}</p>
+                          </div>
+                        ))}
                       </div>
-                      {adminSecurityEvents.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                          Nenhum evento administrativo de segurança registrado até agora.
-                        </div>
-                      ) : (
-                        adminSecurityEvents.map((eventRow) => {
-                          const eventMeta = getSecurityEventMeta(eventRow.event_type);
-                          const actorProfile = eventRow.actor_user_id ? profileMap.get(eventRow.actor_user_id) : null;
-                          const targetProfile = eventRow.target_user_id ? profileMap.get(eventRow.target_user_id) : null;
+                    )}
+                  </div>
 
-                          return (
-                            <div key={eventRow.id} className="rounded-lg border p-3">
-                              <div className="flex items-start justify-between gap-4 flex-wrap">
-                                <div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="font-medium">{eventMeta.label}</p>
-                                    <Badge variant="outline" className={SECURITY_TONE_BADGE_CLASSNAMES[eventMeta.tone]}>
-                                      Administrativo
-                                    </Badge>
-                                  </div>
-                                  <p className="mt-1 text-sm text-muted-foreground">{eventMeta.description}</p>
-                                  <p className="mt-2 text-sm text-muted-foreground">
-                                    {actorProfile?.full_name || actorProfile?.email || "Conta da clínica"}
-                                    {targetProfile ? ` → ${targetProfile.full_name || targetProfile.email || targetProfile.id}` : ""}
-                                  </p>
-                                </div>
-                                <p className="text-sm text-muted-foreground">{formatSecurityEventTimestamp(eventRow.created_at)}</p>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div>
+                      <p className="font-medium">Eventos administrativos recentes</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Eventos críticos ligados a acessos e contas da equipe.
+                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                    {adminSecurityEvents.length === 0 ? (
+                      <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                        Nenhum evento administrativo de segurança registrado até agora.
+                      </div>
+                    ) : (
+                      adminSecurityEvents.map((eventRow) => {
+                        const eventMeta = getSecurityEventMeta(eventRow.event_type);
+                        const actorProfile = eventRow.actor_user_id ? profileMap.get(eventRow.actor_user_id) : null;
+                        const targetProfile = eventRow.target_user_id ? profileMap.get(eventRow.target_user_id) : null;
+
+                        return (
+                          <div key={eventRow.id} className="rounded-lg border p-3">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium">{eventMeta.label}</p>
+                                  <Badge variant="outline" className={SECURITY_TONE_BADGE_CLASSNAMES[eventMeta.tone]}>
+                                    Administrativo
+                                  </Badge>
+                                </div>
+                                <p className="mt-1 text-sm text-muted-foreground">{eventMeta.description}</p>
+                                <p className="mt-2 text-sm text-muted-foreground">
+                                  {actorProfile?.full_name || actorProfile?.email || "Conta da clínica"}
+                                  {targetProfile ? ` -> ${targetProfile.full_name || targetProfile.email || targetProfile.id}` : ""}
+                                </p>
+                              </div>
+                              <p className="text-sm text-muted-foreground">{formatSecurityEventTimestamp(eventRow.created_at)}</p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </>
           )}
 
@@ -4574,57 +5162,86 @@ const Configuracoes = () => {
             ? "designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t bg-background/94 backdrop-blur supports-[backdrop-filter]:bg-background/88 lg:hidden"
             : "fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90 lg:hidden"
         }
+        data-dock-state={mobileDockExpanded ? "medium" : "compact"}
+        data-dock-pressing={mobileDockPointerActive ? "true" : "false"}
       >
         <div className="mx-auto max-w-screen-sm px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
-          {mobileDescriptionSection && (
-            <div className="mb-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
-              <p className="text-xs font-medium">{availableSections.find((item) => item.id === mobileDescriptionSection)?.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {availableSections.find((item) => item.id === mobileDescriptionSection)?.description}
-              </p>
-            </div>
+          {isDesignLabExperience && mobileDockTooltip && (
+            <span
+              className="designlab-settings-mobile-floating-tooltip"
+              style={{ "--mobile-dock-tooltip-x": `${mobileDockTooltip.x}px` } as CSSProperties}
+            >
+              {mobileDockTooltip.title}
+            </span>
           )}
-          <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            className={`designlab-settings-mobile-dock flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+              availableSections.length > 5 ? "is-scrollable" : ""
+            }`}
+            onPointerMove={(event) => {
+              if (moveMobileDockGesture(event.clientX, event.clientY)) {
+                event.preventDefault();
+              }
+            }}
+            onTouchMove={(event) => {
+              const touch = event.touches[0];
+              if (touch && moveMobileDockGesture(touch.clientX, touch.clientY)) {
+                event.preventDefault();
+              }
+            }}
+            onPointerUp={finishMobileDockInteraction}
+            onPointerCancel={finishMobileDockInteraction}
+            onTouchEnd={finishMobileDockInteraction}
+            onTouchCancel={finishMobileDockInteraction}
+            onPointerLeave={() => {
+              if (mobileDockPointerActive) {
+                finishMobileDockInteraction();
+              }
+            }}
+          >
             {availableSections.map((item) => {
               const isActive = activeSection === item.id;
+              const isPressed = mobileDockPressedSection === item.id;
 
               return (
                 <button
                   key={item.id}
                   type="button"
+                  aria-label={item.title}
+                  data-settings-mobile-section={item.id}
                   className={
                     isDesignLabExperience
-                      ? `designlab-settings-mobile-item group relative flex min-w-[78px] flex-1 shrink-0 snap-start flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-300 ease-out active:translate-y-0.5 ${
-                          isActive ? "is-active" : ""
-                        }`
-                      : `flex min-w-[88px] shrink-0 snap-start flex-col items-center justify-center rounded-xl border px-3 py-2 text-center transition-colors ${
+                      ? cn(
+                          "designlab-settings-mobile-item group relative flex shrink-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-150 ease-out active:translate-y-0.5",
+                          isActive && "is-active",
+                          isPressed && "is-pressed"
+                        )
+                      : `flex min-w-0 flex-col items-center justify-center rounded-xl border px-2 py-2 text-center transition-colors ${
                           isActive ? "border-primary bg-primary/8 text-primary" : "bg-background text-muted-foreground"
                         }`
                   }
-                  onPointerDown={() => {
-                    mobileLongPressTriggeredRef.current = false;
-                    clearMobileLongPress();
-                    mobileLongPressTimerRef.current = window.setTimeout(() => {
-                      mobileLongPressTriggeredRef.current = true;
-                      showMobileDescription(item.id);
-                    }, 450);
+                  onPointerDown={(event) => {
+                    startMobileDockGesture(event.currentTarget, item.id, item.title, event.clientX, event.clientY, event.pointerId);
                   }}
-                  onPointerUp={clearMobileLongPress}
-                  onPointerLeave={clearMobileLongPress}
-                  onPointerCancel={clearMobileLongPress}
+                  onTouchStart={(event) => {
+                    const touch = event.touches[0];
+                    if (touch) {
+                      startMobileDockGesture(event.currentTarget, item.id, item.title, touch.clientX, touch.clientY);
+                    }
+                  }}
                   onClick={() => {
                     if (mobileLongPressTriggeredRef.current) {
                       mobileLongPressTriggeredRef.current = false;
                       return;
                     }
 
-                    setMobileDescriptionSection(null);
+                    setMobileDockExpanded(true);
                     setActiveSection(item.id);
                   }}
                 >
                   {isDesignLabExperience ? (
                     <span
-                      className={`designlab-settings-mobile-surface flex h-full min-h-[58px] w-full flex-col items-center justify-center rounded-[0.68rem] border px-2 py-2 transition-colors duration-300 ${
+                      className={`designlab-settings-mobile-surface flex h-full w-full flex-col items-center justify-center rounded-[0.68rem] border px-2 py-2 transition-colors duration-300 ${
                         isActive
                           ? "border-primary/45 bg-primary/10 text-primary"
                           : "border-border/80 bg-card/92 text-muted-foreground"
@@ -4637,7 +5254,6 @@ const Configuracoes = () => {
                       >
                         <item.icon className="h-4 w-4" />
                       </span>
-                      <span className="mt-1 line-clamp-2 max-w-full text-[10px] font-medium leading-[1.08]">{item.title}</span>
                     </span>
                   ) : (
                     <>

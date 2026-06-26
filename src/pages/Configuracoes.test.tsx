@@ -184,6 +184,7 @@ vi.mock("@/integrations/supabase/client", () => {
     const builder = {
       delete: () => builder,
       eq: () => builder,
+      in: () => builder,
       limit: () => builder,
       maybeSingle: () => Promise.resolve({ data: resolveData(), error: null }),
       or: () => builder,
@@ -357,7 +358,8 @@ describe("Configuracoes", () => {
     expect(screen.queryByRole("heading", { name: "Perfil pessoal" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Clínica" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Perfil pessoal" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Segurança" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Segurança pessoal" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Segurança da clínica" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Suporte" })).not.toBeInTheDocument();
   });
 
@@ -371,9 +373,10 @@ describe("Configuracoes", () => {
     await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "Espaço pessoal" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Perfil pessoal" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Segurança" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Segurança pessoal" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Perfil da clínica" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Colaboradores e acessos" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Segurança da clínica" })).not.toBeInTheDocument();
   });
 
   it("returns to the personal space when profile settings were opened from there", async () => {
@@ -434,7 +437,7 @@ describe("Configuracoes", () => {
     await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "Espaço pessoal" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Perfil pessoal" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Segurança" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Segurança pessoal" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Perfil da clínica" })).not.toBeInTheDocument();
   });
 
@@ -519,7 +522,7 @@ describe("Configuracoes", () => {
     );
 
     await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Segurança" }));
+    fireEvent.click(screen.getByRole("button", { name: "Segurança pessoal" }));
 
     await waitFor(() => {
       expect(screen.getByText("Sessões e dispositivos")).toBeInTheDocument();
@@ -647,16 +650,44 @@ describe("Configuracoes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Colaboradores e acessos" }));
     fireEvent.click(screen.getByRole("button", { name: /editar campos/i }));
 
-    const collaboratorNameInput = await screen.findByDisplayValue("Bianca");
-    fireEvent.change(collaboratorNameInput, { target: { value: "Bianca Nova" } });
+    await screen.findByText("Campos gerenciados pela clínica");
+    expect(screen.queryByLabelText(/^Nome$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^E-mail$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Resetar senha/i)).not.toBeInTheDocument();
+
+    const jobTitleInput = screen.getByDisplayValue("Estagiário");
+    fireEvent.change(jobTitleInput, { target: { value: "Coordenadora clínica" } });
 
     const floatingActions = screen.getByRole("region", { name: /ações de edição/i });
     expect(within(floatingActions).getByRole("button", { name: "Salvar alterações" })).toBeInTheDocument();
 
     fireEvent.click(within(floatingActions).getByRole("button", { name: "Cancelar" }));
 
-    expect(screen.queryByDisplayValue("Bianca Nova")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Coordenadora clínica")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: /ações de edição/i })).not.toBeInTheDocument();
+  });
+
+  it("asks before revoking collaborator access from the clinic", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes?secao=clinic"]}>
+        <Configuracoes />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Colaboradores e acessos" }));
+    fireEvent.click(screen.getByRole("button", { name: /remover acesso/i }));
+
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByText(/não serão apagados/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^remover acesso$/i }));
+
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith("revoke_clinic_member_access", {
+        _membership_id: "membership-1",
+      })
+    );
   });
 
   it("limits oversized clinic text inputs before they become payloads", async () => {

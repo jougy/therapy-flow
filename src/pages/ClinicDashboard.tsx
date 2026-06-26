@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowLeft, BarChart3, CalendarClock, CreditCard, Loader2, PieChart, TrendingUp, UsersRound } from "lucide-react";
+import { Activity, ArrowLeft, BarChart3, CalendarClock, CreditCard, Loader2, PieChart, TrendingUp, UsersRound, Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
@@ -38,6 +38,8 @@ type Segment = {
   label: string;
   value: number;
 };
+
+type DashboardSection = "overview" | "financial" | "agenda" | "patients" | "team";
 
 const colors = {
   amber: "#f59e0b",
@@ -111,6 +113,13 @@ const paymentMethodColor = (method: string) =>
   colors.zinc;
 
 const compactNumber = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+const dashboardSections: Array<{ icon: typeof TrendingUp; label: string; value: DashboardSection }> = [
+  { icon: Activity, label: "Visão geral", value: "overview" },
+  { icon: Wallet, label: "Financeiro", value: "financial" },
+  { icon: CalendarClock, label: "Agenda", value: "agenda" },
+  { icon: UsersRound, label: "Pacientes", value: "patients" },
+  { icon: BarChart3, label: "Equipe", value: "team" },
+];
 
 const metricChartConfig = {
   atendimentos: { color: colors.blue, label: "Atendimentos" },
@@ -142,10 +151,10 @@ const DashboardProportionCard = ({
   const visibleTotal = visibleSegments.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardContent className="p-4">
         <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">{title}</p>
-        <p className="mt-2 font-serif text-4xl leading-none text-foreground">{value}</p>
+        <p className="mt-2 break-words font-serif text-3xl leading-none text-foreground sm:text-4xl">{value}</p>
         <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
         <div className="mt-4 flex h-7 overflow-hidden rounded-full bg-muted">
           {visibleSegments.map((segment) => (
@@ -188,7 +197,7 @@ const MetricCard = ({
   title: string;
   value: string;
 }) => (
-  <Card>
+  <Card className="min-w-0 overflow-hidden">
     <CardContent className="flex items-start gap-3 p-4">
       <span className="rounded-lg bg-primary/10 p-2 text-primary">
         <Icon className="h-4 w-4" />
@@ -202,6 +211,9 @@ const MetricCard = ({
   </Card>
 );
 
+const mobileSectionClass = (section: DashboardSection, activeSection: DashboardSection) =>
+  section === activeSection ? "grid" : "hidden md:grid";
+
 const ClinicDashboard = () => {
   const navigate = useNavigate();
   const { can, clinic, clinicId, user } = useAuth();
@@ -211,6 +223,7 @@ const ClinicDashboard = () => {
   const [agendaEvents, setAgendaEvents] = useState<HomeAgendaEventRecord[]>([]);
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
   const canViewFinancialData = can("treasury.manage");
 
   const fetchData = useCallback(async () => {
@@ -510,9 +523,9 @@ const ClinicDashboard = () => {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 p-4 sm:p-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-28 pt-4 sm:p-6">
+      <header className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <Button type="button" variant="ghost" className="-ml-2 mb-2 gap-2" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4" />
             Voltar
@@ -523,13 +536,13 @@ const ClinicDashboard = () => {
             Analytics operacionais, financeiros e clínicos para acompanhar a saúde da clínica com mais profundidade.
           </p>
         </div>
-        <Button type="button" variant="outline" className="gap-2" onClick={() => void fetchData()}>
+        <Button type="button" variant="outline" className="w-fit gap-2" onClick={() => void fetchData()}>
           <TrendingUp className="h-4 w-4" />
           Atualizar
         </Button>
       </header>
 
-      <section className="grid gap-3 lg:grid-cols-2">
+      <section className={`${mobileSectionClass("overview", activeSection)} min-w-0 gap-3 lg:grid-cols-2`}>
         <div className="lg:col-span-2">
           <DashboardProportionCard {...analytics.paymentChart} />
         </div>
@@ -539,7 +552,7 @@ const ClinicDashboard = () => {
         <DashboardProportionCard {...analytics.paymentMethodChart} />
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className={`${mobileSectionClass("overview", activeSection)} min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4`}>
         {analytics.cards.map((metric) => (
           <MetricCard key={metric.title} {...metric} />
         ))}
@@ -549,14 +562,23 @@ const ClinicDashboard = () => {
         <MetricCard detail="atendimentos no ano" icon={CalendarClock} title="Quantidade por ano" value={String(analytics.yearSessions)} />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <Card>
+      <section className={`${mobileSectionClass("financial", activeSection)} min-w-0 gap-4 xl:grid-cols-2`}>
+        <div className="md:hidden">
+          <DashboardProportionCard {...analytics.paymentChart} />
+        </div>
+        <div className="md:hidden">
+          <DashboardProportionCard {...analytics.paymentStatusChart} />
+        </div>
+        <div className="md:hidden">
+          <DashboardProportionCard {...analytics.paymentMethodChart} />
+        </div>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-lg">Receita e atendimentos no ano</CardTitle>
             <CardDescription>Pago, em aberto e volume mensal de atendimentos.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <ChartContainer config={metricChartConfig} className="h-80 w-full">
+          <CardContent className="min-w-0">
+            <ChartContainer config={metricChartConfig} className="h-72 w-full sm:h-80">
               <AreaChart data={analytics.monthlyRevenue} margin={{ bottom: 8, left: -10, right: 12, top: 8 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} />
@@ -570,13 +592,13 @@ const ClinicDashboard = () => {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-lg">Atendimentos nos últimos 30 dias</CardTitle>
             <CardDescription>Volume diário para perceber oscilações de agenda.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <ChartContainer config={metricChartConfig} className="h-80 w-full">
+          <CardContent className="min-w-0">
+            <ChartContainer config={metricChartConfig} className="h-72 w-full sm:h-80">
               <LineChart data={analytics.last30Days} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} interval={4} />
@@ -589,14 +611,17 @@ const ClinicDashboard = () => {
         </Card>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-3">
-        <Card>
+      <section className={`${mobileSectionClass("agenda", activeSection)} min-w-0 gap-4 xl:grid-cols-3`}>
+        <div className="md:hidden">
+          <DashboardProportionCard {...analytics.agendaChart} />
+        </div>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-lg">Distribuição por dia da semana</CardTitle>
             <CardDescription>Onde a agenda concentra mais atendimentos.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <ChartContainer config={metricChartConfig} className="h-72 w-full">
+          <CardContent className="min-w-0">
+            <ChartContainer config={metricChartConfig} className="h-64 w-full sm:h-72">
               <BarChart data={analytics.weekdayDistribution} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} />
@@ -607,8 +632,13 @@ const ClinicDashboard = () => {
             </ChartContainer>
           </CardContent>
         </Card>
+      </section>
 
-        <Card>
+      <section className={`${mobileSectionClass("patients", activeSection)} min-w-0 gap-4 xl:grid-cols-3`}>
+        <div className="md:hidden">
+          <DashboardProportionCard {...analytics.patientStatusChart} />
+        </div>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-lg">Grupos mais recorrentes</CardTitle>
             <CardDescription>Top grupos vinculados aos atendimentos.</CardDescription>
@@ -641,13 +671,13 @@ const ClinicDashboard = () => {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-lg">Status financeiro</CardTitle>
             <CardDescription>Composição dos atendimentos por situação de pagamento.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <ChartContainer config={pieChartConfig} className="h-72 w-full">
+          <CardContent className="min-w-0">
+            <ChartContainer config={pieChartConfig} className="h-64 w-full sm:h-72">
               <RechartsPieChart>
                 <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
                 <Pie data={analytics.paymentStatusChart.segments} dataKey="value" nameKey="label" innerRadius={54} outerRadius={92} paddingAngle={2}>
@@ -661,21 +691,21 @@ const ClinicDashboard = () => {
         </Card>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <Card>
+      <section className={`${mobileSectionClass("team", activeSection)} min-w-0 gap-4 xl:grid-cols-2`}>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-lg">Produtividade por colaborador</CardTitle>
             <CardDescription>Atendimentos e receita quitada associada ao profissional.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-w-0">
             {analytics.collaborators.length === 0 ? (
               <p className="text-sm text-muted-foreground">Sem colaboradores associados aos atendimentos.</p>
             ) : (
-              <ChartContainer config={metricChartConfig} className="h-80 w-full">
-                <BarChart data={analytics.collaborators} layout="vertical" margin={{ bottom: 8, left: 20, right: 12, top: 8 }}>
+              <ChartContainer config={metricChartConfig} className="h-72 w-full sm:h-80">
+                <BarChart data={analytics.collaborators} layout="vertical" margin={{ bottom: 8, left: -12, right: 12, top: 8 }}>
                   <CartesianGrid horizontal={false} />
                   <XAxis type="number" tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="label" width={110} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="label" width={84} tickLine={false} axisLine={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Bar dataKey="total" name="Atendimentos" fill={colors.blue} radius={[0, 6, 6, 0]} />
                 </BarChart>
@@ -684,7 +714,7 @@ const ClinicDashboard = () => {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="text-lg">Leitura executiva</CardTitle>
             <CardDescription>Sinais rápidos para priorizar ações da clínica.</CardDescription>
@@ -713,6 +743,46 @@ const ClinicDashboard = () => {
           </CardContent>
         </Card>
       </section>
+
+      <nav
+        className="designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/94 backdrop-blur supports-[backdrop-filter]:bg-background/88 md:hidden"
+        data-dock-state="compact"
+      >
+        <div className="designlab-settings-mobile-dock flex justify-center gap-1 pb-1">
+          {dashboardSections.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeSection === item.value;
+
+            return (
+              <button
+                key={item.value}
+                type="button"
+                className={`designlab-settings-mobile-item group relative flex min-w-0 shrink flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-150 ease-out active:translate-y-0.5 ${
+                  isActive ? "is-active" : ""
+                }`}
+                aria-label={item.label}
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => setActiveSection(item.value)}
+              >
+                <span className="designlab-settings-mobile-tooltip">{item.label}</span>
+                <span
+                  className={`designlab-settings-mobile-surface flex h-full w-full flex-col items-center justify-center rounded-[0.68rem] border px-2 py-2 transition-colors duration-300 ${
+                    isActive ? "border-sky-300/90 bg-sky-50/70 text-sky-700" : "border-border/70 bg-card/92 text-muted-foreground"
+                  }`}
+                >
+                  <span
+                    className={`designlab-settings-mobile-icon grid h-7 w-7 place-items-center rounded-lg transition-colors duration-300 ${
+                      isActive ? "bg-sky-100 text-sky-600" : "bg-muted/60 text-foreground"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </main>
   );
 };

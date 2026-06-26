@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -278,6 +279,7 @@ const PlatformShell = ({
             {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <PersonalNotificationsButton />
             <Badge className="bg-primary/10 text-primary hover:bg-primary/10">platform_owner</Badge>
             <Button variant="outline" onClick={() => navigate("/platform")}>Painel mestre</Button>
             <Button variant="outline" onClick={() => navigate("/espacopessoal")}>Espaço pessoal</Button>

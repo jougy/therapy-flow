@@ -91,6 +91,68 @@ export type Database = {
           },
         ]
       }
+      app_notifications: {
+        Row: {
+          action_label: string | null
+          action_url: string | null
+          actor_user_id: string | null
+          body: string
+          category: string
+          clinic_id: string | null
+          created_at: string
+          dismissed_at: string | null
+          event_type: string
+          id: string
+          payload: Json
+          read_at: string | null
+          source_event_id: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          action_label?: string | null
+          action_url?: string | null
+          actor_user_id?: string | null
+          body: string
+          category: string
+          clinic_id?: string | null
+          created_at?: string
+          dismissed_at?: string | null
+          event_type: string
+          id?: string
+          payload?: Json
+          read_at?: string | null
+          source_event_id?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          action_label?: string | null
+          action_url?: string | null
+          actor_user_id?: string | null
+          body?: string
+          category?: string
+          clinic_id?: string | null
+          created_at?: string
+          dismissed_at?: string | null
+          event_type?: string
+          id?: string
+          payload?: Json
+          read_at?: string | null
+          source_event_id?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       anamnesis_form_templates: {
         Row: {
           clinic_id: string
@@ -382,6 +444,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notification_preferences: {
+        Row: {
+          created_at: string
+          notify_clinic_access: boolean
+          notify_event_reminders: boolean
+          notify_patient_saved: boolean
+          notify_security: boolean
+          notify_session_activity: boolean
+          notify_system: boolean
+          sound_key: string
+          sound_mode: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          notify_clinic_access?: boolean
+          notify_event_reminders?: boolean
+          notify_patient_saved?: boolean
+          notify_security?: boolean
+          notify_session_activity?: boolean
+          notify_system?: boolean
+          sound_key?: string
+          sound_mode?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          notify_clinic_access?: boolean
+          notify_event_reminders?: boolean
+          notify_patient_saved?: boolean
+          notify_security?: boolean
+          notify_session_activity?: boolean
+          notify_system?: boolean
+          sound_key?: string
+          sound_mode?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       patient_groups: {
         Row: {
@@ -1386,8 +1490,30 @@ export type Database = {
         }
         Returns: Json
       }
+      accept_clinic_collaborator_invitation: {
+        Args: { _full_name?: string; _token: string }
+        Returns: Json
+      }
+      accept_current_user_clinic_invitation: {
+        Args: { _invitation_id: string }
+        Returns: Json
+      }
       acknowledge_current_user_release_notes: {
         Args: { _release_id?: string }
+        Returns: Json
+      }
+      invite_clinic_collaborator: {
+        Args: {
+          _clinic_id?: string
+          _email?: string
+          _job_title?: string
+          _operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          _specialty?: string
+        }
+        Returns: Json
+      }
+      get_clinic_collaborator_invitation: {
+        Args: { _token: string }
         Returns: Json
       }
       get_clinic_concurrent_access_overview: {
@@ -1401,6 +1527,10 @@ export type Database = {
       current_user_can: {
         Args: { _capability: string; _clinic_id?: string }
         Returns: boolean
+      }
+      decline_current_user_clinic_invitation: {
+        Args: { _invitation_id: string }
+        Returns: Json
       }
       can_read_session: {
         Args: { _session_id: string }
@@ -1535,6 +1665,10 @@ export type Database = {
         }
         Returns: Json
       }
+      revoke_clinic_member_access: {
+        Args: { _membership_id: string }
+        Returns: Json
+      }
       revoke_session_share: {
         Args: { _session_id: string; _user_id: string }
         Returns: Json
@@ -1585,6 +1719,17 @@ export type Database = {
         }
         Returns: Json
       }
+      update_clinic_member_operational_fields: {
+        Args: {
+          _job_title?: string
+          _membership_id: string
+          _membership_status?: Database["public"]["Enums"]["membership_status_type"]
+          _operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          _specialty?: string
+          _working_hours?: string
+        }
+        Returns: Json
+      }
       update_current_profile: {
         Args: {
           _address?: Json
@@ -1617,6 +1762,10 @@ export type Database = {
         }
         Returns: Json
       }
+      verify_password_recovery_identity: {
+        Args: { _cpf: string; _email: string }
+        Returns: boolean
+      }
       upsert_current_user_security_settings: {
         Args: {
           _alert_access_change?: boolean
@@ -1629,6 +1778,92 @@ export type Database = {
       validate_user_clinic: {
         Args: { _cnpj: string; _user_id: string }
         Returns: boolean
+      }
+      list_current_user_clinic_invitations: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          clinic_id: string
+          clinic_logo_url: string | null
+          clinic_name: string
+          clinic_route_key: string
+          created_at: string
+          expires_at: string
+          invitation_id: string
+          invited_by_name: string | null
+          job_title: string | null
+          operational_role: Database["public"]["Enums"]["operational_role_type"]
+          specialty: string | null
+        }[]
+      }
+      leave_current_user_clinic: {
+        Args: { _clinic_id: string }
+        Returns: Json
+      }
+      clear_current_user_notifications: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      create_current_user_notification: {
+        Args: {
+          _action_label?: string
+          _action_url?: string
+          _body: string
+          _category: string
+          _clinic_id: string | null
+          _event_type: string
+          _payload?: Json
+          _title: string
+        }
+        Returns: string | null
+      }
+      delete_current_user_notification: {
+        Args: { _notification_id: string }
+        Returns: Json
+      }
+      list_current_user_notification_preferences: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          notify_clinic_access: boolean
+          notify_event_reminders: boolean
+          notify_patient_saved: boolean
+          notify_security: boolean
+          notify_session_activity: boolean
+          notify_system: boolean
+          sound_key: string
+          sound_mode: string
+        }[]
+      }
+      list_current_user_notifications: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          action_label: string | null
+          action_url: string | null
+          actor_name: string | null
+          actor_user_id: string | null
+          body: string
+          category: string
+          clinic_id: string | null
+          clinic_name: string | null
+          created_at: string
+          event_type: string
+          notification_id: string
+          payload: Json
+          read_at: string | null
+          title: string
+        }[]
+      }
+      update_current_user_notification_preferences: {
+        Args: {
+          _notify_clinic_access?: boolean
+          _notify_event_reminders?: boolean
+          _notify_patient_saved?: boolean
+          _notify_security?: boolean
+          _notify_session_activity?: boolean
+          _notify_system?: boolean
+          _sound_key?: string
+          _sound_mode?: string
+        }
+        Returns: Json
       }
       list_current_user_clinics: {
         Args: Record<PropertyKey, never>
