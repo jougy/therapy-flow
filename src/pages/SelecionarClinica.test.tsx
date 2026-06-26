@@ -6,6 +6,23 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 
 const navigateMock = vi.fn();
+const buildSupabaseQueryMock = () => ({
+  delete: vi.fn(() => ({
+    eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+    in: vi.fn().mockResolvedValue({ data: null, error: null }),
+  })),
+  eq: vi.fn().mockReturnThis(),
+  in: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockReturnThis(),
+  order: vi.fn().mockReturnThis(),
+  select: vi.fn().mockReturnThis(),
+  update: vi.fn(() => ({
+    eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+    in: vi.fn(() => ({
+      eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+    })),
+  })),
+});
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
@@ -25,12 +42,14 @@ vi.mock("@/hooks/use-toast", () => ({
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    from: vi.fn(),
+    from: vi.fn(() => buildSupabaseQueryMock()),
     rpc: vi.fn(),
   },
 }));
 
 describe("SelecionarClinica", () => {
+  const getNavButton = (name: RegExp) => screen.getAllByRole("button", { name })[0]!;
+
   beforeEach(() => {
     global.ResizeObserver = class ResizeObserver {
       disconnect = vi.fn();
@@ -39,6 +58,7 @@ describe("SelecionarClinica", () => {
     };
     navigateMock.mockReset();
     vi.mocked(supabase.from).mockReset();
+    vi.mocked(supabase.from).mockImplementation(() => buildSupabaseQueryMock() as never);
     vi.mocked(supabase.rpc).mockReset();
     vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null });
   });
@@ -137,10 +157,10 @@ describe("SelecionarClinica", () => {
     );
 
     expect(screen.getByText("Espaço pessoal")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /clínicas/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /minhas estatísticas/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /novidades/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Configurações$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^clínicas$/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^minhas estatísticas$/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^novidades$/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^Configurações$/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Owner Example").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /ver acessos online/i })).toHaveTextContent("3/4");
 
@@ -275,7 +295,7 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /minhas estatísticas/i }));
+    fireEvent.click(getNavButton(/^minhas estatísticas$/i));
 
     await waitFor(() => expect(screen.getByText("Quantidade de atendimentos")).toBeInTheDocument());
 
@@ -386,7 +406,7 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /novidades/i }));
+    fireEvent.click(getNavButton(/^novidades$/i));
 
     await waitFor(() => expect(screen.getByText("Painel de novidades")).toBeInTheDocument());
 
@@ -464,7 +484,7 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Configurações$/i }));
+    fireEvent.click(getNavButton(/^Configurações$/i));
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/configuracoes?secao=profile&origem=pessoal"));
   });
