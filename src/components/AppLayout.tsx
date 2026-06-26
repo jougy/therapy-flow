@@ -12,9 +12,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import ProfileAccountButton from "@/components/ProfileAccountButton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 
@@ -65,38 +66,30 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         </button>
 
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="flex items-center gap-3 rounded-md px-2 py-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          <PersonalNotificationsButton />
+          <ProfileAccountButton
+            displayName={displayName}
+            subtitle={clinicBrandName}
+            avatarUrl={profile?.avatar_url}
+            initials={initials}
             onClick={() => navigate(
               isPersonalOriginSettings
                 ? "/configuracoes?secao=profile&origem=pessoal"
                 : `${clinicHomePath}/configuracoes?secao=profile`
             )}
-            aria-label="Abrir configurações pessoais"
-          >
-            <div className="hidden sm:flex flex-col items-end">
-              <span className="text-sm font-medium leading-none">{displayName}</span>
-              <span className="text-xs text-muted-foreground leading-tight mt-0.5">
-                {clinicBrandName}
-              </span>
-            </div>
-            <Avatar className="h-8 w-8">
-              {profile?.avatar_url ? <AvatarImage src={profile.avatar_url} alt={displayName} /> : null}
-              <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-          </button>
+          />
           {!isPersonalOriginSettings && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              className="group/clinic-settings h-8 w-8 justify-center gap-0 overflow-hidden px-0 text-muted-foreground transition-[width,gap,padding,box-shadow,border-color,background-color,color,transform] duration-700 ease-in-out hover:text-foreground sm:hover:w-[144px] sm:hover:justify-start sm:hover:gap-2 sm:hover:px-3 sm:hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.08),0_8px_18px_hsl(var(--primary)/0.08)] sm:focus-visible:w-[144px] sm:focus-visible:justify-start sm:focus-visible:gap-2 sm:focus-visible:px-3"
               onClick={() => navigate(`${clinicHomePath}/configuracoes?secao=clinic`)}
-              aria-label="Configurações da clínica"
+              aria-label="Editar Clínica"
             >
-              <Settings className="h-4 w-4" />
+              <Settings className="h-4 w-4 shrink-0 transition-transform duration-700 ease-in-out group-hover/clinic-settings:rotate-180 group-focus-visible/clinic-settings:rotate-180" />
+              <span className="hidden max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/clinic-settings:ml-2 group-hover/clinic-settings:max-w-[10rem] group-hover/clinic-settings:opacity-100 group-focus-visible/clinic-settings:ml-2 group-focus-visible/clinic-settings:max-w-[10rem] group-focus-visible/clinic-settings:opacity-100 sm:inline">
+                Editar Clínica
+              </span>
             </Button>
           )}
           {isPersonalOriginSettings ? (

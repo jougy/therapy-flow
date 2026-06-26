@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildClinicMemberCodeMap,
   buildVisibleTeamMembershipRows,
   countActiveConcurrentAccesses,
   formatLastSeenAt,
@@ -148,6 +149,36 @@ describe("sortMembershipsForDisplay", () => {
       "assistant",
       "intern",
     ]);
+  });
+});
+
+describe("buildClinicMemberCodeMap", () => {
+  it("keeps the account owner as 001 and numbers collaborators by membership creation order", () => {
+    const invitedLaterButPersonalCodeWouldBeOne = membership({
+      created_at: "2026-03-26T12:00:00.000Z",
+      id: "membership-fulano",
+      operational_role: "professional",
+      user_id: "fulano",
+    });
+    const firstCollaborator = membership({
+      created_at: "2026-03-24T12:00:00.000Z",
+      id: "membership-first",
+      operational_role: "professional",
+      user_id: "first",
+    });
+    const owner = membership({
+      account_role: "account_owner",
+      created_at: "2026-03-25T12:00:00.000Z",
+      id: "membership-owner",
+      operational_role: "owner",
+      user_id: "owner",
+    });
+
+    const codeMap = buildClinicMemberCodeMap([invitedLaterButPersonalCodeWouldBeOne, firstCollaborator, owner]);
+
+    expect(codeMap.get("membership-owner")).toBe("001");
+    expect(codeMap.get("membership-first")).toBe("002");
+    expect(codeMap.get("membership-fulano")).toBe("003");
   });
 });
 

@@ -311,6 +311,17 @@ const CadastroCompleto = () => {
         }
       }
 
+      await supabase.rpc("create_current_user_notification", {
+        _action_label: "Abrir paciente",
+        _action_url: clinic?.route_key ? `/clinica/${clinic.route_key}/pacientes/${payload.id}` : `/pacientes/${payload.id}`,
+        _body: `O cadastro de ${payload.name || "paciente"} foi salvo corretamente.`,
+        _category: "patient",
+        _clinic_id: payload.clinic_id,
+        _event_type: "patient_registration_saved",
+        _payload: { patient_id: payload.id },
+        _title: "Cadastro salvo",
+      });
+
       toast({ title: "Cadastro atualizado", description: "Informações salvas com sucesso." });
       navigate(`/pacientes/${id}`);
     } catch (error) {

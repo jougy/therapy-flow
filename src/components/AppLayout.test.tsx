@@ -95,7 +95,7 @@ describe("AppLayout", () => {
     fireEvent.click(screen.getByRole("button", { name: /abrir configurações pessoais/i }));
     expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1/configuracoes?secao=profile");
 
-    fireEvent.click(screen.getByRole("button", { name: /configurações da clínica/i }));
+    fireEvent.click(screen.getByRole("button", { name: /editar clínica/i }));
     expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1/configuracoes?secao=clinic");
   });
 
@@ -111,7 +111,7 @@ describe("AppLayout", () => {
     );
 
     expect(screen.getByRole("button", { name: /abrir configurações pessoais/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /configurações da clínica/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /editar clínica/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /voltar ao painel pessoal/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /ir para o espaço pessoal/i }));

@@ -179,7 +179,7 @@ const CadastroContaAlfa = () => {
         email: nextEmail,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth`,
+          emailRedirectTo: `${window.location.origin}/auth/confirmado`,
           data: {
             birth_date: birthDate,
             cnpj: cleanCnpj || null,

@@ -1,0 +1,10 @@
+Pluri-Health
+
+Confirme sua conta alfa
+
+Recebemos a criação de uma conta para organizar sua rotina clínica no Pluri-Health. Confirme seu e-mail para liberar o acesso com segurança.
+
+Confirmar minha conta:
+{{ .ConfirmationURL }}
+
+Este link é pessoal e expira por segurança. Se você não criou uma conta no Pluri-Health, ignore esta mensagem.

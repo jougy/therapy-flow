@@ -594,7 +594,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setPlatformMfaVerified(data.currentLevel === "aal2");
   };
 
-  const can = (capability: AccessCapability) => capabilities[capability];
+  const can = useCallback((capability: AccessCapability) => capabilities[capability], [capabilities]);
 
   const leaveClinic = async () => {
     await endCurrentSecuritySession({ session });

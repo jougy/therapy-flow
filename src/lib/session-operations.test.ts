@@ -91,8 +91,28 @@ describe("session operations", () => {
     expect(getArrivalDelayMinutes({ patient_arrived_at: "2026-05-18T13:48:00.000Z", scheduled_start_at: "2026-05-18T14:00:00.000Z" })).toBe(-12);
     expect(summary.absences).toBe(1);
     expect(summary.averageDelayMinutes).toBe(12);
-    expect(summary.openBalanceCents).toBe(6000);
-    expect(summary.creditCents).toBe(5000);
+    expect(summary.grossOpenBalanceCents).toBe(6000);
+    expect(summary.grossCreditCents).toBe(5000);
+    expect(summary.openBalanceCents).toBe(1000);
+    expect(summary.creditCents).toBe(0);
     expect(summary.originalChargedCents).toBe(25000);
+  });
+
+  it("nets patient credit against open balances in the operational summary", () => {
+    const summary = buildPatientOperationalSummary([
+      {
+        amount_charged_cents: 14000,
+        amount_paid_cents: 311000,
+      },
+      {
+        amount_charged_cents: 5000,
+        amount_paid_cents: 0,
+      },
+    ]);
+
+    expect(summary.grossCreditCents).toBe(297000);
+    expect(summary.grossOpenBalanceCents).toBe(5000);
+    expect(summary.creditCents).toBe(292000);
+    expect(summary.openBalanceCents).toBe(0);
   });
 });

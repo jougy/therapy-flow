@@ -230,8 +230,10 @@ export const buildPatientOperationalSummary = (sessions: OperationalSession[]) =
     .map(getArrivalDelayMinutes)
     .filter((delay): delay is number => delay !== null && delay > 0);
   const totalDelay = delayedSessions.reduce((sum, delay) => sum + delay, 0);
-  const openBalanceCents = sessions.reduce((sum, session) => sum + getSessionBalanceCents(session), 0);
-  const creditCents = sessions.reduce((sum, session) => sum + getSessionCreditCents(session), 0);
+  const grossOpenBalanceCents = sessions.reduce((sum, session) => sum + getSessionBalanceCents(session), 0);
+  const grossCreditCents = sessions.reduce((sum, session) => sum + getSessionCreditCents(session), 0);
+  const openBalanceCents = Math.max(0, grossOpenBalanceCents - grossCreditCents);
+  const creditCents = Math.max(0, grossCreditCents - grossOpenBalanceCents);
   const chargedCents = sessions.reduce((sum, session) => sum + (session.amount_charged_cents ?? 0), 0);
   const originalChargedCents = sessions.reduce((sum, session) => sum + getSessionOriginalAmountCents(session), 0);
   const paidCents = sessions.reduce((sum, session) => sum + (session.amount_paid_cents ?? 0), 0);
@@ -241,6 +243,8 @@ export const buildPatientOperationalSummary = (sessions: OperationalSession[]) =
     averageDelayMinutes: delayedSessions.length ? Math.round(totalDelay / delayedSessions.length) : 0,
     chargedCents,
     creditCents,
+    grossCreditCents,
+    grossOpenBalanceCents,
     openBalanceCents,
     originalChargedCents,
     paidCents,

@@ -6,6 +6,23 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 
 const navigateMock = vi.fn();
+const buildSupabaseQueryMock = () => ({
+  delete: vi.fn(() => ({
+    eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+    in: vi.fn().mockResolvedValue({ data: null, error: null }),
+  })),
+  eq: vi.fn().mockReturnThis(),
+  in: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockReturnThis(),
+  order: vi.fn().mockReturnThis(),
+  select: vi.fn().mockReturnThis(),
+  update: vi.fn(() => ({
+    eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+    in: vi.fn(() => ({
+      eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+    })),
+  })),
+});
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
@@ -25,11 +42,14 @@ vi.mock("@/hooks/use-toast", () => ({
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    from: vi.fn(),
+    from: vi.fn(() => buildSupabaseQueryMock()),
+    rpc: vi.fn(),
   },
 }));
 
 describe("SelecionarClinica", () => {
+  const getNavButton = (name: RegExp) => screen.getAllByRole("button", { name })[0]!;
+
   beforeEach(() => {
     global.ResizeObserver = class ResizeObserver {
       disconnect = vi.fn();
@@ -38,6 +58,9 @@ describe("SelecionarClinica", () => {
     };
     navigateMock.mockReset();
     vi.mocked(supabase.from).mockReset();
+    vi.mocked(supabase.from).mockImplementation(() => buildSupabaseQueryMock() as never);
+    vi.mocked(supabase.rpc).mockReset();
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null });
   });
 
   const buildAuthMock = (overrides = {}) => ({
@@ -134,10 +157,10 @@ describe("SelecionarClinica", () => {
     );
 
     expect(screen.getByText("Espaço pessoal")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /clínicas/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /minhas estatísticas/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /novidades/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Configurações$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^clínicas$/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^minhas estatísticas$/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^novidades$/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^Configurações$/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Owner Example").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /ver acessos online/i })).toHaveTextContent("3/4");
 
@@ -164,6 +187,47 @@ describe("SelecionarClinica", () => {
     expect(screen.getByText("Acessos online")).toBeInTheDocument();
     expect(screen.getByText(/3 de 4 em uso/i)).toBeInTheDocument();
     expect(screen.getAllByText("Owner Example")).toHaveLength(2);
+  });
+
+  it("asks before leaving a clinic from the personal space", async () => {
+    const refreshAuthState = vi.fn(async () => {});
+    vi.mocked(useAuth).mockReturnValue(
+      buildAuthMock({
+        accessibleClinics: [
+          {
+            ...buildAuthMock().accessibleClinics[0],
+            membership: {
+              ...buildAuthMock().accessibleClinics[0].membership,
+              account_role: null,
+              id: "membership-collab",
+              operational_role: "professional",
+              user_id: "user-1",
+            },
+          },
+        ],
+        refreshAuthState,
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /sair da clínica clinica aurora/i }));
+
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByText(/seu espaço pessoal e seus dados próprios continuam/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^sair da clínica$/i }));
+
+    await waitFor(() =>
+      expect(supabase.rpc).toHaveBeenCalledWith("leave_current_user_clinic", {
+        _clinic_id: "clinic-1",
+      })
+    );
+    expect(refreshAuthState).toHaveBeenCalled();
   });
 
   it("shows attendance metrics in personal statistics", async () => {
@@ -231,7 +295,7 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /minhas estatísticas/i }));
+    fireEvent.click(getNavButton(/^minhas estatísticas$/i));
 
     await waitFor(() => expect(screen.getByText("Quantidade de atendimentos")).toBeInTheDocument());
 
@@ -342,12 +406,73 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /novidades/i }));
+    fireEvent.click(getNavButton(/^novidades$/i));
 
     await waitFor(() => expect(screen.getByText("Painel de novidades")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /reparado/i }));
     expect(screen.getByText("Correção de acesso")).toBeInTheDocument();
+  });
+
+  it("renders personal notifications with action history", async () => {
+    vi.mocked(supabase.rpc).mockImplementation((fn: string) => {
+      if (fn === "list_current_user_notifications") {
+        return Promise.resolve({
+          data: [
+            {
+              action_label: null,
+              action_url: null,
+              actor_name: "Testesessess",
+              actor_user_id: "owner-1",
+              body: "Testesessess removeu seu acesso da clínica Clinica Aurora.",
+              category: "security",
+              clinic_id: "clinic-1",
+              clinic_name: "Clinica Aurora",
+              created_at: "2026-06-18T12:30:00.000Z",
+              event_type: "clinic_access_removed",
+              notification_id: "notification-1",
+              payload: { initiated_by: "clinic" },
+              read_at: null,
+              title: "Acesso removido",
+            },
+            {
+              action_label: null,
+              action_url: null,
+              actor_name: "Testesessess",
+              actor_user_id: "owner-1",
+              body: "Testesessess suspendeu seu acesso da clínica Clinica Aurora.",
+              category: "security",
+              clinic_id: "clinic-1",
+              clinic_name: "Clinica Aurora",
+              created_at: "2026-06-18T12:20:00.000Z",
+              event_type: "subaccount_status_changed",
+              notification_id: "notification-2",
+              payload: { to: "suspended" },
+              read_at: null,
+              title: "Status de acesso alterado",
+            },
+          ],
+          error: null,
+        });
+      }
+
+      return Promise.resolve({ data: [], error: null });
+    });
+    vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Abrir notificações$/i }));
+
+    await waitFor(() => expect(screen.getByText("Acesso removido")).toBeInTheDocument());
+    expect(screen.getByText("Status de acesso alterado")).toBeInTheDocument();
+    expect(screen.getByText(/Testesessess removeu seu acesso da clínica Clinica Aurora/i)).toBeInTheDocument();
+    expect(screen.getByText(/Testesessess suspendeu seu acesso da clínica Clinica Aurora/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/\[18\/06\/2026,/).length).toBeGreaterThan(0);
   });
 
   it("opens personal settings from the lateral menu", async () => {
@@ -359,7 +484,7 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Configurações$/i }));
+    fireEvent.click(getNavButton(/^Configurações$/i));
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/configuracoes?secao=profile&origem=pessoal"));
   });
