@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCpf, formatPhone } from "@/lib/profile-settings";
+import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { toast } from "@/hooks/use-toast";
 
 const onlyDigits = (value: string) => value.replace(/\D/g, "");
@@ -179,7 +180,7 @@ const CadastroContaAlfa = () => {
         email: nextEmail,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/confirmado`,
+          emailRedirectTo: buildPublicAppUrl("/auth/confirmado"),
           data: {
             birth_date: birthDate,
             cnpj: cleanCnpj || null,

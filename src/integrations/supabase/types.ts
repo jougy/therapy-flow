@@ -694,6 +694,7 @@ export type Database = {
           registration_complete: boolean
           recurring_time: string
           recurring_weekdays: number[]
+          responsible_cpf: string | null
           rg: string | null
           state: string | null
           status: string
@@ -701,6 +702,7 @@ export type Database = {
           surgeries: string | null
           updated_at: string
           user_id: string
+          uses_responsible_cpf: boolean
         }
         Insert: {
           address_complement?: string | null
@@ -739,6 +741,7 @@ export type Database = {
           registration_complete?: boolean
           recurring_time?: string
           recurring_weekdays?: number[]
+          responsible_cpf?: string | null
           rg?: string | null
           state?: string | null
           status?: string
@@ -746,6 +749,7 @@ export type Database = {
           surgeries?: string | null
           updated_at?: string
           user_id: string
+          uses_responsible_cpf?: boolean
         }
         Update: {
           address_complement?: string | null
@@ -784,6 +788,7 @@ export type Database = {
           registration_complete?: boolean
           recurring_time?: string
           recurring_weekdays?: number[]
+          responsible_cpf?: string | null
           rg?: string | null
           state?: string | null
           status?: string
@@ -791,6 +796,7 @@ export type Database = {
           surgeries?: string | null
           updated_at?: string
           user_id?: string
+          uses_responsible_cpf?: boolean
         }
         Relationships: [
           {
@@ -1573,6 +1579,7 @@ export type Database = {
           _name: string
           _name_key: string
           _phone: string
+          _uses_responsible_cpf?: boolean
         }
         Returns: Json
       }

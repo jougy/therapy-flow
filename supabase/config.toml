@@ -1,8 +1,8 @@
 project_id = "ggytwbnintrftgzvjczs"
 
 [auth]
-site_url = "http://localhost:8080"
-additional_redirect_urls = ["http://localhost:8080", "http://localhost:8080/auth/confirmado", "http://localhost:8080/auth/redefinir-senha", "http://127.0.0.1:8080", "http://127.0.0.1:8080/auth/confirmado", "http://127.0.0.1:8080/auth/redefinir-senha"]
+site_url = "https://fisioterapia.prontohealth.workers.dev"
+additional_redirect_urls = ["https://fisioterapia.prontohealth.workers.dev", "https://fisioterapia.prontohealth.workers.dev/auth/confirmado", "https://fisioterapia.prontohealth.workers.dev/auth/redefinir-senha", "https://fisioterapia.prontohealth.workers.dev/convite/clinica/**", "http://localhost:8080", "http://localhost:8080/auth/confirmado", "http://localhost:8080/auth/redefinir-senha", "http://localhost:8080/convite/clinica/**", "http://127.0.0.1:8080", "http://127.0.0.1:8080/auth/confirmado", "http://127.0.0.1:8080/auth/redefinir-senha", "http://127.0.0.1:8080/convite/clinica/**"]
 
 [auth.email]
 enable_confirmations = false

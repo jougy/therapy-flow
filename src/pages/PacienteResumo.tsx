@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Calendar, CheckCircle2, ChevronLeft, ChevronRight, ClipboardEdit, FileText, HeartPulse, Loader2, MapPin, Phone, Share2, User } from "lucide-react";
+import { ArrowLeft, BarChart3, Calendar, CheckCircle2, ChevronLeft, ChevronRight, ClipboardEdit, FileText, HeartPulse, Loader2, MapPin, Phone, Share2, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -368,6 +368,10 @@ const PacienteResumo = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/dashboard`)}>
+            <BarChart3 className="mr-2 h-4 w-4" />
+            Dashboard
+          </Button>
           <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/cadastro`)}>
             <ClipboardEdit className="mr-2 h-4 w-4" />
             Editar cadastro

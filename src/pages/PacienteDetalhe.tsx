@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } fro
 import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
-  AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock,
+  AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
   Pencil, Trash2, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { GroupColorPaletteField, type ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import { SessionShareDialog } from "@/components/SessionShareDialog";
 import AgendaWidget from "@/components/AgendaWidget";
+import { PatientAnamnesisDashboardContent } from "@/pages/PacienteAnamnesisDashboard";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -35,7 +36,12 @@ import {
   notifyAgendaEventsUpdated,
   type AgendaEventStatus,
 } from "@/lib/agenda-events";
-import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
+import { isAnamnesisTemplateSchema, type AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
+import {
+  buildPatientAnamnesisDashboard,
+  type PatientAnamnesisChartType,
+  type PatientAnamnesisDashboardTemplate,
+} from "@/lib/patient-anamnesis-dashboard";
 import type { PatientGroupStatus } from "@/lib/patient-groups";
 import { getSessionPersonLabel } from "@/lib/session-people";
 import { getSessionPreviewContent, getSessionPreviewIndicators } from "@/lib/session-preview";
@@ -88,6 +94,7 @@ import {
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientGroup = Database["public"]["Tables"]["patient_groups"]["Row"];
 type PatientGroupTemplate = Database["public"]["Tables"]["patient_group_templates"]["Row"];
+type AnamnesisTemplateRow = Pick<Database["public"]["Tables"]["anamnesis_form_templates"]["Row"], "id" | "name" | "schema">;
 type ClinicColorSlotRow = Database["public"]["Tables"]["clinic_group_color_slots"]["Row"];
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
 type AgendaEvent = Database["public"]["Tables"]["agenda_events"]["Row"];
@@ -102,6 +109,7 @@ type PatientStatus = EditablePatientStatus;
 type PatientStatusSelectValue = PatientStatus | "delete";
 type AgendaStatusAction = AgendaEventStatus | "delete";
 type PatientGroupKind = "custom" | "default" | "cancelados";
+type PatientRecordsView = "dashboard" | "list";
 
 const dashboardColors = {
   amber: "#f59e0b",
@@ -613,6 +621,7 @@ const PacienteDetalhe = () => {
   const [shareCollaborators, setShareCollaborators] = useState<SessionShareCollaborator[]>([]);
   const [sessionShareSummaries, setSessionShareSummaries] = useState<Record<string, SessionShareSummary>>({});
   const [baseSchema, setBaseSchema] = useState<AnamnesisTemplateSchema>([]);
+  const [anamnesisTemplates, setAnamnesisTemplates] = useState<PatientAnamnesisDashboardTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   // Group dialog state
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
@@ -653,6 +662,9 @@ const PacienteDetalhe = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sessionStatusFilter, setSessionStatusFilter] = useState("all");
   const [groupStatusFilter, setGroupStatusFilter] = useState("all");
+  const [recordsView, setRecordsView] = useState<PatientRecordsView>("list");
+  const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState("all");
+  const [dashboardChartPreferences, setDashboardChartPreferences] = useState<Record<string, PatientAnamnesisChartType>>({});
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -678,7 +690,7 @@ const PacienteDetalhe = () => {
   const fetchData = useCallback(async () => {
     if (!id) return;
 
-    const [pRes, gRes, sRes, clinicRes, profilesRes, colorSlotsRes, agendaRes] = await Promise.all([
+    const [pRes, gRes, sRes, clinicRes, profilesRes, colorSlotsRes, agendaRes, anamnesisTemplatesRes] = await Promise.all([
       supabase.from("patients").select("*").eq("id", id).single(),
       supabase.from("patient_groups").select("*").eq("patient_id", id),
       supabase.from("sessions").select("*").eq("patient_id", id).order("session_date", { ascending: false }),
@@ -692,6 +704,9 @@ const PacienteDetalhe = () => {
         .select("*")
         .eq("patient_id", id)
         .order("scheduled_for", { ascending: true }),
+      clinicId
+        ? supabase.from("anamnesis_form_templates").select("id, name, schema").eq("clinic_id", clinicId).eq("is_active", true)
+        : Promise.resolve({ data: [] }),
     ]);
     const templatesRes = clinicId
       ? await supabase
@@ -762,7 +777,16 @@ const PacienteDetalhe = () => {
     setSessionShareSummaries(shareSummaryMap);
     setShareCollaborators(collaborators);
     setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
-    setBaseSchema(Array.isArray(clinicRes.data?.anamnesis_base_schema) ? (clinicRes.data.anamnesis_base_schema as AnamnesisTemplateSchema) : []);
+    setBaseSchema(isAnamnesisTemplateSchema(clinicRes.data?.anamnesis_base_schema) ? clinicRes.data.anamnesis_base_schema : []);
+    setAnamnesisTemplates(
+      ((anamnesisTemplatesRes.data ?? []) as AnamnesisTemplateRow[])
+        .filter((template) => isAnamnesisTemplateSchema(template.schema))
+        .map((template) => ({
+          id: template.id,
+          name: template.name,
+          schema: template.schema,
+        }))
+    );
     setLoading(false);
   }, [clinicId, id, operationalRole, user?.id]);
 
@@ -1219,6 +1243,36 @@ const PacienteDetalhe = () => {
       }),
     [getSessionSearchText, groupStatusFilter, groups, searchTerm, sessionStatusFilter, sessions]
   );
+
+  const dashboardStorageKey = clinicId && id ? `therapy-flow:patient-anamnesis-dashboard:v1:${clinicId}:${id}` : null;
+
+  useEffect(() => {
+    if (!dashboardStorageKey) {
+      setDashboardChartPreferences({});
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(dashboardStorageKey) ?? "{}");
+      setDashboardChartPreferences(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, PatientAnamnesisChartType> : {});
+    } catch {
+      setDashboardChartPreferences({});
+    }
+  }, [dashboardStorageKey]);
+
+  const anamnesisDashboard = useMemo(
+    () => buildPatientAnamnesisDashboard({ baseSchema, sessions, templates: anamnesisTemplates }),
+    [anamnesisTemplates, baseSchema, sessions]
+  );
+
+  const handleDashboardChartChange = (metricKey: string, chart: PatientAnamnesisChartType) => {
+    const next = { ...dashboardChartPreferences, [metricKey]: chart };
+    setDashboardChartPreferences(next);
+
+    if (dashboardStorageKey) {
+      window.localStorage.setItem(dashboardStorageKey, JSON.stringify(next));
+    }
+  };
 
   const normalizedGroupName = normalizeGroupName(groupName);
   const existingPatientGroup = normalizedGroupName
@@ -1940,16 +1994,50 @@ const PacienteDetalhe = () => {
 
       {/* Group management toolbar */}
       <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h2 className="text-lg font-semibold">Grupos & Atendimentos</h2>
-          {!isIntern && (
-            <Button variant="outline" size="sm" onClick={openNewGroup}>
-              <FolderPlus className="h-4 w-4 mr-2" />
-              Novo Grupo
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="grid w-full grid-cols-2 rounded-xl border bg-background p-1 shadow-sm sm:w-auto">
+            <Button
+              type="button"
+              size="sm"
+              variant={recordsView === "list" ? "default" : "ghost"}
+              className="gap-2 rounded-lg"
+              onClick={() => setRecordsView("list")}
+            >
+              <FolderPlus className="h-4 w-4" />
+              Grupos
             </Button>
-          )}
+            <Button
+              type="button"
+              size="sm"
+              variant={recordsView === "dashboard" ? "default" : "ghost"}
+              className="gap-2 rounded-lg"
+              onClick={() => setRecordsView("dashboard")}
+            >
+              <BarChart3 className="h-4 w-4" />
+              Dashboard
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+            <h2 className="text-lg font-semibold leading-tight">{recordsView === "dashboard" ? "Dashboard de Anamnese" : "Grupos & Atendimentos"}</h2>
+            {!isIntern && recordsView === "list" && (
+              <Button variant="outline" size="sm" onClick={openNewGroup}>
+                <FolderPlus className="h-4 w-4 mr-2" />
+                Novo Grupo
+              </Button>
+            )}
+          </div>
         </div>
 
+        {recordsView === "dashboard" ? (
+          <PatientAnamnesisDashboardContent
+            chartPreferences={dashboardChartPreferences}
+            dashboard={anamnesisDashboard}
+            onChartChange={handleDashboardChartChange}
+            onSelectedTemplateIdChange={setDashboardTemplateFilter}
+            selectedTemplateId={dashboardTemplateFilter}
+          />
+        ) : (
+          <>
         <Card>
           <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr),180px,180px]">
             <div className="space-y-2">
@@ -2046,8 +2134,6 @@ const PacienteDetalhe = () => {
             </CardContent>
           </Card>
         )}
-      </div>
-
       {/* Groups with sessions */}
       {sessionView.groups.map((groupView) => (
         <Card key={groupView.group.id}>
@@ -2191,6 +2277,9 @@ const PacienteDetalhe = () => {
           <p className="text-muted-foreground">Nenhum atendimento registrado.</p>
         </Card>
       )}
+          </>
+        )}
+      </div>
 
       {/* Group create/edit dialog */}
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
@@ -2654,6 +2743,16 @@ const PacienteDetalhe = () => {
               >
                 <FileText className="h-4 w-4 mr-2" />
                 Resumo Clínico
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPatientInfoDialogOpen(false);
+                  navigate(`/pacientes/${id}/dashboard`);
+                }}
+              >
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Dashboard
               </Button>
               <Button
                 variant="outline"

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { buildPublicAppUrl } from "@/lib/public-app-url";
 import type { Session } from "@supabase/supabase-js";
 
 type InviteSummary = {
@@ -131,7 +132,7 @@ const ConviteClinica = () => {
       password,
       options: {
         data: { full_name: fullName },
-        emailRedirectTo: window.location.href,
+        emailRedirectTo: buildPublicAppUrl(`/convite/clinica/${token}`),
       },
     });
 

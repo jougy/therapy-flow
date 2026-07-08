@@ -38,12 +38,23 @@ const basePatient = (): PatientRow => ({
   emergency_contact: null,
   gender: null,
   id: "patient-1",
+  is_recurring: false,
   name: "Paciente Base",
   neighborhood: null,
+  origin_insurance_member_id: null,
+  origin_insurance_plan: null,
+  origin_insurance_provider: null,
+  origin_other_description: null,
+  origin_other_name: null,
+  origin_referrer_name: null,
+  origin_type: "outros",
   phone: "11999998888",
   profession: null,
   pronoun: null,
   registration_complete: false,
+  recurring_time: "09:00",
+  recurring_weekdays: [],
+  responsible_cpf: null,
   rg: null,
   state: null,
   status: "ativo",
@@ -51,6 +62,7 @@ const basePatient = (): PatientRow => ({
   surgeries: null,
   updated_at: "2026-04-10T09:00:00.000Z",
   user_id: "user-1",
+  uses_responsible_cpf: false,
 });
 
 describe("patient registration helpers", () => {
@@ -88,7 +100,7 @@ describe("patient registration helpers", () => {
     expect(normalizePatientNameKey("Ana\u202E Maria 😀 da Silva")).toBe("anamariadasilva");
   });
 
-  it("requires every pre-registration field and normalizes hostile values", () => {
+  it("requires identity fields and treats contact fields as optional", () => {
     const invalid = validatePatientPreRegistration({
       cpf: "111.111.111-11",
       dateOfBirth: "2100-01-01",
@@ -106,7 +118,27 @@ describe("patient registration helpers", () => {
       phone: expect.any(String),
     });
 
-    const valid = validatePatientPreRegistration({
+    const validWithoutContact = validatePatientPreRegistration({
+      cpf: "529.982.247-25<script>",
+      dateOfBirth: "2000-04-20",
+      email: "",
+      name: "  Ana\u0000 Maria 😀  ",
+      phone: "",
+    });
+
+    expect(validWithoutContact).toMatchObject({
+      isValid: true,
+      values: {
+        cpf: "52998224725",
+        dateOfBirth: "2000-04-20",
+        email: "",
+        name: "Ana Maria",
+        phone: "",
+        usesResponsibleCpf: false,
+      },
+    });
+
+    const validWithContact = validatePatientPreRegistration({
       cpf: "529.982.247-25<script>",
       dateOfBirth: "2000-04-20",
       email: " PACIENTE@EXAMPLE.COM\u202E ",
@@ -114,14 +146,42 @@ describe("patient registration helpers", () => {
       phone: "(11) 98765-4321",
     });
 
+    expect(validWithContact).toMatchObject({
+      isValid: true,
+      values: {
+        email: "paciente@example.com",
+        phone: "11987654321",
+      },
+    });
+  });
+
+  it("accepts a responsible CPF flag while keeping CPF validation strict", () => {
+    const invalid = validatePatientPreRegistration({
+      cpf: "123",
+      dateOfBirth: "2020-04-20",
+      email: "",
+      name: "Crianca Teste",
+      phone: "",
+      usesResponsibleCpf: true,
+    });
+
+    expect(invalid.isValid).toBe(false);
+    expect(invalid.errors.cpf).toBe("Informe um CPF válido do responsável.");
+
+    const valid = validatePatientPreRegistration({
+      cpf: "529.982.247-25",
+      dateOfBirth: "2020-04-20",
+      email: "",
+      name: "Crianca Teste",
+      phone: "",
+      usesResponsibleCpf: true,
+    });
+
     expect(valid).toMatchObject({
       isValid: true,
       values: {
         cpf: "52998224725",
-        dateOfBirth: "2000-04-20",
-        email: "paciente@example.com",
-        name: "Ana Maria",
-        phone: "11987654321",
+        usesResponsibleCpf: true,
       },
     });
   });
