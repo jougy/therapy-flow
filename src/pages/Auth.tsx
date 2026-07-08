@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { formatCpf } from "@/lib/profile-settings";
+import { buildPublicAppUrl } from "@/lib/public-app-url";
 
 const normalizeCpf = (value: string) => value.replace(/\D/g, "").slice(0, 11);
 
@@ -62,7 +63,7 @@ const Auth = () => {
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, {
-      redirectTo: `${window.location.origin}/auth/redefinir-senha`,
+      redirectTo: buildPublicAppUrl("/auth/redefinir-senha"),
     });
 
     if (error) {

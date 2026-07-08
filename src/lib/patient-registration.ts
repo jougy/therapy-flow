@@ -86,6 +86,7 @@ export interface PatientPreRegistrationValues {
   email: string;
   name: string;
   phone: string;
+  usesResponsibleCpf?: boolean;
 }
 
 export const validatePatientPreRegistration = (values: PatientPreRegistrationValues) => {
@@ -95,6 +96,7 @@ export const validatePatientPreRegistration = (values: PatientPreRegistrationVal
     email: sanitizeSingleLineInput(values.email, INPUT_LIMITS.email).trim().toLowerCase(),
     name: sanitizeSingleLineInput(values.name, INPUT_LIMITS.name).trim(),
     phone: normalizePatientPhoneDigits(values.phone),
+    usesResponsibleCpf: Boolean(values.usesResponsibleCpf),
   };
   const errors: Partial<Record<keyof PatientPreRegistrationValues, string>> = {};
 
@@ -107,14 +109,16 @@ export const validatePatientPreRegistration = (values: PatientPreRegistrationVal
   }
 
   if (!isValidCpfDigits(normalized.cpf)) {
-    errors.cpf = "Informe um CPF válido com 11 dígitos.";
+    errors.cpf = normalized.usesResponsibleCpf
+      ? "Informe um CPF válido do responsável."
+      : "Informe um CPF válido do paciente.";
   }
 
-  if (!/^\d{10,11}$/.test(normalized.phone)) {
+  if (normalized.phone.length > 0 && !/^\d{10,11}$/.test(normalized.phone)) {
     errors.phone = "Informe um telefone com DDD.";
   }
 
-  if (!isValidPatientEmail(normalized.email)) {
+  if (normalized.email.length > 0 && !isValidPatientEmail(normalized.email)) {
     errors.email = "Informe um e-mail válido.";
   }
 

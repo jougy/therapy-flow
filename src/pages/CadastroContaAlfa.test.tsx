@@ -76,7 +76,7 @@ describe("CadastroContaAlfa", () => {
         email: "alpha@example.com",
         password: "teste1234",
         options: {
-          emailRedirectTo: "http://localhost:3000/auth/confirmado",
+          emailRedirectTo: "https://fisioterapia.prontohealth.workers.dev/auth/confirmado",
           data: {
             birth_date: "1990-01-20",
             cnpj: "04252011000110",

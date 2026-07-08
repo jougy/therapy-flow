@@ -23,6 +23,7 @@ const FormularioEditor = lazy(() => import("./pages/FormularioEditor"));
 const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const NovoPaciente = lazy(() => import("./pages/NovoPaciente"));
+const PacienteAnamnesisDashboard = lazy(() => import("./pages/PacienteAnamnesisDashboard"));
 const PacienteDetalhe = lazy(() => import("./pages/PacienteDetalhe"));
 const PacienteResumo = lazy(() => import("./pages/PacienteResumo"));
 const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
@@ -176,6 +177,7 @@ const App = () => (
                               <Route path="configuracoes/formularios/:templateId" element={<FormularioEditor />} />
                               <Route path="pacientes/novo" element={<NovoPaciente />} />
                               <Route path="pacientes/:id" element={<PacienteDetalhe />} />
+                              <Route path="pacientes/:id/dashboard" element={<PacienteAnamnesisDashboard />} />
                               <Route path="pacientes/:id/resumo" element={<PacienteResumo />} />
                               <Route path="pacientes/:id/cadastro" element={<CadastroCompleto />} />
                               <Route path="pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />

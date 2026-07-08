@@ -84,6 +84,7 @@ import {
   hasDefaultCapability,
   type AccessCapability,
 } from "@/lib/rbac";
+import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { cn } from "@/lib/utils";
 import {
   buildClinicMemberCodeMap,
@@ -2429,7 +2430,7 @@ const Configuracoes = () => {
     const inviteEmail = typeof data === "object" && data && "email" in data ? String(data.email) : newSubaccountEmail;
     const inviteToken = typeof data === "object" && data && "token" in data ? String(data.token) : "";
     const existingUser = typeof data === "object" && data && "existing_user" in data ? Boolean(data.existing_user) : false;
-    const inviteUrl = invitePath ? `${window.location.origin}${invitePath}` : "";
+    const inviteUrl = invitePath ? buildPublicAppUrl(invitePath) : "";
     setNewSubaccountInviteEmail(inviteEmail);
 
     if (existingUser) {
