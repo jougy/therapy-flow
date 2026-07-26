@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import termsMarkdown from "../../core/Pluri-Health/60 - Juridico e Compliance/Termos de Uso e Consentimento - Owner (PT-BR).md?raw";
+import termsMarkdown from "@/assets/terms-of-service.md?raw";
 import { useAuth } from "@/hooks/useAuth";
 
 interface TermsOfServiceModalProps {

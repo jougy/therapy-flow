@@ -13,6 +13,13 @@ describe("AppErrorBoundary", () => {
     const consoleGroupEndSpy = vi.spyOn(console, "groupEnd").mockImplementation(() => undefined);
     const consoleInfoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
+    const onError = (e: ErrorEvent) => {
+      if (e?.error?.message?.includes("render crash") || e?.message?.includes("render crash")) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("error", onError);
+
     render(
       <AppErrorBoundary>
         <ThrowingChild />
@@ -28,6 +35,7 @@ describe("AppErrorBoundary", () => {
     expect(screen.getByText(/Error: render crash/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copiar/i })).toBeInTheDocument();
 
+    window.removeEventListener("error", onError);
     consoleErrorSpy.mockRestore();
     consoleGroupSpy.mockRestore();
     consoleGroupEndSpy.mockRestore();
