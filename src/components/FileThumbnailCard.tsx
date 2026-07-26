@@ -91,7 +91,7 @@ export function FileThumbnailCard({
           {/* Box da Miniatura Genérica */}
           <div className="relative flex w-full items-center justify-center bg-muted/40 p-10 transition-colors group-hover:bg-muted/60 min-h-[140px]">
             {/* Badges / Tags */}
-            <div className="absolute left-2 top-2 flex flex-col gap-1 items-start pointer-events-none">
+            <div className="absolute left-2 top-2 flex flex-col gap-1 items-start pointer-events-none z-10">
               {file.session?.group && (
                 <Badge variant="secondary" className="bg-background/80 backdrop-blur-sm text-[10px] shadow-sm font-semibold truncate max-w-[120px]">
                   {file.session.group.name}
@@ -101,6 +101,19 @@ export function FileThumbnailCard({
                 <Badge variant="outline" className="bg-background/80 backdrop-blur-sm text-[10px] shadow-sm uppercase">
                   {file.session.status.replace("_", " ")}
                 </Badge>
+              )}
+              {file.original_byte_size && file.stored_byte_size && file.stored_byte_size < file.original_byte_size ? (
+                <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-200 text-[10px]">
+                  {`${Math.round(((file.original_byte_size - file.stored_byte_size) / file.original_byte_size) * 100)}% menor`}
+                </Badge>
+              ) : null}
+              {file.compression_profile && (
+                <Badge variant="outline" className="bg-background/80 backdrop-blur-sm text-[10px] text-muted-foreground">
+                  {file.compression_profile}
+                </Badge>
+              )}
+              {file.compression_profile === "pdf-clinical-raster-v1" && (
+                <span className="text-[10px] text-amber-600 font-medium">Arquivo otimizado para armazenamento</span>
               )}
             </div>
 

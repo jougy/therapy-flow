@@ -56,7 +56,7 @@ describe("Auth", () => {
     expect(screen.getByText(/próxima etapa/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/e-mail/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/cpf ou cnpj/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/criar conta/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/criar conta/i)).toBeInTheDocument();
     expect(screen.queryByText(/cadastre-se/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/logins de teste locais/i)).not.toBeInTheDocument();
   });

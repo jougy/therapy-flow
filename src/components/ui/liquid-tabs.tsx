@@ -138,6 +138,8 @@ export function LiquidTabs({ tabs, activeTab, onChange, className, tabClassName 
           return (
             <button
               key={tab.id}
+              role="tab"
+              aria-selected={isActive}
               data-active={isActive}
               onClick={() => onChange(tab.id)}
               className={cn(

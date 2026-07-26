@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PatientFilesPanel } from "@/components/PatientFilesPanel";
+import { PatientFilesProvider } from "@/contexts/PatientFilesContext";
 import { createAppDiagnosticError } from "@/lib/app-diagnostics";
 
 const queueMocks = vi.hoisted(() => ({
@@ -56,6 +58,20 @@ vi.mock("@/integrations/supabase/client", () => {
 describe("PatientFilesPanel", () => {
   const validSessionId = "11111111-1111-4111-8111-111111111111";
 
+  const renderWithProvider = (
+    uiProps: React.ComponentProps<typeof PatientFilesPanel>,
+    clinicId = "clinic-1",
+    patientId = "patient-1"
+  ) => {
+    return render(
+      <MemoryRouter>
+        <PatientFilesProvider clinicId={clinicId} patientId={patientId}>
+          <PatientFilesPanel {...uiProps} />
+        </PatientFilesProvider>
+      </MemoryRouter>
+    );
+  };
+
   beforeEach(() => {
     supabaseMocks.files = [];
     supabaseMocks.functionsInvoke.mockReset();
@@ -71,7 +87,7 @@ describe("PatientFilesPanel", () => {
   });
 
   it("renders an empty state when the patient has no files", async () => {
-    render(<PatientFilesPanel clinicId="clinic-1" patientId="patient-1" sessionId={null} variant="patient" />);
+    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: null, variant: "patient" });
 
     expect(await screen.findByText("Nenhum arquivo registrado.")).toBeInTheDocument();
   });
@@ -112,7 +128,7 @@ describe("PatientFilesPanel", () => {
       },
     ];
 
-    render(<PatientFilesPanel clinicId="clinic-1" patientId="patient-1" sessionId={null} variant="patient" />);
+    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: null, variant: "patient" });
 
     expect(await screen.findByText("exame.png")).toBeInTheDocument();
     expect(screen.getByText("20% menor")).toBeInTheDocument();
@@ -155,14 +171,14 @@ describe("PatientFilesPanel", () => {
       },
     ];
 
-    render(<PatientFilesPanel clinicId="clinic-1" patientId="patient-1" sessionId={null} variant="patient" />);
+    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: null, variant: "patient" });
 
     expect(await screen.findByText("catalogo.pdf")).toBeInTheDocument();
     expect(screen.getByText(/Arquivo otimizado para armazenamento/)).toBeInTheDocument();
   });
 
   it("enqueues valid PDF uploads", async () => {
-    const { container } = render(<PatientFilesPanel clinicId="clinic-1" patientId="patient-1" sessionId={validSessionId} variant="session" />);
+    const { container } = renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: validSessionId, variant: "session" });
     await screen.findByText("Nenhum arquivo registrado.");
 
     const input = container.querySelector('input[accept="application/pdf"]') as HTMLInputElement;
@@ -181,7 +197,7 @@ describe("PatientFilesPanel", () => {
   });
 
   it("does not query session files when the route uses the new-session placeholder", async () => {
-    render(<PatientFilesPanel clinicId="clinic-1" disabledReason="Salve antes." patientId="patient-1" sessionId="novo" variant="session" />);
+    renderWithProvider({ clinicId: "clinic-1", disabledReason: "Salve antes.", patientId: "patient-1", sessionId: "novo", variant: "session" });
 
     expect(await screen.findByText("Nenhum arquivo registrado.")).toBeInTheDocument();
     expect(queueMocks.enqueue).not.toHaveBeenCalled();
@@ -209,7 +225,7 @@ describe("PatientFilesPanel", () => {
       },
     ];
 
-    render(<PatientFilesPanel clinicId="clinic-1" patientId="patient-1" sessionId={validSessionId} variant="session" />);
+    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: validSessionId, variant: "session" });
 
     fireEvent.click(await screen.findByLabelText("Abrir diagnóstico do erro"));
 
@@ -261,10 +277,11 @@ describe("PatientFilesPanel", () => {
       },
     ];
 
-    render(<PatientFilesPanel clinicId="clinic-1" patientId="patient-1" sessionId={validSessionId} variant="session" />);
+    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: validSessionId, variant: "session" });
 
     expect(await screen.findByText("exame.png")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /descartar/i }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Opções do arquivo" }), { key: "Enter", code: "Enter" });
+    fireEvent.click(await screen.findByText("Descartar"));
     fireEvent.click(await screen.findByRole("button", { name: /descartar definitivamente/i }));
 
     await waitFor(() => {

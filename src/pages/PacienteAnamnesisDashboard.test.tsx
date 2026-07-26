@@ -32,6 +32,14 @@ vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
 }));
 
+vi.mock("@/contexts/FeatureFlagsContext", () => ({
+  useFeatureFlags: () => ({
+    flags: { dashboards_patient: true },
+    loading: false,
+    isFeatureEnabled: (key: string) => key === "dashboards_patient",
+  }),
+}));
+
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
 
