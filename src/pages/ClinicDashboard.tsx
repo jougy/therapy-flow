@@ -21,6 +21,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { getLegacyGroupHex } from "@/lib/group-colors";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
@@ -217,6 +218,7 @@ const mobileSectionClass = (section: DashboardSection, activeSection: DashboardS
 const ClinicDashboard = () => {
   const navigate = useNavigate();
   const { can, clinic, clinicId, user } = useAuth();
+  const { isFeatureEnabled } = useFeatureFlags();
   const [patients, setPatients] = useState<HomePatientRecord[]>([]);
   const [groups, setGroups] = useState<HomePatientGroupRecord[]>([]);
   const [sessions, setSessions] = useState<HomeSessionRecord[]>([]);
@@ -497,7 +499,7 @@ const ClinicDashboard = () => {
     };
   }, [agendaEvents, groups, patients, profiles, sessions]);
 
-  if (!canViewFinancialData) {
+  if (!canViewFinancialData || !isFeatureEnabled("dashboards_general")) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 p-4 sm:p-6">
         <Button type="button" variant="ghost" className="w-fit gap-2" onClick={() => navigate(-1)}>

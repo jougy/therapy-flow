@@ -164,25 +164,47 @@ const generateSecuritySessionKey = () => {
   return `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
+const getLocalStorage = () => {
+  try {
+    return typeof window !== "undefined" && window.localStorage ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+};
+
+const getSessionStorage = () => {
+  try {
+    return typeof window !== "undefined" && window.sessionStorage ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+};
+
 export const createSecuritySessionKey = async () => {
   if (typeof window === "undefined") {
     return generateSecuritySessionKey();
   }
 
-  const existingKey = window.sessionStorage.getItem(SECURITY_SESSION_STORAGE_KEY);
+  const localStorage = getLocalStorage();
+  const sessionStorage = getSessionStorage();
+
+  const existingKey = localStorage?.getItem(SECURITY_SESSION_STORAGE_KEY) || sessionStorage?.getItem(SECURITY_SESSION_STORAGE_KEY);
   if (existingKey) {
+    localStorage?.setItem(SECURITY_SESSION_STORAGE_KEY, existingKey);
+    sessionStorage?.setItem(SECURITY_SESSION_STORAGE_KEY, existingKey);
     return existingKey;
   }
 
   const nextKey = generateSecuritySessionKey();
-  window.sessionStorage.setItem(SECURITY_SESSION_STORAGE_KEY, nextKey);
+  localStorage?.setItem(SECURITY_SESSION_STORAGE_KEY, nextKey);
+  sessionStorage?.setItem(SECURITY_SESSION_STORAGE_KEY, nextKey);
   return nextKey;
 };
 
 export const clearSecuritySessionKey = () => {
-  if (typeof window === "undefined") {
-    return;
-  }
+  const localStorage = getLocalStorage();
+  const sessionStorage = getSessionStorage();
 
-  window.sessionStorage.removeItem(SECURITY_SESSION_STORAGE_KEY);
+  localStorage?.removeItem(SECURITY_SESSION_STORAGE_KEY);
+  sessionStorage?.removeItem(SECURITY_SESSION_STORAGE_KEY);
 };

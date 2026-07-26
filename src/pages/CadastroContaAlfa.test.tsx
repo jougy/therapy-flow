@@ -93,7 +93,7 @@ describe("CadastroContaAlfa", () => {
         _clinic_name: "Clínica Teste",
         _email: "alpha@example.com",
         _full_name: "Owner Teste",
-        _subscription_plan: "clinic",
+        _subscription_plan: "solo",
         _user_id: "user-alpha-1",
       });
     });

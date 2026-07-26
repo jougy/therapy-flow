@@ -4,6 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import Index from "@/pages/Index";
 import { useAuth } from "@/hooks/useAuth";
 
+vi.mock("@/hooks/use-toast", () => ({
+  toast: vi.fn(),
+  useToast: () => ({ toast: vi.fn() }),
+}));
+
+vi.mock("@/contexts/FeatureFlagsContext", () => ({
+  useFeatureFlags: () => ({
+    flags: { dashboards_general: true },
+    loading: false,
+    isFeatureEnabled: () => true,
+  }),
+}));
+
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: vi.fn(),
 }));

@@ -1131,9 +1131,15 @@ const SelecionarClinica = () => {
 
           <Card className="overflow-hidden">
             <CardHeader className="px-4 sm:px-6">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="text-base">Escolha a clínica</CardTitle>
-                <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Escolha a clínica</CardTitle>
+                  <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => navigate("/planos")} className="w-fit">
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Comprar meu próprio espaço
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="px-4 sm:px-6">

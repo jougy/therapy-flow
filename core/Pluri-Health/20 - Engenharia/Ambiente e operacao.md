@@ -107,7 +107,9 @@ Os scripts em `scripts/dev` padronizam a checagem visual local sem depender da m
 
 ### Preview mobile com scrcpy
 
-- `scripts/dev/mobile-preview-start.sh [app_port] [supabase_port]`: encontra um Android autorizado via ADB, cria `adb reverse` para o app e para o Supabase local, e abre `scrcpy`.
+*Para detalhes e guia de uso por agentes de IA, leia: [[Ambiente Mobile e Scrcpy]]*
+
+- `scripts/dev/mobile-preview-start.sh [app_port] [supabase_port]`: encontra um Android autorizado via ADB, cria `adb reverse` para o app e para o Supabase local, e abre `scrcpy`. O script foi atualizado para automatizar a configuração Wi-Fi.
 - Padrao: app `8080`, Supabase API `54321`, `SCRCPY_MAX_SIZE=1600`.
 - No celular, abrir `http://localhost:8080` no navegador depois que os reverses estiverem ativos.
 - `scripts/dev/mobile-preview-status.sh`: lista dispositivos ADB e reverses ativos.

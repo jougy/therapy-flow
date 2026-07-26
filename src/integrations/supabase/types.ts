@@ -866,6 +866,127 @@ export type Database = {
           },
         ]
       }
+      patient_file_uploads: {
+        Row: {
+          bucket_name: string
+          byte_size: number
+          category: Database["public"]["Enums"]["patient_file_upload_category"]
+          checksum_sha256: string | null
+          clinic_id: string
+          compression_profile: string
+          content_type: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          image_height: number | null
+          image_width: number | null
+          last_accessed_at: string | null
+          metadata: Json
+          object_key: string
+          original_byte_size: number | null
+          original_content_type: string | null
+          original_filename: string
+          page_count: number | null
+          patient_id: string
+          provider: string
+          session_id: string | null
+          status: Database["public"]["Enums"]["patient_file_upload_status"]
+          storage_encoding: string | null
+          stored_byte_size: number | null
+          stored_content_type: string | null
+          updated_at: string
+          upload_expires_at: string
+          uploaded_at: string | null
+          uploaded_by_user_id: string
+        }
+        Insert: {
+          bucket_name: string
+          byte_size: number
+          category?: Database["public"]["Enums"]["patient_file_upload_category"]
+          checksum_sha256?: string | null
+          clinic_id: string
+          compression_profile?: string
+          content_type: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          image_height?: number | null
+          image_width?: number | null
+          last_accessed_at?: string | null
+          metadata?: Json
+          object_key: string
+          original_byte_size?: number | null
+          original_content_type?: string | null
+          original_filename: string
+          page_count?: number | null
+          patient_id: string
+          provider?: string
+          session_id?: string | null
+          status?: Database["public"]["Enums"]["patient_file_upload_status"]
+          storage_encoding?: string | null
+          stored_byte_size?: number | null
+          stored_content_type?: string | null
+          updated_at?: string
+          upload_expires_at?: string
+          uploaded_at?: string | null
+          uploaded_by_user_id: string
+        }
+        Update: {
+          bucket_name?: string
+          byte_size?: number
+          category?: Database["public"]["Enums"]["patient_file_upload_category"]
+          checksum_sha256?: string | null
+          clinic_id?: string
+          compression_profile?: string
+          content_type?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          image_height?: number | null
+          image_width?: number | null
+          last_accessed_at?: string | null
+          metadata?: Json
+          object_key?: string
+          original_byte_size?: number | null
+          original_content_type?: string | null
+          original_filename?: string
+          page_count?: number | null
+          patient_id?: string
+          provider?: string
+          session_id?: string | null
+          status?: Database["public"]["Enums"]["patient_file_upload_status"]
+          storage_encoding?: string | null
+          stored_byte_size?: number | null
+          stored_content_type?: string | null
+          updated_at?: string
+          upload_expires_at?: string
+          uploaded_at?: string | null
+          uploaded_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_file_uploads_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_file_uploads_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_file_uploads_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           address: Json
@@ -881,6 +1002,7 @@ export type Database = {
           job_title: string | null
           last_password_changed_at: string | null
           last_seen_at: string | null
+          owner_terms_accepted_at: string | null
           password_temporary: boolean
           phone: string | null
           professional_license: string | null
@@ -905,6 +1027,7 @@ export type Database = {
           job_title?: string | null
           last_password_changed_at?: string | null
           last_seen_at?: string | null
+          owner_terms_accepted_at?: string | null
           password_temporary?: boolean
           phone?: string | null
           professional_license?: string | null
@@ -929,6 +1052,7 @@ export type Database = {
           job_title?: string | null
           last_password_changed_at?: string | null
           last_seen_at?: string | null
+          owner_terms_accepted_at?: string | null
           password_temporary?: boolean
           phone?: string | null
           professional_license?: string | null
@@ -1911,6 +2035,8 @@ export type Database = {
       app_role: "super_admin" | "clinic_admin" | "user"
       membership_status_type: "invited" | "active" | "inactive" | "suspended"
       operational_role_type: "owner" | "admin" | "professional" | "assistant" | "estagiario"
+      patient_file_upload_category: "anamnesis" | "exam" | "image" | "document" | "other"
+      patient_file_upload_status: "pending" | "uploaded" | "failed" | "deleted"
       platform_release_note_category: "fixed" | "added" | "changed" | "removed"
       subscription_plan: "solo" | "clinic"
     }

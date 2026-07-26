@@ -23,11 +23,16 @@ dist__permission_backup_*/
 !.env.*.example
 !.env.sample
 !.env.*.sample
+.secrets/
 
 # Local operational artifacts
 .control
 .local-tools
 backups/
+minio-data/
+
+# Edge Function local env (nao commitar - credenciais de dev)
+supabase/functions/.env
 
 # Local-only visual experiments
 /designlab/

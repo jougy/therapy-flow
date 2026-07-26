@@ -24,6 +24,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { isAnamnesisTemplateSchema, type AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import {
@@ -460,6 +461,7 @@ const PacienteAnamnesisDashboard = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { clinic, clinicId } = useAuth();
+  const { isFeatureEnabled } = useFeatureFlags();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const storageKey = getStorageKey(clinicId, id);
   const [baseSchema, setBaseSchema] = useState<AnamnesisTemplateSchema>([]);
@@ -539,6 +541,23 @@ const PacienteAnamnesisDashboard = () => {
       window.localStorage.setItem(storageKey, JSON.stringify(next));
     }
   };
+
+  if (!isFeatureEnabled("dashboards_patient")) {
+    return (
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 p-4 sm:p-6">
+        <Button type="button" variant="ghost" className="w-fit gap-2" onClick={() => navigate(-1)}>
+          <ArrowLeft className="h-4 w-4" />
+          Voltar
+        </Button>
+        <Card>
+          <CardHeader>
+            <CardTitle>Acesso restrito</CardTitle>
+            <CardDescription>O dashboard de paciente está desabilitado nas configurações da clínica.</CardDescription>
+          </CardHeader>
+        </Card>
+      </main>
+    );
+  }
 
   if (loading || !patient) {
     return (

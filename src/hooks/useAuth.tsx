@@ -488,19 +488,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
-    const handlePageHide = () => {
-      void endCurrentSecuritySession({ keepalive: true, session });
-    };
-
     const interval = window.setInterval(heartbeat, 60 * 1000);
     heartbeat();
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", handlePageHide);
 
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pagehide", handlePageHide);
     };
   }, [clinic, endCurrentSecuritySession, registerSecuritySession, session]);
 
@@ -537,7 +531,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [clinic?.id, fetchRoleCapabilityOverrides, session?.user?.id]);
+  }, [clinic?.id, fetchRoleCapabilityOverrides, session?.user]);
 
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {
