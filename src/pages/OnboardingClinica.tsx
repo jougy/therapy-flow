@@ -46,15 +46,33 @@ const formatCEP = (v: string) => {
 
 const cleanDigits = (v: string) => v.replace(/\D/g, "");
 
+type ClinicAddress = {
+  country?: string;
+  cep?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+};
+
+type BusinessHours = {
+  description?: string;
+};
+
 export default function OnboardingClinica() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  // @ts-ignore
+  // @ts-expect-error - useAuth context property types
   const { clinic, profile, session } = useAuth();
   const plan = searchParams.get("plan") as "solo" | "clinic" | null;
 
   const [loading, setLoading] = useState(false);
   const [fetchingCep, setFetchingCep] = useState(false);
+
+  const clinicAddress = (clinic?.address || {}) as ClinicAddress;
+  const clinicHours = (clinic?.business_hours || {}) as BusinessHours;
 
   const [formData, setFormData] = useState({
     name: clinic?.name || "",
@@ -64,31 +82,32 @@ export default function OnboardingClinica() {
     legal_name: clinic?.legal_name || "",
     cpf: profile?.cpf ? formatCPF(profile.cpf) : "",
     cnpj: clinic?.cnpj ? formatCNPJ(clinic.cnpj) : "",
-    business_hours: clinic?.business_hours ? (clinic.business_hours as any).description || "" : "",
-    country: (clinic?.address as any)?.country || "BR",
-    cep: (clinic?.address as any)?.cep ? formatCEP((clinic?.address as any).cep) : "",
-    street: (clinic?.address as any)?.street || "",
-    number: (clinic?.address as any)?.number || "",
-    complement: (clinic?.address as any)?.complement || "",
-    neighborhood: (clinic?.address as any)?.neighborhood || "",
-    city: (clinic?.address as any)?.city || "",
-    state: (clinic?.address as any)?.state || "",
+    business_hours: clinicHours.description || "",
+    country: clinicAddress.country || "BR",
+    cep: clinicAddress.cep ? formatCEP(clinicAddress.cep) : "",
+    street: clinicAddress.street || "",
+    number: clinicAddress.number || "",
+    complement: clinicAddress.complement || "",
+    neighborhood: clinicAddress.neighborhood || "",
+    city: clinicAddress.city || "",
+    state: clinicAddress.state || "",
     subaccount_limit: clinic?.subaccount_limit?.toString() || (plan === "clinic" ? "5" : "1"),
     concurrent_access_limit: clinic?.concurrent_access_limit?.toString() || (plan === "clinic" ? "3" : "1"),
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let { name, value } = e.target;
+    const fieldName = e.target.name;
+    let value = e.target.value;
     
-    if (name === "cpf") value = formatCPF(value);
-    if (name === "cnpj") value = formatCNPJ(value);
-    if (name === "phone") value = formatPhone(value);
-    if (name === "cep") {
+    if (fieldName === "cpf") value = formatCPF(value);
+    if (fieldName === "cnpj") value = formatCNPJ(value);
+    if (fieldName === "phone") value = formatPhone(value);
+    if (fieldName === "cep") {
       value = formatCEP(value);
       handleCepChange(value);
     }
     
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [fieldName]: value }));
   };
 
   const handleSelectChange = (name: string, value: string) => {
@@ -168,7 +187,7 @@ export default function OnboardingClinica() {
 
       const { error: clinicError } = await supabase
         .from("clinics")
-        // @ts-ignore - typing might be strict for cnpj if not null
+        // @ts-expect-error - typing might be strict for cnpj if not null
         .update(clinicPayload)
         .eq("id", clinic.id);
 
@@ -186,9 +205,10 @@ export default function OnboardingClinica() {
 
       toast.success("Dados salvos com sucesso!");
       navigate("/espacopessoal");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao salvar os dados.";
       console.error("Error updating onboarding data:", error);
-      toast.error(error.message || "Erro ao salvar os dados.");
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

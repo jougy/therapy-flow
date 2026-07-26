@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { featureFlagsCatalog, FeatureFlagCategory } from "@/lib/feature-flags-catalog";
 import { Switch } from "@/components/ui/switch";
@@ -26,18 +26,29 @@ const getCategoryIcon = (category: FeatureFlagCategory) => {
   }
 };
 
+interface TagItem {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface FeatureFlagRecord {
+  key: string;
+  value: unknown;
+}
+
 export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   const categories = Array.from(new Set(featureFlagsCatalog.map(f => f.category)));
   const [activeCategory, setActiveCategory] = useState<FeatureFlagCategory>(categories[0] as FeatureFlagCategory);
   
   const [activeFlags, setActiveFlags] = useState<Record<string, boolean>>({});
-  const [rawFlags, setRawFlags] = useState<Record<string, any>>({});
+  const [rawFlags, setRawFlags] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
 
   // Context selection (Global vs Tag vs Clinic)
   const [contextType, setContextType] = useState<"global" | "tag" | "clinic">(clinicId ? "clinic" : "global");
   const [selectedTagId, setSelectedTagId] = useState<string>("");
-  const [tags, setTags] = useState<any[]>([]);
+  const [tags, setTags] = useState<TagItem[]>([]);
 
   // Modal states
   const [justificationModalOpen, setJustificationModalOpen] = useState(false);
@@ -52,25 +63,18 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [configFlagKey, setConfigFlagKey] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTags();
-  }, []);
-
-  useEffect(() => {
-    loadFlags();
-  }, [contextType, selectedTagId, clinicId]);
-
   const loadTags = async () => {
     try {
       const { data, error } = await supabase.from("clinic_tags").select("*").order("name");
       if (error) throw error;
       setTags(data || []);
-    } catch (error: any) {
-      toast({ title: "Erro ao carregar tags", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao carregar tags";
+      toast({ title: "Erro ao carregar tags", description: errorMessage, variant: "destructive" });
     }
   };
 
-  const loadFlags = async () => {
+  const loadFlags = useCallback(async () => {
     setLoading(true);
     try {
       let query = supabase.from("feature_flags").select("*").eq("scope", contextType);
@@ -90,20 +94,31 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       if (error) throw error;
       
       const flagsMap: Record<string, boolean> = {};
-      const rawMap: Record<string, any> = {};
-      data?.forEach((f: any) => {
+      const rawMap: Record<string, unknown> = {};
+      const records = (data || []) as FeatureFlagRecord[];
+      records.forEach((f) => {
         const isObj = f.value && typeof f.value === 'object';
-        flagsMap[f.key] = isObj ? f.value.enabled === true : (f.value === true || f.value === "true");
+        const valObj = f.value as Record<string, unknown> | null;
+        flagsMap[f.key] = isObj ? valObj?.enabled === true : (f.value === true || f.value === "true");
         rawMap[f.key] = f.value;
       });
       setActiveFlags(flagsMap);
       setRawFlags(rawMap);
-    } catch (error: any) {
-      toast({ title: "Erro ao carregar flags", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao carregar flags";
+      toast({ title: "Erro ao carregar flags", description: errorMessage, variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [clinicId, contextType, selectedTagId]);
+
+  useEffect(() => {
+    loadTags();
+  }, []);
+
+  useEffect(() => {
+    loadFlags();
+  }, [loadFlags]);
 
   const handleToggle = async (key: string, currentValue: boolean) => {
     if (contextType === "tag" && !selectedTagId) {
@@ -115,10 +130,10 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
     
     // Value to save
-    let valueToSave: any = newState;
+    let valueToSave: unknown = newState;
     if (isConfigurable) {
       const raw = rawFlags[key] || {};
-      if (typeof raw === 'object') {
+      if (typeof raw === 'object' && raw !== null) {
         valueToSave = { ...raw, enabled: newState };
       } else {
         valueToSave = { enabled: newState };
@@ -142,9 +157,10 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       });
 
       if (error) throw error;
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao salvar flag";
       setActiveFlags(prev => ({ ...prev, [key]: currentValue }));
-      toast({ title: "Erro ao salvar flag", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao salvar flag", description: errorMessage, variant: "destructive" });
     }
   };
 
@@ -165,10 +181,10 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     const newState = targetState;
     const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
     
-    let valueToSave: any = newState;
+    let valueToSave: unknown = newState;
     if (isConfigurable) {
       const raw = rawFlags[key] || {};
-      if (typeof raw === 'object') {
+      if (typeof raw === 'object' && raw !== null) {
         valueToSave = { ...raw, enabled: newState };
       } else {
         valueToSave = { enabled: newState };
@@ -198,9 +214,10 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       }
 
       toast({ title: "Alteração justificada salva." });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao salvar";
       setActiveFlags(prev => ({ ...prev, [key]: !newState }));
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
+      toast({ title: "Erro", description: errorMessage, variant: "destructive" });
     }
   };
 

@@ -528,7 +528,7 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
       setFormsSummary((formsRes.data ?? null) as PlatformClinicFormsSummary | null);
       
       if (tagsRes.data) {
-        setClinicTags(tagsRes.data.map((r: any) => r.clinic_tags).filter(Boolean));
+        setClinicTags(tagsRes.data.map((r: { clinic_tags: unknown }) => r.clinic_tags).filter(Boolean));
       }
     } catch (error) {
       toast({

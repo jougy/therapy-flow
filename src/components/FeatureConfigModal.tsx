@@ -14,8 +14,8 @@ export interface FeatureConfigModalProps {
   featureKey: string | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave?: (payload: any) => void;
-  initialData?: any;
+  onSave?: (payload: Record<string, unknown>) => void;
+  initialData?: Record<string, unknown>;
   scope?: "global" | "tag" | "clinic";
   tagId?: string;
   clinicId?: string;
@@ -23,12 +23,12 @@ export interface FeatureConfigModalProps {
 
 export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initialData, scope = "global", tagId, clinicId }: FeatureConfigModalProps) {
   const feature = featureFlagsCatalog.find(f => f.key === featureKey);
-  const [formData, setFormData] = useState<any>({});
+  const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setFormData(initialData || {});
+      setFormData((initialData as Record<string, unknown>) || {});
     }
   }, [isOpen, initialData]);
 
@@ -76,7 +76,7 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
 
       // Sanitizar texto
       const sanitizedData = { ...formData };
-      if (sanitizedData.allowedExtensions) {
+      if (sanitizedData.allowedExtensions && typeof sanitizedData.allowedExtensions === 'string') {
         sanitizedData.allowedExtensions = sanitizedData.allowedExtensions.split(',').map((s: string) => s.trim()).filter(Boolean).join(', ');
       }
 
@@ -99,8 +99,9 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
       
       if (onSave) onSave(mergedPayload);
       onClose();
-    } catch (error: any) {
-      toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro desconhecido ao salvar";
+      toast({ title: "Erro ao salvar", description: errorMessage, variant: "destructive" });
     } finally {
       setIsSaving(false);
     }

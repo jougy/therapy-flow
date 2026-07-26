@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 interface FeatureFlagsContextType {
-  flags: Record<string, any>;
+  flags: Record<string, unknown>;
   loading: boolean;
   isFeatureEnabled: (key: string) => boolean;
 }
@@ -14,11 +14,12 @@ const FeatureFlagsContext = createContext<FeatureFlagsContextType>({
   isFeatureEnabled: () => false,
 });
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useFeatureFlags = () => useContext(FeatureFlagsContext);
 
 export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
   const { clinicId } = useAuth();
-  const [flags, setFlags] = useState<Record<string, any>>({});
+  const [flags, setFlags] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,7 +36,7 @@ export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
           console.error("Erro ao carregar feature flags:", error);
           setFlags({});
         } else {
-          setFlags((data as Record<string, any>) || {});
+          setFlags((data as Record<string, unknown>) || {});
         }
       })
       .finally(() => {
@@ -45,8 +46,8 @@ export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
 
   const isFeatureEnabled = (key: string) => {
     const val = flags[key];
-    if (val && typeof val === 'object') {
-      return val.enabled === true;
+    if (val && typeof val === 'object' && 'enabled' in val) {
+      return (val as { enabled?: boolean }).enabled === true;
     }
     return val === true;
   };

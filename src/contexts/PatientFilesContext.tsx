@@ -231,6 +231,7 @@ export function PatientFilesProvider({
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePatientFilesContext() {
   const context = useContext(PatientFilesContext);
   if (!context) {

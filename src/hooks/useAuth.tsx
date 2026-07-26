@@ -531,7 +531,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [clinic?.id, fetchRoleCapabilityOverrides, session?.user?.id]);
+  }, [clinic?.id, fetchRoleCapabilityOverrides, session?.user]);
 
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {

@@ -20,6 +20,22 @@ const INITIAL_PALETTE_SLOTS: ClinicGroupColorSlot[] = [
   { id: "6", color_hex: "#ec4899", alpha: 100, slot_index: 5 },
 ];
 
+interface TagItem {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface ClinicItem {
+  id: string;
+  name: string;
+}
+
+interface RelationItem {
+  clinic_id: string;
+  tag_id: string;
+}
+
 export function PlatformClinicTags() {
   const [tagName, setTagName] = useState("");
   const [tagColor, setTagColor] = useState("#8b5cf6");
@@ -28,11 +44,11 @@ export function PlatformClinicTags() {
   const [loading, setLoading] = useState(true);
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
   
-  const [paletteSlots, setPaletteSlots] = useState<ClinicGroupColorSlot[]>(INITIAL_PALETTE_SLOTS);
+  const [paletteSlots] = useState<ClinicGroupColorSlot[]>(INITIAL_PALETTE_SLOTS);
 
-  const [tags, setTags] = useState<any[]>([]);
-  const [clinics, setClinics] = useState<any[]>([]);
-  const [relations, setRelations] = useState<any[]>([]);
+  const [tags, setTags] = useState<TagItem[]>([]);
+  const [clinics, setClinics] = useState<ClinicItem[]>([]);
+  const [relations, setRelations] = useState<RelationItem[]>([]);
 
   const loadData = async () => {
     setLoading(true);
@@ -49,15 +65,17 @@ export function PlatformClinicTags() {
 
       setTags(tagsRes.data || []);
       
-      const mappedClinics = (clinicsRes.data || []).map((item: any) => ({
+      const rawClinics = (clinicsRes.data || []) as Array<{ item_id: string; title: string }>;
+      const mappedClinics: ClinicItem[] = rawClinics.map((item) => ({
         id: item.item_id,
         name: item.title,
-      })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+      })).sort((a, b) => a.name.localeCompare(b.name));
       
       setClinics(mappedClinics);
       setRelations(relationsRes.data || []);
-    } catch (error: any) {
-      toast({ title: "Erro ao carregar dados", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao carregar dados";
+      toast({ title: "Erro ao carregar dados", description: errorMessage, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -90,8 +108,9 @@ export function PlatformClinicTags() {
       setEditingTagId(null);
       setIsDialogOpen(false);
       loadData();
-    } catch (error: any) {
-      toast({ title: "Erro ao salvar tag", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao salvar tag";
+      toast({ title: "Erro ao salvar tag", description: errorMessage, variant: "destructive" });
     }
   };
 
@@ -102,12 +121,13 @@ export function PlatformClinicTags() {
       if (error) throw error;
       toast({ title: "Tag excluída com sucesso" });
       loadData();
-    } catch (error: any) {
-      toast({ title: "Erro ao excluir tag", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao excluir tag";
+      toast({ title: "Erro ao excluir tag", description: errorMessage, variant: "destructive" });
     }
   };
 
-  const openEditDialog = (tag: any) => {
+  const openEditDialog = (tag: TagItem) => {
     setEditingTagId(tag.id);
     setTagName(tag.name);
     setTagColor(tag.color);
@@ -148,8 +168,9 @@ export function PlatformClinicTags() {
           .insert({ clinic_id: clinicId, tag_id: tagId });
         if (error) throw error;
       }
-    } catch (error: any) {
-      toast({ title: "Erro ao vincular tag", description: error.message, variant: "destructive" });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao vincular tag";
+      toast({ title: "Erro ao vincular tag", description: errorMessage, variant: "destructive" });
       loadData(); // Revert on error
     }
   };
