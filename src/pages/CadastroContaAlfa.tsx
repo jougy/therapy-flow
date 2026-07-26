@@ -14,7 +14,7 @@ import { toast } from "@/hooks/use-toast";
 
 const onlyDigits = (value: string) => value.replace(/\D/g, "");
 
-const sanitizeText = (value: string, max = 120) =>
+const sanitizeText = (value: string, max = 63) =>
   Array.from(value.replace(/<[^>]*>/g, ""))
     .filter((char) => {
       const code = char.charCodeAt(0);
@@ -22,11 +22,10 @@ const sanitizeText = (value: string, max = 120) =>
     })
     .join("")
     .replace(/[<>]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
+    .replace(/\s+/g, " ") // Preserva espaços simples para digitação
     .slice(0, max);
 
-const normalizeName = (value: string) => sanitizeText(value, 120);
+const normalizeName = (value: string) => sanitizeText(value, 63);
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
@@ -116,7 +115,6 @@ const CadastroContaAlfa = () => {
   const [cnpj, setCnpj] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
-  const [plan, setPlan] = useState<"clinic" | "solo">("clinic");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -173,8 +171,8 @@ const CadastroContaAlfa = () => {
     setLoading(true);
     try {
       const nextEmail = normalizeEmail(email);
-      const nextOwnerName = normalizeName(ownerName);
-      const nextClinicName = sanitizeText(clinicName, 120);
+      const nextOwnerName = normalizeName(ownerName).trim();
+      const nextClinicName = sanitizeText(clinicName, 63).trim();
 
       const { data: signupData, error: signupError } = await supabase.auth.signUp({
         email: nextEmail,
@@ -202,7 +200,7 @@ const CadastroContaAlfa = () => {
         _clinic_name: nextClinicName || null,
         _email: nextEmail,
         _full_name: nextOwnerName,
-        _subscription_plan: plan,
+        _subscription_plan: "solo", // Default provisório até a escolha oficial de planos
         _user_id: userId,
       });
       if (rpcError) throw rpcError;
@@ -281,12 +279,12 @@ const CadastroContaAlfa = () => {
                     <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
                     <div>
                       <p className="font-medium">Cadastro alfa concluído</p>
-                      <p className="mt-1 text-sm">Se a confirmação de e-mail estiver ativa, confirme seu e-mail antes de entrar.</p>
+                      <p className="mt-1 text-sm">Se a confirmação de e-mail estiver ativa, confirme seu e-mail na caixa de entrada para fazer login.</p>
                     </div>
                   </div>
                 </div>
-                <Button className="w-full sm:w-auto" onClick={() => navigate("/espacopessoal", { replace: true })}>
-                  Ir para minhas clínicas
+                <Button className="w-full sm:w-auto" onClick={() => navigate("/planos", { replace: true })}>
+                  Avançar para escolha de plano
                 </Button>
               </div>
             ) : (
@@ -301,7 +299,7 @@ const CadastroContaAlfa = () => {
                         value={ownerName}
                         onChange={(event) => setOwnerName(event.target.value)}
                         className="pl-9"
-                        maxLength={120}
+                        maxLength={63}
                         required
                       />
                     </div>
@@ -325,8 +323,8 @@ const CadastroContaAlfa = () => {
                     <Input
                       id="clinic-name"
                       value={clinicName}
-                      onChange={(event) => setClinicName(sanitizeText(event.target.value, 120))}
-                      maxLength={120}
+                      onChange={(event) => setClinicName(sanitizeText(event.target.value, 63))}
+                      maxLength={63}
                       placeholder="Opcional"
                     />
                   </div>
@@ -377,23 +375,10 @@ const CadastroContaAlfa = () => {
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
                         className="pl-9"
-                        maxLength={160}
+                        maxLength={63}
                         required
                       />
                     </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Tipo de conta</Label>
-                    <Select value={plan} onValueChange={(value) => setPlan(value as "clinic" | "solo")}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="clinic">Clínica com equipe</SelectItem>
-                        <SelectItem value="solo">Profissional solo</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
 
                   <div className="space-y-2">

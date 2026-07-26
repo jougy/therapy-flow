@@ -33,6 +33,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
+import { PlatformFeatureFlags } from "@/components/PlatformFeatureFlags";
+import { PlatformClinicTags } from "@/components/PlatformClinicTags";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -364,73 +366,88 @@ const PlatformDirectoryPage = () => {
       title="Painel administrativo global"
       subtitle="Busque clínicas, contas e pacientes; os detalhes, logs e ferramentas ficam em páginas dedicadas."
     >
-      <section className="rounded-xl border bg-card p-3 shadow-sm">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto_auto] lg:items-center">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="h-11 pl-9"
-              placeholder="Buscar clínica, usuário, paciente, idade, CPF, RG, telefone..."
-            />
-          </div>
-          <Select value={kind} onValueChange={(value) => setKind(value as DirectoryKind)}>
-            <SelectTrigger className="h-11">
-              <SlidersHorizontal className="mr-2 h-4 w-4" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="clinic">Clínicas</SelectItem>
-              <SelectItem value="account">Contas</SelectItem>
-              <SelectItem value="patient">Pacientes</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button className="h-11" onClick={() => setCreateClinicOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nova clínica
-          </Button>
-          <Button className="h-11" variant="outline" onClick={() => setCreateAccountOpen(true)}>
-            <UserCog className="mr-2 h-4 w-4" />
-            Nova conta
-          </Button>
-        </div>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-3">
-        <DirectoryPill icon={Building2} label="Clínicas na busca" value={counters.clinic} />
-        <DirectoryPill icon={UsersRound} label="Contas na busca" value={counters.account} />
-        <DirectoryPill icon={Stethoscope} label="Pacientes na busca" value={counters.patient} />
-      </section>
-
-      <Card>
-        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Diretório mestre</CardTitle>
-          <p className="text-sm text-muted-foreground">{directory.length} resultado(s)</p>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex min-h-[260px] items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-          ) : directory.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-              Nenhum resultado encontrado para esta busca.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {directory.map((item) => (
-                <DirectoryCard
-                  key={`${item.item_type}-${item.item_id}`}
-                  item={item}
-                  onClick={() => openDirectoryItem(item)}
+      <Tabs defaultValue="directory" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="directory">Diretório Mestre</TabsTrigger>
+          <TabsTrigger value="tags">Gestão de Tags</TabsTrigger>
+          <TabsTrigger value="flags">Feature Flags Globais</TabsTrigger>
+        </TabsList>
+        <TabsContent value="directory" className="space-y-5">
+          <section className="rounded-xl border bg-card p-3 shadow-sm">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto_auto] lg:items-center">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="h-11 pl-9"
+                  placeholder="Buscar clínica, usuário, paciente, idade, CPF, RG, telefone..."
                 />
-              ))}
+              </div>
+              <Select value={kind} onValueChange={(value) => setKind(value as DirectoryKind)}>
+                <SelectTrigger className="h-11">
+                  <SlidersHorizontal className="mr-2 h-4 w-4" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="clinic">Clínicas</SelectItem>
+                  <SelectItem value="account">Contas</SelectItem>
+                  <SelectItem value="patient">Pacientes</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button className="h-11" onClick={() => setCreateClinicOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Nova clínica
+              </Button>
+              <Button className="h-11" variant="outline" onClick={() => setCreateAccountOpen(true)}>
+                <UserCog className="mr-2 h-4 w-4" />
+                Nova conta
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </section>
+
+          <section className="grid gap-3 sm:grid-cols-3">
+            <DirectoryPill icon={Building2} label="Clínicas na busca" value={counters.clinic} />
+            <DirectoryPill icon={UsersRound} label="Contas na busca" value={counters.account} />
+            <DirectoryPill icon={Stethoscope} label="Pacientes na busca" value={counters.patient} />
+          </section>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle>Diretório mestre</CardTitle>
+              <p className="text-sm text-muted-foreground">{directory.length} resultado(s)</p>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="flex min-h-[260px] items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : directory.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  Nenhum resultado encontrado para esta busca.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {directory.map((item) => (
+                    <DirectoryCard
+                      key={`${item.item_type}-${item.item_id}`}
+                      item={item}
+                      onClick={() => openDirectoryItem(item)}
+                    />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="tags">
+          <PlatformClinicTags />
+        </TabsContent>
+        <TabsContent value="flags">
+          <PlatformFeatureFlags />
+        </TabsContent>
+      </Tabs>
 
       <CreateClinicDialog
         open={createClinicOpen}
@@ -459,6 +476,7 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
   const [detail, setDetail] = useState<PlatformClinicDetail | null>(null);
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEvent[]>([]);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
+  const [clinicTags, setClinicTags] = useState<{id: string, name: string, color: string}[]>([]);
   const [formsSummary, setFormsSummary] = useState<PlatformClinicFormsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [supportReason, setSupportReason] = useState("");
@@ -493,10 +511,11 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
       const loadedClinicId = String(loadedDetail?.clinic?.id ?? "");
       if (!loadedClinicId) throw new Error("Clínica não encontrada para esta rota mascarada.");
 
-      const [auditRes, flagsRes, formsRes] = await Promise.all([
+      const [auditRes, flagsRes, formsRes, tagsRes] = await Promise.all([
         callRpc("list_platform_audit_events", { _clinic_id: loadedClinicId, _limit: 80 }),
         callRpc("list_feature_flags", { _clinic_id: loadedClinicId }),
         callRpc("get_platform_clinic_forms_summary_by_route_key", { _route_key: clinicKey }),
+        supabase.from("clinic_tag_relations").select("clinic_tags(id, name, color)").eq("clinic_id", loadedClinicId),
       ]);
 
       if (auditRes.error) throw auditRes.error;
@@ -507,6 +526,10 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
       setAuditEvents((auditRes.data ?? []) as PlatformAuditEvent[]);
       setFeatureFlags((flagsRes.data ?? []) as FeatureFlag[]);
       setFormsSummary((formsRes.data ?? null) as PlatformClinicFormsSummary | null);
+      
+      if (tagsRes.data) {
+        setClinicTags(tagsRes.data.map((r: any) => r.clinic_tags).filter(Boolean));
+      }
     } catch (error) {
       toast({
         title: "Detalhe da clínica indisponível",
@@ -643,19 +666,33 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                   />
                 </CardContent>
               </Card>
-              <Card>
-                <CardHeader><CardTitle>Limites e operação</CardTitle></CardHeader>
-                <CardContent>
-                  <InfoGrid
-                    items={[
-                      ["Equipe", String(detail?.counts?.collaborators ?? 0)],
-                      ["Pacientes", String(detail?.counts?.patients ?? 0)],
-                      ["Atendimentos", String(detail?.counts?.sessions ?? 0)],
-                      ["Subcontas", String(clinic?.subaccount_limit ?? 0)],
-                    ]}
-                  />
-                </CardContent>
-              </Card>
+              <div className="flex flex-col gap-4">
+                <Card>
+                  <CardHeader><CardTitle>Limites e operação</CardTitle></CardHeader>
+                  <CardContent>
+                    <InfoGrid
+                      items={[
+                        ["Equipe", String(detail?.counts?.collaborators ?? 0)],
+                        ["Pacientes", String(detail?.counts?.patients ?? 0)],
+                        ["Atendimentos", String(detail?.counts?.sessions ?? 0)],
+                        ["Subcontas", String(clinic?.subaccount_limit ?? 0)],
+                      ]}
+                    />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader><CardTitle>Tags ativas</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {clinicTags.length > 0 ? clinicTags.map(tag => (
+                        <Badge key={tag.id} style={{ backgroundColor: tag.color, color: "#fff" }} className="hover:opacity-90 border-transparent shadow-sm">
+                          {tag.name}
+                        </Badge>
+                      )) : <span className="text-sm text-muted-foreground">Nenhuma tag atribuída.</span>}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
             <div className="mt-4">
               <PlatformAccountOperations
@@ -905,21 +942,8 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
 
           <TabsContent value="flags">
             <Card>
-              <CardHeader><CardTitle>Feature flags da clínica</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <FeatureFlagForm
-                  description={flagDescription}
-                  keyValue={flagKey}
-                  onDescriptionChange={setFlagDescription}
-                  onKeyChange={setFlagKey}
-                  onReasonChange={setFlagReason}
-                  onSave={handleSaveFlag}
-                  onValueChange={setFlagValue}
-                  reason={flagReason}
-                  saving={savingFlag}
-                  value={flagValue}
-                />
-                <FlagList flags={featureFlags} />
+              <CardContent className="pt-6">
+                <PlatformFeatureFlags clinicId={resolvedClinicId} />
               </CardContent>
             </Card>
           </TabsContent>

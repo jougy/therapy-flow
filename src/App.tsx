@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { Loader2 } from "lucide-react";
+import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 
 const queryClient = new QueryClient();
 const Auth = lazy(() => import("./pages/Auth"));
@@ -23,6 +24,7 @@ const FormularioEditor = lazy(() => import("./pages/FormularioEditor"));
 const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const NovoPaciente = lazy(() => import("./pages/NovoPaciente"));
+const OnboardingClinica = lazy(() => import("./pages/OnboardingClinica"));
 const PacienteAnamnesisDashboard = lazy(() => import("./pages/PacienteAnamnesisDashboard"));
 const PacienteDetalhe = lazy(() => import("./pages/PacienteDetalhe"));
 const PacienteResumo = lazy(() => import("./pages/PacienteResumo"));
@@ -31,6 +33,7 @@ const SelecionarClinica = lazy(() => import("./pages/SelecionarClinica"));
 const SessaoDetalhe = lazy(() => import("./pages/SessaoDetalhe"));
 const PlatformAdmin = lazy(() => import("./pages/PlatformAdmin"));
 const PlatformMfa = lazy(() => import("./pages/PlatformMfa"));
+const PlanosAssinatura = lazy(() => import("./pages/PlanosAssinatura"));
 const designLabModulePath = "/designlab/DesignLabApp.tsx";
 const DesignLabApp = lazy(() =>
   import(/* @vite-ignore */ designLabModulePath).catch(() => import("./pages/NotFound"))
@@ -86,7 +89,7 @@ const ClinicRoute = ({ children }: { children: ReactNode }) => {
   if (isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
   if (!clinicKey || deniedRouteKey === clinicKey) return <Navigate to="/espacopessoal" replace />;
   if (validatingRouteKey || clinic?.route_key !== clinicKey) return <LoadingScreen />;
-  return <>{children}</>;
+  return <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
 };
 
 const PlatformRoute = ({ children }: { children: ReactNode }) => {
@@ -160,6 +163,8 @@ const App = () => (
                     <Route path="/cadastro/conta-alfa" element={<AuthRoute><CadastroContaAlfa /></AuthRoute>} />
                     <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
                     <Route path="/espacopessoal" element={<ProtectedRoute><SelecionarClinica /></ProtectedRoute>} />
+                    <Route path="/planos" element={<ProtectedRoute><PlanosAssinatura /></ProtectedRoute>} />
+                    <Route path="/onboarding-clinica" element={<ProtectedRoute><OnboardingClinica /></ProtectedRoute>} />
                     <Route path="/clinicas" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                     <Route path="/platform/mfa" element={<PlatformMfaRoute><PlatformMfa /></PlatformMfaRoute>} />
                     <Route path="/platform/*" element={<PlatformRoute><PlatformAdmin /></PlatformRoute>} />

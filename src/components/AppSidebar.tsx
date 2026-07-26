@@ -9,6 +9,7 @@ import {
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import {
   Sidebar,
   SidebarContent,
@@ -39,6 +40,7 @@ export function AppSidebar() {
   const location = useLocation();
   const currentPath = location.pathname;
   const { can, signOut } = useAuth();
+  const { isFeatureEnabled } = useFeatureFlags();
 
   const visibleMainItems = mainItems.filter((item) => {
     if (item.url === "/financeiro") {
@@ -46,7 +48,7 @@ export function AppSidebar() {
     }
 
     if (item.url === "/fichas") {
-      return can("forms.manage");
+      return can("forms.manage") && isFeatureEnabled("forms_creator");
     }
 
     return true;

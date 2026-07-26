@@ -19,10 +19,14 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { GroupColorPaletteField, type ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import { SessionShareDialog } from "@/components/SessionShareDialog";
 import AgendaWidget from "@/components/AgendaWidget";
+import { PatientFilesPanel } from "@/components/PatientFilesPanel";
+import { PatientFilesProvider, usePatientFilesContext } from "@/contexts/PatientFilesContext";
+import { FileThumbnailCard } from "@/components/FileThumbnailCard";
 import { PatientAnamnesisDashboardContent } from "@/pages/PacienteAnamnesisDashboard";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
@@ -75,6 +79,8 @@ import {
   DEFAULT_GROUP_COLOR_SLOT_SEEDS,
   getLegacyGroupHex,
 } from "@/lib/group-colors";
+import { LiquidTabs } from "@/components/ui/liquid-tabs";
+import { getDesignLabButtonClass, designLabLabelClass, designLabIconClass } from "@/lib/design-animations";
 import {
   getFunctionalIndependenceLabel,
   getPatientRiskFlagLabel,
@@ -109,7 +115,7 @@ type PatientStatus = EditablePatientStatus;
 type PatientStatusSelectValue = PatientStatus | "delete";
 type AgendaStatusAction = AgendaEventStatus | "delete";
 type PatientGroupKind = "custom" | "default" | "cancelados";
-type PatientRecordsView = "dashboard" | "list";
+type PatientRecordsView = "dashboard" | "files" | "list";
 
 const dashboardColors = {
   amber: "#f59e0b",
@@ -393,6 +399,10 @@ const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: numb
 };
 const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemplateSchema; session: Session }) => {
   const preview = getSessionPreviewContent(session, baseSchema);
+  const { files } = usePatientFilesContext();
+  const sessionFiles = useMemo(() => files.filter(f => f.session_id === session.id), [files, session.id]);
+  const { isFeatureEnabled } = useFeatureFlags();
+  const showFiles = isFeatureEnabled("storage_s3_integration");
 
   return (
     <Tabs
@@ -401,9 +411,17 @@ const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemp
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <TabsList className="grid h-auto w-full grid-cols-2">
+      <TabsList className="grid h-auto w-full grid-cols-3">
         <TabsTrigger value="queixa" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">Queixa principal</TabsTrigger>
         <TabsTrigger value="tratamento" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">Tratamento</TabsTrigger>
+        {showFiles && (
+          <TabsTrigger value="arquivos" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+            Arquivos
+            {sessionFiles.length > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1">{sessionFiles.length}</Badge>
+            )}
+          </TabsTrigger>
+        )}
       </TabsList>
       <TabsContent value="queixa" className="rounded-md border bg-muted/20 p-3">
         <p className="text-sm text-muted-foreground whitespace-pre-line">
@@ -415,6 +433,19 @@ const SessionTabsPreview = ({ baseSchema, session }: { baseSchema: AnamnesisTemp
           {preview.treatment || "Nenhum tratamento registrado."}
         </p>
       </TabsContent>
+      {showFiles && (
+        <TabsContent value="arquivos" className="rounded-md border bg-muted/20 p-3">
+          {sessionFiles.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+              {sessionFiles.map(file => (
+                <FileThumbnailCard key={file.id} file={file} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhum arquivo anexado a esta sessão.</p>
+          )}
+        </TabsContent>
+      )}
     </Tabs>
   );
 };
@@ -458,6 +489,8 @@ const SessionCard = ({
   shareSummary?: SessionShareSummary;
   session: Session;
 }) => {
+  const touchStartPosRef = useRef<{x: number, y: number} | null>(null);
+  const longPressOccurredRef = useRef(false);
   const indicators = getSessionPreviewIndicators(session, baseSchema);
   const shareCount = shareSummary?.share_count ?? 0;
   const delayMinutes = getArrivalDelayMinutes(session);
@@ -473,9 +506,19 @@ const SessionCard = ({
 
   return (
     <Card
-      className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
+      className={`border-l-4 cursor-pointer select-none hover:shadow-md transition-shadow ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
       style={borderColor ? { borderLeftColor: borderColor } : undefined}
-      onClick={selectionMode ? onToggleSelect : navigateTo}
+      onClick={(e) => {
+        if (longPressOccurredRef.current) {
+          longPressOccurredRef.current = false;
+          return;
+        }
+        if (selectionMode) {
+          onToggleSelect();
+        } else {
+          navigateTo();
+        }
+      }}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
@@ -492,10 +535,44 @@ const SessionCard = ({
 
         navigateTo();
       }}
-      onPointerDown={selectionMode ? undefined : onPressStart}
-      onPointerUp={selectionMode ? undefined : onPressCancel}
-      onPointerLeave={selectionMode ? undefined : onPressCancel}
-      onPointerCancel={selectionMode ? undefined : onPressCancel}
+      onTouchStart={(e) => {
+        if (selectionMode) return;
+        touchStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        
+        // Wrap the passed onPressStart to know if it actually triggered long press
+        // Since we can't modify the parent's timer easily from here without changing signature,
+        // we'll just set a local timer for the long press state tracking.
+        setTimeout(() => {
+          if (touchStartPosRef.current) {
+            longPressOccurredRef.current = true;
+          }
+        }, 500);
+        
+        onPressStart();
+      }}
+      onTouchMove={(e) => {
+        if (selectionMode || !touchStartPosRef.current) return;
+        const dx = Math.abs(e.touches[0].clientX - touchStartPosRef.current.x);
+        const dy = Math.abs(e.touches[0].clientY - touchStartPosRef.current.y);
+        if (dx > 10 || dy > 10) {
+          touchStartPosRef.current = null;
+          onPressCancel();
+        }
+      }}
+      onTouchEnd={(e) => {
+        touchStartPosRef.current = null;
+        if (!selectionMode) onPressCancel();
+      }}
+      onTouchCancel={(e) => {
+        touchStartPosRef.current = null;
+        if (!selectionMode) onPressCancel();
+      }}
+      onContextMenu={(e) => {
+        if (!selectionMode && onPressStart) {
+          const isTouch = e.nativeEvent.pointerType === 'touch' || window.matchMedia("(pointer: coarse)").matches;
+          if (isTouch) e.preventDefault();
+        }
+      }}
     >
       <CardContent className="p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -608,6 +685,7 @@ const PacienteDetalhe = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { can, clinic, clinicId, operationalRole, user } = useAuth();
+  const { isFeatureEnabled } = useFeatureFlags();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const canViewPatientContact = can("patients.manage");
   const canViewFinancialData = can("treasury.manage");
@@ -1826,7 +1904,8 @@ const PacienteDetalhe = () => {
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
+    <PatientFilesProvider patientId={id!} clinicId={clinicId}>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
       {/* Header */}
       <div className="overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 px-4 py-4 shadow-sm sm:px-5">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
@@ -1981,12 +2060,12 @@ const PacienteDetalhe = () => {
               type="button"
               variant={patient.is_recurring ? "default" : "outline"}
               size="sm"
-              className="h-9 max-w-[180px] gap-1.5 rounded-xl px-2 text-xs"
+              className={getDesignLabButtonClass("hover:w-[200px]", "h-9 rounded-xl text-xs")}
               onClick={() => setRecurrenceDialogOpen(true)}
               title={patient.is_recurring ? `Recorrente: ${patientRecurrenceLabel}` : "Configurar recorrência"}
             >
-              <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{patientRecurrenceLabel}</span>
+              <CalendarClock className={`${designLabIconClass} h-3.5 w-3.5`} />
+              <span className={designLabLabelClass}>{patientRecurrenceLabel}</span>
             </Button>
           }
         />
@@ -1995,34 +2074,25 @@ const PacienteDetalhe = () => {
       {/* Group management toolbar */}
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="grid w-full grid-cols-2 rounded-xl border bg-background p-1 shadow-sm sm:w-auto">
-            <Button
-              type="button"
-              size="sm"
-              variant={recordsView === "list" ? "default" : "ghost"}
-              className="gap-2 rounded-lg"
-              onClick={() => setRecordsView("list")}
-            >
-              <FolderPlus className="h-4 w-4" />
-              Grupos
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={recordsView === "dashboard" ? "default" : "ghost"}
-              className="gap-2 rounded-lg"
-              onClick={() => setRecordsView("dashboard")}
-            >
-              <BarChart3 className="h-4 w-4" />
-              Dashboard
-            </Button>
-          </div>
+          <LiquidTabs
+            tabs={[
+              { id: "list", label: "Grupos", icon: FolderPlus, buttonClass: getDesignLabButtonClass("hover:w-[120px]"), labelClass: designLabLabelClass, iconClass: designLabIconClass },
+              ...(isFeatureEnabled("storage_s3_integration") ? [{ id: "files", label: "Arquivos", icon: FileText, buttonClass: getDesignLabButtonClass("hover:w-[125px]"), labelClass: designLabLabelClass, iconClass: designLabIconClass }] : []),
+              ...(isFeatureEnabled("dashboards_patient") ? [{ id: "dashboard", label: "Estatísticas", icon: BarChart3, buttonClass: getDesignLabButtonClass("hover:w-[140px]"), labelClass: designLabLabelClass, iconClass: designLabIconClass }] : [])
+            ]}
+            activeTab={recordsView}
+            onChange={(val) => setRecordsView(val as "list" | "files" | "dashboard")}
+            className="w-full sm:w-auto"
+            tabClassName="flex-1 sm:flex-none"
+          />
           <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
-            <h2 className="text-lg font-semibold leading-tight">{recordsView === "dashboard" ? "Dashboard de Anamnese" : "Grupos & Atendimentos"}</h2>
+            <h2 className="text-lg font-semibold leading-tight">
+              {recordsView === "dashboard" ? "Dashboard de Anamnese" : recordsView === "files" ? "Arquivos do Paciente" : "Grupos & Atendimentos"}
+            </h2>
             {!isIntern && recordsView === "list" && (
-              <Button variant="outline" size="sm" onClick={openNewGroup}>
-                <FolderPlus className="h-4 w-4 mr-2" />
-                Novo Grupo
+              <Button variant="outline" size="sm" onClick={openNewGroup} className={getDesignLabButtonClass("hover:w-[140px]")}>
+                <FolderPlus className={`${designLabIconClass} h-4 w-4`} />
+                <span className={designLabLabelClass}>Novo Grupo</span>
               </Button>
             )}
           </div>
@@ -2035,6 +2105,14 @@ const PacienteDetalhe = () => {
             onChartChange={handleDashboardChartChange}
             onSelectedTemplateIdChange={setDashboardTemplateFilter}
             selectedTemplateId={dashboardTemplateFilter}
+          />
+        ) : recordsView === "files" ? (
+          <PatientFilesPanel
+            clinicId={clinicId}
+            patientId={patient.id}
+            sessionId={null}
+            title="Arquivos do paciente"
+            variant="patient"
           />
         ) : (
           <>
@@ -2094,7 +2172,7 @@ const PacienteDetalhe = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Sem grupo</SelectItem>
-                  {groups.map((group) => (
+                  {Array.from(new Map(groups.map(g => [g.name, g])).values()).map((group) => (
                     <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -2883,7 +2961,8 @@ const PacienteDetalhe = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </motion.div>
+      </motion.div>
+    </PatientFilesProvider>
   );
 };
 

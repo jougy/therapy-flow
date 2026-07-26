@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Eye, EyeOff, KeyRound, Loader2, LogIn, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +14,7 @@ import { buildPublicAppUrl } from "@/lib/public-app-url";
 const normalizeCpf = (value: string) => value.replace(/\D/g, "").slice(0, 11);
 
 const Auth = () => {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "recovery">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -214,16 +216,25 @@ const Auth = () => {
                   </>
                 )}
               </Button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRecoveryEmail(email);
-                    setMode("recovery");
-                  }}
-                  className="w-full text-center text-sm font-medium text-primary transition-colors hover:text-primary/80"
-                >
-                  Esqueci minha senha
-                </button>
+                <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecoveryEmail(email);
+                      setMode("recovery");
+                    }}
+                    className="w-full text-center text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                  >
+                    Esqueci minha senha
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/cadastro/conta-alfa")}
+                    className="w-full text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Não tem uma conta? Criar conta
+                  </button>
+                </div>
               </form>
             )}
           </CardContent>

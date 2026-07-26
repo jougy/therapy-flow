@@ -44,6 +44,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 ### Operacao tecnica e qualidade
 
 - [[Ambiente e operacao]]
+- [[Ambiente Mobile e Scrcpy]]
 - [[Deploy - Cloudflare Pages]]
 - [[Backup do Supabase antes de deploy]]
 - [[TDD e checks]]
@@ -87,10 +88,12 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 ### Engenharia
 
 - [[Ambiente e operacao]]
+- [[Ambiente Mobile e Scrcpy]]
 - [[Deploy - Cloudflare Pages]]
 - [[Backup do Supabase antes de deploy]]
 - [[TDD e checks]]
 - [[Inventario de inputs]]
+- [[Feature Flags - Guia]]
 
 ### Seguranca
 

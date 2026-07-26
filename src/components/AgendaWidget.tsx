@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format, isSameDay, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Loader2, Plus, X } from "lucide-react";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Loader2, Plus, X, Play } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
@@ -13,6 +13,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { getDesignLabButtonClass, designLabLabelClass, designLabIconClass } from "@/lib/design-animations";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -636,13 +637,14 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
         </div>
 
         {fixedPatientId ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button variant="default" size="sm" className="w-full" onClick={handleOpenAddDialog}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              Agendar
+          <div className="flex flex-wrap gap-2">
+            <Button variant="default" size="sm" className={getDesignLabButtonClass("hover:w-[120px]")} onClick={handleOpenAddDialog}>
+              <Plus className={`${designLabIconClass} h-3.5 w-3.5`} />
+              <span className={designLabLabelClass}>Agendar</span>
             </Button>
-            <Button variant="outline" size="sm" className="w-full" onClick={handleStartAttendanceNow}>
-              Iniciar atendimento agora
+            <Button variant="outline" size="sm" className={getDesignLabButtonClass("hover:w-[260px]")} onClick={handleStartAttendanceNow}>
+              <Play className={`${designLabIconClass} h-3.5 w-3.5`} />
+              <span className={designLabLabelClass}>Iniciar atendimento agora</span>
             </Button>
           </div>
         ) : (

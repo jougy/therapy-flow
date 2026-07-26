@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUpDown, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, FileText, ListFilter, Loader2, Plus, Search, UsersRound, X } from "lucide-react";
+import { ArrowDown, ArrowUpDown, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, FileText, ListFilter, Loader2, Plus, Search, Trash2, UsersRound, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/components/ui/use-toast";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import AgendaWidget from "@/components/AgendaWidget";
 import PatientCard from "@/components/PatientCard";
 import {
@@ -41,7 +42,9 @@ import {
   type HomeSessionRecord,
 } from "@/lib/home-patients-view";
 import { getLegacyGroupHex } from "@/lib/group-colors";
+import { getDesignLabButtonClass, designLabLabelClass, designLabIconClass } from "@/lib/design-animations";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
+import { LiquidTabs } from "@/components/ui/liquid-tabs";
 import { normalizePatientOriginType, PATIENT_ORIGIN_OPTIONS, type PatientOriginType } from "@/lib/patient-origin";
 import { AGENDA_EVENTS_UPDATED_EVENT } from "@/lib/agenda-events";
 import { formatMoneyCents, getPaymentMethodLabel, getPaymentStatusLabel, MAX_SESSION_AMOUNT_CENTS, PAYMENT_METHOD_OPTIONS } from "@/lib/session-operations";
@@ -78,6 +81,12 @@ const FILTER_SECTIONS = {
 } as const;
 
 type FilterSectionKey = (typeof FILTER_SECTIONS)[keyof typeof FILTER_SECTIONS];
+
+const SESSION_STATUSES = [
+  { value: "rascunho", label: "Rascunho" },
+  { value: "concluído", label: "Concluído" },
+  { value: "cancelado", label: "Cancelado" },
+] as const;
 
 const container = {
   hidden: { opacity: 0 },
@@ -259,6 +268,12 @@ const Index = () => {
   const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
   const [mobileDockTooltip, setMobileDockTooltip] = useState<{ title: string; x: number } | null>(null);
   const [toolbarFixed, setToolbarFixed] = useState(false);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const selectionMode = selectedSessionIds.length > 0;
+  const sessionLongPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartPosRef = useRef<{x: number, y: number} | null>(null);
+  const longPressOccurredRef = useRef(false);
   const toolbarSentinelRef = useRef<HTMLDivElement | null>(null);
   const toolbarPlaceholderRef = useRef<HTMLDivElement | null>(null);
   const toolbarStartTopRef = useRef<number | null>(null);
@@ -276,8 +291,56 @@ const Index = () => {
   } | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
   const isDesignLabExperience = true;
   const { can, clinicId, user } = useAuth();
+  const { isFeatureEnabled, flags } = useFeatureFlags();
+  const hasClinicSessionsList = isFeatureEnabled("clinic_sessions_list");
+  const clinicSessionsListConfig = flags["clinic_sessions_list"] || {};
+  const canUseBulkSelection = hasClinicSessionsList && (clinicSessionsListConfig.bulk_selection !== false);
+
+  useEffect(() => {
+    if (!hasClinicSessionsList && listMode === "sessions") {
+      setListMode("patients");
+    }
+  }, [hasClinicSessionsList, listMode]);
+
+  const toggleSessionSelection = useCallback((sessionId: string) => {
+    if (!canUseBulkSelection) return;
+    setSelectedSessionIds((current) =>
+      current.includes(sessionId)
+        ? current.filter((id) => id !== sessionId)
+        : [...current, sessionId]
+    );
+  }, [canUseBulkSelection]);
+
+  const handleSessionPressStart = useCallback((sessionId: string) => {
+    if (!canUseBulkSelection) return;
+    if (sessionLongPressTimerRef.current) clearTimeout(sessionLongPressTimerRef.current);
+    sessionLongPressTimerRef.current = setTimeout(() => {
+      longPressOccurredRef.current = true;
+      setSelectedSessionIds((current) => {
+        if (!current.includes(sessionId)) {
+          return [...current, sessionId];
+        }
+        return current;
+      });
+      if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(50);
+      }
+    }, 500);
+  }, [canUseBulkSelection]);
+
+  const handleSessionPressCancel = useCallback(() => {
+    if (sessionLongPressTimerRef.current) {
+      clearTimeout(sessionLongPressTimerRef.current);
+      sessionLongPressTimerRef.current = null;
+    }
+  }, []);
+  
+  const clearSelection = useCallback(() => {
+    setSelectedSessionIds([]);
+  }, []);
   const canViewFinancialData = can("treasury.manage");
   const deletedPatientId =
     typeof (location.state as { deletedPatientId?: unknown } | null)?.deletedPatientId === "string"
@@ -1120,102 +1183,31 @@ const Index = () => {
   }, [clearMobileLongPress, stopMobileDockAutoScroll]);
 
   const renderListModeSwitch = (compact = false) => {
-    const liquidListMode = true;
-    const patientsSelected = listMode === "patients";
-    const patientsButtonStateClass = patientsSelected
-      ? liquidListMode
-        ? `text-primary-foreground shadow-sm hover:bg-primary focus-visible:bg-primary ${compact ? "bg-primary" : ""}`
-        : "bg-background text-foreground shadow-sm"
-      : "text-muted-foreground hover:text-foreground";
-    const sessionsButtonStateClass = listMode === "sessions"
-      ? liquidListMode
-        ? `text-primary-foreground shadow-sm hover:bg-primary focus-visible:bg-primary ${compact ? "bg-primary" : ""}`
-        : "bg-background text-foreground shadow-sm"
-      : "text-muted-foreground hover:text-foreground";
-    const designLabPatientsModeClass = isDesignLabExperience && !compact
-      ? patientsSelected
-        ? "group/design-action w-10 flex-none overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,color] duration-700 ease-in-out hover:w-[126px] hover:px-4 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.10),0_8px_18px_hsl(var(--primary)/0.10)] focus-visible:w-[126px] focus-visible:px-4"
-        : "group/design-action w-10 flex-none overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,color] duration-700 ease-in-out hover:w-[126px] hover:px-4 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.08),0_8px_18px_hsl(var(--primary)/0.08)] focus-visible:w-[126px] focus-visible:px-4"
-      : "flex-1 gap-2 px-3 transition-colors";
-    const designLabSessionsModeClass = isDesignLabExperience && !compact
-      ? !patientsSelected
-        ? "group/design-action w-10 flex-none overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,color] duration-700 ease-in-out hover:w-[154px] hover:px-4 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.10),0_8px_18px_hsl(var(--primary)/0.10)] focus-visible:w-[154px] focus-visible:px-4"
-        : "group/design-action w-10 flex-none overflow-hidden px-0 transition-[width,padding,box-shadow,border-color,background-color,color] duration-700 ease-in-out hover:w-[154px] hover:px-4 hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.08),0_8px_18px_hsl(var(--primary)/0.08)] focus-visible:w-[154px] focus-visible:px-4"
-      : "flex-1 gap-2 px-3 transition-colors";
-    const designLabPatientsLabelClass = compact && isDesignLabExperience
-      ? "relative z-10"
-      : compact
-        ? "sr-only"
-        : isDesignLabExperience && !patientsSelected
-        ? "relative z-10 ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[6rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[6rem] group-focus-visible/design-action:opacity-100"
-        : isDesignLabExperience
-          ? "relative z-10 ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[6rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[6rem] group-focus-visible/design-action:opacity-100"
-          : "relative z-10";
-    const designLabSessionsLabelClass = compact && isDesignLabExperience
-      ? "relative z-10"
-      : compact
-        ? "sr-only"
-        : isDesignLabExperience && patientsSelected
-        ? "relative z-10 ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[8rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[8rem] group-focus-visible/design-action:opacity-100"
-        : isDesignLabExperience
-          ? "relative z-10 ml-0 max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity,margin] duration-700 ease-in-out group-hover/design-action:ml-2 group-hover/design-action:max-w-[8rem] group-hover/design-action:opacity-100 group-focus-visible/design-action:ml-2 group-focus-visible/design-action:max-w-[8rem] group-focus-visible/design-action:opacity-100"
-          : "relative z-10";
-
     return (
-      <div
-        className={`inline-flex rounded-2xl border bg-muted/30 p-1 ${compact && isDesignLabExperience ? "h-10 w-full" : compact ? "h-11 w-24" : isDesignLabExperience ? "h-10 overflow-visible" : "h-10"}`}
-        role="tablist"
-        aria-label="Alternar lista da homepage"
-      >
-        <button
-          type="button"
-          className={`relative z-10 inline-flex items-center justify-center rounded-xl text-sm font-medium duration-700 ease-in-out ${patientsButtonStateClass} ${designLabPatientsModeClass}`}
-          onClick={() => setListMode("patients")}
-          role="tab"
-          aria-selected={patientsSelected}
-        >
-          {patientsSelected && (
-            <motion.span
-              layoutId="list-mode-indicator"
-              aria-hidden="true"
-              className="designlab-liquid-toggle-indicator pointer-events-none absolute inset-0 z-0 rounded-xl bg-primary shadow-[0_8px_18px_hsl(var(--primary)/0.20),inset_0_0_0_1px_hsl(var(--primary-foreground)/0.22)]"
-              transition={{
-                type: "spring",
-                stiffness: 260,
-                damping: 28,
-                mass: 1.4
-              }}
-              style={{ originX: 0.5, originY: 0.5 }}
-            />
-          )}
-          <UsersRound className={`relative z-10 h-4 w-4 shrink-0 transition-transform duration-700 ${isDesignLabExperience && !compact ? "group-hover/design-action:animate-[designlab-icon-dance_0.7s_ease-in-out]" : ""}`} />
-          <span className={designLabPatientsLabelClass}>Pacientes</span>
-        </button>
-        <button
-          type="button"
-          className={`relative z-10 inline-flex items-center justify-center rounded-xl text-sm font-medium duration-700 ease-in-out ${sessionsButtonStateClass} ${designLabSessionsModeClass}`}
-          onClick={() => setListMode("sessions")}
-          role="tab"
-          aria-selected={!patientsSelected}
-        >
-          {!patientsSelected && (
-            <motion.span
-              layoutId="list-mode-indicator"
-              aria-hidden="true"
-              className="designlab-liquid-toggle-indicator pointer-events-none absolute inset-0 z-0 rounded-xl bg-primary shadow-[0_8px_18px_hsl(var(--primary)/0.20),inset_0_0_0_1px_hsl(var(--primary-foreground)/0.22)]"
-              transition={{
-                type: "spring",
-                stiffness: 260,
-                damping: 28,
-                mass: 1.4
-              }}
-              style={{ originX: 0.5, originY: 0.5 }}
-            />
-          )}
-          <FileText className={`relative z-10 h-4 w-4 shrink-0 transition-transform duration-700 ${isDesignLabExperience && !compact ? "group-hover/design-action:animate-[designlab-icon-dance_0.7s_ease-in-out]" : ""}`} />
-          <span className={designLabSessionsLabelClass}>Atendimentos</span>
-        </button>
-      </div>
+      <LiquidTabs
+        tabs={[
+          { 
+            id: "patients", 
+            label: compact ? "" : "Pacientes", 
+            icon: UsersRound,
+            buttonClass: compact ? "" : isDesignLabExperience ? getDesignLabButtonClass("hover:w-[126px]") : "",
+            labelClass: compact ? "" : isDesignLabExperience ? designLabLabelClass : "",
+            iconClass: compact ? "" : isDesignLabExperience ? designLabIconClass : ""
+          },
+          ...(hasClinicSessionsList ? [{ 
+            id: "sessions", 
+            label: compact ? "" : "Atendimentos", 
+            icon: FileText,
+            buttonClass: compact ? "" : isDesignLabExperience ? getDesignLabButtonClass("hover:w-[154px]") : "",
+            labelClass: compact ? "" : isDesignLabExperience ? designLabLabelClass : "",
+            iconClass: compact ? "" : isDesignLabExperience ? designLabIconClass : ""
+          }] : [])
+        ]}
+        activeTab={listMode}
+        onChange={(val) => setListMode(val as "patients" | "sessions")}
+        className={compact ? "w-24" : ""}
+        tabClassName={compact ? "px-2 flex-1" : ""}
+      />
     );
   };
 
@@ -1290,6 +1282,63 @@ const Index = () => {
     );
   };
 
+  const handleBulkMove = async (nextGroupId: string) => {
+    if (selectedSessionIds.length === 0) return;
+    setBulkUpdating(true);
+    const { error } = await supabase
+      .from("sessions")
+      .update({ group_id: nextGroupId === "none" ? null : nextGroupId })
+      .in("id", selectedSessionIds);
+
+    if (error) {
+      toast({ title: "Erro ao mover atendimentos", description: error.message, variant: "destructive" });
+      setBulkUpdating(false);
+      return;
+    }
+
+    toast({ title: "Atendimentos movidos" });
+    clearSelection();
+    setBulkUpdating(false);
+    void fetchData({ showLoading: false });
+  };
+
+  const handleBulkStatusUpdate = async (nextStatus: string) => {
+    if (selectedSessionIds.length === 0) return;
+    setBulkUpdating(true);
+    const { error } = await supabase
+      .from("sessions")
+      .update({ status: nextStatus })
+      .in("id", selectedSessionIds);
+
+    if (error) {
+      toast({ title: "Erro ao atualizar status", description: error.message, variant: "destructive" });
+      setBulkUpdating(false);
+      return;
+    }
+
+    toast({ title: "Status dos atendimentos atualizado" });
+    clearSelection();
+    setBulkUpdating(false);
+    void fetchData({ showLoading: false });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedSessionIds.length === 0) return;
+    setBulkUpdating(true);
+    const { error } = await supabase.from("sessions").delete().in("id", selectedSessionIds);
+
+    if (error) {
+      toast({ title: "Erro ao excluir atendimentos", description: error.message, variant: "destructive" });
+      setBulkUpdating(false);
+      return;
+    }
+
+    toast({ title: "Atendimentos excluídos" });
+    clearSelection();
+    setBulkUpdating(false);
+    void fetchData({ showLoading: false });
+  };
+
   const renderSessionCard = (session: HomeSessionRecord) => {
     const patient = patientById.get(session.patient_id);
     const group = session.group_id ? groupById.get(session.group_id) : null;
@@ -1301,18 +1350,62 @@ const Index = () => {
     const credit = Math.max(0, paid - charged);
     const sessionPath = `/pacientes/${session.patient_id}/sessao/${session.id}`;
     const patientPath = `/pacientes/${session.patient_id}`;
+    const isSelected = selectedSessionIds.includes(session.id);
 
     return (
       <Card
         key={session.id}
-        className="cursor-pointer p-4 transition-shadow duration-150 hover:shadow-md"
-        onClick={() => navigate(sessionPath)}
+        className={`cursor-pointer select-none p-4 transition-shadow duration-150 hover:shadow-md ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
+        onClick={(e) => {
+          if (longPressOccurredRef.current) {
+            longPressOccurredRef.current = false;
+            return;
+          }
+          if (selectionMode) {
+            toggleSessionSelection(session.id);
+          } else {
+            navigate(sessionPath);
+          }
+        }}
+        onTouchStart={(e) => {
+          if (selectionMode) return;
+          touchStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+          handleSessionPressStart(session.id);
+        }}
+        onTouchMove={(e) => {
+          if (selectionMode || !touchStartPosRef.current) return;
+          const dx = Math.abs(e.touches[0].clientX - touchStartPosRef.current.x);
+          const dy = Math.abs(e.touches[0].clientY - touchStartPosRef.current.y);
+          if (dx > 10 || dy > 10) {
+            touchStartPosRef.current = null;
+            handleSessionPressCancel();
+          }
+        }}
+        onTouchEnd={(e) => {
+          touchStartPosRef.current = null;
+          if (!selectionMode) handleSessionPressCancel();
+        }}
+        onTouchCancel={(e) => {
+          touchStartPosRef.current = null;
+          if (!selectionMode) handleSessionPressCancel();
+        }}
+        onContextMenu={(e) => {
+          if (canUseBulkSelection && !selectionMode) {
+            const isTouch = e.nativeEvent.pointerType === 'touch' || window.matchMedia("(pointer: coarse)").matches;
+            if (isTouch) e.preventDefault();
+          }
+        }}
         role="button"
         tabIndex={0}
         aria-label={`Abrir atendimento de ${patient?.name ?? "paciente sem nome"}`}
         onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            navigate(sessionPath);
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            if (selectionMode) {
+              toggleSessionSelection(session.id);
+            } else {
+              navigate(sessionPath);
+            }
           }
         }}
       >
@@ -1322,6 +1415,11 @@ const Index = () => {
               <Clock3 className="h-4 w-4 text-muted-foreground" />
               <span className="font-semibold text-sm">{formatDateTime(session.session_date)}</span>
               <Badge variant="outline" className="capitalize">{session.status || "sem status"}</Badge>
+              {selectionMode && (
+                <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
+                  {isSelected ? "Selecionado" : "Toque para selecionar"}
+                </Badge>
+              )}
               {group || fallbackGroup ? (
                 <Badge
                   variant="secondary"
@@ -1891,7 +1989,7 @@ const Index = () => {
             <CalendarDays className={isDesignLabExperience ? designLabIconClass : "h-4 w-4"} />
             {isDesignLabExperience ? <span className={designLabLabelClass}>Agenda</span> : null}
           </Button>
-          {canViewFinancialData ? (
+          {canViewFinancialData && isFeatureEnabled("dashboards_general") ? (
             <Button
               type="button"
               variant="outline"
@@ -1916,13 +2014,13 @@ const Index = () => {
             <AgendaWidget />
           </DialogContent>
         </Dialog>
-        {canViewFinancialData ? (
+        {canViewFinancialData && isFeatureEnabled("dashboards_general") ? (
           <Dialog open={dashboardDialogOpen} onOpenChange={setDashboardDialogOpen}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-4xl sm:p-6">
               <DialogHeader className="gap-3 text-left sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <DialogTitle>Resumo geral</DialogTitle>
-                  <DialogDescription>Indicadores rápidos da clínica para acompanhar operação, atendimentos e pagamentos.</DialogDescription>
+                  <DialogDescription>Indicadores rápidas da clínica para acompanhar operação, atendimentos e pagamentos.</DialogDescription>
                 </div>
                 <Button
                   type="button"
@@ -2006,7 +2104,7 @@ const Index = () => {
             >
               {[
                 { action: "patients" as const, title: "Pacientes", icon: UsersRound, active: listMode === "patients" },
-                { action: "sessions" as const, title: "Atendimentos", icon: FileText, active: listMode === "sessions" },
+                ...(hasClinicSessionsList ? [{ action: "sessions" as const, title: "Atendimentos", icon: FileText, active: listMode === "sessions" }] : []),
                 { action: "new-patient" as const, title: "Novo paciente", icon: Plus, active: false, primary: true },
                 { action: "agenda" as const, title: "Agenda", icon: CalendarDays, active: false },
                 { action: "stats" as const, title: "Estatísticas", icon: BarChart3, active: false, disabled: !canViewFinancialData },
@@ -2120,6 +2218,45 @@ const Index = () => {
 
       {listMode === "sessions" ? (
         <div className="space-y-3">
+          {selectionMode && (
+            <div className="sticky top-0 z-10 -mx-4 mb-4 flex flex-wrap items-center gap-2 border-b border-t bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 sm:-mx-6 sm:px-6">
+              <Badge variant="secondary">{selectedSessionIds.length} atendimento(s) selecionado(s)</Badge>
+              <Select onValueChange={(value) => void handleBulkMove(value)} disabled={bulkUpdating || selectedSessionIds.length === 0}>
+                <SelectTrigger className="h-8 w-[160px] text-xs">
+                  <SelectValue placeholder="Mover para grupo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhum grupo</SelectItem>
+                  {Array.from(new Map(patientGroups.map(g => [g.name, g])).values()).map((group) => (
+                    <SelectItem key={group.id} value={group.id}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select onValueChange={(value) => void handleBulkStatusUpdate(value)} disabled={bulkUpdating || selectedSessionIds.length === 0}>
+                <SelectTrigger className="h-8 w-[140px] text-xs">
+                  <SelectValue placeholder="Alterar status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SESSION_STATUSES.map((status) => (
+                    <SelectItem key={status.value} value={status.value}>
+                      {status.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* Ocultando temporariamente o botão de compartilhar se for complexo, mas se a rota existe, adicionaremos no futuro, ou agora */}
+              <Button type="button" variant="destructive" size="sm" className="h-8 text-xs" onClick={() => void handleBulkDelete()} disabled={bulkUpdating || selectedSessionIds.length === 0}>
+                <Trash2 className="mr-1.5 h-3 w-3" />
+                Excluir
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={clearSelection} disabled={bulkUpdating}>
+                <X className="mr-1.5 h-3 w-3" />
+                Cancelar
+              </Button>
+            </div>
+          )}
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-medium text-muted-foreground">Atendimentos</h2>
             <p className="text-sm text-muted-foreground">

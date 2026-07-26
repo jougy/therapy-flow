@@ -18,6 +18,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SessionShareDialog } from "@/components/SessionShareDialog";
+import { PatientFilesPanel } from "@/components/PatientFilesPanel";
+import { PatientFilesProvider } from "@/contexts/PatientFilesContext";
 import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -2413,6 +2415,15 @@ const SessaoDetalhe = () => {
 
           {renderBaseSliderSection("view")}
 
+          <PatientFilesProvider patientId={patientId!} clinicId={clinicId}>
+            <PatientFilesPanel
+              clinicId={clinicId}
+              patientId={patientId!}
+              sessionId={isNew ? null : sessionId}
+              variant="session"
+            />
+          </PatientFilesProvider>
+
           <Card>
             <CardContent className="space-y-4 p-6">
               <div>
@@ -2583,8 +2594,9 @@ const SessaoDetalhe = () => {
 
       {/* Tabs */}
       <Tabs defaultValue="anamnese" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-3">
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
           <TabsTrigger value="anamnese" className="px-2 py-2 text-xs sm:text-sm">Anamnese</TabsTrigger>
+          <TabsTrigger value="arquivos" className="px-2 py-2 text-xs sm:text-sm">Arquivos</TabsTrigger>
           <TabsTrigger value="tratamento" className="px-2 py-2 text-xs sm:text-sm">Tratamento</TabsTrigger>
           <TabsTrigger value="pagamento" className="px-2 py-2 text-xs sm:text-sm">Pagamento</TabsTrigger>
         </TabsList>
@@ -2613,6 +2625,18 @@ const SessaoDetalhe = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="arquivos" className="mt-4 space-y-4">
+          <PatientFilesProvider patientId={patientId!} clinicId={clinicId}>
+            <PatientFilesPanel
+              clinicId={clinicId}
+              disabledReason={isNew ? "Salve o atendimento antes de anexar arquivos a esta sessão." : undefined}
+              patientId={patientId!}
+              sessionId={isNew ? null : sessionId}
+              variant="session"
+            />
+          </PatientFilesProvider>
         </TabsContent>
 
         <TabsContent value="tratamento" className="mt-4 space-y-4">
