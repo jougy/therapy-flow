@@ -47,11 +47,12 @@ const supabaseMocks = vi.hoisted(() => {
       };
     }
 
-    if (table === "user_roles") {
+    if (table === "user_roles" || table === "clinic_operational_role_capabilities") {
       return {
         eq: vi.fn(() => createQueryResult([])),
       };
     }
+
 
     if (table === "clinic_memberships") {
       const builder = {
@@ -215,4 +216,42 @@ describe("useAuth runtime resilience", () => {
     expect(screen.getByTestId("limit")).toHaveTextContent("missing");
     expect(supabaseMocks.signOut).not.toHaveBeenCalled();
   });
+
+  it("preserves active clinic and membership during background auth state refresh", async () => {
+    let selectClinicFn: (id: string) => Promise<void> = async () => {};
+    let refreshFn: () => Promise<void> = async () => {};
+
+    const ClinicTestProbe = () => {
+      const { clinic, refreshAuthState, selectClinic } = useAuth();
+      selectClinicFn = selectClinic;
+      refreshFn = refreshAuthState;
+
+      return <span data-testid="clinic-id">{clinic?.id ?? "none"}</span>;
+    };
+
+    render(
+      <AuthProvider>
+        <ClinicTestProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("clinic-id")).toHaveTextContent("none");
+    });
+
+    await waitFor(async () => {
+      await selectClinicFn("clinic-1");
+    });
+    expect(screen.getByTestId("clinic-id")).toHaveTextContent("clinic-1");
+
+    // Trigger background refresh (simulating tab switch / token refresh)
+    await waitFor(async () => {
+      await refreshFn();
+    });
+
+    // The active clinic should be preserved seamlessly without resetting to "none"
+    expect(screen.getByTestId("clinic-id")).toHaveTextContent("clinic-1");
+  });
 });
+
+

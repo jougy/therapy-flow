@@ -208,6 +208,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [platformAccess, setPlatformAccess] = useState<PlatformClinicAccess | null>(null);
   const [roleCapabilityOverrides, setRoleCapabilityOverrides] = useState<RoleCapabilityOverride[]>([]);
   const currentSecuritySessionKeyRef = useRef<string | null>(null);
+  const clinicRef = useRef<ClinicSummary | null>(null);
+  const membershipRef = useRef<Membership | null>(null);
+  const platformAccessRef = useRef<PlatformClinicAccess | null>(null);
+
+  useEffect(() => {
+    clinicRef.current = clinic;
+  }, [clinic]);
+
+  useEffect(() => {
+    membershipRef.current = membership;
+  }, [membership]);
+
+  useEffect(() => {
+    platformAccessRef.current = platformAccess;
+  }, [platformAccess]);
 
   const getStoredActiveClinicId = () => {
     if (typeof window === "undefined") {
@@ -403,13 +418,50 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     setProfile(nextProfile);
     setAccessibleClinics(clinicOptions);
-    setMembership(null);
-    setClinic(null);
     setIsSuperAdmin((roleRes.data ?? []).some((role) => role.role === "super_admin"));
     setIsPlatformOwner(nextIsPlatformOwner);
     setPlatformMfaVerified(nextPlatformMfaVerified);
-    setPlatformAccess(null);
+
+    setPlatformAccess((prevAccess) => {
+      if (nextIsPlatformOwner && prevAccess) {
+        return prevAccess;
+      }
+      return null;
+    });
+
+    setClinic((prevClinic) => {
+      if (nextIsPlatformOwner && platformAccessRef.current) {
+        return prevClinic;
+      }
+
+      if (prevClinic) {
+        const matchingOption = clinicOptions.find((opt) => opt.clinic.id === prevClinic.id);
+        if (matchingOption) {
+          return matchingOption.clinic;
+        }
+      }
+
+      return null;
+    });
+
+    setMembership((prevMembership) => {
+      if (nextIsPlatformOwner && platformAccessRef.current) {
+        return prevMembership;
+      }
+
+      const activeClinicId = clinicRef.current?.id || prevMembership?.clinic_id;
+      if (activeClinicId) {
+        const matchingOption = clinicOptions.find((opt) => opt.clinic.id === activeClinicId);
+        if (matchingOption) {
+          return matchingOption.membership;
+        }
+      }
+
+      return null;
+    });
   }, [fetchAccessibleClinics]);
+
+
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -499,7 +551,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [clinic, endCurrentSecuritySession, registerSecuritySession, session]);
 
   useEffect(() => {
-    if (!session?.user || !clinic?.id) {
+    if (!session?.user || !clinic?.id || typeof supabase.channel !== "function") {
       return;
     }
 
@@ -529,9 +581,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
     return () => {
-      void supabase.removeChannel(channel);
+      if (typeof supabase.removeChannel === "function") {
+        void supabase.removeChannel(channel);
+      }
     };
   }, [clinic?.id, fetchRoleCapabilityOverrides, session?.user]);
+
 
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {

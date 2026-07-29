@@ -58,12 +58,20 @@ describe("hasCapability", () => {
     "treasury.manage",
     "agenda.delete_events",
     "subaccounts_analytics.read",
+    "team_development.manage",
     "patients.read",
     "patients.write",
+    "patients.delete",
+    "patients.manage_groups",
     "schedule.read",
     "schedule.write",
+    "schedule.write_others",
     "sessions.read",
     "sessions.write",
+    "sessions.read_all",
+    "sessions.write_others",
+    "sessions.share",
+    "sessions.delete",
     "session.delete_draft",
   ])("grants every capability to account owner", (capability) => {
     expect(hasCapability(ownerContext, capability)).toBe(true);
@@ -73,12 +81,15 @@ describe("hasCapability", () => {
     expect(hasCapability(adminContext, "forms.manage")).toBe(true);
     expect(hasCapability(adminContext, "treasury.manage")).toBe(true);
     expect(hasCapability(adminContext, "subscription_billing.manage")).toBe(false);
-    expect(hasCapability(adminContext, "subaccounts_roles.manage")).toBe(true);
+    expect(hasCapability(adminContext, "sessions.read_all")).toBe(true);
+    expect(hasCapability(adminContext, "sessions.write_others")).toBe(true);
   });
 
   it("keeps professional focused on clinical work", () => {
     expect(hasCapability(professionalContext, "sessions.write")).toBe(true);
     expect(hasCapability(professionalContext, "patients.write")).toBe(true);
+    expect(hasCapability(professionalContext, "sessions.read_all")).toBe(false);
+    expect(hasCapability(professionalContext, "sessions.write_others")).toBe(false);
     expect(hasCapability(professionalContext, "forms.manage")).toBe(false);
     expect(hasCapability(professionalContext, "treasury.manage")).toBe(false);
   });
@@ -95,6 +106,8 @@ describe("hasCapability", () => {
     expect(hasCapability(internContext, "patients.write")).toBe(true);
     expect(hasCapability(internContext, "sessions.read")).toBe(true);
     expect(hasCapability(internContext, "sessions.write")).toBe(true);
+    expect(hasCapability(internContext, "sessions.read_all")).toBe(false);
+    expect(hasCapability(internContext, "sessions.write_others")).toBe(false);
     expect(hasCapability(internContext, "session.delete_draft")).toBe(false);
     expect(hasCapability(internContext, "schedule.read")).toBe(false);
     expect(hasCapability(internContext, "schedule.write")).toBe(false);

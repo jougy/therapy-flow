@@ -1367,32 +1367,37 @@ const Index = () => {
             navigate(sessionPath);
           }
         }}
-        onTouchStart={(e) => {
-          if (selectionMode) return;
-          touchStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        onPointerDown={(e) => {
+          if (selectionMode || (e.button !== undefined && e.button !== 0)) return;
+          touchStartPosRef.current = { x: e.clientX, y: e.clientY };
           handleSessionPressStart(session.id);
         }}
-        onTouchMove={(e) => {
+        onPointerMove={(e) => {
           if (selectionMode || !touchStartPosRef.current) return;
-          const dx = Math.abs(e.touches[0].clientX - touchStartPosRef.current.x);
-          const dy = Math.abs(e.touches[0].clientY - touchStartPosRef.current.y);
+          const dx = Math.abs(e.clientX - touchStartPosRef.current.x);
+          const dy = Math.abs(e.clientY - touchStartPosRef.current.y);
           if (dx > 10 || dy > 10) {
             touchStartPosRef.current = null;
             handleSessionPressCancel();
           }
         }}
-        onTouchEnd={(e) => {
+        onPointerUp={() => {
           touchStartPosRef.current = null;
           if (!selectionMode) handleSessionPressCancel();
         }}
-        onTouchCancel={(e) => {
+        onPointerCancel={() => {
           touchStartPosRef.current = null;
           if (!selectionMode) handleSessionPressCancel();
         }}
         onContextMenu={(e) => {
           if (canUseBulkSelection && !selectionMode) {
-            const isTouch = e.nativeEvent.pointerType === 'touch' || window.matchMedia("(pointer: coarse)").matches;
-            if (isTouch) e.preventDefault();
+            e.preventDefault();
+            longPressOccurredRef.current = true;
+            touchStartPosRef.current = null;
+            if (!isIntern) {
+              setSelectionMode(true);
+              setSelectedSessionIds([session.id]);
+            }
           }
         }}
         role="button"

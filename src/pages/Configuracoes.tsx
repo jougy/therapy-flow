@@ -375,8 +375,8 @@ const ROLE_PERMISSION_CATEGORIES: Array<{ id: RolePermissionCategoryId; label: s
 const ROLE_PERMISSION_ITEMS: RolePermissionItem[] = [
   {
     category: "clinical",
-    description: "Cadastro, contato, grupos e dados operacionais dos pacientes.",
-    details: "Controla acesso à lista de pacientes, ficha cadastral, contato, grupos e informações operacionais do paciente. A edição permite criar pacientes, alterar cadastro e reorganizar grupos.",
+    description: "Cadastro, contato e dados operacionais dos pacientes.",
+    details: "Controla acesso à lista de pacientes, ficha cadastral e informações operacionais. A edição permite criar e alterar cadastros.",
     editCapability: "patients.write",
     key: "patients",
     title: "Pacientes",
@@ -384,101 +384,164 @@ const ROLE_PERMISSION_ITEMS: RolePermissionItem[] = [
   },
   {
     category: "clinical",
-    description: "Evolução, fichas clínicas, registros e histórico de atendimentos.",
-    details: "Controla o histórico clínico do paciente, registros de evolução, fichas preenchidas e atendimentos. A edição permite criar, iniciar e alterar registros clínicos.",
+    description: "Criação, alteração e organização de grupos e categorias de pacientes.",
+    details: "Controla o acesso à estrutura de grupos e tags de organização dos pacientes da clínica.",
+    editCapability: "patients.manage_groups",
+    key: "patients-groups",
+    title: "Grupos de pacientes",
+    viewCapability: "patients.read",
+  },
+  {
+    category: "clinical",
+    description: "Remoção e exclusão definitiva de cadastros de pacientes.",
+    details: "Controla a permissão crítica de apagar registros e fichas cadastrais de pacientes.",
+    editCapability: "patients.delete",
+    key: "patients-delete",
+    title: "Exclusão de pacientes",
+    viewCapability: "patients.delete",
+  },
+  {
+    category: "clinical",
+    description: "Evolução, fichas clínicas e histórico dos próprios atendimentos.",
+    details: "Controla o histórico clínico, registros de evolução e fichas preenchidas pelo próprio colaborador ou atribuídas a ele.",
     editCapability: "sessions.write",
     key: "sessions",
-    title: "Atendimentos",
+    title: "Atendimentos próprios",
     viewCapability: "sessions.read",
   },
   {
     category: "clinical",
-    description: "Remoção de rascunhos de atendimentos.",
-    details: "Controla a exclusão de rascunhos de atendimento. Visualmente fica perto de atendimentos, mas usa a mesma permissão já existente para remover rascunhos.",
+    description: "Visualização de todos os atendimentos da clínica e edição de registros de outros profissionais.",
+    details: "Controla o acesso aos atendimentos de toda a equipe (Ver todos) e a alteração de registros e evoluções iniciados por outros colaboradores (Editar outros).",
+    editCapability: "sessions.write_others",
+    key: "sessions-team",
+    title: "Atendimentos da equipe (Todos)",
+    viewCapability: "sessions.read_all",
+  },
+  {
+    category: "clinical",
+    description: "Compartilhamento explícito de atendimentos entre membros da equipe.",
+    details: "Controla a possibilidade de compartilhar fichas e prontuários específicos com outros profissionais da clínica.",
+    editCapability: "sessions.share",
+    key: "sessions-share",
+    title: "Compartilhamento de atendimentos",
+    viewCapability: "sessions.share",
+  },
+  {
+    category: "clinical",
+    description: "Remoção de rascunhos de atendimentos não finalizados.",
+    details: "Controla a exclusão de rascunhos de atendimento antes de serem consolidados no histórico.",
     editCapability: "session.delete_draft",
-    viewCapability: "session.delete_draft",
     key: "session-drafts",
     title: "Rascunhos de atendimento",
+    viewCapability: "session.delete_draft",
+  },
+  {
+    category: "clinical",
+    description: "Exclusão permanente de atendimentos consolidados e histórico clínico.",
+    details: "Controla a remoção definitiva de atendimentos e evoluções salvas no sistema.",
+    editCapability: "sessions.delete",
+    key: "sessions-delete",
+    title: "Exclusão de atendimentos",
+    viewCapability: "sessions.delete",
   },
   {
     category: "agenda",
-    description: "Agenda, compromissos e eventos da clínica.",
-    details: "Controla a visualização da agenda, horários e eventos da clínica. A edição permite criar e alterar agendamentos.",
+    description: "Visualização e agendamento na própria agenda.",
+    details: "Controla a visualização da agenda e a criação de compromissos para o próprio colaborador.",
     editCapability: "schedule.write",
     key: "schedule",
-    title: "Agenda",
+    title: "Agenda própria",
     viewCapability: "schedule.read",
   },
   {
     category: "agenda",
-    description: "Exclusão de eventos já criados na agenda.",
-    details: "Controla especificamente a remoção de eventos da agenda. Esta opção usa a permissão já existente de exclusão, apenas reorganizada junto das demais opções da agenda.",
+    description: "Marcação e edição de compromissos na agenda de outros profissionais.",
+    details: "Permite agendar, mover e editar horários nos calendários de outros membros da clínica.",
+    editCapability: "schedule.write_others",
+    key: "schedule-team",
+    title: "Agenda da equipe",
+    viewCapability: "schedule.read",
+  },
+  {
+    category: "agenda",
+    description: "Cancelamento e exclusão de eventos já criados na agenda.",
+    details: "Controla a remoção e limpeza de agendamentos e compromissos do calendário.",
     editCapability: "agenda.delete_events",
-    viewCapability: "agenda.delete_events",
     key: "agenda-delete",
     title: "Exclusão da agenda",
+    viewCapability: "agenda.delete_events",
   },
   {
     category: "team",
-    description: "Convites, suspensão, desligamento e edição operacional da equipe.",
-    details: "Controla a lista de colaboradores, status de acesso e dados operacionais da equipe. Usa a permissão já existente de gerenciar colaboradores.",
+    description: "Convites, suspensão, desligamento e cadastro de colaboradores.",
+    details: "Controla a lista de equipe, status de acesso e convites de novos usuários.",
     editCapability: "subaccounts.manage",
-    viewCapability: "subaccounts.manage",
     key: "subaccounts",
     title: "Colaboradores",
+    viewCapability: "subaccounts.manage",
   },
   {
     category: "team",
-    description: "Hierarquias e poderes dos papéis operacionais.",
-    details: "Controla a visualização e alteração dos papéis operacionais. Usa a permissão já existente de gerenciar papéis operacionais.",
+    description: "Configuração de hierarquias e permissões dos papéis operacionais.",
+    details: "Controla a criação e personalização de papéis operacionais da clínica.",
     editCapability: "subaccounts_roles.manage",
-    viewCapability: "subaccounts_roles.manage",
     key: "roles",
     title: "Papéis operacionais",
+    viewCapability: "subaccounts_roles.manage",
   },
   {
     category: "team",
-    description: "Indicadores e desenvolvimento operacional da equipe.",
-    details: "Controla dashboards e indicadores de desenvolvimento dos colaboradores, como atividade, produção e sinais operacionais da equipe.",
+    description: "Visualização de métricas, gráficos e produtividade da equipe.",
+    details: "Controla dashboards de acompanhamento e estatísticas de produção dos colaboradores.",
     key: "team-analytics",
     title: "Analytics da equipe",
     viewCapability: "subaccounts_analytics.read",
   },
   {
+    category: "team",
+    description: "Avaliações internas, planos de metas e níveis de evolução dos colaboradores.",
+    details: "Controla o preenchimento de feedbacks, metas operacionais e acompanhamento individual de desenvolvimento.",
+    editCapability: "team_development.manage",
+    key: "team-development",
+    title: "Desenvolvimento da equipe",
+    viewCapability: "subaccounts_analytics.read",
+  },
+  {
     category: "admin",
-    description: "Dados institucionais, marca e preferências da clínica.",
-    details: "Controla nome, marca, dados institucionais e preferências gerais da clínica. Usa a permissão já existente de gerenciar perfil da clínica.",
+    description: "Dados institucionais, logotipo, endereço e preferências da clínica.",
+    details: "Controla nome fantasia, razão social, logotipo e dados gerais da empresa.",
     editCapability: "clinic_profile.manage",
-    viewCapability: "clinic_profile.manage",
     key: "clinic-profile",
     title: "Perfil da clínica",
+    viewCapability: "clinic_profile.manage",
   },
   {
     category: "admin",
-    description: "Modelos, importação e manutenção das fichas de anamnese.",
-    details: "Controla o acesso aos modelos de formulários e fichas de anamnese. Usa a permissão já existente de gerenciar formulários.",
+    description: "Criação, edição, importação e exportação de modelos de anamnese.",
+    details: "Controla a criação de novos modelos de ficha e formulários personalizados.",
     editCapability: "forms.manage",
-    viewCapability: "forms.manage",
     key: "forms",
     title: "Formulários",
+    viewCapability: "forms.manage",
   },
   {
     category: "finance",
-    description: "Dados financeiros, cobranças, créditos e tesouraria.",
-    details: "Controla valores cobrados, pagos, créditos, pendências, indicadores financeiros e a área de tesouraria. Usa a permissão já existente de gerenciar tesouraria.",
+    description: "Tesouraria, fluxo de caixa, pagamentos e dados financeiros.",
+    details: "Controla o acesso à gestão financeira, recibos, caixa e valores dos atendimentos.",
     editCapability: "treasury.manage",
-    viewCapability: "treasury.manage",
     key: "treasury",
     title: "Tesouraria",
+    viewCapability: "treasury.manage",
   },
   {
     category: "finance",
-    description: "Assinatura, cobrança e limites comerciais do plano.",
-    details: "Controla assinatura, cobrança e limites comerciais da clínica. Por segurança, a edição continua reservada ao dono da conta.",
+    description: "Gestão da assinatura do plano, cartões e limites comerciais.",
+    details: "Controla o faturamento da conta junto à plataforma.",
     editCapability: "subscription_billing.manage",
-    viewCapability: "subscription_billing.manage",
     key: "billing",
     title: "Assinatura",
+    viewCapability: "subscription_billing.manage",
   },
 ];
 
@@ -528,6 +591,41 @@ const RolePermissionSwitch = ({
         )}
       </span>
     </button>
+  );
+};
+
+const PermissionHelpButton = ({ details, title }: { details: string; title: string }) => {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95 touch-manipulation"
+          aria-label={`Explicar permissão ${title}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((prev) => !prev);
+          }}
+        >
+          <CircleHelp className="h-4 w-4" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-72 max-w-[calc(100vw-2rem)] rounded-xl border bg-popover p-3.5 text-xs sm:text-sm leading-relaxed shadow-lg text-popover-foreground z-50"
+      >
+        <div className="space-y-1.5">
+          <p className="font-semibold text-foreground flex items-center gap-1.5">
+            <CircleHelp className="h-4 w-4 text-primary shrink-0" />
+            {title}
+          </p>
+          <p className="text-muted-foreground leading-relaxed">{details}</p>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };
 
@@ -3369,16 +3467,14 @@ const Configuracoes = () => {
                         <div className="flex items-center gap-2 pr-10">
                           <DialogTitle>Gerenciar papéis operacionais</DialogTitle>
                           <Popover open={roleHelpOpen} onOpenChange={setRoleHelpOpen}>
-                            <div onMouseEnter={() => setRoleHelpOpen(true)} onMouseLeave={() => setRoleHelpOpen(false)}>
-                              <PopoverTrigger asChild>
-                                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" aria-label="Ajuda sobre papéis operacionais">
-                                  <CircleHelp className="h-4 w-4" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent align="end" className="w-80 text-sm leading-relaxed">
-                                Este painel ajuda a definir como cada pessoa da equipe pode atuar na clínica. Use os papéis para organizar níveis de acesso, liberar apenas as ferramentas necessárias e manter a rotina da equipe mais clara e segura.
-                              </PopoverContent>
-                            </div>
+                            <PopoverTrigger asChild>
+                              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground touch-manipulation" aria-label="Ajuda sobre papéis operacionais">
+                                <CircleHelp className="h-4 w-4" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)] text-sm leading-relaxed z-50">
+                              Este painel ajuda a definir como cada pessoa da equipe pode atuar na clínica. Use os papéis para organizar níveis de acesso, liberar apenas as ferramentas necessárias e manter a rotina da equipe mais clara e segura.
+                            </PopoverContent>
                           </Popover>
                         </div>
                         <DialogDescription className="sr-only">
@@ -3508,22 +3604,7 @@ const Configuracoes = () => {
                                   <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <p className="font-medium">{item.title}</p>
-                                      <TooltipProvider delayDuration={150}>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <button
-                                              type="button"
-                                              className="inline-flex h-6 w-6 items-center justify-center rounded-full border bg-background text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                              aria-label={`Explicar permissão ${item.title}`}
-                                            >
-                                              <CircleHelp className="h-3.5 w-3.5" />
-                                            </button>
-                                          </TooltipTrigger>
-                                          <TooltipContent className="max-w-xs text-sm leading-relaxed" side="top" align="start">
-                                            {item.details}
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
+                                      <PermissionHelpButton details={item.details} title={item.title} />
                                       {hasOverride ? <Badge variant="outline">Personalizado</Badge> : null}
                                       {isReserved ? <Badge variant="secondary">Reservado</Badge> : null}
                                     </div>

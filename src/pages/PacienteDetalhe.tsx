@@ -535,42 +535,41 @@ const SessionCard = ({
 
         navigateTo();
       }}
-      onTouchStart={(e) => {
-        if (selectionMode) return;
-        touchStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        
-        // Wrap the passed onPressStart to know if it actually triggered long press
-        // Since we can't modify the parent's timer easily from here without changing signature,
-        // we'll just set a local timer for the long press state tracking.
+      onPointerDown={(e) => {
+        if (selectionMode || (e.button !== undefined && e.button !== 0)) return;
+        touchStartPosRef.current = { x: e.clientX, y: e.clientY };
+
         setTimeout(() => {
           if (touchStartPosRef.current) {
             longPressOccurredRef.current = true;
           }
-        }, 500);
-        
+        }, 400);
+
         onPressStart();
       }}
-      onTouchMove={(e) => {
+      onPointerMove={(e) => {
         if (selectionMode || !touchStartPosRef.current) return;
-        const dx = Math.abs(e.touches[0].clientX - touchStartPosRef.current.x);
-        const dy = Math.abs(e.touches[0].clientY - touchStartPosRef.current.y);
+        const dx = Math.abs(e.clientX - touchStartPosRef.current.x);
+        const dy = Math.abs(e.clientY - touchStartPosRef.current.y);
         if (dx > 10 || dy > 10) {
           touchStartPosRef.current = null;
           onPressCancel();
         }
       }}
-      onTouchEnd={(e) => {
+      onPointerUp={() => {
         touchStartPosRef.current = null;
         if (!selectionMode) onPressCancel();
       }}
-      onTouchCancel={(e) => {
+      onPointerCancel={() => {
         touchStartPosRef.current = null;
         if (!selectionMode) onPressCancel();
       }}
       onContextMenu={(e) => {
         if (!selectionMode && onPressStart) {
-          const isTouch = e.nativeEvent.pointerType === 'touch' || window.matchMedia("(pointer: coarse)").matches;
-          if (isTouch) e.preventDefault();
+          e.preventDefault();
+          longPressOccurredRef.current = true;
+          touchStartPosRef.current = null;
+          onPressStart();
         }
       }}
     >
@@ -750,7 +749,7 @@ const PacienteDetalhe = () => {
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const isIntern = operationalRole === "estagiario";
-  const canDeletePatient = can("clinic_profile.manage");
+  const canDeletePatient = can("patients.delete") || can("clinic_profile.manage") || operationalRole === "owner" || operationalRole === "admin";
   const parsedClinicalProfile = useMemo(() => parseClinicalProfile(patient?.clinical_profile), [patient?.clinical_profile]);
   const parsedEmergencyContact = useMemo(() => parseEmergencyContact(patient?.emergency_contact), [patient?.emergency_contact]);
   const patientOriginDetails = useMemo(() => patient ? formatPatientOriginDetails(patient) : null, [patient]);
@@ -832,6 +831,7 @@ const PacienteDetalhe = () => {
     const shareSummaryMap = Object.fromEntries(shareSummaries.map((summary) => [summary.session_id, summary]));
     const sharedSessionIds = new Set(shareSummaries.map((summary) => summary.session_id));
     const visibleSessions = filterSessionsForOperationalRole({
+      canReadAll: can("sessions.read_all"),
       currentUserId: user?.id,
       operationalRole,
       sharedSessionIds,

@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { Check, Loader2, Search, Share2, Users } from "lucide-react";
+import { Check, Copy, Eye, Loader2, Search, Share2, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   getShareRecipientLabel,
   shareSessionsWithCollaborators,
@@ -52,10 +54,11 @@ export const SessionShareDialog = ({
 }: SessionShareDialogProps) => {
   const [query, setQuery] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [accessLevel, setAccessLevel] = useState<"read_only" | "can_evolve">("read_only");
   const [sharing, setSharing] = useState(false);
 
-  const existingRecipientIds = useMemo(
-    () => new Set(existingRecipients.map((recipient) => recipient.id)),
+  const existingRecipientMap = useMemo(
+    () => new Map(existingRecipients.map((recipient) => [recipient.id, recipient])),
     [existingRecipients]
   );
 
@@ -83,7 +86,7 @@ export const SessionShareDialog = ({
   }, [collaborators, currentUserId, query]);
 
   const toggleUser = (userId: string) => {
-    if (existingRecipientIds.has(userId)) {
+    if (existingRecipientMap.has(userId)) {
       return;
     }
 
@@ -100,7 +103,7 @@ export const SessionShareDialog = ({
     setSharing(true);
 
     try {
-      await shareSessionsWithCollaborators(sessionIds, selectedUserIds);
+      await shareSessionsWithCollaborators(sessionIds, selectedUserIds, accessLevel);
       toast({
         title: "Atendimentos compartilhados",
         description: `${sessionCount} atendimento(s) compartilhado(s) com ${selectedUserIds.length} colaborador(es).`,
@@ -133,7 +136,52 @@ export const SessionShareDialog = ({
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary">{sessionCount} atendimento(s)</Badge>
-            <span>Selecione um ou mais colaboradores ativos da clínica.</span>
+            <span>Selecione os colaboradores e o nível de acesso permitido.</span>
+          </div>
+
+          <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Permissão concedida no compartilhamento
+            </Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                className={cn(
+                  "flex items-start gap-2.5 rounded-lg border p-2.5 text-left text-xs transition-colors",
+                  accessLevel === "read_only"
+                    ? "border-primary bg-primary/10 text-foreground font-medium shadow-sm"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted/60"
+                )}
+                onClick={() => setAccessLevel("read_only")}
+              >
+                <Eye className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-foreground">Apenas visualizar</p>
+                  <p className="mt-0.5 text-[0.72rem] text-muted-foreground leading-tight">
+                    O colaborador poderá apenas ler os detalhes do atendimento.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                className={cn(
+                  "flex items-start gap-2.5 rounded-lg border p-2.5 text-left text-xs transition-colors",
+                  accessLevel === "can_evolve"
+                    ? "border-primary bg-primary/10 text-foreground font-medium shadow-sm"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted/60"
+                )}
+                onClick={() => setAccessLevel("can_evolve")}
+              >
+                <Copy className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-foreground">Visualizar e iniciar novo</p>
+                  <p className="mt-0.5 text-[0.72rem] text-muted-foreground leading-tight">
+                    Permite visualizar e iniciar um novo atendimento a partir deste.
+                  </p>
+                </div>
+              </button>
+            </div>
           </div>
 
           <div className="relative">
@@ -146,10 +194,11 @@ export const SessionShareDialog = ({
             />
           </div>
 
-          <ScrollArea className="h-[340px] rounded-lg border">
+          <ScrollArea className="h-[280px] rounded-lg border">
             <div className="divide-y">
               {visibleCollaborators.map((collaborator) => {
-                const alreadyShared = existingRecipientIds.has(collaborator.id);
+                const existingRecipient = existingRecipientMap.get(collaborator.id);
+                const alreadyShared = Boolean(existingRecipient);
                 const selected = selectedUserIds.includes(collaborator.id);
 
                 return (
@@ -177,7 +226,7 @@ export const SessionShareDialog = ({
                       {alreadyShared ? (
                         <Badge variant="secondary" className="gap-1">
                           <Check className="h-3 w-3" />
-                          Já possui acesso
+                          {existingRecipient?.access_level === "can_evolve" ? "Pode iniciar novo" : "Visualização"}
                         </Badge>
                       ) : null}
                     </div>
