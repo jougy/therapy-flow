@@ -186,17 +186,19 @@ export const canDeleteSelectedSessionsForRole = <TSession extends SearchableOwne
 };
 
 export const filterSessionsForOperationalRole = <TSession extends SearchableOwnedSession>({
+  canReadAll,
   currentUserId,
   operationalRole,
   sharedSessionIds = new Set<string>(),
   sessions,
 }: {
+  canReadAll?: boolean;
   currentUserId: string | null | undefined;
   operationalRole: "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
   sharedSessionIds?: Set<string>;
   sessions: TSession[];
 }) => {
-  if (operationalRole === "owner" || operationalRole === "admin" || !currentUserId) {
+  if (canReadAll || operationalRole === "owner" || operationalRole === "admin" || !currentUserId) {
     return sessions;
   }
 

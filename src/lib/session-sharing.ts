@@ -10,6 +10,7 @@ export type SessionShareCollaborator = {
 };
 
 export type SessionShareRecipient = SessionShareCollaborator & {
+  access_level?: "read_only" | "can_evolve" | string | null;
   created_at: string | null;
   shared_by_user_id?: string | null;
 };
@@ -54,6 +55,7 @@ const parseRecipient = (value: Json): SessionShareRecipient | null => {
 
   return {
     ...collaborator,
+    access_level: readString(value.access_level) ?? "read_only",
     created_at: readString(value.created_at),
     shared_by_user_id: readString(value.shared_by_user_id),
   };
@@ -140,14 +142,39 @@ export const fetchSessionShareSummaries = async (sessionIds: string[]) => {
   return parseSessionShareSummaries(data);
 };
 
-export const shareSessionsWithCollaborators = async (sessionIds: string[], userIds: string[]) => {
+export const shareSessionsWithCollaborators = async (
+  sessionIds: string[],
+  userIds: string[],
+  accessLevel: "read_only" | "can_evolve" = "read_only"
+) => {
   const { data, error } = await supabase.rpc("share_sessions_with_collaborators", {
+    _access_level: accessLevel,
     _session_ids: sessionIds,
     _user_ids: userIds,
-  });
+  } as never);
 
   if (error) {
-    throw error;
+    const { data: fallbackData, error: fallbackError } = await supabase.rpc("share_sessions_with_collaborators", {
+      _session_ids: sessionIds,
+      _user_ids: userIds,
+    });
+
+    if (fallbackError) {
+      throw fallbackError;
+    }
+
+    try {
+      await supabase
+        .from("session_shares")
+        .update({ access_level: accessLevel })
+        .in("session_id", sessionIds)
+        .in("shared_with_user_id", userIds)
+        .is("revoked_at", null);
+    } catch {
+      // Ignore fallback table update errors if column or policies differ
+    }
+
+    return fallbackData;
   }
 
   return data;

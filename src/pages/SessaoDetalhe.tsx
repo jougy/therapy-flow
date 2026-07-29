@@ -581,7 +581,7 @@ const SessaoDetalhe = () => {
   const { id: patientId, sessionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, clinicId, operationalRole, profile } = useAuth();
+  const { can, user, clinicId, operationalRole, profile } = useAuth();
   const isNew = sessionId === "novo";
   const newSessionState = location.state as { agendaEventId?: string; scheduledFor?: string } | null;
 
@@ -739,10 +739,16 @@ const SessaoDetalhe = () => {
       let sessionData = fetchedSessionData;
 
       if (sessionData) {
-        if (operationalRole === "estagiario" && sessionData.user_id !== user?.id) {
+        if (
+          sessionData.user_id !== user?.id &&
+          sessionData.provider_id !== user?.id &&
+          !can("sessions.read_all") &&
+          operationalRole !== "owner" &&
+          operationalRole !== "admin"
+        ) {
           toast({
             title: "Acesso restrito",
-            description: "O papel Estagiário só pode acessar atendimentos criados pela própria conta.",
+            description: "Você não possui permissão para visualizar atendimentos de outros colaboradores.",
             variant: "destructive",
           });
           navigate(`/pacientes/${patientId}`);
@@ -1265,6 +1271,14 @@ const SessaoDetalhe = () => {
 
   const handleStartFromThis = async () => {
     if (!patientId || !user || isNew) return;
+    if (!canStartNewSessionFromThis) {
+      toast({
+        title: "Acesso de visualização apenas",
+        description: "Este atendimento foi compartilhado com você com permissão apenas de visualização. Não é possível iniciar um novo atendimento a partir dele.",
+        variant: "destructive",
+      });
+      return;
+    }
     setStartingFromThis(true);
 
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
@@ -1450,12 +1464,16 @@ const SessaoDetalhe = () => {
 
   const readOnly = locked || (!isNew && !isEditing);
   const canManageSessionDeletion = operationalRole === "owner" || operationalRole === "admin";
-  const canDeleteOwnProfessionalSession = operationalRole === "professional" && createdByUserId === user?.id;
-  const canManageSessionSharing =
-    !isNew && (canManageSessionDeletion || createdByUserId === user?.id);
+  const canEditOthersSessions = can("sessions.write_others") || canManageSessionDeletion;
+  const canEditSessionContent = createdByUserId === user?.id || canEditOthersSessions;
+  const currentShareRecipient = shareRecipients.find((r) => r.id === user?.id);
+  const isSharedWithReadOnlyAccess = currentShareRecipient && currentShareRecipient.access_level === "read_only" && createdByUserId !== user?.id && !canEditOthersSessions;
+  const canStartNewSessionFromThis = !isSharedWithReadOnlyAccess;
+  const canDeleteOwnProfessionalSession = (operationalRole === "professional" || operationalRole === "estagiario") && createdByUserId === user?.id;
+  const canManageSessionSharing = !isNew && (canManageSessionDeletion || canEditSessionContent);
   const canEditSavedDraft = !isNew && status === "rascunho";
-  const canEditPresenceSummary = !isNew && !isEditing && (canManageSessionDeletion || createdByUserId === user?.id);
-  const canEditPaymentSummary = !isNew && !isEditing && (canManageSessionDeletion || createdByUserId === user?.id);
+  const canEditPresenceSummary = !isNew && !isEditing && canEditSessionContent;
+  const canEditPaymentSummary = !isNew && !isEditing && canEditSessionContent;
   const canDeleteSession = !isNew && (canManageSessionDeletion || canDeleteOwnProfessionalSession);
   const treatmentSummary = formatTreatmentSummary({
     blocks: treatmentBlocks,
@@ -2165,7 +2183,13 @@ const SessaoDetalhe = () => {
           </Button>
         )}
         {!isNew && (
-          <Button size="sm" variant="outline" onClick={handleStartFromThis} disabled={startingFromThis}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleStartFromThis}
+            disabled={startingFromThis || !canStartNewSessionFromThis}
+            title={!canStartNewSessionFromThis ? "Compartilhado com permissão apenas de visualização" : undefined}
+          >
             {startingFromThis ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
             <span>Iniciar Novo Atendimento a Partir Deste</span>
           </Button>
