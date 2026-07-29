@@ -30,6 +30,18 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err && typeof (err as { message: unknown }).message === "string") {
+    return (err as { message: string }).message;
+  }
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+};
+
 type CategoryType = "added" | "changed" | "fixed" | "removed";
 
 interface ReleaseItem {
@@ -113,10 +125,10 @@ export function PlatformReleaseNotesManager({ onNotesUpdated, standalone = false
       if (loadedReleases.length > 0) {
         setSelectedReleaseId((prev) => (prev && loadedReleases.some((r) => r.id === prev) ? prev : loadedReleases[0].id));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: "Erro ao carregar novidades",
-        description: err.message || "Não foi possível carregar a lista de lançamentos.",
+        description: getErrorMessage(err) || "Não foi possível carregar a lista de lançamentos.",
         variant: "destructive",
       });
     } finally {
@@ -215,10 +227,10 @@ export function PlatformReleaseNotesManager({ onNotesUpdated, standalone = false
       setIsReleaseDialogOpen(false);
       await loadData();
       onNotesUpdated?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: "Erro ao salvar versão",
-        description: err.message || "Tente novamente.",
+        description: getErrorMessage(err) || "Tente novamente.",
         variant: "destructive",
       });
     } finally {
@@ -235,8 +247,8 @@ export function PlatformReleaseNotesManager({ onNotesUpdated, standalone = false
       toast({ title: "Versão removida", description: "Lançamento excluído com sucesso." });
       await loadData();
       onNotesUpdated?.();
-    } catch (err: any) {
-      toast({ title: "Erro ao excluir versão", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Erro ao excluir versão", description: getErrorMessage(err), variant: "destructive" });
     }
   };
 
@@ -305,8 +317,8 @@ export function PlatformReleaseNotesManager({ onNotesUpdated, standalone = false
       setIsItemDialogOpen(false);
       await loadData();
       onNotesUpdated?.();
-    } catch (err: any) {
-      toast({ title: "Erro ao salvar tópico", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Erro ao salvar tópico", description: getErrorMessage(err), variant: "destructive" });
     } finally {
       setSubmittingItem(false);
     }
@@ -321,8 +333,8 @@ export function PlatformReleaseNotesManager({ onNotesUpdated, standalone = false
       toast({ title: "Tópico removido", description: "Tópico excluído." });
       await loadData();
       onNotesUpdated?.();
-    } catch (err: any) {
-      toast({ title: "Erro ao excluir tópico", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Erro ao excluir tópico", description: getErrorMessage(err), variant: "destructive" });
     }
   };
 
