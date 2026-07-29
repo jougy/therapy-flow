@@ -82,6 +82,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Compartilhamento de fichas de atendimento]]
 - [[Grupos reutilizaveis de atendimentos]]
 - [[Acesso mestre e painel administrativo global]]
+- [[Bloco de endereco no criador de formularios e geolocalizacao]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
 

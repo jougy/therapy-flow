@@ -12,6 +12,7 @@ export interface FeatureFlagDefinition {
   description: string;
   category: FeatureFlagCategory;
   hasConfiguration: boolean;
+  hasToggle?: boolean;
 }
 
 export const featureFlagsCatalog: FeatureFlagDefinition[] = [
@@ -65,6 +66,13 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasConfiguration: false,
   },
   {
+    key: 'forms_blank_print',
+    label: 'Impressão de Fichas em Branco (Kit Offline)',
+    description: 'Exibe ou oculta o botão de impressão de modelos e fichas de atendimento/cadastro em branco no gerenciador de formulários da clínica.',
+    category: 'Formulários',
+    hasConfiguration: false,
+  },
+  {
     key: 'forms_download_upload',
     label: 'Permissões de Download/Upload em Formulários',
     description: 'Permite que formulários preenchidos possam ser baixados em PDF ou anexem arquivos.',
@@ -96,6 +104,14 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
   },
 
   // UI/Experiência
+  {
+    key: 'terms_of_service_management',
+    label: 'Termos de Uso e Consentimento',
+    description: 'Gerenciamento dos Termos de Uso (Owner/Usuários, BR e Internacional) e disparo de obrigatoriedade no próximo login.',
+    category: 'UI/Experiência',
+    hasConfiguration: true,
+    hasToggle: false,
+  },
   {
     key: 'ui_animations_toggle',
     label: 'Ligar/Desligar Animações UI',

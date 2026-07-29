@@ -263,3 +263,21 @@ Ao longo do tempo, este arquivo deve virar:
 - `src/pages/Index.tsx` removeu `stats.activePatients` de uma lista de dependencias onde nao era usado.
 - `src/App.tsx` passou a carregar paginas por `lazy`/`Suspense`, reduzindo o bundle principal e removendo o warning de chunk maior que 500 kB.
 - Validado com `sh scripts/ops/control.sh --run tdd-check`: testes, build e lint finalizaram sem warnings novos. O log de `render crash` continua esperado pelo teste do ErrorBoundary.
+
+## 2026-07-26 - Protocolo Estrito de Validação de CI/CD (Linter, Tests, Build e Git Asset Resolution)
+
+### Regras Obrigatórias para Qualquer Agente antes de Confirmar Deploy:
+
+1. **Checagem de Linter (Zero Errors/Warnings)**:
+   - Rodar `npm run lint`. Nenhuma flag `any` não justificada ou desativação global de regras deve ser enviada sem verificação.
+
+2. **Checagem de Testes Unitários Completa**:
+   - Rodar `npm test`. Todos os 54 test files (312 testes) devem passar 100%.
+   - Para testes de Error Boundary com crashes intencionais em JSDOM, utilizar interceptadores `window.addEventListener("error", onError)` com `e.preventDefault()` para evitar vazamento de erro como `uncaught window error` no runner do CI.
+
+3. **Validação do Build do Vite/Rolldown**:
+   - Rodar `npm run build` localmente.
+   - **Resolução de Imports e Assets**: NENHUM componente dentro de `src/` deve importar arquivos markdown, imagens ou assets que estejam localizados em diretórios ignorados pelo `.gitignore` (ex: `core/Pluri-Health/` ou Obsidian Vault). Todos os assets do aplicativo devem residir dentro da árvore `src/assets/` ou `public/`.
+
+4. **Sincronização de Lockfiles de Dependência (`bun.lock` e `package-lock.json`)**:
+   - Quando a versão no `package.json` for alterada (ex: `alfa-26.07.25-01`), rodar obrigatoriamente `npx bun install` (ou `npm install`) para regenerar e atualizar o `bun.lock` e `package-lock.json`. O Cloudflare Pages compila com `bun install --frozen-lockfile` e rejeita a compilação se a versão no `package.json` divergir do `bun.lock`.

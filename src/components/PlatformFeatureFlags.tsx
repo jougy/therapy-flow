@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { featureFlagsCatalog, FeatureFlagCategory } from "@/lib/feature-flags-catalog";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag } from "lucide-react";
+import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { FeatureConfigModal } from "@/components/FeatureConfigModal";
+import { TermsConfigModal } from "@/components/TermsConfigModal";
 
 const getCategoryIcon = (category: FeatureFlagCategory) => {
   switch (category) {
@@ -62,6 +63,41 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   // Config Modal states
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [configFlagKey, setConfigFlagKey] = useState<string | null>(null);
+
+  // Terms Modal state
+  const [termsModalOpen, setTermsModalOpen] = useState(false);
+
+  const handlePublishNewTermsVersion = async (currentRaw?: Record<string, unknown>) => {
+    const rawObj = (currentRaw || rawFlags["terms_of_service_management"] || {}) as Record<string, unknown>;
+    const newVersion = new Date().toISOString();
+    const updatedPayload = {
+      ...rawObj,
+      publishedVersion: newVersion,
+      publishedAt: newVersion,
+    };
+
+    try {
+      const { error } = await supabase.rpc("upsert_feature_flag", {
+        _key: "terms_of_service_management",
+        _scope: contextType,
+        _tag_id: contextType === "tag" ? selectedTagId : undefined,
+        _clinic_id: contextType === "clinic" ? clinicId : undefined,
+        _value: updatedPayload,
+        _description: "Termos de Uso atualizados e publicados.",
+      });
+
+      if (error) throw error;
+
+      setRawFlags((prev) => ({ ...prev, terms_of_service_management: updatedPayload }));
+      toast({
+        title: "Termos de Uso Atualizados!",
+        description: "Nova versão publicada. Todos os usuários afetados serão solicitados a aceitar no próximo login.",
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao publicar termos";
+      toast({ title: "Erro ao publicar versão", description: errorMessage, variant: "destructive" });
+    }
+  };
 
   const loadTags = async () => {
     try {
@@ -343,43 +379,69 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                         </div>
                         
                         <div className="flex items-center gap-3 shrink-0">
-                          {feature.hasConfiguration && (
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="h-9 px-3"
-                              onClick={() => {
-                                setConfigFlagKey(feature.key);
-                                setConfigModalOpen(true);
-                              }}
-                            >
-                              <Settings className="w-3.5 h-3.5 mr-2" /> Configurar
-                            </Button>
+                          {feature.key === "terms_of_service_management" ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-9 px-3"
+                                onClick={() => setTermsModalOpen(true)}
+                              >
+                                <Settings className="w-3.5 h-3.5 mr-2" /> Configurar
+                              </Button>
+
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="h-9 px-3 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => void handlePublishNewTermsVersion()}
+                              >
+                                <RefreshCw className="w-3.5 h-3.5 mr-2" /> Atualizar
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              {feature.hasConfiguration && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-9 px-3"
+                                  onClick={() => {
+                                    setConfigFlagKey(feature.key);
+                                    setConfigModalOpen(true);
+                                  }}
+                                >
+                                  <Settings className="w-3.5 h-3.5 mr-2" /> Configurar
+                                </Button>
+                              )}
+
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-9 px-2 text-neutral-500 hover:text-primary"
+                                onClick={() => openJustificationModal(feature.key)}
+                                title="Auditoria Avançada / Justificativa"
+                              >
+                                <MessageSquare className="w-4 h-4" />
+                              </Button>
+
+                              {feature.hasToggle !== false && (
+                                <div className="flex items-center gap-2">
+                                  <span className={cn(
+                                    "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider",
+                                    isOn ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-600"
+                                  )}>
+                                    {isOn ? 'On' : 'Off'}
+                                  </span>
+                                  <Switch 
+                                    checked={isOn} 
+                                    onCheckedChange={() => handleToggle(feature.key, isOn)} 
+                                    className="data-[state=checked]:bg-emerald-500"
+                                  />
+                                </div>
+                              )}
+                            </>
                           )}
-                          
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-9 px-2 text-neutral-500 hover:text-primary"
-                            onClick={() => openJustificationModal(feature.key)}
-                            title="Auditoria Avançada / Justificativa"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                          </Button>
-                          
-                          <div className="flex items-center gap-2">
-                            <span className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider",
-                              isOn ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-600"
-                            )}>
-                              {isOn ? 'On' : 'Off'}
-                            </span>
-                            <Switch 
-                              checked={isOn} 
-                              onCheckedChange={() => handleToggle(feature.key, isOn)} 
-                              className="data-[state=checked]:bg-emerald-500"
-                            />
-                          </div>
                         </div>
                       </div>
                     );
@@ -443,6 +505,15 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
         scope={contextType}
         tagId={selectedTagId}
         onSave={() => loadFlags()}
+      />
+
+      <TermsConfigModal
+        isOpen={termsModalOpen}
+        onClose={() => setTermsModalOpen(false)}
+        initialData={rawFlags["terms_of_service_management"] as Record<string, unknown> | undefined}
+        onSave={(payload) => {
+          void handlePublishNewTermsVersion(payload);
+        }}
       />
     </div>
   );

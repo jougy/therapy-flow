@@ -12,13 +12,31 @@ export type AnamnesisFieldType =
   | "slider"
   | "section"
   | "horizontal_section"
-  | "section_selector";
+  | "section_selector"
+  | "address_block";
 
 export interface AnamnesisFieldOption {
   id: string;
   label: string;
   description?: string;
   row?: number;
+}
+
+export interface AddressBlockValue {
+  cep?: string;
+  state?: string;
+  city?: string;
+  neighborhood?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  locationType?: "clinic" | "home_visit" | "custom";
+  clinicId?: string | null;
+  clinicName?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracy?: number | null;
+  capturedAt?: string | null;
 }
 
 export interface AnamnesisField {
@@ -39,7 +57,7 @@ export interface AnamnesisField {
 
 export type AnamnesisTemplateSchema = AnamnesisField[];
 export type AnamnesisTableRow = Record<string, string>;
-export type AnamnesisFormValue = string | number | string[] | boolean | AnamnesisTableRow[] | null;
+export type AnamnesisFormValue = string | number | string[] | boolean | AnamnesisTableRow[] | AddressBlockValue | null;
 export type AnamnesisFormResponse = Record<string, AnamnesisFormValue>;
 export type AnamnesisTemplateExchangeKind = "base" | "template";
 
@@ -242,6 +260,27 @@ export const sanitizeAnamnesisFormResponse = (response: AnamnesisFormResponse): 
           return [safeFieldId, normalized];
         }
 
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          const rec = value as AddressBlockValue;
+          const sanitizedAddress: AddressBlockValue = {
+            cep: rec.cep ? sanitizeSingleLineInput(String(rec.cep), 20).trim() : "",
+            state: rec.state ? sanitizeSingleLineInput(String(rec.state), 10).trim().toUpperCase() : "",
+            city: rec.city ? sanitizeSingleLineInput(String(rec.city), 100).trim() : "",
+            neighborhood: rec.neighborhood ? sanitizeSingleLineInput(String(rec.neighborhood), 100).trim() : "",
+            street: rec.street ? sanitizeSingleLineInput(String(rec.street), 200).trim() : "",
+            number: rec.number ? sanitizeSingleLineInput(String(rec.number), 50).trim() : "",
+            complement: rec.complement ? sanitizeSingleLineInput(String(rec.complement), 100).trim() : "",
+            locationType: rec.locationType === "clinic" || rec.locationType === "home_visit" ? rec.locationType : "custom",
+            clinicId: rec.clinicId ? sanitizeId(String(rec.clinicId), "clinic") : null,
+            clinicName: rec.clinicName ? sanitizeSingleLineInput(String(rec.clinicName), 100).trim() : undefined,
+            latitude: typeof rec.latitude === "number" && Number.isFinite(rec.latitude) ? rec.latitude : null,
+            longitude: typeof rec.longitude === "number" && Number.isFinite(rec.longitude) ? rec.longitude : null,
+            accuracy: typeof rec.accuracy === "number" && Number.isFinite(rec.accuracy) ? rec.accuracy : null,
+            capturedAt: rec.capturedAt ? sanitizeSingleLineInput(String(rec.capturedAt), 50).trim() : null,
+          };
+          return [safeFieldId, sanitizedAddress];
+        }
+
         return [safeFieldId, null];
       })
   );
@@ -310,6 +349,7 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
   { type: "select", label: "Droplist" },
   { type: "table", label: "Tabela" },
   { type: "slider", label: "Slidebar" },
+  { type: "address_block", label: "Bloco de Endereço" },
   { type: "section", label: "Seção" },
   { type: "horizontal_section", label: "Seção horizontal" },
   { type: "section_selector", label: "Seletor de seções" },

@@ -81,6 +81,8 @@ import {
 } from "@/lib/session-sharing";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
+import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
+import type { AddressBlockValue } from "@/lib/anamnesis-forms";
 import {
   addTableRow,
   buildTemplateLayout,
@@ -1730,6 +1732,22 @@ const SessaoDetalhe = () => {
             min={field.min ?? 0}
             max={field.max ?? 10}
             step={1}
+            disabled={locked}
+          />
+        </div>
+      );
+    }
+
+    if (field.type === "address_block") {
+      const addressVal = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as AddressBlockValue;
+      return (
+        <div key={field.id} className="min-w-0 space-y-2">
+          <AddressBlockInput
+            label={field.label}
+            helpText={field.helpText}
+            required={field.required}
+            value={addressVal}
+            onChange={(next) => updateFormResponse(field.id, next)}
             disabled={locked}
           />
         </div>

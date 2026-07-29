@@ -17,6 +17,7 @@ import ProfileAccountButton from "@/components/ProfileAccountButton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
+import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 
 interface AppLayoutProps {
@@ -186,6 +187,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         {children}
       </main>
       <ReleaseNotesDialog />
+      <TermsUpdatePromptModal />
     </div>
   );
 };

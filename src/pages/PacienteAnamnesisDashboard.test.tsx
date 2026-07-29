@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 const navigateMock = vi.fn();
 
 const ensureLocalStorage = () => {
-  if (window.localStorage) {
+  if (window.localStorage && typeof window.localStorage.clear === "function") {
     return;
   }
 

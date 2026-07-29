@@ -25,10 +25,15 @@ Ele resolve tarefas como:
 
 Pontos importantes:
 
-- detecta automaticamente macOS ou Linux para seguir a trilha correta;
+- detecta automaticamente macOS (incluindo M1 / Apple Silicon `arm64`), Arch Linux (`pacman`/`AUR`), Debian/Ubuntu e Linux genérico;
+- na opção **Geral -> 1) install-all**, executa um assistente inteligente de auto-instalação:
+  - no **Arch Linux**: verifica/instala `nodejs`, `npm`, `bun`, `docker`, `docker-compose`, `git`, `curl`, `python`, `jq`, `scrcpy`, `android-tools`, `brave-browser` via `pacman`, ativa o daemon do Docker (`systemctl enable --now docker`) e instala o `supabase` CLI (via `yay`/`paru` `supabase-bin` ou `npm`);
+  - no **macOS M1**: detecta/instala Homebrew (`/opt/homebrew`), `node`, `bun`, `colima`, `docker`, `docker-compose`, `python3`, `jq`, `brave-browser`, `supabase/tap/supabase`, `scrcpy` e `android-platform-tools` (`adb`);
+  - executa `npm ci` para sincronizar pacotes do projeto;
+  - verifica/gera o `.env.local` automaticamente se ausente;
 - no macOS usa `colima` para iniciar o Docker e `open` para abrir URLs;
 - no Linux valida `docker`/`docker compose` e usa `xdg-open` quando disponível;
-- carrega `~/.profile` antes de comandos Node/npm/npx/Supabase;
+- carrega `~/.profile` e os binários do Homebrew (`/opt/homebrew/bin`) antes de comandos Node/npm/npx/Supabase;
 - guarda PID e logs do frontend em `scripts/ops/.control/`.
 
 Formas de uso:
