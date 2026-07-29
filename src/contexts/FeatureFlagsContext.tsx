@@ -46,10 +46,13 @@ export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
 
   const isFeatureEnabled = (key: string) => {
     const val = flags[key];
-    if (val && typeof val === 'object' && 'enabled' in val) {
+    if (val && typeof val === "object" && "enabled" in val) {
       return (val as { enabled?: boolean }).enabled === true;
     }
-    return val === true;
+    if (val !== undefined) {
+      return val === true;
+    }
+    return true;
   };
 
   return (

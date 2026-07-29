@@ -27,6 +27,7 @@ import {
   Pencil,
   Pin,
   Plus,
+  Printer,
   Settings,
   Shield,
   ShieldAlert,
@@ -38,6 +39,8 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
+import PrintBlankKitModal from "@/components/PrintBlankKitModal";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -862,6 +865,10 @@ const Configuracoes = () => {
     title: string;
   } | null>(null);
   const templateImportInputRef = useRef<HTMLInputElement | null>(null);
+  const { isFeatureEnabled } = useFeatureFlags();
+  const canPrintBlankKit = isFeatureEnabled("forms_blank_print");
+  const [printKitModalOpen, setPrintKitModalOpen] = useState(false);
+  const [printKitDefaultTemplateId, setPrintKitDefaultTemplateId] = useState<string | null>(null);
   const canManageSubaccountsForFetch = can("subaccounts.manage");
 
   const fetchData = useCallback(async () => {
@@ -4951,6 +4958,19 @@ const Configuracoes = () => {
                   </p>
                 </div>
                 <div className="grid gap-2 sm:flex sm:items-center">
+                  {canPrintBlankKit && (
+                    <Button
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                      onClick={() => {
+                        setPrintKitDefaultTemplateId(null);
+                        setPrintKitModalOpen(true);
+                      }}
+                    >
+                      <Printer className="h-4 w-4 mr-2" />
+                      Imprimir ficha em branco
+                    </Button>
+                  )}
                   <Button variant="outline" className="w-full sm:w-auto" onClick={() => templateImportInputRef.current?.click()}>
                     <Upload className="h-4 w-4 mr-2" />
                     Importar modelo
@@ -4961,6 +4981,12 @@ const Configuracoes = () => {
                   </Button>
                 </div>
               </div>
+
+              <PrintBlankKitModal
+                open={printKitModalOpen}
+                onOpenChange={setPrintKitModalOpen}
+                defaultTemplateId={printKitDefaultTemplateId}
+              />
 
               <Card>
                 <CardHeader className="flex flex-col gap-4 space-y-0 sm:flex-row sm:items-start sm:justify-between">
@@ -5053,6 +5079,20 @@ const Configuracoes = () => {
                         </p>
                       </div>
                       <div className="grid gap-2 sm:flex sm:shrink-0 sm:items-center">
+                        {canPrintBlankKit && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full sm:w-auto"
+                            onClick={() => {
+                              setPrintKitDefaultTemplateId(selectedTemplate.id);
+                              setPrintKitModalOpen(true);
+                            }}
+                          >
+                            <Printer className="h-4 w-4 mr-2" />
+                            Imprimir em branco
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"

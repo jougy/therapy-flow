@@ -180,6 +180,24 @@ const getSessionStorage = () => {
   }
 };
 
+const getItem = (storage: Storage | null, key: string) => {
+  try {
+    return typeof storage?.getItem === "function" ? storage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+};
+
+const setItem = (storage: Storage | null, key: string, value: string) => {
+  try {
+    if (typeof storage?.setItem === "function") {
+      storage.setItem(key, value);
+    }
+  } catch {
+    // ignore storage errors
+  }
+};
+
 export const createSecuritySessionKey = async () => {
   if (typeof window === "undefined") {
     return generateSecuritySessionKey();
@@ -188,16 +206,16 @@ export const createSecuritySessionKey = async () => {
   const localStorage = getLocalStorage();
   const sessionStorage = getSessionStorage();
 
-  const existingKey = localStorage?.getItem(SECURITY_SESSION_STORAGE_KEY) || sessionStorage?.getItem(SECURITY_SESSION_STORAGE_KEY);
+  const existingKey = getItem(localStorage, SECURITY_SESSION_STORAGE_KEY) || getItem(sessionStorage, SECURITY_SESSION_STORAGE_KEY);
   if (existingKey) {
-    localStorage?.setItem(SECURITY_SESSION_STORAGE_KEY, existingKey);
-    sessionStorage?.setItem(SECURITY_SESSION_STORAGE_KEY, existingKey);
+    setItem(localStorage, SECURITY_SESSION_STORAGE_KEY, existingKey);
+    setItem(sessionStorage, SECURITY_SESSION_STORAGE_KEY, existingKey);
     return existingKey;
   }
 
   const nextKey = generateSecuritySessionKey();
-  localStorage?.setItem(SECURITY_SESSION_STORAGE_KEY, nextKey);
-  sessionStorage?.setItem(SECURITY_SESSION_STORAGE_KEY, nextKey);
+  setItem(localStorage, SECURITY_SESSION_STORAGE_KEY, nextKey);
+  setItem(sessionStorage, SECURITY_SESSION_STORAGE_KEY, nextKey);
   return nextKey;
 };
 
@@ -205,6 +223,14 @@ export const clearSecuritySessionKey = () => {
   const localStorage = getLocalStorage();
   const sessionStorage = getSessionStorage();
 
-  localStorage?.removeItem(SECURITY_SESSION_STORAGE_KEY);
-  sessionStorage?.removeItem(SECURITY_SESSION_STORAGE_KEY);
+  try {
+    if (typeof localStorage?.removeItem === "function") {
+      localStorage.removeItem(SECURITY_SESSION_STORAGE_KEY);
+    }
+    if (typeof sessionStorage?.removeItem === "function") {
+      sessionStorage.removeItem(SECURITY_SESSION_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
 };

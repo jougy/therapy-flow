@@ -642,7 +642,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const selectClinic = async (clinicId: string) => {
-    const selectedClinic = accessibleClinics.find((option) => option.clinic.id === clinicId);
+    let selectedClinic = accessibleClinics.find((option) => option.clinic.id === clinicId);
+
+    if (!selectedClinic && session?.user?.id) {
+      const freshOptions = await fetchAccessibleClinics(session.user.id);
+      setAccessibleClinics(freshOptions);
+      selectedClinic = freshOptions.find((option) => option.clinic.id === clinicId);
+    }
 
     await activateClinic(selectedClinic, () =>
       supabase.rpc("set_current_user_active_clinic", {
@@ -652,7 +658,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const selectClinicByRouteKey = async (routeKey: string) => {
-    const selectedClinic = accessibleClinics.find((option) => option.clinic.route_key === routeKey);
+    let selectedClinic = accessibleClinics.find((option) => option.clinic.route_key === routeKey);
+
+    if (!selectedClinic && session?.user?.id) {
+      const freshOptions = await fetchAccessibleClinics(session.user.id);
+      setAccessibleClinics(freshOptions);
+      selectedClinic = freshOptions.find((option) => option.clinic.route_key === routeKey);
+    }
 
     await activateClinic(selectedClinic, () =>
       supabase.rpc("set_current_user_active_clinic_by_route_key", {

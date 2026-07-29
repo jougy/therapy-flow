@@ -16,6 +16,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { OptionListEditor } from "@/components/anamnesis/OptionListEditor";
 import { OptionMatrixEditor } from "@/components/anamnesis/OptionMatrixEditor";
+import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -523,6 +524,20 @@ const FormularioEditor = () => {
           </div>
           {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
           <Slider value={[field.min ?? 0]} min={field.min ?? 0} max={field.max ?? 10} step={1} disabled />
+        </div>
+      );
+    }
+
+    if (field.type === "address_block") {
+      return (
+        <div key={field.id} className="space-y-2">
+          <AddressBlockInput
+            label={field.label}
+            helpText={field.helpText}
+            required={field.required}
+            onChange={() => {}}
+            disabled
+          />
         </div>
       );
     }
@@ -1068,6 +1083,12 @@ const FormularioEditor = () => {
                         {field.type === "section" && (
                           <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
                             Você pode colocar campos, subseções e seções horizontais dentro desta seção.
+                          </div>
+                        )}
+
+                        {field.type === "address_block" && (
+                          <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
+                            Este bloco agrupa automaticamente CEP (com autocompletar), Estado, Cidade, Bairro, Rua, Número, Complemento, Geolocalização (GPS via PWA) e atalhos de seleção rápida para Múltiplas Clínicas e Atendimento Domiciliar.
                           </div>
                         )}
 

@@ -247,6 +247,16 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
   };
 
   const deleteNotification = async (notificationId: string) => {
+    const targetNotif = notifications.find((n) => n.notification_id === notificationId);
+    if (targetNotif?.category === "terms_update" && targetNotif.title?.includes("Pendentes")) {
+      toast({
+        title: "Ação não permitida",
+        description: "Esta notificação é obrigatória e só poderá ser removida após o aceite dos Termos de Uso.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setNotifications((current) => current.filter((notification) => notification.notification_id !== notificationId));
     const { error } = await supabase.rpc("delete_current_user_notification", { _notification_id: notificationId });
 
@@ -257,8 +267,17 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
   };
 
   const clearNotifications = async () => {
+    const mandatoryNotifs = notifications.filter((n) => n.category === "terms_update" && n.title?.includes("Pendentes"));
+    if (mandatoryNotifs.length > 0 && notifications.length === mandatoryNotifs.length) {
+      toast({
+        title: "Aviso",
+        description: "Notificações obrigatórias de Termos de Uso continuam pendentes e não podem ser excluídas.",
+      });
+      return;
+    }
+
     const previousNotifications = notifications;
-    setNotifications([]);
+    setNotifications(mandatoryNotifs);
     const { error } = await supabase.rpc("clear_current_user_notifications");
 
     if (error) {
@@ -268,6 +287,13 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
   };
 
   const handleAction = (notification: PersonalNotification) => {
+    if (notification.category === "terms_update") {
+      if (desktopOpen) setDesktopOpen(false);
+      if (mobileOpen) setMobileOpen(false);
+      window.dispatchEvent(new CustomEvent("open-terms-update-modal"));
+      return;
+    }
+
     if (!notification.action_url) return;
     if (desktopOpen) setDesktopOpen(false);
     if (mobileOpen) setMobileOpen(false);
@@ -404,7 +430,7 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
                   <X className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              {notification.action_url && (
+              {(notification.action_url || notification.category === "terms_update") && (
                 <Button
                   type="button"
                   variant="outline"
@@ -413,7 +439,7 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
                   onClick={() => handleAction(notification)}
                 >
                   <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                  {notification.action_label || "Abrir"}
+                  {notification.action_label || (notification.category === "terms_update" ? "Revisar e Aceitar Termos" : "Abrir")}
                 </Button>
               )}
             </article>

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { createPrivateKey, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -198,8 +198,55 @@ const loadEnvFile = (filePath) => {
   return parseEnvBlock(raw);
 };
 
+const generateEs256TokenFromDocker = async () => {
+  try {
+    const { stdout: psStdout } = await execFileAsync("docker", [
+      "ps",
+      "--filter",
+      "name=supabase_auth_",
+      "--format",
+      "{{.Names}}",
+    ]);
+    const containerName = psStdout.trim().split("\n")[0];
+    if (!containerName) return null;
+
+    const { stdout: envStdout } = await execFileAsync("docker", [
+      "exec",
+      containerName,
+      "env",
+    ]);
+
+    const jwtKeysMatch = envStdout.match(/^GOTRUE_JWT_KEYS=(.*)$/m);
+    if (!jwtKeysMatch) return null;
+
+    const jwkList = JSON.parse(jwtKeysMatch[1]);
+    const es256Jwk = jwkList.find((key) => key.alg === "ES256" && key.d);
+    if (!es256Jwk) return null;
+
+    const key = createPrivateKey({ key: es256Jwk, format: "jwk" });
+    const header = Buffer.from(
+      JSON.stringify({ alg: "ES256", kid: es256Jwk.kid, typ: "JWT" })
+    ).toString("base64url");
+    const payload = Buffer.from(
+      JSON.stringify({
+        iss: "supabase-demo",
+        role: "service_role",
+        exp: Math.floor(Date.now() / 1000) + 10 * 365 * 86400,
+      })
+    ).toString("base64url");
+    const signature = sign("SHA256", Buffer.from(`${header}.${payload}`), {
+      key,
+      dsaEncoding: "ieee-p1363",
+    }).toString("base64url");
+
+    return `${header}.${payload}.${signature}`;
+  } catch {
+    return null;
+  }
+};
+
 const loadRuntimeEnv = async () => {
-  if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (ADMIN_MODE !== "local" && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return {
       supabaseUrl: process.env.SUPABASE_URL,
       serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -248,12 +295,29 @@ const loadRuntimeEnv = async () => {
 const createAdminClient = async () => {
   const env = await loadRuntimeEnv();
 
-  return createClient(env.supabaseUrl, env.serviceRoleKey, {
+  let client = createClient(env.supabaseUrl, env.serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
     },
   });
+
+  if (ADMIN_MODE === "local") {
+    const { error } = await client.auth.admin.listUsers({ page: 1, perPage: 1 });
+    if (error && error.message && error.message.includes("signing method HS256 is invalid")) {
+      const es256Token = await generateEs256TokenFromDocker();
+      if (es256Token) {
+        client = createClient(env.supabaseUrl, es256Token, {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        });
+      }
+    }
+  }
+
+  return client;
 };
 
 const listAllUsers = async (client) => {
@@ -654,6 +718,7 @@ const createManagedOwnerAccount = async (client, { cnpj, concurrentAccessLimit, 
 
   const userId = data.user.id;
   const { error: signupError } = await client.rpc("handle_signup", {
+    _clinic_name: null,
     _cnpj: normalizedCnpj,
     _email: normalizedEmail,
     _full_name: null,

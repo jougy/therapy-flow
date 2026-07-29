@@ -420,4 +420,41 @@ describe("anamnesis forms helpers", () => {
 
     expect(removeTableRow(rows, 0, field)).toEqual(rows);
   });
+
+  it("sanitizes address_block responses with coordinates and clinic location metadata", () => {
+    expect(ANAMNESIS_FIELD_LIBRARY.some((item) => item.type === "address_block")).toBe(true);
+
+    const rawResponse = {
+      address_field: {
+        cep: "01310-200",
+        state: "sp",
+        city: "São Paulo",
+        street: "Av Paulista",
+        number: "1000",
+        locationType: "clinic",
+        clinicId: "clinic_123",
+        latitude: -23.561,
+        longitude: -46.655,
+        accuracy: 12,
+      },
+    };
+
+    const sanitized = sanitizeAnamnesisFormResponse(rawResponse);
+    expect(sanitized.address_field).toEqual({
+      cep: "01310-200",
+      state: "SP",
+      city: "São Paulo",
+      neighborhood: "",
+      street: "Av Paulista",
+      number: "1000",
+      complement: "",
+      locationType: "clinic",
+      clinicId: "clinic_123",
+      clinicName: undefined,
+      latitude: -23.561,
+      longitude: -46.655,
+      accuracy: 12,
+      capturedAt: null,
+    });
+  });
 });

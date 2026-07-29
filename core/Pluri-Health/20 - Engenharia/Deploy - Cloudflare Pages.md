@@ -72,6 +72,16 @@ npx wrangler deploy
 - Nao deve existir `public/_redirects` com regra catch-all quando o deploy estiver em `Workers Static Assets`, porque isso causa loop de fallback na Cloudflare.
 - Se o repositorio continuar conectado ao GitHub na Cloudflare, os builds de PR devem usar essa mesma configuracao.
 
+## Armadilhas Recorrentes no Build do Cloudflare Pages (GitHub Webhook)
+
+1. **`bun install --frozen-lockfile` (Lockfile defasado)**:
+   - A Cloudflare executa `bun install --frozen-lockfile` ao clonar o repositório. Se você alterar a versão no `package.json` ou adicionar dependências sem atualizar o `bun.lock` via `npx bun install` ou `npm install`, a Cloudflare rejeita o build com: `error: lockfile had changes, but lockfile is frozen`.
+   - **Solução**: Sempre commitar o `bun.lock` e `package-lock.json` atualizados após qualquer alteração em dependências ou versão.
+
+2. **`UNRESOLVED_IMPORT` por arquivos fora de `src/` ou ignorados**:
+   - Se um componente importar um arquivo markdown ou asset situado em uma pasta no `.gitignore` (ex: `core/Pluri-Health/`), o build local funcionará por causa dos arquivos no disco local, mas o Cloudflare falhará porque essa pasta não foi enviada ao Git.
+   - **Solução**: Mover assets consumidos pelo aplicativo frontend para `src/assets/` ou `public/`.
+
 ## Notas relacionadas
 
 - [[Mapa da vault]]

@@ -88,12 +88,12 @@ npm run supabase:stop
 
 ### Operacao por plataforma
 
-O [scripts/ops/control.sh](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/scripts/ops/control.sh) agora detecta automaticamente macOS ou Linux e segue a trilha correta:
+O [scripts/ops/control.sh](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/scripts/ops/control.sh) e o painel gráfico [control.py](/Users/jougy/Documents/programacao/Prontuario/therapy-flow/control.py) detectam automaticamente o sistema e a arquitetura (macOS M1/Apple Silicon, Arch Linux, Debian/Ubuntu ou Linux genérico) e contam com um auto-instalador de dependências em **Opção 4 (Geral) -> 1) install-all** (ou botão **Auto-Instalar tudo** no `control.py`):
 
-- no macOS usa `colima` para iniciar o Docker e `open` para abrir URLs;
-- no Linux valida `docker`/`docker compose` e usa `xdg-open` quando disponivel.
+- no **macOS M1**: detecta/instala Homebrew (`/opt/homebrew`), `node`, `bun`, `colima`, `docker`, `docker-compose`, `python3`, `jq`, `brave-browser`, `supabase/tap/supabase`, `scrcpy` e `android-platform-tools` (`adb`), além de usar `open` para URLs;
+- no **Arch Linux**: valida e instala pacotes base (`nodejs`, `npm`, `bun`, `docker`, `docker-compose`, `git`, `curl`, `python`, `jq`, `scrcpy`, `android-tools`, `brave-browser`) via `pacman`, ativa o daemon do Docker (`systemctl enable --now docker`) e instala o CLI do Supabase (via AUR `yay`/`paru` `supabase-bin` ou `npm`), utilizando `xdg-open` para URLs quando disponível.
 
-Esse atalho unifica a experiencia local sem manter dois fluxos separados para o resto da operacao.
+Esse atalho unifica a experiência local sem manter dois fluxos separados para o resto da operação.
 
 ## Debug visual com Brave CDP e mobile
 
