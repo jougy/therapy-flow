@@ -35,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import { PlatformFeatureFlags } from "@/components/PlatformFeatureFlags";
 import { PlatformClinicTags } from "@/components/PlatformClinicTags";
+import { PlatformReleaseNotesManager } from "@/components/PlatformReleaseNotesManager";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -369,6 +370,7 @@ const PlatformDirectoryPage = () => {
       <Tabs defaultValue="directory" className="space-y-4">
         <TabsList>
           <TabsTrigger value="directory">Diretório Mestre</TabsTrigger>
+          <TabsTrigger value="news">Notas de Novidades</TabsTrigger>
           <TabsTrigger value="tags">Gestão de Tags</TabsTrigger>
           <TabsTrigger value="flags">Feature Flags Globais</TabsTrigger>
         </TabsList>
@@ -440,6 +442,9 @@ const PlatformDirectoryPage = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+        <TabsContent value="news">
+          <PlatformReleaseNotesManager standalone />
         </TabsContent>
         <TabsContent value="tags">
           <PlatformClinicTags />

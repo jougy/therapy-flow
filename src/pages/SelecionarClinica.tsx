@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { Activity, Building2, CalendarDays, CheckCircle2, LayoutDashboard, Loader2, LogOut, Megaphone, PlusCircle, RefreshCw, Settings, ShieldCheck, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
+import { Activity, Building2, CalendarDays, CheckCircle2, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, PlusCircle, RefreshCw, Settings, ShieldCheck, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
 import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
 import {
   AlertDialog,
@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +22,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import ProfileAccountButton from "@/components/ProfileAccountButton";
+import { PlatformReleaseNotesManager } from "@/components/PlatformReleaseNotesManager";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
@@ -214,6 +216,7 @@ const SelecionarClinica = () => {
   const [activeSection, setActiveSection] = useState<PersonalSection>("clinics");
   const [releaseNotes, setReleaseNotes] = useState<ReleaseNote[]>([]);
   const [loadingReleaseNotes, setLoadingReleaseNotes] = useState(false);
+  const [isReleaseEditorOpen, setIsReleaseEditorOpen] = useState(false);
   const [activeReleaseCategory, setActiveReleaseCategory] = useState<ReleaseNoteCategory>("added");
   const [dashboardSessions, setDashboardSessions] = useState<DashboardSession[]>([]);
   const [dashboardGroups, setDashboardGroups] = useState<DashboardGroup[]>([]);
@@ -985,9 +988,17 @@ const SelecionarClinica = () => {
 
   const renderNews = () => (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Novidades</CardTitle>
-        <p className="text-sm text-muted-foreground">Histórico de notas de atualização publicadas na plataforma.</p>
+      <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <CardTitle className="text-base">Novidades</CardTitle>
+          <p className="text-sm text-muted-foreground">Histórico de notas de atualização publicadas na plataforma.</p>
+        </div>
+        {isPlatformOwner && (
+          <Button variant="outline" size="sm" onClick={() => setIsReleaseEditorOpen(true)}>
+            <Pencil className="mr-2 h-4 w-4 text-primary" />
+            Editar Novidades
+          </Button>
+        )}
       </CardHeader>
       <CardContent>
         {loadingReleaseNotes ? (
@@ -1036,7 +1047,19 @@ const SelecionarClinica = () => {
                   <article key={item.id} className="rounded-lg border bg-background p-4">
                     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                       <div className="min-w-0 sm:pr-3">
-                        <h3 className="font-medium leading-snug">{item.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium leading-snug">{item.title}</h3>
+                          {isPlatformOwner && (
+                            <button
+                              type="button"
+                              onClick={() => setIsReleaseEditorOpen(true)}
+                              className="text-xs text-muted-foreground hover:text-primary"
+                              title="Editar via acesso master"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                         {item.body && <p className="mt-2 text-sm text-muted-foreground">{item.body}</p>}
                       </div>
                       <Badge variant="outline" className="w-fit shrink-0 justify-self-start sm:justify-self-end">{item.release.version}</Badge>
@@ -1048,6 +1071,36 @@ const SelecionarClinica = () => {
           </div>
         )}
       </CardContent>
+
+      {isPlatformOwner && (
+        <Dialog open={isReleaseEditorOpen} onOpenChange={setIsReleaseEditorOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Gerenciador de Novidades (Acesso Mestre)</DialogTitle>
+              <DialogDescription>
+                Crie, edite e remova versões e tópicos de novidades do sistema.
+              </DialogDescription>
+            </DialogHeader>
+            <PlatformReleaseNotesManager
+              onNotesUpdated={() => {
+                const fetchFn = async () => {
+                  const [{ data: releasesData }, { data: itemsData }] = await Promise.all([
+                    supabase.from("platform_releases").select("id, version, version_order, title, summary, published_at").eq("is_active", true).order("version_order", { ascending: false }).limit(12),
+                    supabase.from("platform_release_note_items").select("id, release_id, category, title, body, sort_order").order("sort_order", { ascending: true }),
+                  ]);
+                  const items = (itemsData ?? []).filter((item): item is ReleaseNoteItem => isReleaseNoteCategory(item.category));
+                  const nextReleaseNotes = (releasesData ?? []).map((release) => ({
+                    ...release,
+                    items: items.filter((item) => item.release_id === release.id),
+                  }));
+                  setReleaseNotes(nextReleaseNotes);
+                };
+                void fetchFn();
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </Card>
   );
 
