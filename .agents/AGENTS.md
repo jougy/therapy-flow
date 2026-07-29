@@ -32,3 +32,9 @@ Quando o usuário mandar capturas de tela (screenshots) ou vídeos editados, sig
 - **Roxo**: Movimentar, alinhar, redimensionar ou problemas de responsividade.
 - **Azul**: Conteúdo a ser transformado em popup, modal ou expansível.
 - **Rosa**: Lógica interativa, tornar a área clicável ou engatilhar evento Javascript.
+
+## 6. Verificação Obrigatória de Scroll Mobile
+Sempre que criar ou modificar qualquer componente visual, tela, formulário, modal ou layout:
+- **Revisão de CSS/Layout:** Certifique-se de que contêineres filhos usam `overflow-y-auto` corretamente e que contêineres pai não bloqueiam a rolagem com `overflow: hidden` indevido ou alturas fixas (`h-screen` vs `min-h-screen` / `dvh`). Modais e drawers de navegação em mobile **devem** ter rolagem vertical funcional quando o conteúdo ultrapassar a tela.
+- **Validação com `browser_subagent`:** Testar obrigatoriamente a interface simulando tela mobile (larguras pequenas como 375px–390px) e realizando o scroll até o final do fluxo antes de declarar a tarefa concluída.
+

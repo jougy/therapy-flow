@@ -7,9 +7,12 @@ area: governanca
 aliases:
   - AGENTS
 ---
-# AGENTS
+## Privacidade do Painel de Novidades vs Backoffice
 
-## Objective
+🔒 **Regra Estrita de Privacidade:** NUNCA adicionar informações confidenciais, internas, táticas ou referentes ao painel de Backoffice / Acesso Mestre Administrativo (`isPlatformOwner`, RBAC mestre, ferramentas de suporte, auditoria interna) no painel público de novidades da plataforma (`platform_releases` e `platform_release_note_items`).
+- O painel de **Novidades** é visível a todos os usuários finais da clínica e deve conter **exclusivamente melhorias públicas de produto para uso clínico**.
+- Edições nas notas de atualização podem ser feitas manualmente via acesso Master / Backoffice através do editor de novidades.
+
 
 This repository should be handled with a TDD-first workflow. Before using Git commands that change history or stage work, validate the change with the project's available checks and record any pre-existing failures.
 
@@ -125,3 +128,10 @@ When finishing a task, always report:
 - which commands passed;
 - which commands failed;
 - whether any failure was pre-existing or introduced by the change.
+
+## Mobile Scroll Verification
+
+Sempre que criar ou modificar qualquer componente visual, tela, formulário, modal ou layout:
+- **Revisão de CSS/Layout:** Certifique-se de que contêineres filhos usam `overflow-y-auto` corretamente e que contêineres pai não bloqueiam a rolagem com `overflow: hidden` indevido ou alturas fixas (`h-screen` vs `min-h-screen` / `dvh`). Modais e drawers em mobile **devem** ter rolagem vertical funcional.
+- **Validação com `browser_subagent`:** Testar obrigatoriamente a interface simulando tela mobile (larguras de 375px–390px) e realizando o scroll até o final do fluxo antes de declarar a tarefa concluída.
+
