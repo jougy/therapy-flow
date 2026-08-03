@@ -1,8 +1,8 @@
 {
   "name": "pluri-health",
   "private": true,
-  "version": "0.0.0-alfa-26.07.29-02",
-  "releaseVersion": "alfa-26.07.29-02",
+  "version": "0.0.0-alfa-26.08.03-01",
+  "releaseVersion": "alfa-26.08.03-01",
   "type": "module",
   "scripts": {
     "dev": "vite",

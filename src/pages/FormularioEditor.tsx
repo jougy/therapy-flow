@@ -269,23 +269,21 @@ const FormularioEditor = () => {
 
   const updateField = (fieldId: string, changes: Partial<AnamnesisField>) => {
     setTemplateFields((current) =>
-      sanitizeAnamnesisTemplateSchema(
-        current.map((field) => {
-          if (field.id !== fieldId) {
-            return field;
-          }
+      current.map((field) => {
+        if (field.id !== fieldId) {
+          return field;
+        }
 
-          const nextField = { ...field, ...sanitizeFieldChanges(changes) };
+        const nextField = { ...field, ...sanitizeFieldChanges(changes) };
 
-          if (nextField.type === "slider" || typeof changes.min === "number" || typeof changes.max === "number") {
-            const range = normalizeAnamnesisSliderRange(nextField.min, nextField.max);
-            nextField.min = range.min;
-            nextField.max = range.max;
-          }
+        if (nextField.type === "slider" || typeof changes.min === "number" || typeof changes.max === "number") {
+          const range = normalizeAnamnesisSliderRange(nextField.min, nextField.max);
+          nextField.min = range.min;
+          nextField.max = range.max;
+        }
 
-          return nextField;
-        })
-      )
+        return nextField;
+      })
     );
   };
 

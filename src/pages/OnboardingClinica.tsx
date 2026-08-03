@@ -105,7 +105,7 @@ export default function OnboardingClinica() {
     city: (!isCreateMode && clinicAddress.city) ? clinicAddress.city : "",
     state: (!isCreateMode && clinicAddress.state) ? clinicAddress.state : "",
     subaccount_limit: (!isCreateMode && clinic?.subaccount_limit) ? clinic.subaccount_limit.toString() : (plan === "clinic" ? "5" : "1"),
-    concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? clinic.concurrent_access_limit.toString() : (plan === "clinic" ? "3" : "1"),
+    concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : (plan === "clinic" ? "2" : "1"),
   });
 
   useEffect(() => {
@@ -130,7 +130,7 @@ export default function OnboardingClinica() {
         city: addr.city || "",
         state: addr.state || "",
         subaccount_limit: clinic.subaccount_limit?.toString() || (plan === "clinic" ? "5" : "1"),
-        concurrent_access_limit: clinic.concurrent_access_limit?.toString() || (plan === "clinic" ? "3" : "1"),
+        concurrent_access_limit: clinic.concurrent_access_limit ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : (plan === "clinic" ? "2" : "1"),
       });
     }
   }, [clinic, isCreateMode, plan, profile?.cpf]);
@@ -244,6 +244,9 @@ export default function OnboardingClinica() {
         description: formData.business_hours,
       };
 
+      const parsedSubaccounts = plan === "clinic" ? Math.max(1, parseInt(formData.subaccount_limit || "5", 10)) : 0;
+      const parsedConcurrent = plan === "clinic" ? Math.max(2, parseInt(formData.concurrent_access_limit || "2", 10)) : 1;
+
       const clinicPayload = {
         name: formData.name,
         logo_url: formData.logo_url || null,
@@ -255,8 +258,8 @@ export default function OnboardingClinica() {
         business_hours: businessHoursJson,
         subscription_plan: plan || "solo",
         ...(plan === "clinic" && {
-          subaccount_limit: parseInt(formData.subaccount_limit, 10),
-          concurrent_access_limit: parseInt(formData.concurrent_access_limit, 10),
+          subaccount_limit: parsedSubaccounts,
+          concurrent_access_limit: parsedConcurrent,
         }),
       };
 
@@ -529,7 +532,7 @@ export default function OnboardingClinica() {
                     id="concurrent_access_limit" 
                     name="concurrent_access_limit" 
                     type="number" 
-                    min={1} 
+                    min={plan === "clinic" ? 2 : 1} 
                     required 
                     value={formData.concurrent_access_limit} 
                     onChange={handleChange} 

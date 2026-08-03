@@ -39,19 +39,14 @@ describe("CadastroContaAlfa", () => {
     );
   });
 
-  it("creates an alpha owner account and calls handle_signup", async () => {
+  it("creates a personal account and calls handle_personal_signup", async () => {
     supabaseMocks.signUp.mockResolvedValue({
       data: { user: { id: "user-alpha-1" } },
       error: null,
     });
     supabaseMocks.rpc.mockResolvedValue({
-      data: { clinic_id: "clinic-alpha-1" },
+      data: { user_id: "user-alpha-1", has_clinic: false },
       error: null,
-    });
-    supabaseMocks.from.mockReturnValue({
-      update: vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      }),
     });
 
     render(
@@ -61,15 +56,13 @@ describe("CadastroContaAlfa", () => {
     );
 
     fireEvent.change(screen.getByLabelText(/seu nome/i), { target: { value: "Owner <script>Teste</script>" } });
-    fireEvent.change(screen.getByLabelText(/nome da clínica/i), { target: { value: "Clínica <b>Teste</b>" } });
     fireEvent.change(screen.getByLabelText(/^cpf$/i), { target: { value: "529.982.247-25" } });
-    fireEvent.change(screen.getByLabelText(/cnpj da clínica/i), { target: { value: "04.252.011/0001-10" } });
     fireEvent.change(screen.getByLabelText(/data de nascimento/i), { target: { value: "1990-01-20" } });
     fireEvent.change(screen.getByLabelText(/número de contato/i), { target: { value: "(11) 99999-8888" } });
     fireEvent.change(screen.getByLabelText(/^e-mail$/i), { target: { value: "alpha@example.com" } });
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "teste1234" } });
     fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "teste1234" } });
-    fireEvent.click(screen.getByRole("button", { name: /criar conta alfa/i }));
+    fireEvent.click(screen.getByRole("button", { name: /criar conta/i }));
 
     await waitFor(() => {
       expect(supabaseMocks.signUp).toHaveBeenCalledWith({
@@ -79,8 +72,6 @@ describe("CadastroContaAlfa", () => {
           emailRedirectTo: "https://fisioterapia.prontohealth.workers.dev/auth/confirmado",
           data: {
             birth_date: "1990-01-20",
-            cnpj: "04252011000110",
-            clinic_name: "Clínica Teste",
             cpf: "52998224725",
             full_name: "Owner Teste",
             phone: "11999998888",
@@ -88,12 +79,12 @@ describe("CadastroContaAlfa", () => {
           },
         },
       });
-      expect(supabaseMocks.rpc).toHaveBeenCalledWith("handle_signup", {
-        _cnpj: "04252011000110",
-        _clinic_name: "Clínica Teste",
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("handle_personal_signup", {
+        _birth_date: "1990-01-20",
+        _cpf: "52998224725",
         _email: "alpha@example.com",
         _full_name: "Owner Teste",
-        _subscription_plan: "solo",
+        _phone: "11999998888",
         _user_id: "user-alpha-1",
       });
     });
@@ -114,7 +105,7 @@ describe("CadastroContaAlfa", () => {
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "abcdefg" } });
     fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "abcdefg" } });
 
-    expect(screen.getByRole("button", { name: /criar conta alfa/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /criar conta/i })).toBeDisabled();
     expect(supabaseMocks.signUp).not.toHaveBeenCalled();
   });
 

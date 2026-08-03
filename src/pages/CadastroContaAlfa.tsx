@@ -110,9 +110,7 @@ const getErrorMessage = (error: unknown) => {
 const CadastroContaAlfa = () => {
   const navigate = useNavigate();
   const [ownerName, setOwnerName] = useState("");
-  const [clinicName, setClinicName] = useState("");
   const [cpf, setCpf] = useState("");
-  const [cnpj, setCnpj] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -135,29 +133,25 @@ const CadastroContaAlfa = () => {
   }, [signupCooldown]);
 
   const cleanCpf = useMemo(() => onlyDigits(cpf), [cpf]);
-  const cleanCnpj = useMemo(() => onlyDigits(cnpj), [cnpj]);
   const cleanPhone = useMemo(() => onlyDigits(phone), [phone]);
-  const clinicDocument = cleanCnpj || cleanCpf;
-  const hasStartedForm = Boolean(ownerName || clinicName || cpf || cnpj || birthDate || phone || email || password || passwordConfirmation);
+  const hasStartedForm = Boolean(ownerName || cpf || birthDate || phone || email || password || passwordConfirmation);
   const formErrors = useMemo(() => {
     const errors: string[] = [];
     if (ownerName && normalizeName(ownerName).length < 3) errors.push("Nome precisa ter pelo menos 3 caracteres.");
     if (cpf && !isValidCpf(cpf)) errors.push("CPF inválido.");
-    if (cnpj && !isValidCnpj(cnpj)) errors.push("CNPJ inválido.");
     if (birthDate && !isValidBirthDate(birthDate)) errors.push("Data de nascimento deve indicar uma pessoa maior de 18 anos e com até 120 anos.");
     if (phone && ![10, 11].includes(cleanPhone.length)) errors.push("Contato precisa ter DDD e 10 ou 11 dígitos.");
     if (email && !isValidEmail(normalizeEmail(email))) errors.push("E-mail inválido.");
     if (password && !isStrongEnoughPassword(password)) errors.push("Senha precisa ter pelo menos 8 caracteres, com letras e números.");
     if (passwordConfirmation && password !== passwordConfirmation) errors.push("Confirmação de senha não confere.");
     return errors;
-  }, [birthDate, cleanPhone.length, cnpj, cpf, email, ownerName, password, passwordConfirmation, phone]);
+  }, [birthDate, cleanPhone.length, cpf, email, ownerName, password, passwordConfirmation, phone]);
 
   const canSubmit =
     signupCooldown === 0 &&
     normalizeName(ownerName).length >= 3 &&
     isValidEmail(normalizeEmail(email)) &&
     isValidCpf(cpf) &&
-    isValidCnpj(cnpj) &&
     isValidBirthDate(birthDate) &&
     [10, 11].includes(cleanPhone.length) &&
     isStrongEnoughPassword(password) &&
@@ -172,7 +166,6 @@ const CadastroContaAlfa = () => {
     try {
       const nextEmail = normalizeEmail(email);
       const nextOwnerName = normalizeName(ownerName).trim();
-      const nextClinicName = sanitizeText(clinicName, 63).trim();
 
       const { data: signupData, error: signupError } = await supabase.auth.signUp({
         email: nextEmail,
@@ -181,8 +174,6 @@ const CadastroContaAlfa = () => {
           emailRedirectTo: buildPublicAppUrl("/auth/confirmado"),
           data: {
             birth_date: birthDate,
-            cnpj: cleanCnpj || null,
-            clinic_name: nextClinicName || null,
             cpf: cleanCpf,
             full_name: nextOwnerName,
             phone: cleanPhone,
@@ -195,34 +186,20 @@ const CadastroContaAlfa = () => {
       const userId = signupData.user?.id;
       if (!userId) throw new Error("Conta criada sem ID de usuário. Tente entrar pelo login.");
 
-      const { data: rpcData, error: rpcError } = await supabase.rpc("handle_signup", {
-        _cnpj: clinicDocument,
-        _clinic_name: nextClinicName || null,
+      const { error: rpcError } = await supabase.rpc("handle_personal_signup", {
+        _birth_date: birthDate,
+        _cpf: cleanCpf,
         _email: nextEmail,
         _full_name: nextOwnerName,
-        _subscription_plan: "solo", // Default provisório até a escolha oficial de planos
+        _phone: cleanPhone,
         _user_id: userId,
       });
       if (rpcError) throw rpcError;
 
-      const result = (rpcData ?? {}) as { clinic_id?: string };
-      if (result.clinic_id) {
-        await supabase
-          .from("profiles")
-          .update({ birth_date: birthDate, cpf: cleanCpf, phone: cleanPhone })
-          .eq("id", userId);
-      }
-      if (result.clinic_id && nextClinicName) {
-        await supabase
-          .from("clinics")
-          .update({ email: nextEmail, legal_name: nextClinicName, name: nextClinicName, phone: cleanPhone })
-          .eq("id", result.clinic_id);
-      }
-
       setCreated(true);
       toast({
         title: "Conta criada",
-        description: "Seu acesso alfa foi criado. Você já pode escolher sua clínica.",
+        description: "Sua conta pessoal foi criada. Você já pode acessar seu espaço pessoal.",
       });
     } catch (error) {
       const message = getErrorMessage(error);
@@ -259,7 +236,7 @@ const CadastroContaAlfa = () => {
 
         <div className="mb-6">
           <p className="text-sm text-muted-foreground">Pluri-Health</p>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Criar conta alfa</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Criar conta</h1>
         </div>
 
         <Card>
@@ -267,8 +244,8 @@ const CadastroContaAlfa = () => {
             <CardTitle>{created ? "Conta criada" : "Dados da conta"}</CardTitle>
             <CardDescription>
               {created
-                ? "Sua conta foi preparada. Continue para selecionar a clínica."
-                : "Crie o owner inicial e a clínica vinculada a esta conta."}
+                ? "Sua conta pessoal foi preparada. Continue para o espaço pessoal."
+                : "Crie sua conta pessoal para acessar e gerenciar suas clínicas."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -278,13 +255,13 @@ const CadastroContaAlfa = () => {
                   <div className="flex items-start gap-3">
                     <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
                     <div>
-                      <p className="font-medium">Cadastro alfa concluído</p>
+                      <p className="font-medium">Cadastro pessoal concluído</p>
                       <p className="mt-1 text-sm">Se a confirmação de e-mail estiver ativa, confirme seu e-mail na caixa de entrada para fazer login.</p>
                     </div>
                   </div>
                 </div>
-                <Button className="w-full sm:w-auto" onClick={() => navigate("/planos", { replace: true })}>
-                  Avançar para escolha de plano
+                <Button className="w-full sm:w-auto" onClick={() => navigate("/espacopessoal", { replace: true })}>
+                  Avançar para o espaço pessoal
                 </Button>
               </div>
             ) : (
@@ -315,29 +292,6 @@ const CadastroContaAlfa = () => {
                       maxLength={32}
                       placeholder="000.000.000-00"
                       required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="clinic-name">Nome da clínica</Label>
-                    <Input
-                      id="clinic-name"
-                      value={clinicName}
-                      onChange={(event) => setClinicName(sanitizeText(event.target.value, 63))}
-                      maxLength={63}
-                      placeholder="Opcional"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="clinic-cnpj">CNPJ da clínica</Label>
-                    <Input
-                      id="clinic-cnpj"
-                      value={cnpj}
-                      onChange={(event) => setCnpj(formatCnpj(event.target.value))}
-                      inputMode="numeric"
-                      maxLength={32}
-                      placeholder="Opcional"
                     />
                   </div>
 

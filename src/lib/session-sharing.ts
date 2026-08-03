@@ -53,9 +53,12 @@ const parseRecipient = (value: Json): SessionShareRecipient | null => {
     return null;
   }
 
+  const rawAccessLevel = readString(value.access_level);
+  const accessLevel = rawAccessLevel === "read_only" ? "read_only" : "can_evolve";
+
   return {
     ...collaborator,
-    access_level: readString(value.access_level) ?? "read_only",
+    access_level: accessLevel,
     created_at: readString(value.created_at),
     shared_by_user_id: readString(value.shared_by_user_id),
   };

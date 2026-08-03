@@ -128,12 +128,17 @@ export const normalizeAnamnesisSliderRange = (
 
 const sanitizeOption = (option: unknown, index: number, usedIds: Set<string>): AnamnesisFieldOption => {
   const source = isPlainRecord(option) ? option : {};
-  const description = getOptionalStringValue(source.description);
+  const description = typeof source.description === "string" ? source.description : undefined;
+  const rawLabel = typeof source.label === "string" ? source.label : undefined;
+  const sanitizedLabel = rawLabel !== undefined ? sanitizeSingleLineInput(rawLabel, INPUT_LIMITS.formOptionLabel).trim() : undefined;
+  const label = sanitizedLabel !== undefined
+    ? (sanitizedLabel === "" && rawLabel === "" ? "" : (sanitizedLabel || `Opção ${index + 1}`))
+    : `Opção ${index + 1}`;
 
   return {
     id: makeUniqueId(getStringValue(source.id), usedIds, `option_${index + 1}`),
-    label: sanitizeSingleLineInput(getStringValue(source.label), INPUT_LIMITS.formOptionLabel).trim() || `Opção ${index + 1}`,
-    ...(description ? { description: sanitizeMultilineInput(description, INPUT_LIMITS.formHelpText).trim() } : {}),
+    label,
+    ...(description !== undefined ? { description: sanitizeMultilineInput(description, INPUT_LIMITS.formHelpText) } : {}),
     row: Number.isFinite(source.row) ? clamp(Math.round(Number(source.row)), 0, 99) : 0,
   };
 };
@@ -173,17 +178,29 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
           ? (source.systemKey as NonNullable<AnamnesisField["systemKey"]>)
           : undefined;
 
+      const rawLabel = typeof source.label === "string" ? source.label : undefined;
+      const sanitizedLabel = rawLabel !== undefined ? sanitizeSingleLineInput(rawLabel, INPUT_LIMITS.formFieldLabel).trim() : undefined;
+      const label = sanitizedLabel !== undefined
+        ? (sanitizedLabel === "" && rawLabel === "" ? "" : (sanitizedLabel || systemKey || "Campo"))
+        : (systemKey || "Campo");
+
+      const rawHelpText = typeof source.helpText === "string" ? source.helpText : undefined;
+      const helpText = rawHelpText !== undefined
+        ? sanitizeMultilineInput(rawHelpText, INPUT_LIMITS.formHelpText)
+        : undefined;
+
+      const rawPlaceholder = typeof source.placeholder === "string" ? source.placeholder : undefined;
+      const placeholder = rawPlaceholder !== undefined
+        ? sanitizeSingleLineInput(rawPlaceholder, INPUT_LIMITS.formPlaceholder)
+        : undefined;
+
       return {
         id: fieldId,
-        label: sanitizeSingleLineInput(getStringValue(source.label), INPUT_LIMITS.formFieldLabel).trim() || `Campo ${index + 1}`,
+        label,
         type,
         groupKey: getOptionalStringValue(source.groupKey) ? sanitizeId(getStringValue(source.groupKey), "") || null : null,
-        helpText: getOptionalStringValue(source.helpText)
-          ? sanitizeMultilineInput(getStringValue(source.helpText), INPUT_LIMITS.formHelpText).trim()
-          : undefined,
-        placeholder: getOptionalStringValue(source.placeholder)
-          ? sanitizeSingleLineInput(getStringValue(source.placeholder), INPUT_LIMITS.formPlaceholder).trim()
-          : undefined,
+        ...(helpText !== undefined ? { helpText } : {}),
+        ...(placeholder !== undefined ? { placeholder } : {}),
         required: source.required === true,
         showInPatientList: source.showInPatientList === true,
         ...(options ? { options } : {}),
@@ -192,6 +209,7 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         ...(systemKey ? { systemKey } : {}),
       };
     });
+
 
   const fieldIds = new Set(fields.map((field) => field.id));
   const selectorOptionIds = new Set(

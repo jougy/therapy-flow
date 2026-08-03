@@ -54,7 +54,7 @@ export const SessionShareDialog = ({
 }: SessionShareDialogProps) => {
   const [query, setQuery] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [accessLevel, setAccessLevel] = useState<"read_only" | "can_evolve">("read_only");
+  const [accessLevel, setAccessLevel] = useState<"read_only" | "can_evolve">("can_evolve");
   const [sharing, setSharing] = useState(false);
 
   const existingRecipientMap = useMemo(

@@ -766,13 +766,13 @@
 }
 
 .designlab-settings-mobile-dock {
-  align-items: end;
-  justify-content: center;
+  align-items: flex-end;
+  justify-content: safe center;
   touch-action: pan-x;
   overscroll-behavior-x: contain;
   padding-inline: 0.75rem;
   padding-top: 0.35rem;
-  scroll-padding-inline: 0.5rem;
+  scroll-padding-inline: 0.75rem;
   transition:
     gap 180ms ease-in-out,
     padding-top 180ms ease-in-out,
@@ -780,8 +780,8 @@
 }
 
 .designlab-settings-mobile-dock.is-scrollable {
-  justify-content: flex-start;
-  padding-inline: 0.15rem 1rem;
+  justify-content: safe center;
+  padding-inline: 0.75rem;
 }
 
 .designlab-settings-mobile-nav[data-dock-state="medium"] .designlab-settings-mobile-dock {
