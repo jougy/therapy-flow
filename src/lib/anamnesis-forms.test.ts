@@ -457,4 +457,14 @@ describe("anamnesis forms helpers", () => {
       capturedAt: null,
     });
   });
+
+  it("preserves empty label strings during active editing and allows trailing spaces in help text and placeholders", () => {
+    const schema = sanitizeAnamnesisTemplateSchema([
+      { id: "field_1", label: "", helpText: "Qual é o endereço ", placeholder: "Digite aqui " },
+    ]);
+
+    expect(schema[0]?.label).toBe("");
+    expect(schema[0]?.helpText).toBe("Qual é o endereço ");
+    expect(schema[0]?.placeholder).toBe("Digite aqui ");
+  });
 });

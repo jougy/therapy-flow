@@ -739,12 +739,23 @@ const SessaoDetalhe = () => {
       let sessionData = fetchedSessionData;
 
       if (sessionData) {
+        let recipients: SessionShareRecipient[] = [];
+        try {
+          recipients = await fetchSessionShareRecipients(sessionData.id);
+          setShareRecipients(recipients);
+        } catch {
+          setShareRecipients([]);
+        }
+
+        const isSharedWithMe = user?.id ? recipients.some((r) => r.id === user.id) : false;
+
         if (
           sessionData.user_id !== user?.id &&
           sessionData.provider_id !== user?.id &&
           !can("sessions.read_all") &&
           operationalRole !== "owner" &&
-          operationalRole !== "admin"
+          operationalRole !== "admin" &&
+          !isSharedWithMe
         ) {
           toast({
             title: "Acesso restrito",
@@ -810,13 +821,6 @@ const SessaoDetalhe = () => {
         setSessionCreatedAt(sessionData.created_at);
         setEditHistory(historyData ?? []);
         setIsEditing(false);
-
-        try {
-          const recipients = await fetchSessionShareRecipients(sessionData.id);
-          setShareRecipients(recipients);
-        } catch {
-          setShareRecipients([]);
-        }
       }
     } else {
       setLocked(false);

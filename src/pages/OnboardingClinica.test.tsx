@@ -98,33 +98,59 @@ describe("OnboardingClinica", () => {
     });
   });
 
-  it("displays explicit error message from Supabase when handle_signup fails", async () => {
+  it("enforces minimum of 2 concurrent accesses for clinic plan and updates clinic payload", async () => {
+    const mockSelectClinic = vi.fn().mockResolvedValue(undefined);
+    const mockRefreshAuthState = vi.fn().mockResolvedValue(undefined);
+
     vi.mocked(useAuth).mockReturnValue({
       clinic: null,
       profile: { cpf: "12345678901" },
-      session: { user: { id: "user-1", email: "test@example.com" } },
+      session: { user: { id: "user-clinic-1", email: "clinic@exemplo.com" } },
+      selectClinic: mockSelectClinic,
+      refreshAuthState: mockRefreshAuthState,
     } as unknown as ReturnType<typeof useAuth>);
 
     supabaseMocks.rpc.mockResolvedValue({
-      data: null,
-      error: { message: "Já existe uma clínica cadastrada com este CPF/CNPJ." },
+      data: { clinic_id: "new-team-clinic-id" },
+      error: null,
+    });
+
+    const mockUpdate = vi.fn().mockReturnValue({
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    });
+    supabaseMocks.from.mockReturnValue({
+      update: mockUpdate,
     });
 
     render(
-      <MemoryRouter initialEntries={["/onboarding-clinica?plan=solo"]}>
+      <MemoryRouter initialEntries={["/onboarding-clinica?plan=clinic"]}>
         <OnboardingClinica />
       </MemoryRouter>
     );
 
-    fireEvent.change(screen.getByLabelText(/Nome da Clínica/i), { target: { value: "Minha Clínica" } });
-    fireEvent.change(screen.getByLabelText(/Logradouro/i), { target: { value: "Rua A" } });
-    fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "São Paulo" } });
-    fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "SP" } });
+    fireEvent.change(screen.getByLabelText(/Nome da Clínica/i), { target: { value: "Clínica Equipe Alfa" } });
+    fireEvent.change(screen.getByLabelText(/Logradouro/i), { target: { value: "Av. Brasil" } });
+    fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "Curitiba" } });
+    fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "PR" } });
 
-    fireEvent.click(screen.getByRole("button", { name: /Salvar e Continuar/i }));
+    const concurrentInput = screen.getByLabelText(/Acessos Simultâneos/i);
+    expect(concurrentInput).toHaveAttribute("min", "2");
+
+    // Try setting 1, form should floor to 2
+    fireEvent.change(concurrentInput, { target: { value: "1" } });
+
+    const submitBtn = screen.getByRole("button", { name: /Salvar e Continuar/i });
+    const form = submitBtn.closest("form")!;
+    fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(supabaseMocks.rpc).toHaveBeenCalledWith("handle_signup", expect.anything());
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscription_plan: "clinic",
+          subaccount_limit: 5,
+          concurrent_access_limit: 2,
+        })
+      );
     });
   });
 });

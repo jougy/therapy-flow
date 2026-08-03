@@ -2929,17 +2929,17 @@ const Configuracoes = () => {
 
   const renderSettingsSideCard = (floating = false) => (
     <Card
-      className={`hidden lg:block ${
+      className={`hidden lg:flex flex-col ${
         isDesignLabExperience
-          ? `overflow-visible transition-all duration-500 ease-out ${
+          ? `transition-all duration-500 ease-out ${
               floating
-                ? "pointer-events-auto w-80 shadow-2xl shadow-primary/10"
-                : ""
+                ? "pointer-events-auto w-80 max-h-[calc(100vh-4rem)] max-h-[calc(100dvh-4rem)] shadow-2xl shadow-primary/10"
+                : "max-h-[calc(100vh-6rem)] max-h-[calc(100dvh-6rem)]"
             }`
           : ""
       }`}
     >
-      <CardHeader className={isDesignLabExperience ? "pb-4" : undefined}>
+      <CardHeader className={isDesignLabExperience ? "pb-3 shrink-0" : undefined}>
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-base flex items-center gap-2">
             <Settings className="h-4 w-4" />
@@ -2960,7 +2960,9 @@ const Configuracoes = () => {
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className={isDesignLabExperience ? "overflow-visible" : undefined}>{renderSettingsMenu()}</CardContent>
+      <CardContent className={isDesignLabExperience ? "overflow-y-auto flex-1 p-4 pt-0 min-h-0 [scrollbar-width:thin]" : undefined}>
+        {renderSettingsMenu()}
+      </CardContent>
     </Card>
   );
 
@@ -2996,7 +2998,7 @@ const Configuracoes = () => {
       </div>
 
       {isDesignLabExperience && !designLabSettingsMenuPinned ? (
-        <div className="group/designlab-settings-drawer pointer-events-none fixed bottom-0 left-0 top-28 z-40 hidden w-[356px] lg:block">
+        <div className="group/designlab-settings-drawer pointer-events-none fixed top-1/2 left-0 -translate-y-1/2 z-40 hidden w-[356px] h-0 lg:block">
           <button
             type="button"
             className="designlab-settings-drawer-handle pointer-events-auto absolute left-0 top-1/2 z-10 flex h-36 w-10 -translate-y-1/2 items-center justify-center rounded-r-2xl p-[1px] text-primary focus-visible:outline-none"
@@ -3010,7 +3012,7 @@ const Configuracoes = () => {
             </span>
           </button>
           <div className="pointer-events-auto absolute inset-y-0 left-10 z-0 w-2" aria-hidden="true" />
-          <div className="absolute left-4 top-20 -translate-x-[calc(100%+1.25rem)] opacity-0 transition-all duration-500 ease-out group-hover/designlab-settings-drawer:translate-x-0 group-hover/designlab-settings-drawer:opacity-100 group-focus-within/designlab-settings-drawer:translate-x-0 group-focus-within/designlab-settings-drawer:opacity-100">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 -translate-x-[calc(100%+1.25rem)] opacity-0 transition-all duration-500 ease-out group-hover/designlab-settings-drawer:translate-x-0 group-hover/designlab-settings-drawer:opacity-100 group-focus-within/designlab-settings-drawer:translate-x-0 group-focus-within/designlab-settings-drawer:opacity-100">
             {renderSettingsSideCard(true)}
           </div>
         </div>
@@ -5287,7 +5289,7 @@ const Configuracoes = () => {
         data-dock-state={mobileDockExpanded ? "medium" : "compact"}
         data-dock-pressing={mobileDockPointerActive ? "true" : "false"}
       >
-        <div className="mx-auto max-w-screen-sm px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
+        <div className="mx-auto flex w-full max-w-screen-sm justify-center px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
           {isDesignLabExperience && mobileDockTooltip && (
             <span
               className="designlab-settings-mobile-floating-tooltip"
