@@ -1565,3 +1565,29 @@
     transition-duration: 1ms !important;
   }
 }
+
+@media print {
+  body > *:not(#print-blank-kit-root) {
+    display: none !important;
+  }
+
+  #print-blank-kit-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  #print-blank-kit-root * {
+    visibility: visible !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm 10mm 12mm 10mm;
+  }
+}
+

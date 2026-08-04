@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Printer, FileText, CheckSquare, Sparkles, Building2 } from "lucide-react";
 import {
   Dialog,
@@ -94,7 +95,26 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
   const handlePrint = () => {
+    const originalTitle = document.title;
+
+    let targetName = "";
+    if (selectedTemplate?.name) {
+      targetName = selectedTemplate.name;
+    } else if (includeUniversalBase) {
+      targetName = "Bloco Padrão Universal";
+    } else if (includePatientRegistration) {
+      targetName = "Ficha de Cadastro do Paciente";
+    }
+
+    const clinicClean = clinic?.name ? ` - ${clinic.name}` : "";
+    const cleanFormName = targetName.replace(/[^a-zA-Z0-9-_\s]/g, " ").replaceAll(/\s+/g, " ").trim();
+    document.title = `Ficha em Branco - ${cleanFormName}${clinicClean}`;
+
     window.print();
+
+    window.setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
   };
 
   return (
@@ -157,7 +177,7 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
               <div className="space-y-2 rounded-md border p-3 bg-background">
                 <Label className="font-medium flex items-center gap-2">
                   <CheckSquare className="h-4 w-4 text-muted-foreground" />
-                  Ficha Extra de Atendimento Especifico (Opcional)
+                  Ficha Extra de Atendimento Específico (Opcional)
                 </Label>
                 <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
                   <SelectTrigger className="w-full">
@@ -211,21 +231,26 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* ÁREA DE IMPRESSÃO (Oculta na tela, visível na janela de impressão do navegador) */}
-      <div className="hidden print:block print:fixed print:inset-0 print:bg-white print:z-[999999]">
-        <PrintBlankKitSheet
-          clinicName={clinic?.name}
-          clinicLogoUrl={clinic?.logo_url}
-          includeHeader={includeHeader}
-          includePatientRegistration={includePatientRegistration}
-          includeUniversalBase={includeUniversalBase}
-          universalBaseSchema={baseSchema}
-          selectedTemplateName={selectedTemplate?.name}
-          selectedTemplateSchema={selectedTemplate?.schema}
-        />
-      </div>
+      {/* ÁREA DE IMPRESSÃO (Renderizada via React Portal diretamente no document.body para isolamento CSS de impressão) */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <div id="print-blank-kit-root" className="hidden print:block">
+            <PrintBlankKitSheet
+              clinicName={clinic?.name}
+              clinicLogoUrl={clinic?.logo_url}
+              includeHeader={includeHeader}
+              includePatientRegistration={includePatientRegistration}
+              includeUniversalBase={includeUniversalBase}
+              universalBaseSchema={baseSchema}
+              selectedTemplateName={selectedTemplate?.name}
+              selectedTemplateSchema={selectedTemplate?.schema}
+            />
+          </div>,
+          document.body
+        )}
     </>
   );
 };
 
 export default PrintBlankKitModal;
+
