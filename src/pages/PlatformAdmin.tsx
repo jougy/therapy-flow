@@ -867,32 +867,60 @@ const toRoute = (item: Pick<PlatformDirectoryItem, "item_id" | "item_type" | "me
   return `/platform/pacientes/${item.item_id}`;
 };
 
-const PlatformAdmin = () => {
-  const params = useParams();
-  const location = useLocation();
-  const detailKind = useMemo<DetailKind | null>(() => {
-    if (params["*"]?.startsWith("clinicas/")) return "clinic";
-    if (params["*"]?.startsWith("usuarios/")) return "account";
-    if (params["*"]?.startsWith("pacientes/")) return "patient";
-    return null;
-  }, [params]);
-  const detailId = params["*"]?.split("/")[1] ?? null;
+const DirectoryPill = ({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Building2;
+  label: string;
+  value: number;
+}) => (
+  <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      <Icon className="h-5 w-5" />
+    </div>
+    <div>
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="text-xl font-semibold text-foreground">{value}</p>
+    </div>
+  </div>
+);
 
-  if (detailKind && detailId) {
-    if (detailKind === "clinic") {
-      const locationState = location.state as { clinicKey?: string } | null;
-      const clinicKey = detailId === "detalhes"
-        ? locationState?.clinicKey || readStoredPlatformClinicKey()
-        : detailId;
-
-      if (!clinicKey) return <PlatformDirectoryPage />;
-
-      return <PlatformClinicDetailPage clinicKey={clinicKey} shouldMaskUrl={detailId !== "detalhes"} />;
-    }
-    return <PlatformPersonDetailPage itemType={detailKind} itemId={detailId} />;
-  }
-
-  return <PlatformDirectoryPage />;
+const DirectoryCard = ({ item, onClick }: { item: PlatformDirectoryItem; onClick: () => void }) => {
+  const Icon = item.item_type === "clinic" ? Building2 : item.item_type === "account" ? UsersRound : Stethoscope;
+  return (
+    <button
+      type="button"
+      className="grid w-full gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/50 hover:bg-accent/40 md:grid-cols-[auto_minmax(0,1fr)_auto]"
+      onClick={onClick}
+    >
+      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-base font-semibold text-foreground">{item.title}</p>
+          <Badge variant="secondary">{itemLabels[item.item_type]}</Badge>
+          {item.status && <Badge variant="outline">{item.status}</Badge>}
+        </div>
+        <p className="mt-1 truncate text-sm text-muted-foreground">{item.subtitle ?? item.clinic_name ?? "Sem subtítulo"}</p>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>{compactDocument(item.primary_document)}</span>
+          {item.secondary_document && <span>{item.secondary_document}</span>}
+          {item.clinic_name && item.item_type !== "clinic" && <span>{item.clinic_name}</span>}
+          {typeof item.metadata?.age === "number" && <span>{item.metadata.age} anos</span>}
+        </div>
+      </div>
+      {item.item_type === "clinic" && (
+        <div className="grid grid-cols-3 gap-2 text-center text-xs text-muted-foreground md:min-w-48">
+          <span><strong className="block text-sm text-foreground">{metadataNumber(item.metadata, "team_count")}</strong>equipe</span>
+          <span><strong className="block text-sm text-foreground">{metadataNumber(item.metadata, "patients_count")}</strong>pacientes</span>
+          <span><strong className="block text-sm text-foreground">{metadataNumber(item.metadata, "sessions_count")}</strong>atend.</span>
+        </div>
+      )}
+    </button>
+  );
 };
 
 const PlatformShell = ({
@@ -1953,62 +1981,35 @@ const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "account" | 
   );
 };
 
-const DirectoryPill = ({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Building2;
-  label: string;
-  value: number;
-}) => (
-  <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-      <Icon className="h-5 w-5" />
-    </div>
-    <div>
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="text-xl font-semibold text-foreground">{value}</p>
-    </div>
-  </div>
-);
+const PlatformAdmin = () => {
+  const params = useParams();
+  const location = useLocation();
+  const detailKind = useMemo<DetailKind | null>(() => {
+    if (params["*"]?.startsWith("clinicas/")) return "clinic";
+    if (params["*"]?.startsWith("usuarios/")) return "account";
+    if (params["*"]?.startsWith("pacientes/")) return "patient";
+    return null;
+  }, [params]);
+  const detailId = params["*"]?.split("/")[1] ?? null;
 
-const DirectoryCard = ({ item, onClick }: { item: PlatformDirectoryItem; onClick: () => void }) => {
-  const Icon = item.item_type === "clinic" ? Building2 : item.item_type === "account" ? UsersRound : Stethoscope;
-  return (
-    <button
-      type="button"
-      className="grid w-full gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/50 hover:bg-accent/40 md:grid-cols-[auto_minmax(0,1fr)_auto]"
-      onClick={onClick}
-    >
-      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <Icon className="h-5 w-5" />
-      </div>
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-base font-semibold text-foreground">{item.title}</p>
-          <Badge variant="secondary">{itemLabels[item.item_type]}</Badge>
-          {item.status && <Badge variant="outline">{item.status}</Badge>}
-        </div>
-        <p className="mt-1 truncate text-sm text-muted-foreground">{item.subtitle ?? item.clinic_name ?? "Sem subtítulo"}</p>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>{compactDocument(item.primary_document)}</span>
-          {item.secondary_document && <span>{item.secondary_document}</span>}
-          {item.clinic_name && item.item_type !== "clinic" && <span>{item.clinic_name}</span>}
-          {typeof item.metadata?.age === "number" && <span>{item.metadata.age} anos</span>}
-        </div>
-      </div>
-      {item.item_type === "clinic" && (
-        <div className="grid grid-cols-3 gap-2 text-center text-xs text-muted-foreground md:min-w-48">
-          <span><strong className="block text-sm text-foreground">{metadataNumber(item.metadata, "team_count")}</strong>equipe</span>
-          <span><strong className="block text-sm text-foreground">{metadataNumber(item.metadata, "patients_count")}</strong>pacientes</span>
-          <span><strong className="block text-sm text-foreground">{metadataNumber(item.metadata, "sessions_count")}</strong>atend.</span>
-        </div>
-      )}
-    </button>
-  );
+  if (detailKind && detailId) {
+    if (detailKind === "clinic") {
+      const locationState = location.state as { clinicKey?: string } | null;
+      const clinicKey = detailId === "detalhes"
+        ? locationState?.clinicKey || readStoredPlatformClinicKey()
+        : detailId;
+
+      if (!clinicKey) return <PlatformDirectoryPage />;
+
+      return <PlatformClinicDetailPage clinicKey={clinicKey} shouldMaskUrl={detailId !== "detalhes"} />;
+    }
+    return <PlatformPersonDetailPage itemType={detailKind} itemId={detailId} />;
+  }
+
+  return <PlatformDirectoryPage />;
 };
 
 export default PlatformAdmin;
+
 
 
