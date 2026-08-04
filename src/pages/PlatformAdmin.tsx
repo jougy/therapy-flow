@@ -1162,6 +1162,46 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
   const resolvedClinicId = String(clinic?.id ?? "");
   const patients = detail?.patients ?? [];
 
+  const loadDetail = useCallback(async () => {
+    setLoading(true);
+    try {
+      const detailRes = await callRpc("get_platform_clinic_detail_by_route_key", { _route_key: clinicKey });
+      if (detailRes.error) throw detailRes.error;
+
+      const loadedDetail = (detailRes.data ?? null) as PlatformClinicDetail | null;
+      const loadedClinicId = String(loadedDetail?.clinic?.id ?? "");
+      if (!loadedClinicId) throw new Error("Clínica não encontrada para esta rota mascarada.");
+
+      const [auditRes, flagsRes, formsRes, tagsRes] = await Promise.all([
+        callRpc("list_platform_audit_events", { _clinic_id: loadedClinicId, _limit: 80 }),
+        callRpc("list_feature_flags", { _clinic_id: loadedClinicId }),
+        callRpc("get_platform_clinic_forms_summary_by_route_key", { _route_key: clinicKey }),
+        supabase.from("clinic_tag_relations").select("clinic_tags(id, name, color)").eq("clinic_id", loadedClinicId),
+      ]);
+
+      if (auditRes.error) throw auditRes.error;
+      if (flagsRes.error) throw flagsRes.error;
+      if (formsRes.error) throw formsRes.error;
+
+      setDetail(loadedDetail);
+      setAuditEvents((auditRes.data ?? []) as PlatformAuditEvent[]);
+      setFeatureFlags((flagsRes.data ?? []) as FeatureFlag[]);
+      setFormsSummary((formsRes.data ?? null) as PlatformClinicFormsSummary | null);
+      
+      if (tagsRes.data) {
+        setClinicTags(tagsRes.data.map((r: { clinic_tags: unknown }) => r.clinic_tags).filter(Boolean));
+      }
+    } catch (error) {
+      toast({
+        title: "Detalhe da clínica indisponível",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [clinicKey]);
+
   const handleExportTemplateModel = useCallback(
     ({
       description,
@@ -1286,53 +1326,6 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
     },
     [resolvedClinicId, user?.id, supportReason, startPlatformClinicAccess, supportRole, loadDetail]
   );
-
-  useEffect(() => {
-    storePlatformClinicKey(clinicKey);
-    if (shouldMaskUrl) {
-      navigate(PLATFORM_CLINIC_DETAIL_ROUTE, { replace: true, state: { clinicKey } });
-    }
-  }, [clinicKey, navigate, shouldMaskUrl]);
-
-  const loadDetail = useCallback(async () => {
-    setLoading(true);
-    try {
-      const detailRes = await callRpc("get_platform_clinic_detail_by_route_key", { _route_key: clinicKey });
-      if (detailRes.error) throw detailRes.error;
-
-      const loadedDetail = (detailRes.data ?? null) as PlatformClinicDetail | null;
-      const loadedClinicId = String(loadedDetail?.clinic?.id ?? "");
-      if (!loadedClinicId) throw new Error("Clínica não encontrada para esta rota mascarada.");
-
-      const [auditRes, flagsRes, formsRes, tagsRes] = await Promise.all([
-        callRpc("list_platform_audit_events", { _clinic_id: loadedClinicId, _limit: 80 }),
-        callRpc("list_feature_flags", { _clinic_id: loadedClinicId }),
-        callRpc("get_platform_clinic_forms_summary_by_route_key", { _route_key: clinicKey }),
-        supabase.from("clinic_tag_relations").select("clinic_tags(id, name, color)").eq("clinic_id", loadedClinicId),
-      ]);
-
-      if (auditRes.error) throw auditRes.error;
-      if (flagsRes.error) throw flagsRes.error;
-      if (formsRes.error) throw formsRes.error;
-
-      setDetail(loadedDetail);
-      setAuditEvents((auditRes.data ?? []) as PlatformAuditEvent[]);
-      setFeatureFlags((flagsRes.data ?? []) as FeatureFlag[]);
-      setFormsSummary((formsRes.data ?? null) as PlatformClinicFormsSummary | null);
-      
-      if (tagsRes.data) {
-        setClinicTags(tagsRes.data.map((r: { clinic_tags: unknown }) => r.clinic_tags).filter(Boolean));
-      }
-    } catch (error) {
-      toast({
-        title: "Detalhe da clínica indisponível",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [clinicKey]);
 
   useEffect(() => {
     void loadDetail();
