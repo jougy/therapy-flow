@@ -1,9 +1,10 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Building2,
   ClipboardList,
+  Download,
   FileText,
   Gauge,
   Loader2,
@@ -13,6 +14,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Stethoscope,
+  Upload,
   UserCog,
   UsersRound,
 } from "lucide-react";
@@ -39,6 +41,14 @@ import { PlatformReleaseNotesManager } from "@/components/PlatformReleaseNotesMa
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import {
+  ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES,
+  type AnamnesisTemplateExchangeKind,
+  type AnamnesisTemplateSchema,
+  buildAnamnesisTemplateExchangeFileName,
+  buildAnamnesisTemplateExchangePayload,
+  parseAnamnesisTemplateExchangePayload,
+} from "@/lib/anamnesis-forms";
 
 type DirectoryKind = "all" | "clinic" | "account" | "patient";
 type DetailKind = "clinic" | "account" | "patient";
@@ -82,6 +92,7 @@ type PlatformClinicFormsSummary = {
   base?: {
     field_count?: number;
     section_count?: number;
+    schema?: AnamnesisTemplateSchema;
     updated_at?: string | null;
   };
   templates?: Array<{
@@ -89,6 +100,7 @@ type PlatformClinicFormsSummary = {
     field_count?: number;
     id: string;
     name: string;
+    schema?: AnamnesisTemplateSchema;
     section_count?: number;
     updated_at?: string | null;
     usage_count?: number;
@@ -477,7 +489,8 @@ const PlatformDirectoryPage = () => {
 
 const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinicKey: string; shouldMaskUrl?: boolean }) => {
   const navigate = useNavigate();
-  const { startPlatformClinicAccess } = useAuth();
+  const { user, startPlatformClinicAccess } = useAuth();
+  const templateImportInputRef = useRef<HTMLInputElement>(null);
   const [detail, setDetail] = useState<PlatformClinicDetail | null>(null);
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEvent[]>([]);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
@@ -498,6 +511,131 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
   const routeKey = String(clinic?.route_key ?? "");
   const resolvedClinicId = String(clinic?.id ?? "");
   const patients = detail?.patients ?? [];
+
+  const handleExportTemplateModel = useCallback(
+    ({
+      description,
+      kind,
+      name,
+      schema,
+    }: {
+      description?: string | null;
+      kind: AnamnesisTemplateExchangeKind;
+      name: string;
+      schema: AnamnesisTemplateSchema;
+    }) => {
+      if (!schema || schema.length === 0) {
+        toast({
+          title: "Não foi possível exportar",
+          description: "Este formulário não possui campos cadastrados.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const payload = buildAnamnesisTemplateExchangePayload({
+        description,
+        kind,
+        name,
+        schema,
+      });
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = objectUrl;
+      link.download = buildAnamnesisTemplateExchangeFileName(kind, name);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+
+      toast({
+        title: kind === "base" ? "Bloco padrão exportado" : "Modelo exportado",
+        description: "O arquivo JSON foi baixado com a estrutura completa do formulário.",
+      });
+    },
+    []
+  );
+
+  const handleImportTemplateFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+
+      if (!file || !resolvedClinicId || !user?.id) {
+        return;
+      }
+
+      if (supportReason.trim().length < 8) {
+        toast({
+          title: "Motivo do suporte necessário",
+          description: "Informe o motivo do suporte com pelo menos 8 caracteres para importar formulários.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setStartingSupport(true);
+      try {
+        if (file.size > ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES) {
+          throw new Error("Arquivo de modelo muito grande");
+        }
+
+        const raw = await file.text();
+        const imported = parseAnamnesisTemplateExchangePayload(raw);
+
+        if (startPlatformClinicAccess) {
+          await startPlatformClinicAccess(resolvedClinicId, supportReason.trim(), supportRole);
+        }
+
+        if (imported.kind === "base") {
+          const { error } = await supabase
+            .from("clinics")
+            .update({ anamnesis_base_schema: imported.template.schema })
+            .eq("id", resolvedClinicId);
+
+          if (error) throw error;
+
+          await loadDetail();
+          toast({
+            title: "Bloco padrão importado",
+            description: `A estrutura "${imported.template.name}" foi aplicada ao bloco padrão universal.`,
+          });
+        } else {
+          const { error } = await supabase
+            .from("anamnesis_form_templates")
+            .insert({
+              clinic_id: resolvedClinicId,
+              description: imported.template.description.trim() || null,
+              is_active: true,
+              is_system_default: false,
+              name: imported.template.name.trim(),
+              schema: imported.template.schema,
+              user_id: user.id,
+            });
+
+          if (error) throw error;
+
+          await loadDetail();
+          toast({
+            title: "Modelo importado",
+            description: `A ficha "${imported.template.name}" foi criada com a mesma estrutura do arquivo.`,
+          });
+        }
+      } catch (error) {
+        toast({
+          title: "Erro ao importar modelo",
+          description: error instanceof Error ? error.message : "Não foi possível importar este arquivo.",
+          variant: "destructive",
+        });
+      } finally {
+        setStartingSupport(false);
+      }
+    },
+    [resolvedClinicId, user?.id, supportReason, startPlatformClinicAccess, supportRole, loadDetail]
+  );
 
   useEffect(() => {
     storePlatformClinicKey(clinicKey);
@@ -806,6 +944,13 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
           </TabsContent>
 
           <TabsContent value="forms">
+            <input
+              type="file"
+              ref={templateImportInputRef}
+              accept=".json,application/json"
+              className="hidden"
+              onChange={handleImportTemplateFile}
+            />
             <Card>
               <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -822,6 +967,14 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                   >
                     <ClipboardList className="mr-2 h-4 w-4" />
                     Gerenciar na clínica
+                  </Button>
+                  <Button
+                    disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
+                    variant="outline"
+                    onClick={() => templateImportInputRef.current?.click()}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Importar modelo
                   </Button>
                   <Button
                     disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
@@ -874,14 +1027,31 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                         Estrutura obrigatória aplicada antes das fichas extras em todos os atendimentos.
                       </p>
                     </div>
-                    <Button
-                      disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
-                      variant="outline"
-                      onClick={() => void handleOpenClinicTool("/configuracoes/formularios/base")}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Editar bloco
-                    </Button>
+                    <div className="grid gap-2 sm:flex sm:items-center">
+                      <Button
+                        variant="outline"
+                        disabled={!formsSummary?.base?.schema || formsSummary.base.schema.length === 0}
+                        onClick={() =>
+                          handleExportTemplateModel({
+                            description: "Estrutura obrigatória aplicada antes das fichas extras em todos os atendimentos.",
+                            kind: "base",
+                            name: "Bloco padrão universal",
+                            schema: formsSummary?.base?.schema ?? [],
+                          })
+                        }
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar modelo
+                      </Button>
+                      <Button
+                        disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
+                        variant="outline"
+                        onClick={() => void handleOpenClinicTool("/configuracoes/formularios/base")}
+                      >
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Editar bloco
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
@@ -913,14 +1083,31 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                               {template.field_count ?? 0} campo(s) • {template.section_count ?? 0} seção(ões)
                             </p>
                           </div>
-                          <Button
-                            disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
-                            variant="outline"
-                            onClick={() => void handleOpenClinicTool(`/configuracoes/formularios/${template.id}`)}
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Editar
-                          </Button>
+                          <div className="grid gap-2 sm:flex sm:items-center">
+                            <Button
+                              variant="outline"
+                              disabled={!template.schema || template.schema.length === 0}
+                              onClick={() =>
+                                handleExportTemplateModel({
+                                  description: template.description,
+                                  kind: "template",
+                                  name: template.name,
+                                  schema: template.schema ?? [],
+                                })
+                              }
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              Exportar
+                            </Button>
+                            <Button
+                              disabled={startingSupport || !routeKey || !resolvedClinicId || supportReason.trim().length < 8}
+                              variant="outline"
+                              onClick={() => void handleOpenClinicTool(`/configuracoes/formularios/${template.id}`)}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Editar
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
