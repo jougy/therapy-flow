@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Download,
   FileText,
+  FlaskConical,
   Gauge,
   Loader2,
   Pencil,
@@ -38,6 +39,12 @@ import PersonalNotificationsButton from "@/components/PersonalNotificationsButto
 import { PlatformFeatureFlags } from "@/components/PlatformFeatureFlags";
 import { PlatformClinicTags } from "@/components/PlatformClinicTags";
 import { PlatformReleaseNotesManager } from "@/components/PlatformReleaseNotesManager";
+import { PlatformClinicStatistics } from "@/components/PlatformClinicStatistics";
+import { PlatformUserStatistics } from "@/components/PlatformUserStatistics";
+import { PlatformGovernanceSettings } from "@/components/PlatformGovernanceSettings";
+import { PlatformUserGovernancePanel } from "@/components/PlatformUserGovernancePanel";
+import { PlatformMobileDock, BACKOFFICE_DOCK_TABS } from "@/components/PlatformMobileDock";
+import { LiquidTabs } from "@/components/ui/liquid-tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -933,30 +940,59 @@ const PlatformShell = ({
   subtitle?: string;
 }) => {
   const navigate = useNavigate();
+  const { startPlatformClinicSimulation } = useAuth();
+  const [startingSim, setStartingSim] = useState(false);
+
+  const handleStartSimulation = async () => {
+    if (!startPlatformClinicSimulation) return;
+    setStartingSim(true);
+    try {
+      const access = await startPlatformClinicSimulation();
+      navigate(`/clinica/${access.clinic.route_key}`);
+    } catch (error) {
+      toast({
+        title: "Não foi possível iniciar a simulação",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setStartingSim(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background overflow-x-hidden">
       <header className="border-b bg-card px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+          <div className="min-w-0">
             <p className="text-sm text-muted-foreground">Pluri-Health</p>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground truncate">{title}</h1>
             {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <PersonalNotificationsButton />
             <Badge className="bg-primary/10 text-primary hover:bg-primary/10">platform_owner</Badge>
+            <Button
+              type="button"
+              disabled={startingSim}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-medium gap-1.5 shadow-sm"
+              onClick={() => void handleStartSimulation()}
+            >
+              {startingSim ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+              <span>Simulação (Preview)</span>
+            </Button>
             <Button variant="outline" onClick={() => navigate("/platform")}>Painel mestre</Button>
             <Button variant="outline" onClick={() => navigate("/espacopessoal")}>Espaço pessoal</Button>
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">{children}</main>
+      <main className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6 overflow-x-hidden pb-28 lg:pb-6">{children}</main>
     </div>
   );
 };
 
 const PlatformDirectoryPage = () => {
+  const [activeTab, setActiveTab] = useState("directory");
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<DirectoryKind>("all");
   const [directory, setDirectory] = useState<PlatformDirectoryItem[]>([]);
@@ -964,6 +1000,16 @@ const PlatformDirectoryPage = () => {
   const [createClinicOpen, setCreateClinicOpen] = useState(false);
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const navigate = useNavigate();
+
+  const liquidTabItems = useMemo(
+    () =>
+      BACKOFFICE_DOCK_TABS.map((t) => ({
+        id: t.id,
+        label: t.label,
+        icon: t.icon,
+      })),
+    []
+  );
 
   const openDirectoryItem = useCallback((item: PlatformDirectoryItem) => {
     if (item.item_type === "clinic") {
@@ -1029,16 +1075,33 @@ const PlatformDirectoryPage = () => {
       title="Painel administrativo global"
       subtitle="Busque clínicas, contas e pacientes; os detalhes, logs e ferramentas ficam em páginas dedicadas."
     >
-      <Tabs defaultValue="directory" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="directory">Diretório Mestre</TabsTrigger>
-          <TabsTrigger value="news">Notas de Novidades</TabsTrigger>
-          <TabsTrigger value="tags">Gestão de Tags</TabsTrigger>
-          <TabsTrigger value="flags">Feature Flags Globais</TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        {/* Desktop Liquid Tabs */}
+        <div className="hidden lg:block">
+          <LiquidTabs
+            tabs={liquidTabItems}
+            activeTab={activeTab}
+            onChange={setActiveTab}
+          />
+        </div>
+
+        {/* Standard top fallback tabs for tablet view */}
+        <div className="hidden md:block lg:hidden">
+          <TabsList className="w-full justify-start overflow-x-auto">
+            <TabsTrigger value="directory">Diretório Mestre</TabsTrigger>
+            <TabsTrigger value="news">Notas de Novidades</TabsTrigger>
+            <TabsTrigger value="tags">Gestão de Tags</TabsTrigger>
+            <TabsTrigger value="flags">Feature Flags Globais</TabsTrigger>
+            <TabsTrigger value="governance">Governança & Segurança</TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* Mobile Bottom Floating Dock Bar */}
+        <PlatformMobileDock activeTab={activeTab} onChange={setActiveTab} />
+
         <TabsContent value="directory" className="space-y-5">
-          <section className="rounded-xl border bg-card p-3 shadow-sm">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto_auto] lg:items-center">
+          <section className="rounded-xl border bg-card p-3 shadow-sm overflow-hidden">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_180px_auto_auto] lg:items-center">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -1060,12 +1123,12 @@ const PlatformDirectoryPage = () => {
                   <SelectItem value="patient">Pacientes</SelectItem>
                 </SelectContent>
               </Select>
-              <Button className="h-11" onClick={() => setCreateClinicOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
+              <Button className="h-11 whitespace-nowrap" onClick={() => setCreateClinicOpen(true)}>
+                <Plus className="mr-2 h-4 w-4 shrink-0" />
                 Nova clínica
               </Button>
-              <Button className="h-11" variant="outline" onClick={() => setCreateAccountOpen(true)}>
-                <UserCog className="mr-2 h-4 w-4" />
+              <Button className="h-11 whitespace-nowrap" variant="outline" onClick={() => setCreateAccountOpen(true)}>
+                <UserCog className="mr-2 h-4 w-4 shrink-0" />
                 Nova conta
               </Button>
             </div>
@@ -1114,6 +1177,9 @@ const PlatformDirectoryPage = () => {
         <TabsContent value="flags">
           <PlatformFeatureFlags />
         </TabsContent>
+        <TabsContent value="governance">
+          <PlatformGovernanceSettings />
+        </TabsContent>
       </Tabs>
 
       <CreateClinicDialog
@@ -1139,7 +1205,7 @@ const PlatformDirectoryPage = () => {
 
 const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinicKey: string; shouldMaskUrl?: boolean }) => {
   const navigate = useNavigate();
-  const { user, startPlatformClinicAccess } = useAuth();
+  const { user, startPlatformClinicAccess, startPlatformClinicSimulation } = useAuth();
   const templateImportInputRef = useRef<HTMLInputElement>(null);
   const [detail, setDetail] = useState<PlatformClinicDetail | null>(null);
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEvent[]>([]);
@@ -1342,6 +1408,23 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
     } catch (error) {
       toast({
         title: "Não foi possível acessar a clínica",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setStartingSupport(false);
+    }
+  };
+
+  const handleStartSimulationForClinic = async () => {
+    if (!startPlatformClinicSimulation || !resolvedClinicId) return;
+    setStartingSupport(true);
+    try {
+      const access = await startPlatformClinicSimulation(resolvedClinicId);
+      navigate(`/clinica/${access.clinic.route_key}`);
+    } catch (error) {
+      toast({
+        title: "Não foi possível iniciar a simulação",
         description: getErrorMessage(error),
         variant: "destructive",
       });
@@ -1761,18 +1844,7 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
           </TabsContent>
 
           <TabsContent value="dashboard">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <PlatformReportCard
-                title="Resumo operacional"
-                value={`${detail?.counts?.sessions ?? 0} atendimentos`}
-                description={`${detail?.counts?.patients ?? 0} pacientes cadastrados e ${detail?.counts?.collaborators ?? 0} contas na equipe.`}
-              />
-              <PlatformReportCard
-                title="Resumo por extenso"
-                value="Relatório narrativo"
-                description="Espaço reservado para gerar relatórios recursivos: operação, financeiro, equipe, formulários e dados clínicos por período."
-              />
-            </div>
+            <PlatformClinicStatistics clinicId={resolvedClinicId} counts={detail?.counts} />
           </TabsContent>
 
           <TabsContent value="flags">
@@ -1818,10 +1890,22 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                     </p>
                   </div>
                 </div>
-                <Button disabled={startingSupport || !resolvedClinicId || supportReason.trim().length < 8} onClick={() => void handleStartSupport()}>
-                  {startingSupport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-                  Entrar na clínica com super menu
-                </Button>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button disabled={startingSupport || !resolvedClinicId || supportReason.trim().length < 8} onClick={() => void handleStartSupport()}>
+                    {startingSupport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                    Entrar na clínica com super menu
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-200"
+                    disabled={startingSupport || !resolvedClinicId}
+                    onClick={() => void handleStartSimulationForClinic()}
+                  >
+                    <FlaskConical className="mr-2 h-4 w-4 text-amber-600" />
+                    Simular Clínica (Preview)
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1968,6 +2052,16 @@ const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "account" | 
               title={itemType === "account" ? "Operações master desta conta" : "Operações master deste paciente"}
             />
           </div>
+          {itemType === "account" && (
+            <>
+              <div className="lg:col-span-2 mt-2">
+                <PlatformUserGovernancePanel userId={itemId} userName={title} />
+              </div>
+              <div className="lg:col-span-2 mt-2">
+                <PlatformUserStatistics userId={itemId} userName={title} />
+              </div>
+            </>
+          )}
         </div>
       )}
     </PlatformShell>

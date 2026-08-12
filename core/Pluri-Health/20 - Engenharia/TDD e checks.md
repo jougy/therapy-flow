@@ -281,3 +281,26 @@ Ao longo do tempo, este arquivo deve virar:
 
 4. **Sincronização de Lockfiles de Dependência (`bun.lock` e `package-lock.json`)**:
    - Quando a versão no `package.json` for alterada (ex: `alfa-26.07.25-01`), rodar obrigatoriamente `npx bun install` (ou `npm install`) para regenerar e atualizar o `bun.lock` e `package-lock.json`. O Cloudflare Pages compila com `bun install --frozen-lockfile` e rejeita a compilação se a versão no `package.json` divergir do `bun.lock`.
+
+## 2026-08-04 - Prevenção de TDZ (Temporal Dead Zone) em Hooks React
+
+- **Diagnóstico**: Erro `ReferenceError: can't access lexical declaration 'X' before initialization` ocorria ao carregar `/platform/clinicas/detalhes`.
+- **Causa**: `handleImportTemplateFile` referenciava `loadDetail` no seu array de dependências antes da declaração de `loadDetail`.
+- **Regra**: Callbacks de carregamento base (`loadDetail`, `fetchData`) **devem** ser declarados antes de qualquer handler ou callback que os referencie em dependências (`useCallback` / `useMemo` / `useEffect`).
+- Documentado em detalhe na nota [[Prevencao de TDZ e ordem de hooks no React]].
+
+## 2026-08-11 - Alinhamento Estrutural do Cabeçalho Superior (AppLayout)
+
+- **Diagnóstico**: O cabeçalho global do `AppLayout` usava largura total da viewport sem container limitador, enquanto o conteúdo das páginas usava `max-w-7xl mx-auto`. Em telas de resolução média e alta (Full HD/2K/Mac), isso desalinhava a marca da clínica e descolava os controles do perfil em relação ao grid das telas.
+- **Correção**: Envolvido o conteúdo interno do `<header>` no `AppLayout.tsx` com `mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6`, garantindo alinhamento uniforme da marca e dos botões de ação em todas as rotas.
+
+## 2026-08-11 - Resolução de Layout Fluido (Design System) e DevTools Viewport Mode
+
+- **Diagnóstico**: Ao recarregar a página no navegador Brave no Mac, o layout da aplicação aparecia espremido em uma coluna estreita de 390px à esquerda, deixando 75% da tela desktop em branco.
+- **Causa Raiz**:
+  1. O navegador Brave/Chrome DevTools estava com o modo **Device Emulation Toolbar** (`Cmd+Shift+M`) ativo na origem `localhost:8080`, forçando o `window.innerWidth` para o preset mobile "Tall" (390px) persistentemente entre reloads.
+  2. Os limites rígidos `max-w-7xl` (1280px) criavam margens laterais desproporcionais em monitores Mac e de alta resolução.
+- **Correção**:
+  1. Desativado o modo de emulação de dispositivos no DevTools do navegador (`Cmd+Shift+M`).
+  2. Expandidos os containers das páginas ([AppLayout.tsx](file:///Users/jougy/Documents/therapy-flow/src/components/AppLayout.tsx), [ClinicDashboard.tsx](file:///Users/jougy/Documents/therapy-flow/src/pages/ClinicDashboard.tsx), [Index.tsx](file:///Users/jougy/Documents/therapy-flow/src/pages/Index.tsx), [Configuracoes.tsx](file:///Users/jougy/Documents/therapy-flow/src/pages/Configuracoes.tsx)) para `max-w-screen-2xl` (1536px) com padding responsivo fluido `px-4 sm:px-6 lg:px-8`.
+  3. Adicionada truncagem com `truncate max-w-[130px] sm:max-w-none` e `shrink-0` no nome da clínica e botões do topo para que telas pequenas ou janelas lado a lado (split screen) mantenham os ícones de ação visíveis sem quebra de layout.

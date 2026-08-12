@@ -56,6 +56,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Modelo de ameacas e ativos sensiveis]]
 - [[Roteiro de testes de seguranca]]
 - [[Matriz de riscos de seguranca]]
+- [[Termo de Responsabilidade para Impressao (LGPD)]]
 
 ### Implementacao guiada e referencia
 
@@ -85,16 +86,19 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Bloco de endereco no criador de formularios e geolocalizacao]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
+- [[Plano de Telemetria Auditoria e Estatisticas do Backoffice]]
 
 ### Engenharia
 
 - [[Ambiente e operacao]]
 - [[Ambiente Mobile e Scrcpy]]
 - [[Deploy - Cloudflare Pages]]
+- [[Empacotamento PWA Mobile e Desktop Cross-Platform]]
 - [[Backup do Supabase antes de deploy]]
 - [[TDD e checks]]
 - [[Inventario de inputs]]
 - [[Feature Flags - Guia]]
+- [[Prevencao de TDZ e ordem de hooks no React]]
 
 ### Seguranca
 
@@ -107,6 +111,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 ### Prompts e execucao orientada
 
 - [[Prompt - Homepage filtro e ordenacao de pacientes]]
+- [[Prompt - Execucao Telemetria Auditoria e Protecao Anti-Print]]
 - [[Matriz de contexto do Codex]]
 
 ## Convencao sugerida para novas notas

@@ -8,8 +8,14 @@ LOG_FILE="${HOME}/.cache/brave-codex.log"
 
 mkdir -p "${PROFILE_DIR}"
 
-exec /usr/bin/brave \
+BRAVE_BIN="/usr/bin/brave"
+if [ ! -x "${BRAVE_BIN}" ] && [ -x "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" ]; then
+  BRAVE_BIN="/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+fi
+
+exec "${BRAVE_BIN}" \
   --remote-debugging-port="${PORT}" \
+  --remote-allow-origins="*" \
   --user-data-dir="${PROFILE_DIR}" \
   --new-window \
   "${URL}" \

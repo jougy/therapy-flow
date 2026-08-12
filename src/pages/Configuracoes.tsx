@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ThemeModeSwitch from "@/components/ThemeModeSwitch";
+import { ClinicBillingSettings } from "@/components/ClinicBillingSettings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -524,6 +525,15 @@ const ROLE_PERMISSION_ITEMS: RolePermissionItem[] = [
     key: "forms",
     title: "Formulários",
     viewCapability: "forms.manage",
+  },
+  {
+    category: "admin",
+    description: "Permissão para exportar e imprimir relatórios, estatísticas, prontuários e fichas.",
+    details: "Controla a habilidade de acionar rotinas de impressão e exportação física de documentos na plataforma.",
+    editCapability: "system.print",
+    key: "system-print",
+    title: "Impressão no sistema",
+    viewCapability: "system.print",
   },
   {
     category: "finance",
@@ -1603,7 +1613,7 @@ const Configuracoes = () => {
           id: "clinic-security" as const,
           title: "Segurança da clínica",
         },
-        can("subscription_billing.manage") && {
+        can("subscription_billing.manage") && isFeatureEnabled("subscriptions_module") && {
           description: "Assinatura, cobrança e limites do plano contratado.",
           icon: CreditCard,
           id: "billing" as const,
@@ -2971,7 +2981,7 @@ const Configuracoes = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
-      className={floatingEditActions ? "space-y-6 pb-44 lg:pb-24" : "space-y-6 pb-28 lg:pb-0"}
+      className={floatingEditActions ? "mx-auto w-full max-w-screen-2xl space-y-6 pb-44 lg:pb-24" : "mx-auto w-full max-w-screen-2xl space-y-6 pb-28 lg:pb-0"}
     >
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
@@ -3668,18 +3678,22 @@ const Configuracoes = () => {
                     {canViewTeam && (
                       <>
                         <div className="rounded-lg border p-4 text-sm">
-                          <p className="font-medium">Limite atual de acessos simultâneos</p>
+                          <p className="font-medium">Limites do Plano da Clínica</p>
                           <p className="mt-1 text-muted-foreground">
-                            {concurrentAccessCapacity.occupied} de {concurrentAccessCapacity.limit} acesso(s) simultâneo(s) em uso neste momento.
+                            Vagas de Colaboradores: {visibleTeamMemberships.length} de {authClinic?.subaccount_limit ?? 30} vaga(s) ocupada(s). | Acessos Simultâneos: {concurrentAccessCapacity.occupied} de {concurrentAccessCapacity.limit} acesso(s) em uso.
                           </p>
                         </div>
-                        <div className="grid gap-4 md:grid-cols-3">
+                        <div className="grid gap-4 md:grid-cols-4">
                           <div className="rounded-lg border p-4">
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Acessos ativos agora</p>
-                            <p className="mt-2 text-2xl font-semibold">{concurrentAccessCapacity.occupied}</p>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Vagas de Colaboradores</p>
+                            <p className="mt-2 text-2xl font-semibold">{visibleTeamMemberships.length} / {authClinic?.subaccount_limit ?? 30}</p>
                           </div>
                           <div className="rounded-lg border p-4">
-                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Disponíveis agora</p>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Acessos simultâneos ativos</p>
+                            <p className="mt-2 text-2xl font-semibold">{concurrentAccessCapacity.occupied} / {concurrentAccessCapacity.limit}</p>
+                          </div>
+                          <div className="rounded-lg border p-4">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Acessos disponíveis agora</p>
                             <p className="mt-2 text-2xl font-semibold">{concurrentAccessCapacity.available}</p>
                           </div>
                           <div className="rounded-lg border p-4">
@@ -3691,7 +3705,7 @@ const Configuracoes = () => {
                           <div>
                             <p className="font-medium">Acessos ativos neste momento</p>
                             <p className="mt-1 text-sm text-muted-foreground">
-                              As subcontas são ilimitadas. O controle comercial atual da clínica é pelo número de acessos simultâneos em uso.
+                              Sua clínica possui limite de até {authClinic?.subaccount_limit ?? 30} colaborador(es) cadastrado(s) e {concurrentAccessCapacity.limit} acesso(s) simultâneo(s) conectados ao mesmo tempo.
                             </p>
                           </div>
                           {activeTeamAccessRows.length === 0 ? (
@@ -4138,21 +4152,13 @@ const Configuracoes = () => {
             </Card>
           )}
 
-          {activeSection === "billing" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-xl">Assinatura e pagamentos</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-lg border p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Plano atual</p>
-                  <p className="mt-2 text-lg font-semibold">{subscriptionPlan || "Não identificado"}</p>
-                </div>
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  Esta área já está reservada para faturamento da assinatura. A capacidade está ligada ao `account_owner`.
-                </div>
-              </CardContent>
-            </Card>
+          {activeSection === "billing" && isFeatureEnabled("subscriptions_module") && (
+            <ClinicBillingSettings
+              clinicId={clinicId}
+              currentPlan={(subscriptionPlan as "solo" | "clinic") || "clinic"}
+              accountRole={accountRole}
+              refreshAuthState={refreshAuthState}
+            />
           )}
 
           {activeSection === "treasury" && (

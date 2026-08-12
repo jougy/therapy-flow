@@ -1,14 +1,20 @@
 import { motion } from "framer-motion";
 import { CheckCircle2, ChevronRight, Sparkles, Building2, UserRound } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
 import { useState } from "react";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 
 export default function PlanosAssinatura() {
   const navigate = useNavigate();
+  const { isFeatureEnabled, loading } = useFeatureFlags();
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+
+  if (!loading && !isFeatureEnabled("subscriptions_module")) {
+    return <Navigate to="/espacopessoal" replace />;
+  }
 
   const handleSelectPlan = (planId: string) => {
     setSelectedPlanId(planId);
@@ -62,19 +68,20 @@ export default function PlanosAssinatura() {
             </p>
             <div className="mb-8">
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-bold text-white">Grátis</span>
-                <span className="text-neutral-500 line-through text-lg font-medium">R$ 50/mês</span>
+                <span className="text-4xl font-bold text-white">R$ 50</span>
+                <span className="text-neutral-400 text-lg font-medium">/mês</span>
               </div>
-              <p className="text-emerald-400 text-sm font-medium mt-1">Oferta de Beta Test</p>
+              <p className="text-emerald-400 text-sm font-medium mt-1">Fase Beta: Acesso 100% Gratuito</p>
             </div>
             
             <div className="space-y-4 mb-8 flex-1">
               {[
-                "1 Profissional de saúde",
+                "1 Profissional de saúde (titular)",
+                "Sem cobrança de subcontas",
+                "1 Acesso simultâneo por vez",
                 "Gestão completa de pacientes",
                 "Prontuário eletrônico inteligente",
-                "Agendamento e calendário",
-                "Faturamento básico"
+                "Agendamento e calendário completo",
               ].map((feature, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
@@ -87,7 +94,7 @@ export default function PlanosAssinatura() {
               className="w-full bg-white text-neutral-950 hover:bg-neutral-200 h-12 text-base font-semibold group-hover:scale-[1.02] transition-transform"
               onClick={() => handleSelectPlan("solo")}
             >
-              Começar agora
+              Começar como Profissional Solo
               <ChevronRight className="w-5 h-5 ml-1" />
             </Button>
           </div>
@@ -117,32 +124,42 @@ export default function PlanosAssinatura() {
               </span>
             </div>
             <p className="text-neutral-400 mb-6 min-h-[48px] relative">
-              Para clínicas e consultórios compartilhados que precisam de controle total e colaboração.
+              Para clínicas e consultórios compartilhados que precisam de colaboração e múltiplos acessos.
             </p>
             <div className="mb-8 relative">
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-bold text-white">Grátis</span>
-                <div className="flex flex-col">
-                  <span className="text-neutral-500 line-through text-lg font-medium leading-tight">R$ 60/mês</span>
-                  <span className="text-neutral-500 text-xs font-medium leading-tight">+ R$ 20/acesso extra</span>
-                </div>
+                <span className="text-4xl font-bold text-white">R$ 60</span>
+                <span className="text-neutral-400 text-lg font-medium">/mês base</span>
               </div>
-              <p className="text-emerald-400 text-sm font-medium mt-1">Oferta de Beta Test</p>
+              <p className="text-emerald-400 text-sm font-medium mt-1">Fase Beta: Acesso 100% Gratuito</p>
             </div>
             
-            <div className="space-y-4 mb-8 flex-1 relative">
+            <div className="space-y-4 mb-6 flex-1 relative">
               {[
+                "30 vagas para cadastro de colaboradores",
+                "2 acessos simultâneos inclusos na base",
                 "Múltiplos profissionais e secretárias",
-                "Permissões e controle de acesso",
-                "Agendas compartilhadas",
-                "Faturamento avançado e repasses",
-                "Suporte prioritário"
+                "Permissões e controle de acesso (RBAC)",
+                "Agendas compartilhadas e relatórios",
               ].map((feature, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
                   <span className="text-neutral-300">{feature}</span>
                 </div>
               ))}
+            </div>
+
+            {/* Badges de Expansão de Cotas */}
+            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2 mb-8 relative">
+              <div className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Expansões de Cotas Disponíveis:</div>
+              <div className="text-xs text-neutral-300 flex items-center justify-between">
+                <span>Acesso simultâneo adicional:</span>
+                <span className="font-semibold text-white">+R$ 10/mês</span>
+              </div>
+              <div className="text-xs text-neutral-300 flex items-center justify-between">
+                <span>Vaga extra de colaborador:</span>
+                <span className="font-semibold text-emerald-400">R$ 5,00 (avulso)</span>
+              </div>
             </div>
 
             <Button 
