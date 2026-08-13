@@ -226,7 +226,7 @@ export const PlatformClinicStatistics: React.FC<PlatformClinicStatisticsProps> =
     let narrative = `No período analisado, a clínica realizou um total de ${totalSessions} atendimentos cadastrados para ${totalPatients} pacientes ativos na plataforma. `;
 
     if (metrics.printsDetected > 0) {
-      narrativaAlerta: narrative += `⚠️ ATENÇÃO DE SEGURANÇA: O sistema de proteção interceptou ${metrics.printsDetected} tentativa(s) de captura de tela (print screen) em áreas confidenciais. `;
+      narrative += `⚠️ ATENÇÃO DE SEGURANÇA: O sistema de proteção interceptou ${metrics.printsDetected} tentativa(s) de captura de tela (print screen) em áreas confidenciais. `;
     } else {
       narrative += `🔒 Nenhuma tentativa de captura não autorizada de tela foi detectada. A integridade dos prontuários foi preservada. `;
     }

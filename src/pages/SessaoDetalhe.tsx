@@ -849,7 +849,7 @@ const SessaoDetalhe = () => {
     }
 
     setLoading(false);
-  }, [clinicId, isNew, navigate, newSessionState?.scheduledFor, operationalRole, patientId, sessionId, user?.id]);
+  }, [clinicId, isNew, navigate, newSessionState?.scheduledFor, operationalRole, patientId, sessionId, user?.id, can]);
 
   useEffect(() => {
     void loadSessionPage();

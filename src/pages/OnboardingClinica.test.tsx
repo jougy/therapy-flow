@@ -147,7 +147,7 @@ describe("OnboardingClinica", () => {
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           subscription_plan: "clinic",
-          subaccount_limit: 5,
+          subaccount_limit: 30,
           concurrent_access_limit: 2,
         })
       );

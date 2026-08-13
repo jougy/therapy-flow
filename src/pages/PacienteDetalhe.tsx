@@ -866,7 +866,7 @@ const PacienteDetalhe = () => {
         }))
     );
     setLoading(false);
-  }, [clinicId, id, operationalRole, user?.id]);
+  }, [clinicId, id, operationalRole, user?.id, can]);
 
   const fetchPatientAgendaEvents = useCallback(async () => {
     if (!id) return;

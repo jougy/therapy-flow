@@ -99,7 +99,7 @@ serve(async (req) => {
     }
 
     const today = new Date().toISOString().split('T')[0];
-    const paymentData: any = {
+    const paymentData: Record<string, unknown> = {
       customer: customerId,
       billingType: billing_type || 'PIX',
       value: totalAmount,
@@ -169,8 +169,9 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message || 'Erro interno do servidor.' }), {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(JSON.stringify({ error: message || 'Erro interno do servidor.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

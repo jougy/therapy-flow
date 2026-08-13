@@ -452,7 +452,7 @@ describe("Configuracoes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Colaboradores e acessos" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Limite atual de acessos simultâneos")).toBeInTheDocument();
+      expect(screen.getByText("Vagas de Colaboradores")).toBeInTheDocument();
     });
 
     expect(screen.queryByText("Limite atual de subcontas")).not.toBeInTheDocument();
@@ -480,7 +480,7 @@ describe("Configuracoes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Colaboradores e acessos" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Limite atual de acessos simultâneos")).toBeInTheDocument();
+      expect(screen.getByText("Vagas de Colaboradores")).toBeInTheDocument();
     });
   });
 

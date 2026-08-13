@@ -65,7 +65,7 @@ serve(async (req) => {
     if (eventType === 'PAYMENT_RECEIVED' || eventType === 'PAYMENT_CONFIRMED') {
       const paymentId = payment.id;
       const externalReferenceRaw = payment.externalReference;
-      let externalData: any = {};
+      let externalData: Record<string, unknown> = {};
 
       try {
         if (externalReferenceRaw && externalReferenceRaw.startsWith('{')) {
@@ -202,8 +202,9 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message || 'Erro no processamento do webhook.' }), {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(JSON.stringify({ error: message || 'Erro no processamento do webhook.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

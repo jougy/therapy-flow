@@ -46,7 +46,7 @@ describe("PlatformGovernanceSettings", () => {
         error: null,
       }),
       upsert: vi.fn().mockResolvedValue({ error: null }),
-    } as any);
+    } as unknown as ReturnType<typeof supabase.from>);
   });
 
   it("renders rate-limiting parameters correctly", async () => {

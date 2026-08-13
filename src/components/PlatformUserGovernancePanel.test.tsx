@@ -25,12 +25,12 @@ describe("PlatformUserGovernancePanel", () => {
         return Promise.resolve({
           data: [],
           error: null,
-        }) as any;
+        }) as unknown as ReturnType<typeof supabase.rpc>;
       }
       if (fn === "apply_user_punishment") {
-        return Promise.resolve({ data: { success: true }, error: null }) as any;
+        return Promise.resolve({ data: { success: true }, error: null }) as unknown as ReturnType<typeof supabase.rpc>;
       }
-      return Promise.resolve({ data: null, error: null }) as any;
+      return Promise.resolve({ data: null, error: null }) as unknown as ReturnType<typeof supabase.rpc>;
     });
 
     vi.mocked(supabase.from).mockReturnValue({
@@ -41,7 +41,7 @@ describe("PlatformUserGovernancePanel", () => {
         error: null,
       }),
       upsert: vi.fn().mockResolvedValue({ error: null }),
-    } as any);
+    } as unknown as ReturnType<typeof supabase.from>);
   });
 
   it("renders PlatformUserGovernancePanel with header and action buttons", async () => {
