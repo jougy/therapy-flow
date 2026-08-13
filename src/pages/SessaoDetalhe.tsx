@@ -609,6 +609,8 @@ const SessaoDetalhe = () => {
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [presenceDialogOpen, setPresenceDialogOpen] = useState(false);
   const [savingPresence, setSavingPresence] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
   const { isFeatureEnabled } = useFeatureFlags();
   const canPrintSessionDoc = can("system.print") && isFeatureEnabled("print_general") && isFeatureEnabled("records_session_print");
   const [isPrintTermsOpen, setIsPrintTermsOpen] = useState(false);

@@ -917,6 +917,11 @@ const DirectoryCard = ({ item, onClick }: { item: PlatformDirectoryItem; onClick
           {item.secondary_document && <span>{item.secondary_document}</span>}
           {item.clinic_name && item.item_type !== "clinic" && <span>{item.clinic_name}</span>}
           {typeof item.metadata?.age === "number" && <span>{item.metadata.age} anos</span>}
+          {item.created_at && (
+            <span className="font-mono text-neutral-500">
+              Cadastrado: {new Date(item.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
         </div>
       </div>
       {item.item_type === "clinic" && (
@@ -1528,6 +1533,7 @@ const PlatformClinicDetailPage = ({ clinicKey, shouldMaskUrl = false }: { clinic
                       ["CNPJ", String(clinic?.cnpj ?? "-")],
                       ["Plano", String(clinic?.subscription_plan ?? "-")],
                       ["Status", formatClinicAccessStatus(String(clinic?.access_status ?? "active"))],
+                      ["Data de cadastro", clinic?.created_at ? new Date(clinic.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"],
                       ["Rota", routeKey || "-"],
                       ["E-mail", String(clinic?.email ?? "-")],
                       ["Telefone", String(clinic?.phone ?? "-")],
@@ -1994,6 +2000,7 @@ const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "account" | 
                   ["CPF", String(entity?.cpf ?? "-")],
                   ["RG", String(entity?.rg ?? "-")],
                   ["Status", String(entity?.status ?? "-")],
+                  ["Data de registro", entity?.created_at ? new Date(entity.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"],
                 ]}
               />
             </CardContent>
