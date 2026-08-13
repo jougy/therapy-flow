@@ -3046,7 +3046,7 @@ const Configuracoes = () => {
                 <CardTitle className="text-xl">Perfil pessoal</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <div className="rounded-lg border p-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">ID</p>
                     <p className="mt-2 font-medium">{getProfilePublicCodeLabel(profile?.public_code ?? null)}</p>
@@ -3054,6 +3054,12 @@ const Configuracoes = () => {
                   <div className="rounded-lg border p-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Último acesso</p>
                     <p className="mt-2 font-medium">{formatLastSeenAt(profile?.last_seen_at ?? null)}</p>
+                  </div>
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Membro desde</p>
+                    <p className="mt-2 font-medium">
+                      {profile?.created_at ? new Date(profile.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}
+                    </p>
                   </div>
                   <div className="rounded-lg border p-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Contexto atual</p>
@@ -3278,7 +3284,7 @@ const Configuracoes = () => {
                 <CardTitle className="text-xl">Perfil da clínica</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <div className="rounded-lg border p-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Marca ativa</p>
                     <p className="mt-2 font-medium">{getClinicBrandName(clinicName)}</p>
@@ -3286,6 +3292,12 @@ const Configuracoes = () => {
                   <div className="rounded-lg border p-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Plano</p>
                     <p className="mt-2 font-medium">{clinic.subscription_plan}</p>
+                  </div>
+                  <div className="rounded-lg border p-4">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Cadastrada em</p>
+                    <p className="mt-2 font-medium">
+                      {clinic.created_at ? new Date(clinic.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}
+                    </p>
                   </div>
                   <div className="rounded-lg border p-4">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Conta compradora</p>

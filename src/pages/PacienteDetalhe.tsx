@@ -1980,7 +1980,7 @@ const PacienteDetalhe = () => {
             />
           </div>
 
-          <div className="grid gap-3 rounded-2xl border bg-background/70 p-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:grid-cols-[auto,auto,minmax(0,160px)] xl:shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border bg-background/70 p-2.5 shadow-sm backdrop-blur xl:shrink-0">
             {canViewPatientContact ? (
               <Button
                 variant="outline"
@@ -1989,29 +1989,38 @@ const PacienteDetalhe = () => {
                 disabled={!patientWhatsAppHref}
                 aria-label="Abrir WhatsApp do paciente"
                 title="Abrir WhatsApp"
-                className="border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success"
+                className="h-9 w-9 rounded-xl border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success shrink-0"
               >
-                <WhatsAppLogo className="h-5 w-5" />
+                <WhatsAppLogo className="h-4.5 w-4.5" />
               </Button>
             ) : null}
-            <Button variant="outline" onClick={() => setPatientInfoDialogOpen(true)} className="w-full sm:w-auto">
-              <MoreHorizontal className="h-4 w-4 mr-2" />
-              Ver mais
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPatientInfoDialogOpen(true)}
+              className={getDesignLabButtonClass(
+                "hover:w-[165px]",
+                "h-9 rounded-xl border-primary/20 bg-background hover:border-primary/50 hover:bg-primary/5 text-xs font-medium shrink-0"
+              )}
+              title="Abrir resumo clínico do paciente"
+            >
+              <FileText className={`${designLabIconClass} h-4 w-4 text-primary`} />
+              <span className={designLabLabelClass}>Resumo clínico</span>
             </Button>
             <Select
               value={patient.status}
               onValueChange={(value) => void handlePatientStatusChange(value as PatientStatusSelectValue)}
               disabled={updatingPatientStatus || deletingPatient}
             >
-              <SelectTrigger className="w-full sm:w-[160px]">
+              <SelectTrigger className="h-9 w-[130px] rounded-xl text-xs bg-background shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {EDITABLE_PATIENT_STATUS_OPTIONS.map((status) => (
-                  <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                  <SelectItem key={status.value} value={status.value} className="text-xs">{status.label}</SelectItem>
                 ))}
                 {canDeletePatient ? (
-                  <SelectItem value={DELETE_PATIENT_STATUS_OPTION.value} className="text-destructive focus:text-destructive">
+                  <SelectItem value={DELETE_PATIENT_STATUS_OPTION.value} className="text-xs text-destructive focus:text-destructive">
                     {DELETE_PATIENT_STATUS_OPTION.label}
                   </SelectItem>
                 ) : null}
@@ -2773,6 +2782,10 @@ const PacienteDetalhe = () => {
               <SummaryField label="Nome" value={patient.name} />
               <SummaryField label="Status" value={patient.status} />
               <SummaryField label="Cadastro" value={patientRegistrationStatus} />
+              <SummaryField
+                label="Data de cadastro"
+                value={patient.created_at ? new Date(patient.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : undefined}
+              />
               {canViewPatientContact ? <SummaryField label="Telefone" value={patient.phone} /> : null}
               <SummaryField label="E-mail" value={patient.email} />
               <SummaryField label="CPF" value={patient.cpf} />
@@ -2820,17 +2833,7 @@ const PacienteDetalhe = () => {
                 }}
               >
                 <FileText className="h-4 w-4 mr-2" />
-                Resumo Clínico
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setPatientInfoDialogOpen(false);
-                  navigate(`/pacientes/${id}/dashboard`);
-                }}
-              >
-                <BarChart3 className="h-4 w-4 mr-2" />
-                Dashboard
+                Ver cadastro completo
               </Button>
               <Button
                 variant="outline"

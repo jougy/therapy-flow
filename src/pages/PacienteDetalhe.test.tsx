@@ -545,11 +545,16 @@ describe("PacienteDetalhe", () => {
 
     await screen.findByRole("heading", { name: "Maria Silva" });
 
-    fireEvent.click(screen.getByRole("button", { name: /ver mais/i }));
+    // Check that "Cadastrado:" badge was removed from header
+    expect(screen.queryByText(/^Cadastrado:/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /resumo clínico/i }));
 
     expect(await screen.findByRole("heading", { name: "Resumo do paciente" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /resumo clínico/i })).toBeInTheDocument();
+    expect(screen.getByText("Data de cadastro")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ver cadastro completo/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /editar cadastro/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /dashboard/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /compartilhar com o paciente/i })).toBeInTheDocument();
   });
 
