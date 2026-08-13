@@ -89,7 +89,7 @@ const ClinicRoute = ({ children }: { children: ReactNode }) => {
   if (isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
   if (!clinicKey || deniedRouteKey === clinicKey) return <Navigate to="/espacopessoal" replace />;
   if (validatingRouteKey || clinic?.route_key !== clinicKey) return <LoadingScreen />;
-  return <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
+  return <>{children}</>;
 };
 
 const PlatformRoute = ({ children }: { children: ReactNode }) => {
@@ -152,7 +152,8 @@ const App = () => (
             <Sonner />
             <BrowserRouter>
               <AuthProvider>
-                <Suspense fallback={<LoadingScreen />}>
+                <FeatureFlagsProvider>
+                  <Suspense fallback={<LoadingScreen />}>
                   <Routes>
                     <Route path="/designlab/*" element={<DesignLabApp />} />
                     <Route path="/designlabs/*" element={<DesignLabApp />} />
@@ -195,7 +196,8 @@ const App = () => (
                     <Route path="/*" element={<LegacyClinicRoute />} />
                   </Routes>
                 </Suspense>
-              </AuthProvider>
+              </FeatureFlagsProvider>
+            </AuthProvider>
             </BrowserRouter>
           </TooltipProvider>
         </ThemeProvider>

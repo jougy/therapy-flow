@@ -5,9 +5,10 @@ import { Label } from "@/components/ui/label";
 interface FieldLabelWithHelpProps {
   helpText?: string | null;
   label: string;
+  required?: boolean;
 }
 
-export const FieldLabelWithHelp = ({ helpText, label }: FieldLabelWithHelpProps) => {
+export const FieldLabelWithHelp = ({ helpText, label, required }: FieldLabelWithHelpProps) => {
   const [open, setOpen] = useState(false);
   const normalizedHelpText = helpText?.trim() ?? "";
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -32,7 +33,12 @@ export const FieldLabelWithHelp = ({ helpText, label }: FieldLabelWithHelpProps)
 
   return (
     <div ref={containerRef} className="relative flex items-center gap-2">
-      <Label>{label}</Label>
+      <Label className="flex items-center gap-1">
+        <span>{label}</span>
+        {required && (
+          <span className="text-destructive font-bold text-sm" title="Campo obrigatório">*</span>
+        )}
+      </Label>
       {normalizedHelpText ? (
         <>
           <button

@@ -26,7 +26,8 @@ export type AccessCapability =
   | "sessions.write_others"
   | "sessions.share"
   | "sessions.delete"
-  | "session.delete_draft";
+  | "session.delete_draft"
+  | "system.print";
 
 export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "clinic_profile.manage",
@@ -52,6 +53,7 @@ export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "sessions.share",
   "sessions.delete",
   "session.delete_draft",
+  "system.print",
 ];
 
 export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: string; label: string }> = {
@@ -139,6 +141,10 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
     description: "Pode ver e alterar assinatura, cobrança e limites comerciais.",
     label: "Gerenciar assinatura",
   },
+  "system.print": {
+    description: "Pode exportar e imprimir estatísticas, fichas, relatórios e prontuários.",
+    label: "Impressão no sistema",
+  },
   "team_development.manage": {
     description: "Pode avaliar, definir metas e acompanhar evolução interna de colaboradores.",
     label: "Gerenciar desenvolvimento da equipe",
@@ -199,6 +205,7 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "patients.read":
     case "patients.write":
     case "patients.manage_groups":
+    case "system.print":
       return hasOperationalRole(context, ["owner", "admin", "professional", "assistant", "estagiario"]);
 
     case "schedule.read":

@@ -2,16 +2,22 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
-interface FeatureFlagsContextType {
+export interface FeatureFlagsContextType {
   flags: Record<string, unknown>;
   loading: boolean;
   isFeatureEnabled: (key: string) => boolean;
+  flagOverrides: Record<string, boolean>;
+  setFlagOverride: (key: string, enabled: boolean) => void;
+  resetFlagOverrides: () => void;
 }
 
 const FeatureFlagsContext = createContext<FeatureFlagsContextType>({
   flags: {},
   loading: true,
   isFeatureEnabled: () => false,
+  flagOverrides: {},
+  setFlagOverride: () => {},
+  resetFlagOverrides: () => {},
 });
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -20,6 +26,7 @@ export const useFeatureFlags = () => useContext(FeatureFlagsContext);
 export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
   const { clinicId } = useAuth();
   const [flags, setFlags] = useState<Record<string, unknown>>({});
+  const [flagOverrides, setFlagOverrides] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,7 +51,19 @@ export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
       });
   }, [clinicId]);
 
+  const setFlagOverride = (key: string, enabled: boolean) => {
+    setFlagOverrides((prev) => ({ ...prev, [key]: enabled }));
+  };
+
+  const resetFlagOverrides = () => {
+    setFlagOverrides({});
+  };
+
   const isFeatureEnabled = (key: string) => {
+    if (key in flagOverrides) {
+      return flagOverrides[key];
+    }
+
     const val = flags[key];
     if (val && typeof val === "object" && "enabled" in val) {
       return (val as { enabled?: boolean }).enabled === true;
@@ -56,8 +75,9 @@ export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <FeatureFlagsContext.Provider value={{ flags, loading, isFeatureEnabled }}>
+    <FeatureFlagsContext.Provider value={{ flags, loading, isFeatureEnabled, flagOverrides, setFlagOverride, resetFlagOverrides }}>
       {children}
     </FeatureFlagsContext.Provider>
   );
 };
+

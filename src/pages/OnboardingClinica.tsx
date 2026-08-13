@@ -104,7 +104,7 @@ export default function OnboardingClinica() {
     neighborhood: (!isCreateMode && clinicAddress.neighborhood) ? clinicAddress.neighborhood : "",
     city: (!isCreateMode && clinicAddress.city) ? clinicAddress.city : "",
     state: (!isCreateMode && clinicAddress.state) ? clinicAddress.state : "",
-    subaccount_limit: (!isCreateMode && clinic?.subaccount_limit) ? clinic.subaccount_limit.toString() : (plan === "clinic" ? "5" : "1"),
+    subaccount_limit: (!isCreateMode && clinic?.subaccount_limit) ? clinic.subaccount_limit.toString() : (plan === "clinic" ? "30" : "0"),
     concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : (plan === "clinic" ? "2" : "1"),
   });
 
@@ -129,7 +129,7 @@ export default function OnboardingClinica() {
         neighborhood: addr.neighborhood || "",
         city: addr.city || "",
         state: addr.state || "",
-        subaccount_limit: clinic.subaccount_limit?.toString() || (plan === "clinic" ? "5" : "1"),
+        subaccount_limit: clinic.subaccount_limit?.toString() || (plan === "clinic" ? "30" : "0"),
         concurrent_access_limit: clinic.concurrent_access_limit ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : (plan === "clinic" ? "2" : "1"),
       });
     }
@@ -525,7 +525,7 @@ export default function OnboardingClinica() {
                   <FieldLabel 
                     htmlFor="concurrent_access_limit" 
                     label="Acessos Simultâneos" 
-                    tooltip="Quantos acessos simultâneos precisará?" 
+                    tooltip="Quantos acessos simultâneos precisará na clínica? (2 inclusos na base + R$10/mês por extra)" 
                     required
                   />
                   <Input 
@@ -538,9 +538,33 @@ export default function OnboardingClinica() {
                     onChange={handleChange} 
                     className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl" 
                   />
-                  <p className="text-xs text-neutral-500 mt-2">
-                    Cada acesso simultâneo adicional aumentaria a mensalidade em +R$10. No entanto, durante a fase Beta, todos os acessos são <strong className="text-emerald-400 font-medium">100% gratuitos</strong>.
-                  </p>
+                </div>
+
+                {/* Calculadora em Tempo Real do Resumo da Assinatura */}
+                <div className="sm:col-span-2 p-4 rounded-xl bg-neutral-950/90 border border-blue-500/30 space-y-3 mt-2">
+                  <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Resumo da Assinatura Recorrente</span>
+                    <span className="text-xs text-emerald-400 font-medium px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">Modo Beta: 100% Gratuito</span>
+                  </div>
+
+                  <div className="space-y-1 text-sm text-neutral-300">
+                    <div className="flex justify-between">
+                      <span>Mensalidade Base Clínica (30 vagas + 2 acessos):</span>
+                      <span className="font-semibold text-white">R$ 60,00/mês</span>
+                    </div>
+                    {parseInt(formData.concurrent_access_limit || "2", 10) > 2 && (
+                      <div className="flex justify-between text-blue-300">
+                        <span>Acessos Simultâneos Adicionais ({parseInt(formData.concurrent_access_limit || "2", 10) - 2}x R$ 10,00):</span>
+                        <span className="font-semibold">+R$ {((parseInt(formData.concurrent_access_limit || "2", 10) - 2) * 10).toFixed(2).replace('.', ',')}/mês</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t border-neutral-800 pt-2 text-base font-bold text-white">
+                      <span>Total Recorrente Estimado:</span>
+                      <span className="text-emerald-400">
+                        R$ {(60 + Math.max(0, parseInt(formData.concurrent_access_limit || "2", 10) - 2) * 10).toFixed(2).replace('.', ',')}/mês
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

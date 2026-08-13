@@ -253,6 +253,204 @@ export type Database = {
           },
         ]
       }
+      clinic_subscriptions: {
+        Row: {
+          id: string
+          clinic_id: string
+          account_owner_user_id: string
+          asaas_customer_id: string | null
+          asaas_subscription_id: string | null
+          plan_type: Database["public"]["Enums"]["subscription_plan"]
+          billing_cycle: string
+          payment_method: string
+          base_monthly_price: number
+          base_concurrent_access_count: number
+          additional_concurrent_access_count: number
+          additional_concurrent_access_price: number
+          total_recurring_monthly_price: number
+          base_subaccount_limit: number
+          purchased_subaccount_extra_count: number
+          purchased_subaccount_unit_price: number
+          status: string
+          next_due_date: string | null
+          current_period_start: string | null
+          current_period_end: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          clinic_id: string
+          account_owner_user_id: string
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
+          plan_type?: Database["public"]["Enums"]["subscription_plan"]
+          billing_cycle?: string
+          payment_method?: string
+          base_monthly_price?: number
+          base_concurrent_access_count?: number
+          additional_concurrent_access_count?: number
+          additional_concurrent_access_price?: number
+          total_recurring_monthly_price?: number
+          base_subaccount_limit?: number
+          purchased_subaccount_extra_count?: number
+          purchased_subaccount_unit_price?: number
+          status?: string
+          next_due_date?: string | null
+          current_period_start?: string | null
+          current_period_end?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          clinic_id?: string
+          account_owner_user_id?: string
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
+          plan_type?: Database["public"]["Enums"]["subscription_plan"]
+          billing_cycle?: string
+          payment_method?: string
+          base_monthly_price?: number
+          base_concurrent_access_count?: number
+          additional_concurrent_access_count?: number
+          additional_concurrent_access_price?: number
+          total_recurring_monthly_price?: number
+          base_subaccount_limit?: number
+          purchased_subaccount_extra_count?: number
+          purchased_subaccount_unit_price?: number
+          status?: string
+          next_due_date?: string | null
+          current_period_start?: string | null
+          current_period_end?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_subscriptions_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: true
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinic_subscriptions_account_owner_user_id_fkey"
+            columns: ["account_owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscription_invoices: {
+        Row: {
+          id: string
+          clinic_id: string
+          subscription_id: string | null
+          asaas_payment_id: string
+          charge_type: string
+          status: string
+          value: number
+          net_value: number | null
+          due_date: string
+          payment_date: string | null
+          billing_type: string | null
+          invoice_url: string | null
+          bank_slip_url: string | null
+          pix_qr_code: string | null
+          pix_copy_paste: string | null
+          metadata: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          clinic_id: string
+          subscription_id?: string | null
+          asaas_payment_id: string
+          charge_type?: string
+          status?: string
+          value: number
+          net_value?: number | null
+          due_date: string
+          payment_date?: string | null
+          billing_type?: string | null
+          invoice_url?: string | null
+          bank_slip_url?: string | null
+          pix_qr_code?: string | null
+          pix_copy_paste?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          clinic_id?: string
+          subscription_id?: string | null
+          asaas_payment_id?: string
+          charge_type?: string
+          status?: string
+          value?: number
+          net_value?: number | null
+          due_date?: string
+          payment_date?: string | null
+          billing_type?: string | null
+          invoice_url?: string | null
+          bank_slip_url?: string | null
+          pix_qr_code?: string | null
+          pix_copy_paste?: string | null
+          metadata?: Json
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_invoices_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_invoices_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "clinic_subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asaas_webhook_events: {
+        Row: {
+          id: string
+          asaas_event_id: string
+          event_type: string
+          payload: Json
+          processed: boolean
+          processed_at: string | null
+          error_message: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          asaas_event_id: string
+          event_type: string
+          payload: Json
+          processed?: boolean
+          processed_at?: string | null
+          error_message?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          asaas_event_id?: string
+          event_type?: string
+          payload?: Json
+          processed?: boolean
+          processed_at?: string | null
+          error_message?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       clinic_operational_role_capabilities: {
         Row: {
           capability: string

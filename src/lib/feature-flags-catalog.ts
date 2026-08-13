@@ -1,10 +1,13 @@
 export type FeatureFlagCategory = 
+  | 'Governança'
   | 'Storage/Arquivos'
   | 'Notificações'
   | 'Dashboards'
   | 'Formulários'
   | 'Prontuário/Atendimentos'
-  | 'UI/Experiência';
+  | 'Impressão'
+  | 'UI/Experiência'
+  | 'Assinaturas';
 
 export interface FeatureFlagDefinition {
   key: string;
@@ -16,6 +19,15 @@ export interface FeatureFlagDefinition {
 }
 
 export const featureFlagsCatalog: FeatureFlagDefinition[] = [
+  // Assinaturas & Financeiro
+  {
+    key: 'subscriptions_module',
+    label: 'Módulo de Assinaturas e Cobrança Asaas',
+    description: 'Controla a exibição da página de planos (/planos), aba de assinaturas nas configurações da clínica e modais de upgrade/compras avulsas.',
+    category: 'Assinaturas',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
   // Storage/Arquivos
   {
     key: 'storage_s3_integration',
@@ -66,13 +78,6 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasConfiguration: false,
   },
   {
-    key: 'forms_blank_print',
-    label: 'Impressão de Fichas em Branco (Kit Offline)',
-    description: 'Exibe ou oculta o botão de impressão de modelos e fichas de atendimento/cadastro em branco no gerenciador de formulários da clínica.',
-    category: 'Formulários',
-    hasConfiguration: false,
-  },
-  {
     key: 'forms_download_upload',
     label: 'Permissões de Download/Upload em Formulários',
     description: 'Permite que formulários preenchidos possam ser baixados em PDF ou anexem arquivos.',
@@ -89,13 +94,6 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasConfiguration: true,
   },
   {
-    key: 'records_print_layout',
-    label: 'Layout de Impressão do Prontuário',
-    description: 'Habilita configurações avançadas de layout (cabeçalho, rodapé, logo) para impressão do prontuário.',
-    category: 'Prontuário/Atendimentos',
-    hasConfiguration: true,
-  },
-  {
     key: 'clinic_sessions_list',
     label: 'Lista Geral de Atendimentos',
     description: 'Habilita a visualização da lista geral de atendimentos na página principal da clínica, com opções avançadas de edição.',
@@ -103,12 +101,57 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasConfiguration: true,
   },
 
-  // UI/Experiência
+  // Impressão & Segurança
+  {
+    key: 'anti_print_protection',
+    label: 'Proteção Anti-Print Screen (Captura de Tela)',
+    description: 'Bloqueia atalhos de captura de tela, desfoca a página e registra auditoria com selo de data/hora no Backoffice para rotas protegidas.',
+    category: 'Impressão',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'print_general',
+    label: 'Permitir Impressões no Sistema (Opção Global)',
+    description: 'Habilita ou desabilita globalmente todas as rotinas e botões de impressão em papel e exportação física na plataforma.',
+    category: 'Impressão',
+    hasConfiguration: false,
+  },
+  {
+    key: 'print_clinic_stats',
+    label: 'Impressão de Estatísticas da Clínica',
+    description: 'Exibe ou oculta o botão de impressão personalizada de relatórios e blocos de estatísticas da clínica.',
+    category: 'Impressão',
+    hasConfiguration: false,
+  },
+  {
+    key: 'forms_blank_print',
+    label: 'Impressão de Fichas em Branco (Kit Offline)',
+    description: 'Exibe ou oculta o botão de impressão de modelos e fichas de atendimento/cadastro em branco no gerenciador de formulários da clínica.',
+    category: 'Impressão',
+    hasConfiguration: false,
+  },
+  {
+    key: 'records_print_layout',
+    label: 'Layout de Impressão do Prontuário',
+    description: 'Habilita configurações avançadas de layout (cabeçalho, rodapé, logo) para impressão do prontuário.',
+    category: 'Impressão',
+    hasConfiguration: true,
+  },
+  {
+    key: 'records_session_print',
+    label: 'Impressão de Documentos de Atendimento',
+    description: 'Exibe ou oculta a opção de impressão de atestados, receitas, declarações e evoluções de atendimentos.',
+    category: 'Impressão',
+    hasConfiguration: false,
+  },
+
+  // Governança & Compliance
   {
     key: 'terms_of_service_management',
     label: 'Termos de Uso e Consentimento',
-    description: 'Gerenciamento dos Termos de Uso (Owner/Usuários, BR e Internacional) e disparo de obrigatoriedade no próximo login.',
-    category: 'UI/Experiência',
+    description: 'Gerenciamento dos Termos de Uso (Owner/Usuários, BR e Internacional, Responsabilidade de Impressão) e disparo de obrigatoriedade.',
+    category: 'Governança',
     hasConfiguration: true,
     hasToggle: false,
   },
@@ -127,3 +170,4 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasConfiguration: true,
   },
 ];
+

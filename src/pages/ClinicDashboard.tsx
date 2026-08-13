@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
   Area,
@@ -14,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, ArrowLeft, BarChart3, CalendarClock, CreditCard, Loader2, PieChart, TrendingUp, UsersRound, Wallet } from "lucide-react";
+import { Activity, ArrowLeft, BarChart3, CalendarClock, CreditCard, Loader2, PieChart, Printer, TrendingUp, UsersRound, Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
@@ -27,6 +28,7 @@ import { getLegacyGroupHex } from "@/lib/group-colors";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
 import { formatMoneyCents, getPaymentMethodLabel, MAX_SESSION_AMOUNT_CENTS, PAYMENT_METHOD_OPTIONS } from "@/lib/session-operations";
 import type { HomeAgendaEventRecord, HomePatientGroupRecord, HomePatientRecord, HomeSessionRecord } from "@/lib/home-patients-view";
+import { ClinicStatsPrintModal, type StatsBlockId } from "@/components/ClinicStatsPrintModal";
 
 type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
 type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id" | "job_title">;
@@ -134,12 +136,14 @@ const pieChartConfig = {
 } satisfies ChartConfig;
 
 const DashboardProportionCard = ({
+  compact = false,
   formatSegmentValue,
   segments,
   subtitle,
   title,
   value,
 }: {
+  compact?: boolean;
   formatSegmentValue?: (value: number) => string;
   segments: Segment[];
   subtitle: string;
@@ -151,11 +155,50 @@ const DashboardProportionCard = ({
   const visibleSegments = total > 0 ? normalizedSegments : [{ color: "#d6d3d1", label: "Sem dados", value: 1 }];
   const visibleTotal = visibleSegments.reduce((sum, item) => sum + item.value, 0);
 
+  if (compact) {
+    return (
+      <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+        <CardContent className="p-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{title}</p>
+            <p className="text-base font-bold text-slate-900 leading-none">{value}</p>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-0.5 truncate">{subtitle}</p>
+          <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-slate-200/80">
+            {visibleSegments.map((segment) => (
+              <div
+                key={segment.label}
+                className="h-full"
+                style={{ backgroundColor: segment.color, width: `${Math.max(4, (segment.value / visibleTotal) * 100)}%` }}
+                title={`${segment.label}: ${segment.value}`}
+              />
+            ))}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-600">
+            {normalizedSegments.length > 0 ? (
+              normalizedSegments.map((segment) => (
+                <span key={segment.label} className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: segment.color }} />
+                  {segment.label}: {formatSegmentValue ? `${formatSegmentValue(segment.value)} (${formatPercentage((segment.value / total) * 100)})` : formatPercentage((segment.value / total) * 100)}
+                </span>
+              ))
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-slate-300" />
+                Sem dados suficientes
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardContent className="p-4">
         <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">{title}</p>
-        <p className="mt-2 break-words font-serif text-3xl leading-none text-foreground sm:text-4xl">{value}</p>
+        <p className="mt-2 break-words text-3xl font-semibold leading-none text-foreground sm:text-4xl">{value}</p>
         <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
         <div className="mt-4 flex h-7 overflow-hidden rounded-full bg-muted">
           {visibleSegments.map((segment) => (
@@ -188,36 +231,57 @@ const DashboardProportionCard = ({
 };
 
 const MetricCard = ({
+  compact = false,
   detail,
   icon: Icon,
   title,
   value,
 }: {
+  compact?: boolean;
   detail: string;
   icon: typeof TrendingUp;
   title: string;
   value: string;
-}) => (
-  <Card className="min-w-0 overflow-hidden">
-    <CardContent className="flex items-start gap-3 p-4">
-      <span className="rounded-lg bg-primary/10 p-2 text-primary">
-        <Icon className="h-4 w-4" />
-      </span>
-      <div className="min-w-0">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
-        <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
-      </div>
-    </CardContent>
-  </Card>
-);
+}) => {
+  if (compact) {
+    return (
+      <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+        <CardContent className="p-2.5 flex items-center gap-2">
+          <span className="rounded-md bg-primary/10 p-1.5 text-primary shrink-0">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 truncate">{title}</p>
+            <p className="text-base font-bold text-slate-900 leading-none mt-0.5">{value}</p>
+            <p className="text-[9px] text-slate-500 truncate mt-0.5">{detail}</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <CardContent className="flex items-start gap-3 p-4">
+        <span className="rounded-lg bg-primary/10 p-2 text-primary">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
+          <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 const mobileSectionClass = (section: DashboardSection, activeSection: DashboardSection) =>
   section === activeSection ? "grid" : "hidden md:grid";
 
 const ClinicDashboard = () => {
   const navigate = useNavigate();
-  const { can, clinic, clinicId, user } = useAuth();
+  const { can, clinic, clinicId, profile, user } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
   const [patients, setPatients] = useState<HomePatientRecord[]>([]);
   const [groups, setGroups] = useState<HomePatientGroupRecord[]>([]);
@@ -499,6 +563,27 @@ const ClinicDashboard = () => {
     };
   }, [agendaEvents, groups, patients, profiles, sessions]);
 
+  const canPrintStats = can("system.print") && isFeatureEnabled("print_general") && isFeatureEnabled("print_clinic_stats");
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printedBlockIds, setPrintedBlockIds] = useState<StatsBlockId[]>([]);
+
+  const handleExecutePrint = (blockIds: StatsBlockId[]) => {
+    setPrintedBlockIds(blockIds);
+    setIsPrintModalOpen(false);
+    const previousTitle = document.title;
+    const clinicCleanName = (clinic?.name ?? "Clínica").replace(/[^a-zA-Z0-9-_\s]/g, " ").replaceAll(/\s+/g, " ").trim();
+    document.title = `Estatísticas clínicas - ${clinicCleanName}`;
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.title = previousTitle;
+      }, 1000);
+    }, 150);
+  };
+
+  const hasBlock = (id: StatsBlockId) => printedBlockIds.includes(id);
+
   if (!canViewFinancialData || !isFeatureEnabled("dashboards_general")) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 p-4 sm:p-6">
@@ -525,23 +610,35 @@ const ClinicDashboard = () => {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-28 pt-4 sm:p-6">
+    <main className="mx-auto flex w-full max-w-screen-2xl flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-28 pt-4 sm:p-6 lg:px-8">
       <header className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <Button type="button" variant="ghost" className="-ml-2 mb-2 gap-2" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4" />
             Voltar
           </Button>
-          <p className="text-sm text-muted-foreground">{clinic?.name ?? "Clínica"}</p>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Estatísticas completas</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             Analytics operacionais, financeiros e clínicos para acompanhar a saúde da clínica com mais profundidade.
           </p>
         </div>
-        <Button type="button" variant="outline" className="w-fit gap-2" onClick={() => void fetchData()}>
-          <TrendingUp className="h-4 w-4" />
-          Atualizar
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canPrintStats && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-fit gap-2 border-primary/40 text-primary hover:bg-primary/5"
+              onClick={() => setIsPrintModalOpen(true)}
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir
+            </Button>
+          )}
+          <Button type="button" variant="outline" className="w-fit gap-2" onClick={() => void fetchData()}>
+            <TrendingUp className="h-4 w-4" />
+            Atualizar
+          </Button>
+        </div>
       </header>
 
       <section className={`${mobileSectionClass("overview", activeSection)} min-w-0 gap-3 lg:grid-cols-2`}>
@@ -746,6 +843,209 @@ const ClinicDashboard = () => {
         </Card>
       </section>
 
+      <ClinicStatsPrintModal
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        onConfirmPrint={handleExecutePrint}
+      />
+
+      {/* ÁREA DE IMPRESSÃO (Renderizada via React Portal diretamente no body) */}
+      {createPortal(
+        <div id="print-clinic-stats-root" className="hidden print:block font-sans p-4 space-y-3 bg-white text-slate-900">
+          <header className="border-b pb-2 mb-3 flex justify-between items-center">
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 leading-tight">{clinic?.name ?? "Clínica"}</h1>
+              <h2 className="text-xs text-slate-600 font-medium">Relatório de Estatísticas Completas</h2>
+            </div>
+            <div className="text-right text-[10px] text-slate-600 space-y-0.5">
+              <p><span className="font-medium text-slate-500">Gerado em:</span> {new Date().toLocaleDateString("pt-BR")} às {new Date().toLocaleTimeString("pt-BR")}</p>
+              <p><span className="font-semibold text-slate-700">Impresso por:</span> {profile?.full_name || profile?.social_name || user?.email || "Usuário do sistema"}{user?.email && (profile?.full_name || profile?.social_name) ? ` (${user.email})` : ""}</p>
+            </div>
+          </header>
+
+          {/* 1. Cards de Métricas Gerais (8 cards em grid 4 colunas) */}
+          {hasBlock("metrics_cards") && (
+            <div className="grid grid-cols-4 gap-2">
+              {analytics.cards.map((metric) => (
+                <MetricCard key={metric.title} {...metric} compact />
+              ))}
+              <MetricCard detail="atendimentos hoje" icon={CalendarClock} title="Por dia" value={String(analytics.todaySessions)} compact />
+              <MetricCard detail="nesta semana" icon={CalendarClock} title="Por semana" value={String(analytics.weekSessions)} compact />
+              <MetricCard detail="neste mês" icon={CalendarClock} title="Por mês" value={String(analytics.monthSessions)} compact />
+              <MetricCard detail="no ano" icon={CalendarClock} title="Por ano" value={String(analytics.yearSessions)} compact />
+            </div>
+          )}
+
+          {/* 2. Cards de Proporção (5 cards em grid 2 colunas) */}
+          <div className="grid grid-cols-2 gap-2">
+            {hasBlock("payment_chart") && <DashboardProportionCard {...analytics.paymentChart} compact />}
+            {hasBlock("agenda_chart") && <DashboardProportionCard {...analytics.agendaChart} compact />}
+            {hasBlock("payment_status_chart") && <DashboardProportionCard {...analytics.paymentStatusChart} compact />}
+            {hasBlock("patient_status_chart") && <DashboardProportionCard {...analytics.patientStatusChart} compact />}
+            {hasBlock("payment_method_chart") && <DashboardProportionCard {...analytics.paymentMethodChart} compact />}
+          </div>
+
+          {/* 3. Gráficos Recharts (4 gráficos em grid 2 colunas) */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {hasBlock("revenue_area_chart") && (
+              <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+                <CardHeader className="p-2.5 pb-1">
+                  <CardTitle className="text-xs font-bold">Receita e atendimentos no ano</CardTitle>
+                  <CardDescription className="text-[10px]">Pago, em aberto e volume mensal.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-2.5 pt-0 min-w-0">
+                  <ChartContainer config={metricChartConfig} className="h-36 w-full">
+                    <AreaChart data={analytics.monthlyRevenue} margin={{ bottom: 4, left: -16, right: 8, top: 4 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                      <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                      <Area type="monotone" dataKey="pago" stackId="1" stroke="var(--color-pago)" fill="var(--color-pago)" fillOpacity={0.32} />
+                      <Area type="monotone" dataKey="emAberto" stackId="1" stroke="var(--color-emAberto)" fill="var(--color-emAberto)" fillOpacity={0.26} />
+                      <Line type="monotone" dataKey="atendimentos" stroke="var(--color-atendimentos)" strokeWidth={1.5} dot={false} />
+                    </AreaChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {hasBlock("last30days_chart") && (
+              <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+                <CardHeader className="p-2.5 pb-1">
+                  <CardTitle className="text-xs font-bold">Atendimentos nos últimos 30 dias</CardTitle>
+                  <CardDescription className="text-[10px]">Volume diário de atendimentos.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-2.5 pt-0 min-w-0">
+                  <ChartContainer config={metricChartConfig} className="h-36 w-full">
+                    <LineChart data={analytics.last30Days} margin={{ bottom: 4, left: -20, right: 8, top: 4 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} interval={5} tick={{ fontSize: 9 }} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                      <Line type="monotone" dataKey="atendimentos" stroke="var(--color-atendimentos)" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {hasBlock("weekday_chart") && (
+              <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+                <CardHeader className="p-2.5 pb-1">
+                  <CardTitle className="text-xs font-bold">Distribuição por dia da semana</CardTitle>
+                  <CardDescription className="text-[10px]">Concentração da agenda semanal.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-2.5 pt-0 min-w-0">
+                  <ChartContainer config={metricChartConfig} className="h-36 w-full">
+                    <BarChart data={analytics.weekdayDistribution} margin={{ bottom: 4, left: -20, right: 8, top: 4 }}>
+                      <CartesianGrid vertical={false} />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                      <Bar dataKey="atendimentos" fill="var(--color-atendimentos)" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {hasBlock("collaborators_chart") && (
+              <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+                <CardHeader className="p-2.5 pb-1">
+                  <CardTitle className="text-xs font-bold">Produtividade por colaborador</CardTitle>
+                  <CardDescription className="text-[10px]">Atendimentos associados ao profissional.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-2.5 pt-0 min-w-0">
+                  {analytics.collaborators.length === 0 ? (
+                    <p className="text-[10px] text-slate-500 py-4 text-center">Sem colaboradores associados.</p>
+                  ) : (
+                    <ChartContainer config={metricChartConfig} className="h-36 w-full">
+                      <BarChart data={analytics.collaborators} layout="vertical" margin={{ bottom: 4, left: -12, right: 8, top: 4 }}>
+                        <CartesianGrid horizontal={false} />
+                        <XAxis type="number" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                        <YAxis type="category" dataKey="label" width={75} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                        <Bar dataKey="total" name="Atendimentos" fill={colors.blue} radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ChartContainer>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* 4. Grupos + Leitura Executiva em grid 2 colunas */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {hasBlock("groups_list") && (
+              <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+                <CardHeader className="p-2.5 pb-1">
+                  <CardTitle className="text-xs font-bold">Grupos mais recorrentes</CardTitle>
+                  <CardDescription className="text-[10px]">Top grupos vinculados.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-2.5 pt-1 space-y-1.5">
+                  {analytics.topGroups.length === 0 ? (
+                    <p className="text-[10px] text-slate-500">Sem grupos suficientes para análise.</p>
+                  ) : (
+                    analytics.topGroups.slice(0, 5).map((group) => (
+                      <div key={group.name} className="space-y-0.5">
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="inline-flex min-w-0 items-center gap-1.5 font-medium">
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: group.color }} />
+                            <span className="truncate">{group.name}</span>
+                          </span>
+                          <span className="text-slate-500 font-semibold">{group.total}</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              backgroundColor: group.color,
+                              width: `${Math.max(6, (group.total / Math.max(1, analytics.topGroups[0].total)) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {hasBlock("executive_summary") && (
+              <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+                <CardHeader className="p-2.5 pb-1">
+                  <CardTitle className="text-xs font-bold">Leitura executiva</CardTitle>
+                  <CardDescription className="text-[10px]">Indicadores operacionais rápidos.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-2.5 pt-1 grid gap-2 grid-cols-2">
+                  <div className="rounded border bg-white p-2">
+                    <p className="text-[10px] text-slate-500">Ticket médio</p>
+                    <p className="text-sm font-bold text-slate-900 mt-0.5">{sessions.length > 0 ? formatMoney(Math.round(analytics.forecastRevenueCents / sessions.length)) : formatMoney(0)}</p>
+                  </div>
+                  <div className="rounded border bg-white p-2">
+                    <p className="text-[10px] text-slate-500">Cancelamento</p>
+                    <p className="text-sm font-bold text-slate-900 mt-0.5">{formatPercentage(analytics.cancellationRate)}</p>
+                  </div>
+                  <div className="rounded border bg-white p-2">
+                    <p className="text-[10px] text-slate-500">Média 30 dias</p>
+                    <p className="text-sm font-bold text-slate-900 mt-0.5">
+                      {compactNumber.format(analytics.last30Days.reduce((sum, day) => sum + day.atendimentos, 0) / 30)}
+                    </p>
+                  </div>
+                  <div className="rounded border bg-white p-2">
+                    <p className="text-[10px] text-slate-500">Meses c/ receita</p>
+                    <p className="text-sm font-bold text-slate-900 mt-0.5">
+                      {analytics.monthlyRevenue.filter((month) => month.pago + month.emAberto > 0).length}/12
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <footer className="pt-2 border-t text-center text-[9px] text-slate-400">
+            <p>Documento gerado eletronicamente por Pluri-Health. O manuseio do papel impresso é de responsabilidade do solicitante.</p>
+          </footer>
+        </div>,
+        document.body
+      )}
+
       <nav
         className="designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/94 backdrop-blur supports-[backdrop-filter]:bg-background/88 md:hidden"
         data-dock-state="compact"
@@ -790,3 +1090,4 @@ const ClinicDashboard = () => {
 };
 
 export default ClinicDashboard;
+

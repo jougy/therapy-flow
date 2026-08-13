@@ -293,7 +293,6 @@ export function PlatformReleaseNotesManager({ onNotesUpdated, standalone = false
             title: itemTitle.trim(),
             body: itemBody.trim() || null,
             sort_order: itemSortOrder,
-            updated_at: new Date().toISOString(),
           })
           .eq("id", editingItem.id);
 

@@ -24,6 +24,8 @@ import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties, 
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
 import { toast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { readBusinessHours } from "@/lib/clinic-settings";
@@ -607,8 +609,10 @@ const SessaoDetalhe = () => {
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [presenceDialogOpen, setPresenceDialogOpen] = useState(false);
   const [savingPresence, setSavingPresence] = useState(false);
-  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [savingPayment, setSavingPayment] = useState(false);
+  const { isFeatureEnabled } = useFeatureFlags();
+  const canPrintSessionDoc = can("system.print") && isFeatureEnabled("print_general") && isFeatureEnabled("records_session_print");
+  const [isPrintTermsOpen, setIsPrintTermsOpen] = useState(false);
+  const [pendingPrintKind, setPendingPrintKind] = useState<SessionDocumentKind | null>(null);
 
   // Form state
   const [queixa, setQueixa] = useState("");
@@ -845,7 +849,7 @@ const SessaoDetalhe = () => {
     }
 
     setLoading(false);
-  }, [clinicId, isNew, navigate, newSessionState?.scheduledFor, operationalRole, patientId, sessionId, user?.id]);
+  }, [clinicId, isNew, navigate, newSessionState?.scheduledFor, operationalRole, patientId, sessionId, user?.id, can]);
 
   useEffect(() => {
     void loadSessionPage();
@@ -1586,15 +1590,24 @@ const SessaoDetalhe = () => {
     }
   };
 
-  const handlePrintDocument = async (kind: SessionDocumentKind) => {
+  const handlePrintDocument = (kind: SessionDocumentKind) => {
+    setPendingPrintKind(kind);
+    setIsPrintTermsOpen(true);
+  };
+
+  const handleConfirmPrintDocument = async () => {
+    if (!pendingPrintKind) return;
+    setIsPrintTermsOpen(false);
     try {
-      await printSessionDocument(kind, buildCurrentDocumentData());
+      await printSessionDocument(pendingPrintKind, buildCurrentDocumentData());
     } catch (error) {
       toast({
         title: "Não foi possível imprimir o documento",
         description: error instanceof Error ? error.message : "Tente novamente.",
         variant: "destructive",
       });
+    } finally {
+      setPendingPrintKind(null);
     }
   };
 
@@ -2260,19 +2273,21 @@ const SessaoDetalhe = () => {
                 <DropdownMenuItem onClick={() => void handleShareDocument("combined")}>Anamnese + Tratamento</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline">
-                  <Printer className="h-4 w-4 mr-2" />
-                  Imprimir
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onClick={() => handlePrintDocument("anamnesis")}>Anamnese</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handlePrintDocument("treatment")}>Tratamento</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handlePrintDocument("combined")}>Anamnese + Tratamento</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {canPrintSessionDoc && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Printer className="h-4 w-4 mr-2" />
+                    Imprimir
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => handlePrintDocument("anamnesis")}>Anamnese</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handlePrintDocument("treatment")}>Tratamento</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handlePrintDocument("combined")}>Anamnese + Tratamento</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </>
         )}
       </div>
@@ -3251,6 +3266,16 @@ const SessaoDetalhe = () => {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <PrintResponsibilityModal
+        isOpen={isPrintTermsOpen}
+        documentTitle={`Documento de Atendimento (${pendingPrintKind ?? "Sessão"})`}
+        onConfirm={handleConfirmPrintDocument}
+        onCancel={() => {
+          setIsPrintTermsOpen(false);
+          setPendingPrintKind(null);
+        }}
+      />
     </motion.div>
   );
 };

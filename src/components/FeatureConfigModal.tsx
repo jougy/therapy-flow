@@ -559,7 +559,159 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
     );
   };
 
+  const renderSubscriptionsConfig = () => {
+    return (
+      <div className="grid gap-6">
+        <div className="space-y-1">
+          <Label className="text-base font-semibold">Customização de Tipos de Planos</Label>
+          <p className="text-xs text-muted-foreground">
+            Configure as regras de valores, cotas base e recursos oferecidos em cada tipo de plano da plataforma.
+          </p>
+        </div>
+
+        {/* Plano Solo */}
+        <div className="rounded-xl border border-neutral-200 p-4 space-y-3 bg-neutral-50/50">
+          <div className="flex justify-between items-center">
+            <Label className="font-bold text-sm text-neutral-900">Plano Profissional Solo</Label>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">1 Acesso / 0 Subcontas</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Valor Recorrente (R$/mês)</Label>
+              <Input
+                type="number"
+                value={formData.soloPrice !== undefined ? String(formData.soloPrice) : "50"}
+                onChange={(e) => setFormData({ ...formData, soloPrice: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Acessos Simultâneos Inclusos</Label>
+              <Input
+                type="number"
+                disabled
+                value="1"
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Descrição / Benefícios</Label>
+            <Input
+              value={formData.soloDescription !== undefined ? String(formData.soloDescription) : "1 Profissional de saúde (titular), sem cobrança de subcontas, 1 acesso simultâneo por vez."}
+              onChange={(e) => setFormData({ ...formData, soloDescription: e.target.value })}
+            />
+          </div>
+        </div>
+
+        {/* Plano Clínica */}
+        <div className="rounded-xl border border-neutral-200 p-4 space-y-3 bg-neutral-50/50">
+          <div className="flex justify-between items-center">
+            <Label className="font-bold text-sm text-neutral-900">Plano Clínica com Equipe</Label>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800">Múltiplos Acessos</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Mensalidade Base (R$/mês)</Label>
+              <Input
+                type="number"
+                value={formData.clinicBasePrice !== undefined ? String(formData.clinicBasePrice) : "60"}
+                onChange={(e) => setFormData({ ...formData, clinicBasePrice: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Vagas de Colaboradores Inclusas</Label>
+              <Input
+                type="number"
+                value={formData.clinicBaseSubaccountLimit !== undefined ? String(formData.clinicBaseSubaccountLimit) : "30"}
+                onChange={(e) => setFormData({ ...formData, clinicBaseSubaccountLimit: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Acessos Simultâneos Inclusos</Label>
+              <Input
+                type="number"
+                value={formData.clinicBaseConcurrentLimit !== undefined ? String(formData.clinicBaseConcurrentLimit) : "2"}
+                onChange={(e) => setFormData({ ...formData, clinicBaseConcurrentLimit: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Preço Acesso Extra (R$/mês)</Label>
+              <Input
+                type="number"
+                value={formData.clinicExtraConcurrentPrice !== undefined ? String(formData.clinicExtraConcurrentPrice) : "10"}
+                onChange={(e) => setFormData({ ...formData, clinicExtraConcurrentPrice: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Preço Vaga Avulsa de Colaborador (R$ único)</Label>
+            <Input
+              type="number"
+              value={formData.clinicExtraSeatPrice !== undefined ? String(formData.clinicExtraSeatPrice) : "5"}
+              onChange={(e) => setFormData({ ...formData, clinicExtraSeatPrice: Number(e.target.value) })}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAntiPrintConfig = () => {
+    const availableRoutes = [
+      { path: "/pacientes", label: "/pacientes (Fichas e Prontuários)", defaultChecked: true },
+      { path: "/sessoes", label: "/sessoes (Atendimentos e Evoluções)", defaultChecked: true },
+      { path: "/formularios", label: "/formularios (Respostas de Formulários)", defaultChecked: true },
+      { path: "/configuracoes/equipe", label: "/configuracoes/equipe (Dados de Colaboradores)", defaultChecked: true },
+      { path: "/dashboard", label: "/dashboard (Painel Geral da Clínica)", defaultChecked: false },
+      { path: "/configuracoes/clinica", label: "/configuracoes/clinica (Configurações Gerais)", defaultChecked: false },
+    ];
+
+    const currentRoutes: string[] = Array.isArray(formData.protectedRoutes)
+      ? (formData.protectedRoutes as string[])
+      : availableRoutes.filter(r => r.defaultChecked).map(r => r.path);
+
+    const toggleRoute = (path: string, checked: boolean) => {
+      let updated: string[];
+      if (checked) {
+        updated = Array.from(new Set([...currentRoutes, path]));
+      } else {
+        updated = currentRoutes.filter(r => r !== path);
+      }
+      setFormData({ ...formData, protectedRoutes: updated });
+    };
+
+    return (
+      <div className="grid gap-6">
+        <div className="space-y-1">
+          <Label className="text-base font-semibold">Checklist de Páginas Protegidas</Label>
+          <p className="text-xs text-muted-foreground">
+            Selecione quais páginas da aplicação ativam o desfoque imediato, alerta visual e log de auditoria ao tentar tirar captura de tela.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 bg-neutral-50/50">
+          {availableRoutes.map((route) => {
+            const isChecked = currentRoutes.includes(route.path);
+            return (
+              <div key={route.path} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-white transition-colors">
+                <Checkbox
+                  id={`route-${route.path}`}
+                  checked={isChecked}
+                  onCheckedChange={(v) => toggleRoute(route.path, !!v)}
+                />
+                <Label htmlFor={`route-${route.path}`} className="font-medium text-sm cursor-pointer text-neutral-800">
+                  {route.label}
+                </Label>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const renderFormContent = () => {
+    if (feature.key === "anti_print_protection") return renderAntiPrintConfig();
+    if (feature.category === "Assinaturas") return renderSubscriptionsConfig();
     if (feature.category === "Storage/Arquivos") return renderStorageForm();
     if (feature.category === "Notificações") return renderNotificationsForm();
     if (feature.category === "Dashboards") return renderDashboardsForm();

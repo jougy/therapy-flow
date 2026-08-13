@@ -18,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { isAnamnesisTemplateSchema, sanitizeAnamnesisTemplateSchema, type AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import PrintBlankKitSheet from "./PrintBlankKitSheet";
+import PrintResponsibilityModal from "./PrintResponsibilityModal";
 
 export interface PrintBlankKitModalProps {
   open: boolean;
@@ -45,6 +46,7 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("none");
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
   const [baseSchema, setBaseSchema] = useState<AnamnesisTemplateSchema>([]);
+  const [showTermsModal, setShowTermsModal] = useState(false);
 
   useEffect(() => {
     if (defaultTemplateId) {
@@ -117,9 +119,18 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
     }, 1000);
   };
 
+  const handleStartPrintFlow = () => {
+    setShowTermsModal(true);
+  };
+
+  const handleAcceptTermsAndPrint = () => {
+    setShowTermsModal(false);
+    handlePrint();
+  };
+
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open && !showTermsModal} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-xl sm:max-w-2xl print:hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-xl">
@@ -220,7 +231,7 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
               Cancelar
             </Button>
             <Button
-              onClick={handlePrint}
+              onClick={handleStartPrintFlow}
               disabled={loading || (!includePatientRegistration && !includeUniversalBase && selectedTemplateId === "none")}
               className="gap-2"
             >
@@ -230,6 +241,13 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PrintResponsibilityModal
+        isOpen={showTermsModal}
+        documentTitle="Ficha em Branco / Kit Offline"
+        onConfirm={handleAcceptTermsAndPrint}
+        onCancel={() => setShowTermsModal(false)}
+      />
 
       {/* ÁREA DE IMPRESSÃO (Renderizada via React Portal diretamente no document.body para isolamento CSS de impressão) */}
       {typeof document !== "undefined" &&
@@ -253,4 +271,5 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
 };
 
 export default PrintBlankKitModal;
+
 

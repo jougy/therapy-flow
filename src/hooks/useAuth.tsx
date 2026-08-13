@@ -68,6 +68,8 @@ export interface PlatformClinicAccess {
   clinic: ClinicSummary;
   reason: string;
   simulatedRole: PlatformSupportRole;
+  simulatedPlan?: SubscriptionPlan;
+  isSimulation?: boolean;
 }
 
 interface AuthContextType {
@@ -87,6 +89,11 @@ interface AuthContextType {
   operationalRole: OperationalRole;
   platformAccess?: PlatformClinicAccess | null;
   setPlatformSupportRole?: (role: PlatformSupportRole) => Promise<void>;
+  setPlatformSimulatedPlan?: (plan: SubscriptionPlan) => void;
+  startPlatformClinicSimulation?: (clinicId?: string) => Promise<PlatformClinicAccess>;
+  simulatedRoleCapabilityOverrides?: Partial<Record<AccessCapability, boolean>>;
+  setPlatformRoleCapabilityOverride?: (capability: AccessCapability, enabled: boolean) => void;
+  resetPlatformRoleCapabilityOverrides?: () => void;
   profile: Profile | null;
   leaveClinic: () => Promise<void>;
   refreshMfaAssurance: () => Promise<void>;
@@ -588,16 +595,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [clinic?.id, fetchRoleCapabilityOverrides, session?.user]);
 
 
+  const [simulatedRoleCapabilityOverrides, setSimulatedRoleCapabilityOverrides] = useState<Partial<Record<AccessCapability, boolean>>>({});
+
+  const activeSubscriptionPlan = (platformAccess?.simulatedPlan ?? clinic?.subscription_plan as SubscriptionPlan) ?? null;
+
+  const setPlatformRoleCapabilityOverride = (capability: AccessCapability, enabled: boolean) => {
+    setSimulatedRoleCapabilityOverrides((prev) => ({ ...prev, [capability]: enabled }));
+  };
+
+  const resetPlatformRoleCapabilityOverrides = () => {
+    setSimulatedRoleCapabilityOverrides({});
+  };
+
   const capabilities = useMemo(() => {
     if (!membership || !clinic) {
       return emptyCapabilities;
     }
 
-    const roleOverrides = Object.fromEntries(
-      roleCapabilityOverrides
-        .filter((row) => row.operational_role === membership.operational_role)
-        .map((row) => [row.capability, row.enabled]),
-    ) as Partial<Record<AccessCapability, boolean>>;
+    const roleOverrides = {
+      ...Object.fromEntries(
+        roleCapabilityOverrides
+          .filter((row) => row.operational_role === membership.operational_role)
+          .map((row) => [row.capability, row.enabled]),
+      ),
+      ...simulatedRoleCapabilityOverrides,
+    } as Partial<Record<AccessCapability, boolean>>;
 
     return buildCapabilitiesForContext(
       {
@@ -605,11 +627,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isActive: membership.is_active,
         membershipStatus: membership.membership_status as MembershipStatus,
         operationalRole: membership.operational_role as OperationalRole,
-        subscriptionPlan: clinic.subscription_plan as SubscriptionPlan,
+        subscriptionPlan: activeSubscriptionPlan ?? (clinic.subscription_plan as SubscriptionPlan),
       },
       roleOverrides,
     );
-  }, [clinic, membership, roleCapabilityOverrides]);
+  }, [clinic, membership, roleCapabilityOverrides, activeSubscriptionPlan, simulatedRoleCapabilityOverrides]);
 
   const signOut = async () => {
     await endCurrentSecuritySession({ session });
@@ -800,6 +822,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const setPlatformSimulatedPlan = (plan: SubscriptionPlan) => {
+    if (!platformAccess) return;
+    setPlatformAccess({ ...platformAccess, simulatedPlan: plan });
+  };
+
+  const startPlatformClinicSimulation = async (clinicId?: string): Promise<PlatformClinicAccess> => {
+    let targetClinicId = clinicId;
+
+    if (!targetClinicId && accessibleClinics.length > 0) {
+      targetClinicId = accessibleClinics[0].clinic.id;
+    }
+
+    if (!targetClinicId) {
+      try {
+        const { data } = await supabase.rpc("list_platform_directory" as never, {
+          _kind: "clinic",
+        } as never) as { data: Array<{ item_id: string }> | null };
+        if (data && data.length > 0) {
+          targetClinicId = data[0].item_id;
+        }
+      } catch (err) {
+        console.error("Erro ao buscar diretório para simulação:", err);
+      }
+    }
+
+    if (!targetClinicId) {
+      throw new Error("Nenhuma clínica de teste encontrada para iniciar a simulação.");
+    }
+
+    const access = await startPlatformClinicAccess(
+      targetClinicId,
+      "Simulação de Experiência do Usuário (Backoffice)",
+      "owner"
+    );
+
+    const simulationAccess: PlatformClinicAccess = {
+      ...access,
+      isSimulation: true,
+      simulatedPlan: (access.clinic.subscription_plan as SubscriptionPlan) ?? "clinic",
+    };
+
+    setPlatformAccess(simulationAccess);
+    return simulationAccess;
+  };
+
   const endPlatformClinicAccess = async () => {
     const { error } = await supabase.rpc("end_platform_clinic_access" as never, undefined as never) as {
       error: unknown;
@@ -842,8 +909,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         session,
         signOut,
         setPlatformSupportRole,
+        setPlatformSimulatedPlan,
         startPlatformClinicAccess,
-        subscriptionPlan: (clinic?.subscription_plan as SubscriptionPlan) ?? null,
+        startPlatformClinicSimulation,
+        simulatedRoleCapabilityOverrides,
+        setPlatformRoleCapabilityOverride,
+        resetPlatformRoleCapabilityOverrides,
+        subscriptionPlan: activeSubscriptionPlan,
         user: session?.user ?? null,
       }}
     >

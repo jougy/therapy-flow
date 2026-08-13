@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { featureFlagsCatalog, FeatureFlagCategory } from "@/lib/feature-flags-catalog";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag, RefreshCw } from "lucide-react";
+import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag, RefreshCw, CreditCard, Printer, Save, X, AlertTriangle, CheckCircle2, Loader2, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -11,18 +11,22 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { FeatureConfigModal } from "@/components/FeatureConfigModal";
 import { TermsConfigModal } from "@/components/TermsConfigModal";
 
 const getCategoryIcon = (category: FeatureFlagCategory) => {
   switch (category) {
+    case 'Governança': return <Shield className="w-4 h-4 text-emerald-600" />;
     case 'Storage/Arquivos': return <Box className="w-4 h-4" />;
     case 'Notificações': return <ShieldAlert className="w-4 h-4" />;
     case 'Dashboards': return <LayoutDashboard className="w-4 h-4" />;
     case 'Formulários': return <FileText className="w-4 h-4" />;
     case 'Prontuário/Atendimentos': return <ClipboardList className="w-4 h-4" />;
+    case 'Impressão': return <Printer className="w-4 h-4" />;
     case 'UI/Experiência': return <Sparkles className="w-4 h-4" />;
+    case 'Assinaturas': return <CreditCard className="w-4 h-4" />;
     default: return <Settings className="w-4 h-4" />;
   }
 };
@@ -42,9 +46,17 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   const categories = Array.from(new Set(featureFlagsCatalog.map(f => f.category)));
   const [activeCategory, setActiveCategory] = useState<FeatureFlagCategory>(categories[0] as FeatureFlagCategory);
   
+  // Saved state from database
   const [activeFlags, setActiveFlags] = useState<Record<string, boolean>>({});
   const [rawFlags, setRawFlags] = useState<Record<string, unknown>>({});
+
+  // Draft state (Pending user confirmation via Salvar/Cancelar buttons)
+  const [pendingFlags, setPendingFlags] = useState<Record<string, boolean>>({});
+  const [pendingRawFlags, setPendingRawFlags] = useState<Record<string, unknown>>({});
+  const [modifiedKeys, setModifiedKeys] = useState<Set<string>>(new Set());
+
   const [loading, setLoading] = useState(true);
+  const [savingPending, setSavingPending] = useState(false);
 
   // Context selection (Global vs Tag vs Clinic)
   const [contextType, setContextType] = useState<"global" | "tag" | "clinic">(clinicId ? "clinic" : "global");
@@ -67,38 +79,6 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   // Terms Modal state
   const [termsModalOpen, setTermsModalOpen] = useState(false);
 
-  const handlePublishNewTermsVersion = async (currentRaw?: Record<string, unknown>) => {
-    const rawObj = (currentRaw || rawFlags["terms_of_service_management"] || {}) as Record<string, unknown>;
-    const newVersion = new Date().toISOString();
-    const updatedPayload = {
-      ...rawObj,
-      publishedVersion: newVersion,
-      publishedAt: newVersion,
-    };
-
-    try {
-      const { error } = await supabase.rpc("upsert_feature_flag", {
-        _key: "terms_of_service_management",
-        _scope: contextType,
-        _tag_id: contextType === "tag" ? selectedTagId : undefined,
-        _clinic_id: contextType === "clinic" ? clinicId : undefined,
-        _value: updatedPayload,
-        _description: "Termos de Uso atualizados e publicados.",
-      });
-
-      if (error) throw error;
-
-      setRawFlags((prev) => ({ ...prev, terms_of_service_management: updatedPayload }));
-      toast({
-        title: "Termos de Uso Atualizados!",
-        description: "Nova versão publicada. Todos os usuários afetados serão solicitados a aceitar no próximo login.",
-      });
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Erro ao publicar termos";
-      toast({ title: "Erro ao publicar versão", description: errorMessage, variant: "destructive" });
-    }
-  };
-
   const loadTags = async () => {
     try {
       const { data, error } = await supabase.from("clinic_tags").select("*").order("name");
@@ -118,6 +98,8 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       if (contextType === "tag") {
         if (!selectedTagId) {
           setActiveFlags({});
+          setPendingFlags({});
+          setModifiedKeys(new Set());
           setLoading(false);
           return;
         }
@@ -139,7 +121,10 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
         rawMap[f.key] = f.value;
       });
       setActiveFlags(flagsMap);
+      setPendingFlags(flagsMap);
       setRawFlags(rawMap);
+      setPendingRawFlags(rawMap);
+      setModifiedKeys(new Set());
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Erro ao carregar flags";
       toast({ title: "Erro ao carregar flags", description: errorMessage, variant: "destructive" });
@@ -156,53 +141,96 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     loadFlags();
   }, [loadFlags]);
 
-  const handleToggle = async (key: string, currentValue: boolean) => {
+  // Handle local draft toggle (does NOT save immediately to database)
+  const handleToggleDraft = (key: string) => {
     if (contextType === "tag" && !selectedTagId) {
       toast({ title: "Selecione uma tag", description: "Você precisa selecionar uma tag para configurar suas flags.", variant: "destructive" });
       return;
     }
 
-    const newState = !currentValue;
+    const currentPendingValue = !!pendingFlags[key];
+    const newState = !currentPendingValue;
     const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
-    
-    // Value to save
-    let valueToSave: unknown = newState;
+
+    let newRawValue: unknown = newState;
     if (isConfigurable) {
-      const raw = rawFlags[key] || {};
-      if (typeof raw === 'object' && raw !== null) {
-        valueToSave = { ...raw, enabled: newState };
+      const currentRaw = pendingRawFlags[key] || {};
+      if (typeof currentRaw === 'object' && currentRaw !== null) {
+        newRawValue = { ...currentRaw, enabled: newState };
       } else {
-        valueToSave = { enabled: newState };
+        newRawValue = { enabled: newState };
       }
     }
 
-    // Optimistic Update
-    setActiveFlags(prev => ({ ...prev, [key]: newState }));
+    setPendingFlags(prev => ({ ...prev, [key]: newState }));
     if (isConfigurable) {
-      setRawFlags(prev => ({ ...prev, [key]: valueToSave }));
+      setPendingRawFlags(prev => ({ ...prev, [key]: newRawValue }));
     }
-    
-    try {
-      const { error } = await supabase.rpc("upsert_feature_flag", {
-        _key: key,
-        _scope: contextType,
-        _tag_id: contextType === "tag" ? selectedTagId : undefined,
-        _clinic_id: contextType === "clinic" ? clinicId : undefined,
-        _value: valueToSave,
-        _description: featureFlagsCatalog.find(f => f.key === key)?.description,
-      });
 
-      if (error) throw error;
+    setModifiedKeys(prev => {
+      const next = new Set(prev);
+      const originalValue = !!activeFlags[key];
+      if (newState === originalValue) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Revert all draft changes back to saved state
+  const handleCancelDrafts = () => {
+    setPendingFlags({ ...activeFlags });
+    setPendingRawFlags({ ...rawFlags });
+    setModifiedKeys(new Set());
+    toast({ title: "Alterações Canceladas", description: "As modificações pendentes foram descartadas." });
+  };
+
+  // Save all pending draft changes to database at once
+  const handleSaveAllDrafts = async () => {
+    if (modifiedKeys.size === 0) return;
+    setSavingPending(true);
+
+    try {
+      const keysToSave = Array.from(modifiedKeys);
+      for (const key of keysToSave) {
+        const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
+        const newState = pendingFlags[key];
+        const valueToSave = isConfigurable ? pendingRawFlags[key] : newState;
+
+        const { error } = await supabase.rpc("upsert_feature_flag", {
+          _key: key,
+          _scope: contextType,
+          _tag_id: contextType === "tag" ? selectedTagId : undefined,
+          _clinic_id: contextType === "clinic" ? clinicId : undefined,
+          _value: valueToSave,
+          _description: featureFlagsCatalog.find(f => f.key === key)?.description,
+        });
+
+        if (error) throw error;
+      }
+
+      // Update saved baseline
+      setActiveFlags({ ...pendingFlags });
+      setRawFlags({ ...pendingRawFlags });
+      setModifiedKeys(new Set());
+
+      toast({
+        title: "Feature Flags Atualizadas com Sucesso!",
+        description: `Total de ${keysToSave.length} alteração(ões) aplicada(s) à plataforma.`,
+      });
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Erro ao salvar flag";
-      setActiveFlags(prev => ({ ...prev, [key]: currentValue }));
-      toast({ title: "Erro ao salvar flag", description: errorMessage, variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "Erro ao salvar alterações pendentes";
+      toast({ title: "Erro ao salvar", description: errorMessage, variant: "destructive" });
+    } finally {
+      setSavingPending(false);
     }
   };
 
   const openJustificationModal = (key: string) => {
     setSelectedFlagKey(key);
-    setTargetState(!activeFlags[key]);
+    setTargetState(!pendingFlags[key]);
     setReason("");
     setNotifyOwner(false);
     setNotifyAdmin(false);
@@ -219,7 +247,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     
     let valueToSave: unknown = newState;
     if (isConfigurable) {
-      const raw = rawFlags[key] || {};
+      const raw = pendingRawFlags[key] || {};
       if (typeof raw === 'object' && raw !== null) {
         valueToSave = { ...raw, enabled: newState };
       } else {
@@ -227,9 +255,9 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       }
     }
 
-    setActiveFlags(prev => ({ ...prev, [key]: newState }));
+    setPendingFlags(prev => ({ ...prev, [key]: newState }));
     if (isConfigurable) {
-      setRawFlags(prev => ({ ...prev, [key]: valueToSave }));
+      setPendingRawFlags(prev => ({ ...prev, [key]: valueToSave }));
     }
     setJustificationModalOpen(false);
 
@@ -245,29 +273,103 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       });
       if (error) throw error;
 
-      if (notifyOwner || notifyAdmin || notifyPro) {
-        toast({ title: "Notificações", description: "Notificações seriam enviadas para as equipes selecionadas." });
-      }
+      setActiveFlags(prev => ({ ...prev, [key]: newState }));
+      setRawFlags(prev => ({ ...prev, [key]: valueToSave }));
+      setModifiedKeys(prev => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
 
       toast({ title: "Alteração justificada salva." });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Erro ao salvar";
-      setActiveFlags(prev => ({ ...prev, [key]: !newState }));
       toast({ title: "Erro", description: errorMessage, variant: "destructive" });
     }
   };
 
+  const handlePublishNewTermsVersion = async (currentRaw?: Record<string, unknown>) => {
+    const rawObj = (currentRaw || pendingRawFlags["terms_of_service_management"] || {}) as Record<string, unknown>;
+    const newVersion = new Date().toISOString();
+    const updatedPayload = {
+      ...rawObj,
+      publishedVersion: newVersion,
+      publishedAt: newVersion,
+    };
+
+    try {
+      const { error } = await supabase.rpc("upsert_feature_flag", {
+        _key: "terms_of_service_management",
+        _scope: contextType,
+        _tag_id: contextType === "tag" ? selectedTagId : undefined,
+        _clinic_id: contextType === "clinic" ? clinicId : undefined,
+        _value: updatedPayload,
+        _description: "Termos de Uso atualizados e publicados.",
+      });
+
+      if (error) throw error;
+
+      setRawFlags((prev) => ({ ...prev, terms_of_service_management: updatedPayload }));
+      setPendingRawFlags((prev) => ({ ...prev, terms_of_service_management: updatedPayload }));
+      toast({
+        title: "Termos de Uso Atualizados!",
+        description: "Nova versão publicada. Todos os usuários afetados serão solicitados a aceitar no próximo login.",
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao publicar termos";
+      toast({ title: "Erro ao publicar versão", description: errorMessage, variant: "destructive" });
+    }
+  };
+
   const filteredFeatures = featureFlagsCatalog.filter(f => f.category === activeCategory);
+  const hasPendingChanges = modifiedKeys.size > 0;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 relative">
       
+      {/* Floating Action Bar for Pending Changes (Salvar / Cancelar) */}
+      <AnimatePresence>
+        {hasPendingChanges && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-4 bg-neutral-900 dark:bg-neutral-950 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-neutral-800"
+          >
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <AlertTriangle className="w-4 h-4 text-amber-400 animate-pulse" />
+              <span>{modifiedKeys.size} alteração(ões) pendente(s)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCancelDrafts}
+                disabled={savingPending}
+                className="h-9 px-3 text-xs bg-neutral-800 text-neutral-200 border-neutral-700 hover:bg-neutral-700"
+              >
+                <X className="w-3.5 h-3.5 mr-1" /> Cancelar
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveAllDrafts}
+                disabled={savingPending}
+                className="h-9 px-4 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 shadow-md"
+              >
+                {savingPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Salvar Alterações
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top Context Selector - Hidden in Clinic Detail Context */}
       {!clinicId && (
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-neutral-200/60 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+        <div className="bg-white dark:bg-neutral-900 p-5 rounded-2xl shadow-sm border border-neutral-200/60 dark:border-neutral-800 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
           <div className="space-y-1">
-            <h2 className="text-lg font-semibold text-neutral-900">Contexto de Configuração</h2>
-            <p className="text-sm text-neutral-500">
+            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">Contexto de Configuração</h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
               Defina flags que valem para toda a plataforma ou apenas para clínicas com uma tag específica.
             </p>
           </div>
@@ -284,7 +386,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                 }
               }}
             >
-              <SelectTrigger className="w-full bg-neutral-50">
+              <SelectTrigger className="w-full bg-neutral-50 dark:bg-neutral-800">
                 <SelectValue placeholder="Selecione o contexto" />
               </SelectTrigger>
               <SelectContent>
@@ -324,7 +426,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                 "flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200",
                 activeCategory === category
                   ? "bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
-                  : "text-neutral-600 hover:bg-neutral-100/80 hover:text-neutral-900"
+                  : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/80 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100"
               )}
             >
               {getCategoryIcon(category as FeatureFlagCategory)}
@@ -335,9 +437,9 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
 
         {/* Main List Area */}
         <div className="md:col-span-8">
-          <div className="bg-white rounded-2xl shadow-sm border border-neutral-200/60 overflow-hidden relative min-h-[450px]">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200/60 dark:border-neutral-800 overflow-hidden relative min-h-[450px]">
             {loading ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-10">
+              <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-neutral-900/50 backdrop-blur-sm z-10">
                 <div className="text-muted-foreground animate-pulse font-medium">Carregando flags...</div>
               </div>
             ) : contextType === "tag" && !selectedTagId ? (
@@ -356,24 +458,43 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                 transition={{ duration: 0.25, ease: "easeInOut" }}
                 className={cn("p-5 md:p-6 flex flex-col gap-5", (contextType === "tag" && !selectedTagId) ? "opacity-30 pointer-events-none" : "")}
               >
-                <div className="mb-2">
-                  <h2 className="text-xl font-semibold text-neutral-800 flex items-center gap-2">
+                <div className="mb-2 flex items-center justify-between">
+                  <h2 className="text-xl font-semibold text-neutral-800 dark:text-neutral-100 flex items-center gap-2">
                     {getCategoryIcon(activeCategory)}
                     {activeCategory}
                   </h2>
+                  {hasPendingChanges && (
+                    <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-300">
+                      Modificações não salvas
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-4">
                   {filteredFeatures.map((feature) => {
-                    const isOn = !!activeFlags[feature.key];
+                    const isOn = !!pendingFlags[feature.key];
+                    const isModified = modifiedKeys.has(feature.key);
+
                     return (
                       <div 
                         key={feature.key} 
-                        className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-xl border border-neutral-100 bg-neutral-50/50 hover:bg-neutral-50 hover:border-neutral-200 transition-colors"
+                        className={cn(
+                          "flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-xl border transition-colors",
+                          isModified
+                            ? "border-amber-300 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-800"
+                            : "border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 hover:bg-neutral-50 dark:hover:bg-neutral-800/70"
+                        )}
                       >
                         <div className="flex-1 space-y-1">
-                          <h3 className="font-semibold text-neutral-900 text-base">{feature.label}</h3>
-                          <p className="text-sm text-neutral-500 leading-relaxed">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 text-base">{feature.label}</h3>
+                            {isModified && (
+                              <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-mono">
+                                Alterado (Pendente)
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
                             {feature.description}
                           </p>
                         </div>
@@ -396,7 +517,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                                 className="h-9 px-3 bg-emerald-600 hover:bg-emerald-700 text-white"
                                 onClick={() => void handlePublishNewTermsVersion()}
                               >
-                                <RefreshCw className="w-3.5 h-3.5 mr-2" /> Atualizar
+                                <RefreshCw className="w-3.5 h-3.5 mr-2" /> Atualizar Versão
                               </Button>
                             </>
                           ) : (
@@ -429,13 +550,13 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                                 <div className="flex items-center gap-2">
                                   <span className={cn(
                                     "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider",
-                                    isOn ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-600"
+                                    isOn ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
                                   )}>
                                     {isOn ? 'On' : 'Off'}
                                   </span>
                                   <Switch 
                                     checked={isOn} 
-                                    onCheckedChange={() => handleToggle(feature.key, isOn)} 
+                                    onCheckedChange={() => handleToggleDraft(feature.key)} 
                                     className="data-[state=checked]:bg-emerald-500"
                                   />
                                 </div>
@@ -510,7 +631,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       <TermsConfigModal
         isOpen={termsModalOpen}
         onClose={() => setTermsModalOpen(false)}
-        initialData={rawFlags["terms_of_service_management"] as Record<string, unknown> | undefined}
+        initialData={pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined}
         onSave={(payload) => {
           void handlePublishNewTermsVersion(payload);
         }}

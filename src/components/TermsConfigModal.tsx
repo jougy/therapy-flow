@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
-import { Upload, FileText, CheckCircle2, Eye, ChevronDown, ChevronUp, Globe, Users, Shield } from "lucide-react";
+import { Upload, FileText, CheckCircle2, Eye, ChevronDown, ChevronUp, Globe, Users, Shield, Printer } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 export interface TermsDocItem {
@@ -16,6 +16,7 @@ export interface TermsConfigPayload {
   user_br?: TermsDocItem;
   owner_intl?: TermsDocItem;
   user_intl?: TermsDocItem;
+  print_terms?: TermsDocItem;
   publishedVersion?: string;
   publishedAt?: string;
 }
@@ -56,6 +57,13 @@ const DOC_TYPES: Array<{ key: keyof Omit<TermsConfigPayload, "publishedVersion" 
     description: "Aplicável a todos os usuários internacionais (em inglês, incluindo owners).",
     icon: Users,
   },
+  {
+    key: "print_terms",
+    label: "Termo de Responsabilidade para Impressão",
+    badge: "PT-BR | Impressão LGPD",
+    description: "Exibido a qualquer usuário antes de realizar a impressão de relatórios e dados sensíveis.",
+    icon: Printer,
+  },
 ];
 
 export function TermsConfigModal({ isOpen, onClose, initialData, onSave }: TermsConfigModalProps) {
@@ -69,6 +77,7 @@ export function TermsConfigModal({ isOpen, onClose, initialData, onSave }: Terms
         user_br: (initialData.user_br as TermsDocItem) || undefined,
         owner_intl: (initialData.owner_intl as TermsDocItem) || undefined,
         user_intl: (initialData.user_intl as TermsDocItem) || undefined,
+        print_terms: (initialData.print_terms as TermsDocItem) || undefined,
         publishedVersion: (initialData.publishedVersion as string) || undefined,
         publishedAt: (initialData.publishedAt as string) || undefined,
       });
@@ -119,7 +128,7 @@ export function TermsConfigModal({ isOpen, onClose, initialData, onSave }: Terms
             Configuração dos Termos de Uso e Consentimento
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            Faça o upload dos arquivos <strong>.md</strong> para os 4 perfis de termos do sistema.
+            Faça o upload dos arquivos <strong>.md</strong> para os perfis de termos e consentimento do sistema.
           </DialogDescription>
         </DialogHeader>
 

@@ -188,7 +188,7 @@ const DashboardProportionCard = ({
   return (
     <Card className="p-4">
       <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">{title}</p>
-      <p className="mt-2 font-serif text-4xl leading-none text-foreground sm:text-5xl">{value}</p>
+      <p className="mt-2 text-4xl font-semibold leading-none text-foreground sm:text-5xl">{value}</p>
       <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
       <div className="mt-4 flex h-7 overflow-hidden rounded-full bg-muted">
         {visibleSegments.map((segment) => {
@@ -1478,7 +1478,7 @@ const Index = () => {
   }
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className={isDesignLabExperience ? "space-y-4 pb-20 md:space-y-6 md:pb-0" : "space-y-6"}>
+    <motion.div variants={container} initial="hidden" animate="show" className={isDesignLabExperience ? "mx-auto w-full max-w-screen-2xl space-y-4 pb-20 md:space-y-6 md:pb-0" : "mx-auto w-full max-w-screen-2xl space-y-6"}>
       <div ref={toolbarSentinelRef} aria-hidden="true" className="h-0" />
       <div
         ref={toolbarPlaceholderRef}
