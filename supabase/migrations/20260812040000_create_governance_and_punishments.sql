@@ -63,18 +63,21 @@ ALTER TABLE public.user_punishments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_governance_overrides ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies: Authenticated users can read active governance rules & own active punishments
+DROP POLICY IF EXISTS "Anyone authenticated can view governance rules" ON public.governance_rules;
 CREATE POLICY "Anyone authenticated can view governance rules"
   ON public.governance_rules
   FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Users can read own active punishments" ON public.user_punishments;
 CREATE POLICY "Users can read own active punishments"
   ON public.user_punishments
   FOR SELECT
   TO authenticated
   USING (auth.uid() = user_id OR public.is_platform_owner());
 
+DROP POLICY IF EXISTS "Users can read own overrides" ON public.user_governance_overrides;
 CREATE POLICY "Users can read own overrides"
   ON public.user_governance_overrides
   FOR SELECT
@@ -82,6 +85,7 @@ CREATE POLICY "Users can read own overrides"
   USING (auth.uid() = user_id OR public.is_platform_owner());
 
 -- RLS Policies for Platform Owners
+DROP POLICY IF EXISTS "Platform owners can manage governance rules" ON public.governance_rules;
 CREATE POLICY "Platform owners can manage governance rules"
   ON public.governance_rules
   FOR ALL
@@ -89,6 +93,7 @@ CREATE POLICY "Platform owners can manage governance rules"
   USING (public.is_platform_owner())
   WITH CHECK (public.is_platform_owner());
 
+DROP POLICY IF EXISTS "Platform owners can manage user punishments" ON public.user_punishments;
 CREATE POLICY "Platform owners can manage user punishments"
   ON public.user_punishments
   FOR ALL
@@ -96,6 +101,7 @@ CREATE POLICY "Platform owners can manage user punishments"
   USING (public.is_platform_owner())
   WITH CHECK (public.is_platform_owner());
 
+DROP POLICY IF EXISTS "Platform owners can manage governance overrides" ON public.user_governance_overrides;
 CREATE POLICY "Platform owners can manage governance overrides"
   ON public.user_governance_overrides
   FOR ALL

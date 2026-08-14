@@ -19,9 +19,11 @@ import {
   validatePatientPreRegistration,
 } from "@/lib/patient-registration";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
+import { getPatientPath } from "@/lib/patient-routing";
 
 type EnsurePatientResponse = {
   id: string;
+  patient_code?: string | null;
   matched_by: "cpf" | "name_birth" | "created";
   status: "existing" | "created";
 };
@@ -232,7 +234,7 @@ const NovoPaciente = () => {
             ? `${validation.values.name} foi adicionado(a). Gere o link e compartilhe com o paciente.`
             : `${validation.values.name} foi adicionado(a). Complete o cadastro para mais detalhes.`,
       });
-      navigate(`/pacientes/${data.id}/cadastro`, {
+      navigate(getPatientPath(data.patient_code || data.id, "cadastro"), {
         state: shareWithPatient && !alreadyExisted ? { openShareDialog: true } : undefined,
       });
     }

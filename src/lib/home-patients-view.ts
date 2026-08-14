@@ -49,6 +49,7 @@ export interface HomePatientRecord {
   date_of_birth: string | null;
   gender: string | null;
   id: string;
+  patient_code?: string | null;
   is_recurring?: boolean | null;
   name: string;
   origin_type?: string | null;
@@ -109,6 +110,7 @@ export interface HomePatientView {
   groups: { color: string; name: string; status: string | null }[];
   hasSessionInDateRange: boolean;
   id: string;
+  patient_code?: string | null;
   lastSessionDate: string | null;
   missedCount: number;
   name: string;
@@ -590,6 +592,7 @@ export const buildHomePatientViews = ({
                 isSessionInDateRange(session.session_date, filters.sessionDateFrom, filters.sessionDateTo),
               ),
         id: patient.id,
+        patient_code: patient.patient_code,
         lastSessionDate: patientLastSession,
         missedCount: patientSessions.filter((session) => session.status === "cancelado").length,
         name: patient.name,

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.telemetry_events (
 ALTER TABLE public.telemetry_events ENABLE ROW LEVEL SECURITY;
 
 -- Allow authenticated users to record telemetry events
+DROP POLICY IF EXISTS "Authenticated users can insert telemetry events" ON public.telemetry_events;
 CREATE POLICY "Authenticated users can insert telemetry events"
   ON public.telemetry_events
   FOR INSERT
@@ -25,6 +26,7 @@ CREATE POLICY "Authenticated users can insert telemetry events"
   WITH CHECK (true);
 
 -- Allow Platform Owners to read telemetry events
+DROP POLICY IF EXISTS "Platform owners can view all telemetry events" ON public.telemetry_events;
 CREATE POLICY "Platform owners can view all telemetry events"
   ON public.telemetry_events
   FOR SELECT

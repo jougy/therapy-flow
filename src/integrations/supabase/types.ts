@@ -886,6 +886,7 @@ export type Database = {
           origin_other_name: string | null
           origin_referrer_name: string | null
           origin_type: string
+          patient_code: string | null
           phone: string | null
           profession: string | null
           pronoun: string | null
@@ -933,6 +934,7 @@ export type Database = {
           origin_other_name?: string | null
           origin_referrer_name?: string | null
           origin_type?: string
+          patient_code?: string | null
           phone?: string | null
           profession?: string | null
           pronoun?: string | null
@@ -980,6 +982,7 @@ export type Database = {
           origin_other_name?: string | null
           origin_referrer_name?: string | null
           origin_type?: string
+          patient_code?: string | null
           phone?: string | null
           profession?: string | null
           pronoun?: string | null

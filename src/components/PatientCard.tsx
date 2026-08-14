@@ -8,10 +8,12 @@ import { useNavigate } from "react-router-dom";
 import { getPatientStatusMeta } from "@/lib/patient-statuses";
 import { getLegacyGroupHex, getReadableTextColor, toRgbaString } from "@/lib/group-colors";
 import { PATIENT_RECURRENCE_WEEKDAY_OPTIONS } from "@/lib/patient-recurrence";
+import { getPatientPath } from "@/lib/patient-routing";
 import { cn } from "@/lib/utils";
 
 export interface PatientCardData {
   id: string;
+  patient_code?: string | null;
   name: string;
   gender: string | null;
   pronoun: string | null;
@@ -72,11 +74,11 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
   return (
     <Card
       className="p-4 cursor-pointer hover:shadow-md transition-shadow duration-150 group"
-      onClick={() => navigate(`/pacientes/${patient.id}`)}
+      onClick={() => navigate(getPatientPath(patient))}
       role="button"
       tabIndex={0}
       aria-label={`Ver detalhes de ${patient.name}`}
-      onKeyDown={(e) => e.key === "Enter" && navigate(`/pacientes/${patient.id}`)}
+      onKeyDown={(e) => e.key === "Enter" && navigate(getPatientPath(patient))}
     >
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0 space-y-1.5">

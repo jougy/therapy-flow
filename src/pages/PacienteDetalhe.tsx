@@ -29,6 +29,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
+import { fetchPatientByRef, getPatientRouteKey, getClinicPatientPath, getPatientPath } from "@/lib/patient-routing";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
 import {
   AGENDA_EVENTS_UPDATED_EVENT,
@@ -680,7 +681,7 @@ const isLockedSystemGroup = (group: Pick<PatientGroup, "group_kind" | "is_defaul
   getPatientGroupKind(group) !== "custom";
 
 const PacienteDetalhe = () => {
-  const { id } = useParams();
+  const { id, clinicKey } = useParams<{ id?: string; clinicKey?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const { can, clinic, clinicId, operationalRole, user } = useAuth();
@@ -767,10 +768,24 @@ const PacienteDetalhe = () => {
   const fetchData = useCallback(async () => {
     if (!id) return;
 
-    const [pRes, gRes, sRes, clinicRes, profilesRes, colorSlotsRes, agendaRes, anamnesisTemplatesRes] = await Promise.all([
-      supabase.from("patients").select("*").eq("id", id).single(),
-      supabase.from("patient_groups").select("*").eq("patient_id", id),
-      supabase.from("sessions").select("*").eq("patient_id", id).order("session_date", { ascending: false }),
+    const pRes = await fetchPatientByRef(id, clinicId);
+    if (pRes.error || !pRes.data) {
+      toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
+      navigate(clinicHomePath);
+      return;
+    }
+
+    const realPatientId = pRes.data.id;
+    const canonicalRouteKey = getPatientRouteKey(pRes.data);
+    const targetClinicKey = clinic?.route_key || clinicKey;
+
+    if (id !== canonicalRouteKey && targetClinicKey) {
+      navigate(`/clinica/${targetClinicKey}/pacientes/${canonicalRouteKey}${location.search}`, { replace: true });
+    }
+
+    const [gRes, sRes, clinicRes, profilesRes, colorSlotsRes, agendaRes, anamnesisTemplatesRes] = await Promise.all([
+      supabase.from("patient_groups").select("*").eq("patient_id", realPatientId),
+      supabase.from("sessions").select("*").eq("patient_id", realPatientId).order("session_date", { ascending: false }),
       clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null }),
       clinicId ? supabase.from("profiles").select("id, full_name, email, job_title").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
       clinicId
@@ -779,7 +794,7 @@ const PacienteDetalhe = () => {
       supabase
         .from("agenda_events")
         .select("*")
-        .eq("patient_id", id)
+        .eq("patient_id", realPatientId)
         .order("scheduled_for", { ascending: true }),
       clinicId
         ? supabase.from("anamnesis_form_templates").select("id, name, schema").eq("clinic_id", clinicId).eq("is_active", true)
@@ -869,12 +884,13 @@ const PacienteDetalhe = () => {
   }, [clinicId, id, operationalRole, user?.id, can]);
 
   const fetchPatientAgendaEvents = useCallback(async () => {
-    if (!id) return;
+    const targetUuid = patient?.id;
+    if (!targetUuid) return;
 
     const { data, error } = await supabase
       .from("agenda_events")
       .select("*")
-      .eq("patient_id", id)
+      .eq("patient_id", targetUuid)
       .order("scheduled_for", { ascending: true });
 
     if (error) {
@@ -883,7 +899,7 @@ const PacienteDetalhe = () => {
     }
 
     setAgendaEvents((data ?? []) as AgendaEvent[]);
-  }, [id]);
+  }, [patient?.id]);
 
   useEffect(() => {
     void fetchData();
@@ -1904,7 +1920,7 @@ const PacienteDetalhe = () => {
   };
 
   return (
-    <PatientFilesProvider patientId={id!} clinicId={clinicId}>
+    <PatientFilesProvider patientId={patient?.id || id!} clinicId={clinicId}>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
       {/* Header */}
       <div className="overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 px-4 py-4 shadow-sm sm:px-5">
@@ -1939,7 +1955,7 @@ const PacienteDetalhe = () => {
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => navigate(`/pacientes/${patient.id}/cadastro`)}
+                  onClick={() => navigate(getPatientPath(patient, "cadastro"))}
                   title="Editar cadastro completo"
                   className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-left transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     patient.registration_complete
@@ -2829,7 +2845,7 @@ const PacienteDetalhe = () => {
                 variant="outline"
                 onClick={() => {
                   setPatientInfoDialogOpen(false);
-                  navigate(`/pacientes/${id}/resumo`);
+                  navigate(getPatientPath(patient || id, "resumo"));
                 }}
               >
                 <FileText className="h-4 w-4 mr-2" />
@@ -2839,7 +2855,7 @@ const PacienteDetalhe = () => {
                 variant="outline"
                 onClick={() => {
                   setPatientInfoDialogOpen(false);
-                  navigate(`/pacientes/${id}/cadastro`);
+                  navigate(getPatientPath(patient || id, "cadastro"));
                 }}
               >
                 <ClipboardEdit className="h-4 w-4 mr-2" />
