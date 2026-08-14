@@ -77,8 +77,14 @@ vi.mock("@/integrations/supabase/client", () => {
           if (table === "agenda_events") {
             return { order: () => Promise.resolve({ data: sampleAgendaEvents, error: null }) };
           }
+          if (table === "clinic_memberships") {
+            return { eq: () => Promise.resolve({ data: [{ user_id: "prof1" }], error: null }) };
+          }
           if (table === "profiles") {
-            return { eq: () => Promise.resolve({ data: sampleProfiles, error: null }) };
+            return {
+              eq: () => Promise.resolve({ data: sampleProfiles, error: null }),
+              in: () => Promise.resolve({ data: sampleProfiles, error: null }),
+            };
           }
           return Promise.resolve({ data: [], error: null });
         },
