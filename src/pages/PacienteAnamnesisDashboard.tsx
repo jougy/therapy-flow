@@ -26,6 +26,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
+import { fetchPatientByRef, getPatientPath } from "@/lib/patient-routing";
 import { isAnamnesisTemplateSchema, type AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import {
   buildPatientAnamnesisDashboard,
@@ -483,23 +484,24 @@ const PacienteAnamnesisDashboard = () => {
 
     setLoading(true);
 
-    const [patientRes, clinicRes, sessionsRes, templatesRes] = await Promise.all([
-      supabase.from("patients").select("id, name, age, phone, registration_complete").eq("id", id).single(),
-      clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null, error: null }),
-      supabase
-        .from("sessions")
-        .select("id, anamnesis, anamnesis_form_response, anamnesis_template_id, complexity_score, pain_score, session_date, status")
-        .eq("patient_id", id)
-        .in("status", ["concluído", "rascunho"])
-        .order("session_date", { ascending: true }),
-      clinicId ? supabase.from("anamnesis_form_templates").select("id, name, schema").eq("clinic_id", clinicId).eq("is_active", true) : Promise.resolve({ data: [], error: null }),
-    ]);
-
+    const patientRes = await fetchPatientByRef(id, clinicId);
     if (patientRes.error || !patientRes.data) {
       toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
       navigate(clinicHomePath);
       return;
     }
+
+    const realPatientId = patientRes.data.id;
+    const [clinicRes, sessionsRes, templatesRes] = await Promise.all([
+      clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null, error: null }),
+      supabase
+        .from("sessions")
+        .select("id, anamnesis, anamnesis_form_response, anamnesis_template_id, complexity_score, pain_score, session_date, status")
+        .eq("patient_id", realPatientId)
+        .in("status", ["concluído", "rascunho"])
+        .order("session_date", { ascending: true }),
+      clinicId ? supabase.from("anamnesis_form_templates").select("id, name, schema").eq("clinic_id", clinicId).eq("is_active", true) : Promise.resolve({ data: [], error: null }),
+    ]);
 
     if (sessionsRes.error) {
       toast({ title: "Erro ao carregar fichas", description: sessionsRes.error.message, variant: "destructive" });
@@ -509,18 +511,10 @@ const PacienteAnamnesisDashboard = () => {
       toast({ title: "Erro ao carregar modelos", description: templatesRes.error.message, variant: "destructive" });
     }
 
-    setPatient(patientRes.data as Patient);
+    setPatient(patientRes.data);
     setBaseSchema(isAnamnesisTemplateSchema(clinicRes.data?.anamnesis_base_schema) ? clinicRes.data.anamnesis_base_schema : []);
-    setSessions((sessionsRes.data ?? []) as PatientAnamnesisDashboardSession[]);
-    setTemplates(
-      ((templatesRes.data ?? []) as TemplateRow[])
-        .filter((template) => isAnamnesisTemplateSchema(template.schema))
-        .map((template) => ({
-          id: template.id,
-          name: template.name,
-          schema: template.schema as Json,
-        }))
-    );
+    setSessions((sessionsRes.data ?? []) as SessionSummary[]);
+    setTemplates((templatesRes.data ?? []) as AnamnesisTemplate[]);
     setLoading(false);
   }, [clinicHomePath, clinicId, id, navigate]);
 
@@ -571,7 +565,7 @@ const PacienteAnamnesisDashboard = () => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
-          <Button variant="ghost" className="-ml-3 w-fit px-3" onClick={() => navigate(`/pacientes/${id}`)}>
+          <Button variant="ghost" className="-ml-3 w-fit px-3" onClick={() => navigate(getPatientPath(patient))}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Voltar ao paciente
           </Button>
@@ -589,11 +583,11 @@ const PacienteAnamnesisDashboard = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/resumo`)}>
+          <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "resumo"))}>
             <FileText className="mr-2 h-4 w-4" />
             Resumo
           </Button>
-          <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/cadastro`)}>
+          <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "cadastro"))}>
             <ClipboardEdit className="mr-2 h-4 w-4" />
             Cadastro
           </Button>

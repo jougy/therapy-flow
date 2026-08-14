@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "@/hooks/use-toast";
 import { deleteUploadedPatientFile, removePatientFileUploadQueueItem, isPatientFileUploadImage } from "@/lib/patient-file-upload-queue";
+import { isUuid, fetchPatientByRef } from "@/lib/patient-routing";
 
 export type PatientFileUploadRow = Database["public"]["Tables"]["patient_file_uploads"]["Row"] & {
   session?: {
@@ -73,7 +74,20 @@ export function PatientFilesProvider({
   const [previewTitle, setPreviewTitle] = useState("");
 
   const refreshFiles = useCallback(async () => {
+    if (!patientId) return;
     setLoading(true);
+
+    let targetUuid = patientId;
+    if (!isUuid(patientId)) {
+      const pRes = await fetchPatientByRef(patientId, clinicId);
+      if (pRes.data?.id) {
+        targetUuid = pRes.data.id;
+      } else {
+        setLoading(false);
+        return;
+      }
+    }
+
     const { data, error } = await supabase
       .from("patient_file_uploads")
       .select(`
@@ -91,7 +105,7 @@ export function PatientFilesProvider({
           )
         )
       `)
-      .eq("patient_id", patientId)
+      .eq("patient_id", targetUuid)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -100,7 +114,7 @@ export function PatientFilesProvider({
       setFiles((data ?? []) as PatientFileUploadRow[]);
     }
     setLoading(false);
-  }, [patientId]);
+  }, [clinicId, patientId]);
 
   useEffect(() => {
     void refreshFiles();

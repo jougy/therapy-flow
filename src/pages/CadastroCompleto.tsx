@@ -33,7 +33,9 @@ import {
   isValidPatientEmail,
   normalizePatientPhoneDigits,
   putPatientRegistration,
+  validatePatientCpf,
 } from "@/lib/patient-registration";
+import { fetchPatientByRef, getPatientPath, getClinicPatientPath } from "@/lib/patient-routing";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { SubstanceUseClinicalSection } from "@/components/patients/SubstanceUseClinicalSection";
 import { PatientRiskFlagsChecklist } from "@/components/patients/PatientRiskFlagsChecklist";
@@ -117,11 +119,7 @@ const CadastroCompleto = () => {
 
   const fetchPatient = useCallback(async () => {
     if (!id) return;
-    const { data, error } = await supabase
-      .from("patients")
-      .select("*")
-      .eq("id", id)
-      .single();
+    const { data, error } = await fetchPatientByRef(id, clinicId);
 
     if (error || !data) {
       toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
@@ -313,7 +311,7 @@ const CadastroCompleto = () => {
 
       await supabase.rpc("create_current_user_notification", {
         _action_label: "Abrir paciente",
-        _action_url: clinic?.route_key ? `/clinica/${clinic.route_key}/pacientes/${payload.id}` : `/pacientes/${payload.id}`,
+        _action_url: getClinicPatientPath(clinic?.route_key, patientRecord || payload.id),
         _body: `O cadastro de ${payload.name || "paciente"} foi salvo corretamente.`,
         _category: "patient",
         _clinic_id: payload.clinic_id,
@@ -323,7 +321,7 @@ const CadastroCompleto = () => {
       });
 
       toast({ title: "Cadastro atualizado", description: "Informações salvas com sucesso." });
-      navigate(`/pacientes/${id}`);
+      navigate(getPatientPath(patientRecord || id));
     } catch (error) {
       toast({
         title: "Erro ao salvar",
@@ -346,7 +344,7 @@ const CadastroCompleto = () => {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/pacientes/${id}`)} aria-label="Voltar">
+        <Button variant="ghost" size="icon" onClick={() => navigate(getPatientPath(patientRecord || id))} aria-label="Voltar">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
@@ -824,7 +822,7 @@ const CadastroCompleto = () => {
       </Tabs>
 
       <div className="flex items-center justify-between pb-8">
-        <Button variant="outline" onClick={() => navigate(`/pacientes/${id}`)}>
+        <Button variant="outline" onClick={() => navigate(getPatientPath(patientRecord || id))}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Voltar ao paciente
         </Button>

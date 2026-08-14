@@ -843,16 +843,27 @@ const Index = () => {
     }
 
     const [patientsRes, groupsRes, sessionsRes, agendaEventsRes, membershipsRes, profilesRes] = await Promise.all([
-      supabase.from("patients").select("*").order("updated_at", { ascending: false }),
-      supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)"),
-      supabase
-        .from("sessions")
-        .select("*"),
-      supabase
-        .from("agenda_events")
-        .select("id, patient_id, title, event_type, status, scheduled_for")
-        .neq("status", "cancelado")
-        .order("scheduled_for", { ascending: true }),
+      clinicId
+        ? supabase.from("patients").select("*").eq("clinic_id", clinicId).order("updated_at", { ascending: false })
+        : supabase.from("patients").select("*").order("updated_at", { ascending: false }),
+      clinicId
+        ? supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)").eq("clinic_id", clinicId)
+        : supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)"),
+      clinicId
+        ? supabase.from("sessions").select("*").eq("clinic_id", clinicId)
+        : supabase.from("sessions").select("*"),
+      clinicId
+        ? supabase
+            .from("agenda_events")
+            .select("id, patient_id, title, event_type, status, scheduled_for")
+            .eq("clinic_id", clinicId)
+            .neq("status", "cancelado")
+            .order("scheduled_for", { ascending: true })
+        : supabase
+            .from("agenda_events")
+            .select("id, patient_id, title, event_type, status, scheduled_for")
+            .neq("status", "cancelado")
+            .order("scheduled_for", { ascending: true }),
       clinicId
         ? supabase
             .from("clinic_memberships")

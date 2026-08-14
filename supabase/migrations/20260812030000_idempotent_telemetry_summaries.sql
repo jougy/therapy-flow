@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.user_telemetry_summaries (
 ALTER TABLE public.user_telemetry_summaries ENABLE ROW LEVEL SECURITY;
 
 -- Allow authenticated users to upsert their own summary row
+DROP POLICY IF EXISTS "Users can upsert own summary row" ON public.user_telemetry_summaries;
 CREATE POLICY "Users can upsert own summary row"
   ON public.user_telemetry_summaries
   FOR ALL
@@ -31,6 +32,7 @@ CREATE POLICY "Users can upsert own summary row"
   WITH CHECK (auth.uid() = user_id);
 
 -- Allow Platform Owners to read all summaries
+DROP POLICY IF EXISTS "Platform owners can view all summaries" ON public.user_telemetry_summaries;
 CREATE POLICY "Platform owners can view all summaries"
   ON public.user_telemetry_summaries
   FOR SELECT

@@ -27,6 +27,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
 import { toast } from "@/hooks/use-toast";
+import { fetchPatientByRef, getPatientPath } from "@/lib/patient-routing";
 import { ToastAction } from "@/components/ui/toast";
 import { readBusinessHours } from "@/lib/clinic-settings";
 import { readProfileAddress } from "@/lib/profile-settings";
@@ -665,13 +666,15 @@ const SessaoDetalhe = () => {
 
     setLoading(true);
 
-    const [patientRes, groupsRes, lastUsedGroupRes, paymentSessionsRes, templatesRes, clinicRes, profilesRes] = await Promise.all([
-      supabase.from("patients").select("name").eq("id", patientId).maybeSingle(),
-      supabase.from("patient_groups").select("*").eq("patient_id", patientId),
+    const patientRes = await fetchPatientByRef(patientId, clinicId);
+    const realPatientId = patientRes.data?.id || patientId;
+
+    const [groupsRes, lastUsedGroupRes, paymentSessionsRes, templatesRes, clinicRes, profilesRes] = await Promise.all([
+      supabase.from("patient_groups").select("*").eq("patient_id", realPatientId),
       supabase
         .from("sessions")
         .select("group_id")
-        .eq("patient_id", patientId)
+        .eq("patient_id", realPatientId)
         .not("group_id", "is", null)
         .order("session_date", { ascending: false })
         .limit(1)
@@ -679,7 +682,7 @@ const SessaoDetalhe = () => {
       supabase
         .from("sessions")
         .select("id, amount_charged_cents, amount_paid_cents, payment_status")
-        .eq("patient_id", patientId),
+        .eq("patient_id", realPatientId),
       supabase
         .from("anamnesis_form_templates")
         .select("*")

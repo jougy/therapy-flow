@@ -1,8 +1,8 @@
 {
   "name": "pluri-health",
   "private": true,
-  "version": "0.0.0-alfa-26.08.12-01",
-  "releaseVersion": "alfa-26.08.12-01",
+  "version": "0.0.0-alfa-26.08.14-01",
+  "releaseVersion": "alfa-26.08.14-01",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,7 @@
     "backup:prod": "sh scripts/backup-supabase-prod.sh --prod --full",
     "backup:prod:schema": "sh scripts/backup-supabase-prod.sh --prod --schema-only",
     "backup:local": "sh scripts/backup-supabase-prod.sh --local --full",
+    "maintain:local": "sh scripts/auto-maintain-supabase.sh",
     "supabase:start": "npx supabase start -x logflare -x vector --ignore-health-check",
     "supabase:functions:files": "sh scripts/dev/supabase-functions-files.sh",
     "supabase:stop": "npx supabase stop",

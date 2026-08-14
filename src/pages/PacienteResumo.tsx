@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BarChart3, Calendar, CheckCircle2, ChevronLeft, ChevronRight, ClipboardEdit, FileText, HeartPulse, Loader2, MapPin, Phone, Share2, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/patient-clinical-profile";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
 import { formatPatientOriginDetails, getPatientOriginLabel } from "@/lib/patient-origin";
+import { fetchPatientByRef, getPatientPath, getPatientRouteKey } from "@/lib/patient-routing";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientClinicalSnapshot = Database["public"]["Tables"]["patient_clinical_snapshots"]["Row"];
@@ -209,8 +210,9 @@ const ClinicalHistoryNavigator = ({
 };
 
 const PacienteResumo = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id, clinicKey } = useParams<{ id?: string; clinicKey?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { clinic, clinicId, user } = useAuth();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const [loading, setLoading] = useState(true);
@@ -225,23 +227,31 @@ const PacienteResumo = () => {
       return;
     }
 
-    const [patientRes, profilesRes, snapshotsRes] = await Promise.all([
-      supabase.from("patients").select("*").eq("id", id).single(),
-      clinicId ? supabase.from("profiles").select("id, full_name, email").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
-      supabase.from("patient_clinical_snapshots").select("*").eq("patient_id", id).order("created_at", { ascending: false }),
-    ]);
-
+    const patientRes = await fetchPatientByRef(id, clinicId);
     if (patientRes.error || !patientRes.data) {
       toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
       navigate(clinicHomePath);
       return;
     }
 
+    const realPatientId = patientRes.data.id;
+    const canonicalRouteKey = getPatientRouteKey(patientRes.data);
+    const targetClinicKey = clinic?.route_key || clinicKey;
+
+    if (id !== canonicalRouteKey && targetClinicKey) {
+      navigate(`/clinica/${targetClinicKey}/pacientes/${canonicalRouteKey}/resumo${location.search}`, { replace: true });
+    }
+
+    const [profilesRes, snapshotsRes] = await Promise.all([
+      clinicId ? supabase.from("profiles").select("id, full_name, email").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
+      supabase.from("patient_clinical_snapshots").select("*").eq("patient_id", realPatientId).order("created_at", { ascending: false }),
+    ]);
+
     setPatient(patientRes.data);
     setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
     setClinicalSnapshots((snapshotsRes.data ?? []) as PatientClinicalSnapshot[]);
     setLoading(false);
-  }, [clinicHomePath, clinicId, id, navigate]);
+  }, [clinicHomePath, clinicId, clinicKey, clinic?.route_key, id, location.search, navigate]);
 
   useEffect(() => {
     void fetchData();
@@ -332,19 +342,23 @@ const PacienteResumo = () => {
     });
   }, [clinicId, patient, user]);
 
-  if (loading || !patient) {
+  if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
+      <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (!patient) {
+    return null;
   }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
-          <Button variant="ghost" className="-ml-3 w-fit px-3" onClick={() => navigate(`/pacientes/${id}`)}>
+          <Button variant="ghost" className="-ml-3 w-fit px-3" onClick={() => navigate(getPatientPath(patient))}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Voltar ao paciente
           </Button>
@@ -368,11 +382,11 @@ const PacienteResumo = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/dashboard`)}>
+          <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "dashboard"))}>
             <BarChart3 className="mr-2 h-4 w-4" />
             Dashboard
           </Button>
-          <Button variant="outline" onClick={() => navigate(`/pacientes/${id}/cadastro`)}>
+          <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "cadastro"))}>
             <ClipboardEdit className="mr-2 h-4 w-4" />
             Editar cadastro
           </Button>

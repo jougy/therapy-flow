@@ -28,7 +28,7 @@ import { getLegacyGroupHex } from "@/lib/group-colors";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
 import { formatMoneyCents, getPaymentMethodLabel, MAX_SESSION_AMOUNT_CENTS, PAYMENT_METHOD_OPTIONS } from "@/lib/session-operations";
 import type { HomeAgendaEventRecord, HomePatientGroupRecord, HomePatientRecord, HomeSessionRecord } from "@/lib/home-patients-view";
-import { ClinicStatsPrintModal, type StatsBlockId } from "@/components/ClinicStatsPrintModal";
+import { ClinicStatsPrintModal, STATS_BLOCKS, type StatsBlockId } from "@/components/ClinicStatsPrintModal";
 
 type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
 type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id" | "job_title">;
@@ -565,7 +565,7 @@ const ClinicDashboard = () => {
 
   const canPrintStats = can("system.print") && isFeatureEnabled("print_general") && isFeatureEnabled("print_clinic_stats");
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [printedBlockIds, setPrintedBlockIds] = useState<StatsBlockId[]>([]);
+  const [printedBlockIds, setPrintedBlockIds] = useState<StatsBlockId[]>(() => STATS_BLOCKS.map((b) => b.id));
 
   const handleExecutePrint = (blockIds: StatsBlockId[]) => {
     setPrintedBlockIds(blockIds);
@@ -893,9 +893,9 @@ const ClinicDashboard = () => {
                   <CardTitle className="text-xs font-bold">Receita e atendimentos no ano</CardTitle>
                   <CardDescription className="text-[10px]">Pago, em aberto e volume mensal.</CardDescription>
                 </CardHeader>
-                <CardContent className="p-2.5 pt-0 min-w-0">
-                  <ChartContainer config={metricChartConfig} className="h-36 w-full">
-                    <AreaChart data={analytics.monthlyRevenue} margin={{ bottom: 4, left: -16, right: 8, top: 4 }}>
+                <CardContent className="p-2.5 pt-0 min-w-0 flex justify-center">
+                  <ChartContainer config={metricChartConfig} responsive={false} className="h-36 w-full flex justify-center">
+                    <AreaChart width={340} height={140} data={analytics.monthlyRevenue} margin={{ bottom: 4, left: -16, right: 8, top: 4 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                       <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
@@ -914,9 +914,9 @@ const ClinicDashboard = () => {
                   <CardTitle className="text-xs font-bold">Atendimentos nos últimos 30 dias</CardTitle>
                   <CardDescription className="text-[10px]">Volume diário de atendimentos.</CardDescription>
                 </CardHeader>
-                <CardContent className="p-2.5 pt-0 min-w-0">
-                  <ChartContainer config={metricChartConfig} className="h-36 w-full">
-                    <LineChart data={analytics.last30Days} margin={{ bottom: 4, left: -20, right: 8, top: 4 }}>
+                <CardContent className="p-2.5 pt-0 min-w-0 flex justify-center">
+                  <ChartContainer config={metricChartConfig} responsive={false} className="h-36 w-full flex justify-center">
+                    <LineChart width={340} height={140} data={analytics.last30Days} margin={{ bottom: 4, left: -20, right: 8, top: 4 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} interval={5} tick={{ fontSize: 9 }} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
@@ -933,9 +933,9 @@ const ClinicDashboard = () => {
                   <CardTitle className="text-xs font-bold">Distribuição por dia da semana</CardTitle>
                   <CardDescription className="text-[10px]">Concentração da agenda semanal.</CardDescription>
                 </CardHeader>
-                <CardContent className="p-2.5 pt-0 min-w-0">
-                  <ChartContainer config={metricChartConfig} className="h-36 w-full">
-                    <BarChart data={analytics.weekdayDistribution} margin={{ bottom: 4, left: -20, right: 8, top: 4 }}>
+                <CardContent className="p-2.5 pt-0 min-w-0 flex justify-center">
+                  <ChartContainer config={metricChartConfig} responsive={false} className="h-36 w-full flex justify-center">
+                    <BarChart width={340} height={140} data={analytics.weekdayDistribution} margin={{ bottom: 4, left: -20, right: 8, top: 4 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
@@ -952,12 +952,12 @@ const ClinicDashboard = () => {
                   <CardTitle className="text-xs font-bold">Produtividade por colaborador</CardTitle>
                   <CardDescription className="text-[10px]">Atendimentos associados ao profissional.</CardDescription>
                 </CardHeader>
-                <CardContent className="p-2.5 pt-0 min-w-0">
+                <CardContent className="p-2.5 pt-0 min-w-0 flex justify-center">
                   {analytics.collaborators.length === 0 ? (
                     <p className="text-[10px] text-slate-500 py-4 text-center">Sem colaboradores associados.</p>
                   ) : (
-                    <ChartContainer config={metricChartConfig} className="h-36 w-full">
-                      <BarChart data={analytics.collaborators} layout="vertical" margin={{ bottom: 4, left: -12, right: 8, top: 4 }}>
+                    <ChartContainer config={metricChartConfig} responsive={false} className="h-36 w-full flex justify-center">
+                      <BarChart width={340} height={140} data={analytics.collaborators} layout="vertical" margin={{ bottom: 4, left: -12, right: 8, top: 4 }}>
                         <CartesianGrid horizontal={false} />
                         <XAxis type="number" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                         <YAxis type="category" dataKey="label" width={75} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
@@ -965,6 +965,44 @@ const ClinicDashboard = () => {
                       </BarChart>
                     </ChartContainer>
                   )}
+                </CardContent>
+              </Card>
+            )}
+
+            {hasBlock("payment_status_chart") && (
+              <Card className="min-w-0 overflow-hidden border shadow-none bg-slate-50/50">
+                <CardHeader className="p-2.5 pb-1">
+                  <CardTitle className="text-xs font-bold">Status financeiro</CardTitle>
+                  <CardDescription className="text-[10px]">Composição dos atendimentos por situação de pagamento.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-2.5 pt-0 min-w-0 flex items-center justify-between gap-2">
+                  <ChartContainer config={pieChartConfig} responsive={false} className="h-32 w-32 flex items-center justify-center shrink-0">
+                    <RechartsPieChart width={128} height={128}>
+                      <Pie
+                        data={analytics.paymentStatusChart.segments}
+                        dataKey="value"
+                        nameKey="label"
+                        innerRadius={30}
+                        outerRadius={52}
+                        paddingAngle={2}
+                      >
+                        {analytics.paymentStatusChart.segments.map((segment) => (
+                          <Cell key={segment.label} fill={segment.color} />
+                        ))}
+                      </Pie>
+                    </RechartsPieChart>
+                  </ChartContainer>
+                  <div className="flex-1 space-y-1 text-[10px] min-w-0">
+                    {analytics.paymentStatusChart.segments.map((segment) => (
+                      <div key={segment.label} className="flex items-center justify-between gap-1.5">
+                        <span className="inline-flex items-center gap-1.5 min-w-0">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: segment.color }} />
+                          <span className="truncate text-slate-700 font-medium">{segment.label}</span>
+                        </span>
+                        <span className="font-semibold text-slate-900 shrink-0">{segment.value}</span>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             )}
