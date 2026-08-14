@@ -300,7 +300,7 @@ const ClinicDashboard = () => {
 
     setLoading(true);
 
-    const [patientsRes, groupsRes, sessionsRes, agendaEventsRes, membershipsRes] = await Promise.all([
+    const [patientsRes, groupsRes, sessionsRes, agendaEventsRes, membershipsRes, allProfilesRes] = await Promise.all([
       supabase.from("patients").select("*").order("updated_at", { ascending: false }),
       supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)"),
       supabase.from("sessions").select("*"),
@@ -310,7 +310,8 @@ const ClinicDashboard = () => {
         .order("scheduled_for", { ascending: true }),
       clinicId
         ? supabase.from("clinic_memberships").select("user_id").eq("clinic_id", clinicId)
-        : Promise.resolve({ data: [] }),
+        : supabase.from("clinic_memberships").select("user_id"),
+      supabase.from("profiles").select("id, full_name, social_name, email, job_title, public_code"),
     ]);
 
     const sessionsData = (sessionsRes.data ?? []) as HomeSessionRecord[];
@@ -322,18 +323,26 @@ const ClinicDashboard = () => {
       ].filter(Boolean) as string[])
     );
 
-    const profilesRes = membershipUserIds.length > 0
+    const inProfilesRes = membershipUserIds.length > 0
       ? await supabase
           .from("profiles")
           .select("id, full_name, social_name, email, job_title, public_code")
           .in("id", membershipUserIds)
       : { data: [], error: null };
 
-    if (patientsRes.error || groupsRes.error || sessionsRes.error || agendaEventsRes.error || profilesRes.error) {
-      logRuntimeError("clinic_dashboard.fetch", patientsRes.error ?? groupsRes.error ?? sessionsRes.error ?? agendaEventsRes.error ?? profilesRes.error, {
+    if (patientsRes.error || groupsRes.error || sessionsRes.error || agendaEventsRes.error || allProfilesRes.error) {
+      logRuntimeError("clinic_dashboard.fetch", patientsRes.error ?? groupsRes.error ?? sessionsRes.error ?? agendaEventsRes.error ?? allProfilesRes.error, {
         clinicId,
       });
     }
+
+    const mergedProfileMap = new Map<string, ProfileRow>();
+    ((allProfilesRes.data ?? []) as ProfileRow[]).forEach((p) => {
+      if (p.id) mergedProfileMap.set(p.id, p);
+    });
+    ((inProfilesRes.data ?? []) as ProfileRow[]).forEach((p) => {
+      if (p.id) mergedProfileMap.set(p.id, p);
+    });
 
     setPatients((patientsRes.data ?? []) as HomePatientRecord[]);
     setGroups(((groupsRes.data ?? []) as PatientGroupWithColorSlot[]).map((group) => ({
@@ -345,7 +354,7 @@ const ClinicDashboard = () => {
     })));
     setSessions(sessionsData);
     setAgendaEvents((agendaEventsRes.data ?? []) as HomeAgendaEventRecord[]);
-    setProfiles((profilesRes.data ?? []) as ProfileRow[]);
+    setProfiles(Array.from(mergedProfileMap.values()));
     setLoading(false);
   }, [clinicId, user]);
 
@@ -361,7 +370,15 @@ const ClinicDashboard = () => {
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const groupById = new Map(groups.filter((group) => group.id).map((group) => [group.id as string, group]));
     const patientGroupsByPatientId = new Map<string, HomePatientGroupRecord[]>();
-    const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+    const profileById = new Map<string, ProfileRow>();
+    profiles.forEach((profile) => {
+      if (profile.id) profileById.set(profile.id, profile);
+      if (profile.email) {
+        profileById.set(profile.email, profile);
+        profileById.set(profile.email.toLowerCase(), profile);
+      }
+      if (profile.public_code) profileById.set(profile.public_code, profile);
+    });
 
     groups.forEach((group) => {
       patientGroupsByPatientId.set(group.patient_id, [...(patientGroupsByPatientId.get(group.patient_id) ?? []), group]);
@@ -500,7 +517,10 @@ const ClinicDashboard = () => {
     const collaboratorCounts = new Map<string, { label: string; receita: number; total: number }>();
     sessions.forEach((session) => {
       const collaboratorId = session.provider_id || session.user_id || "desconhecido";
-      const profile = profileById.get(collaboratorId);
+      const profile =
+        profileById.get(collaboratorId) ||
+        (session.provider_id ? profileById.get(session.provider_id) : undefined) ||
+        (session.user_id ? profileById.get(session.user_id) : undefined);
       const rawName = (profile?.social_name || profile?.full_name || profile?.email || "").trim();
       const label = rawName
         ? rawName
@@ -508,13 +528,18 @@ const ClinicDashboard = () => {
           ? `${profile.job_title} (${profile.public_code})`
           : profile?.public_code
             ? `Colaborador ${profile.public_code}`
-            : "";
+            : collaboratorId === user?.id
+              ? (user?.email || "Eu (Usuário Atual)")
+              : "";
 
       const current = collaboratorCounts.get(collaboratorId) ?? {
-        label,
+        label: "",
         receita: 0,
         total: 0,
       };
+      if (label && (!current.label || current.label.startsWith("Colaborador "))) {
+        current.label = label;
+      }
       const charged = sanitizeCents(session.amount_charged_cents);
       const paid = sanitizeCents(session.amount_paid_cents);
       current.total += 1;
