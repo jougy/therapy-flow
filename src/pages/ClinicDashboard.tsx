@@ -815,7 +815,7 @@ const ClinicDashboard = () => {
                   <YAxis type="category" dataKey="label" width={120} tickLine={false} axisLine={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Bar dataKey="total" name="Atendimentos" fill={colors.blue} radius={[0, 6, 6, 0]}>
-                    <LabelList dataKey="total" position="right" style={{ fill: "#0ea5e9", fontSize: 11, fontWeight: 700 }} formatter={(v: any) => (v > 0 ? v : "")} />
+                    <LabelList dataKey="total" position="right" style={{ fill: "#0ea5e9", fontSize: 11, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
                   </Bar>
                 </BarChart>
               </ChartContainer>
@@ -912,7 +912,7 @@ const ClinicDashboard = () => {
                       <Area type="monotone" dataKey="pago" stackId="1" stroke="var(--color-pago)" fill="var(--color-pago)" fillOpacity={0.32} />
                       <Area type="monotone" dataKey="emAberto" stackId="1" stroke="var(--color-emAberto)" fill="var(--color-emAberto)" fillOpacity={0.26} />
                       <Line type="monotone" dataKey="atendimentos" stroke="var(--color-atendimentos)" strokeWidth={1.5} dot={true}>
-                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 8, fontWeight: 700 }} formatter={(v: any) => (v > 0 ? v : "")} />
+                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 8, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
                       </Line>
                     </AreaChart>
                   </ChartContainer>
@@ -933,7 +933,7 @@ const ClinicDashboard = () => {
                       <XAxis dataKey="label" tickLine={false} axisLine={false} interval={5} tick={{ fontSize: 9 }} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                       <Line type="monotone" dataKey="atendimentos" stroke="var(--color-atendimentos)" strokeWidth={2} dot={true}>
-                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 8, fontWeight: 700 }} formatter={(v: any) => (v > 0 ? v : "")} />
+                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 8, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
                       </Line>
                     </LineChart>
                   </ChartContainer>
@@ -954,7 +954,7 @@ const ClinicDashboard = () => {
                       <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                       <Bar dataKey="atendimentos" fill="var(--color-atendimentos)" radius={[4, 4, 0, 0]}>
-                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 9, fontWeight: 700 }} formatter={(v: any) => (v > 0 ? v : "")} />
+                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 9, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
                       </Bar>
                     </BarChart>
                   </ChartContainer>
@@ -978,7 +978,7 @@ const ClinicDashboard = () => {
                         <XAxis type="number" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                         <YAxis type="category" dataKey="label" width={110} tickLine={false} axisLine={false} tick={{ fontSize: 8 }} />
                         <Bar dataKey="total" name="Atendimentos" fill={colors.blue} radius={[0, 4, 4, 0]}>
-                          <LabelList dataKey="total" position="right" style={{ fill: "#0ea5e9", fontSize: 9, fontWeight: 700 }} formatter={(v: any) => (v > 0 ? v : "")} />
+                          <LabelList dataKey="total" position="right" style={{ fill: "#0ea5e9", fontSize: 9, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
                         </Bar>
                       </BarChart>
                     </ChartContainer>
