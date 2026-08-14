@@ -8,6 +8,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Line,
   LineChart,
   Pie,
@@ -31,7 +32,7 @@ import type { HomeAgendaEventRecord, HomePatientGroupRecord, HomePatientRecord, 
 import { ClinicStatsPrintModal, STATS_BLOCKS, type StatsBlockId } from "@/components/ClinicStatsPrintModal";
 
 type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
-type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id" | "job_title">;
+type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id" | "job_title" | "public_code" | "social_name">;
 type PatientGroupWithColorSlot = PatientGroupRow & {
   clinic_group_color_slots?: { color_hex: string | null } | null;
 };
@@ -307,9 +308,7 @@ const ClinicDashboard = () => {
         .from("agenda_events")
         .select("id, patient_id, title, event_type, status, scheduled_for")
         .order("scheduled_for", { ascending: true }),
-      clinicId
-        ? supabase.from("profiles").select("id, full_name, email, job_title").eq("clinic_id", clinicId)
-        : Promise.resolve({ data: [] }),
+      supabase.from("profiles").select("id, full_name, social_name, email, job_title, public_code"),
     ]);
 
     if (patientsRes.error || groupsRes.error || sessionsRes.error || agendaEventsRes.error || profilesRes.error) {
@@ -482,10 +481,19 @@ const ClinicDashboard = () => {
     const topGroups = Array.from(groupCounts.values()).sort((left, right) => right.total - left.total).slice(0, 8);
     const collaboratorCounts = new Map<string, { label: string; receita: number; total: number }>();
     sessions.forEach((session) => {
-      const collaboratorId = session.provider_id ?? session.user_id ?? "nao_informado";
+      const collaboratorId = session.provider_id || session.user_id || "desconhecido";
       const profile = profileById.get(collaboratorId);
+      const rawName = (profile?.social_name || profile?.full_name || profile?.email || "").trim();
+      const label = rawName
+        ? rawName
+        : profile?.public_code
+          ? `Colaborador ${profile.public_code}`
+          : collaboratorId !== "desconhecido"
+            ? `Profissional #${collaboratorId.slice(0, 6)}`
+            : "Profissional não especificado";
+
       const current = collaboratorCounts.get(collaboratorId) ?? {
-        label: profile?.full_name ?? profile?.email ?? "Não informado",
+        label,
         receita: 0,
         total: 0,
       };
@@ -801,12 +809,14 @@ const ClinicDashboard = () => {
               <p className="text-sm text-muted-foreground">Sem colaboradores associados aos atendimentos.</p>
             ) : (
               <ChartContainer config={metricChartConfig} className="h-72 w-full sm:h-80">
-                <BarChart data={analytics.collaborators} layout="vertical" margin={{ bottom: 8, left: -12, right: 12, top: 8 }}>
+                <BarChart data={analytics.collaborators} layout="vertical" margin={{ bottom: 8, left: -12, right: 36, top: 8 }}>
                   <CartesianGrid horizontal={false} />
                   <XAxis type="number" tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="label" width={84} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="label" width={120} tickLine={false} axisLine={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="total" name="Atendimentos" fill={colors.blue} radius={[0, 6, 6, 0]} />
+                  <Bar dataKey="total" name="Atendimentos" fill={colors.blue} radius={[0, 6, 6, 0]}>
+                    <LabelList dataKey="total" position="right" style={{ fill: "#0ea5e9", fontSize: 11, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
+                  </Bar>
                 </BarChart>
               </ChartContainer>
             )}
@@ -895,13 +905,15 @@ const ClinicDashboard = () => {
                 </CardHeader>
                 <CardContent className="p-2.5 pt-0 min-w-0 flex justify-center">
                   <ChartContainer config={metricChartConfig} responsive={false} className="h-36 w-full flex justify-center">
-                    <AreaChart width={340} height={140} data={analytics.monthlyRevenue} margin={{ bottom: 4, left: -16, right: 8, top: 4 }}>
+                    <AreaChart width={340} height={140} data={analytics.monthlyRevenue} margin={{ bottom: 4, left: -16, right: 8, top: 12 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                       <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                       <Area type="monotone" dataKey="pago" stackId="1" stroke="var(--color-pago)" fill="var(--color-pago)" fillOpacity={0.32} />
                       <Area type="monotone" dataKey="emAberto" stackId="1" stroke="var(--color-emAberto)" fill="var(--color-emAberto)" fillOpacity={0.26} />
-                      <Line type="monotone" dataKey="atendimentos" stroke="var(--color-atendimentos)" strokeWidth={1.5} dot={false} />
+                      <Line type="monotone" dataKey="atendimentos" stroke="var(--color-atendimentos)" strokeWidth={1.5} dot={true}>
+                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 8, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
+                      </Line>
                     </AreaChart>
                   </ChartContainer>
                 </CardContent>
@@ -916,11 +928,13 @@ const ClinicDashboard = () => {
                 </CardHeader>
                 <CardContent className="p-2.5 pt-0 min-w-0 flex justify-center">
                   <ChartContainer config={metricChartConfig} responsive={false} className="h-36 w-full flex justify-center">
-                    <LineChart width={340} height={140} data={analytics.last30Days} margin={{ bottom: 4, left: -20, right: 8, top: 4 }}>
+                    <LineChart width={340} height={140} data={analytics.last30Days} margin={{ bottom: 4, left: -20, right: 8, top: 12 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} interval={5} tick={{ fontSize: 9 }} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
-                      <Line type="monotone" dataKey="atendimentos" stroke="var(--color-atendimentos)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="atendimentos" stroke="var(--color-atendimentos)" strokeWidth={2} dot={true}>
+                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 8, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
+                      </Line>
                     </LineChart>
                   </ChartContainer>
                 </CardContent>
@@ -935,11 +949,13 @@ const ClinicDashboard = () => {
                 </CardHeader>
                 <CardContent className="p-2.5 pt-0 min-w-0 flex justify-center">
                   <ChartContainer config={metricChartConfig} responsive={false} className="h-36 w-full flex justify-center">
-                    <BarChart width={340} height={140} data={analytics.weekdayDistribution} margin={{ bottom: 4, left: -20, right: 8, top: 4 }}>
+                    <BarChart width={340} height={140} data={analytics.weekdayDistribution} margin={{ bottom: 4, left: -20, right: 8, top: 12 }}>
                       <CartesianGrid vertical={false} />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
-                      <Bar dataKey="atendimentos" fill="var(--color-atendimentos)" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="atendimentos" fill="var(--color-atendimentos)" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="atendimentos" position="top" style={{ fill: "#0ea5e9", fontSize: 9, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
+                      </Bar>
                     </BarChart>
                   </ChartContainer>
                 </CardContent>
@@ -957,11 +973,13 @@ const ClinicDashboard = () => {
                     <p className="text-[10px] text-slate-500 py-4 text-center">Sem colaboradores associados.</p>
                   ) : (
                     <ChartContainer config={metricChartConfig} responsive={false} className="h-36 w-full flex justify-center">
-                      <BarChart width={340} height={140} data={analytics.collaborators} layout="vertical" margin={{ bottom: 4, left: -12, right: 8, top: 4 }}>
+                      <BarChart width={340} height={140} data={analytics.collaborators} layout="vertical" margin={{ bottom: 4, left: -12, right: 28, top: 4 }}>
                         <CartesianGrid horizontal={false} />
                         <XAxis type="number" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
-                        <YAxis type="category" dataKey="label" width={75} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
-                        <Bar dataKey="total" name="Atendimentos" fill={colors.blue} radius={[0, 4, 4, 0]} />
+                        <YAxis type="category" dataKey="label" width={110} tickLine={false} axisLine={false} tick={{ fontSize: 8 }} />
+                        <Bar dataKey="total" name="Atendimentos" fill={colors.blue} radius={[0, 4, 4, 0]}>
+                          <LabelList dataKey="total" position="right" style={{ fill: "#0ea5e9", fontSize: 9, fontWeight: 700 }} formatter={(v: number | string) => (Number(v) > 0 ? v : "")} />
+                        </Bar>
                       </BarChart>
                     </ChartContainer>
                   )}
