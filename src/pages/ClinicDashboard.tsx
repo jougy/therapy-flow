@@ -300,7 +300,7 @@ const ClinicDashboard = () => {
 
     setLoading(true);
 
-    const [patientsRes, groupsRes, sessionsRes, agendaEventsRes, profilesRes] = await Promise.all([
+    const [patientsRes, groupsRes, sessionsRes, agendaEventsRes, membershipsRes] = await Promise.all([
       supabase.from("patients").select("*").order("updated_at", { ascending: false }),
       supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)"),
       supabase.from("sessions").select("*"),
@@ -308,8 +308,26 @@ const ClinicDashboard = () => {
         .from("agenda_events")
         .select("id, patient_id, title, event_type, status, scheduled_for")
         .order("scheduled_for", { ascending: true }),
-      supabase.from("profiles").select("id, full_name, social_name, email, job_title, public_code"),
+      clinicId
+        ? supabase.from("clinic_memberships").select("user_id").eq("clinic_id", clinicId)
+        : Promise.resolve({ data: [] }),
     ]);
+
+    const sessionsData = (sessionsRes.data ?? []) as HomeSessionRecord[];
+    const membershipUserIds = Array.from(
+      new Set([
+        ...(membershipsRes.data ?? []).map((m) => m.user_id),
+        ...sessionsData.flatMap((s) => [s.provider_id, s.user_id]),
+        user?.id,
+      ].filter(Boolean) as string[])
+    );
+
+    const profilesRes = membershipUserIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("id, full_name, social_name, email, job_title, public_code")
+          .in("id", membershipUserIds)
+      : { data: [], error: null };
 
     if (patientsRes.error || groupsRes.error || sessionsRes.error || agendaEventsRes.error || profilesRes.error) {
       logRuntimeError("clinic_dashboard.fetch", patientsRes.error ?? groupsRes.error ?? sessionsRes.error ?? agendaEventsRes.error ?? profilesRes.error, {
@@ -325,7 +343,7 @@ const ClinicDashboard = () => {
       patient_id: group.patient_id,
       status: group.status,
     })));
-    setSessions((sessionsRes.data ?? []) as HomeSessionRecord[]);
+    setSessions(sessionsData);
     setAgendaEvents((agendaEventsRes.data ?? []) as HomeAgendaEventRecord[]);
     setProfiles((profilesRes.data ?? []) as ProfileRow[]);
     setLoading(false);
@@ -486,11 +504,11 @@ const ClinicDashboard = () => {
       const rawName = (profile?.social_name || profile?.full_name || profile?.email || "").trim();
       const label = rawName
         ? rawName
-        : profile?.public_code
-          ? `Colaborador ${profile.public_code}`
-          : collaboratorId !== "desconhecido"
-            ? `Profissional #${collaboratorId.slice(0, 6)}`
-            : "Profissional não especificado";
+        : profile?.job_title && profile?.public_code
+          ? `${profile.job_title} (${profile.public_code})`
+          : profile?.public_code
+            ? `Colaborador ${profile.public_code}`
+            : "";
 
       const current = collaboratorCounts.get(collaboratorId) ?? {
         label,
@@ -503,7 +521,11 @@ const ClinicDashboard = () => {
       current.receita += Math.min(paid, charged) / 100;
       collaboratorCounts.set(collaboratorId, current);
     });
-    const collaborators = Array.from(collaboratorCounts.values()).sort((left, right) => right.total - left.total).slice(0, 8);
+    const sortedCollaboratorList = Array.from(collaboratorCounts.values()).sort((left, right) => right.total - left.total).slice(0, 8);
+    const collaborators = sortedCollaboratorList.map((collab, index) => ({
+      ...collab,
+      label: collab.label || `Colaborador ${index + 1}`,
+    }));
     const monthSessions = sessions.filter((session) => toLocalDate(session.session_date).getTime() >= startOfMonth.getTime());
     const yearSessions = sessions.filter((session) => toLocalDate(session.session_date).getTime() >= startOfYear.getTime());
     const recurringPatients = patients.filter((patient) => (patient.recurring_weekdays ?? []).length > 0).length;
