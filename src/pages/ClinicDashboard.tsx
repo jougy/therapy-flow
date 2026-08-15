@@ -514,6 +514,36 @@ const ClinicDashboard = () => {
       groupCounts.set(group.name, current);
     });
     const topGroups = Array.from(groupCounts.values()).sort((left, right) => right.total - left.total).slice(0, 8);
+    const isClinicName = (name?: string | null) => {
+      if (!name) return false;
+      const normalized = name.toLowerCase().trim();
+      return (
+        normalized.includes("instituo") ||
+        normalized.includes("instituto") ||
+        normalized.includes("clínica") ||
+        normalized.includes("clinica") ||
+        (clinic?.name && normalized === clinic.name.toLowerCase().trim())
+      );
+    };
+
+    const getProfileDisplayName = (p?: ProfileRow | null) => {
+      if (!p) return "";
+      const full = p.full_name?.trim();
+      const social = p.social_name?.trim();
+      const email = p.email?.trim();
+
+      if (full && !isClinicName(full)) {
+        return full;
+      }
+      if (social && !isClinicName(social)) {
+        return social;
+      }
+      if (p.job_title) {
+        return `${p.job_title}${p.public_code ? ` (${p.public_code})` : ""}`;
+      }
+      return full || social || email || "";
+    };
+
     const collaboratorCounts = new Map<string, { label: string; receita: number; total: number }>();
     sessions.forEach((session) => {
       const collaboratorId = session.provider_id || session.user_id || "desconhecido";
@@ -521,7 +551,7 @@ const ClinicDashboard = () => {
         profileById.get(collaboratorId) ||
         (session.provider_id ? profileById.get(session.provider_id) : undefined) ||
         (session.user_id ? profileById.get(session.user_id) : undefined);
-      const rawName = (profile?.social_name || profile?.full_name || profile?.email || "").trim();
+      const rawName = getProfileDisplayName(profile);
       const label = rawName
         ? rawName
         : profile?.job_title && profile?.public_code
