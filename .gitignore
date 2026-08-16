@@ -89,3 +89,7 @@ scripts
 !scripts/
 !scripts/security/
 !scripts/security/**
+
+# Institutional Astro website
+website/
+
