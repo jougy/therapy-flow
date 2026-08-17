@@ -137,7 +137,19 @@ const ConviteClinica = () => {
     });
 
     if (error) {
-      toast({ title: "Erro ao criar conta", description: error.message, variant: "destructive" });
+      const isAlreadyRegistered =
+        error.message.toLowerCase().includes("already registered") ||
+        error.message.toLowerCase().includes("user_already_exists");
+
+      if (isAlreadyRegistered) {
+        toast({
+          title: "Conta já existente",
+          description: "Este e-mail já foi registrado. Enviamos um e-mail de confirmação para você. Verifique sua caixa de entrada/spam, ou entre com a sua senha.",
+        });
+        setMode("login");
+      } else {
+        toast({ title: "Erro ao criar conta", description: error.message, variant: "destructive" });
+      }
       setSubmitting(false);
       return;
     }
@@ -149,8 +161,9 @@ const ConviteClinica = () => {
 
     toast({
       title: "Confirme seu e-mail",
-      description: "Depois de confirmar o e-mail, volte a este convite para ativar o acesso da clínica.",
+      description: "Enviamos um link de confirmação para o seu e-mail. Após confirmar, faça login nesta mesma página para liberar o acesso.",
     });
+    setMode("login");
     setSubmitting(false);
   };
 
@@ -298,6 +311,28 @@ const ConviteClinica = () => {
                   Completar cadastro e entrar
                 </Button>
               </form>
+            )}
+
+            {!sameEmailLoggedIn && (
+              <div className="pt-2 text-center">
+                {mode === "login" ? (
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline font-medium"
+                    onClick={() => setMode("signup")}
+                  >
+                    Ainda não possui senha? Alternar para cadastro
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline font-medium"
+                    onClick={() => setMode("login")}
+                  >
+                    Já criou sua conta ou possui senha? Alternar para login
+                  </button>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>
