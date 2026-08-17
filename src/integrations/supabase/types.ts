@@ -1847,6 +1847,23 @@ export type Database = {
         Args: { _token: string }
         Returns: Json
       }
+      get_clinic_pending_collaborator_invitations: {
+        Args: { _clinic_id: string }
+        Returns: Json
+      }
+      cancel_clinic_collaborator_invitation: {
+        Args: { _invitation_id: string }
+        Returns: Json
+      }
+      update_clinic_collaborator_invitation: {
+        Args: {
+          _invitation_id: string
+          _job_title?: string
+          _operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          _specialty?: string
+        }
+        Returns: Json
+      }
       get_clinic_concurrent_access_overview: {
         Args: { _clinic_id?: string }
         Returns: Json

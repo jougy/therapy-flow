@@ -217,6 +217,21 @@ type EditableSubaccountState = {
   workingHours: string;
 };
 
+type PendingCollaboratorInvitation = {
+  id: string;
+  clinic_id: string;
+  email: string;
+  operational_role: SubaccountOperationalRole;
+  job_title: string | null;
+  specialty: string | null;
+  status: "pending" | "accepted" | "cancelled" | "expired";
+  created_at: string;
+  expires_at: string;
+  account_state: "registered_unconfirmed" | "registered_confirmed_pending_acceptance" | "invite_sent";
+  pending_reason: string;
+  token_hash?: string;
+};
+
 type EditableOwnProfileState = {
   address: ProfileAddress;
   birthDate: string;
@@ -954,6 +969,10 @@ const Configuracoes = () => {
   const [newSubaccountInviteUrl, setNewSubaccountInviteUrl] = useState("");
   const [newSubaccountInviteEmail, setNewSubaccountInviteEmail] = useState("");
   const [newSubaccountInviteMode, setNewSubaccountInviteMode] = useState<"internal" | "email" | "fallback" | null>(null);
+  const [pendingCollaboratorInvitations, setPendingCollaboratorInvitations] = useState<PendingCollaboratorInvitation[]>([]);
+  const [cancelingInvitationId, setCancelingInvitationId] = useState<string | null>(null);
+  const [editingPendingInvitation, setEditingPendingInvitation] = useState<PendingCollaboratorInvitation | null>(null);
+  const [savingPendingInvitation, setSavingPendingInvitation] = useState(false);
   const [teamSearchTerm, setTeamSearchTerm] = useState("");
   const [teamRoleFilter, setTeamRoleFilter] = useState<SubaccountOperationalRole | "all">("all");
   const [teamStatusFilter, setTeamStatusFilter] = useState<MembershipRow["membership_status"] | "all" | "online">("all");
@@ -1073,7 +1092,21 @@ const Configuracoes = () => {
 
     setLoading(true);
     try {
-      const [clinicRes, templatesRes, sessionsRes, membershipsRes, roleDefinitionsRes, roleCapabilitiesRes, teamDevelopmentRes, securitySettingsRes, securitySessionsRes, securityEventsRes, adminSecurityEventsRes, concurrentAccessRes] = await Promise.all([
+      const [
+        clinicRes,
+        templatesRes,
+        sessionsRes,
+        membershipsRes,
+        roleDefinitionsRes,
+        roleCapabilitiesRes,
+        teamDevelopmentRes,
+        securitySettingsRes,
+        securitySessionsRes,
+        securityEventsRes,
+        adminSecurityEventsRes,
+        concurrentAccessRes,
+        pendingInvitationsRes,
+      ] = await Promise.all([
         supabase.from("clinics").select("*").eq("id", clinicId).single(),
         supabase
           .from("anamnesis_form_templates")
@@ -1131,6 +1164,9 @@ const Configuracoes = () => {
         shouldShowTeamSettingsSection(subscriptionPlan) && canManageSubaccountsForFetch
           ? supabase.rpc("get_clinic_concurrent_access_overview", { _clinic_id: clinicId })
           : Promise.resolve({ data: null, error: null }),
+        shouldShowTeamSettingsSection(subscriptionPlan) && canManageSubaccountsForFetch
+          ? supabase.rpc("get_clinic_pending_collaborator_invitations", { _clinic_id: clinicId })
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (clinicRes.error) {
@@ -1208,6 +1244,9 @@ const Configuracoes = () => {
       setSecurityEvents(securityEventsRes.data ?? []);
       setAdminSecurityEvents((adminSecurityEventsRes.data as SecurityEventRow[] | null) ?? []);
       setTeamConcurrentAccessOverview((concurrentAccessRes.data as TeamConcurrentAccessOverview | null) ?? null);
+      setPendingCollaboratorInvitations(
+        Array.isArray(pendingInvitationsRes.data) ? (pendingInvitationsRes.data as PendingCollaboratorInvitation[]) : []
+      );
       setInitialClinicForm(nextClinicForm);
       setClinicName(nextClinicForm.name);
       setClinicLegalName(nextClinicForm.legalName);
@@ -2592,6 +2631,45 @@ const Configuracoes = () => {
     toast({ title: "Link copiado", description: "O convite foi copiado para a área de transferência." });
   };
 
+  const handleCancelPendingInvitation = async (invitationId: string) => {
+    setCancelingInvitationId(invitationId);
+    const { error } = await supabase.rpc("cancel_clinic_collaborator_invitation", {
+      _invitation_id: invitationId,
+    });
+
+    if (error) {
+      toast({ title: "Erro ao cancelar convite", description: error.message, variant: "destructive" });
+      setCancelingInvitationId(null);
+      return;
+    }
+
+    toast({ title: "Convite cancelado", description: "A pendência de acesso foi removida." });
+    setCancelingInvitationId(null);
+    void fetchData();
+  };
+
+  const handleSaveEditedPendingInvitation = async () => {
+    if (!editingPendingInvitation) return;
+    setSavingPendingInvitation(true);
+    const { error } = await supabase.rpc("update_clinic_collaborator_invitation", {
+      _invitation_id: editingPendingInvitation.id,
+      _operational_role: editingPendingInvitation.operational_role,
+      _job_title: editingPendingInvitation.job_title || undefined,
+      _specialty: editingPendingInvitation.specialty || undefined,
+    });
+
+    if (error) {
+      toast({ title: "Erro ao atualizar convite", description: error.message, variant: "destructive" });
+      setSavingPendingInvitation(false);
+      return;
+    }
+
+    toast({ title: "Convite atualizado", description: "As informações do convite pendente foram salvas." });
+    setEditingPendingInvitation(null);
+    setSavingPendingInvitation(false);
+    void fetchData();
+  };
+
   const handleSaveSubaccount = async (membershipRow: MembershipRow) => {
     if (!editingSubaccount || !can("subaccounts.manage")) {
       return;
@@ -3868,6 +3946,169 @@ const Configuracoes = () => {
                           </Button>
                         </div>
                       </div>
+                    )}
+
+                    {canViewTeam && pendingCollaboratorInvitations.length > 0 && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-4">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-foreground">
+                                Pendências de Cadastro e Confirmação ({pendingCollaboratorInvitations.length})
+                              </p>
+                              <Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400">
+                                Ação necessária
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Colaboradores que receberam convite ou criaram a conta, mas ainda não concluíram a verificação de e-mail ou ativação do acesso.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          {pendingCollaboratorInvitations.map((invitation) => {
+                            const isRegisteredUnconfirmed = invitation.account_state === "registered_unconfirmed";
+                            const isRegisteredConfirmed = invitation.account_state === "registered_confirmed_pending_acceptance";
+                            const isCanceling = cancelingInvitationId === invitation.id;
+
+                            return (
+                              <div key={invitation.id} className="rounded-md border bg-background p-4 space-y-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="font-medium">{invitation.email}</p>
+                                      <Badge variant="secondary">
+                                        {OPERATIONAL_ROLE_LABELS[invitation.operational_role] || invitation.operational_role}
+                                      </Badge>
+                                      {isRegisteredUnconfirmed ? (
+                                        <Badge variant="destructive">E-mail não verificado</Badge>
+                                      ) : isRegisteredConfirmed ? (
+                                        <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
+                                          Aguardando login
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline">Convite pendente</Badge>
+                                      )}
+                                    </div>
+                                    {(invitation.job_title || invitation.specialty) && (
+                                      <p className="mt-1 text-xs text-muted-foreground">
+                                        {[invitation.job_title, invitation.specialty].filter(Boolean).join(" • ")}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    Enviado em: {new Date(invitation.created_at).toLocaleDateString()}
+                                  </p>
+                                </div>
+
+                                <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+                                  <span className="font-semibold">Status / Motivo: </span>
+                                  {invitation.pending_reason}
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-wrap text-xs">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1.5"
+                                    onClick={() => {
+                                      setNewSubaccountEmail(invitation.email);
+                                      setNewSubaccountRole(invitation.operational_role);
+                                      setNewSubaccountJobTitle(invitation.job_title || "");
+                                      setNewSubaccountSpecialty(invitation.specialty || "");
+                                      toast({
+                                        title: "Preparar novo envio",
+                                        description: `Dados de ${invitation.email} preenchidos no formulário acima. Clique em "Preparar convite" para reenviar.`,
+                                      });
+                                    }}
+                                  >
+                                    <Mail className="h-3.5 w-3.5" />
+                                    Reenviar convite
+                                  </Button>
+
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1.5"
+                                    onClick={() => setEditingPendingInvitation(invitation)}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                    Alterar papel / cargo
+                                  </Button>
+
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    disabled={isCanceling}
+                                    onClick={() => void handleCancelPendingInvitation(invitation.id)}
+                                  >
+                                    {isCanceling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                                    Cancelar / Resetar pendência
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {editingPendingInvitation && (
+                      <Dialog open={editingPendingInvitation !== null} onOpenChange={(open) => { if (!open) setEditingPendingInvitation(null); }}>
+                        <DialogContent className="sm:max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Editar convite pendente</DialogTitle>
+                            <DialogDescription>
+                              Altere o papel operacional, cargo ou especialidade atribuídos ao convite de {editingPendingInvitation.email}.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4 py-2">
+                            <div className="space-y-2">
+                              <Label>Papel operacional</Label>
+                              <Select
+                                value={editingPendingInvitation.operational_role}
+                                onValueChange={(val) => setEditingPendingInvitation((curr) => curr ? { ...curr, operational_role: val as SubaccountOperationalRole } : null)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="admin">admin</SelectItem>
+                                  <SelectItem value="professional">professional</SelectItem>
+                                  <SelectItem value="assistant">assistant</SelectItem>
+                                  <SelectItem value="estagiario">estagiario</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Cargo</Label>
+                              <Input
+                                value={editingPendingInvitation.job_title || ""}
+                                onChange={(e) => setEditingPendingInvitation((curr) => curr ? { ...curr, job_title: e.target.value } : null)}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Especialidade</Label>
+                              <Input
+                                value={editingPendingInvitation.specialty || ""}
+                                onChange={(e) => setEditingPendingInvitation((curr) => curr ? { ...curr, specialty: e.target.value } : null)}
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setEditingPendingInvitation(null)}>Cancelar</Button>
+                            <Button onClick={() => void handleSaveEditedPendingInvitation()} disabled={savingPendingInvitation}>
+                              {savingPendingInvitation ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                              Salvar alterações
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                     )}
 
                     {visibleTeamMemberships.length === 0 ? (

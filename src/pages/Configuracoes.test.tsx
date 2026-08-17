@@ -229,6 +229,10 @@ vi.mock("@/integrations/supabase/client", () => {
           return Promise.resolve({ data: { ended_count: 1 }, error: null });
         }
 
+        if (fn === "get_clinic_pending_collaborator_invitations") {
+          return Promise.resolve({ data: [], error: null });
+        }
+
         return Promise.resolve({ data: null, error: null });
       }),
     },
@@ -327,6 +331,10 @@ describe("Configuracoes", () => {
 
       if (fn === "end_clinic_user_security_sessions") {
         return Promise.resolve({ data: { ended_count: 1 }, error: null });
+      }
+
+      if (fn === "get_clinic_pending_collaborator_invitations") {
+        return Promise.resolve({ data: [], error: null });
       }
 
       return Promise.resolve({ data: null, error: null });
