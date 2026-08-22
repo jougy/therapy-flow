@@ -32,8 +32,8 @@ describe("Tutorial Module - Core Engine, Chapters & Master Journey", () => {
     vi.clearAllMocks();
   });
 
-  it("should have 9 registered chapters with steps and metadata", () => {
-    expect(TUTORIAL_CHAPTERS.length).toBe(9);
+  it("should have 10 registered chapters with steps and metadata", () => {
+    expect(TUTORIAL_CHAPTERS.length).toBe(10);
     expect(TUTORIAL_CHAPTERS[0].id).toBe("espaco-pessoal");
     expect(TUTORIAL_CHAPTERS[1].id).toBe("home-clinica");
     expect(TUTORIAL_CHAPTERS[2].id).toBe("novo-paciente");
@@ -43,6 +43,7 @@ describe("Tutorial Module - Core Engine, Chapters & Master Journey", () => {
     expect(TUTORIAL_CHAPTERS[6].id).toBe("prontuario-paciente");
     expect(TUTORIAL_CHAPTERS[7].id).toBe("registro-sessao");
     expect(TUTORIAL_CHAPTERS[8].id).toBe("dashboard-configuracoes");
+    expect(TUTORIAL_CHAPTERS[9].id).toBe("editor-formularios");
 
     TUTORIAL_CHAPTERS.forEach((ch) => {
       expect(ch.steps.length).toBeGreaterThan(0);
@@ -161,8 +162,8 @@ describe("Tutorial Module - Core Engine, Chapters & Master Journey", () => {
     });
 
     expect(result.current.isTutorialCompleted("espaco-pessoal")).toBe(true);
-    // 1 chapter completed out of 9 = 11%
-    expect(result.current.completionPercentage).toBeGreaterThanOrEqual(11);
+    // 1 chapter completed out of 10 = 10%
+    expect(result.current.completionPercentage).toBeGreaterThanOrEqual(10);
   });
 
   it("should trigger showComponentHelp for composite blocks with multi-step breakdown", () => {

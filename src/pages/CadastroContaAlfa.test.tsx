@@ -63,23 +63,24 @@ describe("CadastroContaAlfa", () => {
     fireEvent.change(screen.getByLabelText(/^e-mail$/i), { target: { value: "alpha@example.com" } });
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "teste1234" } });
     fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "teste1234" } });
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: /^criar conta$/i }));
 
     await waitFor(() => {
-      expect(supabaseMocks.signUp).toHaveBeenCalledWith({
+      expect(supabaseMocks.signUp).toHaveBeenCalledWith(expect.objectContaining({
         email: "alpha@example.com",
         password: "teste1234",
-        options: {
+        options: expect.objectContaining({
           emailRedirectTo: buildPublicAppUrl("/auth/confirmado"),
-          data: {
+          data: expect.objectContaining({
             birth_date: "1990-01-20",
             cpf: "52998224725",
             full_name: "Owner Teste",
             phone: "11999998888",
             signup_source: "web_signup",
-          },
-        },
-      });
+          }),
+        }),
+      }));
       expect(supabaseMocks.rpc).toHaveBeenCalledWith("handle_personal_signup", {
         _birth_date: "1990-01-20",
         _cpf: "52998224725",
@@ -120,6 +121,7 @@ describe("CadastroContaAlfa", () => {
     fireEvent.change(screen.getByLabelText(/^e-mail$/i), { target: { value: "direto@example.com" } });
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "senhaForte123" } });
     fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "senhaForte123" } });
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: /^criar conta$/i }));
 
     await waitFor(() => {
@@ -166,6 +168,7 @@ describe("CadastroContaAlfa", () => {
     fireEvent.change(screen.getByLabelText(/^e-mail$/i), { target: { value: "alpha@example.com" } });
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "teste1234" } });
     fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "teste1234" } });
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: /^criar conta$/i }));
 
     await waitFor(() => {

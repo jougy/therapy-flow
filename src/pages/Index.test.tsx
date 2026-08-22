@@ -176,6 +176,37 @@ vi.mock("@/integrations/supabase/client", () => {
   return {
     supabase: {
       from: vi.fn((table: string) => createQueryBuilder(table)),
+      rpc: vi.fn((fnName: string) => {
+        if (fnName === "get_clinic_dashboard_analytics") {
+          return Promise.resolve({
+            data: {
+              year: 2026,
+              totalSessions: 42,
+              paidSessions: 35,
+              canceledSessions: 3,
+              cancellationRate: 7.1,
+              todaySessions: 4,
+              weekSessions: 18,
+              monthSessions: 42,
+              yearSessions: 120,
+              financialTotals: { paid: 525000, credit: 0, open: 105000, forecastRevenueCents: 630000 },
+              paymentStatusCounts: { paid: 35, pending: 4, debt: 0, credit: 0, courtesy: 3, notCharged: 0 },
+              paymentMethodCounts: { pix: 25, cartao_credito: 10, dinheiro: 7 },
+              patientStatusCounts: { ativo: 20, alta: 5 },
+              totalPatients: 25,
+              recurringPatients: 15,
+              agendaCounts: { late: 1, confirmed: 8, awaiting: 2, total: 11 },
+              monthlyRevenue: [{ label: "Jan", pago: 5250, emAberto: 1050, atendimentos: 42 }],
+              last30Days: [],
+              weekdayDistribution: [],
+              topGroups: [],
+              collaborators: [],
+            },
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: null, error: null });
+      }),
     },
   };
 });
@@ -420,12 +451,9 @@ describe("Index", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /abrir estatísticas/i })[0]);
 
     expect(await screen.findByRole("dialog", { name: "Resumo geral" })).toBeInTheDocument();
-    expect(screen.getByText("Receita registrada")).toBeInTheDocument();
-    expect(screen.getByText("Método de pagamento")).toBeInTheDocument();
-    expect(screen.queryByText("Total de pacientes")).not.toBeInTheDocument();
-    expect(screen.getByText(/Pago: R\$/)).toBeInTheDocument();
-    expect(screen.getByText(/Crédito: R\$/)).toBeInTheDocument();
-    expect(screen.getByText(/Em aberto: R\$/)).toBeInTheDocument();
+    expect(await screen.findByText("Total de atendimentos")).toBeInTheDocument();
+    expect(screen.getByText("Pagamentos concluídos")).toBeInTheDocument();
+    expect(screen.getByText("Índice de cancelamento")).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(/NaN|Infinity|∞/);
   });
 });

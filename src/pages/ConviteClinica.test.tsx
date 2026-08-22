@@ -148,6 +148,7 @@ describe("ConviteClinica", () => {
     fireEvent.change(screen.getByLabelText(/telefone \/ whatsapp/i), { target: { value: "(11) 98888-7777" } });
     fireEvent.change(screen.getByLabelText(/^criar senha$/i), { target: { value: "senhaForte123" } });
     fireEvent.change(screen.getByLabelText(/^confirmar senha$/i), { target: { value: "senhaForte123" } });
+    fireEvent.click(screen.getByRole("checkbox"));
 
     fireEvent.click(screen.getByRole("button", { name: /concluir cadastro e entrar na clínica/i }));
 

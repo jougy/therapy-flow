@@ -80,7 +80,7 @@ export const TutorialOverlay = () => {
       const availableLeft = computedRect.left - margin;
       const availableRight = viewportWidth - computedRect.right - margin;
 
-      let preferredPlacement = currentStep.placement || "bottom";
+      const preferredPlacement = currentStep.placement || "bottom";
       let finalPlacement = preferredPlacement;
 
       // Smart flip & Non-occlusion guard:

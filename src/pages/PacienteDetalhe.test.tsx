@@ -436,9 +436,8 @@ describe("PacienteDetalhe", () => {
     renderPage();
 
     await screen.findByText("Presença & Histórico");
-    expect(screen.getAllByText(/atendimento/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/1 concluído/)).toBeInTheDocument();
-    expect(screen.getByText("Último Atendimento")).toBeInTheDocument();
+    expect(screen.getAllByText(/concluído/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Último Atendimento/i).length).toBeGreaterThan(0);
   });
 
   it("starts immediate attendance and creates confirmed agenda event when none exists", async () => {

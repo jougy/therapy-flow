@@ -138,8 +138,8 @@ export function useFormEditorState() {
             localStorage.removeItem(draftStorageKey);
           }
         }
-      } catch {
-        // Ignore corrupted storage
+      } catch (err) {
+        console.warn("Falha ao recuperar rascunho do formulário:", err);
       }
     },
     [draftStorageKey]
@@ -226,7 +226,9 @@ export function useFormEditorState() {
     if (draftStorageKey && typeof window !== "undefined") {
       try {
         localStorage.removeItem(draftStorageKey);
-      } catch {}
+      } catch (err) {
+        console.warn("Falha ao remover rascunho:", err);
+      }
     }
     setRecoverableDraft(null);
     toast({
@@ -331,7 +333,9 @@ export function useFormEditorState() {
         if (typeof navigator !== "undefined" && "vibrate" in navigator) {
           try {
             navigator.vibrate(50);
-          } catch (_) {}
+          } catch (err) {
+            console.debug("Vibrate not supported or permitted:", err);
+          }
         }
         toast({
           title: "Modo multiseleção ativado",
@@ -1276,7 +1280,9 @@ export function useFormEditorState() {
         if (draftStorageKey && typeof window !== "undefined") {
           try {
             localStorage.removeItem(draftStorageKey);
-          } catch {}
+          } catch (err) {
+            console.warn("Falha ao limpar rascunho após salvar bloco:", err);
+          }
         }
         setRecoverableDraft(null);
         toast({ title: "Bloco padrão universal salvo com sucesso!" });
@@ -1315,7 +1321,9 @@ export function useFormEditorState() {
       if (draftStorageKey && typeof window !== "undefined") {
         try {
           localStorage.removeItem(draftStorageKey);
-        } catch {}
+        } catch (err) {
+          console.warn("Falha ao limpar rascunho após salvar formulário:", err);
+        }
       }
       setRecoverableDraft(null);
       toast({ title: isNew ? "Formulário criado com sucesso!" : "Formulário atualizado com sucesso!" });
@@ -1386,7 +1394,9 @@ export function useFormEditorState() {
       if (draftStorageKey && typeof window !== "undefined") {
         try {
           localStorage.removeItem(draftStorageKey);
-        } catch {}
+        } catch (err) {
+          console.warn("Falha ao limpar rascunho após exclusão:", err);
+        }
       }
 
       toast({
