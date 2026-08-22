@@ -52,7 +52,7 @@ const SessaoDetalhe = lazy(() => import("./pages/SessaoDetalhe"));
 const PlatformAdmin = lazy(() => import("./pages/PlatformAdmin"));
 const PlatformMfa = lazy(() => import("./pages/PlatformMfa"));
 const PlanosAssinatura = lazy(() => import("./pages/PlanosAssinatura"));
-const DesignLabApp = lazy(() => import("../designlab/DesignLabApp"));
+const DesignLabApp = lazy(() => import("./pages/DesignLabPlaceholder"));
 
 const LoadingScreen = () => (
   <div className="min-h-screen flex items-center justify-center">
