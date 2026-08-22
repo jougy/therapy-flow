@@ -28,6 +28,10 @@ jobs:
 
       - name: Test
         run: npm run test
+        env:
+          VITE_SUPABASE_PROJECT_ID: local
+          VITE_SUPABASE_PUBLISHABLE_KEY: ci-anon-key
+          VITE_SUPABASE_URL: https://example.supabase.co
 
       - name: Build
         run: npm run build
