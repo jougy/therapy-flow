@@ -1,681 +1,24 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import React from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Copy, GripVertical, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BookOpen, Loader2, Save, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { OptionListEditor } from "@/components/anamnesis/OptionListEditor";
-import { OptionMatrixEditor } from "@/components/anamnesis/OptionMatrixEditor";
-import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
-import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
-import { useAuth } from "@/hooks/useAuth";
-import { toast } from "@/hooks/use-toast";
 import {
-  ANAMNESIS_OPTION_LIMIT,
-  ANAMNESIS_FIELD_LIBRARY,
-  ANAMNESIS_RAW_OPTIONS_INPUT_LIMIT,
-  ANAMNESIS_SCHEMA_FIELD_LIMIT,
-  ANAMNESIS_SLIDER_MAX,
-  ANAMNESIS_SLIDER_MIN,
-  ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES,
-  buildTemplateLayout,
-  parseAnamnesisTemplateExchangePayload,
-  createAnamnesisField,
-  createDefaultTemplateSchema,
-  getAssignableContainerFields,
-  getSectionSelectorOptions,
-  hasScrollableOptionEditor,
-  hasTableColumnEditor,
-  hasVerticalOptionEditor,
-  isContainerField,
-  isAnamnesisTemplateSchema,
-  isSelectionChoiceFieldType,
-  normalizeOptions,
-  normalizeAnamnesisSliderRange,
-  sanitizeAnamnesisTemplateSchema,
-  type AnamnesisField,
-  type TemplateLayoutItem,
-  type AnamnesisTemplateSchema,
-} from "@/lib/anamnesis-forms";
-import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
+  FormEditorBatchActionBar,
+  FormEditorCanvas,
+  FormEditorDraftRestoreDialog,
+  FormEditorHeader,
+  FormEditorInspectorPanel,
+  FormEditorMobileDock,
+  FormEditorPaletteSidebar,
+  useFormEditorState,
+} from "@/components/anamnesis-editor";
 
-type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
 const FormularioEditor = () => {
-  const { clinicKey, templateId } = useParams();
-  const navigate = useNavigate();
-  const { can, clinic, clinicId, user } = useAuth();
-  const routeClinicKey = clinicKey ?? clinic?.route_key;
-  const clinicSettingsPath = routeClinicKey ? `/clinica/${routeClinicKey}/configuracoes` : "/configuracoes";
-  const clinicFormsManagerPath = `${clinicSettingsPath}?secao=forms`;
-  const isNew = templateId === "novo";
-  const isBase = templateId === "base";
-  const canManageForms = can("forms.manage");
+  const state = useFormEditorState();
 
-  const [loading, setLoading] = useState(!isNew && !isBase);
-  const [saving, setSaving] = useState(false);
-  const [templateName, setTemplateName] = useState("");
-  const [templateDescription, setTemplateDescription] = useState("");
-  const [templateFields, setTemplateFields] = useState<AnamnesisTemplateSchema>(createDefaultTemplateSchema());
-  const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [template, setTemplate] = useState<TemplateRow | null>(null);
-  const headerRef = useRef<HTMLDivElement | null>(null);
-  const templateImportInputRef = useRef<HTMLInputElement | null>(null);
-  const [desktopMenuTop, setDesktopMenuTop] = useState(128);
-  const [desktopMenuMaxHeight, setDesktopMenuMaxHeight] = useState(480);
-  const [showFloatingSave, setShowFloatingSave] = useState(false);
-  const [previewMode, setPreviewMode] = useState(false);
-
-  useEffect(() => {
-    if (!canManageForms) {
-      toast({ title: "Acesso restrito", description: "Seu perfil não pode gerenciar formulários.", variant: "destructive" });
-      navigate(clinicFormsManagerPath);
-      return;
-    }
-
-    if (isBase) {
-      const fetchClinic = async () => {
-        if (!clinicId) return;
-
-        const { data, error } = await supabase.from("clinics").select("*").eq("id", clinicId).single();
-
-        if (error || !data) {
-          toast({ title: "Clínica não encontrada", description: error?.message, variant: "destructive" });
-          navigate(clinicFormsManagerPath);
-          return;
-        }
-
-        setTemplateName("Bloco padrão universal");
-        setTemplateDescription("Primeira parte obrigatória aplicada em todas as fichas da clínica.");
-        setTemplateFields(isAnamnesisTemplateSchema(data.anamnesis_base_schema) ? sanitizeAnamnesisTemplateSchema(data.anamnesis_base_schema) : createDefaultTemplateSchema());
-        setLoading(false);
-      };
-
-      void fetchClinic();
-      return;
-    }
-
-    if (isNew) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchTemplate = async () => {
-      if (!templateId) return;
-
-      const { data, error } = await supabase
-        .from("anamnesis_form_templates")
-        .select("*")
-        .eq("id", templateId)
-        .single();
-
-      if (error || !data) {
-        toast({ title: "Formulário não encontrado", description: error?.message, variant: "destructive" });
-        navigate(clinicFormsManagerPath);
-        return;
-      }
-
-      setTemplate(data);
-      setTemplateName(sanitizeSingleLineInput(data.name, INPUT_LIMITS.formTemplateName).trim());
-      setTemplateDescription(sanitizeMultilineInput(data.description ?? "", INPUT_LIMITS.formDescription).trim());
-      setTemplateFields(isAnamnesisTemplateSchema(data.schema) ? sanitizeAnamnesisTemplateSchema(data.schema) : createDefaultTemplateSchema());
-      setLoading(false);
-    };
-
-    void fetchTemplate();
-  }, [canManageForms, clinicFormsManagerPath, clinicId, isBase, isNew, navigate, templateId]);
-
-  useEffect(() => {
-    const updateDesktopMenuBounds = () => {
-      if (typeof window === "undefined") return;
-
-      const headerBottom = headerRef.current?.getBoundingClientRect().bottom ?? 96;
-      const topOffset = Math.max(Math.round(headerBottom + 16), 96);
-      const maxHeight = Math.max(window.innerHeight - topOffset - 24, 240);
-
-      setDesktopMenuTop(topOffset);
-      setDesktopMenuMaxHeight(maxHeight);
-      setShowFloatingSave(window.scrollY > 140);
-    };
-
-    updateDesktopMenuBounds();
-
-    const resizeObserver =
-      typeof ResizeObserver !== "undefined" && headerRef.current
-        ? new ResizeObserver(() => updateDesktopMenuBounds())
-        : null;
-
-    if (headerRef.current && resizeObserver) {
-      resizeObserver.observe(headerRef.current);
-    }
-
-    window.addEventListener("resize", updateDesktopMenuBounds);
-    window.addEventListener("scroll", updateDesktopMenuBounds, { passive: true });
-
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", updateDesktopMenuBounds);
-      window.removeEventListener("scroll", updateDesktopMenuBounds);
-    };
-  }, []);
-
-  const sectionOptions = useMemo(() => getSectionSelectorOptions(templateFields), [templateFields]);
-  const groupedLayout = useMemo(() => buildTemplateLayout(templateFields), [templateFields]);
-  const fieldLimitReached = templateFields.length >= ANAMNESIS_SCHEMA_FIELD_LIMIT;
-
-  const updateTemplateName = (value: string) => {
-    setTemplateName(sanitizeSingleLineInput(value, INPUT_LIMITS.formTemplateName));
-  };
-
-  const updateTemplateDescription = (value: string) => {
-    setTemplateDescription(sanitizeMultilineInput(value, INPUT_LIMITS.formDescription));
-  };
-
-  const sanitizeFieldChanges = (changes: Partial<AnamnesisField>): Partial<AnamnesisField> => {
-    const next = { ...changes };
-
-    if (typeof next.label === "string") {
-      next.label = sanitizeSingleLineInput(next.label, INPUT_LIMITS.formFieldLabel);
-    }
-
-    if (typeof next.helpText === "string") {
-      next.helpText = sanitizeMultilineInput(next.helpText, INPUT_LIMITS.formHelpText);
-    }
-
-    if (typeof next.placeholder === "string") {
-      next.placeholder = sanitizeSingleLineInput(next.placeholder, INPUT_LIMITS.formPlaceholder);
-    }
-
-    return next;
-  };
-
-  const viewModeControl = (
-    <div className="rounded-lg border bg-background p-3">
-      <div className="flex items-center justify-between gap-3">
-        <Label htmlFor="form-editor-preview-mode" className="text-sm font-medium">
-          {previewMode ? "Visualizar" : "Editar"}
-        </Label>
-        <Switch
-          id="form-editor-preview-mode"
-          checked={previewMode}
-          onCheckedChange={setPreviewMode}
-          aria-label="Alternar entre editar e visualizar ficha"
-        />
-      </div>
-      <div className="mt-2 grid grid-cols-2 rounded-md bg-muted p-1 text-xs font-medium">
-        <button
-          type="button"
-          className={`rounded px-2 py-1.5 transition ${!previewMode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-          onClick={() => setPreviewMode(false)}
-        >
-          Editar
-        </button>
-        <button
-          type="button"
-          className={`rounded px-2 py-1.5 transition ${previewMode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-          onClick={() => setPreviewMode(true)}
-        >
-          Visualizar
-        </button>
-      </div>
-    </div>
-  );
-
-  const blockMenuContent = (
-    <Card className="border-border/70">
-      <CardHeader>
-        <div className="mb-4">{viewModeControl}</div>
-        <CardTitle className="text-base">Blocos disponíveis</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-2">
-        {ANAMNESIS_FIELD_LIBRARY.map((item) => (
-          <Button
-            key={item.type}
-            type="button"
-            variant="outline"
-            className="justify-start"
-            onClick={() => handleAddField(item.type)}
-            disabled={fieldLimitReached || previewMode}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            {item.label}
-          </Button>
-        ))}
-        {isBase && (
-          <p className="text-xs text-muted-foreground mt-2">
-            No bloco padrão universal, você pode manter os campos fixos, adicionar novos campos e escolher quais aparecem no bloco de atendimentos do paciente.
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-
-  const handleAddField = (type: AnamnesisField["type"]) => {
-    setTemplateFields((current) =>
-      current.length >= ANAMNESIS_SCHEMA_FIELD_LIMIT ? current : sanitizeAnamnesisTemplateSchema([...current, createAnamnesisField(type, current.length)])
-    );
-  };
-
-  const updateField = (fieldId: string, changes: Partial<AnamnesisField>) => {
-    setTemplateFields((current) =>
-      current.map((field) => {
-        if (field.id !== fieldId) {
-          return field;
-        }
-
-        const nextField = { ...field, ...sanitizeFieldChanges(changes) };
-
-        if (nextField.type === "slider" || typeof changes.min === "number" || typeof changes.max === "number") {
-          const range = normalizeAnamnesisSliderRange(nextField.min, nextField.max);
-          nextField.min = range.min;
-          nextField.max = range.max;
-        }
-
-        return nextField;
-      })
-    );
-  };
-
-  const removeField = (fieldId: string) => {
-    setTemplateFields((current) => current.filter((field) => field.id !== fieldId));
-  };
-
-  const duplicateField = (field: AnamnesisField) => {
-    setTemplateFields((current) =>
-      current.length >= ANAMNESIS_SCHEMA_FIELD_LIMIT
-        ? current
-        : sanitizeAnamnesisTemplateSchema([
-            ...current,
-            {
-              ...field,
-              id: `${field.id}_copy_${current.length}`,
-              label: `${field.label} (cópia)`,
-            },
-          ])
-    );
-  };
-
-  const moveField = (sourceId: string, targetId: string) => {
-    setTemplateFields((current) => {
-      const sourceIndex = current.findIndex((field) => field.id === sourceId);
-      const targetIndex = current.findIndex((field) => field.id === targetId);
-
-      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
-        return current;
-      }
-
-      const next = [...current];
-      const [moved] = next.splice(sourceIndex, 1);
-      next.splice(targetIndex, 0, moved);
-      return next;
-    });
-  };
-
-  const moveFieldByOffset = (fieldId: string, offset: -1 | 1) => {
-    setTemplateFields((current) => {
-      const sourceIndex = current.findIndex((field) => field.id === fieldId);
-      const targetIndex = sourceIndex + offset;
-
-      if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= current.length) {
-        return current;
-      }
-
-      const next = [...current];
-      const [moved] = next.splice(sourceIndex, 1);
-      next.splice(targetIndex, 0, moved);
-      return next;
-    });
-  };
-
-  const assignFieldToSection = (fieldId: string, sectionId: string | null) => {
-    setTemplateFields((current) =>
-      current.map((field) => (field.id === fieldId ? { ...field, groupKey: sectionId } : field))
-    );
-  };
-
-  const handleSave = async () => {
-    const safeTemplateName = sanitizeSingleLineInput(templateName, INPUT_LIMITS.formTemplateName).trim();
-    const safeTemplateDescription = sanitizeMultilineInput(templateDescription, INPUT_LIMITS.formDescription).trim();
-    const safeTemplateFields = sanitizeAnamnesisTemplateSchema(templateFields);
-
-    if (!clinicId || !user || !safeTemplateName || safeTemplateFields.length === 0) return;
-    setSaving(true);
-
-    if (isBase) {
-      const { error } = await supabase
-        .from("clinics")
-        .update({ anamnesis_base_schema: safeTemplateFields })
-        .eq("id", clinicId);
-
-      if (error) {
-        toast({ title: "Erro ao salvar bloco padrão", description: error.message, variant: "destructive" });
-        setSaving(false);
-        return;
-      }
-
-      toast({ title: "Bloco padrão atualizado" });
-      setSaving(false);
-      navigate(clinicFormsManagerPath);
-      return;
-    }
-
-    const payload = {
-      clinic_id: clinicId,
-      description: safeTemplateDescription || null,
-      is_active: true,
-      is_system_default: false,
-      name: safeTemplateName,
-      schema: safeTemplateFields,
-      user_id: user.id,
-    };
-
-    const query = isNew
-      ? supabase.from("anamnesis_form_templates").insert(payload).select("id").single()
-      : supabase.from("anamnesis_form_templates").update(payload).eq("id", templateId!).select("id").single();
-
-    const { data, error } = await query;
-
-    if (error) {
-      toast({ title: "Erro ao salvar formulário", description: error.message, variant: "destructive" });
-      setSaving(false);
-      return;
-    }
-
-    toast({ title: isNew ? "Formulário criado" : "Formulário atualizado" });
-    setSaving(false);
-    navigate(`${clinicSettingsPath}/formularios/${data.id}`);
-  };
-
-  const handleImportDraftModel = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file) {
-      return;
-    }
-
-    try {
-      if (file.size > ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES) {
-        throw new Error("Arquivo de modelo muito grande");
-      }
-
-      const raw = await file.text();
-      const imported = parseAnamnesisTemplateExchangePayload(raw);
-
-      if (!isBase) {
-        updateTemplateName(imported.template.name);
-        updateTemplateDescription(imported.template.description);
-      }
-
-      setTemplateFields(imported.template.schema);
-
-      toast({
-        title: "Modelo importado no editor",
-        description: isBase
-          ? "A estrutura do bloco padrão foi substituída no rascunho atual."
-          : "A ficha aberta foi substituída pelo modelo importado. Salve quando quiser aplicar.",
-      });
-    } catch (error) {
-      toast({
-        title: "Erro ao importar modelo",
-        description: error instanceof Error ? error.message : "Não foi possível ler este arquivo.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const renderPreviewField = (field: AnamnesisField): ReactNode => {
-    if (field.type === "short_text") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <Input placeholder={field.placeholder} disabled />
-        </div>
-      );
-    }
-
-    if (field.type === "long_text") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <Textarea placeholder={field.placeholder} disabled rows={4} />
-        </div>
-      );
-    }
-
-    if (field.type === "date") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <Input type="date" disabled />
-        </div>
-      );
-    }
-
-    if (field.type === "number") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <Input type="number" placeholder={field.placeholder} disabled />
-        </div>
-      );
-    }
-
-    if (field.type === "select") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <Select disabled>
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione" />
-            </SelectTrigger>
-            <SelectContent>
-              {(field.options ?? []).map((option) => (
-                <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      );
-    }
-
-    if (field.type === "slider") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <Label>
-              {field.label}
-              {field.required && <span className="ml-1 text-destructive">*</span>}
-            </Label>
-            <span className="text-sm font-semibold">{field.min ?? 0}</span>
-          </div>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <Slider value={[field.min ?? 0]} min={field.min ?? 0} max={field.max ?? 10} step={1} disabled />
-        </div>
-      );
-    }
-
-    if (field.type === "address_block") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <AddressBlockInput
-            label={field.label}
-            helpText={field.helpText}
-            required={field.required}
-            onChange={() => {}}
-            disabled
-          />
-        </div>
-      );
-    }
-
-    if (field.type === "multiple_choice") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <RadioGroup>
-            <div className="flex flex-wrap gap-3">
-              {(field.options ?? []).map((option) => (
-                <div key={option.id} className="inline-flex max-w-full items-start gap-2 rounded-md border px-3 py-2">
-                  <RadioGroupItem value={option.id} id={`preview_${field.id}_${option.id}`} disabled className="mt-0.5" />
-                  <Label htmlFor={`preview_${field.id}_${option.id}`} className="break-words leading-snug">{option.label}</Label>
-                </div>
-              ))}
-            </div>
-          </RadioGroup>
-        </div>
-      );
-    }
-
-    if (field.type === "checklist") {
-      return (
-        <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <div className="flex flex-wrap gap-3">
-            {(field.options ?? []).map((option) => (
-              <div key={option.id} className="inline-flex max-w-full items-start gap-2 rounded-md border px-3 py-2">
-                <Checkbox id={`preview_${field.id}_${option.id}`} disabled className="mt-0.5" />
-                <Label htmlFor={`preview_${field.id}_${option.id}`} className="break-words leading-snug">{option.label}</Label>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    if (field.type === "section_selector") {
-      return (
-        <div key={field.id} className="space-y-3 rounded-lg border p-4">
-          <div>
-            <Label>{field.label}</Label>
-            {field.helpText && <p className="mt-1 text-sm text-muted-foreground">{field.helpText}</p>}
-          </div>
-          <div className="flex flex-wrap gap-3">
-            {(field.options ?? []).map((option) => (
-              <div key={option.id} className="inline-flex max-w-full items-center gap-3 rounded-md border px-3 py-2">
-                <span className="text-sm font-medium">{option.label}</span>
-                <Switch disabled />
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    if (field.type === "table") {
-      const columns = field.options ?? [];
-      return (
-        <div key={field.id} className="space-y-2">
-          <Label>
-            {field.label}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
-          </Label>
-          {field.helpText && <p className="text-sm text-muted-foreground">{field.helpText}</p>}
-          <div className="overflow-x-auto rounded-md border">
-            <div
-              className="grid min-w-max gap-3 border-b bg-muted/40 p-3 text-sm font-medium text-muted-foreground"
-              style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(180px, 1fr))` }}
-            >
-              {columns.length > 0 ? columns.map((option) => <span key={option.id}>{option.label}</span>) : <span>Coluna</span>}
-            </div>
-            <div
-              className="grid min-w-max gap-3 p-3"
-              style={{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(180px, 1fr))` }}
-            >
-              {(columns.length > 0 ? columns : [{ id: "preview_column", label: "Coluna" }]).map((option) => (
-                <Input key={option.id} placeholder={option.label} disabled />
-              ))}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return null;
-  };
-
-  const renderPreviewLayout = (layout: TemplateLayoutItem[]): ReactNode => (
-    <div className="space-y-4">
-      {layout.map((item) => {
-        if (item.type === "field") {
-          return <div key={item.field.id}>{renderPreviewField(item.field)}</div>;
-        }
-
-        if (item.type === "horizontal_section") {
-          return (
-            <Card key={item.field.id} className="border-dashed">
-              <CardContent className="space-y-4 p-4">
-                <div>
-                  <p className="font-medium">{item.field.label}</p>
-                  {item.field.helpText && <p className="mt-1 text-sm text-muted-foreground">{item.field.helpText}</p>}
-                </div>
-                <div className="flex gap-4 overflow-x-auto pb-2">
-                  {item.items.map((child) => (
-                    <div key={child.field.id} className="min-w-[280px] flex-1 rounded-lg border bg-muted/10 p-4">
-                      {child.type === "field" ? renderPreviewField(child.field) : renderPreviewLayout([child])}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        }
-
-        return (
-          <Card key={item.field.id}>
-            <CardContent className="space-y-4 p-4">
-              <div>
-                <p className="font-medium">{item.field.label}</p>
-                {item.field.helpText && <p className="mt-1 text-sm text-muted-foreground">{item.field.helpText}</p>}
-              </div>
-              {renderPreviewLayout(item.items)}
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
-  );
-
-  if (loading) {
+  if (state.loading) {
     return (
       <div className="flex items-center justify-center py-24">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -684,439 +27,224 @@ const FormularioEditor = () => {
   }
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6 pb-20 lg:pb-0">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+      className="space-y-6 pb-36 max-w-full overflow-x-clip lg:pb-12"
+      onClick={state.handleCanvasBackgroundClick}
+    >
       <input
-        ref={templateImportInputRef}
+        ref={state.templateImportInputRef}
         type="file"
         accept="application/json,.json"
         className="sr-only"
-        onChange={(event) => void handleImportDraftModel(event)}
+        onChange={(event) => void state.handleImportDraftModel(event)}
       />
-      <div ref={headerRef} className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(clinicFormsManagerPath)} aria-label="Voltar para gerenciar formulários">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {isBase ? "Bloco padrão universal" : isNew ? "Nova ficha" : template?.name || "Editar ficha"}
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {isBase
-                ? "Edite a primeira parte obrigatória da anamnese, aplicada automaticamente em todas as fichas da clínica."
-                : "Monte a estrutura da ficha em uma página completa, com rolagem normal para formulários grandes."}
-            </p>
+
+      <FormEditorHeader state={state} />
+
+      <FormEditorDraftRestoreDialog state={state} />
+
+      {/* Main 3-Column Desktop Layout */}
+      <div className="space-y-6 max-w-full lg:relative">
+        {/* Left Column: Component Palette */}
+        <div
+          className={`hidden lg:block ${state.flowSidebarCollapsed ? "lg:w-[64px]" : "lg:w-[284px]"}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className={`fixed left-6 z-20 flex flex-col ${state.flowSidebarCollapsed ? "w-[56px]" : "w-[284px]"}`}
+            style={{
+              top: `${state.desktopMenuTop}px`,
+              height: `${state.desktopMenuMaxHeight}px`,
+              maxHeight: `${state.desktopMenuMaxHeight}px`,
+            }}
+          >
+            <FormEditorPaletteSidebar
+              flowSidebarCollapsed={state.flowSidebarCollapsed}
+              setFlowSidebarCollapsed={state.setFlowSidebarCollapsed}
+              handleAddField={state.handleAddField}
+              setDraggedNewFieldType={state.setDraggedNewFieldType}
+              isBase={state.isBase}
+            />
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => templateImportInputRef.current?.click()}>
-            <Upload className="h-4 w-4 mr-2" />
-            Importar modelo
-          </Button>
-          <Button onClick={() => void handleSave()} disabled={saving || !templateName.trim()}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            Salvar ficha
-          </Button>
+
+        {/* Right Column: Unified Flow & Inspector */}
+        <div className="hidden lg:block lg:w-[332px]" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="fixed right-6 z-20 flex flex-col w-[332px] space-y-3"
+            style={{
+              top: `${state.desktopMenuTop}px`,
+              height: `${state.desktopMenuMaxHeight}px`,
+              maxHeight: `${state.desktopMenuMaxHeight}px`,
+            }}
+          >
+            <div className="flex-1 min-h-0 flex flex-col">
+              <FormEditorInspectorPanel state={state} />
+            </div>
+            <div data-tutorial="form-editor-actions" className="shrink-0 rounded-lg border bg-card p-3 shadow-xs space-y-2">
+              <Button
+                type="button"
+                data-tutorial="form-editor-save-btn"
+                className="w-full h-10 shadow-sm"
+                onClick={() => void state.handleSave()}
+                disabled={state.saving || !state.templateName.trim() || (!state.isDirty && !state.isNew)}
+              >
+                {state.saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Salvar ficha
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={() => state.templateImportInputRef.current?.click()}
+              >
+                <Upload className="h-3.5 w-3.5 mr-2" />
+                Importar arquivo
+              </Button>
+              <Button
+                asChild
+                type="button"
+                variant="ghost"
+                className="w-full text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Link to={`${state.clinicBasePath}/configuracoes/formularios/biblioteca`}>
+                  <BookOpen className="h-3.5 w-3.5 mr-2 text-primary" />
+                  Biblioteca de Modelos
+                </Link>
+              </Button>
+            </div>
+          </div>
         </div>
+
+        {/* Center Column: Canvas */}
+        <FormEditorCanvas state={state} />
       </div>
 
-      <Button
-        type="button"
-        variant="secondary"
-        size="icon"
-        className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 z-10 h-11 w-11 rounded-full shadow-lg lg:hidden"
-        aria-label="Abrir blocos disponíveis"
-        onClick={() => setMobileMenuOpen(true)}
-      >
-        <ChevronRight className="h-5 w-5" />
-      </Button>
-
-      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="w-[300px] overflow-y-auto sm:w-[340px]">
-          <SheetHeader>
-            <SheetTitle>Blocos disponíveis</SheetTitle>
-          </SheetHeader>
-          <div className="mt-6">{blockMenuContent}</div>
-        </SheetContent>
-      </Sheet>
-
-      {showFloatingSave && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-3 z-50 hidden sm:block sm:bottom-5 sm:right-5 lg:bottom-6 lg:right-6">
+      {/* Floating Save Button */}
+      {state.showFloatingSave && (
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-3 z-50 hidden sm:block lg:hidden sm:bottom-5 sm:right-5">
           <Button
             type="button"
-            onClick={() => void handleSave()}
-            disabled={saving || !templateName.trim()}
+            onClick={(e) => {
+              e.stopPropagation();
+              void state.handleSave();
+            }}
+            disabled={state.saving || !state.templateName.trim() || (!state.isDirty && !state.isNew)}
             className="h-11 rounded-full px-5 shadow-lg shadow-primary/20"
             aria-label="Salvar ficha pelo botão fixo"
           >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+            {state.saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
             Salvar ficha
           </Button>
         </div>
       )}
 
-      <div className="space-y-6 lg:relative">
-        <div className="hidden lg:block lg:w-[260px]">
-          <div
-            className="fixed left-6 z-20 w-[260px] overflow-y-auto"
-            style={{ top: `${desktopMenuTop}px`, maxHeight: `${desktopMenuMaxHeight}px` }}
-          >
-            {blockMenuContent}
+      {/* Batch Actions Bar */}
+      <FormEditorBatchActionBar
+        isMultiSelecting={state.isMultiSelecting}
+        selectedFieldIds={state.selectedFieldIds}
+        isAllSelected={state.isAllSelected}
+        handleToggleSelectAll={state.handleToggleSelectAll}
+        encapsulateSelectedFields={state.encapsulateSelectedFields}
+        duplicateSelectedFields={state.duplicateSelectedFields}
+        deleteSelectedFields={state.deleteSelectedFields}
+        setSelectedFieldIds={state.setSelectedFieldIds}
+      />
+
+      {/* Mobile Navigation Dock */}
+      <FormEditorMobileDock
+        saving={state.saving}
+        templateName={state.templateName}
+        mobileMenuOpen={state.mobileMenuOpen}
+        setMobileMenuOpen={state.setMobileMenuOpen}
+        mobileInspectorOpen={state.mobileInspectorOpen}
+        setMobileInspectorOpen={state.setMobileInspectorOpen}
+        selectedFieldId={state.selectedFieldId}
+        handleSave={state.handleSave}
+        onImportClick={() => state.templateImportInputRef.current?.click()}
+      />
+
+      {/* Mobile Drawer 1: Component Library */}
+      <Sheet
+        open={state.mobileMenuOpen}
+        onOpenChange={(open) => {
+          if (!open && typeof document !== "undefined" && document.querySelector("[data-radix-popper-content-wrapper]")) {
+            return;
+          }
+          state.setMobileMenuOpen(open);
+        }}
+      >
+        <SheetContent
+          side="left"
+          className="w-[320px] max-w-[85vw] p-3 overflow-y-auto max-h-[100dvh]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Biblioteca de componentes</SheetTitle>
+          </SheetHeader>
+          <FormEditorPaletteSidebar
+            flowSidebarCollapsed={false}
+            setFlowSidebarCollapsed={() => {}}
+            handleAddField={(type) => {
+              state.handleAddField(type);
+              state.setMobileMenuOpen(false);
+            }}
+            setDraggedNewFieldType={state.setDraggedNewFieldType}
+            isBase={state.isBase}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Mobile Drawer 2: Fluxo / Inspetor */}
+      <Sheet
+        open={state.mobileInspectorOpen}
+        onOpenChange={(open) => {
+          if (!open && typeof document !== "undefined" && document.querySelector("[data-radix-popper-content-wrapper]")) {
+            return;
+          }
+          state.setMobileInspectorOpen(open);
+        }}
+      >
+        <SheetContent
+          side="right"
+          className="w-[340px] max-w-[90vw] p-3 overflow-y-auto max-h-[100dvh] space-y-3 pb-28"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Fluxo e propriedades da ficha</SheetTitle>
+          </SheetHeader>
+          <FormEditorInspectorPanel state={state} />
+          <div className="rounded-lg border bg-card p-3 shadow-xs space-y-2">
+            <Button
+              type="button"
+              className="w-full h-10 shadow-sm"
+              onClick={() => {
+                void state.handleSave();
+                state.setMobileInspectorOpen(false);
+              }}
+              disabled={state.saving || !state.templateName.trim() || (!state.isDirty && !state.isNew)}
+            >
+              {state.saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Salvar ficha
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full text-xs"
+              onClick={() => {
+                state.templateImportInputRef.current?.click();
+                state.setMobileInspectorOpen(false);
+              }}
+            >
+              <Upload className="h-3.5 w-3.5 mr-2" />
+              Importar modelo
+            </Button>
           </div>
-        </div>
-
-        <div className="space-y-4 min-h-0 lg:pl-[284px]">
-          <Card>
-            <CardContent className="grid gap-4 p-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>{isBase ? "Nome da estrutura" : "Nome da ficha"}</Label>
-                <Input
-                  value={templateName}
-                  onChange={(event) => updateTemplateName(event.target.value)}
-                  placeholder="Ex: Ficha ortopédica inicial"
-                  disabled={isBase}
-                  maxLength={INPUT_LIMITS.formTemplateName}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Descrição</Label>
-                <Input
-                  value={templateDescription}
-                  onChange={(event) => updateTemplateDescription(event.target.value)}
-                  placeholder="Ex: triagem inicial para dor lombar"
-                  disabled={isBase}
-                  maxLength={INPUT_LIMITS.formDescription}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Separator />
-
-          {previewMode ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">{templateName.trim() || (isBase ? "Bloco padrão universal" : "Ficha sem nome")}</CardTitle>
-                {templateDescription.trim() && (
-                  <p className="text-sm text-muted-foreground">{templateDescription.trim()}</p>
-                )}
-              </CardHeader>
-              <CardContent>{renderPreviewLayout(groupedLayout)}</CardContent>
-            </Card>
-          ) : (
-          <div className="space-y-3">
-            {groupedLayout.map((layoutItem) => {
-              const renderEditorItem = (item: TemplateLayoutItem, depth = 0): ReactNode => {
-                const field = item.field;
-                const assignableContainers = getAssignableContainerFields(templateFields, field.id);
-                const isNested = depth > 0;
-                const isContainer = isContainerField(field);
-                const fieldIndex = templateFields.findIndex((templateField) => templateField.id === field.id);
-
-                return (
-                  <Card
-                    key={field.id}
-                    draggable={!isNested}
-                    onDragStart={() => !isNested && setDraggedFieldId(field.id)}
-                    onDragOver={(event) => !isNested && event.preventDefault()}
-                    onDrop={() => {
-                      if (!draggedFieldId || isNested) return;
-
-                      if (item.type !== "field" && draggedFieldId !== field.id) {
-                        assignFieldToSection(draggedFieldId, field.id);
-                      } else {
-                        moveField(draggedFieldId, field.id);
-                      }
-
-                      setDraggedFieldId(null);
-                    }}
-                    className={isNested ? "border-dashed bg-muted/10" : undefined}
-                  >
-                    <CardContent className="p-5 space-y-4">
-                      {isNested && (
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          {item.type === "horizontal_section" ? "Seção horizontal interna" : item.type === "section" ? "Subseção" : "Campo dentro da seção"}
-                        </p>
-                      )}
-                      <div className="space-y-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">{ANAMNESIS_FIELD_LIBRARY.find((entry) => entry.type === field.type)?.label || field.type}</p>
-                              <p className="truncate text-xs text-muted-foreground">{field.id}</p>
-                            </div>
-                          </div>
-                          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
-                            <div className="flex items-center gap-1 lg:hidden">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Mover ${field.label} para cima`}
-                                onClick={() => moveFieldByOffset(field.id, -1)}
-                                disabled={fieldIndex <= 0}
-                              >
-                                <ArrowUp className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Mover ${field.label} para baixo`}
-                                onClick={() => moveFieldByOffset(field.id, 1)}
-                                disabled={fieldIndex < 0 || fieldIndex >= templateFields.length - 1}
-                              >
-                                <ArrowDown className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            {!isBase && (
-                              <Button type="button" variant="ghost" size="icon" onClick={() => duplicateField(field)} disabled={fieldLimitReached}>
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                            )}
-                            {(!isBase || !field.systemKey) && (
-                              <Button type="button" variant="ghost" size="icon" onClick={() => removeField(field.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label>Rótulo</Label>
-                            <Input
-                              value={field.label}
-                              onChange={(event) => updateField(field.id, { label: event.target.value })}
-                              maxLength={INPUT_LIMITS.formFieldLabel}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Ajuda</Label>
-                            <Input
-                              value={field.helpText ?? ""}
-                              onChange={(event) => updateField(field.id, { helpText: event.target.value })}
-                              maxLength={INPUT_LIMITS.formHelpText}
-                            />
-                          </div>
-                        </div>
-
-                        {isSelectionChoiceFieldType(field.type) && (
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <Label>Tipo de seleção</Label>
-                              <Select
-                                value={field.type}
-                                onValueChange={(value) =>
-                                  updateField(field.id, { type: value as AnamnesisField["type"] })
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Selecione" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="multiple_choice">Múltipla escolha</SelectItem>
-                                  <SelectItem value="checklist">Checklist</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        )}
-
-                        {!isContainer && (
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <Label>Placeholder</Label>
-                              <Input
-                                value={field.placeholder ?? ""}
-                                onChange={(event) => updateField(field.id, { placeholder: event.target.value })}
-                                maxLength={INPUT_LIMITS.formPlaceholder}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Agrupar no contêiner</Label>
-                              <Select
-                                value={field.groupKey ?? "none"}
-                                onValueChange={(value) => assignFieldToSection(field.id, value === "none" ? null : value)}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Sem contêiner" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">Sem contêiner</SelectItem>
-                                  {assignableContainers.map((container) => (
-                                    <SelectItem key={container.id} value={container.id}>{container.label}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        )}
-
-                        {isContainer && (
-                          <div className="space-y-2">
-                            <Label>Inserir dentro de</Label>
-                            <Select
-                              value={field.groupKey ?? "none"}
-                              onValueChange={(value) => assignFieldToSection(field.id, value === "none" ? null : value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Sem seção pai" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">Sem seção pai</SelectItem>
-                                {assignableContainers.map((container) => (
-                                  <SelectItem key={container.id} value={container.id}>{container.label}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
-
-                        {!isContainer && field.type !== "section_selector" && (
-                          <div className="space-y-2">
-                            <Label>Vincular à seção condicional</Label>
-                            <Select
-                              value={field.sectionKey ?? "none"}
-                              onValueChange={(value) => updateField(field.id, { sectionKey: value === "none" ? null : value })}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Sempre visível" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">Sempre visível</SelectItem>
-                                {sectionOptions.map((option) => (
-                                  <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
-
-                        {!isContainer && (
-                          <div className="flex items-center gap-3">
-                            <Checkbox
-                              id={`required_${field.id}`}
-                              checked={field.required ?? false}
-                              onCheckedChange={(checked) => updateField(field.id, { required: checked === true })}
-                            />
-                            <Label htmlFor={`required_${field.id}`}>Campo obrigatório</Label>
-                          </div>
-                        )}
-
-                        {isBase && !isContainer && (
-                          <div className="flex items-center gap-3">
-                            <Checkbox
-                              id={`show_in_patient_list_${field.id}`}
-                              checked={field.showInPatientList ?? false}
-                              onCheckedChange={(checked) => updateField(field.id, { showInPatientList: checked === true })}
-                            />
-                            <Label htmlFor={`show_in_patient_list_${field.id}`}>
-                              Exibir este campo na lista de atendimentos do paciente
-                            </Label>
-                          </div>
-                        )}
-
-                        {(field.type === "checklist" || field.type === "multiple_choice" || field.type === "select" || field.type === "table" || field.type === "section_selector") && (
-                          <div className="space-y-2">
-                            <Label>{hasTableColumnEditor(field.type) ? "Colunas" : "Opções"}</Label>
-                            {hasScrollableOptionEditor(field.type) ? (
-                              <OptionMatrixEditor
-                                options={field.options}
-                                maxOptions={ANAMNESIS_OPTION_LIMIT}
-                                onChange={(options) => updateField(field.id, { options })}
-                              />
-                            ) : hasTableColumnEditor(field.type) ? (
-                              <OptionListEditor
-                                options={field.options}
-                                maxOptions={ANAMNESIS_OPTION_LIMIT}
-                                onChange={(options) => updateField(field.id, { options })}
-                              />
-                            ) : hasVerticalOptionEditor(field.type) ? (
-                              <OptionListEditor
-                                options={field.options}
-                                maxOptions={ANAMNESIS_OPTION_LIMIT}
-                                onChange={(options) => updateField(field.id, { options })}
-                              />
-                            ) : (
-                              <Textarea
-                                rows={4}
-                                value={(field.options ?? []).map((option) => option.label).join("\n")}
-                                onChange={(event) => updateField(field.id, { options: normalizeOptions(event.target.value) })}
-                                placeholder="Uma opção por linha"
-                                maxLength={ANAMNESIS_RAW_OPTIONS_INPUT_LIMIT}
-                              />
-                            )}
-                          </div>
-                        )}
-
-                        {field.type === "slider" && (
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <Label>Mínimo</Label>
-                              <Input
-                                type="number"
-                                value={field.min ?? 0}
-                                onChange={(event) => updateField(field.id, { min: Number(event.target.value) })}
-                                min={ANAMNESIS_SLIDER_MIN}
-                                max={ANAMNESIS_SLIDER_MAX - 1}
-                                step={1}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Máximo</Label>
-                              <Input
-                                type="number"
-                                value={field.max ?? 10}
-                                onChange={(event) => updateField(field.id, { max: Number(event.target.value) })}
-                                min={ANAMNESIS_SLIDER_MIN + 1}
-                                max={ANAMNESIS_SLIDER_MAX}
-                                step={1}
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {field.type === "section" && (
-                          <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-                            Você pode colocar campos, subseções e seções horizontais dentro desta seção.
-                          </div>
-                        )}
-
-                        {field.type === "address_block" && (
-                          <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-                            Este bloco agrupa automaticamente CEP (com autocompletar), Estado, Cidade, Bairro, Rua, Número, Complemento, Geolocalização (GPS via PWA) e atalhos de seleção rápida para Múltiplas Clínicas e Atendimento Domiciliar.
-                          </div>
-                        )}
-
-                        {field.type === "horizontal_section" && (
-                          <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-                            Os itens desta seção serão exibidos lado a lado com rolagem horizontal. Seções não podem ser inseridas aqui.
-                          </div>
-                        )}
-
-                        {item.type !== "field" && item.items.length > 0 && (
-                          <div className={item.type === "horizontal_section" ? "flex gap-3 overflow-x-auto pb-2" : "space-y-3"}>
-                            {item.items.map((child) => (
-                              <div key={child.field.id} className={item.type === "horizontal_section" ? "min-w-[320px] flex-1" : undefined}>
-                                {renderEditorItem(child, depth + 1)}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              };
-
-              return renderEditorItem(layoutItem);
-            })}
-          </div>
-          )}
-        </div>
-      </div>
+        </SheetContent>
+      </Sheet>
     </motion.div>
   );
 };

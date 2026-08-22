@@ -42,6 +42,8 @@ export type Database = {
           generated_by_recurring_patient: boolean
           id: string
           patient_id: string | null
+          payment_plan_id: string | null
+          payment_plan_session_index: number | null
           scheduled_for: string
           status: string
           title: string
@@ -55,6 +57,8 @@ export type Database = {
           generated_by_recurring_patient?: boolean
           id?: string
           patient_id?: string | null
+          payment_plan_id?: string | null
+          payment_plan_session_index?: number | null
           scheduled_for: string
           status?: string
           title: string
@@ -68,6 +72,8 @@ export type Database = {
           generated_by_recurring_patient?: boolean
           id?: string
           patient_id?: string | null
+          payment_plan_id?: string | null
+          payment_plan_session_index?: number | null
           scheduled_for?: string
           status?: string
           title?: string
@@ -682,6 +688,66 @@ export type Database = {
           sound_mode?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      patient_payment_plans: {
+        Row: {
+          clinic_id: string
+          created_at: string
+          created_by_user_id: string | null
+          id: string
+          name: string
+          notes: string | null
+          patient_id: string
+          payment_installments: number
+          payment_method: string
+          payment_status: string
+          payment_status_date: string | null
+          session_unit_amount_cents: number
+          start_date: string
+          total_amount_cents: number
+          total_sessions: number
+          updated_at: string
+          used_sessions: number
+        }
+        Insert: {
+          clinic_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          patient_id: string
+          payment_installments?: number
+          payment_method?: string
+          payment_status?: string
+          payment_status_date?: string | null
+          session_unit_amount_cents?: number
+          start_date?: string
+          total_amount_cents?: number
+          total_sessions: number
+          updated_at?: string
+          used_sessions?: number
+        }
+        Update: {
+          clinic_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          patient_id?: string
+          payment_installments?: number
+          payment_method?: string
+          payment_status?: string
+          payment_status_date?: string | null
+          session_unit_amount_cents?: number
+          start_date?: string
+          total_amount_cents?: number
+          total_sessions?: number
+          updated_at?: string
+          used_sessions?: number
         }
         Relationships: []
       }
@@ -1425,6 +1491,8 @@ export type Database = {
           payment_adjustment_reason: string | null
           payment_installments: number
           payment_method: string
+          payment_plan_id: string | null
+          payment_plan_session_index: number | null
           payment_status_date: string | null
           payment_status: string
           provider_id: string | null
@@ -1454,6 +1522,8 @@ export type Database = {
           payment_adjustment_reason?: string | null
           payment_installments?: number
           payment_method?: string
+          payment_plan_id?: string | null
+          payment_plan_session_index?: number | null
           payment_status_date?: string | null
           payment_status?: string
           provider_id?: string | null

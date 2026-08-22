@@ -42,7 +42,18 @@ O Pluri-Health fornece ferramentas em nuvem para agenda de atendimentos, gestão
 - **Cancelamento:** Em caso de cancelamento da assinatura, a Clínica terá um prazo de 30 (trinta) dias para exportar seus dados. Após este período, o Pluri-Health suspenderá o acesso.
 - **Guarda Legal de Prontuários:** É de responsabilidade da Clínica garantir a guarda e arquivamento dos prontuários médicos pelo tempo exigido por lei e por seus respectivos conselhos de classe (ex: 20 anos no Brasil). O Pluri-Health excluirá ou anonimizará os dados de forma permanente de seus servidores conforme sua política de retenção após o encerramento do contrato, desobrigando-se da guarda perpétua.
 
-## 7. Isenção de Responsabilidade e Limitação de Danos (Liability Cap)
+## 7. Planos, Faturamento Recorrente e Política de Cotas
+
+- **Modalidades de Assinatura:** O Pluri-Health disponibiliza os planos *Profissional Solo* (R$ 50/mês para atendimentos individuais sem equipe) e *Clínica com Equipe* (R$ 60/mês base, incluindo colaboradores e equipe cadastrada ilimitados e 2 acessos simultâneos inclusos). Durante a Fase Beta, isenções promocionais podem ser aplicadas com cupons validados.
+- **Formas de Pagamento e Gateway:** Todas as cobranças recorrentes são processadas com segurança através da instituição parceira de pagamentos (Asaas Gestão Financeira).
+- **Acessos Simultâneos Extras:** A inclusão de conexões simultâneas adicionais além da cota inclusa (2 acessos) adiciona R$ 10,00 (dez reais)/mês recorrentes por acesso extra na mensalidade da clínica.
+- **Regras de Upgrade e Efetivação de Reduções (Downgrade):**
+  - **Aumentos e Upgrades:** Entram em vigor imediatamente após a contratação.
+  - **Reduções e Alteração para Plano Menor:** Solicitações de redução de acessos simultâneos ou mudança de plano entram em vigor no **início do próximo ciclo de faturamento** (data de renovação), permanecendo a cota atual ativa durante todo o período já faturado no mês vigente. Não haverá estorno ou reembolso pro-rata por redução voluntária de cotas dentro do ciclo em andamento.
+  - **Bloqueio por Dependência de Colaboradores:** A alteração do plano *Clínica com Equipe* para o plano *Profissional Solo* exige previamente o desvinculo ou inativação de todos os colaboradores associados à clínica.
+- **Inadimplência e Suspensão:** Em caso de atraso na quitação das faturas emitidas, o Pluri-Health reserva-se o direito de suspender temporariamente os acessos simultâneos extras ou bloquear funcionalidades administrativas até a confirmação de compensação bancária pelo parceiro Asaas.
+
+## 8. Isenção de Responsabilidade e Limitação de Danos (Liability Cap)
 
 **O Pluri-Health não se responsabiliza** por incidentes ou vazamentos que ocorram por falha humana ou negligência da Clínica e seus colaboradores, tais como:
 - Capturas de tela (prints) ou fotos de telas.
@@ -52,15 +63,15 @@ O Pluri-Health fornece ferramentas em nuvem para agenda de atendimentos, gestão
 
 **Limitação Financeira:** Em nenhuma hipótese o Pluri-Health será responsabilizado por danos indiretos, lucros cessantes, perda de receita ou perda de dados decorrente do uso inadequado do sistema. A responsabilidade financeira máxima da plataforma por quaisquer danos diretos comprovados e decorrentes de falha no sistema será estritamente limitada ao valor total pago pela Clínica nos 12 (doze) meses anteriores ao evento.
 
-## 8. Incidentes de Segurança e Notificação
+## 9. Incidentes de Segurança e Notificação
 
 Caso o Pluri-Health identifique um incidente de segurança (como invasões hackers em nossos servidores ou quebra de criptografia) que possa acarretar risco aos dados dos pacientes, nos comprometemos a notificar as Clínicas afetadas (Controladores) em prazo razoável, auxiliando com as informações necessárias para que a Clínica possa notificar a Autoridade Nacional de Proteção de Dados (ANPD) e os pacientes, em conformidade com o Art. 48 da LGPD.
 
-## 9. Modificações dos Termos
+## 10. Modificações dos Termos
 
 O Pluri-Health reserva-se o direito de atualizar ou modificar estes Termos a qualquer momento, visando adequações legais ou evolução do sistema. A Clínica será notificada previamente sobre mudanças substanciais. O uso continuado após a notificação constitui aceitação dos novos Termos.
 
-## 10. Lei Aplicável e Foro
+## 11. Lei Aplicável e Foro
 
 Estes Termos são regidos e interpretados segundo a legislação da República Federativa do Brasil. Fica eleito o foro da comarca da sede do Pluri-Health para dirimir quaisquer dúvidas ou litígios decorrentes deste Contrato, renunciando a qualquer outro, por mais privilegiado que seja.
 

@@ -11,21 +11,33 @@ import { useAuth } from "@/hooks/useAuth";
 interface TermsOfServiceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  planId: string | null;
+  planId?: string | null;
+  onAccept?: () => void;
 }
 
-export function TermsOfServiceModal({ isOpen, onClose, planId }: TermsOfServiceModalProps) {
+export function TermsOfServiceModal({ isOpen, onClose, planId, onAccept }: TermsOfServiceModalProps) {
   const navigate = useNavigate();
   const { session } = useAuth();
   const [isAccepting, setIsAccepting] = useState(false);
 
   const handleDecline = () => {
-    toast.error("Você precisa aceitar os Termos de Uso para prosseguir com a contratação do plano.");
+    if (planId) {
+      toast.error("Você precisa aceitar os Termos de Uso para prosseguir com a contratação do plano.");
+    }
     onClose();
   };
 
   const handleAccept = async () => {
-    if (!session?.user?.id || !planId) return;
+    if (onAccept) {
+      onAccept();
+      onClose();
+      return;
+    }
+
+    if (!session?.user?.id || !planId) {
+      onClose();
+      return;
+    }
 
     setIsAccepting(true);
     try {
@@ -53,9 +65,9 @@ export function TermsOfServiceModal({ isOpen, onClose, planId }: TermsOfServiceM
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[90vh] bg-neutral-900/90 border-neutral-800 backdrop-blur-xl text-neutral-100 p-0 overflow-hidden flex flex-col rounded-2xl">
         <DialogHeader className="p-6 pb-4 border-b border-neutral-800/50">
-          <DialogTitle className="text-2xl font-bold tracking-tight">Termos de Uso e Consentimento</DialogTitle>
+          <DialogTitle className="text-2xl font-bold tracking-tight">Termos de Uso e Consentimento (LGPD)</DialogTitle>
           <DialogDescription className="text-neutral-400">
-            Leia atentamente os termos antes de prosseguir com a contratação.
+            Leia atentamente as diretrizes de uso, privacidade e proteção de dados da plataforma.
           </DialogDescription>
         </DialogHeader>
 
@@ -67,7 +79,7 @@ export function TermsOfServiceModal({ isOpen, onClose, planId }: TermsOfServiceM
 
         <DialogFooter className="p-6 pt-4 border-t border-neutral-800/50 flex items-center justify-between gap-4 sm:justify-end">
           <Button variant="ghost" onClick={handleDecline} disabled={isAccepting} className="text-neutral-400 hover:text-white hover:bg-neutral-800">
-            Recusar
+            {planId ? "Recusar" : "Fechar"}
           </Button>
           <Button onClick={handleAccept} disabled={isAccepting} className="bg-emerald-500 hover:bg-emerald-600 text-white font-medium">
             {isAccepting ? "Processando..." : "Li e Aceito os Termos"}

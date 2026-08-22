@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, memo, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
-  Pencil, Trash2, FolderPlus, ClipboardEdit, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock
+  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,16 +13,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { GroupColorPaletteField, type ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import { SessionShareDialog } from "@/components/SessionShareDialog";
 import AgendaWidget from "@/components/AgendaWidget";
+import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { PatientFilesPanel } from "@/components/PatientFilesPanel";
 import { PatientFilesProvider, usePatientFilesContext } from "@/contexts/PatientFilesContext";
 import { FileThumbnailCard } from "@/components/FileThumbnailCard";
 import { PatientAnamnesisDashboardContent } from "@/pages/PacienteAnamnesisDashboard";
+import { SharePatientRegistrationModal } from "@/components/patients/SharePatientRegistrationModal";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -30,6 +39,21 @@ import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { fetchPatientByRef, getPatientRouteKey, getClinicPatientPath, getPatientPath } from "@/lib/patient-routing";
+import {
+  usePatientDetailQuery,
+  usePatientSessionsQuery,
+  usePatientGroupsQuery,
+  usePatientAgendaEventsQuery,
+  usePatientGroupSuggestionsQuery,
+  usePatientAnamnesisTemplatesQuery,
+  usePatientClinicBaseSchemaQuery,
+  useOptimisticPatientDetailUpdates,
+  useInvalidatePatientData,
+} from "@/hooks/queries/usePatientDataQueries";
+import {
+  useClinicGroupColorSlotsQuery,
+  useClinicCollaboratorsQuery,
+} from "@/hooks/queries/useClinicDataQueries";
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
 import {
   AGENDA_EVENTS_UPDATED_EVENT,
@@ -73,12 +97,14 @@ import {
   buildPatientSessionsView,
   canDeleteSelectedSessionsForRole,
   filterSessionsForOperationalRole,
+  getSessionCareLineIds,
   shouldAutoCompleteInternDraft,
   shouldShowSessionCreatorInternBadge,
 } from "@/lib/patient-sessions-view";
 import {
   DEFAULT_GROUP_COLOR_SLOT_SEEDS,
   getLegacyGroupHex,
+  getReadableTextColor,
 } from "@/lib/group-colors";
 import { LiquidTabs } from "@/components/ui/liquid-tabs";
 import { getDesignLabButtonClass, designLabLabelClass, designLabIconClass } from "@/lib/design-animations";
@@ -459,7 +485,7 @@ const formatOperationalTime = (value: string | null | undefined) =>
       })
     : "—";
 
-const SessionCard = ({
+const SessionCard = memo(({
   baseSchema,
   borderColor,
   canViewFinancialData,
@@ -474,6 +500,7 @@ const SessionCard = ({
   shareSummary,
   selectionMode,
   session,
+  sessionGroups,
 }: {
   baseSchema: AnamnesisTemplateSchema;
   borderColor?: string;
@@ -489,6 +516,7 @@ const SessionCard = ({
   selectionMode: boolean;
   shareSummary?: SessionShareSummary;
   session: Session;
+  sessionGroups?: PatientGroup[];
 }) => {
   const touchStartPosRef = useRef<{x: number, y: number} | null>(null);
   const longPressOccurredRef = useRef(false);
@@ -610,6 +638,30 @@ const SessionCard = ({
                 </Badge>
               )}
             </div>
+
+            {/* Badges de Sintomas & Linhas de Cuidado da Sessão */}
+            {sessionGroups && sessionGroups.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {sessionGroups.map((tag) => (
+                  <Badge
+                    key={tag.id}
+                    variant="outline"
+                    className="text-[11px] font-semibold px-2 py-0.5 gap-1 shadow-xs"
+                    style={{
+                      borderColor: getLegacyGroupHex(tag.color),
+                      backgroundColor: `${getLegacyGroupHex(tag.color)}20`,
+                      color: getReadableTextColor(getLegacyGroupHex(tag.color)) === "#111827" ? "#111827" : undefined,
+                    }}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: getLegacyGroupHex(tag.color) }}
+                    />
+                    {tag.name}
+                  </Badge>
+                ))}
+              </div>
+            )}
             {hasOperationalInfo ? (
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                 {session.scheduled_start_at || session.patient_arrived_at ? (
@@ -654,7 +706,7 @@ const SessionCard = ({
       </CardContent>
     </Card>
   );
-};
+});
 
 const isShareLinkResponse = (value: Json): value is ShareLinkResponse => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -680,6 +732,8 @@ const getPatientGroupKind = (group: Pick<PatientGroup, "group_kind" | "is_defaul
 const isLockedSystemGroup = (group: Pick<PatientGroup, "group_kind" | "is_default">) =>
   getPatientGroupKind(group) !== "custom";
 
+const EMPTY_ARRAY: never[] = [];
+
 const PacienteDetalhe = () => {
   const { id, clinicKey } = useParams<{ id?: string; clinicKey?: string }>();
   const navigate = useNavigate();
@@ -689,18 +743,149 @@ const PacienteDetalhe = () => {
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const canViewPatientContact = can("patients.manage");
   const canViewFinancialData = can("treasury.manage");
-  const [patient, setPatient] = useState<Patient | null>(null);
-  const [groups, setGroups] = useState<PatientGroup[]>([]);
-  const [groupSuggestions, setGroupSuggestions] = useState<GroupSuggestion[]>([]);
-  const [clinicColorSlots, setClinicColorSlots] = useState<ClinicColorSlotRow[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
-  const [agendaEvents, setAgendaEvents] = useState<AgendaEvent[]>([]);
+
+  // Query Hooks persistidos em IndexedDB
+  const {
+    data: patientQueryData,
+    isLoading: isPatientLoading,
+    error: patientQueryError,
+  } = usePatientDetailQuery(id, clinicId);
+  const patient = patientQueryData ?? null;
+  const realPatientId = patient?.id;
+
+  const { data: groups = EMPTY_ARRAY } = usePatientGroupsQuery(realPatientId, Boolean(realPatientId));
+  const { data: allSessions = EMPTY_ARRAY } = usePatientSessionsQuery(realPatientId, Boolean(realPatientId));
+  const { data: agendaEvents = EMPTY_ARRAY } = usePatientAgendaEventsQuery(realPatientId, Boolean(realPatientId));
+  const { data: groupSuggestions = EMPTY_ARRAY } = usePatientGroupSuggestionsQuery(clinicId, Boolean(clinicId));
+  const { data: anamnesisTemplates = EMPTY_ARRAY } = usePatientAnamnesisTemplatesQuery(clinicId, Boolean(clinicId));
+  const { data: baseSchema = EMPTY_ARRAY } = usePatientClinicBaseSchemaQuery(clinicId, Boolean(clinicId));
+  const { data: clinicColorSlots = EMPTY_ARRAY } = useClinicGroupColorSlotsQuery(clinicId, Boolean(clinicId));
+  const { data: collaboratorProfiles = EMPTY_ARRAY } = useClinicCollaboratorsQuery(clinicId, Boolean(clinicId));
+  const profiles: ProfileSummary[] = collaboratorProfiles;
+
+  const {
+    optimisticUpdatePatientStatus,
+    optimisticUpdatePatient,
+    optimisticUpdateSessionStatus,
+    optimisticMoveSessions,
+    optimisticDeleteSessions,
+    optimisticAddOrUpdateGroup,
+    optimisticDeleteGroup,
+    optimisticAddAgendaEvent,
+    optimisticUpdateAgendaEvent,
+    optimisticDeleteAgendaEvent,
+  } = useOptimisticPatientDetailUpdates(realPatientId, clinicId, id);
+
+  const invalidatePatientData = useInvalidatePatientData();
+
   const [shareCollaborators, setShareCollaborators] = useState<SessionShareCollaborator[]>([]);
   const [sessionShareSummaries, setSessionShareSummaries] = useState<Record<string, SessionShareSummary>>({});
-  const [baseSchema, setBaseSchema] = useState<AnamnesisTemplateSchema>([]);
-  const [anamnesisTemplates, setAnamnesisTemplates] = useState<PatientAnamnesisDashboardTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const loading = isPatientLoading && !patient;
+
+  // Redirecionamento canônico de rota (PAC-xxx)
+  useEffect(() => {
+    if (!patient || !id) return;
+    const canonicalRouteKey = getPatientRouteKey(patient);
+    const targetClinicKey = clinic?.route_key || clinicKey;
+
+    if (id !== canonicalRouteKey && targetClinicKey) {
+      navigate(`/clinica/${targetClinicKey}/pacientes/${canonicalRouteKey}${location.search}`, { replace: true });
+    }
+  }, [clinic?.route_key, clinicKey, id, location.search, navigate, patient]);
+
+  const allSessionIdsKey = useMemo(() => allSessions.map((session) => session.id).join(","), [allSessions]);
+
+  // Carregar resumos de compartilhamento das sessões
+  useEffect(() => {
+    if (!allSessionIdsKey) {
+      setSessionShareSummaries((current) => (Object.keys(current).length === 0 ? current : {}));
+      return;
+    }
+
+    let isMounted = true;
+    const sessionIds = allSessions.map((session) => session.id);
+    fetchSessionShareSummaries(sessionIds)
+      .then((summaries) => {
+        if (isMounted) {
+          setSessionShareSummaries(Object.fromEntries(summaries.map((summary) => [summary.session_id, summary])));
+        }
+      })
+      .catch((error) => {
+        logRuntimeError("patient_detail.fetch_session_share_summaries", error, { patientId: id });
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [allSessionIdsKey, allSessions, id]);
+
+  // Carregar colaboradores para compartilhamento da clínica
+  useEffect(() => {
+    if (!clinicId) return;
+
+    let isMounted = true;
+    fetchClinicShareCollaborators(clinicId)
+      .then((collaborators) => {
+        if (isMounted) {
+          setShareCollaborators(collaborators);
+        }
+      })
+      .catch((error) => {
+        logRuntimeError("patient_detail.fetch_share_collaborators", error, { clinicId, patientId: id });
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [clinicId, id]);
+
+  // Auto-completar rascunhos antigos de estagiários
+  useEffect(() => {
+    if (allSessions.length === 0 || !user?.id) return;
+
+    const staleInternDraftIds = allSessions
+      .filter((session) =>
+        shouldAutoCompleteInternDraft({
+          createdAt: session.created_at,
+          currentUserId: user?.id,
+          operationalRole,
+          sessionStatus: session.status,
+          userId: session.user_id,
+        })
+      )
+      .map((session) => session.id);
+
+    if (staleInternDraftIds.length > 0) {
+      void supabase
+        .from("sessions")
+        .update({ status: "concluído" })
+        .in("id", staleInternDraftIds)
+        .then(({ error }) => {
+          if (!error) {
+            optimisticUpdateSessionStatus(staleInternDraftIds, "concluído");
+          }
+        });
+    }
+  }, [allSessions, operationalRole, optimisticUpdateSessionStatus, user?.id]);
+
+  // Sessões filtradas conforme o perfil operacional
+  const sharedSessionIds = useMemo(
+    () => new Set(Object.keys(sessionShareSummaries)),
+    [sessionShareSummaries]
+  );
+
+  const sessions = useMemo(
+    () =>
+      filterSessionsForOperationalRole({
+        canReadAll: can("sessions.read_all"),
+        currentUserId: user?.id,
+        operationalRole,
+        sharedSessionIds,
+        sessions: allSessions,
+      }),
+    [allSessions, can, operationalRole, sharedSessionIds, user?.id]
+  );
+
   // Group dialog state
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<PatientGroup | null>(null);
@@ -715,7 +900,6 @@ const PacienteDetalhe = () => {
   const [sessionShareDialogOpen, setSessionShareDialogOpen] = useState(false);
   const [shareRecipientsSessionId, setShareRecipientsSessionId] = useState<string | null>(null);
   const [patientInfoDialogOpen, setPatientInfoDialogOpen] = useState(false);
-  const [summaryCardIndex, setSummaryCardIndex] = useState(0);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [agendaDate, setAgendaDate] = useState(() => getDefaultAgendaInputs().date);
   const [agendaTime, setAgendaTime] = useState(() => getDefaultAgendaInputs().time);
@@ -739,13 +923,12 @@ const PacienteDetalhe = () => {
   const [deletingPatient, setDeletingPatient] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sessionStatusFilter, setSessionStatusFilter] = useState("all");
-  const [groupStatusFilter, setGroupStatusFilter] = useState("all");
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string>("all");
   const [recordsView, setRecordsView] = useState<PatientRecordsView>("list");
   const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState("all");
   const [dashboardChartPreferences, setDashboardChartPreferences] = useState<Record<string, PatientAnamnesisChartType>>({});
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -761,153 +944,14 @@ const PacienteDetalhe = () => {
     }
 
     setRecurrenceEnabled(Boolean(patient.is_recurring));
-    setRecurrenceWeekdays(normalizePatientRecurringWeekdays(patient.recurring_weekdays));
     setRecurrenceTime(normalizePatientRecurringTime(patient.recurring_time));
   }, [patient]);
 
-  const fetchData = useCallback(async () => {
-    if (!id) return;
-
-    const pRes = await fetchPatientByRef(id, clinicId);
-    if (pRes.error || !pRes.data) {
-      toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
-      navigate(clinicHomePath);
-      return;
-    }
-
-    const realPatientId = pRes.data.id;
-    const canonicalRouteKey = getPatientRouteKey(pRes.data);
-    const targetClinicKey = clinic?.route_key || clinicKey;
-
-    if (id !== canonicalRouteKey && targetClinicKey) {
-      navigate(`/clinica/${targetClinicKey}/pacientes/${canonicalRouteKey}${location.search}`, { replace: true });
-    }
-
-    const [gRes, sRes, clinicRes, profilesRes, colorSlotsRes, agendaRes, anamnesisTemplatesRes] = await Promise.all([
-      supabase.from("patient_groups").select("*").eq("patient_id", realPatientId),
-      supabase.from("sessions").select("*").eq("patient_id", realPatientId).order("session_date", { ascending: false }),
-      clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null }),
-      clinicId ? supabase.from("profiles").select("id, full_name, email, job_title").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
-      clinicId
-        ? supabase.from("clinic_group_color_slots").select("*").eq("clinic_id", clinicId).order("slot_index", { ascending: true })
-        : Promise.resolve({ data: [] }),
-      supabase
-        .from("agenda_events")
-        .select("*")
-        .eq("patient_id", realPatientId)
-        .order("scheduled_for", { ascending: true }),
-      clinicId
-        ? supabase.from("anamnesis_form_templates").select("id, name, schema").eq("clinic_id", clinicId).eq("is_active", true)
-        : Promise.resolve({ data: [] }),
-    ]);
-    const templatesRes = clinicId
-      ? await supabase
-          .from("patient_group_templates")
-          .select("clinic_color_slot_id, color, name, normalized_name, status")
-          .eq("clinic_id", clinicId)
-          .order("name", { ascending: true })
-      : { data: [] };
-
-    const allSessions = (sRes.data ?? []) as Session[];
-    const staleInternDraftIds = allSessions
-      .filter((session) =>
-        shouldAutoCompleteInternDraft({
-          createdAt: session.created_at,
-          currentUserId: user?.id,
-          operationalRole,
-          sessionStatus: session.status,
-          userId: session.user_id,
-        })
-      )
-      .map((session) => session.id);
-
-    if (staleInternDraftIds.length > 0) {
-      const { error: autoCompleteError } = await supabase
-        .from("sessions")
-        .update({ status: "concluído" })
-        .in("id", staleInternDraftIds);
-
-      if (!autoCompleteError) {
-        allSessions.forEach((session) => {
-          if (staleInternDraftIds.includes(session.id)) {
-            session.status = "concluído";
-          }
-        });
-      }
-    }
-
-    let shareSummaries: SessionShareSummary[] = [];
-    try {
-      shareSummaries = await fetchSessionShareSummaries(allSessions.map((session) => session.id));
-    } catch (error) {
-      logRuntimeError("patient_detail.fetch_session_share_summaries", error, { patientId: id });
-    }
-
-    const shareSummaryMap = Object.fromEntries(shareSummaries.map((summary) => [summary.session_id, summary]));
-    const sharedSessionIds = new Set(shareSummaries.map((summary) => summary.session_id));
-    const visibleSessions = filterSessionsForOperationalRole({
-      canReadAll: can("sessions.read_all"),
-      currentUserId: user?.id,
-      operationalRole,
-      sharedSessionIds,
-      sessions: allSessions,
-    });
-    let collaborators: SessionShareCollaborator[] = [];
-    if (clinicId) {
-      try {
-        collaborators = await fetchClinicShareCollaborators(clinicId);
-      } catch (error) {
-        logRuntimeError("patient_detail.fetch_share_collaborators", error, { clinicId, patientId: id });
-      }
-    }
-
-    setPatient(pRes.data);
-    setGroups(gRes.data ?? []);
-    setGroupSuggestions((templatesRes.data ?? []) as GroupSuggestion[]);
-    setClinicColorSlots((colorSlotsRes.data ?? []) as ClinicColorSlotRow[]);
-    setSessions(visibleSessions);
-    setAgendaEvents((agendaRes.data ?? []) as AgendaEvent[]);
-    setSessionShareSummaries(shareSummaryMap);
-    setShareCollaborators(collaborators);
-    setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
-    setBaseSchema(isAnamnesisTemplateSchema(clinicRes.data?.anamnesis_base_schema) ? clinicRes.data.anamnesis_base_schema : []);
-    setAnamnesisTemplates(
-      ((anamnesisTemplatesRes.data ?? []) as AnamnesisTemplateRow[])
-        .filter((template) => isAnamnesisTemplateSchema(template.schema))
-        .map((template) => ({
-          id: template.id,
-          name: template.name,
-          schema: template.schema,
-        }))
-    );
-    setLoading(false);
-  }, [clinicId, id, operationalRole, user?.id, can]);
-
-  const fetchPatientAgendaEvents = useCallback(async () => {
-    const targetUuid = patient?.id;
-    if (!targetUuid) return;
-
-    const { data, error } = await supabase
-      .from("agenda_events")
-      .select("*")
-      .eq("patient_id", targetUuid)
-      .order("scheduled_for", { ascending: true });
-
-    if (error) {
-      toast({ title: "Erro ao atualizar agendamentos", description: error.message, variant: "destructive" });
-      return;
-    }
-
-    setAgendaEvents((data ?? []) as AgendaEvent[]);
-  }, [patient?.id]);
-
-  useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
-
   useEffect(() => {
     const handleAgendaEventsUpdated = () => {
-      void fetchPatientAgendaEvents();
+      if (realPatientId) {
+        void invalidatePatientData(realPatientId, clinicId, ["agenda"]);
+      }
     };
 
     window.addEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleAgendaEventsUpdated);
@@ -915,7 +959,7 @@ const PacienteDetalhe = () => {
     return () => {
       window.removeEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleAgendaEventsUpdated);
     };
-  }, [fetchPatientAgendaEvents]);
+  }, [clinicId, invalidatePatientData, realPatientId]);
 
   const resolvedClinicColorSlots = useMemo<ClinicGroupColorSlot[]>(
     () =>
@@ -936,20 +980,6 @@ const PacienteDetalhe = () => {
   );
 
   useEffect(() => {
-    setCollapsedGroups((current) => {
-      const next = { ...current };
-
-      groups.forEach((group) => {
-        if (!(group.id in next)) {
-          next[group.id] = false;
-        }
-      });
-
-      return next;
-    });
-  }, [groups]);
-
-  useEffect(() => {
     if (!groupColorSlotId) {
       return;
     }
@@ -961,37 +991,17 @@ const PacienteDetalhe = () => {
     }
   }, [getSlotById, groupColor, groupColorSlotId]);
 
-  const handleOpenShareDialog = useCallback(async () => {
-    if (!id || !patient) return;
-    setGeneratingShareLink(true);
-
-    const { data, error } = await supabase.rpc("create_patient_registration_link", {
-      _patient_id: id,
-    });
-
-    if (error || !data || !isShareLinkResponse(data)) {
-      toast({
-        title: "Não foi possível gerar o link",
-        description: error?.message ?? "Tente novamente em alguns instantes.",
-        variant: "destructive",
-      });
-      setGeneratingShareLink(false);
-      return;
-    }
-
-    setShareLink(buildPatientRegistrationUrl(window.location.origin, data.token));
-    setSharePassword(data.password_prefix);
-    setShareCompleted(data.completed);
+  const handleOpenShareDialog = useCallback(() => {
+    if (!patient) return;
     setShareDialogOpen(true);
-    setGeneratingShareLink(false);
-  }, [id, patient]);
+  }, [patient]);
 
   useEffect(() => {
     const shouldOpenShareDialog = (location.state as { openShareDialog?: boolean } | null)?.openShareDialog;
 
     if (!shouldOpenShareDialog || !patient) return;
 
-    void handleOpenShareDialog();
+    handleOpenShareDialog();
     navigate(location.pathname, { replace: true, state: null });
   }, [handleOpenShareDialog, location.pathname, location.state, navigate, patient]);
 
@@ -1091,29 +1101,44 @@ const PacienteDetalhe = () => {
     const resolvedGroupStatus = (reusableSuggestion?.status as PatientGroupStatus | null) || groupStatus;
 
     if (editingGroup) {
+      const updatedGroup: PatientGroup = {
+        ...editingGroup,
+        clinic_color_slot_id: groupColorSlotId,
+        name: groupName.trim(),
+        color: groupColor,
+        status: groupStatus,
+      };
+      optimisticAddOrUpdateGroup(updatedGroup);
+
       const { error } = await supabase
         .from("patient_groups")
         .update({ clinic_color_slot_id: groupColorSlotId, name: groupName.trim(), color: groupColor, status: groupStatus })
         .eq("id", editingGroup.id);
-      if (error) { toast({ title: "Erro ao atualizar grupo", variant: "destructive" }); }
-      else {
+      if (error) {
+        toast({ title: "Erro ao atualizar grupo", variant: "destructive" });
+        if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["groups"]);
+      } else {
         await upsertGroupTemplate({ clinicColorSlotId: groupColorSlotId, color: groupColor, name: groupName.trim(), status: groupStatus });
         toast({ title: "Grupo atualizado" });
       }
     } else {
-      const { error } = await supabase.from("patient_groups").insert({
+      const { data: insertedGroup, error } = await supabase.from("patient_groups").insert({
         clinic_color_slot_id: resolvedGroupColorSlotId,
         name: groupName.trim(),
         color: resolvedGroupColor,
         group_kind: "custom",
         status: resolvedGroupStatus,
         is_default: false,
-        patient_id: id,
+        patient_id: realPatientId || id,
         user_id: user.id,
         clinic_id: clinicRes.data,
-      });
-      if (error) { toast({ title: "Erro ao criar grupo", variant: "destructive" }); }
-      else {
+      }).select("*").single();
+
+      if (error || !insertedGroup) {
+        toast({ title: "Erro ao criar grupo", variant: "destructive" });
+        if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["groups"]);
+      } else {
+        optimisticAddOrUpdateGroup(insertedGroup);
         await upsertGroupTemplate({
           clinicColorSlotId: resolvedGroupColorSlotId,
           color: resolvedGroupColor,
@@ -1126,7 +1151,6 @@ const PacienteDetalhe = () => {
 
     setSavingGroup(false);
     setGroupDialogOpen(false);
-    void fetchData();
   };
 
   const handleSaveClinicColorSlot = async (slotIndex: number, colorHex: string, alpha: number) => {
@@ -1170,7 +1194,7 @@ const PacienteDetalhe = () => {
     setGroupColorSlotId(slotId);
     setGroupColor(colorHex);
     toast({ title: "Paleta da clínica atualizada" });
-    await fetchData();
+    if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["groups"]);
   };
 
   const handleDeleteGroup = async (groupId: string) => {
@@ -1181,13 +1205,18 @@ const PacienteDetalhe = () => {
       return;
     }
 
+    optimisticDeleteGroup(groupId);
+    setDeleteConfirmId(null);
+
     // Unlink sessions first
     await supabase.from("sessions").update({ group_id: null }).eq("group_id", groupId);
     const { error } = await supabase.from("patient_groups").delete().eq("id", groupId);
-    if (error) { toast({ title: "Erro ao excluir grupo", variant: "destructive" }); }
-    else { toast({ title: "Grupo excluído" }); }
-    setDeleteConfirmId(null);
-    void fetchData();
+    if (error) {
+      toast({ title: "Erro ao excluir grupo", variant: "destructive" });
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["groups", "sessions"]);
+    } else {
+      toast({ title: "Grupo excluído" });
+    }
   };
 
   const handlePatientStatusChange = async (nextStatus: PatientStatusSelectValue) => {
@@ -1204,6 +1233,7 @@ const PacienteDetalhe = () => {
       return;
     }
 
+    optimisticUpdatePatientStatus(nextStatus as PatientStatus);
     setUpdatingPatientStatus(true);
     const { error } = await supabase
       .from("patients")
@@ -1212,12 +1242,10 @@ const PacienteDetalhe = () => {
 
     if (error) {
       toast({ title: "Erro ao atualizar status do paciente", description: error.message, variant: "destructive" });
-      setUpdatingPatientStatus(false);
-      return;
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["patient"]);
+    } else {
+      toast({ title: "Status do paciente atualizado" });
     }
-
-    setPatient((current) => (current ? { ...current, status: nextStatus } : current));
-    toast({ title: "Status do paciente atualizado" });
     setUpdatingPatientStatus(false);
   };
 
@@ -1331,11 +1359,11 @@ const PacienteDetalhe = () => {
         filters: {
           searchTerm,
           sessionStatus: sessionStatusFilter,
-          groupStatus: groupStatusFilter,
+          selectedTagId: selectedTagFilter,
         },
         getSessionText: getSessionSearchText,
       }),
-    [getSessionSearchText, groupStatusFilter, groups, searchTerm, sessionStatusFilter, sessions]
+    [getSessionSearchText, groups, searchTerm, sessionStatusFilter, selectedTagFilter, sessions]
   );
 
   const dashboardStorageKey = clinicId && id ? `therapy-flow:patient-anamnesis-dashboard:v1:${clinicId}:${id}` : null;
@@ -1415,28 +1443,32 @@ const PacienteDetalhe = () => {
       return;
     }
 
+    const resolvedGroupId = nextGroupId === "none" ? null : nextGroupId;
+    optimisticMoveSessions(selectedSessionIds, resolvedGroupId);
+    handleExitSelectionMode();
+
     setBulkUpdating(true);
     const { error } = await supabase
       .from("sessions")
-      .update({ group_id: nextGroupId === "none" ? null : nextGroupId })
+      .update({ group_id: resolvedGroupId })
       .in("id", selectedSessionIds);
 
     if (error) {
       toast({ title: "Erro ao mover atendimentos", description: error.message, variant: "destructive" });
-      setBulkUpdating(false);
-      return;
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+    } else {
+      toast({ title: "Atendimentos movidos" });
     }
-
-    toast({ title: "Atendimentos movidos" });
-    handleExitSelectionMode();
     setBulkUpdating(false);
-    void fetchData();
   };
 
   const handleBulkStatusUpdate = async (nextStatus: string) => {
     if (selectedSessionIds.length === 0) {
       return;
     }
+
+    optimisticUpdateSessionStatus(selectedSessionIds, nextStatus);
+    handleExitSelectionMode();
 
     setBulkUpdating(true);
     const { error } = await supabase
@@ -1446,14 +1478,11 @@ const PacienteDetalhe = () => {
 
     if (error) {
       toast({ title: "Erro ao atualizar status", description: error.message, variant: "destructive" });
-      setBulkUpdating(false);
-      return;
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+    } else {
+      toast({ title: "Status dos atendimentos atualizado" });
     }
-
-    toast({ title: "Status dos atendimentos atualizado" });
-    handleExitSelectionMode();
     setBulkUpdating(false);
-    void fetchData();
   };
 
   const handleBulkDelete = async () => {
@@ -1469,19 +1498,19 @@ const PacienteDetalhe = () => {
       return;
     }
 
+    optimisticDeleteSessions(selectedSessionIds);
+    handleExitSelectionMode();
+
     setBulkUpdating(true);
     const { error } = await supabase.from("sessions").delete().in("id", selectedSessionIds);
 
     if (error) {
       toast({ title: "Erro ao excluir atendimentos", description: error.message, variant: "destructive" });
-      setBulkUpdating(false);
-      return;
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+    } else {
+      toast({ title: "Atendimentos excluídos" });
     }
-
-    toast({ title: "Atendimentos excluídos" });
-    handleExitSelectionMode();
     setBulkUpdating(false);
-    void fetchData();
   };
 
   const handleOpenSessionShareDialog = () => {
@@ -1569,68 +1598,6 @@ const PacienteDetalhe = () => {
   }).length;
   const onTimeSessionsCount = Math.max(scheduledSessionsCount - absentSessionsCount - delayedSessionsCount, 0);
   const settledPaymentCents = Math.min(operationalSummary.paidCents, operationalSummary.chargedCents);
-  const patientPaymentChartSegments = [
-    { color: dashboardColors.emerald, label: "Acertado", value: settledPaymentCents },
-    { color: dashboardColors.blue, label: "Crédito", value: operationalSummary.creditCents },
-    { color: dashboardColors.amber, label: "Em aberto", value: operationalSummary.grossOpenBalanceCents },
-    { color: dashboardColors.rose, label: "Devendo", value: operationalSummary.openBalanceCents },
-  ];
-  const paymentChartTotalCents = patientPaymentChartSegments.reduce((sum, segment) => sum + segment.value, 0);
-  const patientAbsenteeismChartSegments = [
-    { color: dashboardColors.rose, label: "Faltou", value: absentSessionsCount },
-    { color: dashboardColors.amber, label: "Atrasou", value: delayedSessionsCount },
-    { color: dashboardColors.emerald, label: "No horário", value: onTimeSessionsCount },
-  ];
-  const summaryCards: { detail: ReactNode; label: string; value: string; chart?: ReactNode }[] = [
-    {
-      detail: (
-        <span className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-          <span>{canceledSessionsCount} cancelamento{canceledSessionsCount !== 1 ? "s" : ""}</span>
-          <span className="hidden sm:inline">·</span>
-          <span>média {operationalSummary.averageDelayMinutes} min</span>
-          <span className="hidden sm:inline">·</span>
-          <span>{completedSessionsCount} concluído{completedSessionsCount !== 1 ? "s" : ""}</span>
-          <span className="hidden sm:inline">·</span>
-          <span>{draftSessionsCount} rascunho{draftSessionsCount !== 1 ? "s" : ""}</span>
-        </span>
-      ),
-      label: "Absenteísmo",
-      value: `${totalSessionsCount} atendimento${totalSessionsCount !== 1 ? "s" : ""}`,
-      chart: <SummaryInlineChart segments={patientAbsenteeismChartSegments} />,
-    },
-    {
-      detail: latestSession?.status ?? "Sem atendimento",
-      label: "Mais recente",
-      value: formatSessionMetaDate(latestSession?.session_date ?? null),
-    },
-    ...(canViewFinancialData
-      ? [{
-          detail: (
-            <>
-              Acertado {formatMoneyCents(settledPaymentCents)} · cobrado{" "}
-              {hasPaymentSummaryAdjustment ? (
-                <>
-                  <span className="line-through">{formatMoneyCents(operationalSummary.originalChargedCents)}</span>{" "}
-                  {formatMoneyCents(operationalSummary.chargedCents)}
-                  <span className={paymentSummaryAdjustmentCents > 0 ? "ml-1 font-semibold text-success" : "ml-1 font-semibold text-destructive"}>
-                    {paymentSummaryAdjustmentCents > 0 ? "+" : ""}
-                    {paymentSummaryAdjustmentPercent}%
-                  </span>
-                </>
-              ) : (
-                formatMoneyCents(operationalSummary.chargedCents)
-              )}
-            </>
-          ),
-          label: "Pagamentos",
-          value: formatMoneyCents(paymentChartTotalCents),
-          chart: <SummaryInlineChart segments={patientPaymentChartSegments} valueFormatter={formatMoneyCents} />,
-        }]
-      : []),
-  ];
-  const activeSummaryCard = summaryCards[summaryCardIndex] ?? summaryCards[0];
-  const goToPreviousSummary = () => setSummaryCardIndex((current) => (current === 0 ? summaryCards.length - 1 : current - 1));
-  const goToNextSummary = () => setSummaryCardIndex((current) => (current + 1) % summaryCards.length);
   const patientRecurringWeekdays = normalizePatientRecurringWeekdays(patient.recurring_weekdays);
   const patientRecurringTime = normalizePatientRecurringTime(patient.recurring_time);
   const patientRecurrenceLabel = patient.is_recurring && patientRecurringWeekdays.length > 0
@@ -1677,7 +1644,7 @@ const PacienteDetalhe = () => {
         throw error;
       }
 
-      setAgendaEvents((current) => [...current, data as AgendaEvent].sort((left, right) => left.scheduled_for.localeCompare(right.scheduled_for)));
+      optimisticAddAgendaEvent(data as AgendaEvent);
       setAgendaDialogOpen(false);
       notifyAgendaEventsUpdated();
       toast({ title: "Agendamento confirmado" });
@@ -1781,8 +1748,8 @@ const PacienteDetalhe = () => {
         }
       }
 
-      setPatient(updatedPatient as Patient);
-      await fetchPatientAgendaEvents();
+      optimisticUpdatePatient(updatedPatient as Patient);
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["patient", "agenda"]);
       notifyAgendaEventsUpdated();
       setRecurrenceDialogOpen(false);
       toast({ title: "Recorrência atualizada" });
@@ -1802,13 +1769,14 @@ const PacienteDetalhe = () => {
       setSavingAgendaDetails(true);
 
       if (selectedAgendaStatusAction === "delete") {
+        optimisticDeleteAgendaEvent(selectedAgendaEvent.id);
         const { error } = await supabase.from("agenda_events").delete().eq("id", selectedAgendaEvent.id);
 
         if (error) {
+          if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["agenda"]);
           throw error;
         }
 
-        setAgendaEvents((current) => current.filter((event) => event.id !== selectedAgendaEvent.id));
         setSelectedAgendaEvent(null);
         notifyAgendaEventsUpdated();
         toast({ title: "Agendamento excluído" });
@@ -1816,6 +1784,9 @@ const PacienteDetalhe = () => {
       }
 
       const previousStatus = getAgendaEventStatus(selectedAgendaEvent);
+      const updatedAgendaRecord = { ...selectedAgendaEvent, status: selectedAgendaStatusAction };
+      optimisticUpdateAgendaEvent(updatedAgendaRecord);
+
       const { data, error } = await supabase
         .from("agenda_events")
         .update({ status: selectedAgendaStatusAction })
@@ -1824,15 +1795,11 @@ const PacienteDetalhe = () => {
         .single();
 
       if (error) {
+        if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["agenda"]);
         throw error;
       }
 
       const updatedEvent = data as AgendaEvent;
-      setAgendaEvents((current) =>
-        current
-          .map((event) => (event.id === updatedEvent.id ? updatedEvent : event))
-          .sort((left, right) => left.scheduled_for.localeCompare(right.scheduled_for))
-      );
       setSelectedAgendaEvent(updatedEvent);
 
       if (selectedAgendaStatusAction === "cancelado" && previousStatus !== "cancelado") {
@@ -1856,8 +1823,8 @@ const PacienteDetalhe = () => {
           throw sessionError;
         }
 
-        if (canceledSession) {
-          setSessions((current) => [canceledSession as Session, ...current]);
+        if (canceledSession && realPatientId) {
+          void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
         }
       }
 
@@ -1891,11 +1858,7 @@ const PacienteDetalhe = () => {
       }
 
       const updatedEvent = data as AgendaEvent;
-      setAgendaEvents((current) =>
-        current
-          .map((event) => (event.id === updatedEvent.id ? updatedEvent : event))
-          .sort((left, right) => left.scheduled_for.localeCompare(right.scheduled_for))
-      );
+      optimisticUpdateAgendaEvent(updatedEvent);
       setSelectedAgendaEvent(updatedEvent);
       notifyAgendaEventsUpdated();
       toast({ title: "Data e horário atualizados" });
@@ -1919,11 +1882,62 @@ const PacienteDetalhe = () => {
     });
   };
 
+  const handleStartAttendanceNow = async () => {
+    if (!patient || !user) return;
+
+    if (upcomingAgendaEvent) {
+      navigate(`/pacientes/${id}/sessao/novo`, {
+        state: {
+          agendaEventId: upcomingAgendaEvent.id,
+          scheduledFor: upcomingAgendaEvent.scheduled_for,
+        },
+      });
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const { data, error } = await supabase
+        .from("agenda_events")
+        .insert({
+          clinic_id: clinicId,
+          event_type: "atendimento",
+          patient_id: patient.id,
+          scheduled_for: now.toISOString(),
+          status: "confirmado",
+          title: patient.name,
+          user_id: user.id,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      notifyAgendaEventsUpdated();
+
+      navigate(`/pacientes/${id}/sessao/novo`, {
+        state: {
+          agendaEventId: data.id,
+          scheduledFor: data.scheduled_for,
+        },
+      });
+    } catch (err) {
+      logRuntimeError("patient_detail.start_attendance_now", err);
+      toast({
+        title: "Erro ao iniciar atendimento",
+        description: "Não foi possível registrar o agendamento no momento.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <PatientFilesProvider patientId={patient?.id || id!} clinicId={clinicId}>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
       {/* Header */}
-      <div className="overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 px-4 py-4 shadow-sm sm:px-5">
+      <div data-tutorial="patient-profile-header" className="overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 px-4 py-4 shadow-sm sm:px-5">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-start gap-4">
             <Button
@@ -2035,65 +2049,113 @@ const PacienteDetalhe = () => {
                 {EDITABLE_PATIENT_STATUS_OPTIONS.map((status) => (
                   <SelectItem key={status.value} value={status.value} className="text-xs">{status.label}</SelectItem>
                 ))}
-                {canDeletePatient ? (
-                  <SelectItem value={DELETE_PATIENT_STATUS_OPTION.value} className="text-xs text-destructive focus:text-destructive">
-                    {DELETE_PATIENT_STATUS_OPTION.label}
-                  </SelectItem>
-                ) : null}
               </SelectContent>
             </Select>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Mais opções" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground shrink-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem
+                  data-tutorial="patient-btn-share-form"
+                  onClick={() => handleOpenShareDialog()}
+                >
+                  <Share2 className="mr-2 h-4 w-4" />
+                  Compartilhar cadastro
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setRecurrenceDialogOpen(true)}>
+                  <CalendarClock className="mr-2 h-4 w-4" />
+                  Configurar recorrência
+                </DropdownMenuItem>
+                {canDeletePatient && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setDeletePatientDialogOpen(true)}
+                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Excluir paciente
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]">
-        <div className="overflow-hidden rounded-2xl border bg-card p-4">
-          <div className="grid grid-cols-[44px,minmax(0,1fr),44px] items-center gap-2 md:flex md:gap-4">
-            <Button type="button" variant="outline" size="icon" onClick={goToPreviousSummary} aria-label="Resumo anterior" className="h-11 w-11 md:h-10 md:w-10">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="min-w-0 flex-1 text-center">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{activeSummaryCard.label}</p>
-              <p className={activeSummaryCard.label === "Mais recente" ? "mt-2 truncate text-lg font-semibold" : "mt-2 break-words text-[clamp(1.35rem,7vw,1.875rem)] font-semibold leading-tight md:truncate md:text-2xl"}>
-                {activeSummaryCard.value}
-              </p>
-              <p className="mx-auto mt-1 max-w-full text-balance text-sm leading-snug text-muted-foreground md:truncate">{activeSummaryCard.detail}</p>
-              {activeSummaryCard.chart}
+        {/* Compact Metrics Grid */}
+        <div data-tutorial="patient-metrics-panel" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 rounded-2xl border bg-card p-4 shadow-sm relative">
+          <div className="rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Último Atendimento</span>
+              <ComponentHelpButton helpId="patient-metrics-panel" size="xs" />
             </div>
-            <Button type="button" variant="outline" size="icon" onClick={goToNextSummary} aria-label="Próximo resumo" className="h-11 w-11 md:h-10 md:w-10">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            <div className="mt-2">
+              <p className="text-lg font-bold text-foreground">{formatSessionMetaDate(latestSession?.session_date ?? null)}</p>
+              <p className="text-xs text-muted-foreground capitalize mt-0.5">{latestSession ? `Status: ${latestSession.status}` : "Sem atendimentos anteriores"}</p>
+            </div>
           </div>
-          <div className="mt-3 flex justify-center gap-1.5" aria-label="Opções de resumo">
-            {summaryCards.map((card, index) => (
-              <button
-                key={card.label}
-                type="button"
-                className={`h-1.5 rounded-full transition-all ${index === summaryCardIndex ? "w-5 bg-primary" : "w-1.5 bg-muted-foreground/30"}`}
-                onClick={() => setSummaryCardIndex(index)}
-                aria-label={`Mostrar ${card.label}`}
-                aria-current={index === summaryCardIndex ? "true" : undefined}
-              />
-            ))}
+          <div className="rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Presença & Histórico</span>
+            <div className="mt-2">
+              <p className="text-lg font-bold text-foreground">{totalSessionsCount} atendimento{totalSessionsCount !== 1 ? "s" : ""}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {completedSessionsCount} concluído{completedSessionsCount !== 1 ? "s" : ""} · {canceledSessionsCount} cancelado{canceledSessionsCount !== 1 ? "s" : ""}
+                {operationalSummary.averageDelayMinutes > 0 ? ` · média ${operationalSummary.averageDelayMinutes}min` : ""}
+              </p>
+            </div>
           </div>
+          {canViewFinancialData ? (
+            <div className="rounded-xl border bg-muted/20 p-3 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Financeiro do Paciente</span>
+              <div className="mt-2">
+                <p className="text-lg font-bold text-foreground">{formatMoneyCents(settledPaymentCents)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Cobrado: {formatMoneyCents(operationalSummary.chargedCents)}
+                  {operationalSummary.openBalanceCents > 0 ? ` · Aberto: ${formatMoneyCents(operationalSummary.openBalanceCents)}` : " · Em dia"}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border bg-muted/20 p-3 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agendamentos</span>
+              <div className="mt-2">
+                <p className="text-lg font-bold text-foreground">{futureAgendaCount} agendado{futureAgendaCount !== 1 ? "s" : ""}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {upcomingAgendaEvent ? `Próximo: ${formatAgendaEventDateTime(upcomingAgendaEvent.scheduled_for)}` : "Nenhum agendamento futuro"}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
-        <AgendaWidget
-          fixedPatient={{ id: patient.id, name: patient.name }}
-          headerAccessory={
-            <Button
-              type="button"
-              variant={patient.is_recurring ? "default" : "outline"}
-              size="sm"
-              className={getDesignLabButtonClass("hover:w-[200px]", "h-9 rounded-xl text-xs")}
-              onClick={() => setRecurrenceDialogOpen(true)}
-              title={patient.is_recurring ? `Recorrente: ${patientRecurrenceLabel}` : "Configurar recorrência"}
-            >
-              <CalendarClock className={`${designLabIconClass} h-3.5 w-3.5`} />
-              <span className={designLabLabelClass}>{patientRecurrenceLabel}</span>
-            </Button>
-          }
-        />
+        <div data-tutorial="patient-internal-agenda">
+          <AgendaWidget
+            fixedPatient={{ id: patient.id, name: patient.name }}
+            onStartAttendance={() => void handleStartAttendanceNow()}
+            startAttendanceLabel="Iniciar atendimento agora"
+            headerAccessory={
+              <Button
+                data-tutorial="patient-btn-recurrence"
+                type="button"
+                variant={patient.is_recurring ? "default" : "outline"}
+                size="sm"
+                className={getDesignLabButtonClass("hover:w-[200px]", "h-9 rounded-xl text-xs")}
+                onClick={() => setRecurrenceDialogOpen(true)}
+                title={patient.is_recurring ? `Recorrente: ${patientRecurrenceLabel}` : "Configurar recorrência"}
+              >
+                <CalendarClock className={`${designLabIconClass} h-3.5 w-3.5`} />
+                <span className={designLabLabelClass}>{patientRecurrenceLabel}</span>
+              </Button>
+            }
+          />
+        </div>
       </div>
 
       {/* Group management toolbar */}
@@ -2101,8 +2163,8 @@ const PacienteDetalhe = () => {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <LiquidTabs
             tabs={[
-              { id: "list", label: "Grupos", icon: FolderPlus, buttonClass: getDesignLabButtonClass("hover:w-[120px]"), labelClass: designLabLabelClass, iconClass: designLabIconClass },
-              ...(isFeatureEnabled("storage_s3_integration") ? [{ id: "files", label: "Arquivos", icon: FileText, buttonClass: getDesignLabButtonClass("hover:w-[125px]"), labelClass: designLabLabelClass, iconClass: designLabIconClass }] : []),
+              { id: "list", label: "Atendimentos", icon: ClipboardList, dataTutorial: "patient-tab-sessions", buttonClass: getDesignLabButtonClass("hover:w-[140px]"), labelClass: designLabLabelClass, iconClass: designLabIconClass },
+              ...(isFeatureEnabled("storage_s3_integration") ? [{ id: "files", label: "Arquivos", icon: FileText, dataTutorial: "patient-tab-files", buttonClass: getDesignLabButtonClass("hover:w-[125px]"), labelClass: designLabLabelClass, iconClass: designLabIconClass }] : []),
               ...(isFeatureEnabled("dashboards_patient") ? [{ id: "dashboard", label: "Estatísticas", icon: BarChart3, buttonClass: getDesignLabButtonClass("hover:w-[140px]"), labelClass: designLabLabelClass, iconClass: designLabIconClass }] : [])
             ]}
             activeTab={recordsView}
@@ -2110,17 +2172,19 @@ const PacienteDetalhe = () => {
             className="w-full sm:w-auto"
             tabClassName="flex-1 sm:flex-none"
           />
-          <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
-            <h2 className="text-lg font-semibold leading-tight">
-              {recordsView === "dashboard" ? "Dashboard de Anamnese" : recordsView === "files" ? "Arquivos do Paciente" : "Grupos & Atendimentos"}
-            </h2>
-            {!isIntern && recordsView === "list" && (
-              <Button variant="outline" size="sm" onClick={openNewGroup} className={getDesignLabButtonClass("hover:w-[140px]")}>
-                <FolderPlus className={`${designLabIconClass} h-4 w-4`} />
-                <span className={designLabLabelClass}>Novo Grupo</span>
+          {recordsView === "dashboard" && !isIntern && (
+            <div className="flex items-center justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`${clinicHomePath}/configuracoes?secao=forms`)}
+                className="gap-2 text-xs"
+              >
+                <ClipboardList className="h-4 w-4 text-primary" />
+                Gerenciar Formulários
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {recordsView === "dashboard" ? (
@@ -2141,17 +2205,42 @@ const PacienteDetalhe = () => {
           />
         ) : (
           <>
+        {/* Banner de Rascunhos Pendentes */}
+        {sessions.filter((s) => s.status === "rascunho").length > 0 && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200 animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+              <div>
+                <p className="font-semibold text-sm">
+                  {sessions.filter((s) => s.status === "rascunho").length} atendimento(s) em rascunho pendente(s)
+                </p>
+                <p className="text-xs text-muted-foreground dark:text-amber-300/80">
+                  Revisar e concluir atendimentos em andamento mantém o prontuário clínico protegido e atualizado.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-amber-500/40 bg-background/80 hover:bg-background text-xs gap-1 self-start sm:self-auto shrink-0"
+              onClick={() => setSessionStatusFilter("rascunho")}
+            >
+              Ver Rascunhos
+            </Button>
+          </div>
+        )}
+
         <Card>
-          <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr),180px,180px]">
+          <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr),200px,220px]">
             <div className="space-y-2">
-              <Label htmlFor="sessions-search">Buscar por grupo ou atendimento</Label>
+              <Label htmlFor="sessions-search">Buscar no prontuário</Label>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="sessions-search"
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Ex: lombar, rascunho, 18/03/2026"
+                  placeholder="Ex: lombar, conduta, 18/03/2026"
                   className="pl-9"
                 />
               </div>
@@ -2163,7 +2252,7 @@ const PacienteDetalhe = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="all">Todos os status</SelectItem>
                   {SESSION_STATUSES.map((status) => (
                     <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
                   ))}
@@ -2171,16 +2260,17 @@ const PacienteDetalhe = () => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Status do grupo</Label>
-              <Select value={groupStatusFilter} onValueChange={setGroupStatusFilter}>
+              <Label>Filtrar por Sintoma / Tag</Label>
+              <Select value={selectedTagFilter} onValueChange={setSelectedTagFilter}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {GROUP_STATUSES.map((status) => (
-                    <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                  <SelectItem value="all">Todos os sintomas / tags</SelectItem>
+                  {groups.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
                   ))}
+                  <SelectItem value="none">Sintomas não definidos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2191,19 +2281,29 @@ const PacienteDetalhe = () => {
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="flex flex-wrap items-center gap-3 p-4">
               <Badge variant="secondary">{selectedSessionIds.length} atendimento(s) selecionado(s)</Badge>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => void handleBulkStatusUpdate("concluído")}
+                disabled={bulkUpdating || selectedSessionIds.length === 0}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-sm"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Concluir Selecionados
+              </Button>
               <Select onValueChange={(value) => void handleBulkMove(value)} disabled={bulkUpdating || selectedSessionIds.length === 0}>
-                <SelectTrigger className="w-[220px] bg-background">
-                  <SelectValue placeholder="Mover para grupo" />
+                <SelectTrigger className="w-[240px] bg-background">
+                  <SelectValue placeholder="Vincular a Sintoma / Tag" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Sem grupo</SelectItem>
+                  <SelectItem value="none">Sintomas não definidos</SelectItem>
                   {Array.from(new Map(groups.map(g => [g.name, g])).values()).map((group) => (
                     <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <Select onValueChange={(value) => void handleBulkStatusUpdate(value)} disabled={bulkUpdating || selectedSessionIds.length === 0}>
-                <SelectTrigger className="w-[220px] bg-background">
+                <SelectTrigger className="w-[180px] bg-background">
                   <SelectValue placeholder="Alterar status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2237,149 +2337,144 @@ const PacienteDetalhe = () => {
             </CardContent>
           </Card>
         )}
-      {/* Groups with sessions */}
-      {sessionView.groups.map((groupView) => (
-        <Card key={groupView.group.id}>
-          <CardHeader
-            className="border-l-4 rounded-tl-lg"
-            style={{ borderLeftColor: getLegacyGroupHex(groupView.group.color) }}
-          >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <button
-                type="button"
-                className="flex w-full flex-1 items-start justify-between gap-3 text-left"
-                onClick={() => toggleGroupCollapsed(groupView.group.id)}
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <CardTitle className="text-lg">{groupView.group.name}</CardTitle>
-                    {getPatientGroupKind(groupView.group) !== "default" && groupView.group.status && (
-                      <Badge variant="outline" className={groupStatusBadgeStyles[groupView.group.status as PatientGroupStatus]}>
-                        {GROUP_STATUSES.find((status) => status.value === groupView.group.status)?.label || "Em andamento"}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="mt-2 grid gap-x-4 gap-y-1 text-sm text-muted-foreground sm:flex sm:flex-wrap">
-                    <span>{groupView.sessionCount} atendimento{groupView.sessionCount !== 1 ? "s" : ""}</span>
-                    <span>Primeiro: {formatSessionMetaDate(groupView.firstSessionDate)}</span>
-                    <span>Mais recente: {formatSessionMetaDate(groupView.latestSessionDate)}</span>
-                  </div>
-                </div>
-                {collapsedGroups[groupView.group.id] ? <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronUp className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
-              </button>
-              <div className="flex items-center justify-end gap-1 sm:pt-0">
-                {!isIntern && getPatientGroupKind(groupView.group) === "custom" && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditGroup(groupView.group)} aria-label="Editar grupo">
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-                {!isIntern && getPatientGroupKind(groupView.group) === "custom" && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteConfirmId(groupView.group.id)} aria-label="Excluir grupo">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                )}
+        {/* Barra de Filtros por Sintomas / Tags e Histórico */}
+        <div className="space-y-3 pt-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
+                  Histórico de Atendimentos
+                  <Badge variant="secondary" className="text-xs font-semibold px-2 py-0.5 rounded-full">
+                    {sessionView.totalCount}
+                  </Badge>
+                </h2>
+                <ComponentHelpButton
+                  helpId="patient-tab-sessions"
+                  size="xs"
+                />
               </div>
+              <p className="text-xs text-muted-foreground">
+                Linha do tempo cronológica com filtros rápidos por sintomas e motivos de tratamento
+              </p>
             </div>
-          </CardHeader>
-          <AnimatePresence initial={false}>
-            {!collapsedGroups[groupView.group.id] && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden"
-              >
-                <CardContent className="pt-4 space-y-3">
-                  {groupView.sessions.map((session) => (
-                    <SessionCard
-                      key={session.id}
-                      baseSchema={baseSchema}
-                      canViewFinancialData={canViewFinancialData}
-                      creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
-                      creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
-                      session={session}
-                      shareSummary={sessionShareSummaries[session.id]}
-                      isSelected={selectedSessionIds.includes(session.id)}
-                      selectionMode={!isIntern && selectionMode}
-                      borderColor={getLegacyGroupHex(groupView.group.color)}
-                      onPressStart={() => handleSessionPressStart(session.id)}
-                      onPressCancel={handleSessionPressCancel}
-                      onToggleSelect={() => toggleSessionSelection(session.id)}
-                      onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
-                      navigateTo={() => handleSessionNavigate(session.id)}
-                    />
-                  ))}
-                  {groupView.sessions.length === 0 && <p className="text-sm text-muted-foreground py-2">Nenhum atendimento neste grupo.</p>}
-                </CardContent>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </Card>
-      ))}
+          </div>
 
-      {/* Ungrouped sessions */}
-      {sessionView.ungrouped.length > 0 && (
-        <Card>
-          <CardHeader>
-            <button
+          {/* Filtros em Pílulas Táteis por Tags / Sintomas */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <Button
               type="button"
-              className="flex w-full items-center justify-between text-left"
-              onClick={() => toggleGroupCollapsed("ungrouped")}
+              size="sm"
+              variant={selectedTagFilter === "all" ? "default" : "outline"}
+              onClick={() => setSelectedTagFilter("all")}
+              className="text-xs h-7 px-3 rounded-full shrink-0 font-medium"
             >
-              <div>
-                <CardTitle className="text-lg">Atendimentos sem grupo</CardTitle>
-                <p className="mt-2 text-sm text-muted-foreground">{sessionView.ungrouped.length} atendimento{sessionView.ungrouped.length !== 1 ? "s" : ""}</p>
-              </div>
-              {collapsedGroups.ungrouped ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 text-muted-foreground" />}
-            </button>
-          </CardHeader>
-          <AnimatePresence initial={false}>
-            {!collapsedGroups.ungrouped && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden"
+              ✨ Todos ({sessionView.totalCount})
+            </Button>
+
+            {sessionView.tagStats.map(({ group, count }) => {
+              const isSelected = selectedTagFilter === group.id;
+              const groupHex = getLegacyGroupHex(group.color);
+              return (
+                <Button
+                  key={group.id}
+                  type="button"
+                  size="sm"
+                  variant={isSelected ? "default" : "outline"}
+                  onClick={() => setSelectedTagFilter(isSelected ? "all" : group.id)}
+                  className={`text-xs h-7 px-3 rounded-full shrink-0 gap-1.5 transition-all ${
+                    isSelected ? "shadow-sm font-semibold ring-1 ring-primary/40" : "text-foreground hover:bg-accent/40"
+                  }`}
+                  style={
+                    isSelected
+                      ? {
+                          borderColor: groupHex,
+                          backgroundColor: groupHex,
+                          color: getReadableTextColor(groupHex),
+                        }
+                      : undefined
+                  }
+                >
+                  <span
+                    className="h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: getLegacyGroupHex(group.color) }}
+                  />
+                  {group.name}
+                  <span className={`text-[10px] ml-0.5 opacity-80 ${isSelected ? "" : "text-muted-foreground"}`}>
+                    ({count})
+                  </span>
+                </Button>
+              );
+            })}
+
+            {sessionView.ungroupedCount > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant={selectedTagFilter === "none" ? "default" : "outline"}
+                onClick={() => setSelectedTagFilter(selectedTagFilter === "none" ? "all" : "none")}
+                className="text-xs h-7 px-3 rounded-full shrink-0 text-muted-foreground"
               >
-                <CardContent className="pt-4 space-y-3">
-                  {sessionView.ungrouped.map((session) => (
-                    <SessionCard
-                      key={session.id}
-                      baseSchema={baseSchema}
-                      canViewFinancialData={canViewFinancialData}
-                      creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
-                      creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
-                      session={session}
-                      shareSummary={sessionShareSummaries[session.id]}
-                      isSelected={selectedSessionIds.includes(session.id)}
-                      selectionMode={!isIntern && selectionMode}
-                      onPressStart={() => handleSessionPressStart(session.id)}
-                      onPressCancel={handleSessionPressCancel}
-                      onToggleSelect={() => toggleSessionSelection(session.id)}
-                      onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
-                      navigateTo={() => handleSessionNavigate(session.id)}
-                    />
-                  ))}
-                </CardContent>
-              </motion.div>
+                Sintomas não definidos ({sessionView.ungroupedCount})
+              </Button>
             )}
-          </AnimatePresence>
-        </Card>
-      )}
+          </div>
+        </div>
 
-      {sessionView.groups.length === 0 && sessionView.ungrouped.length === 0 && (
-        <Card className="p-8 text-center">
-          <p className="text-muted-foreground">Nenhum resultado encontrado para a busca ou filtros atuais.</p>
-        </Card>
-      )}
+        {/* Linha do Tempo Cronológica Unificada */}
+        {sessionView.chronologicalSessions.length > 0 ? (
+          <div className="space-y-3">
+            {sessionView.chronologicalSessions.map((session) => {
+              const careLineIds = getSessionCareLineIds(session);
+              const sessionGroups = careLineIds
+                .map((id) => groups.find((g) => g.id === id))
+                .filter(Boolean) as PatientGroup[];
+              const primaryColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : undefined;
 
-      {sessions.length === 0 && groups.length === 0 && (
-        <Card className="p-8 text-center">
-          <p className="text-muted-foreground">Nenhum atendimento registrado.</p>
-        </Card>
-      )}
+              return (
+                <SessionCard
+                  key={session.id}
+                  baseSchema={baseSchema}
+                  canViewFinancialData={canViewFinancialData}
+                  creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
+                  creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
+                  session={session}
+                  sessionGroups={sessionGroups}
+                  shareSummary={sessionShareSummaries[session.id]}
+                  isSelected={selectedSessionIds.includes(session.id)}
+                  selectionMode={!isIntern && selectionMode}
+                  borderColor={primaryColor}
+                  onPressStart={() => handleSessionPressStart(session.id)}
+                  onPressCancel={handleSessionPressCancel}
+                  onToggleSelect={() => toggleSessionSelection(session.id)}
+                  onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
+                  navigateTo={() => handleSessionNavigate(session.id)}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <Card className="p-8 text-center border-dashed">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Calendar className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="mt-3 text-base font-semibold">Nenhum atendimento encontrado</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {searchTerm || sessionStatusFilter !== "all" || selectedTagFilter !== "all"
+                ? "Nenhum atendimento corresponde aos filtros selecionados."
+                : "Este paciente ainda não possui atendimentos registrados."}
+            </p>
+            {selectedTagFilter !== "all" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4 text-xs"
+                onClick={() => setSelectedTagFilter("all")}
+              >
+                Ver todos os atendimentos
+              </Button>
+            )}
+          </Card>
+        )}
           </>
         )}
       </div>
@@ -2388,11 +2483,11 @@ const PacienteDetalhe = () => {
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
         <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
           <DialogHeader>
-            <DialogTitle>{editingGroup ? "Editar Grupo" : "Novo Grupo"}</DialogTitle>
+            <DialogTitle>{editingGroup ? "Editar Linha de Cuidado" : "Nova Linha de Cuidado"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Nome do grupo</Label>
+              <Label>Nome da Linha de Cuidado / Motivo</Label>
               <Popover open={groupComboboxOpen} onOpenChange={setGroupComboboxOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -2403,7 +2498,7 @@ const PacienteDetalhe = () => {
                     className="h-auto min-h-10 w-full justify-between px-3 py-2 text-left font-normal"
                   >
                     <span className={groupName ? "truncate" : "truncate text-muted-foreground"}>
-                      {groupName || "Selecione um grupo ou digite para criar"}
+                      {groupName || "Selecione uma linha de cuidado ou digite para criar"}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -2413,7 +2508,7 @@ const PacienteDetalhe = () => {
                     <CommandInput
                       value={groupName}
                       onValueChange={setGroupName}
-                      placeholder="Buscar ou criar grupo..."
+                      placeholder="Buscar ou criar linha de cuidado..."
                     />
                     <CommandList>
                       {groupName.trim() && !existingSuggestion && !existingPatientGroup ? (
@@ -2427,8 +2522,8 @@ const PacienteDetalhe = () => {
                           </CommandItem>
                         </CommandGroup>
                       ) : null}
-                      <CommandEmpty>Nenhum grupo reutilizável encontrado.</CommandEmpty>
-                      <CommandGroup heading="Grupos reutilizáveis">
+                      <CommandEmpty>Nenhuma linha de cuidado encontrada.</CommandEmpty>
+                      <CommandGroup heading="Linhas de cuidado frequentes">
                         {groupSuggestions.map((suggestion) => {
                           const alreadyInPatient = patientGroupNameSet.has(normalizeGroupName(suggestion.name));
 
@@ -2456,17 +2551,17 @@ const PacienteDetalhe = () => {
                 </PopoverContent>
               </Popover>
               {existingPatientGroup ? (
-                <p className="text-xs text-destructive">Este paciente já possui um grupo com esse nome.</p>
+                <p className="text-xs text-destructive">Este paciente já possui uma linha de cuidado com esse nome.</p>
               ) : existingSuggestion && !editingGroup ? (
                 <p className="text-xs text-muted-foreground">
                   Este nome já existe na clínica. Ao criar, ele será reutilizado neste paciente com a cor e status selecionados.
                 </p>
               ) : (
-                <p className="text-xs text-muted-foreground">Digite para buscar grupos existentes ou criar uma nova opção reutilizável.</p>
+                <p className="text-xs text-muted-foreground">Digite para buscar linhas de cuidado existentes ou criar uma nova opção reutilizável.</p>
               )}
             </div>
             <div className="space-y-2">
-              <Label>Status do grupo</Label>
+              <Label>Status da linha de cuidado</Label>
               <Select value={groupStatus} onValueChange={(value) => setGroupStatus(value as PatientGroupStatus)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -2509,9 +2604,9 @@ const PacienteDetalhe = () => {
       <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir grupo?</DialogTitle>
+            <DialogTitle>Excluir Linha de Cuidado?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Os atendimentos deste grupo serão mantidos, mas ficarão sem grupo.</p>
+          <p className="text-sm text-muted-foreground">Os atendimentos desta linha de cuidado serão mantidos como atendimentos gerais.</p>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
@@ -2865,63 +2960,37 @@ const PacienteDetalhe = () => {
             <Button
               onClick={() => {
                 setPatientInfoDialogOpen(false);
-                void handleOpenShareDialog();
+                handleOpenShareDialog();
               }}
-              disabled={generatingShareLink || !sharePasswordAvailable || patient.registration_complete}
             >
-              {generatingShareLink ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Share2 className="h-4 w-4 mr-2" />}
+              <Share2 className="h-4 w-4 mr-2" />
               Compartilhar com o paciente
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Compartilhar com o paciente</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            {shareCompleted ? (
-              <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-                Cadastro concluído! Caso precise atualizar alguma informação, informe o profissional que está te atendendo.
-              </div>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <Label>Link do cadastro</Label>
-                  <div className="flex gap-2">
-                    <Input value={shareLink} readOnly />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(shareLink);
-                        toast({ title: "Link copiado" });
-                      }}
-                    >
-                      <Copy className="h-4 w-4 mr-2" />
-                      Copiar
-                    </Button>
-                  </div>
-                </div>
-                <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm">
-                  <p className="font-medium">Senha de acesso</p>
-                  <p className="text-muted-foreground mt-1">
-                    Oriente o paciente a usar os 6 primeiros dígitos do CPF para abrir o formulário.
-                  </p>
-                  <p className="mt-2 font-mono text-base">{sharePassword}</p>
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Fechar</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SharePatientRegistrationModal
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        patient={
+          patient
+            ? {
+                id: patient.id,
+                name: patient.name,
+                cpf: patient.cpf,
+                responsible_cpf: patient.responsible_cpf,
+                date_of_birth: patient.date_of_birth,
+                phone: patient.phone,
+                email: patient.email,
+                gender: patient.gender,
+                pronoun: patient.pronoun,
+                patient_code: patient.patient_code,
+              }
+            : null
+        }
+        clinicName={clinic?.name}
+      />
 
       <SessionShareDialog
         collaborators={shareCollaborators}
@@ -2930,7 +2999,9 @@ const PacienteDetalhe = () => {
         onOpenChange={setSessionShareDialogOpen}
         onShared={() => {
           handleExitSelectionMode();
-          void fetchData();
+          if (realPatientId) {
+            void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+          }
         }}
         open={sessionShareDialogOpen}
         sessionCount={selectedSessionIds.length}

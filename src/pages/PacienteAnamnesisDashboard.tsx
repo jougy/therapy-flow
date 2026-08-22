@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowLeft, BarChart3, ClipboardEdit, FileText, Loader2 } from "lucide-react";
+import { ArrowLeft, BarChart3, ClipboardEdit, ClipboardList, FileText, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -484,38 +484,44 @@ const PacienteAnamnesisDashboard = () => {
 
     setLoading(true);
 
-    const patientRes = await fetchPatientByRef(id, clinicId);
-    if (patientRes.error || !patientRes.data) {
-      toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
-      navigate(clinicHomePath);
-      return;
+    try {
+      const patientRes = await fetchPatientByRef(id, clinicId);
+      if (patientRes.error || !patientRes.data) {
+        toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
+        navigate(clinicHomePath);
+        return;
+      }
+
+      const realPatientId = patientRes.data.id;
+      const [clinicRes, sessionsRes, templatesRes] = await Promise.all([
+        clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null, error: null }),
+        supabase
+          .from("sessions")
+          .select("id, anamnesis, anamnesis_form_response, anamnesis_template_id, complexity_score, pain_score, session_date, status")
+          .eq("patient_id", realPatientId)
+          .in("status", ["concluído", "rascunho"])
+          .order("session_date", { ascending: true }),
+        clinicId ? supabase.from("anamnesis_form_templates").select("id, name, schema").eq("clinic_id", clinicId).eq("is_active", true) : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (sessionsRes.error) {
+        toast({ title: "Erro ao carregar fichas", description: sessionsRes.error.message, variant: "destructive" });
+      }
+
+      if (templatesRes.error) {
+        toast({ title: "Erro ao carregar modelos", description: templatesRes.error.message, variant: "destructive" });
+      }
+
+      setPatient(patientRes.data);
+      setBaseSchema(isAnamnesisTemplateSchema(clinicRes.data?.anamnesis_base_schema) ? clinicRes.data.anamnesis_base_schema : []);
+      setSessions((sessionsRes.data ?? []) as SessionSummary[]);
+      setTemplates((templatesRes.data ?? []) as AnamnesisTemplate[]);
+    } catch (err) {
+      console.error("Erro ao carregar painel de anamnese:", err);
+      toast({ title: "Erro", description: "Não foi possível carregar os dados de anamnese.", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-
-    const realPatientId = patientRes.data.id;
-    const [clinicRes, sessionsRes, templatesRes] = await Promise.all([
-      clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null, error: null }),
-      supabase
-        .from("sessions")
-        .select("id, anamnesis, anamnesis_form_response, anamnesis_template_id, complexity_score, pain_score, session_date, status")
-        .eq("patient_id", realPatientId)
-        .in("status", ["concluído", "rascunho"])
-        .order("session_date", { ascending: true }),
-      clinicId ? supabase.from("anamnesis_form_templates").select("id, name, schema").eq("clinic_id", clinicId).eq("is_active", true) : Promise.resolve({ data: [], error: null }),
-    ]);
-
-    if (sessionsRes.error) {
-      toast({ title: "Erro ao carregar fichas", description: sessionsRes.error.message, variant: "destructive" });
-    }
-
-    if (templatesRes.error) {
-      toast({ title: "Erro ao carregar modelos", description: templatesRes.error.message, variant: "destructive" });
-    }
-
-    setPatient(patientRes.data);
-    setBaseSchema(isAnamnesisTemplateSchema(clinicRes.data?.anamnesis_base_schema) ? clinicRes.data.anamnesis_base_schema : []);
-    setSessions((sessionsRes.data ?? []) as SessionSummary[]);
-    setTemplates((templatesRes.data ?? []) as AnamnesisTemplate[]);
-    setLoading(false);
   }, [clinicHomePath, clinicId, id, navigate]);
 
   useEffect(() => {
@@ -583,6 +589,10 @@ const PacienteAnamnesisDashboard = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => navigate(clinicHomePath ? `${clinicHomePath}/configuracoes?secao=forms` : `/configuracoes?secao=forms`)}>
+            <ClipboardList className="mr-2 h-4 w-4 text-primary" />
+            Gerenciar Formulários
+          </Button>
           <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "resumo"))}>
             <FileText className="mr-2 h-4 w-4" />
             Resumo

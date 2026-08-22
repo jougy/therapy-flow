@@ -23,10 +23,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import ProfileAccountButton from "@/components/ProfileAccountButton";
 import { PlatformReleaseNotesManager } from "@/components/PlatformReleaseNotesManager";
+import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 import { logRuntimeError } from "@/lib/runtime-debug";
+import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
+import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { cn } from "@/lib/utils";
 
 type PersonalSection = "clinics" | "dashboard" | "news" | "settings";
@@ -225,6 +228,7 @@ const SelecionarClinica = () => {
   const [clinicInvitations, setClinicInvitations] = useState<ClinicInvitation[]>([]);
   const [loadingInvitations, setLoadingInvitations] = useState(false);
   const [actingInvitationId, setActingInvitationId] = useState<string | null>(null);
+  const [decliningInvitation, setDecliningInvitation] = useState<ClinicInvitation | null>(null);
   const [leavingClinicId, setLeavingClinicId] = useState<string | null>(null);
   const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
   const [mobileDockPressedSection, setMobileDockPressedSection] = useState<PersonalSection | null>(null);
@@ -318,7 +322,7 @@ const SelecionarClinica = () => {
 
   useEffect(() => {
     if (activeSection === "settings") {
-      navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes?secao=profile&origem=pessoal`);
+      navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes/pessoal/perfil`);
     }
   }, [activeSection, isDesignLabRoute, navigate]);
 
@@ -1122,74 +1126,117 @@ const SelecionarClinica = () => {
       ) : (
         <div className="space-y-4">
           {(loadingInvitations || clinicInvitations.length > 0) && (
-            <Card className="overflow-hidden border-primary/30 bg-primary/5">
-              <CardHeader className="px-4 sm:px-6">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <CardTitle className="text-base">Convites pendentes</CardTitle>
-                  {clinicInvitations.length > 0 && <Badge variant="secondary" className="w-fit">{clinicInvitations.length}</Badge>}
-                </div>
-              </CardHeader>
-              <CardContent className="px-4 sm:px-6">
-                {loadingInvitations ? (
-                  <div className="flex items-center gap-2 rounded-lg border bg-background p-4 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    Buscando convites...
+            <div className="space-y-3">
+              {loadingInvitations ? (
+                <Card className="border-sky-200 bg-sky-50/50 p-4">
+                  <div className="flex items-center gap-2 text-sm text-sky-800">
+                    <Loader2 className="h-4 w-4 animate-spin text-sky-600" />
+                    Buscando convites pendentes...
                   </div>
-                ) : (
-                  <div className="grid gap-3">
-                    {clinicInvitations.map((invitation) => {
-                      const isActing = actingInvitationId === invitation.invitation_id;
-                      const clinicName = getClinicBrandName(invitation.clinic_name);
+                </Card>
+              ) : (
+                clinicInvitations.map((invitation) => {
+                  const isActing = actingInvitationId === invitation.invitation_id;
+                  const clinicName = getClinicBrandName(invitation.clinic_name);
+                  const roleName = roleLabel[invitation.operational_role] ?? invitation.operational_role;
+                  const positionText = [invitation.job_title, invitation.specialty].filter(Boolean).join(" · ") || roleName;
 
-                      return (
-                        <div key={invitation.invitation_id} className="grid gap-3 rounded-lg border bg-background p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                              {invitation.clinic_logo_url ? (
-                                <img src={invitation.clinic_logo_url} alt="" className="h-9 w-9 rounded object-contain" />
-                              ) : (
-                                <Building2 className="h-5 w-5" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="truncate font-medium text-foreground">{clinicName}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {roleLabel[invitation.operational_role] ?? invitation.operational_role}
-                                {invitation.job_title ? ` · ${invitation.job_title}` : ""}
-                                {invitation.specialty ? ` · ${invitation.specialty}` : ""}
-                              </p>
-                              {invitation.invited_by_name && (
-                                <p className="text-xs text-muted-foreground">Convite enviado por {invitation.invited_by_name}</p>
-                              )}
-                            </div>
+                  return (
+                    <Card
+                      key={invitation.invitation_id}
+                      className="overflow-hidden border-2 border-emerald-500/40 bg-gradient-to-r from-emerald-50/90 via-teal-50/50 to-emerald-50/90 shadow-lg shadow-emerald-950/5 dark:from-emerald-950/30 dark:to-teal-950/20"
+                    >
+                      <div className="flex flex-col gap-4 p-4 sm:p-5 md:flex-row md:items-center md:justify-between">
+                        <div className="flex min-w-0 items-center gap-3.5">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/30">
+                            {invitation.clinic_logo_url ? (
+                              <img src={invitation.clinic_logo_url} alt="" className="h-10 w-10 rounded-lg object-contain" />
+                            ) : (
+                              <Building2 className="h-6 w-6" />
+                            )}
                           </div>
-                          <div className="flex flex-col gap-2 sm:flex-row md:justify-end">
-                            <Button size="sm" onClick={() => void handleAcceptInvitation(invitation.invitation_id)} disabled={!!actingInvitationId}>
-                              {isActing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                              Confirmar e entrar
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => void handleDeclineInvitation(invitation.invitation_id)} disabled={!!actingInvitationId}>
-                              <XCircle className="mr-2 h-4 w-4" />
-                              Recusar convite
-                            </Button>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-300">
+                              Convite para nova clínica
+                            </p>
+                            <h3 className="mt-0.5 text-base font-bold text-foreground">
+                              A clínica <span className="text-emerald-700 dark:text-emerald-400">{clinicName}</span> está te convidando para se juntar a ela como <span className="font-semibold text-foreground">{positionText}</span>.
+                            </h3>
+                            {invitation.invited_by_name && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Convidado por {invitation.invited_by_name}
+                              </p>
+                            )}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+
+                        <div className="flex shrink-0 flex-col gap-2.5 sm:flex-row md:items-center">
+                          <Button
+                            className="bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700"
+                            onClick={() => void handleAcceptInvitation(invitation.invitation_id)}
+                            disabled={!!actingInvitationId}
+                          >
+                            {isActing ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="mr-2 h-4 w-4" />
+                            )}
+                            Aceitar e entrar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setDecliningInvitation(invitation)}
+                            disabled={!!actingInvitationId}
+                          >
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Recusar
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
           )}
+
+          <AlertDialog open={!!decliningInvitation} onOpenChange={(open) => !open && setDecliningInvitation(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Recusar convite da clínica {decliningInvitation?.clinic_name}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Tem certeza que deseja recusar o convite para se juntar à clínica <strong>{decliningInvitation?.clinic_name}</strong>? Você não terá acesso à clínica a menos que um administrador envie um novo convite.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => {
+                    if (decliningInvitation) {
+                      void handleDeclineInvitation(decliningInvitation.invitation_id);
+                      setDecliningInvitation(null);
+                    }
+                  }}
+                >
+                  Sim, recusar convite
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           <Card className="overflow-hidden">
             <CardHeader className="px-4 sm:px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-base">Escolha a clínica</CardTitle>
+                  <ComponentHelpButton helpId="personal-clinics-block" size="xs" />
                   <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => navigate("/planos")} className="w-fit">
+                <Button data-tutorial="create-clinic-btn" variant="outline" size="sm" onClick={() => navigate("/planos")} className="w-fit">
                   <Building2 className="mr-2 h-4 w-4" />
                   Comprar meu próprio espaço
                 </Button>
@@ -1206,7 +1253,7 @@ const SelecionarClinica = () => {
                 </div>
               ) : (
                 <div className="grid gap-3">
-                  {accessibleClinics.map((clinicOption) => {
+                  {accessibleClinics.map((clinicOption, index) => {
                     const clinicName = getClinicBrandName(clinicOption.clinic.name);
                     const isSelecting = selectingClinicId === clinicOption.clinic.id;
                     const canLeaveClinic = clinicOption.membership.account_role !== "account_owner" && clinicOption.membership.operational_role !== "owner";
@@ -1215,6 +1262,7 @@ const SelecionarClinica = () => {
                     return (
                       <div
                         key={clinicOption.clinic.id}
+                        {...(index === 0 ? { "data-tutorial": "clinic-card-primary" } : {})}
                         className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-lg border bg-card p-2 transition-colors hover:border-primary/50 hover:bg-accent/40 sm:gap-3"
                       >
                       <button
@@ -1336,19 +1384,25 @@ const SelecionarClinica = () => {
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card px-4 py-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Pluri-Health</p>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">Espaço pessoal</h1>
+          <div data-tutorial="personal-welcome" className="flex items-center gap-2">
+            <div>
+              <p className="text-sm text-muted-foreground">Pluri-Health</p>
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">Espaço pessoal</h1>
+            </div>
+            <ComponentHelpButton helpId="personal-welcome-block" size="sm" />
           </div>
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <TutorialTriggerButton />
             <PersonalNotificationsButton />
-            <ProfileAccountButton
-              displayName={displayName}
-              subtitle={profile?.email || user?.email || "Conta pessoal"}
-              avatarUrl={profile?.avatar_url}
-              initials={initials}
-              onClick={() => navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes?secao=profile&origem=pessoal`)}
-            />
+            <div data-tutorial="personal-account-btn">
+              <ProfileAccountButton
+                displayName={displayName}
+                subtitle={profile?.email || user?.email || "Conta pessoal"}
+                avatarUrl={profile?.avatar_url}
+                initials={initials}
+                onClick={() => navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes/pessoal/perfil`)}
+              />
+            </div>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" size="sm" className="shrink-0">
@@ -1389,6 +1443,7 @@ const SelecionarClinica = () => {
         </div>
       </main>
       {personalMobileNav}
+      <TermsUpdatePromptModal />
     </div>
   );
 };

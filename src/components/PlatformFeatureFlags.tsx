@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { featureFlagsCatalog, FeatureFlagCategory } from "@/lib/feature-flags-catalog";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag, RefreshCw, CreditCard, Printer, Save, X, AlertTriangle, CheckCircle2, Loader2, Shield } from "lucide-react";
+import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag, RefreshCw, CreditCard, Printer, Save, X, AlertTriangle, CheckCircle2, Loader2, Shield, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -40,6 +40,17 @@ interface TagItem {
 interface FeatureFlagRecord {
   key: string;
   value: unknown;
+  scope?: string;
+  tag_id?: string | null;
+  clinic_id?: string | null;
+}
+
+export type FlagSourceType = "global" | "tag" | "clinic" | "default";
+
+export interface FlagSourceInfo {
+  type: FlagSourceType;
+  label: string;
+  tagName?: string;
 }
 
 export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
@@ -49,6 +60,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   // Saved state from database
   const [activeFlags, setActiveFlags] = useState<Record<string, boolean>>({});
   const [rawFlags, setRawFlags] = useState<Record<string, unknown>>({});
+  const [flagSources, setFlagSources] = useState<Record<string, FlagSourceInfo>>({});
 
   // Draft state (Pending user confirmation via Salvar/Cancelar buttons)
   const [pendingFlags, setPendingFlags] = useState<Record<string, boolean>>({});
@@ -57,6 +69,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
 
   const [loading, setLoading] = useState(true);
   const [savingPending, setSavingPending] = useState(false);
+  const [resettingKey, setResettingKey] = useState<string | null>(null);
 
   // Context selection (Global vs Tag vs Clinic)
   const [contextType, setContextType] = useState<"global" | "tag" | "clinic">(clinicId ? "clinic" : "global");
@@ -93,37 +106,156 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   const loadFlags = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase.from("feature_flags").select("*").eq("scope", contextType);
-      
-      if (contextType === "tag") {
-        if (!selectedTagId) {
-          setActiveFlags({});
-          setPendingFlags({});
-          setModifiedKeys(new Set());
-          setLoading(false);
-          return;
-        }
-        query = query.eq("tag_id", selectedTagId);
-      } else if (contextType === "clinic" && clinicId) {
-        query = query.eq("clinic_id", clinicId);
+      // 1. Sempre carregar as flags Globais como base universal
+      const { data: globalData, error: globalError } = await supabase
+        .from("feature_flags")
+        .select("*")
+        .eq("scope", "global");
+      if (globalError) throw globalError;
+
+      const globalFlagsMap: Record<string, boolean> = {};
+      const globalRawMap: Record<string, unknown> = {};
+      const globalRecords = (globalData || []) as FeatureFlagRecord[];
+      globalRecords.forEach((f) => {
+        const isObj = f.value && typeof f.value === "object";
+        const valObj = f.value as Record<string, unknown> | null;
+        globalFlagsMap[f.key] = isObj ? valObj?.enabled === true : (f.value === true || f.value === "true");
+        globalRawMap[f.key] = f.value;
+      });
+
+      // 2. Se contexto for Tag, carregar flags da Tag específica
+      const tagFlagsMap: Record<string, boolean> = {};
+      const tagRawMap: Record<string, unknown> = {};
+      const tagOverriddenKeys = new Set<string>();
+
+      if (contextType === "tag" && selectedTagId) {
+        const { data: tagData, error: tagError } = await supabase
+          .from("feature_flags")
+          .select("*")
+          .eq("scope", "tag")
+          .eq("tag_id", selectedTagId);
+        if (tagError) throw tagError;
+
+        const tagRecords = (tagData || []) as FeatureFlagRecord[];
+        tagRecords.forEach((f) => {
+          const isObj = f.value && typeof f.value === "object";
+          const valObj = f.value as Record<string, unknown> | null;
+          tagFlagsMap[f.key] = isObj ? valObj?.enabled === true : (f.value === true || f.value === "true");
+          tagRawMap[f.key] = f.value;
+          tagOverriddenKeys.add(f.key);
+        });
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      
-      const flagsMap: Record<string, boolean> = {};
-      const rawMap: Record<string, unknown> = {};
-      const records = (data || []) as FeatureFlagRecord[];
-      records.forEach((f) => {
-        const isObj = f.value && typeof f.value === 'object';
-        const valObj = f.value as Record<string, unknown> | null;
-        flagsMap[f.key] = isObj ? valObj?.enabled === true : (f.value === true || f.value === "true");
-        rawMap[f.key] = f.value;
+      // 3. Se contexto for Clínica, carregar tags associadas à clínica e flags da clínica
+      const clinicFlagsMap: Record<string, boolean> = {};
+      const clinicRawMap: Record<string, unknown> = {};
+      const clinicOverriddenKeys = new Set<string>();
+      const clinicTagNamesMap: Record<string, string> = {};
+
+      if (contextType === "clinic" && clinicId) {
+        // Obter tags vinculadas à clínica
+        const { data: tagRelData } = await supabase
+          .from("clinic_tag_relations")
+          .select("clinic_tags(id, name)")
+          .eq("clinic_id", clinicId);
+
+        const clinicTagsList = (tagRelData || [])
+          .map((r: { clinic_tags: unknown }) => r.clinic_tags as { id: string; name: string } | null)
+          .filter((t): t is { id: string; name: string } => Boolean(t?.id));
+
+        const clinicTagIds = clinicTagsList.map((t) => t.id);
+
+        if (clinicTagIds.length > 0) {
+          const { data: clinicTagsFlagData } = await supabase
+            .from("feature_flags")
+            .select("*")
+            .eq("scope", "tag")
+            .in("tag_id", clinicTagIds);
+
+          const clinicTagFlagRecords = (clinicTagsFlagData || []) as FeatureFlagRecord[];
+          clinicTagFlagRecords.forEach((f) => {
+            const isObj = f.value && typeof f.value === "object";
+            const valObj = f.value as Record<string, unknown> | null;
+            tagFlagsMap[f.key] = isObj ? valObj?.enabled === true : (f.value === true || f.value === "true");
+            tagRawMap[f.key] = f.value;
+            tagOverriddenKeys.add(f.key);
+            const foundTag = clinicTagsList.find((t) => t.id === f.tag_id);
+            if (foundTag?.name) clinicTagNamesMap[f.key] = foundTag.name;
+          });
+        }
+
+        // Carregar flags específicas da clínica
+        const { data: clinicData, error: clinicError } = await supabase
+          .from("feature_flags")
+          .select("*")
+          .eq("scope", "clinic")
+          .eq("clinic_id", clinicId);
+        if (clinicError) throw clinicError;
+
+        const clinicRecords = (clinicData || []) as FeatureFlagRecord[];
+        clinicRecords.forEach((f) => {
+          const isObj = f.value && typeof f.value === "object";
+          const valObj = f.value as Record<string, unknown> | null;
+          clinicFlagsMap[f.key] = isObj ? valObj?.enabled === true : (f.value === true || f.value === "true");
+          clinicRawMap[f.key] = f.value;
+          clinicOverriddenKeys.add(f.key);
+        });
+      }
+
+      // 4. Calcular estado efetivo e origem (Global vs Tag vs Clínica)
+      const effectiveFlagsMap: Record<string, boolean> = {};
+      const effectiveRawMap: Record<string, unknown> = {};
+      const sourcesMap: Record<string, FlagSourceInfo> = {};
+
+      featureFlagsCatalog.forEach((feature) => {
+        const key = feature.key;
+        if (contextType === "clinic" && clinicId) {
+          if (clinicOverriddenKeys.has(key)) {
+            effectiveFlagsMap[key] = clinicFlagsMap[key] ?? false;
+            effectiveRawMap[key] = clinicRawMap[key];
+            sourcesMap[key] = { type: "clinic", label: "Sobrescrito nesta clínica" };
+          } else if (tagOverriddenKeys.has(key)) {
+            effectiveFlagsMap[key] = tagFlagsMap[key] ?? false;
+            effectiveRawMap[key] = tagRawMap[key];
+            sourcesMap[key] = {
+              type: "tag",
+              label: `Herdado da tag: ${clinicTagNamesMap[key] || "Tag"}`,
+              tagName: clinicTagNamesMap[key],
+            };
+          } else if (key in globalFlagsMap) {
+            effectiveFlagsMap[key] = globalFlagsMap[key] ?? false;
+            effectiveRawMap[key] = globalRawMap[key];
+            sourcesMap[key] = { type: "global", label: "Herdado do Global" };
+          } else {
+            effectiveFlagsMap[key] = false;
+            sourcesMap[key] = { type: "default", label: "Padrão do Sistema" };
+          }
+        } else if (contextType === "tag" && selectedTagId) {
+          if (tagOverriddenKeys.has(key)) {
+            effectiveFlagsMap[key] = tagFlagsMap[key] ?? false;
+            effectiveRawMap[key] = tagRawMap[key];
+            sourcesMap[key] = { type: "tag", label: "Sobrescrito nesta tag" };
+          } else if (key in globalFlagsMap) {
+            effectiveFlagsMap[key] = globalFlagsMap[key] ?? false;
+            effectiveRawMap[key] = globalRawMap[key];
+            sourcesMap[key] = { type: "global", label: "Herdado do Global" };
+          } else {
+            effectiveFlagsMap[key] = false;
+            sourcesMap[key] = { type: "default", label: "Padrão do Sistema" };
+          }
+        } else {
+          // Contexto Global
+          effectiveFlagsMap[key] = globalFlagsMap[key] ?? false;
+          effectiveRawMap[key] = globalRawMap[key];
+          sourcesMap[key] = { type: "global", label: "Global" };
+        }
       });
-      setActiveFlags(flagsMap);
-      setPendingFlags(flagsMap);
-      setRawFlags(rawMap);
-      setPendingRawFlags(rawMap);
+
+      setActiveFlags(effectiveFlagsMap);
+      setPendingFlags(effectiveFlagsMap);
+      setRawFlags(effectiveRawMap);
+      setPendingRawFlags(effectiveRawMap);
+      setFlagSources(sourcesMap);
       setModifiedKeys(new Set());
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Erro ao carregar flags";
@@ -187,6 +319,35 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     toast({ title: "Alterações Canceladas", description: "As modificações pendentes foram descartadas." });
   };
 
+  // Restaurar herança (remover sobrescrita da clínica ou tag)
+  const handleResetOverride = async (key: string) => {
+    if (contextType === "global") return;
+    setResettingKey(key);
+    try {
+      let query = supabase.from("feature_flags").delete().eq("key", key).eq("scope", contextType);
+      if (contextType === "clinic" && clinicId) {
+        query = query.eq("clinic_id", clinicId);
+      } else if (contextType === "tag" && selectedTagId) {
+        query = query.eq("tag_id", selectedTagId);
+      }
+
+      const { error } = await query;
+      if (error) throw error;
+
+      toast({
+        title: "Herança restaurada",
+        description: `A flag "${featureFlagsCatalog.find(f => f.key === key)?.label || key}" voltou a herdar o valor padrão.`,
+      });
+
+      await loadFlags();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao restaurar herança";
+      toast({ title: "Erro ao restaurar herança", description: errorMessage, variant: "destructive" });
+    } finally {
+      setResettingKey(null);
+    }
+  };
+
   // Save all pending draft changes to database at once
   const handleSaveAllDrafts = async () => {
     if (modifiedKeys.size === 0) return;
@@ -211,14 +372,11 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
         if (error) throw error;
       }
 
-      // Update saved baseline
-      setActiveFlags({ ...pendingFlags });
-      setRawFlags({ ...pendingRawFlags });
-      setModifiedKeys(new Set());
+      await loadFlags();
 
       toast({
         title: "Feature Flags Atualizadas com Sucesso!",
-        description: `Total de ${keysToSave.length} alteração(ões) aplicada(s) à plataforma.`,
+        description: `Total de ${keysToSave.length} alteração(ões) aplicada(s).`,
       });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Erro ao salvar alterações pendentes";
@@ -486,12 +644,33 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                         )}
                       >
                         <div className="flex-1 space-y-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 text-base">{feature.label}</h3>
                             {isModified && (
                               <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-mono">
                                 Alterado (Pendente)
                               </Badge>
+                            )}
+                            {contextType !== "global" && flagSources[feature.key] && (
+                              <>
+                                {flagSources[feature.key].type === "clinic" ? (
+                                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
+                                    Sobrescrito nesta Clínica
+                                  </Badge>
+                                ) : flagSources[feature.key].type === "tag" ? (
+                                  <Badge variant="outline" className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-300 text-[10px]">
+                                    {flagSources[feature.key].label}
+                                  </Badge>
+                                ) : flagSources[feature.key].type === "global" ? (
+                                  <Badge variant="outline" className="bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-300 text-[10px]">
+                                    Herdado do Global
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-neutral-500 text-[10px]">
+                                    Padrão
+                                  </Badge>
+                                )}
+                              </>
                             )}
                           </div>
                           <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
@@ -499,7 +678,24 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                           </p>
                         </div>
                         
-                        <div className="flex items-center gap-3 shrink-0">
+                        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                          {contextType !== "global" && flagSources[feature.key]?.type === "clinic" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={resettingKey === feature.key}
+                              className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1"
+                              onClick={() => void handleResetOverride(feature.key)}
+                              title="Restaurar herança padrão (remover sobrescrita da clínica)"
+                            >
+                              {resettingKey === feature.key ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              )}
+                              <span>Restaurar Herança</span>
+                            </Button>
+                          )}
                           {feature.key === "terms_of_service_management" ? (
                             <>
                               <Button

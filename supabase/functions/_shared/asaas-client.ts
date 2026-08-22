@@ -22,6 +22,10 @@ export interface AsaasSubscriptionData {
   nextDueDate: string; // YYYY-MM-DD
   cycle: 'MONTHLY' | 'ANNUAL';
   description?: string;
+  discount?: {
+    value: number;
+    type: 'FIXED' | 'PERCENTAGE';
+  };
   creditCard?: {
     holderName: string;
     number: string;
@@ -139,6 +143,12 @@ export class AsaasClient {
   async cancelSubscription(id: string): Promise<{ id: string; deleted: boolean }> {
     return this.request(`/subscriptions/${id}`, {
       method: 'DELETE',
+    });
+  }
+
+  async getSubscriptionPayments(subscriptionId: string): Promise<{ data: Array<{ id: string; status: string; value: number; dueDate: string; invoiceUrl?: string; bankSlipUrl?: string }> }> {
+    return this.request(`/subscriptions/${subscriptionId}/payments`, {
+      method: 'GET',
     });
   }
 

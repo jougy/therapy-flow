@@ -327,8 +327,28 @@ const processPdf = async (file: File): Promise<ProcessSuccess> => {
     originalContentType: "application/pdf",
     pageCount: optimized.pageCount,
     storageEncoding,
+  };
+};
+
+const processDoc = async (file: File): Promise<ProcessSuccess> => {
+  const compressed = await compressPdfTransport(file);
+  const blob = compressed ?? file;
+  const storageEncoding = compressed ? "gzip" : null;
+  const contentType = normalizePatientUploadContentType(file.type, file.name) as PatientFileUploadContentType;
+
+  return {
+    blob,
+    checksumSha256: await blobToSha256(blob),
+    compressionProfile: compressed ? "doc-transport-gzip-v1" : "doc-original-v1",
+    filename: file.name,
+    imageHeight: null,
+    imageWidth: null,
+    originalByteSize: file.size,
+    originalContentType: contentType,
+    pageCount: null,
+    storageEncoding,
     storedByteSize: blob.size,
-    storedContentType: "application/pdf",
+    storedContentType: contentType,
   };
 };
 
@@ -336,8 +356,20 @@ self.onmessage = async (event: MessageEvent<ProcessRequest>) => {
   const { file, jobId } = event.data;
 
   try {
-    const contentType = normalizePatientUploadContentType(file.type);
-    const result = contentType === "application/pdf" ? await processPdf(file) : await processImage(file);
+    const contentType = normalizePatientUploadContentType(file.type, file.name);
+    let result: ProcessSuccess;
+
+    if (contentType === "application/pdf") {
+      result = await processPdf(file);
+    } else if (
+      contentType === "application/msword" ||
+      contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ) {
+      result = await processDoc(file);
+    } else {
+      result = await processImage(file);
+    }
+
     post({ jobId, ok: true, result });
   } catch (error) {
     post({

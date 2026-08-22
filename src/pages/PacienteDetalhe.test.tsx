@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Children, isValidElement, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PacienteDetalhe from "@/pages/PacienteDetalhe";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -39,6 +40,16 @@ vi.mock("@/hooks/useAuth", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
+}));
+
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick, className }: { children: ReactNode; onClick?: () => void; className?: string }) => (
+    <button type="button" onClick={onClick} className={className}>{children}</button>
+  ),
+  DropdownMenuSeparator: () => <hr />,
 }));
 
 vi.mock("@/components/ui/select", () => {
@@ -173,7 +184,7 @@ vi.mock("@/integrations/supabase/client", () => {
               group_kind: "default",
               id: "group-default",
               is_default: true,
-              name: "Grupo sem definição",
+              name: "Sintomas não definidos",
               status: null,
             },
             {
@@ -277,6 +288,14 @@ vi.mock("@/integrations/supabase/client", () => {
         filters.push({ column, value });
         return builder;
       },
+      neq: (column: string, value: unknown) => {
+        filters.push({ column, value });
+        return builder;
+      },
+      gt: () => builder,
+      gte: () => builder,
+      lt: () => builder,
+      lte: () => builder,
       in: (column: string, values: unknown) => {
         filters.push({ column, value: values });
         return builder;
@@ -319,13 +338,25 @@ vi.mock("@/integrations/supabase/client", () => {
   };
 });
 
-const renderPage = () =>
+const createTestQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+      },
+    },
+  });
+
+const renderPage = (client = createTestQueryClient()) =>
   render(
-    <MemoryRouter initialEntries={["/pacientes/patient-1"]}>
-      <Routes>
-        <Route path="/pacientes/:id" element={<PacienteDetalhe />} />
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/pacientes/patient-1"]}>
+        <Routes>
+          <Route path="/pacientes/:id" element={<PacienteDetalhe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 
 describe("PacienteDetalhe", () => {
@@ -383,33 +414,61 @@ describe("PacienteDetalhe", () => {
     supabaseMocks.rpc.mockResolvedValue({ data: null, error: null });
   });
 
-  it("shows the delete option for owner/admin flows", async () => {
+  it("shows the single start attendance button in agenda and renders compact metrics", async () => {
     renderPage();
 
     await screen.findByRole("heading", { name: "Maria Silva" });
 
-    expect(screen.getByRole("option", { name: "Excluir" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /novo atendimento/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /iniciar atendimento/i }).length).toBe(1);
+    expect(screen.getByText("Último Atendimento")).toBeInTheDocument();
+    expect(screen.getByText("Presença & Histórico")).toBeInTheDocument();
   });
 
   it("renders grouped sessions without crashing", async () => {
     renderPage();
 
-    expect(await screen.findByRole("heading", { name: "Lombalgia" })).toBeInTheDocument();
+    const matches = await screen.findAllByText(/Lombalgia/i);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Dor lombar")).toBeInTheDocument();
   });
 
-  it("navigates patient summary cards in a single compact block", async () => {
+  it("displays patient summary metrics in a single compact grid", async () => {
     renderPage();
 
-    await screen.findByText("Absenteísmo");
-    expect(screen.getAllByText("0 atendimentos").length).toBeGreaterThan(0);
-    expect(screen.getByText(/1 concluído/)).toBeInTheDocument();
+    await screen.findByText("Presença & Histórico");
+    expect(screen.getAllByText(/concluído/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Último Atendimento/i).length).toBeGreaterThan(0);
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: /próximo resumo/i }));
+  it("starts immediate attendance and creates confirmed agenda event when none exists", async () => {
+    renderPage();
 
-    expect(screen.getByText("Mais recente")).toBeInTheDocument();
-    expect(screen.getAllByText("concluído").length).toBeGreaterThan(0);
+    await screen.findByRole("heading", { name: "Maria Silva" });
+
+    const startButtons = screen.getAllByRole("button", { name: /iniciar atendimento agora/i });
+    fireEvent.click(startButtons[0]);
+
+    await waitFor(() => {
+      expect(supabaseMocks.insertCalls).toContainEqual({
+        payload: expect.objectContaining({
+          clinic_id: "clinic-1",
+          event_type: "atendimento",
+          patient_id: "patient-1",
+          status: "confirmado",
+          title: "Maria Silva",
+          user_id: "owner-1",
+        }),
+        table: "agenda_events",
+      });
+      expect(navigateMock).toHaveBeenCalledWith(
+        expect.stringContaining("/pacientes/patient-1/sessao/novo"),
+        expect.objectContaining({
+          state: expect.objectContaining({
+            agendaEventId: expect.any(String),
+          }),
+        })
+      );
+    });
   });
 
   it("shows the patient agenda block and opens the scheduling dialog", async () => {
@@ -594,8 +653,10 @@ describe("PacienteDetalhe", () => {
 
     await screen.findByRole("heading", { name: "Maria Silva" });
 
+    fireEvent.click(screen.getByRole("button", { name: /mais opções/i }));
+
     await waitFor(() => {
-      expect(screen.queryByRole("option", { name: "Excluir" })).not.toBeInTheDocument();
+      expect(screen.queryByText(/excluir paciente/i)).not.toBeInTheDocument();
     });
   });
 
@@ -604,9 +665,12 @@ describe("PacienteDetalhe", () => {
 
     await screen.findByRole("heading", { name: "Maria Silva" });
 
-    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "delete" } });
+    fireEvent.click(screen.getByRole("button", { name: /mais opções/i }));
 
-    expect(await screen.findByRole("heading", { name: /excluir paciente/i })).toBeInTheDocument();
+    const deleteOption = await screen.findByText(/excluir paciente/i);
+    fireEvent.click(deleteOption);
+
+    expect(await screen.findByRole("heading", { name: /excluir paciente\?/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^excluir$/i }));
 

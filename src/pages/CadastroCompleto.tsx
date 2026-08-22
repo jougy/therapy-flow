@@ -68,7 +68,7 @@ interface AddressData {
 const CadastroCompleto = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { clinic, session, user } = useAuth();
+  const { clinic, clinicId, session, user } = useAuth();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -119,52 +119,58 @@ const CadastroCompleto = () => {
 
   const fetchPatient = useCallback(async () => {
     if (!id) return;
-    const { data, error } = await fetchPatientByRef(id, clinicId);
+    try {
+      const { data, error } = await fetchPatientByRef(id, clinicId);
 
-    if (error || !data) {
-      toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
-      navigate(clinicHomePath);
-      return;
+      if (error || !data) {
+        toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
+        navigate(clinicHomePath);
+        return;
+      }
+
+      const patient: Patient = data;
+
+      setPatientRecord(patient);
+      setPatientName(patient.name);
+      setName(patient.name);
+      setDateOfBirth(patient.date_of_birth ?? "");
+      setCpf(formatPatientCpf(patient.cpf ?? ""));
+      setPhone(formatPatientPhone(patient.phone ?? ""));
+      setEmail(patient.email ?? "");
+      setGender(patient.gender ?? "");
+      setRg(patient.rg ?? "");
+      setBloodType(patient.blood_type ?? "");
+      setPronoun(patient.pronoun ?? "");
+      setProfession(patient.profession ?? "");
+      setOriginType(normalizePatientOriginType(patient.origin_type));
+      setOriginReferrerName(patient.origin_referrer_name ?? "");
+      setOriginInsuranceProvider(patient.origin_insurance_provider ?? "");
+      setOriginInsurancePlan(patient.origin_insurance_plan ?? "");
+      setOriginInsuranceMemberId(patient.origin_insurance_member_id ?? "");
+      setOriginOtherName(patient.origin_other_name ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME);
+      setOriginOtherDescription(patient.origin_other_description ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION);
+      setCep(formatCep(patient.cep ?? ""));
+      setCountry(patient.country ?? "Brasil");
+      setState(patient.state ?? "");
+      setCity(patient.city ?? "");
+      setNeighborhood(patient.neighborhood ?? "");
+      setStreet(patient.street ?? "");
+      setAddressNumber(patient.address_number ?? "");
+      setAddressComplement(patient.address_complement ?? "");
+      setChronicConditions(patient.chronic_conditions ?? "");
+      setSurgeries(patient.surgeries ?? "");
+      setContinuousMedications(patient.continuous_medications ?? "");
+      setAllergies(patient.allergies ?? "");
+      setClinicalNotes(patient.clinical_notes ?? "");
+      setClinicalProfile(parseClinicalProfile(patient.clinical_profile));
+      setEmergencyContact(parseEmergencyContact(patient.emergency_contact));
+    } catch (err) {
+      console.error("Erro ao carregar paciente:", err);
+      toast({ title: "Erro", description: "Não foi possível carregar os dados do paciente.", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-
-    const patient: Patient = data;
-
-    setPatientRecord(patient);
-    setPatientName(patient.name);
-    setName(patient.name);
-    setDateOfBirth(patient.date_of_birth ?? "");
-    setCpf(formatPatientCpf(patient.cpf ?? ""));
-    setPhone(formatPatientPhone(patient.phone ?? ""));
-    setEmail(patient.email ?? "");
-    setGender(patient.gender ?? "");
-    setRg(patient.rg ?? "");
-    setBloodType(patient.blood_type ?? "");
-    setPronoun(patient.pronoun ?? "");
-    setProfession(patient.profession ?? "");
-    setOriginType(normalizePatientOriginType(patient.origin_type));
-    setOriginReferrerName(patient.origin_referrer_name ?? "");
-    setOriginInsuranceProvider(patient.origin_insurance_provider ?? "");
-    setOriginInsurancePlan(patient.origin_insurance_plan ?? "");
-    setOriginInsuranceMemberId(patient.origin_insurance_member_id ?? "");
-    setOriginOtherName(patient.origin_other_name ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME);
-    setOriginOtherDescription(patient.origin_other_description ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION);
-    setCep(formatCep(patient.cep ?? ""));
-    setCountry(patient.country ?? "Brasil");
-    setState(patient.state ?? "");
-    setCity(patient.city ?? "");
-    setNeighborhood(patient.neighborhood ?? "");
-    setStreet(patient.street ?? "");
-    setAddressNumber(patient.address_number ?? "");
-    setAddressComplement(patient.address_complement ?? "");
-    setChronicConditions(patient.chronic_conditions ?? "");
-    setSurgeries(patient.surgeries ?? "");
-    setContinuousMedications(patient.continuous_medications ?? "");
-    setAllergies(patient.allergies ?? "");
-    setClinicalNotes(patient.clinical_notes ?? "");
-    setClinicalProfile(parseClinicalProfile(patient.clinical_profile));
-    setEmergencyContact(parseEmergencyContact(patient.emergency_contact));
-    setLoading(false);
-  }, [clinicHomePath, id, navigate]);
+  }, [clinicHomePath, clinicId, id, navigate]);
 
   useEffect(() => { fetchPatient(); }, [fetchPatient]);
 
@@ -321,7 +327,7 @@ const CadastroCompleto = () => {
       });
 
       toast({ title: "Cadastro atualizado", description: "Informações salvas com sucesso." });
-      navigate(getPatientPath(patientRecord || id));
+      navigate(getClinicPatientPath(clinic?.route_key, patientRecord || id));
     } catch (error) {
       toast({
         title: "Erro ao salvar",
@@ -344,7 +350,7 @@ const CadastroCompleto = () => {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate(getPatientPath(patientRecord || id))} aria-label="Voltar">
+        <Button variant="ghost" size="icon" onClick={() => navigate(getClinicPatientPath(clinic?.route_key, patientRecord || id))} aria-label="Voltar">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
@@ -822,7 +828,7 @@ const CadastroCompleto = () => {
       </Tabs>
 
       <div className="flex items-center justify-between pb-8">
-        <Button variant="outline" onClick={() => navigate(getPatientPath(patientRecord || id))}>
+        <Button variant="outline" onClick={() => navigate(getClinicPatientPath(clinic?.route_key, patientRecord || id))}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Voltar ao paciente
         </Button>

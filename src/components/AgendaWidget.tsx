@@ -13,7 +13,8 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { getDesignLabButtonClass, designLabLabelClass, designLabIconClass } from "@/lib/design-animations";
+import { getDesignLabButtonClass, designLabIconClass, designLabLabelClass } from "@/lib/design-animations";
+import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -122,9 +123,11 @@ const formatAgendaEventDateTime = (value: string) =>
 interface AgendaWidgetProps {
   fixedPatient?: AgendaPatientOption;
   headerAccessory?: React.ReactNode;
+  onStartAttendance?: () => void;
+  startAttendanceLabel?: string;
 }
 
-const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
+const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startAttendanceLabel }: AgendaWidgetProps) => {
   const navigate = useNavigate();
   const { can, clinicId, user } = useAuth();
   const fixedPatientId = fixedPatient?.id ?? null;
@@ -510,10 +513,13 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
   };
 
   return (
-    <Card className="hover:shadow-md transition-shadow duration-150">
+    <Card data-tutorial="agenda-widget" className="hover:shadow-md transition-shadow duration-150">
       <CardHeader className="space-y-3 pb-2">
         <div className="flex items-start justify-between gap-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Agenda</CardTitle>
+          <div className="flex items-center gap-1.5">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Agenda</CardTitle>
+            <ComponentHelpButton helpId="agenda-widget" size="xs" />
+          </div>
           <div className="flex items-center gap-2">
             {headerAccessory}
             <div className="rounded-lg bg-primary/10 p-2">
@@ -523,7 +529,7 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-[auto,minmax(0,1fr),auto] items-center gap-2">
+        <div data-tutorial="agenda-nav-arrows" className="grid grid-cols-[auto,minmax(0,1fr),auto] items-center gap-2">
           <Button
             type="button"
             variant="outline"
@@ -542,7 +548,7 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
           </Button>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="w-full min-w-0 justify-start text-left font-normal">
+              <Button data-tutorial="agenda-date-picker-btn" variant="outline" size="sm" className="w-full min-w-0 justify-start text-left font-normal">
                 <CalendarDays className="mr-2 h-4 w-4 shrink-0" />
                 <span className="truncate">{format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}</span>
               </Button>
@@ -577,7 +583,7 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
           </Button>
         </div>
 
-        <div className="space-y-1.5 max-h-36 overflow-y-auto overflow-x-hidden pr-1">
+        <div data-tutorial="agenda-events-list" className="space-y-1.5 max-h-36 overflow-y-auto overflow-x-hidden pr-1">
           {loading && (
             <div className="flex items-center justify-center py-3">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -589,6 +595,7 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
           {dayEvents.map((event) => (
             <div
               key={event.id}
+              data-tutorial="agenda-event-item"
               className="group flex min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded bg-muted/50 px-2 py-2 transition-colors hover:bg-muted"
               role="button"
               tabIndex={0}
@@ -620,6 +627,27 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
                   </Badge>
                 </div>
               </div>
+              {event.eventType === "atendimento" && event.patientId && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 gap-1 shrink-0"
+                  onClick={(eventClick) => {
+                    eventClick.stopPropagation();
+                    navigate(`/pacientes/${event.patientId}/sessao/novo`, {
+                      state: {
+                        agendaEventId: event.id,
+                        scheduledFor: event.scheduledFor,
+                      },
+                    });
+                  }}
+                  title="Iniciar atendimento a partir deste agendamento"
+                >
+                  <Play className="h-3 w-3 fill-primary text-primary" />
+                  <span className="hidden min-[520px]:inline">Iniciar</span>
+                </Button>
+              )}
               {can("agenda.delete_events") && (
                 <button
                   onPointerUp={(eventPointer) => eventPointer.stopPropagation()}
@@ -637,18 +665,24 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
         </div>
 
         {fixedPatientId ? (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="default" size="sm" className={getDesignLabButtonClass("hover:w-[120px]")} onClick={handleOpenAddDialog}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button data-tutorial="agenda-add-btn" variant="default" size="sm" className={getDesignLabButtonClass("hover:w-[120px]")} onClick={handleOpenAddDialog}>
               <Plus className={`${designLabIconClass} h-3.5 w-3.5`} />
               <span className={designLabLabelClass}>Agendar</span>
             </Button>
-            <Button variant="outline" size="sm" className={getDesignLabButtonClass("hover:w-[260px]")} onClick={handleStartAttendanceNow}>
-              <Play className={`${designLabIconClass} h-3.5 w-3.5`} />
-              <span className={designLabLabelClass}>Iniciar atendimento agora</span>
+            <Button
+              data-tutorial="agenda-quick-start"
+              type="button"
+              size="sm"
+              className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5 shadow-sm px-3.5 transition-all"
+              onClick={onStartAttendance ?? handleStartAttendanceNow}
+            >
+              <Play className="h-3.5 w-3.5 fill-current text-white" />
+              <span>{startAttendanceLabel ?? "Iniciar Atendimento Agora"}</span>
             </Button>
           </div>
         ) : (
-          <Button variant="ghost" size="sm" className="w-full text-xs" onClick={handleOpenAddDialog}>
+          <Button data-tutorial="agenda-add-btn" variant="ghost" size="sm" className="w-full text-xs" onClick={handleOpenAddDialog}>
             <Plus className="h-3 w-3 mr-1" /> Adicionar evento
           </Button>
         )}
@@ -873,7 +907,9 @@ const AgendaWidget = ({ fixedPatient, headerAccessory }: AgendaWidgetProps) => {
                 variant="outline"
                 onClick={handleStartAttendanceFromEvent}
                 disabled={savingSelectedEvent || !selectedEvent?.patientId}
+                className="gap-1.5 font-medium"
               >
+                <Play className="h-4 w-4 fill-primary text-primary" />
                 Iniciar atendimento
               </Button>
               <DialogClose asChild>

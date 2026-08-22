@@ -2,10 +2,12 @@ import React from "react";
 import { motion } from "framer-motion";
 import {
   UsersRound,
+  MessageSquareHeart,
   Sparkles,
   Tags,
   SlidersHorizontal,
   ShieldAlert,
+  CreditCard,
   LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,6 +25,12 @@ export const BACKOFFICE_DOCK_TABS: BackofficeDockTabItem[] = [
     label: "Diretório Mestre",
     shortLabel: "Diretório",
     icon: UsersRound,
+  },
+  {
+    id: "feedbacks",
+    label: "Feedbacks & Avaliações",
+    shortLabel: "Feedbacks",
+    icon: MessageSquareHeart,
   },
   {
     id: "news",
@@ -47,6 +55,12 @@ export const BACKOFFICE_DOCK_TABS: BackofficeDockTabItem[] = [
     label: "Governança & Segurança",
     shortLabel: "Governança",
     icon: ShieldAlert,
+  },
+  {
+    id: "billing",
+    label: "Faturamento & Webhooks",
+    shortLabel: "Faturamento",
+    icon: CreditCard,
   },
 ];
 

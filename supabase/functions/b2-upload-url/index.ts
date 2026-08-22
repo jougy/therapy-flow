@@ -42,6 +42,8 @@ const allowedContentTypes = new Set([
   "image/webp",
   "image/heic",
   "image/heif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
 const getBearer = (authorization: string | null) => authorization?.replace(/^Bearer\s+/i, "") ?? "";
@@ -159,6 +161,68 @@ Deno.serve(async (req) => {
     const objectKey = `clinics/${clinicId}/patients/${patientId}/sessions/${sessionSegment}/files/${todayPrefix()}/${uploadId}-${filename}`;
     const expiresIn = 900;
     const uploadExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+
+    // --- Deduplicação por SHA-256 ---
+    // Se o mesmo arquivo (mesmo hash) já foi enviado com sucesso para esta clínica,
+    // reutilizamos a entrada existente sem gastar nova cota de armazenamento no B2.
+    if (checksumSha256) {
+      const { data: existingUpload } = await admin
+        .from("patient_file_uploads")
+        .select("id, object_key, upload_expires_at, status")
+        .eq("checksum_sha256", checksumSha256)
+        .eq("clinic_id", clinicId)
+        .eq("status", "uploaded")
+        .maybeSingle();
+
+      if (existingUpload) {
+        // Cria apenas o registro de metadados apontando para o mesmo object_key
+        const { data: dedupUpload, error: dedupInsertError } = await admin
+          .from("patient_file_uploads")
+          .insert({
+            bucket_name: bucketName,
+            byte_size: storedByteSize,
+            category,
+            checksum_sha256: checksumSha256,
+            clinic_id: clinicId,
+            compression_profile: compressionProfile,
+            content_type: storedContentType,
+            id: uploadId,
+            image_height: imageHeight,
+            image_width: imageWidth,
+            metadata: { presigned_method: "PUT", original_filename: originalFilename, dedup_source_id: existingUpload.id },
+            object_key: existingUpload.object_key,
+            original_filename: originalFilename,
+            original_byte_size: originalByteSize,
+            original_content_type: originalContentType,
+            page_count: pageCount,
+            patient_id: patientId,
+            session_id: sessionId || null,
+            status: "uploaded",
+            storage_encoding: storageEncoding,
+            stored_byte_size: storedByteSize,
+            stored_content_type: storedContentType,
+            upload_expires_at: uploadExpiresAt,
+            uploaded_by_user_id: userData.user.id,
+            uploaded_at: new Date().toISOString(),
+          })
+          .select("id, object_key, upload_expires_at")
+          .single();
+
+        if (dedupInsertError) throw new Error(dedupInsertError.message);
+
+        return json({
+          bucket: bucketName,
+          contentType: storedContentType,
+          deduplicatedFrom: existingUpload.id,
+          expiresIn: 0,
+          headers: {},
+          objectKey: dedupUpload.object_key,
+          uploadId: dedupUpload.id,
+          uploadUrl: null,
+          uploadExpiresAt: dedupUpload.upload_expires_at,
+        });
+      }
+    }
 
     const uploadUrl = await createPresignedS3Url({
       accessKeyId: b2KeyId,

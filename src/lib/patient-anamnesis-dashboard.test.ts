@@ -145,7 +145,7 @@ describe("buildPatientAnamnesisDashboard", () => {
 
     const metrics = dashboard.groups[0].sections.flatMap((section) => section.metrics);
 
-    expect(metrics.map((metric) => metric.fieldId)).toEqual(["areas", "knee_pain"]);
+    expect(metrics.map((metric) => metric.fieldId)).toEqual(["knee_pain"]);
     expect(metrics.find((metric) => metric.fieldId === "shoulder_pain")).toBeUndefined();
   });
 

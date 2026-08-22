@@ -9,24 +9,28 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const asaasWebhookSecret = Deno.env.get('ASAAS_WEBHOOK_SECRET') || '';
+
+  // Validar token de autenticação do Asaas Webhook
+  const receivedToken = req.headers.get('asaas-access-token');
+  if (asaasWebhookSecret && receivedToken !== asaasWebhookSecret) {
+    return new Response(JSON.stringify({ error: 'Token de webhook inválido.' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  let eventId = '';
+  let eventType = '';
+  let payload: Record<string, any> = {};
+
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-    const asaasWebhookSecret = Deno.env.get('ASAAS_WEBHOOK_SECRET') || '';
-
-    // Validar token de autenticação do Asaas Webhook
-    const receivedToken = req.headers.get('asaas-access-token');
-    if (asaasWebhookSecret && receivedToken !== asaasWebhookSecret) {
-      return new Response(JSON.stringify({ error: 'Token de webhook inválido.' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const payload = await req.json();
-    const eventId = payload.id || payload.eventId;
-    const eventType = payload.event;
-    const payment = payload.payment;
+    payload = await req.json();
+    eventId = payload.id || payload.eventId || `evt_${Date.now()}`;
+    eventType = payload.event || 'UNKNOWN';
+    const payment = payload.payment || {};
 
     if (!eventId || !eventType) {
       return new Response(JSON.stringify({ error: 'Payload de webhook inválido.' }), {
@@ -51,13 +55,14 @@ serve(async (req) => {
       });
     }
 
-    // Registrar inicio do log de webhook
+    // Registrar início do log de webhook se não existir
     if (!existingEvent) {
       await supabase.from('asaas_webhook_events').insert({
         asaas_event_id: eventId,
         event_type: eventType,
         payload: payload,
         processed: false,
+        signature: receivedToken || null,
       });
     }
 
@@ -72,23 +77,25 @@ serve(async (req) => {
           externalData = JSON.parse(externalReferenceRaw);
         }
       } catch (e) {
-        console.warn('Erro ao parsear externalReference JSON:', e);
+        console.warn('Aviso: externalReference não é um JSON estruturado:', e);
       }
 
-      // Atualizar fatura na tabela subscription_invoices se existir
-      await supabase
-        .from('subscription_invoices')
-        .update({
-          status: 'CONFIRMED',
-          payment_date: payment.paymentDate || new Date().toISOString(),
-          net_value: payment.netValue || null,
-        })
-        .eq('asaas_payment_id', paymentId);
+      // Atualizar fatura na tabela subscription_invoices
+      if (paymentId) {
+        await supabase
+          .from('subscription_invoices')
+          .update({
+            status: 'CONFIRMED',
+            payment_date: payment.paymentDate || new Date().toISOString(),
+            net_value: payment.netValue || null,
+          })
+          .eq('asaas_payment_id', paymentId);
+      }
 
       // A) Se for cobrança avulsa de vagas (ONE_TIME_SUBACCOUNT_EXPANSION)
       if (externalData.charge_type === 'ONE_TIME_SUBACCOUNT_EXPANSION' && externalData.clinic_id && externalData.quantity) {
-        const clinicId = externalData.clinic_id;
-        const boughtQuantity = parseInt(externalData.quantity, 10) || 0;
+        const clinicId = String(externalData.clinic_id);
+        const boughtQuantity = parseInt(String(externalData.quantity), 10) || 0;
 
         const { data: currentSub } = await supabase
           .from('clinic_subscriptions')
@@ -138,8 +145,16 @@ serve(async (req) => {
         }
       }
     } else if (eventType === 'PAYMENT_OVERDUE') {
+      const paymentId = payment.id;
       const customerId = payment.customer;
       const subscriptionId = payment.subscription;
+
+      if (paymentId) {
+        await supabase
+          .from('subscription_invoices')
+          .update({ status: 'OVERDUE' })
+          .eq('asaas_payment_id', paymentId);
+      }
 
       if (subscriptionId || customerId) {
         const query = supabase.from('clinic_subscriptions').update({
@@ -204,6 +219,19 @@ serve(async (req) => {
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+
+    // Salva o erro no log de webhooks para auditoria no backoffice
+    if (eventId) {
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      await supabase
+        .from('asaas_webhook_events')
+        .update({
+          processed: false,
+          error_message: message,
+        })
+        .eq('asaas_event_id', eventId);
+    }
+
     return new Response(JSON.stringify({ error: message || 'Erro no processamento do webhook.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

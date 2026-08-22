@@ -12,7 +12,7 @@ import {
 } from "@/lib/patient-sessions-view";
 
 const groups: SearchablePatientGroup[] = [
-  { id: "group-default", name: "Grupo sem definicao", status: null, created_at: "2026-03-01T10:00:00.000Z" },
+  { id: "group-default", name: "Sintomas não definidos", status: null, created_at: "2026-03-01T10:00:00.000Z" },
   { id: "group-lombar", name: "Lombalgia cronica", status: "em_andamento", created_at: "2026-03-05T10:00:00.000Z" },
   { id: "group-ombro", name: "Ombro", status: "pausado", created_at: "2026-03-06T10:00:00.000Z" },
 ];
