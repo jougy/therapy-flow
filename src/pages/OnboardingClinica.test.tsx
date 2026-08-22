@@ -81,7 +81,7 @@ describe("OnboardingClinica", () => {
     fireEvent.change(stateInput, { target: { value: "AM" } });
 
     // Submit form
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Continuar/i });
+    const submitBtn = screen.getByRole("button", { name: /Ativar Assinatura no Asaas/i });
     fireEvent.click(submitBtn);
 
     // Verify button goes disabled with loading text immediately
@@ -139,7 +139,7 @@ describe("OnboardingClinica", () => {
     // Try setting 1, form should floor to 2
     fireEvent.change(concurrentInput, { target: { value: "1" } });
 
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Continuar/i });
+    const submitBtn = screen.getByRole("button", { name: /Ativar Assinatura no Asaas/i });
     const form = submitBtn.closest("form")!;
     fireEvent.submit(form);
 
@@ -149,6 +149,54 @@ describe("OnboardingClinica", () => {
           subscription_plan: "clinic",
           subaccount_limit: 30,
           concurrent_access_limit: 2,
+        })
+      );
+    });
+  });
+
+  it("shows confirmation dialog when owner attempts to create another clinic under same CNPJ", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      clinic: null,
+      profile: { cpf: "12345678901" },
+      session: { user: { id: "user-owner-1", email: "owner@exemplo.com" } },
+    } as unknown as ReturnType<typeof useAuth>);
+
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: "OWNER_HAS_CLINIC_WITH_CNPJ:Clínica Bem Estar Matriz" },
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/onboarding-clinica?plan=solo"]}>
+        <OnboardingClinica />
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText(/Nome da Clínica/i), { target: { value: "Clínica Bem Estar Filial" } });
+    fireEvent.change(screen.getByLabelText(/Logradouro/i), { target: { value: "Rua Nova" } });
+    fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "Manaus" } });
+    fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "AM" } });
+
+    const submitBtn = screen.getByRole("button", { name: /Ativar Assinatura no Asaas/i });
+    fireEvent.click(submitBtn);
+
+    expect(await screen.findByText(/CNPJ Já Possui um Espaço Cadastrado/i)).toBeInTheDocument();
+    expect(screen.getByText(/Clínica Bem Estar Matriz/i)).toBeInTheDocument();
+
+    // Click confirm button
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: { clinic_id: "filial-clinic-id" },
+      error: null,
+    });
+
+    const confirmBtn = screen.getByRole("button", { name: /Sim, Criar Nova Unidade sob este CNPJ/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.rpc).toHaveBeenLastCalledWith(
+        "handle_signup",
+        expect.objectContaining({
+          _allow_duplicate_cnpj: true,
         })
       );
     });

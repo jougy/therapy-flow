@@ -40,6 +40,12 @@ import {
   isValidPatientEmail,
   normalizePatientPhoneDigits,
 } from "@/lib/patient-registration";
+import {
+  getSharedPatientDraft,
+  useSharedPatientAutoSave,
+  clearSharedPatientDraft,
+  type SharedPatientDraftValues,
+} from "@/hooks/useSharedPatientDraft";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const COMPLETED_MESSAGE =
@@ -212,40 +218,151 @@ const CadastroPacienteCompartilhado = () => {
   const canSubmit = formValidation.isValid && !locked;
   const canUnlock = password.replace(/\D/g, "").length >= 6;
 
+  const currentValues: SharedPatientDraftValues = useMemo(
+    () => ({
+      name,
+      dateOfBirth,
+      gender,
+      pronoun,
+      rg,
+      profession,
+      originType,
+      originReferrerName,
+      originInsuranceProvider,
+      originInsurancePlan,
+      originInsuranceMemberId,
+      originOtherName,
+      originOtherDescription,
+      cep,
+      country,
+      state,
+      city,
+      neighborhood,
+      street,
+      addressNumber,
+      addressComplement,
+      bloodType,
+      chronicConditions,
+      surgeries,
+      continuousMedications,
+      allergies,
+      clinicalNotes,
+      clinicalProfile,
+      emergencyContact,
+      phone,
+      email,
+    }),
+    [
+      name,
+      dateOfBirth,
+      gender,
+      pronoun,
+      rg,
+      profession,
+      originType,
+      originReferrerName,
+      originInsuranceProvider,
+      originInsurancePlan,
+      originInsuranceMemberId,
+      originOtherName,
+      originOtherDescription,
+      cep,
+      country,
+      state,
+      city,
+      neighborhood,
+      street,
+      addressNumber,
+      addressComplement,
+      bloodType,
+      chronicConditions,
+      surgeries,
+      continuousMedications,
+      allergies,
+      clinicalNotes,
+      clinicalProfile,
+      emergencyContact,
+      phone,
+      email,
+    ]
+  );
+
+  useSharedPatientAutoSave(token, currentValues, !locked && Boolean(patientId));
+
   const fillForm = (data: SharedPatientFormData) => {
     setPatientId(data.id);
-    setName(sanitizeLine(data.name ?? "", INPUT_LIMITS.name));
-    setCpf(formatPatientCpf(data.cpf ?? ""));
-    setDateOfBirth(data.date_of_birth ?? "");
-    setPhone(formatPatientPhone(data.phone ?? ""));
-    setEmail(sanitizeLine(data.email ?? "", INPUT_LIMITS.email));
-    setGender(data.gender ?? "");
-    setRg(sanitizeLine(data.rg ?? "", INPUT_LIMITS.patientDocument));
-    setBloodType(data.blood_type ?? "");
-    setPronoun(data.pronoun ?? "");
-    setProfession(sanitizeLine(data.profession ?? "", INPUT_LIMITS.profession));
-    setOriginType(normalizePatientOriginType(data.origin_type));
-    setOriginReferrerName(data.origin_referrer_name ?? "");
-    setOriginInsuranceProvider(data.origin_insurance_provider ?? "");
-    setOriginInsurancePlan(data.origin_insurance_plan ?? "");
-    setOriginInsuranceMemberId(data.origin_insurance_member_id ?? "");
-    setOriginOtherName(data.origin_other_name ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME);
-    setOriginOtherDescription(data.origin_other_description ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION);
-    setCep(formatCep(data.cep ?? ""));
-    setCountry(sanitizeLine(data.country ?? "Brasil", INPUT_LIMITS.country) || "Brasil");
-    setState(sanitizeLine(data.state ?? "", INPUT_LIMITS.state));
-    setCity(sanitizeLine(data.city ?? "", INPUT_LIMITS.city));
-    setNeighborhood(sanitizeLine(data.neighborhood ?? ""));
-    setStreet(sanitizeLine(data.street ?? "", INPUT_LIMITS.street));
-    setAddressNumber(sanitizeLine(data.address_number ?? "", INPUT_LIMITS.addressNumber));
-    setAddressComplement(sanitizeLine(data.address_complement ?? "", INPUT_LIMITS.addressComplement));
-    setChronicConditions(sanitizeMultilineInput(data.chronic_conditions ?? "", INPUT_LIMITS.clinicalLongText));
-    setSurgeries(sanitizeMultilineInput(data.surgeries ?? "", INPUT_LIMITS.clinicalLongText));
-    setContinuousMedications(sanitizeMultilineInput(data.continuous_medications ?? "", INPUT_LIMITS.clinicalLongText));
-    setAllergies(sanitizeMultilineInput(data.allergies ?? "", INPUT_LIMITS.clinicalLongText));
-    setClinicalNotes(sanitizeMultilineInput(data.clinical_notes ?? "", INPUT_LIMITS.clinicalLongText));
-    setClinicalProfile(parseClinicalProfile(data.clinical_profile));
-    setEmergencyContact(parseEmergencyContact(data.emergency_contact));
+    const draft = getSharedPatientDraft(token);
+    if (draft) {
+      setName(draft.name || sanitizeLine(data.name ?? "", INPUT_LIMITS.name));
+      setCpf(formatPatientCpf(data.cpf ?? ""));
+      setDateOfBirth(draft.dateOfBirth || data.date_of_birth || "");
+      setPhone(draft.phone || formatPatientPhone(data.phone ?? ""));
+      setEmail(draft.email || sanitizeLine(data.email ?? "", INPUT_LIMITS.email));
+      setGender(draft.gender || data.gender || "");
+      setRg(draft.rg || sanitizeLine(data.rg ?? "", INPUT_LIMITS.patientDocument));
+      setBloodType(draft.bloodType || data.blood_type || "");
+      setPronoun(draft.pronoun || data.pronoun || "");
+      setProfession(draft.profession || sanitizeLine(data.profession ?? "", INPUT_LIMITS.profession));
+      setOriginType(draft.originType ? normalizePatientOriginType(draft.originType) : normalizePatientOriginType(data.origin_type));
+      setOriginReferrerName(draft.originReferrerName ?? data.origin_referrer_name ?? "");
+      setOriginInsuranceProvider(draft.originInsuranceProvider ?? data.origin_insurance_provider ?? "");
+      setOriginInsurancePlan(draft.originInsurancePlan ?? data.origin_insurance_plan ?? "");
+      setOriginInsuranceMemberId(draft.originInsuranceMemberId ?? data.origin_insurance_member_id ?? "");
+      setOriginOtherName(draft.originOtherName ?? data.origin_other_name ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME);
+      setOriginOtherDescription(draft.originOtherDescription ?? data.origin_other_description ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION);
+      setCep(draft.cep || formatCep(data.cep ?? ""));
+      setCountry(draft.country || sanitizeLine(data.country ?? "Brasil", INPUT_LIMITS.country) || "Brasil");
+      setState(draft.state || sanitizeLine(data.state ?? "", INPUT_LIMITS.state));
+      setCity(draft.city || sanitizeLine(data.city ?? "", INPUT_LIMITS.city));
+      setNeighborhood(draft.neighborhood || sanitizeLine(data.neighborhood ?? ""));
+      setStreet(draft.street || sanitizeLine(data.street ?? "", INPUT_LIMITS.street));
+      setAddressNumber(draft.addressNumber || sanitizeLine(data.address_number ?? "", INPUT_LIMITS.addressNumber));
+      setAddressComplement(draft.addressComplement || sanitizeLine(data.address_complement ?? "", INPUT_LIMITS.addressComplement));
+      setChronicConditions(draft.chronicConditions || sanitizeMultilineInput(data.chronic_conditions ?? "", INPUT_LIMITS.clinicalLongText));
+      setSurgeries(draft.surgeries || sanitizeMultilineInput(data.surgeries ?? "", INPUT_LIMITS.clinicalLongText));
+      setContinuousMedications(draft.continuousMedications || sanitizeMultilineInput(data.continuous_medications ?? "", INPUT_LIMITS.clinicalLongText));
+      setAllergies(draft.allergies || sanitizeMultilineInput(data.allergies ?? "", INPUT_LIMITS.clinicalLongText));
+      setClinicalNotes(draft.clinicalNotes || sanitizeMultilineInput(data.clinical_notes ?? "", INPUT_LIMITS.clinicalLongText));
+      setClinicalProfile(draft.clinicalProfile || parseClinicalProfile(data.clinical_profile));
+      setEmergencyContact(draft.emergencyContact || parseEmergencyContact(data.emergency_contact));
+      toast({
+        title: "Rascunho recuperado",
+        description: "Seus dados foram restaurados automaticamente a partir do seu dispositivo.",
+      });
+    } else {
+      setName(sanitizeLine(data.name ?? "", INPUT_LIMITS.name));
+      setCpf(formatPatientCpf(data.cpf ?? ""));
+      setDateOfBirth(data.date_of_birth ?? "");
+      setPhone(formatPatientPhone(data.phone ?? ""));
+      setEmail(sanitizeLine(data.email ?? "", INPUT_LIMITS.email));
+      setGender(data.gender ?? "");
+      setRg(sanitizeLine(data.rg ?? "", INPUT_LIMITS.patientDocument));
+      setBloodType(data.blood_type ?? "");
+      setPronoun(data.pronoun ?? "");
+      setProfession(sanitizeLine(data.profession ?? "", INPUT_LIMITS.profession));
+      setOriginType(normalizePatientOriginType(data.origin_type));
+      setOriginReferrerName(data.origin_referrer_name ?? "");
+      setOriginInsuranceProvider(data.origin_insurance_provider ?? "");
+      setOriginInsurancePlan(data.origin_insurance_plan ?? "");
+      setOriginInsuranceMemberId(data.origin_insurance_member_id ?? "");
+      setOriginOtherName(data.origin_other_name ?? DEFAULT_PATIENT_ORIGIN_OTHER_NAME);
+      setOriginOtherDescription(data.origin_other_description ?? DEFAULT_PATIENT_ORIGIN_OTHER_DESCRIPTION);
+      setCep(formatCep(data.cep ?? ""));
+      setCountry(sanitizeLine(data.country ?? "Brasil", INPUT_LIMITS.country) || "Brasil");
+      setState(sanitizeLine(data.state ?? "", INPUT_LIMITS.state));
+      setCity(sanitizeLine(data.city ?? "", INPUT_LIMITS.city));
+      setNeighborhood(sanitizeLine(data.neighborhood ?? ""));
+      setStreet(sanitizeLine(data.street ?? "", INPUT_LIMITS.street));
+      setAddressNumber(sanitizeLine(data.address_number ?? "", INPUT_LIMITS.addressNumber));
+      setAddressComplement(sanitizeLine(data.address_complement ?? "", INPUT_LIMITS.addressComplement));
+      setChronicConditions(sanitizeMultilineInput(data.chronic_conditions ?? "", INPUT_LIMITS.clinicalLongText));
+      setSurgeries(sanitizeMultilineInput(data.surgeries ?? "", INPUT_LIMITS.clinicalLongText));
+      setContinuousMedications(sanitizeMultilineInput(data.continuous_medications ?? "", INPUT_LIMITS.clinicalLongText));
+      setAllergies(sanitizeMultilineInput(data.allergies ?? "", INPUT_LIMITS.clinicalLongText));
+      setClinicalNotes(sanitizeMultilineInput(data.clinical_notes ?? "", INPUT_LIMITS.clinicalLongText));
+      setClinicalProfile(parseClinicalProfile(data.clinical_profile));
+      setEmergencyContact(parseEmergencyContact(data.emergency_contact));
+    }
   };
 
   const updateClinicalProfile = <K extends keyof PatientClinicalProfile>(key: K, value: PatientClinicalProfile[K]) => {
@@ -387,6 +504,7 @@ const CadastroPacienteCompartilhado = () => {
       return;
     }
 
+    clearSharedPatientDraft(token);
     const response = data as Record<string, Json | undefined>;
     setLocked(true);
     setCompletedMessage(typeof response.message === "string" ? response.message : COMPLETED_MESSAGE);

@@ -9,11 +9,15 @@ import {
   AlertCircle, 
   Plus, 
   Loader2, 
-  ArrowUpRight,
   ShieldCheck,
   Receipt,
   QrCode,
-  Layers
+  Layers,
+  Copy,
+  Check,
+  Tag,
+  Clock,
+  Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +57,15 @@ interface SubscriptionSummary {
   next_due_date: string | null;
   asaas_customer_id: string | null;
   asaas_subscription_id: string | null;
+  applied_coupon_id?: string | null;
+  coupon_code?: string | null;
+  discount_percentage?: number | null;
+  discount_fixed_amount?: number | null;
+  trial_ends_at?: string | null;
+  cpf_cnpj?: string | null;
+  billing_email?: string | null;
+  billing_name?: string | null;
+  override_reason?: string | null;
 }
 
 interface Invoice {
@@ -64,6 +77,10 @@ interface Invoice {
   due_date: string;
   payment_date: string | null;
   billing_type: string | null;
+  pix_qr_code?: string | null;
+  pix_copia_e_cola?: string | null;
+  pix_expiration_date?: string | null;
+  invoice_url?: string | null;
   metadata?: Record<string, unknown>;
   created_at: string;
 }
@@ -82,32 +99,33 @@ export function ClinicBillingSettings({
 
   // Modals
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
-  const [isBuySpacesModalOpen, setIsBuySpacesModalOpen] = useState(false);
   const [isConcurrentModalOpen, setIsConcurrentModalOpen] = useState(false);
+
+  // Modal do PIX QR Code
+  const [selectedPixInvoice, setSelectedPixInvoice] = useState<Invoice | null>(null);
+  const [copiedPix, setCopiedPix] = useState(false);
 
   // Form states
   const [targetPlan, setTargetPlan] = useState<"solo" | "clinic">(currentPlan);
-  const [extraSpacesQuantity, setExtraSpacesQuantity] = useState(10);
-  const [buySpacesBillingType, setBuySpacesBillingType] = useState("PIX");
   const [extraConcurrentCount, setExtraConcurrentCount] = useState(0);
 
   const fetchSubscriptionData = useCallback(async () => {
     if (!clinicId) return;
     setLoading(true);
     try {
-      // 1. Fetch Subscription summary via RPC
+      // 1. Resumo da Assinatura via RPC get_clinic_subscription_summary
       const { data: summaryData, error: summaryErr } = await supabase
         .rpc("get_clinic_subscription_summary", { _clinic_id: clinicId });
 
       if (summaryErr) {
-        console.warn("Could not fetch subscription summary via RPC:", summaryErr);
+        console.warn("Aviso ao buscar resumo da assinatura via RPC:", summaryErr);
       } else if (summaryData && summaryData.length > 0) {
         const item = summaryData[0] as SubscriptionSummary;
         setSummary(item);
         setExtraConcurrentCount(item.additional_concurrent_access_count || 0);
       }
 
-      // 2. Fetch Active Collaborators Count
+      // 2. Quantidade de colaboradores ativos
       const { count: colabCount, error: colabErr } = await supabase
         .from("clinic_memberships")
         .select("id", { count: "exact", head: true })
@@ -120,7 +138,7 @@ export function ClinicBillingSettings({
         setActiveCollaboratorsCount(colabCount || 0);
       }
 
-      // 3. Fetch Invoices
+      // 3. Faturas registradas
       const { data: invoicesData, error: invoicesErr } = await supabase
         .from("subscription_invoices")
         .select("*")
@@ -131,7 +149,7 @@ export function ClinicBillingSettings({
         setInvoices(invoicesData as Invoice[]);
       }
     } catch (err) {
-      console.error("Error loading billing settings:", err);
+      console.error("Erro ao carregar dados de faturamento:", err);
     } finally {
       setLoading(false);
     }
@@ -141,7 +159,7 @@ export function ClinicBillingSettings({
     fetchSubscriptionData();
   }, [fetchSubscriptionData]);
 
-  // Handle Upgrade / Downgrade Plan
+  // Alterar Plano (Upgrade / Downgrade com Trava de Segurança)
   const handleManagePlan = async () => {
     if (!clinicId || submitting) return;
 
@@ -152,14 +170,14 @@ export function ClinicBillingSettings({
 
     setSubmitting(true);
     try {
-      const { data, error } = await supabase.rpc("manage_clinic_subscription_plan", {
+      const { error } = await supabase.rpc("manage_clinic_subscription_plan", {
         _clinic_id: clinicId,
         _new_plan: targetPlan,
       });
 
       if (error) throw error;
 
-      toast.success(targetPlan === "clinic" ? "Upgrade para Plano Clínica efetuado com sucesso!" : "Alteração para o Plano Solo efetuada com sucesso!");
+      toast.success(targetPlan === "clinic" ? "Upgrade para o Plano Clínica efetuado com sucesso!" : "Alteração para o Plano Solo efetuada com sucesso!");
       setIsPlanModalOpen(false);
 
       if (typeof refreshAuthState === "function") {
@@ -174,46 +192,24 @@ export function ClinicBillingSettings({
     }
   };
 
-  // Handle Buy Extra Collaborator Spaces (One-time purchase R$ 5.00/space)
-  const handleBuyExtraSpaces = async () => {
-    if (!clinicId || submitting) return;
-    if (extraSpacesQuantity <= 0) {
-      toast.error("Informe uma quantidade válida de vagas.");
-      return;
-    }
 
-    setSubmitting(true);
-    try {
-      const { data, error } = await supabase.rpc("buy_clinic_subaccount_extra_spaces", {
-        _clinic_id: clinicId,
-        _quantity: extraSpacesQuantity,
-        _billing_type: buySpacesBillingType,
-      });
-
-      if (error) throw error;
-
-      toast.success(`Compra avulsa de ${extraSpacesQuantity} vagas confirmada com sucesso!`);
-      setIsBuySpacesModalOpen(false);
-
-      if (typeof refreshAuthState === "function") {
-        await refreshAuthState();
-      }
-      await fetchSubscriptionData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro ao adquirir vagas extras.";
-      toast.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Handle Update Extra Concurrent Accesses (+R$ 10.00/month recurring)
+  // Ajustar Acessos Simultâneos (+R$ 10,00/mês cada)
   const handleUpdateConcurrentAccesses = async () => {
     if (!clinicId || submitting) return;
 
     setSubmitting(true);
     try {
-      const { data, error } = await supabase.rpc("update_clinic_concurrent_accesses", {
+      // Invocar Edge Function de atualização no Asaas
+      await supabase.functions.invoke("asaas-subscription", {
+        body: {
+          action: "UPDATE_SEATS",
+          clinic_id: clinicId,
+          additional_seats_count: extraConcurrentCount,
+        },
+      });
+
+      // Invocar RPC de atualização local
+      const { error } = await supabase.rpc("update_clinic_concurrent_accesses", {
         _clinic_id: clinicId,
         _extra_concurrent: extraConcurrentCount,
       });
@@ -235,6 +231,13 @@ export function ClinicBillingSettings({
     }
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedPix(true);
+    toast.success("Código PIX Copia e Cola copiado para a área de transferência!");
+    setTimeout(() => setCopiedPix(false), 3000);
+  };
+
   const activePlan = summary?.plan_type || currentPlan;
   const isSolo = activePlan === "solo";
   const baseSubaccountLimit = summary?.base_subaccount_limit ?? (isSolo ? 1 : 30);
@@ -245,7 +248,8 @@ export function ClinicBillingSettings({
   const extraConcurrent = summary?.additional_concurrent_access_count ?? 0;
   const totalConcurrent = summary?.total_concurrent_access_limit ?? (isSolo ? 1 : 2);
 
-  const totalMonthlyPrice = summary?.total_recurring_monthly_price ?? (isSolo ? 50 : 60 + extraConcurrent * 10);
+  const rawMonthlyPrice = isSolo ? 50.0 : 60.0 + extraConcurrent * 10.0;
+  const totalMonthlyPrice = summary?.total_recurring_monthly_price ?? rawMonthlyPrice;
   const isOwner = accountRole === "account_owner" || !accountRole;
 
   const usagePercent = Math.min(100, Math.round((activeCollaboratorsCount / (totalSubaccountLimit || 1)) * 100));
@@ -260,7 +264,7 @@ export function ClinicBillingSettings({
 
   return (
     <div className="space-y-6">
-      {/* Overview Banner Card */}
+      {/* Banner Principal do Plano */}
       <Card className="relative overflow-hidden border bg-card text-card-foreground backdrop-blur-md shadow-lg rounded-2xl">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
         <CardHeader className="p-6 pb-4">
@@ -270,7 +274,7 @@ export function ClinicBillingSettings({
                 {isSolo ? <UserRound className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xl font-bold text-foreground">
                     {isSolo ? "Profissional Solo" : "Clínica com Equipe"}
                   </h3>
@@ -278,9 +282,18 @@ export function ClinicBillingSettings({
                     <Sparkles className="w-3 h-3 mr-1" />
                     Fase Beta (100% Gratuito)
                   </Badge>
+
+                  {summary?.coupon_code && (
+                    <Badge variant="outline" className="border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/10 text-xs font-semibold">
+                      <Tag className="w-3 h-3 mr-1" />
+                      Cupom: {summary.coupon_code}
+                    </Badge>
+                  )}
                 </div>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-                  {isSolo ? "Ideal para profissionais autônomos organizarem seus atendimentos." : "Para clínicas compartilhadas com gestão de colaboradores e acessos simultâneos."}
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                  {isSolo
+                    ? "Ideal para profissionais autônomos organizarem seus atendimentos."
+                    : "Para clínicas compartilhadas com gestão de colaboradores e acessos simultâneos."}
                 </p>
               </div>
             </div>
@@ -300,10 +313,16 @@ export function ClinicBillingSettings({
             )}
           </div>
         </CardHeader>
+
         <CardContent className="p-6 pt-2 grid gap-4 sm:grid-cols-3 border-t border-border mt-4">
           <div className="rounded-xl border bg-muted/40 p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mensalidade Recorrente</p>
-            <div className="flex items-baseline gap-1 mt-1">
+            <div className="flex items-baseline gap-1.5 mt-1">
+              {summary?.coupon_code && rawMonthlyPrice !== totalMonthlyPrice && (
+                <span className="text-sm text-muted-foreground line-through font-mono">
+                  R$ {rawMonthlyPrice.toFixed(2)}
+                </span>
+              )}
               <span className="text-2xl font-bold text-foreground">R$ {totalMonthlyPrice.toFixed(2)}</span>
               <span className="text-xs text-muted-foreground">/mês</span>
             </div>
@@ -320,72 +339,56 @@ export function ClinicBillingSettings({
           </div>
 
           <div className="rounded-xl border bg-muted/40 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Vencimento</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Vencimento / Ciclo</p>
             <p className="text-base font-semibold text-foreground mt-1">Isenção Beta Ativa</p>
             <p className="text-xs text-muted-foreground mt-1">Renovação automática</p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Capacity & Extra Quotas Grid */}
+      {/* Grid de Cotas e Limites */}
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Card 1: Subaccount Spaces */}
+        {/* Card 1: Colaboradores da Equipe */}
         <Card className="border bg-card text-card-foreground shadow-lg rounded-2xl">
           <CardHeader className="p-6 pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-500" />
-                <CardTitle className="text-lg font-semibold text-foreground">Cadastro de Colaboradores</CardTitle>
+                <CardTitle className="text-lg font-semibold text-foreground">Colaboradores da Equipe</CardTitle>
               </div>
-              <Badge variant="outline" className="text-muted-foreground">
-                {activeCollaboratorsCount} / {totalSubaccountLimit} Vagas
+              <Badge variant="outline" className={isSolo ? "text-muted-foreground" : "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"}>
+                {isSolo ? `${activeCollaboratorsCount} / 0 Vagas` : "Cadastro Ilimitado"}
               </Badge>
             </div>
             <CardDescription className="text-xs text-muted-foreground mt-1">
-              Vagas disponíveis para convidar secretárias, profissionais e colaboradores.
+              {isSolo
+                ? "O plano Solo é voltado para uso individual. Para convidar equipe, faça upgrade para o plano Clínica."
+                : "Cadastre profissionais, secretárias e estagiários sem custos adicionais por usuário cadastrado."}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6 pt-2 space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Uso das Vagas</span>
-                <span>{usagePercent}% preenchido</span>
+            <div className="rounded-xl bg-muted/50 border p-4 space-y-3 text-xs text-foreground">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Colaboradores ativos na clínica:</span>
+                <span className="font-bold text-sm text-foreground">{activeCollaboratorsCount} pessoa(s)</span>
               </div>
-              <Progress value={usagePercent} className="h-2.5 bg-muted" />
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Limite de cadastros:</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                  {isSolo ? "1 usuário (Proprietário)" : "Sem limite (Ilimitado)"}
+                </span>
+              </div>
             </div>
 
-            <div className="rounded-xl bg-muted/50 border p-3 space-y-1.5 text-xs text-foreground">
-              <div className="flex justify-between">
-                <span>Cota Base do Plano:</span>
-                <span className="font-semibold">{baseSubaccountLimit} vagas</span>
-              </div>
-              {!isSolo && (
-                <div className="flex justify-between">
-                  <span>Vagas Extras Compradas:</span>
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{extraSubaccountSpaces} vagas</span>
-                </div>
-              )}
-            </div>
-
-            {!isSolo && isOwner && (
-              <Button
-                onClick={() => setIsBuySpacesModalOpen(true)}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl h-11 text-sm transition-all shadow-md shadow-blue-600/10"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Comprar Vagas Extras (R$ 5,00 Avulso por Vaga)
-              </Button>
-            )}
-
-            {isSolo && (
-              <p className="text-xs text-muted-foreground italic">
-                O plano Solo não permite colaboradores adicionais. Faça upgrade para o plano Clínica com Equipe para liberar até 30 vagas.
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {isSolo
+                ? "No plano Clínica com Equipe, você pode registrar toda a sua equipe livremente e dimensionar apenas os acessos simultâneos."
+                : "No Therapy-Flow, a criação de contas para a equipe é livre. Você só paga pela quantidade de acessos simultâneos que utilizarem o sistema ao mesmo tempo."}
+            </p>
           </CardContent>
         </Card>
 
-        {/* Card 2: Concurrent Accesses */}
+        {/* Card 2: Acessos Simultâneos (Sem vazamento de markdown cru) */}
         <Card className="border bg-card text-card-foreground shadow-lg rounded-2xl">
           <CardHeader className="p-6 pb-3">
             <div className="flex items-center justify-between">
@@ -415,8 +418,8 @@ export function ClinicBillingSettings({
               )}
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              Cada acesso simultâneo adicional adiciona **+R$ 10,00/mês** recorrente na mensalidade do Asaas.
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Cada acesso simultâneo adicional adiciona <strong className="font-semibold text-foreground">+R$ 10,00/mês</strong> recorrente na mensalidade do Asaas.
             </p>
 
             {!isSolo && isOwner && (
@@ -438,7 +441,7 @@ export function ClinicBillingSettings({
         </Card>
       </div>
 
-      {/* Invoices History Table */}
+      {/* Tabela de Faturas e Cobranças */}
       <Card className="border bg-card text-card-foreground shadow-lg rounded-2xl">
         <CardHeader className="p-6 pb-4 border-b">
           <div className="flex items-center gap-2">
@@ -466,6 +469,7 @@ export function ClinicBillingSettings({
                   <th className="p-4">Forma</th>
                   <th className="p-4">Valor</th>
                   <th className="p-4">Status</th>
+                  <th className="p-4 text-right">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -480,9 +484,31 @@ export function ClinicBillingSettings({
                     <td className="p-4">{inv.billing_type || "PIX"}</td>
                     <td className="p-4 font-bold text-foreground">R$ {Number(inv.value).toFixed(2)}</td>
                     <td className="p-4">
-                      <Badge variant="outline" className="border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
-                        {inv.status === "CONFIRMED" || inv.status === "RECEIVED" ? "Pago / Confirmado" : inv.status}
+                      <Badge 
+                        variant="outline" 
+                        className={
+                          inv.status === "CONFIRMED" || inv.status === "RECEIVED"
+                            ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
+                            : inv.status === "PENDING"
+                            ? "border-yellow-500/30 text-yellow-600 dark:text-yellow-400 bg-yellow-500/10"
+                            : "border-neutral-500/30 text-neutral-400"
+                        }
+                      >
+                        {inv.status === "CONFIRMED" || inv.status === "RECEIVED" ? "Pago / Confirmado" : inv.status === "PENDING" ? "Pendente" : inv.status}
                       </Badge>
+                    </td>
+                    <td className="p-4 text-right">
+                      {inv.status === "PENDING" && (inv.pix_copia_e_cola || inv.pix_qr_code) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedPixInvoice(inv)}
+                          className="h-8 text-xs rounded-lg border-blue-500/30 text-blue-500 hover:bg-blue-500/10"
+                        >
+                          <QrCode className="w-3.5 h-3.5 mr-1" />
+                          Pagar via PIX
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -492,9 +518,9 @@ export function ClinicBillingSettings({
         </CardContent>
       </Card>
 
-      {/* Modal 1: Alterar Plano (Upgrade / Downgrade) */}
+      {/* Modal 1: Alterar Plano (Upgrade / Downgrade com Trava de Segurança) */}
       <Dialog open={isPlanModalOpen} onOpenChange={setIsPlanModalOpen}>
-        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-xl rounded-2xl">
+        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-xl rounded-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold text-foreground">Alterar Plano de Assinatura</DialogTitle>
             <DialogDescription className="text-muted-foreground text-sm">
@@ -503,7 +529,7 @@ export function ClinicBillingSettings({
           </DialogHeader>
 
           <div className="grid gap-4 py-4 sm:grid-cols-2">
-            {/* Solo Option */}
+            {/* Plano Solo */}
             <div
               onClick={() => setTargetPlan("solo")}
               className={`cursor-pointer rounded-2xl p-4 border transition-all flex flex-col justify-between ${
@@ -519,15 +545,15 @@ export function ClinicBillingSettings({
                 </div>
                 <p className="text-xs text-muted-foreground mb-3">Para atendimento individual sem equipe.</p>
                 <div className="text-2xl font-bold text-foreground mb-1">R$ 50<span className="text-xs text-muted-foreground">/mês</span></div>
-                <ul className="text-xs text-muted-foreground space-y-1 mt-2">
-                  <li>• 1 Profissional de saúde</li>
-                  <li>• 1 Acesso simultâneo</li>
-                  <li>• Sem colaboradores</li>
+                <ul className="text-xs text-muted-foreground space-y-1.5 mt-2">
+                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> 1 Profissional de saúde</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> 1 Acesso simultâneo</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> Sem cobrança de subcontas</li>
                 </ul>
               </div>
             </div>
 
-            {/* Clinic Option */}
+            {/* Plano Clínica */}
             <div
               onClick={() => setTargetPlan("clinic")}
               className={`cursor-pointer rounded-2xl p-4 border transition-all flex flex-col justify-between ${
@@ -543,16 +569,16 @@ export function ClinicBillingSettings({
                 </div>
                 <p className="text-xs text-muted-foreground mb-3">Para clínicas e consultórios compartilhados.</p>
                 <div className="text-2xl font-bold text-foreground mb-1">R$ 60<span className="text-xs text-muted-foreground">/mês</span></div>
-                <ul className="text-xs text-muted-foreground space-y-1 mt-2">
-                  <li>• **30 Vagas** de colaboradores inclusas</li>
-                  <li>• **2 Acessos** simultâneos inclusos</li>
-                  <li>• Permissões & Hierarquias</li>
+                <ul className="text-xs text-muted-foreground space-y-1.5 mt-2">
+                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" /> <strong>30 Vagas</strong> de colaboradores</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" /> <strong>2 Acessos</strong> simultâneos inclusos</li>
+                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" /> Permissões & Hierarquias</li>
                 </ul>
               </div>
             </div>
           </div>
 
-          {/* Downgrade Warning Guard */}
+          {/* Bloqueio de Downgrade se houver colaboradores */}
           {targetPlan === "solo" && activeCollaboratorsCount > 0 && (
             <Alert variant="destructive" className="rounded-xl">
               <AlertCircle className="h-4 w-4" />
@@ -584,78 +610,10 @@ export function ClinicBillingSettings({
         </DialogContent>
       </Dialog>
 
-      {/* Modal 2: Compra Avulsa de Vagas de Colaboradores (R$ 5,00 avulso/vaga) */}
-      <Dialog open={isBuySpacesModalOpen} onOpenChange={setIsBuySpacesModalOpen}>
-        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-foreground">Comprar Vagas Extras de Colaboradores</DialogTitle>
-            <DialogDescription className="text-muted-foreground text-xs">
-              Adicione mais capacidade de registro de colaboradores na sua clínica.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold text-foreground">Quantidade de Vagas Extras</Label>
-              <Input
-                type="number"
-                min={1}
-                max={500}
-                value={extraSpacesQuantity}
-                onChange={(e) => setExtraSpacesQuantity(Math.max(1, parseInt(e.target.value || "1", 10)))}
-                className="h-11 text-base rounded-xl"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold text-foreground">Forma de Pagamento</Label>
-              <Select value={buySpacesBillingType} onValueChange={setBuySpacesBillingType}>
-                <SelectTrigger className="h-11 rounded-xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="PIX">PIX (Aprovação Imediata Sandbox)</SelectItem>
-                  <SelectItem value="CREDIT_CARD">Cartão de Crédito</SelectItem>
-                  <SelectItem value="BOLETO">Boleto Bancário</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Total Preview Box */}
-            <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-4 space-y-2">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Valor por Vaga Extra:</span>
-                <span>R$ 5,00 (único)</span>
-              </div>
-              <div className="flex justify-between items-baseline pt-2 border-t border-blue-500/20">
-                <span className="text-sm font-semibold text-foreground">Total da Compra Avulsa:</span>
-                <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">R$ {(extraSpacesQuantity * 5).toFixed(2)}</span>
-              </div>
-              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1">
-                * Esta é uma cobrança avulsa e <strong>NÃO</strong> altera o valor da sua mensalidade recorrente.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsBuySpacesModalOpen(false)} disabled={submitting}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleBuyExtraSpaces}
-              disabled={submitting}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl"
-            >
-              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Confirmar Compra (R$ {(extraSpacesQuantity * 5).toFixed(2)})
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Modal 3: Ajustar Acessos Simultâneos Extras (+R$ 10/mês recorrente) */}
       <Dialog open={isConcurrentModalOpen} onOpenChange={setIsConcurrentModalOpen}>
-        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-md rounded-2xl">
+        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-md rounded-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold text-foreground">Ajustar Acessos Simultâneos Extras</DialogTitle>
             <DialogDescription className="text-muted-foreground text-xs">
@@ -675,6 +633,16 @@ export function ClinicBillingSettings({
                 className="h-11 text-base rounded-xl"
               />
             </div>
+
+            {extraConcurrentCount < extraConcurrent && (
+              <Alert className="rounded-xl border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle className="font-semibold text-xs sm:text-sm">Efetivação de Redução de Cotas</AlertTitle>
+                <AlertDescription className="text-xs mt-1">
+                  O aumento de acessos entra em vigor imediatamente. Reduções de acessos simultâneos passam a valer na renovação do próximo ciclo de faturamento para garantir a cobrança justa pelo uso no período atual.
+                </AlertDescription>
+              </Alert>
+            )}
 
             <div className="rounded-xl bg-muted/60 border p-4 space-y-2 text-xs">
               <div className="flex justify-between text-muted-foreground">
@@ -703,6 +671,71 @@ export function ClinicBillingSettings({
             >
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Atualizar Assinatura
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal 4: Pagamento via PIX com QR Code e Copia e Cola */}
+      <Dialog open={!!selectedPixInvoice} onOpenChange={(open) => !open && setSelectedPixInvoice(null)}>
+        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-md rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-foreground flex items-center gap-2">
+              <QrCode className="w-5 h-5 text-emerald-500" />
+              Pagamento via PIX (Asaas Sandbox)
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs">
+              Escaneie o QR Code ou copie a chave abaixo no app do seu banco.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedPixInvoice && (
+            <div className="space-y-4 py-2 text-center">
+              {/* Image QR Code */}
+              {selectedPixInvoice.pix_qr_code ? (
+                <div className="p-4 bg-white rounded-2xl inline-block shadow-inner mx-auto">
+                  <img
+                    src={`data:image/png;base64,${selectedPixInvoice.pix_qr_code}`}
+                    alt="QR Code PIX"
+                    className="w-48 h-48 mx-auto object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="p-8 rounded-2xl bg-muted/60 border text-center text-xs text-muted-foreground">
+                  <QrCode className="w-12 h-12 mx-auto mb-2 text-emerald-500 opacity-60" />
+                  QR Code gerado para cobrança Asaas Sandbox
+                </div>
+              )}
+
+              <div className="text-lg font-bold text-foreground">
+                Valor: <span className="text-emerald-500">R$ {Number(selectedPixInvoice.value).toFixed(2)}</span>
+              </div>
+
+              {/* Payload Copia e Cola */}
+              {selectedPixInvoice.pix_copia_e_cola && (
+                <div className="space-y-2 text-left">
+                  <Label className="text-xs font-semibold text-foreground">PIX Copia e Cola</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      value={selectedPixInvoice.pix_copia_e_cola}
+                      className="h-10 text-xs font-mono bg-muted"
+                    />
+                    <Button
+                      onClick={() => copyToClipboard(selectedPixInvoice.pix_copia_e_cola || "")}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 h-10 px-3"
+                    >
+                      {copiedPix ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedPixInvoice(null)}>
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

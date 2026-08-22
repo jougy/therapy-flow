@@ -29,6 +29,8 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Core do projeto]]
 - [[Codex Brain]]
 - [[Clinica e colaborador no MVP]]
+- [[Sistema de Feedbacks e Avaliacoes]]
+- [[Redesenho de Fluxo de Atendimentos e Linhas de Cuidado]]
 
 ### Equipe, acessos e configuracoes
 
@@ -38,6 +40,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Compartilhamento de fichas de atendimento]]
 - [[Grupos reutilizaveis de atendimentos]]
 - [[Acesso mestre e painel administrativo global]]
+- [[Reenvio de convites com cooldown e Gestao de Pendencias no Diretorio Mestre]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
 
@@ -62,11 +65,13 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 - [[Prompt - Homepage filtro e ordenacao de pacientes]]
 - [[Inventario de inputs]]
+- [[Heuristicas e regras de responsividade mobile-first]]
 
 ## Hubs principais
 
 - [[Core do projeto]]: indice central do projeto e dos documentos de produto.
 - [[Visao geral do produto]]: apresentacao curta do projeto.
+- [[00 - Hub de Tutoriais da Plataforma]]: roteiros, mapeamento e guias passo a passo de todas as páginas da plataforma.
 - [[Ambiente e operacao]]: ambiente local, fluxo tecnico e deploy.
 - [[TDD e checks]]: estrategia de protecao contra regressao.
 - [[Plano de seguranca - hub]]: plano de auditoria, vulnerabilidades e subplanos por camada.
@@ -77,6 +82,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 ### Produto
 
 - [[README - Produto]]
+- [[00 - Hub de Tutoriais da Plataforma]]
 - [[Clinica e colaborador no MVP]]
 - [[Identidade global do usuario e seletor de clinicas]]
 - [[Hierarquias de colaboradores e acessos]]
@@ -87,6 +93,9 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
 - [[Plano de Telemetria Auditoria e Estatisticas do Backoffice]]
+- [[Criador de formularios do DesignLab - Arquitetura e Interacoes]]
+- [[Biblioteca comunitaria de modelos de formularios]]
+- [[Correcao load infinito no cadastro completo de paciente]]
 
 ### Engenharia
 
@@ -100,6 +109,11 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Feature Flags - Guia]]
 - [[Prevencao de TDZ e ordem de hooks no React]]
 - [[Site Institucional Astro]]
+- [[Plano de Otimizacao de Performance e Loads]]
+- [[Arquitetura Client-First e Otimizacao de Performance da Homepage]]
+- [[Persistencia Local em IndexedDB e UX Client-First no Prontuario e Formularios]]
+- [[Agregacoes de Analytics e Performance do Dashboard]]
+- [[Modularizacao do Construtor de Formularios]]
 
 ### Seguranca
 

@@ -177,3 +177,5 @@ export const getReadableTextColor = (hex: string) => {
 };
 
 export const getLegacyGroupHex = (value: string) => normalizeHexColor(value) ?? LEGACY_GROUP_COLOR_HEX[value] ?? "#94A3B8";
+
+export const normalizeGroupName = (name: string) => name.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");

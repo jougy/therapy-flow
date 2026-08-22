@@ -67,7 +67,7 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
       if (scope === "clinic" && clinicId) matchQuery = matchQuery.eq("clinic_id", clinicId);
       if (scope === "global") matchQuery = matchQuery.is("tag_id", null).is("clinic_id", null);
 
-      const { data: existingData, error: fetchError } = await matchQuery.single();
+      const { data: existingData } = await matchQuery.maybeSingle();
       
       let currentValue = {};
       if (existingData && existingData.value && typeof existingData.value === 'object') {
@@ -86,14 +86,17 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
         ...sanitizedData
       };
 
-      // 3. Atualizar no banco
-      let updateQuery = supabase.from("feature_flags").update({ value: mergedPayload }).eq("key", featureKey).eq("scope", scope);
-      if (scope === "tag" && tagId) updateQuery = updateQuery.eq("tag_id", tagId);
-      if (scope === "clinic" && clinicId) updateQuery = updateQuery.eq("clinic_id", clinicId);
-      if (scope === "global") updateQuery = updateQuery.is("tag_id", null).is("clinic_id", null);
+      // 3. Salvar usando RPC upsert_feature_flag
+      const { error: upsertError } = await supabase.rpc("upsert_feature_flag", {
+        _key: featureKey,
+        _scope: scope,
+        _clinic_id: scope === "clinic" ? clinicId : undefined,
+        _tag_id: scope === "tag" ? tagId : undefined,
+        _value: mergedPayload,
+        _description: feature?.description,
+      });
 
-      const { error: updateError } = await updateQuery;
-      if (updateError) throw updateError;
+      if (upsertError) throw upsertError;
 
       toast({ title: "Configurações salvas", description: "As configurações avançadas foram atualizadas com sucesso." });
       

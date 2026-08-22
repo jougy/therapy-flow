@@ -1,8 +1,21 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Index from "@/pages/Index";
 import { useAuth } from "@/hooks/useAuth";
+
+const renderWithClient = (ui: React.ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+      },
+    },
+  });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+};
 
 vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
@@ -195,7 +208,7 @@ describe("Index", () => {
   });
 
   it("removes a recently deleted patient from the homepage list", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter
         initialEntries={[
           {
@@ -213,15 +226,12 @@ describe("Index", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.queryByText("Maria Silva")).not.toBeInTheDocument();
-    });
-
-    expect(screen.getByText("João Souza")).toBeInTheDocument();
+    expect(await screen.findByText("João Souza")).toBeInTheDocument();
+    expect(screen.queryByText("Maria Silva")).not.toBeInTheDocument();
   });
 
   it("shows all recent patients instead of limiting the statistics list to five", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -238,7 +248,7 @@ describe("Index", () => {
   });
 
   it("switches from patients to a global sessions list", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -257,7 +267,7 @@ describe("Index", () => {
   });
 
   it("shows the patient list when a status filter is applied", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -276,7 +286,7 @@ describe("Index", () => {
   });
 
   it("shows the patient list when filtering by group, color and collaborator", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -299,7 +309,7 @@ describe("Index", () => {
   });
 
   it("shows collaborator job title instead of platform hierarchy in the collaborator filter", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -317,7 +327,7 @@ describe("Index", () => {
   });
 
   it("keeps the clinic agenda available in a popup after returning filters and sorting to the default state", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -352,7 +362,7 @@ describe("Index", () => {
   });
 
   it("opens the clinic agenda from the toolbar", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -395,7 +405,7 @@ describe("Index", () => {
       } as never,
     });
 
-    render(
+    renderWithClient(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
           <Route path="/" element={<Index />} />

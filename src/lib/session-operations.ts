@@ -13,6 +13,14 @@ export type SessionPaymentMethod =
 export const MAX_SESSION_AMOUNT_CENTS = 10_000_000;
 export const PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH = 240;
 
+export const sanitizeDashboardCents = (value: number | null | undefined) => {
+  if (!Number.isFinite(value ?? 0)) {
+    return 0;
+  }
+
+  return Math.min(MAX_SESSION_AMOUNT_CENTS, Math.max(0, Math.round(value ?? 0)));
+};
+
 export type OperationalSession = {
   amount_charged_cents?: number | null;
   amount_original_cents?: number | null;

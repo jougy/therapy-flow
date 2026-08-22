@@ -1,4 +1,4 @@
-import { ChevronRight, Clock3, User } from "lucide-react";
+import { ChevronRight, Clock3, MessageCircle, Phone, User } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -17,6 +17,7 @@ export interface PatientCardData {
   name: string;
   gender: string | null;
   pronoun: string | null;
+  phone?: string | null;
   recurringWeekdays?: number[];
   date_of_birth: string | null;
   cpf: string | null;
@@ -38,8 +39,24 @@ export interface PatientCardData {
   } | null;
 }
 
+interface PatientCardProps {
+  patient: PatientCardData;
+  onPrefetch?: (id: string) => void;
+}
+
 const formatCpf = (cpf: string) =>
   cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+
+const formatPhone = (phone: string) => {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11) {
+    return digits.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
+  }
+  if (digits.length === 10) {
+    return digits.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
+  }
+  return phone;
+};
 
 const GenderIcon = ({ gender }: { gender: string | null }) => {
   if (gender === "feminino") return <span className="text-sm shrink-0" title="Feminino">♀</span>;
@@ -65,16 +82,24 @@ const recurrenceWeekdayLetters = ["D", "S", "T", "Q", "Q", "S", "S"] as const;
 
 const stopCardNavigation = (event: SyntheticEvent) => event.stopPropagation();
 
-const PatientCard = ({ patient }: { patient: PatientCardData }) => {
+const PatientCard = ({ patient, onPrefetch }: PatientCardProps) => {
   const navigate = useNavigate();
   const statusMeta = getPatientStatusMeta(patient.status);
   const recurringWeekdaySet = new Set(patient.recurringWeekdays ?? []);
   const hasRecurrence = recurringWeekdaySet.size > 0;
 
+  const phoneDigits = (patient.phone ?? "").replace(/\D/g, "");
+  const hasValidPhone = phoneDigits.length >= 10;
+  const whatsappUrl = hasValidPhone
+    ? `https://wa.me/${phoneDigits.startsWith("55") ? phoneDigits : `55${phoneDigits}`}`
+    : null;
+
   return (
     <Card
-      className="p-4 cursor-pointer hover:shadow-md transition-shadow duration-150 group"
+      className="p-4 cursor-pointer hover:shadow-md transition-shadow duration-150 group select-none"
       onClick={() => navigate(getPatientPath(patient))}
+      onPointerEnter={() => onPrefetch?.(patient.id)}
+      onFocus={() => onPrefetch?.(patient.id)}
       role="button"
       tabIndex={0}
       aria-label={`Ver detalhes de ${patient.name}`}
@@ -89,6 +114,7 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
               <span className="text-xs text-muted-foreground">({patient.pronoun})</span>
             )}
             <Badge
+              data-tutorial="patient-card-status-badge"
               variant={patient.status === "ativo" ? "default" : "secondary"}
               className={statusMeta.badgeClassName}
             >
@@ -98,6 +124,7 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
               <Popover>
                 <PopoverTrigger asChild>
                   <button
+                    data-tutorial="patient-card-payment-icon"
                     type="button"
                     className={cn(
                       "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
@@ -146,6 +173,7 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
               <Popover>
                 <PopoverTrigger asChild>
                   <button
+                    data-tutorial="patient-card-clock-icon"
                     type="button"
                     className={cn(
                       "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
@@ -187,6 +215,7 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
             )}
             {hasRecurrence && (
               <div
+                data-tutorial="patient-card-recurrence-pill"
                 className="inline-flex h-6 shrink-0 items-center gap-0.5 rounded-full border border-primary/20 bg-primary/5 px-1"
                 aria-label={`Recorrência: ${PATIENT_RECURRENCE_WEEKDAY_OPTIONS
                   .filter((weekday) => recurringWeekdaySet.has(weekday.value))
@@ -214,18 +243,24 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
             )}
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+          <div data-tutorial="patient-card-meta-info" className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
             {patient.date_of_birth && (
               <span>Nasc: {format(new Date(patient.date_of_birth + "T12:00:00"), "dd/MM/yyyy")}</span>
             )}
             {patient.cpf && <span>CPF: {formatCpf(patient.cpf)}</span>}
+            {patient.phone && (
+              <span className="inline-flex items-center gap-1">
+                <Phone className="h-3 w-3" />
+                {formatPhone(patient.phone)}
+              </span>
+            )}
             {patient.lastSessionDate && (
               <span>Último atend: {format(new Date(patient.lastSessionDate), "dd/MM/yyyy")}</span>
             )}
           </div>
 
           {patient.groups.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap">
+            <div data-tutorial="patient-card-groups-tags" className="flex gap-1.5 flex-wrap">
               {patient.groups.map((g) => (
                 <Badge
                   key={g.name}
@@ -242,7 +277,24 @@ const PatientCard = ({ patient }: { patient: PatientCardData }) => {
             </div>
           )}
         </div>
-        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0 ml-4" />
+
+        <div className="flex items-center gap-1.5 ml-4 shrink-0">
+          {whatsappUrl && (
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={stopCardNavigation}
+              onPointerDown={stopCardNavigation}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-600 transition-colors hover:bg-emerald-500/20 hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              aria-label={`Conversar no WhatsApp com ${patient.name}`}
+              title="Abrir WhatsApp"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </a>
+          )}
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+        </div>
       </div>
     </Card>
   );

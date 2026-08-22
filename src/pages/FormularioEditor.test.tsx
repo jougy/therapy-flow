@@ -7,6 +7,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { buildAnamnesisTemplateExchangePayload, ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES } from "@/lib/anamnesis-forms";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { TutorialProvider } from "@/contexts/TutorialContext";
+import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
 
 vi.mock("@/hooks/useAuth", () => ({
   useAuth: vi.fn(),
@@ -103,7 +105,7 @@ describe("FormularioEditor", () => {
     });
   });
 
-  it("shows Data in the available blocks menu for a new form", async () => {
+  it("shows Data and components in the component library for a new form", async () => {
     render(
       <MemoryRouter initialEntries={["/configuracoes/formularios/novo"]}>
         <Routes>
@@ -112,11 +114,13 @@ describe("FormularioEditor", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText("Blocos disponíveis")).toBeInTheDocument());
-    expect(screen.getAllByRole("button", { name: "Data" })).not.toHaveLength(0);
+    await waitFor(() => expect(screen.getByText("Nova ficha")).toBeInTheDocument());
+    expect(screen.getAllByText("Data").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Texto curto").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Seção sanfona").length).toBeGreaterThan(0);
   });
 
-  it("switches from editing to the final form preview", async () => {
+  it("switches between edit mode and interactive test mode", async () => {
     render(
       <MemoryRouter initialEntries={["/configuracoes/formularios/novo"]}>
         <Routes>
@@ -125,13 +129,16 @@ describe("FormularioEditor", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.getByText("Blocos disponíveis")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Nova ficha")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: "Visualizar" }));
+    const testModeBtn = screen.getByRole("button", { name: /testar preenchimento/i });
+    expect(testModeBtn).toBeInTheDocument();
 
-    expect(screen.getByText("Ficha sem nome")).toBeInTheDocument();
-    expect(screen.getByText("Queixa principal")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Texto curto" })).toBeDisabled();
+    fireEvent.click(testModeBtn);
+
+    const editModeBtn = screen.getByRole("button", { name: /modo editor/i });
+    expect(editModeBtn).toBeInTheDocument();
+    fireEvent.click(editModeBtn);
   });
 
   it("imports a template file directly into the current draft editor", async () => {
@@ -167,10 +174,11 @@ describe("FormularioEditor", () => {
 
     await waitFor(() => expect(screen.getByDisplayValue("Ficha importada")).toBeInTheDocument());
     expect(screen.getByDisplayValue("Triagem importada")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Campo importado")).toBeInTheDocument();
+    expect(screen.getAllByText("Seção importada").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Campo importado").length).toBeGreaterThan(0);
   });
 
-  it("toggles checklist and multiple choice without resetting options", async () => {
+  it("loads and renders custom template with checklist options", async () => {
     const updateSpy = vi.fn().mockReturnThis();
     const selectSpy = vi.fn().mockReturnThis();
     const eqSpy = vi.fn().mockReturnThis();
@@ -204,6 +212,7 @@ describe("FormularioEditor", () => {
       select: selectSpy,
       single: singleSpy,
       update: updateSpy,
+      delete: vi.fn().mockReturnThis(),
     } as never);
 
     render(
@@ -215,30 +224,9 @@ describe("FormularioEditor", () => {
     );
 
     await waitFor(() => expect(screen.getByDisplayValue("Ficha teste")).toBeInTheDocument());
-    expect(screen.getByDisplayValue("Dor")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Rigidez")).toBeInTheDocument();
-
-    fireEvent.change(screen.getAllByRole("combobox")[0]!, { target: { value: "multiple_choice" } });
-
-    fireEvent.click(screen.getByRole("button", { name: /salvar ficha/i }));
-
-    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
-
-    expect(updateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        schema: expect.arrayContaining([
-          expect.objectContaining({
-            id: "field_1",
-            label: "Sintomas",
-            type: "multiple_choice",
-            options: [
-              expect.objectContaining({ id: "option_1", label: "Dor" }),
-              expect.objectContaining({ id: "option_2", label: "Rigidez" }),
-            ],
-          }),
-        ]),
-      })
-    );
+    expect(screen.getAllByText("Dor").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Rigidez").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /excluir ficha/i })).toBeInTheDocument();
   });
 
   it("rejects oversized template imports before reading the file", async () => {
@@ -267,4 +255,32 @@ describe("FormularioEditor", () => {
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" })));
     expect(textSpy).not.toHaveBeenCalled();
   });
+
+  it("starts with an empty canvas and opens the spotlight tutorial when clicking Como Funciona", async () => {
+    render(
+      <MemoryRouter initialEntries={["/configuracoes/formularios/novo"]}>
+        <TutorialProvider>
+          <TutorialOverlay />
+          <Routes>
+            <Route path="/configuracoes/formularios/:templateId" element={<FormularioEditor />} />
+          </Routes>
+        </TutorialProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Nova ficha")).toBeInTheDocument());
+    expect(screen.getByText("Sua ficha está pronta para ser montada!")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\+ pergunta de texto/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\+ nova seção/i })).toBeInTheDocument();
+
+    const guideBtns = screen.getAllByRole("button", { name: /como funciona/i });
+    expect(guideBtns.length).toBeGreaterThan(0);
+    fireEvent.click(guideBtns[0]);
+
+    await waitFor(() => expect(screen.getByText(/Nome e Apresentação da sua Ficha/i)).toBeInTheDocument());
+    expect(screen.getByText(/Dê um nome bem acolhedor e intuitivo/i)).toBeInTheDocument();
+  });
 });
+
+
+

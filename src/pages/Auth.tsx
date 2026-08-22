@@ -229,7 +229,7 @@ const Auth = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => navigate("/cadastro/conta-alfa")}
+                    onClick={() => navigate("/auth/cadastro")}
                     className="w-full text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Não tem uma conta? Criar conta

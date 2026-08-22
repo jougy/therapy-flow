@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Database } from "@/integrations/supabase/types";
 import {
   buildPatientRegistrationPutPayload,
+  buildPatientShareMessages,
+  calculateAgeDetails,
   calculatePatientAge,
   extractCpfDigits,
+  formatNameTitleCase,
   formatPatientCpf,
   formatPatientPhone,
   getPatientRegistrationPassword,
@@ -12,6 +13,7 @@ import {
   isValidPatientEmail,
   normalizePatientNameKey,
   putPatientRegistration,
+  suggestEmailTypo,
   validatePatientPreRegistration,
 } from "@/lib/patient-registration";
 
@@ -84,6 +86,8 @@ describe("patient registration helpers", () => {
   it("formats and validates required pre-registration fields", () => {
     expect(formatPatientCpf("52998224725<script>")).toBe("529.982.247-25");
     expect(formatPatientPhone("+55 (11) 98765-4321 ramal 999")).toBe("(11) 98765-4321");
+    expect(formatPatientPhone("1132224455")).toBe("(11) 3222-4455"); // Fixo 10 dígitos
+    expect(formatPatientPhone("11987654321")).toBe("(11) 98765-4321"); // Celular 11 dígitos
     expect(isValidCpfDigits("52998224725")).toBe(true);
     expect(isValidCpfDigits("11111111111")).toBe(false);
     expect(isValidCpfDigits("52998224724")).toBe(false);
@@ -92,6 +96,32 @@ describe("patient registration helpers", () => {
     expect(isValidPatientBirthDate("2000-04-20")).toBe(true);
     expect(isValidPatientEmail("paciente@example.com")).toBe(true);
     expect(isValidPatientEmail("bad <script>@example.com")).toBe(false);
+  });
+
+  it("extracts password from patient object with fallback to responsible cpf and birth date", () => {
+    expect(getPatientRegistrationPassword({ cpf: "529.982.247-25" })).toBe("529982");
+    expect(getPatientRegistrationPassword({ responsible_cpf: "111.444.777-35" })).toBe("111444");
+    expect(getPatientRegistrationPassword({ date_of_birth: "2000-04-20" })).toBe("200400");
+  });
+
+  it("builds personalized WhatsApp and Email share messages", () => {
+    const femaleShare = buildPatientShareMessages({
+      patientName: "Mariana Souza",
+      clinicName: "Clínica Vida",
+      shareUrl: "https://exemplo.com/cadastro/paciente/tok123",
+      passwordPrefix: "529982",
+      pronoun: "ela/dela",
+      phone: "11987654321",
+      email: "mariana@exemplo.com",
+    });
+
+    expect(femaleShare.whatsappMessage).toContain("Mariana");
+    expect(femaleShare.whatsappMessage).toContain("bem-vinda");
+    expect(femaleShare.whatsappMessage).toContain("Clínica Vida");
+    expect(femaleShare.whatsappMessage).toContain("https://exemplo.com/cadastro/paciente/tok123");
+    expect(femaleShare.whatsappUrl).toContain("5511987654321");
+    expect(femaleShare.emailSubject).toContain("Mariana");
+    expect(femaleShare.mailtoUrl).toContain("mailto:mariana%40exemplo.com");
   });
 
   it("builds stable patient name keys for idempotency", () => {
@@ -422,5 +452,44 @@ describe("patient registration helpers", () => {
         fetcher,
       })
     ).rejects.toThrow("violacao de regra");
+  });
+
+  it("calculates detailed age and flags minors", () => {
+    // Current test date is 2026-04-21
+    const minor = calculateAgeDetails("2016-04-21");
+    expect(minor).toEqual({
+      isMinor: true,
+      label: "10 anos",
+      months: 0,
+      years: 10,
+    });
+
+    const adult = calculateAgeDetails("1996-04-21");
+    expect(adult).toEqual({
+      isMinor: false,
+      label: "30 anos",
+      months: 0,
+      years: 30,
+    });
+
+    const baby = calculateAgeDetails("2025-10-21");
+    expect(baby?.isMinor).toBe(true);
+    expect(baby?.label).toBe("6 meses");
+
+    expect(calculateAgeDetails("2099-01-01")).toBeNull();
+  });
+
+  it("suggests email domain typo corrections", () => {
+    expect(suggestEmailTypo("usuario@gmai.com")).toBe("usuario@gmail.com");
+    expect(suggestEmailTypo("maria@hotmial.com")).toBe("maria@hotmail.com");
+    expect(suggestEmailTypo("contato@outlok.com")).toBe("contato@outlook.com");
+    expect(suggestEmailTypo("joao@yahooo.com")).toBe("joao@yahoo.com");
+    expect(suggestEmailTypo("correto@gmail.com")).toBeNull();
+  });
+
+  it("formats names in Title Case preserving prepositions", () => {
+    expect(formatNameTitleCase("joao da silva")).toBe("Joao da Silva");
+    expect(formatNameTitleCase("MARIA DE SOUZA E SILVA")).toBe("Maria de Souza e Silva");
+    expect(formatNameTitleCase("ana clara dos santos")).toBe("Ana Clara dos Santos");
   });
 });

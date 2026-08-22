@@ -1,4 +1,5 @@
 export type SearchablePatientGroup = {
+  color?: string | null;
   created_at: string;
   id: string;
   name: string;
@@ -6,6 +7,7 @@ export type SearchablePatientGroup = {
 };
 
 export type SearchableSession = {
+  anamnesis?: unknown;
   group_id: string | null;
   id: string;
   session_date: string;
@@ -21,6 +23,7 @@ export type SessionSearchFilters = {
   groupStatus: string;
   searchTerm: string;
   sessionStatus: string;
+  selectedTagId?: string | null;
 };
 
 type BuildPatientSessionsViewArgs<TGroup extends SearchablePatientGroup, TSession extends SearchableSession> = {
@@ -43,6 +46,20 @@ export type PatientSessionGroupView<TGroup extends SearchablePatientGroup, TSess
   latestSessionDate: string | null;
   sessionCount: number;
   sessions: TSession[];
+};
+
+export const getSessionCareLineIds = (session: SearchableSession): string[] => {
+  const anamnesis = session.anamnesis && typeof session.anamnesis === "object" ? (session.anamnesis as Record<string, unknown>) : null;
+  if (anamnesis && Array.isArray(anamnesis.care_line_ids)) {
+    const list = anamnesis.care_line_ids as string[];
+    if (list.length > 0) return list;
+  }
+  return session.group_id ? [session.group_id] : [];
+};
+
+export const doesSessionHaveCareLine = (session: SearchableSession, careLineId: string): boolean => {
+  const ids = getSessionCareLineIds(session);
+  return ids.includes(careLineId);
 };
 
 const normalizeTerm = (value: string | null | undefined) =>
@@ -95,11 +112,66 @@ export const buildPatientSessionsView = <
   groups,
   sessions,
 }: BuildPatientSessionsViewArgs<TGroup, TSession>) => {
+  const groupMap = new Map(groups.map((g) => [g.id, g]));
+
+  const tagCountsMap = new Map<string, number>();
+  let ungroupedCount = 0;
+
+  sessions.forEach((session) => {
+    const careLineIds = getSessionCareLineIds(session);
+    if (careLineIds.length === 0) {
+      ungroupedCount += 1;
+    } else {
+      careLineIds.forEach((id) => {
+        tagCountsMap.set(id, (tagCountsMap.get(id) || 0) + 1);
+      });
+    }
+  });
+
+  const tagStats = groups.map((group) => ({
+    group,
+    count: tagCountsMap.get(group.id) || 0,
+  }));
+
+  const groupStatusFilter = filters.groupStatus ?? "all";
+
+  const filteredChronological = sessions
+    .filter((session) => {
+      if (filters.sessionStatus !== "all" && session.status !== filters.sessionStatus) {
+        return false;
+      }
+
+      const careLineIds = getSessionCareLineIds(session);
+      if (filters.selectedTagId && filters.selectedTagId !== "all") {
+        if (filters.selectedTagId === "none") {
+          if (careLineIds.length > 0) return false;
+        } else {
+          if (!careLineIds.includes(filters.selectedTagId)) return false;
+        }
+      }
+
+      if (groupStatusFilter !== "all") {
+        const matchingGroups = careLineIds.map((id) => groupMap.get(id)).filter(Boolean) as TGroup[];
+        if (matchingGroups.length === 0 || !matchingGroups.some((g) => g.status === groupStatusFilter)) {
+          return false;
+        }
+      }
+
+      const groupNames = careLineIds.map((id) => groupMap.get(id)?.name).filter(Boolean).join(" ");
+      return shouldSessionBeVisibleInSearch({
+        groupName: groupNames || "Sem grupo",
+        searchTerm: filters.searchTerm,
+        session,
+        textContent: getSessionText(session),
+      });
+    })
+    .sort((a, b) => new Date(b.session_date).getTime() - new Date(a.session_date).getTime());
+
   const grouped = groups
-    .filter((group) => filters.groupStatus === "all" || group.status === filters.groupStatus)
+    .filter((group) => groupStatusFilter === "all" || group.status === groupStatusFilter)
     .map<PatientSessionGroupView<TGroup, TSession>>((group) => {
       const visibleSessions = sessions.filter((session) => {
-        if (session.group_id !== group.id) {
+        if (!doesSessionHaveCareLine(session, group.id)) {
           return false;
         }
 
@@ -136,11 +208,12 @@ export const buildPatientSessionsView = <
     });
 
   const ungrouped = sessions.filter((session) => {
-    if (filters.groupStatus !== "all") {
+    if (groupStatusFilter !== "all") {
       return false;
     }
 
-    if (session.group_id) {
+    const careLineIds = getSessionCareLineIds(session);
+    if (careLineIds.length > 0) {
       return false;
     }
 
@@ -159,6 +232,10 @@ export const buildPatientSessionsView = <
   return {
     groups: grouped,
     ungrouped,
+    chronologicalSessions: filteredChronological,
+    tagStats,
+    ungroupedCount,
+    totalCount: sessions.length,
   };
 };
 

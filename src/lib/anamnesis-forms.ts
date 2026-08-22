@@ -53,6 +53,12 @@ export interface AnamnesisField {
   max?: number;
   sectionKey?: string | null;
   systemKey?: "queixa" | "sintomas" | "pain_score" | "complexity_score" | "observacoes";
+  sliderStep?: number;
+  sliderMinLabel?: string;
+  sliderMaxLabel?: string;
+  columnSpan?: "auto" | "1/4" | "1/3" | "1/2" | "2/3" | "full";
+  accentColor?: string;
+  accentAlpha?: number;
 }
 
 export type AnamnesisTemplateSchema = AnamnesisField[];
@@ -194,6 +200,28 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         ? sanitizeSingleLineInput(rawPlaceholder, INPUT_LIMITS.formPlaceholder)
         : undefined;
 
+      const rawAccentColor = typeof source.accentColor === "string" ? source.accentColor.trim() : undefined;
+      const rawAccentAlpha = typeof source.accentAlpha === "number" && Number.isFinite(source.accentAlpha)
+        ? Math.min(Math.max(Math.round(source.accentAlpha), 0), 100)
+        : undefined;
+
+      const rawSliderStep = typeof source.sliderStep === "number" && Number.isFinite(source.sliderStep) && source.sliderStep > 0
+        ? Math.min(Math.max(source.sliderStep, 0.1), 100)
+        : undefined;
+
+      const rawSliderMinLabel = typeof source.sliderMinLabel === "string"
+        ? sanitizeSingleLineInput(source.sliderMinLabel, 40).trim()
+        : undefined;
+
+      const rawSliderMaxLabel = typeof source.sliderMaxLabel === "string"
+        ? sanitizeSingleLineInput(source.sliderMaxLabel, 40).trim()
+        : undefined;
+
+      const validColumnSpans = new Set(["auto", "1/4", "1/3", "1/2", "2/3", "full"]);
+      const rawColumnSpan = typeof source.columnSpan === "string" && validColumnSpans.has(source.columnSpan)
+        ? (source.columnSpan as AnamnesisField["columnSpan"])
+        : undefined;
+
       return {
         id: fieldId,
         label,
@@ -205,8 +233,14 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         showInPatientList: source.showInPatientList === true,
         ...(options ? { options } : {}),
         ...sliderRange,
+        ...(rawSliderStep !== undefined ? { sliderStep: rawSliderStep } : {}),
+        ...(rawSliderMinLabel !== undefined ? { sliderMinLabel: rawSliderMinLabel } : {}),
+        ...(rawSliderMaxLabel !== undefined ? { sliderMaxLabel: rawSliderMaxLabel } : {}),
+        ...(rawColumnSpan !== undefined ? { columnSpan: rawColumnSpan } : {}),
         sectionKey: getOptionalStringValue(source.sectionKey) ? sanitizeId(getStringValue(source.sectionKey), "") || null : null,
         ...(systemKey ? { systemKey } : {}),
+        ...(rawAccentColor ? { accentColor: rawAccentColor } : {}),
+        ...(rawAccentAlpha !== undefined ? { accentAlpha: rawAccentAlpha } : {}),
       };
     });
 
@@ -233,6 +267,35 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
       groupKey: safeGroupKey,
       sectionKey: safeSectionKey,
     };
+  });
+};
+
+export const compactAnamnesisTemplateSchema = (schema: AnamnesisTemplateSchema): Record<string, unknown>[] => {
+  return schema.map((field) => {
+    const compact: Record<string, unknown> = {
+      id: field.id,
+      label: field.label,
+      type: field.type,
+    };
+
+    if (field.groupKey) compact.groupKey = field.groupKey;
+    if (field.sectionKey) compact.sectionKey = field.sectionKey;
+    if (field.required) compact.required = true;
+    if (field.showInPatientList) compact.showInPatientList = true;
+    if (field.helpText) compact.helpText = field.helpText;
+    if (field.placeholder) compact.placeholder = field.placeholder;
+    if (field.options && field.options.length > 0) compact.options = field.options;
+    if (field.systemKey) compact.systemKey = field.systemKey;
+    if (field.accentColor) compact.accentColor = field.accentColor;
+    if (field.accentAlpha !== undefined && field.accentAlpha !== 100) compact.accentAlpha = field.accentAlpha;
+    if (field.min !== undefined && field.min !== 0) compact.min = field.min;
+    if (field.max !== undefined && field.max !== 10) compact.max = field.max;
+    if (field.sliderStep !== undefined && field.sliderStep !== 1) compact.sliderStep = field.sliderStep;
+    if (field.sliderMinLabel) compact.sliderMinLabel = field.sliderMinLabel;
+    if (field.sliderMaxLabel) compact.sliderMaxLabel = field.sliderMaxLabel;
+    if (field.columnSpan && field.columnSpan !== "auto") compact.columnSpan = field.columnSpan;
+
+    return compact;
   });
 };
 
@@ -375,7 +438,8 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
 
 const ANAMNESIS_FIELD_TYPES = new Set<AnamnesisFieldType>(ANAMNESIS_FIELD_LIBRARY.map((field) => field.type));
 
-export const isContainerFieldType = (type: AnamnesisFieldType) => type === "section" || type === "horizontal_section";
+export const isContainerFieldType = (type: AnamnesisFieldType) =>
+  type === "section" || type === "horizontal_section" || type === "section_selector";
 export const isContainerField = (field: AnamnesisField) => isContainerFieldType(field.type);
 export const hasScrollableOptionEditor = (type: AnamnesisFieldType) =>
   type === "checklist" || type === "multiple_choice";
@@ -707,16 +771,43 @@ export const getVisibleTemplateFields = (
   fields: AnamnesisTemplateSchema,
   response: AnamnesisFormResponse
 ) => {
-  const activeSections = new Set(
-    fields
-      .filter((field) => field.type === "section_selector")
-      .flatMap((field) => {
-        const value = response[field.id];
-        return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-      })
-  );
+  const activeSectionIds = new Set<string>();
 
-  return fields.filter((field) => !field.sectionKey || activeSections.has(field.sectionKey));
+  fields
+    .filter((field) => field.type === "section_selector")
+    .forEach((field) => {
+      const value = response[field.id];
+      if (Array.isArray(value)) {
+        value.forEach((item) => {
+          if (typeof item === "string") activeSectionIds.add(item);
+        });
+      } else if (isPlainRecord(value)) {
+        Object.entries(value).forEach(([id, isActive]) => {
+          if (isActive) activeSectionIds.add(id);
+        });
+      }
+    });
+
+  return fields.filter((field) => {
+    if (field.groupKey) {
+      const parent = getFieldById(fields, field.groupKey);
+      if (parent && parent.type === "section_selector") {
+        return activeSectionIds.has(field.id);
+      }
+      if (parent && parent.groupKey) {
+        const grandParent = getFieldById(fields, parent.groupKey);
+        if (grandParent && grandParent.type === "section_selector") {
+          return activeSectionIds.has(parent.id);
+        }
+      }
+    }
+
+    if (field.sectionKey && !activeSectionIds.has(field.sectionKey)) {
+      return false;
+    }
+
+    return true;
+  });
 };
 
 export const countTemplateQuestionFields = (fields: AnamnesisTemplateSchema) =>
@@ -751,7 +842,7 @@ export const isAnamnesisTemplateSchema = (value: unknown): value is AnamnesisTem
 export interface TemplateLayoutSection {
   field: AnamnesisField;
   items: TemplateLayoutItem[];
-  type: "section" | "horizontal_section";
+  type: "section" | "horizontal_section" | "section_selector";
 }
 
 export interface TemplateLayoutField {
@@ -769,12 +860,23 @@ const canContainerAcceptChild = (container: AnamnesisField, child: AnamnesisFiel
     return false;
   }
 
+  if (child.id === container.id) {
+    return false;
+  }
+
+  // A section_selector can NEVER be inside anything (must always be top-level)
+  if (child.type === "section_selector") {
+    return false;
+  }
+
+  // A horizontal_section cannot contain other containers
   if (container.type === "horizontal_section" && isContainerField(child)) {
     return false;
   }
 
-  if (child.id === container.id) {
-    return false;
+  // A section_selector accepts sections, horizontal_sections, and standard fields
+  if (container.type === "section_selector") {
+    return true;
   }
 
   return true;
@@ -786,8 +888,13 @@ const isDescendantOf = (
   potentialAncestorId: string,
 ): boolean => {
   let current = getFieldById(fields, fieldId);
+  const visited = new Set<string>();
 
   while (current?.groupKey) {
+    if (visited.has(current.id)) {
+      break;
+    }
+    visited.add(current.id);
     if (current.groupKey === potentialAncestorId) {
       return true;
     }
@@ -805,6 +912,11 @@ export const getAssignableContainerFields = (fields: AnamnesisTemplateSchema, ch
     return [];
   }
 
+  // A section_selector cannot be assigned to any parent container
+  if (child.type === "section_selector") {
+    return [];
+  }
+
   return fields.filter((field) => {
     if (!isContainerField(field) || field.id === child.id) {
       return false;
@@ -815,7 +927,7 @@ export const getAssignableContainerFields = (fields: AnamnesisTemplateSchema, ch
     }
 
     if (isContainerField(child)) {
-      return field.type === "section";
+      return field.type === "section_selector" || field.type === "section";
     }
 
     return canContainerAcceptChild(field, child);
@@ -825,19 +937,23 @@ export const getAssignableContainerFields = (fields: AnamnesisTemplateSchema, ch
 const toTemplateLayoutItem = (
   field: AnamnesisField,
   fields: AnamnesisTemplateSchema,
+  visited = new Set<string>(),
 ): TemplateLayoutItem => {
-  if (!isContainerField(field)) {
+  if (!isContainerField(field) || visited.has(field.id)) {
     return {
       field,
       type: "field",
     };
   }
 
+  const nextVisited = new Set(visited);
+  nextVisited.add(field.id);
+
   return {
     field,
     items: fields
-      .filter((child) => child.groupKey === field.id && canContainerAcceptChild(field, child))
-      .map((child) => toTemplateLayoutItem(child, fields)),
+      .filter((child) => child.groupKey === field.id && !nextVisited.has(child.id) && canContainerAcceptChild(field, child))
+      .map((child) => toTemplateLayoutItem(child, fields, nextVisited)),
     type: field.type,
   };
 };

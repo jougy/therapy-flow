@@ -6,9 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Building2, HelpCircle, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeft, Building2, HelpCircle, Loader2, Tag, Check, AlertCircle, Calculator, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
+import { isOwnerDocumentValid, validateCPF, validateCNPJ } from "@/lib/owner-document";
 import { toast } from "sonner";
 
 const formatCPF = (v: string) => {
@@ -61,6 +65,16 @@ type BusinessHours = {
   description?: string;
 };
 
+interface CouponValidationResult {
+  valid: boolean;
+  coupon_id?: string;
+  code?: string;
+  description?: string;
+  discount_type?: "PERCENTAGE" | "FIXED_AMOUNT" | "TRIAL_DAYS";
+  discount_value?: number;
+  message?: string;
+}
+
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message;
   if (error && typeof error === "object" && "message" in error) {
@@ -73,72 +87,131 @@ const getErrorMessage = (error: unknown) => {
 export default function OnboardingClinica() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  // @ts-expect-error - useAuth context property types
   const { clinic, profile, session, selectClinic, refreshAuthState } = useAuth();
-  const plan = searchParams.get("plan") as "solo" | "clinic" | null;
-  const isExplicitCreate = searchParams.get("mode") === "create" || !!plan;
+  const plan = (searchParams.get("plan") as "solo" | "clinic" | null) || "solo";
+  const initialCoupon = searchParams.get("coupon") || "";
+  const initialConcurrent = parseInt(searchParams.get("concurrent") || (plan === "clinic" ? "2" : "1"), 10);
+  const initialSpaces = parseInt(searchParams.get("spaces") || (plan === "clinic" ? "30" : "1"), 10);
 
+  const isExplicitCreate = searchParams.get("mode") === "create" || !!searchParams.get("plan");
   const isCurrentClinicOwnedByMe = Boolean(clinic?.account_owner_user_id && session?.user?.id && clinic.account_owner_user_id === session.user.id);
   const isCreateMode = !clinic || !isCurrentClinicOwnedByMe || isExplicitCreate;
 
   const [loading, setLoading] = useState(false);
   const [fetchingCep, setFetchingCep] = useState(false);
 
-  const clinicAddress = (clinic?.address || {}) as ClinicAddress;
-  const clinicHours = (clinic?.business_hours || {}) as BusinessHours;
+  // State do Cupom de Desconto
+  const [couponCode, setCouponCode] = useState(initialCoupon);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponValidationResult | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   const [formData, setFormData] = useState({
     name: !isCreateMode ? (clinic?.name || "") : "",
     logo_url: !isCreateMode ? (clinic?.logo_url || "") : "",
-    email: !isCreateMode ? (clinic?.email || "") : (profile?.email || session?.user?.email || ""),
-    phone: !isCreateMode ? (clinic?.phone ? formatPhone(clinic.phone) : "") : (profile?.phone ? formatPhone(profile.phone) : ""),
-    legal_name: !isCreateMode ? (clinic?.legal_name || "") : "",
+    email: profile?.email || session?.user?.email || "",
+    phone: profile?.phone ? formatPhone(profile.phone) : "",
+    legal_name: "",
     cpf: profile?.cpf ? formatCPF(profile.cpf) : "",
-    cnpj: !isCreateMode ? (clinic?.cnpj ? formatCNPJ(clinic.cnpj) : "") : "",
-    business_hours: !isCreateMode ? (clinicHours.description || "") : "",
-    country: (!isCreateMode && clinicAddress.country) ? clinicAddress.country : "BR",
-    cep: (!isCreateMode && clinicAddress.cep) ? formatCEP(clinicAddress.cep) : "",
-    street: (!isCreateMode && clinicAddress.street) ? clinicAddress.street : "",
-    number: (!isCreateMode && clinicAddress.number) ? clinicAddress.number : "",
-    complement: (!isCreateMode && clinicAddress.complement) ? clinicAddress.complement : "",
-    neighborhood: (!isCreateMode && clinicAddress.neighborhood) ? clinicAddress.neighborhood : "",
-    city: (!isCreateMode && clinicAddress.city) ? clinicAddress.city : "",
-    state: (!isCreateMode && clinicAddress.state) ? clinicAddress.state : "",
-    subaccount_limit: (!isCreateMode && clinic?.subaccount_limit) ? clinic.subaccount_limit.toString() : (plan === "clinic" ? "30" : "0"),
-    concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : (plan === "clinic" ? "2" : "1"),
+    cnpj: "",
+    business_hours: "",
+    country: "BR",
+    cep: "",
+    street: "",
+    number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    subaccount_limit: (!isCreateMode && clinic?.subaccount_limit) ? clinic.subaccount_limit.toString() : initialSpaces.toString(),
+    concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : initialConcurrent.toString(),
   });
 
+  // Carregar dados detalhados da clínica existente quando em modo de edição
   useEffect(() => {
-    if (!isCreateMode && clinic) {
-      const addr = (clinic.address || {}) as ClinicAddress;
-      const hours = (clinic.business_hours || {}) as BusinessHours;
-      setFormData({
-        name: clinic.name || "",
-        logo_url: clinic.logo_url || "",
-        email: clinic.email || "",
-        phone: clinic.phone ? formatPhone(clinic.phone) : "",
-        legal_name: clinic.legal_name || "",
-        cpf: profile?.cpf ? formatCPF(profile.cpf) : "",
-        cnpj: clinic.cnpj ? formatCNPJ(clinic.cnpj) : "",
-        business_hours: hours.description || "",
-        country: addr.country || "BR",
-        cep: addr.cep ? formatCEP(addr.cep) : "",
-        street: addr.street || "",
-        number: addr.number || "",
-        complement: addr.complement || "",
-        neighborhood: addr.neighborhood || "",
-        city: addr.city || "",
-        state: addr.state || "",
-        subaccount_limit: clinic.subaccount_limit?.toString() || (plan === "clinic" ? "30" : "0"),
-        concurrent_access_limit: clinic.concurrent_access_limit ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : (plan === "clinic" ? "2" : "1"),
-      });
+    if (isCreateMode || !clinic?.id) return;
+    let active = true;
+
+    async function loadExistingClinic() {
+      const { data, error } = await supabase
+        .from("clinics")
+        .select("*")
+        .eq("id", clinic.id)
+        .single();
+
+      if (!active || error || !data) return;
+
+      const addressData = (data.address && typeof data.address === "object" ? data.address : {}) as ClinicAddress;
+      const hoursData = (data.business_hours && typeof data.business_hours === "object" ? data.business_hours : {}) as BusinessHours;
+
+      setFormData((prev) => ({
+        ...prev,
+        name: data.name || prev.name,
+        logo_url: data.logo_url || prev.logo_url,
+        email: data.email || prev.email,
+        phone: data.phone ? formatPhone(data.phone) : prev.phone,
+        legal_name: data.legal_name || prev.legal_name,
+        cnpj: data.cnpj ? formatCNPJ(data.cnpj) : prev.cnpj,
+        business_hours: hoursData.description || prev.business_hours,
+        country: addressData.country || prev.country,
+        cep: addressData.cep ? formatCEP(addressData.cep) : prev.cep,
+        street: addressData.street || prev.street,
+        number: addressData.number || prev.number,
+        complement: addressData.complement || prev.complement,
+        neighborhood: addressData.neighborhood || prev.neighborhood,
+        city: addressData.city || prev.city,
+        state: addressData.state || prev.state,
+        subaccount_limit: data.subaccount_limit ? data.subaccount_limit.toString() : prev.subaccount_limit,
+        concurrent_access_limit: data.concurrent_access_limit ? data.concurrent_access_limit.toString() : prev.concurrent_access_limit,
+      }));
     }
-  }, [clinic, isCreateMode, plan, profile?.cpf]);
+
+    void loadExistingClinic();
+
+    return () => {
+      active = false;
+    };
+  }, [clinic?.id, isCreateMode]);
+
+  // Autovalidar cupom inicial vindo da URL
+  useEffect(() => {
+    if (initialCoupon) {
+      validateCoupon(initialCoupon);
+    }
+  }, [initialCoupon]);
+
+  const validateCoupon = async (codeToValidate: string) => {
+    if (!codeToValidate.trim()) return;
+    setValidatingCoupon(true);
+    setCouponError(null);
+
+    try {
+      const { data, error } = await supabase.rpc("validate_subscription_coupon", {
+        _code: codeToValidate.trim().toUpperCase(),
+        _plan_type: plan,
+      });
+
+      if (error) throw error;
+      const result = data as CouponValidationResult;
+      if (result && result.valid) {
+        setAppliedCoupon(result);
+        setCouponError(null);
+      } else {
+        setAppliedCoupon(null);
+        setCouponError(result?.message || "Cupom inválido.");
+      }
+    } catch (err) {
+      setAppliedCoupon(null);
+      setCouponError("Erro ao validar cupom.");
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fieldName = e.target.name;
     let value = e.target.value;
-    
+
     if (fieldName === "cpf") value = formatCPF(value);
     if (fieldName === "cnpj") value = formatCNPJ(value);
     if (fieldName === "phone") value = formatPhone(value);
@@ -146,7 +219,7 @@ export default function OnboardingClinica() {
       value = formatCEP(value);
       handleCepChange(value);
     }
-    
+
     setFormData((prev) => ({ ...prev, [fieldName]: value }));
   };
 
@@ -179,8 +252,25 @@ export default function OnboardingClinica() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Cálculos Financeiros Dinâmicos em Tempo Real
+  const parsedConcurrent = Math.max(plan === "clinic" ? 2 : 1, parseInt(formData.concurrent_access_limit || "2", 10));
+  const extraConcurrentSeats = Math.max(0, parsedConcurrent - (plan === "clinic" ? 2 : 1));
+  const basePrice = plan === "clinic" ? 60.0 : 50.0;
+  const rawPrice = basePrice + extraConcurrentSeats * 10.0;
+
+  let finalPrice = rawPrice;
+  if (appliedCoupon && appliedCoupon.valid) {
+    if (appliedCoupon.discount_type === "PERCENTAGE") {
+      finalPrice = Math.max(0, rawPrice * (1 - (appliedCoupon.discount_value || 0) / 100));
+    } else if (appliedCoupon.discount_type === "FIXED_AMOUNT") {
+      finalPrice = Math.max(0, rawPrice - (appliedCoupon.discount_value || 0));
+    }
+  }
+
+  const [duplicateCnpjModalOpen, setDuplicateCnpjModalOpen] = useState(false);
+  const [existingClinicNameForCnpj, setExistingClinicNameForCnpj] = useState("");
+
+  const executeSignupProcess = async (allowDuplicateCnpj = false) => {
     if (loading) return;
 
     if (!session?.user?.id) {
@@ -188,8 +278,21 @@ export default function OnboardingClinica() {
       return;
     }
 
-    if (!cleanDigits(formData.cpf) && !cleanDigits(formData.cnpj)) {
-      toast.error("Você deve preencher o CPF do responsável ou o CNPJ da clínica.");
+    const cleanCpf = cleanDigits(formData.cpf);
+    const cleanCnpj = cleanDigits(formData.cnpj);
+
+    if (!cleanCpf && !cleanCnpj) {
+      toast.error("Informe o CPF do responsável ou o CNPJ da clínica.");
+      return;
+    }
+
+    if (cleanCpf && !isOwnerDocumentValid(cleanCpf)) {
+      toast.error("CPF informado é inválido.");
+      return;
+    }
+
+    if (cleanCnpj && !isOwnerDocumentValid(cleanCnpj)) {
+      toast.error("CNPJ informado é inválido.");
       return;
     }
 
@@ -198,10 +301,10 @@ export default function OnboardingClinica() {
 
     try {
       let targetClinicId = clinic?.id;
-      const documentToUse = cleanDigits(formData.cnpj) || cleanDigits(formData.cpf);
+      const documentToUse = cleanCnpj || cleanCpf;
 
       if (isCreateMode) {
-        // Create brand new clinic for user via handle_signup RPC
+        // Criar clínica através do RPC handle_signup
         const { data: rpcData, error: rpcError } = await supabase.rpc("handle_signup", {
           _user_id: session.user.id,
           _email: formData.email || session.user.email || "",
@@ -209,17 +312,33 @@ export default function OnboardingClinica() {
           _subscription_plan: plan || "solo",
           _full_name: profile?.full_name || session.user.user_metadata?.full_name || null,
           _clinic_name: formData.name || "Minha Clínica",
+          _allow_duplicate_cnpj: allowDuplicateCnpj,
         });
 
         if (rpcError) {
+          const msg = rpcError.message || "";
+          if (msg.includes("CNPJ_REGISTERED_TO_OTHER_USER")) {
+            toast.error("Este CNPJ já está sendo utilizado pela conta de outro proprietário na plataforma. Caso este seja o seu CNPJ oficial, entre em contato com nosso suporte.");
+            setLoading(false);
+            return;
+          }
+          if (msg.includes("OWNER_HAS_CLINIC_WITH_CNPJ:")) {
+            const existingName = msg.split("OWNER_HAS_CLINIC_WITH_CNPJ:")[1] || "outra clínica sua";
+            setExistingClinicNameForCnpj(existingName);
+            setDuplicateCnpjModalOpen(true);
+            setLoading(false);
+            return;
+          }
+          if (msg.includes("Ja existe uma clinica cadastrada com este CNPJ")) {
+            setExistingClinicNameForCnpj("sua outra clínica");
+            setDuplicateCnpjModalOpen(true);
+            setLoading(false);
+            return;
+          }
           throw rpcError;
         }
-
         const result = (rpcData ?? {}) as { clinic_id?: string };
-        if (!result.clinic_id) {
-          throw new Error("Não foi possível criar a nova clínica.");
-        }
-
+        if (!result.clinic_id) throw new Error("Não foi possível criar a nova clínica.");
         targetClinicId = result.clinic_id;
       }
 
@@ -228,7 +347,7 @@ export default function OnboardingClinica() {
         return;
       }
 
-      // Save Address and Detailed Clinic info
+      // Atualizar dados da clínica
       const addressJson = {
         country: formData.country,
         cep: formData.cep,
@@ -244,44 +363,59 @@ export default function OnboardingClinica() {
         description: formData.business_hours,
       };
 
-      const parsedSubaccounts = plan === "clinic" ? Math.max(1, parseInt(formData.subaccount_limit || "5", 10)) : 0;
-      const parsedConcurrent = plan === "clinic" ? Math.max(2, parseInt(formData.concurrent_access_limit || "2", 10)) : 1;
+      const parsedSubaccounts = plan === "clinic" ? Math.max(1, parseInt(formData.subaccount_limit || "30", 10)) : 1;
 
-      const clinicPayload = {
+      const clinicPayload: Database["public"]["Tables"]["clinics"]["Update"] = {
         name: formData.name,
         logo_url: formData.logo_url || null,
         email: formData.email || null,
         phone: formData.phone || null,
         legal_name: formData.legal_name || null,
-        cnpj: documentToUse || null,
+        cnpj: documentToUse,
         address: addressJson,
         business_hours: businessHoursJson,
         subscription_plan: plan || "solo",
-        ...(plan === "clinic" && {
-          subaccount_limit: parsedSubaccounts,
-          concurrent_access_limit: parsedConcurrent,
-        }),
+        subaccount_limit: parsedSubaccounts,
+        concurrent_access_limit: parsedConcurrent,
       };
 
       const { error: clinicError } = await supabase
         .from("clinics")
-        // @ts-expect-error - typing check
         .update(clinicPayload)
         .eq("id", targetClinicId);
 
       if (clinicError) throw clinicError;
 
-      // Save CPF to Profile if provided
-      if (cleanDigits(formData.cpf)) {
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .update({ cpf: cleanDigits(formData.cpf) })
-          .eq("id", session.user.id);
-        
-        if (profileError) console.error("Error updating profile CPF:", profileError);
+      // Atualizar CPF no perfil do usuário
+      if (cleanCpf) {
+        await supabase.from("profiles").update({ cpf: cleanCpf }).eq("id", session.user.id);
       }
 
-      // Refresh auth state first so accessibleClinics includes the new clinic, then select it
+      // Registrar/Iniciar Assinatura no Asaas através da Edge Function
+      if (supabase.functions && typeof supabase.functions.invoke === "function") {
+        try {
+          const edgeRes = await supabase.functions.invoke("asaas-subscription", {
+            body: {
+              action: "CREATE",
+              clinic_id: targetClinicId,
+              plan_type: plan,
+              additional_seats_count: extraConcurrentSeats,
+              coupon_code: appliedCoupon?.valid ? appliedCoupon.code : couponCode,
+              billing_type: "PIX",
+              cpf_cnpj: documentToUse,
+              billing_name: formData.name,
+              billing_email: formData.email || session.user.email,
+            },
+          });
+
+          if (edgeRes?.error) {
+            console.warn("Aviso ao ativar assinatura no Asaas:", edgeRes.error);
+          }
+        } catch (subErr) {
+          console.warn("Erro ao invocar asaas-subscription:", subErr);
+        }
+      }
+
       if (isCreateMode && targetClinicId) {
         if (typeof refreshAuthState === "function") {
           await refreshAuthState();
@@ -290,19 +424,16 @@ export default function OnboardingClinica() {
           try {
             await selectClinic(targetClinicId);
           } catch (selectErr) {
-            console.warn("Could not auto-select newly created clinic right away:", selectErr);
+            console.warn("Auto-seleção de clínica:", selectErr);
           }
         }
       }
 
       isSuccess = true;
-      toast.success(isCreateMode ? "Sua clínica foi criada com sucesso! Redirecionando para seu espaço pessoal..." : "Dados salvos com sucesso!");
-      
-      // Automatic immediate redirect to personal space (where all clinics are listed)
+      toast.success(isCreateMode ? "Sua clínica foi cadastrada com sucesso!" : "Dados salvos com sucesso!");
       navigate("/espacopessoal", { replace: true });
     } catch (error: unknown) {
       const errorMessage = getErrorMessage(error);
-      console.error("Error updating/creating onboarding data:", error);
       toast.error(errorMessage);
     } finally {
       if (!isSuccess) {
@@ -311,11 +442,17 @@ export default function OnboardingClinica() {
     }
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSignupProcess(false);
+  };
+
   const FieldLabel = ({ label, tooltip, htmlFor, required = false }: { label: string; tooltip: string; htmlFor: string; required?: boolean }) => (
     <div className="flex items-center gap-2 mb-2">
       <Label htmlFor={htmlFor} className="text-sm font-medium text-neutral-300">
-        {label} {required && <span className="text-red-500">*</span>}
+        {label}
       </Label>
+      {required && <span className="text-red-500">*</span>}
       <Popover>
         <PopoverTrigger asChild>
           <button type="button" tabIndex={-1} className="rounded-full outline-none focus:ring-2 focus:ring-blue-500/50">
@@ -331,14 +468,14 @@ export default function OnboardingClinica() {
 
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-6 px-4 sm:py-12 sm:px-6 relative overflow-hidden">
-      {/* Background Ambient Glow */}
+      {/* Background Glow */}
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-0 left-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-blue-500/10 rounded-full blur-[100px] sm:blur-[120px]" />
         <div className="absolute bottom-0 right-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-emerald-500/10 rounded-full blur-[100px] sm:blur-[120px]" />
       </div>
 
       <div className="z-10 w-full max-w-4xl space-y-6 sm:space-y-8">
-        {/* Navigation / Back Action Bar */}
+        {/* Navigation Bar */}
         <div className="flex items-center justify-between">
           <Button
             type="button"
@@ -366,7 +503,7 @@ export default function OnboardingClinica() {
           )}
         </div>
 
-        {/* Page Header */}
+        {/* Header */}
         <div className="text-left">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs sm:text-sm font-medium mb-3">
             <Building2 className="w-3.5 h-3.5 shrink-0" />
@@ -376,9 +513,7 @@ export default function OnboardingClinica() {
             {isCreateMode ? "Cadastre seu Próprio Espaço" : "Configure sua Clínica"}
           </h1>
           <p className="text-xs sm:text-base text-neutral-400 max-w-2xl">
-            {isCreateMode
-              ? "Preencha os dados para criar a sua própria clínica independente no Pluri-Health."
-              : "Preencha os dados abaixo para personalizar o ambiente e preparar o sistema para os seus atendimentos."}
+            Preencha os dados abaixo para configurar o ambiente de atendimento da sua clínica.
           </p>
         </div>
 
@@ -387,49 +522,49 @@ export default function OnboardingClinica() {
           <Card className="bg-neutral-900/60 border-neutral-800 backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
             <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-neutral-800/50">
               <CardTitle className="text-lg sm:text-xl text-white font-semibold">Identidade e Contato</CardTitle>
-              <CardDescription className="text-xs sm:text-sm text-neutral-400">Como sua clínica será reconhecida pelos pacientes.</CardDescription>
+              <CardDescription className="text-xs sm:text-sm text-neutral-400">Como sua clínica será identificada.</CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 sm:grid-cols-2">
               <div className="space-y-1">
-                <FieldLabel htmlFor="name" label="Nome da Clínica" tooltip="O nome comercial ou fantasia que será exibido aos pacientes." required />
+                <FieldLabel htmlFor="name" label="Nome da Clínica" tooltip="Nome fantasia ou comercial exibido aos pacientes." required />
                 <Input id="name" name="name" required value={formData.name} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="Ex: Clínica Bem Estar" />
               </div>
               <div className="space-y-1">
-                <FieldLabel htmlFor="logo_url" label="URL do Logo" tooltip="Insira um link direto para a imagem do seu logo (ex: https://site.com/logo.png)." />
+                <FieldLabel htmlFor="logo_url" label="URL do Logo" tooltip="Link da imagem do seu logotipo." />
                 <Input id="logo_url" name="logo_url" value={formData.logo_url} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="https://..." />
               </div>
               <div className="space-y-1">
-                <FieldLabel htmlFor="email" label="E-mail Institucional" tooltip="E-mail principal para contato profissional e notificações do sistema." />
+                <FieldLabel htmlFor="email" label="E-mail Institucional" tooltip="E-mail de contato e faturamento." />
                 <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="contato@clinica.com" />
               </div>
               <div className="space-y-1">
-                <FieldLabel htmlFor="phone" label="Telefone / WhatsApp" tooltip="Número de contato principal da clínica." />
+                <FieldLabel htmlFor="phone" label="Telefone / WhatsApp" tooltip="Telefone de atendimento da clínica." />
                 <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="(00) 00000-0000" />
               </div>
             </CardContent>
           </Card>
 
-          {/* Dados Jurídicos e Operação */}
+          {/* Dados Jurídicos e Validação Rigorosa */}
           <Card className="bg-neutral-900/60 border-neutral-800 backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
             <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-neutral-800/50">
-              <CardTitle className="text-lg sm:text-xl text-white font-semibold">Dados Jurídicos e Operação</CardTitle>
-              <CardDescription className="text-xs sm:text-sm text-neutral-400">Você deve preencher o CPF do responsável OU o CNPJ da clínica.</CardDescription>
+              <CardTitle className="text-lg sm:text-xl text-white font-semibold">Dados Jurídicos (CPF ou CNPJ)</CardTitle>
+              <CardDescription className="text-xs sm:text-sm text-neutral-400">Preencha o CPF do responsável OU o CNPJ da clínica para emissão das faturas.</CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 sm:grid-cols-2">
               <div className="sm:col-span-2 space-y-1">
-                <FieldLabel htmlFor="legal_name" label="Razão Social" tooltip="Nome oficial registrado no CNPJ, se aplicável." />
+                <FieldLabel htmlFor="legal_name" label="Razão Social" tooltip="Nome jurídico oficial registrado." />
                 <Input id="legal_name" name="legal_name" value={formData.legal_name} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="Empresa Saúde LTDA" />
               </div>
               <div className="space-y-1">
-                <FieldLabel htmlFor="cpf" label="CPF do Responsável" tooltip="Documento do titular da conta e responsável legal." required={!cleanDigits(formData.cnpj)} />
+                <FieldLabel htmlFor="cpf" label="CPF do Responsável" tooltip="CPF válido do responsável legal." required={!cleanDigits(formData.cnpj)} />
                 <Input id="cpf" name="cpf" value={formData.cpf} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="000.000.000-00" required={!cleanDigits(formData.cnpj)} />
               </div>
               <div className="space-y-1">
-                <FieldLabel htmlFor="cnpj" label="CNPJ da Clínica" tooltip="Documento da clínica para fins de faturamento e registro." required={!cleanDigits(formData.cpf)} />
+                <FieldLabel htmlFor="cnpj" label="CNPJ da Clínica" tooltip="CNPJ oficial para emissão via Asaas." required={!cleanDigits(formData.cpf)} />
                 <Input id="cnpj" name="cnpj" value={formData.cnpj} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="00.000.000/0001-00" required={!cleanDigits(formData.cpf)} />
               </div>
               <div className="sm:col-span-2 space-y-1">
-                <FieldLabel htmlFor="business_hours" label="Horário de Funcionamento" tooltip="Descreva brevemente os horários (ex: Segunda a Sexta, 08h às 18h)." />
+                <FieldLabel htmlFor="business_hours" label="Horário de Funcionamento" tooltip="Descreva os horários de atendimento." />
                 <Input id="business_hours" name="business_hours" value={formData.business_hours} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="Ex: Seg-Sex, 08h-18h" />
               </div>
             </CardContent>
@@ -438,11 +573,11 @@ export default function OnboardingClinica() {
           {/* Endereço Completo */}
           <Card className="bg-neutral-900/60 border-neutral-800 backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
             <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-neutral-800/50">
-              <CardTitle className="text-lg sm:text-xl text-white font-semibold">Endereço Completo</CardTitle>
+              <CardTitle className="text-lg sm:text-xl text-white font-semibold">Endereço do Estabelecimento</CardTitle>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-6">
               <div className="sm:col-span-6 space-y-1">
-                <FieldLabel htmlFor="country" label="País" tooltip="Selecione o país. Endereços no Brasil preenchem automaticamente pelo CEP." required />
+                <FieldLabel htmlFor="country" label="País" tooltip="País do estabelecimento." required />
                 <Select value={formData.country} onValueChange={(val) => handleSelectChange("country", val)}>
                   <SelectTrigger className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl">
                     <SelectValue placeholder="Selecione o país" />
@@ -452,50 +587,46 @@ export default function OnboardingClinica() {
                     <SelectItem value="US">United States</SelectItem>
                     <SelectItem value="CA">Canada</SelectItem>
                     <SelectItem value="PT">Portugal</SelectItem>
-                    <SelectItem value="AR">Argentina</SelectItem>
                     <SelectItem value="OTHER">Outro País</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="sm:col-span-2 space-y-1 relative">
-                <FieldLabel 
-                  htmlFor="cep" 
-                  label={formData.country === "BR" ? "CEP" : "Zip / Postal Code"} 
-                  tooltip={formData.country === "BR" ? "Código postal do endereço (preenchimento automático do restante do endereço se válido)." : "Código postal"} 
-                />
+                <FieldLabel htmlFor="cep" label={formData.country === "BR" ? "CEP" : "Zip Code"} tooltip="Preenchimento automático do endereço via ViaCEP." />
                 <div className="relative">
                   <Input id="cep" name="cep" value={formData.cep} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder={formData.country === "BR" ? "00000-000" : ""} />
                   {fetchingCep && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-neutral-500" />}
                 </div>
               </div>
               <div className="sm:col-span-4 space-y-1">
-                <FieldLabel htmlFor="street" label={formData.country === "BR" ? "Logradouro" : "Address Line 1"} tooltip="Rua, avenida, etc." required />
+                <FieldLabel htmlFor="street" label="Logradouro" tooltip="Rua, avenida ou alameda." required />
                 <Input id="street" name="street" required value={formData.street} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
               </div>
               <div className="sm:col-span-2 space-y-1">
-                <FieldLabel htmlFor="number" label={formData.country === "BR" ? "Número" : "Number"} tooltip="Número do estabelecimento." />
+                <FieldLabel htmlFor="number" label="Número" tooltip="Número do imóvel." />
                 <Input id="number" name="number" value={formData.number} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
               </div>
               <div className="sm:col-span-4 space-y-1">
-                <FieldLabel htmlFor="complement" label={formData.country === "BR" ? "Complemento" : "Address Line 2 (Optional)"} tooltip="Sala, andar, bloco." />
+                <FieldLabel htmlFor="complement" label="Complemento" tooltip="Sala, andar ou bloco." />
                 <Input id="complement" name="complement" value={formData.complement} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
               </div>
               <div className="sm:col-span-2 space-y-1">
-                <FieldLabel htmlFor="neighborhood" label={formData.country === "BR" ? "Bairro" : "Neighborhood / District"} tooltip="Bairro do estabelecimento." />
+                <FieldLabel htmlFor="neighborhood" label="Bairro" tooltip="Bairro." />
                 <Input id="neighborhood" name="neighborhood" value={formData.neighborhood} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
               </div>
               <div className="sm:col-span-3 space-y-1">
-                <FieldLabel htmlFor="city" label={formData.country === "BR" ? "Cidade" : "City"} tooltip="Cidade do estabelecimento." required />
+                <FieldLabel htmlFor="city" label="Cidade" tooltip="Cidade." required />
                 <Input id="city" name="city" required value={formData.city} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
               </div>
               <div className="sm:col-span-1 space-y-1">
-                <FieldLabel htmlFor="state" label={formData.country === "BR" ? "UF" : "State"} tooltip="Estado ou Província." required />
-                <Input id="state" name="state" required value={formData.state} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" maxLength={formData.country === "BR" ? 2 : 50} placeholder={formData.country === "BR" ? "SP" : ""} />
+                <FieldLabel htmlFor="state" label="UF" tooltip="Estado." required />
+                <Input id="state" name="state" required value={formData.state} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" maxLength={2} placeholder="SP" />
               </div>
             </CardContent>
           </Card>
 
+          {/* Equipe e Acessos para Plano Clínica */}
           {plan === "clinic" && (
             <Card className="bg-blue-900/10 border-blue-500/20 backdrop-blur-md rounded-2xl overflow-hidden">
               <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-blue-500/10">
@@ -539,38 +670,132 @@ export default function OnboardingClinica() {
                     className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl" 
                   />
                 </div>
-
-                {/* Calculadora em Tempo Real do Resumo da Assinatura */}
-                <div className="sm:col-span-2 p-4 rounded-xl bg-neutral-950/90 border border-blue-500/30 space-y-3 mt-2">
-                  <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
-                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Resumo da Assinatura Recorrente</span>
-                    <span className="text-xs text-emerald-400 font-medium px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">Modo Beta: 100% Gratuito</span>
-                  </div>
-
-                  <div className="space-y-1 text-sm text-neutral-300">
-                    <div className="flex justify-between">
-                      <span>Mensalidade Base Clínica (30 vagas + 2 acessos):</span>
-                      <span className="font-semibold text-white">R$ 60,00/mês</span>
-                    </div>
-                    {parseInt(formData.concurrent_access_limit || "2", 10) > 2 && (
-                      <div className="flex justify-between text-blue-300">
-                        <span>Acessos Simultâneos Adicionais ({parseInt(formData.concurrent_access_limit || "2", 10) - 2}x R$ 10,00):</span>
-                        <span className="font-semibold">+R$ {((parseInt(formData.concurrent_access_limit || "2", 10) - 2) * 10).toFixed(2).replace('.', ',')}/mês</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between border-t border-neutral-800 pt-2 text-base font-bold text-white">
-                      <span>Total Recorrente Estimado:</span>
-                      <span className="text-emerald-400">
-                        R$ {(60 + Math.max(0, parseInt(formData.concurrent_access_limit || "2", 10) - 2) * 10).toFixed(2).replace('.', ',')}/mês
-                      </span>
-                    </div>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Action Buttons (Mobile-First Responsive Bar) */}
+          {/* Resumo da Assinatura e Cupom de Desconto */}
+          <Card className="bg-blue-900/10 border-blue-500/30 backdrop-blur-md rounded-2xl overflow-hidden">
+            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-blue-500/20">
+              <CardTitle className="text-lg sm:text-xl text-blue-400 font-semibold flex items-center gap-2">
+                <Calculator className="w-5 h-5" />
+                Resumo da Assinatura e Cupom de Desconto
+              </CardTitle>
+              <CardDescription className="text-xs sm:text-sm text-neutral-400">
+                Confira o valor recorrente e aplique seu cupom de desconto.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 space-y-6">
+              {/* Cupom Input */}
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5">
+                  <Tag className="w-4 h-4 text-blue-400" /> Cupom de Desconto
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="DIGITE O CUPOM (EX: BETA50)"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    className="bg-neutral-950 border-neutral-800 text-white font-mono uppercase h-10 text-xs sm:text-sm rounded-xl"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => validateCoupon(couponCode)}
+                    disabled={validatingCoupon || !couponCode.trim()}
+                    className="bg-blue-600 hover:bg-blue-700 text-white h-10 px-4 text-xs font-semibold rounded-xl"
+                  >
+                    {validatingCoupon ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validar"}
+                  </Button>
+                </div>
+
+                {appliedCoupon && appliedCoupon.valid && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Check className="w-4 h-4 shrink-0" />
+                      <span>Cupom <strong>{appliedCoupon.code}</strong> ativo com sucesso!</span>
+                    </div>
+                    <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
+                      {appliedCoupon.discount_type === "PERCENTAGE" && `${appliedCoupon.discount_value}% OFF`}
+                      {appliedCoupon.discount_type === "FIXED_AMOUNT" && `R$ ${appliedCoupon.discount_value} OFF`}
+                      {appliedCoupon.discount_type === "TRIAL_DAYS" && `${appliedCoupon.discount_value} dias degustação`}
+                    </Badge>
+                  </div>
+                )}
+
+                {couponError && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{couponError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Quadro Resumo */}
+              <div className="p-4 rounded-xl bg-neutral-950/90 border border-neutral-800 space-y-3">
+                <div className="flex items-center justify-between text-xs border-b border-neutral-800 pb-2">
+                  <span className="font-semibold text-blue-400 uppercase tracking-wider">Detalhamento dos Recursos</span>
+                  <span className="text-emerald-400 font-medium px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">Fase Beta: 100% Isento</span>
+                </div>
+
+                <div className="space-y-1.5 text-xs text-neutral-300">
+                  <div className="flex justify-between">
+                    <span>Plano Selecionado:</span>
+                    <span className="font-semibold text-white">{plan === "clinic" ? "Clínica com Equipe" : "Profissional Solo"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Mensalidade Base:</span>
+                    <span className="font-semibold text-white">R$ {basePrice.toFixed(2)}/mês</span>
+                  </div>
+                  {plan === "clinic" && extraConcurrentSeats > 0 && (
+                    <div className="flex justify-between text-blue-300">
+                      <span>Acessos Simultâneos Extras ({extraConcurrentSeats}x R$ 10,00):</span>
+                      <span className="font-semibold">+R$ {(extraConcurrentSeats * 10).toFixed(2)}/mês</span>
+                    </div>
+                  )}
+
+                  {appliedCoupon && appliedCoupon.valid && rawPrice !== finalPrice && (
+                    <div className="flex justify-between text-emerald-400 font-semibold border-t border-neutral-800/80 pt-1.5">
+                      <span>Desconto do Cupom ({appliedCoupon.code}):</span>
+                      <span>-R$ {(rawPrice - finalPrice).toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between border-t border-neutral-800 pt-2 text-sm sm:text-base font-bold text-white">
+                    <span>Valor Recorrente Final:</span>
+                    <div className="text-right">
+                      {appliedCoupon && appliedCoupon.valid && rawPrice !== finalPrice && (
+                        <span className="text-xs text-neutral-500 line-through mr-2 font-mono">
+                          R$ {rawPrice.toFixed(2)}
+                        </span>
+                      )}
+                      <span className="text-emerald-400">R$ {finalPrice.toFixed(2)}/mês</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Asaas PCI-DSS Security Compliance Banner */}
+          <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 text-xs text-neutral-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="font-semibold text-white text-xs">Processamento Financeiro Seguro via Asaas (PCI-DSS)</p>
+                <p className="text-[11px] text-neutral-400 mt-0.5">
+                  Os dados cadastrais acima são utilizados exclusivamente para emissão do cadastro na instituição financeira parceira Asaas. O Pluri-Health <strong>nunca armazena números de cartão de crédito</strong> em seus servidores.
+                </p>
+              </div>
+            </div>
+            <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-[10px] whitespace-nowrap shrink-0">
+              Gateway Asaas Oficial
+            </Badge>
+          </div>
+
+          {/* Action Buttons */}
           <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-3 pt-4 sm:pt-6 border-t border-neutral-800/60">
             <Button
               type="button"
@@ -583,14 +808,52 @@ export default function OnboardingClinica() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full sm:w-auto min-w-[200px] h-12 px-6 text-base font-semibold bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-xl shadow-lg shadow-blue-600/20 transition-all"
+              className="w-full sm:w-auto min-w-[220px] h-12 px-6 text-base font-semibold bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-xl shadow-lg shadow-blue-600/20 transition-all"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
-              {loading ? (isCreateMode ? "Criando clínica..." : "Salvando...") : "Salvar e Continuar"}
+              {loading ? (isCreateMode ? "Conectando ao Asaas..." : "Salvando...") : "Ativar Assinatura no Asaas"}
             </Button>
           </div>
         </form>
       </div>
+
+      {/* Modal de Confirmação de CNPJ Duplicado do Próprio Owner */}
+      <Dialog open={duplicateCnpjModalOpen} onOpenChange={setDuplicateCnpjModalOpen}>
+        <DialogContent className="bg-neutral-900 border-neutral-800 text-white sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-400" />
+              CNPJ Já Possui um Espaço Cadastrado
+            </DialogTitle>
+            <DialogDescription className="text-neutral-400 text-xs mt-1">
+              Você já possui a clínica <strong>"{existingClinicNameForCnpj}"</strong> cadastrada sob o CNPJ <strong>{formData.cnpj || formData.cpf}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <p className="text-xs text-neutral-300 py-2">
+            Deseja prosseguir e cadastrar este novo espaço/unidade adicional sob o mesmo CNPJ?
+          </p>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDuplicateCnpjModalOpen(false)}
+              className="border-neutral-800 text-neutral-300 hover:bg-neutral-800 rounded-xl text-xs"
+            >
+              Não, Revisar CNPJ
+            </Button>
+            <Button
+              onClick={() => {
+                setDuplicateCnpjModalOpen(false);
+                executeSignupProcess(true);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs"
+            >
+              Sim, Criar Nova Unidade sob este CNPJ
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

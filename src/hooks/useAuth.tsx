@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
+import { appQueryClient } from "@/lib/query-client";
 import { clearSecuritySessionKey, createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
@@ -380,106 +381,124 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
   }, []);
 
+  const inFlightAuthPromiseRef = useRef<{ promise: Promise<void>; userId: string } | null>(null);
+  const lastSeenUpdateThrottleRef = useRef<number>(0);
+
   const fetchAuthState = useCallback(async (userId: string, nextSession?: Session | null) => {
-    await supabase
-      .from("profiles")
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq("id", userId);
-
-    const platformOwnerRequest = async () => {
-      try {
-        return await supabase.rpc("is_platform_owner" as never, { _user_id: userId } as never) as {
-          data: unknown;
-          error: unknown;
-        };
-      } catch {
-        return { data: false, error: null };
-      }
-    };
-
-    const [profileRes, roleRes, clinicOptions, platformOwnerRes] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select(
-          "address, avatar_url, bio, birth_date, clinic_id, cpf, email, full_name, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours"
-        )
-        .eq("id", userId)
-        .maybeSingle(),
-      supabase.from("user_roles").select("role").eq("user_id", userId),
-      fetchAccessibleClinics(userId),
-      platformOwnerRequest(),
-    ]);
-
-    const nextProfile = profileRes.data ?? null;
-    const nextIsPlatformOwner = platformOwnerRes.data === true;
-    let nextPlatformMfaVerified = false;
-
-    if (nextIsPlatformOwner) {
-      try {
-        const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        nextPlatformMfaVerified = data.currentLevel === "aal2";
-      } catch {
-        nextPlatformMfaVerified = false;
-      }
+    if (inFlightAuthPromiseRef.current && inFlightAuthPromiseRef.current.userId === userId) {
+      return inFlightAuthPromiseRef.current.promise;
     }
 
-    setProfile(nextProfile);
-    setAccessibleClinics(clinicOptions);
-    setIsSuperAdmin((roleRes.data ?? []).some((role) => role.role === "super_admin"));
-    setIsPlatformOwner(nextIsPlatformOwner);
-    setPlatformMfaVerified(nextPlatformMfaVerified);
-
-    setPlatformAccess((prevAccess) => {
-      if (nextIsPlatformOwner && prevAccess) {
-        return prevAccess;
-      }
-      return null;
-    });
-
-    setClinic((prevClinic) => {
-      if (nextIsPlatformOwner && platformAccessRef.current) {
-        return prevClinic;
+    const loadPromise = (async () => {
+      const now = Date.now();
+      if (now - lastSeenUpdateThrottleRef.current > 5 * 60 * 1000) {
+        lastSeenUpdateThrottleRef.current = now;
+        void supabase
+          .from("profiles")
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq("id", userId);
       }
 
-      if (prevClinic) {
-        const matchingOption = clinicOptions.find((opt) => opt.clinic.id === prevClinic.id);
-        if (matchingOption) {
-          return matchingOption.clinic;
+      const platformOwnerRequest = async () => {
+        try {
+          return await supabase.rpc("is_platform_owner" as never, { _user_id: userId } as never) as {
+            data: unknown;
+            error: unknown;
+          };
+        } catch {
+          return { data: false, error: null };
+        }
+      };
+
+      const [profileRes, roleRes, clinicOptions, platformOwnerRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select(
+            "address, avatar_url, bio, birth_date, clinic_id, cpf, email, full_name, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours"
+          )
+          .eq("id", userId)
+          .maybeSingle(),
+        supabase.from("user_roles").select("role").eq("user_id", userId),
+        fetchAccessibleClinics(userId),
+        platformOwnerRequest(),
+      ]);
+
+      const nextProfile = profileRes.data ?? null;
+      const nextIsPlatformOwner = platformOwnerRes.data === true;
+      let nextPlatformMfaVerified = false;
+
+      if (nextIsPlatformOwner) {
+        try {
+          const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          nextPlatformMfaVerified = data.currentLevel === "aal2";
+        } catch {
+          nextPlatformMfaVerified = false;
         }
       }
 
-      return null;
-    });
+      setProfile(nextProfile);
+      setAccessibleClinics(clinicOptions);
+      setIsSuperAdmin((roleRes.data ?? []).some((role) => role.role === "super_admin"));
+      setIsPlatformOwner(nextIsPlatformOwner);
+      setPlatformMfaVerified(nextPlatformMfaVerified);
 
-    setMembership((prevMembership) => {
-      if (nextIsPlatformOwner && platformAccessRef.current) {
-        return prevMembership;
-      }
-
-      const activeClinicId = clinicRef.current?.id || prevMembership?.clinic_id;
-      if (activeClinicId) {
-        const matchingOption = clinicOptions.find((opt) => opt.clinic.id === activeClinicId);
-        if (matchingOption) {
-          return matchingOption.membership;
+      setPlatformAccess((prevAccess) => {
+        if (nextIsPlatformOwner && prevAccess) {
+          return prevAccess;
         }
-      }
+        return null;
+      });
 
-      return null;
+      setClinic((prevClinic) => {
+        if (nextIsPlatformOwner && platformAccessRef.current) {
+          return prevClinic;
+        }
+
+        if (prevClinic) {
+          const matchingOption = clinicOptions.find((opt) => opt.clinic.id === prevClinic.id);
+          if (matchingOption) {
+            return matchingOption.clinic;
+          }
+        }
+
+        return null;
+      });
+
+      setMembership((prevMembership) => {
+        if (nextIsPlatformOwner && platformAccessRef.current) {
+          return prevMembership;
+        }
+
+        if (prevMembership) {
+          const matchingOption = clinicOptions.find((opt) => opt.clinic.id === prevMembership.clinic_id);
+          if (matchingOption) {
+            return matchingOption.membership;
+          }
+        }
+
+        return null;
+      });
+    })().finally(() => {
+      if (inFlightAuthPromiseRef.current?.userId === userId) {
+        inFlightAuthPromiseRef.current = null;
+      }
     });
+
+    inFlightAuthPromiseRef.current = { promise: loadPromise, userId };
+    return loadPromise;
   }, [fetchAccessibleClinics]);
 
-
-
   useEffect(() => {
+    let initialized = false;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
+      initialized = true;
 
       if (nextSession?.user) {
-        setTimeout(() => {
-          void fetchAuthState(nextSession.user.id, nextSession)
-            .catch(() => undefined)
-            .finally(() => setLoading(false));
-        }, 0);
+        void fetchAuthState(nextSession.user.id, nextSession)
+          .catch(() => undefined)
+          .finally(() => setLoading(false));
       } else {
         currentSecuritySessionKeyRef.current = null;
         setProfile(null);
@@ -497,14 +516,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     supabase.auth.getSession().then(({ data: { session: nextSession } }) => {
-      setSession(nextSession);
-
-      if (nextSession?.user) {
-        void fetchAuthState(nextSession.user.id, nextSession)
-          .catch(() => undefined)
-          .finally(() => setLoading(false));
-      } else {
-        setLoading(false);
+      if (!initialized) {
+        setSession(nextSession);
+        if (nextSession?.user) {
+          void fetchAuthState(nextSession.user.id, nextSession)
+            .catch(() => undefined)
+            .finally(() => setLoading(false));
+        } else {
+          setLoading(false);
+        }
       }
     });
 
@@ -638,6 +658,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setStoredActiveClinicId(null);
     setPlatformAccess(null);
     setPlatformMfaVerified(false);
+    appQueryClient.clear();
     await supabase.auth.signOut();
   };
 

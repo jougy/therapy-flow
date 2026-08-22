@@ -20,7 +20,7 @@ const PAGES = [
   { id: '4_NovoPaciente', url: `/clinica/${CLINIC_ID}/pacientes/novo` },
   { id: '5_Auth', url: `/auth` },
   { id: '6_RedefinirSenha', url: `/auth/redefinir-senha` },
-  { id: '7_CadastroContaAlfa', url: `/cadastro/conta-alfa` },
+  { id: '7_CadastroContaAlfa', url: `/auth/cadastro` },
   { id: '8_SelecionarClinica', url: `/espacopessoal` },
   { id: '9_ConviteClinica', url: `/convite/clinica/${TOKEN}` },
   { id: '10_ContaConfirmada', url: `/auth/confirmado` },

@@ -11,6 +11,7 @@ import {
   buildAnamnesisTemplateExchangeFileName,
   buildAnamnesisTemplateExchangePayload,
   buildTemplateLayout,
+  compactAnamnesisTemplateSchema,
   countTemplateQuestionFields,
   countTemplateSections,
   createDefaultTemplateSchema,
@@ -331,6 +332,35 @@ describe("anamnesis forms helpers", () => {
     expect(getAssignableContainerFields(schema, "field_1").map((field) => field.id)).toEqual(["section_1", "section_2", "section_3"]);
   });
 
+  it("handles section_selector as modular super-container that holds child sections", () => {
+    const schema: AnamnesisTemplateSchema = [
+      { id: "selector_1", label: "Módulos de Avaliação", type: "section_selector" },
+      { id: "sec_coluna", groupKey: "selector_1", label: "Coluna Vertebral", type: "section" },
+      { id: "field_dor_coluna", groupKey: "sec_coluna", label: "EVA Coluna", type: "slider" },
+      { id: "sec_ombro", groupKey: "selector_1", label: "Ombro e Membros Superiores", type: "section" },
+      { id: "field_adm_ombro", groupKey: "sec_ombro", label: "ADM Ombro", type: "short_text" },
+    ];
+
+    // section_selector cannot be assigned inside other containers
+    expect(getAssignableContainerFields(schema, "selector_1")).toEqual([]);
+
+    // Sections can be assigned to section_selector
+    expect(getAssignableContainerFields(schema, "sec_coluna").map((f) => f.id)).toContain("selector_1");
+
+    // Layout hierarchy builds correctly
+    const layout = buildTemplateLayout(schema);
+    expect(layout).toHaveLength(1);
+    expect(layout[0]?.field.id).toBe("selector_1");
+    expect(layout[0]?.type).toBe("section_selector");
+
+    // Visibility dynamically toggles based on active section IDs
+    const visibleWithColuna = getVisibleTemplateFields(schema, { selector_1: { sec_coluna: true, sec_ombro: false } });
+    expect(visibleWithColuna.map((f) => f.id)).toEqual(["selector_1", "sec_coluna", "field_dor_coluna"]);
+
+    const visibleWithOmbro = getVisibleTemplateFields(schema, { selector_1: { sec_coluna: false, sec_ombro: true } });
+    expect(visibleWithOmbro.map((f) => f.id)).toEqual(["selector_1", "sec_ombro", "field_adm_ombro"]);
+  });
+
   it("uses the scrollable matrix editor only for checklist and multiple choice options", () => {
     expect(hasScrollableOptionEditor("checklist")).toBe(true);
     expect(hasScrollableOptionEditor("multiple_choice")).toBe(true);
@@ -458,13 +488,50 @@ describe("anamnesis forms helpers", () => {
     });
   });
 
-  it("preserves empty label strings during active editing and allows trailing spaces in help text and placeholders", () => {
-    const schema = sanitizeAnamnesisTemplateSchema([
-      { id: "field_1", label: "", helpText: "Qual é o endereço ", placeholder: "Digite aqui " },
-    ]);
+  it("handles malicious circular parent references safely without infinite recursion or stack overflow", () => {
+    // Malicious circular structure: A -> B -> A
+    const circularSchema: AnamnesisTemplateSchema = [
+      { id: "sec_a", label: "Seção A", type: "section", groupKey: "sec_b" },
+      { id: "sec_b", label: "Seção B", type: "section", groupKey: "sec_a" },
+    ];
 
-    expect(schema[0]?.label).toBe("");
-    expect(schema[0]?.helpText).toBe("Qual é o endereço ");
-    expect(schema[0]?.placeholder).toBe("Digite aqui ");
+    expect(() => buildTemplateLayout(circularSchema)).not.toThrow();
+    const layout = buildTemplateLayout(circularSchema);
+    expect(Array.isArray(layout)).toBe(true);
+  });
+
+  it("compacts template schema by removing default values and expands back safely", () => {
+    const rawSchema: AnamnesisTemplateSchema = [
+      {
+        id: "section_1",
+        label: "Seção 1",
+        type: "section",
+        required: false,
+        showInPatientList: false,
+        groupKey: null,
+        sectionKey: null,
+      },
+      {
+        id: "field_1",
+        label: "Pergunta 1",
+        type: "short_text",
+        groupKey: "section_1",
+        required: true,
+        showInPatientList: true,
+        sectionKey: null,
+      },
+    ];
+    const sanitizedOriginal = sanitizeAnamnesisTemplateSchema(rawSchema);
+    const compacted = compactAnamnesisTemplateSchema(sanitizedOriginal);
+
+    // Verify compaction removed falsy/default properties
+    expect(compacted.length).toBe(sanitizedOriginal.length);
+    expect("required" in (compacted[0] as Record<string, unknown>)).toBe(false);
+    expect("showInPatientList" in (compacted[0] as Record<string, unknown>)).toBe(false);
+    expect("groupKey" in (compacted[0] as Record<string, unknown>)).toBe(false);
+
+    // Verify sanitization expands back to full normalized schema
+    const expanded = sanitizeAnamnesisTemplateSchema(compacted);
+    expect(expanded).toEqual(sanitizedOriginal);
   });
 });

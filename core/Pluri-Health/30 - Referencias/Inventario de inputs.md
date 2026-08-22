@@ -47,6 +47,17 @@ rg -n "(<Input|<Textarea|<Select\b|<Checkbox\b|<RadioGroup\b|<Switch\b|<CommandI
 - `107` `email`: `Input type="email"`; `required`; placeholder `seu@email.com`; sem `maxLength` explicito.
 - `120` `password`: `Input` alterna `password`/`text`; `required`; `minLength={6}`; sem `maxLength` explicito.
 
+## `src/pages/CadastroContaAlfa.tsx`
+
+- `owner-name`: `Input`; nome completo; `autoComplete="name"`; `maxLength={100}`; `required`; `UserRound` icon à esquerda.
+- `owner-cpf`: `Input`; CPF pessoal; `autoComplete="off"`; `inputMode="numeric"`; `maxLength={14}`; `formatCpf(...)`; `required`; `IdCard` icon à esquerda.
+- `birth-date`: `Input type="date"`; data de nascimento; `autoComplete="bday"`; `required`; `Calendar` icon à esquerda.
+- `contact-phone`: `Input`; telefone/WhatsApp; `autoComplete="tel"`; `inputMode="tel"`; `maxLength={15}`; `formatPhone(...)`; `required`; `Phone` icon à esquerda.
+- `signup-email`: `Input type="email"`; e-mail; `autoComplete="email"`; `maxLength={190}`; `required`; `Mail` icon à esquerda.
+- `signup-password`: `Input` alterna `password`/`text`; senha pessoal; `autoComplete="new-password"`; `minLength={8}`; `maxLength={128}`; `required`; `LockKeyhole` icon + toggle `Eye/EyeOff`.
+- `signup-password-confirmation`: `Input` alterna `password`/`text`; confirmação de senha; `autoComplete="new-password"`; `minLength={8}`; `maxLength={128}`; `required`; `LockKeyhole` icon + toggle `Eye/EyeOff`.
+
+
 ## `src/pages/Index.tsx`
 
 - `735` busca mobile: `Input`; `value={search}`; placeholder `Buscar paciente...`; `aria-label` especifico.
