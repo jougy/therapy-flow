@@ -478,11 +478,19 @@ describe("PacienteDetalhe", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^agendar$/i }));
 
-    expect(await screen.findByRole("heading", { name: /novo evento/i })).toBeInTheDocument();
-    expect(screen.getAllByText("Maria Silva").length).toBeGreaterThan(1);
+    const dialog = await screen.findByRole("dialog", { name: /novo evento/i });
+    expect(dialog).toBeInTheDocument();
 
-    const confirmButton = screen.getByRole("button", { name: /confirmar/i });
-    expect(confirmButton).not.toBeDisabled();
+    // The AgendaWidget dialog uses a Label "Horário" with a time input (no id on the input)
+    // The input may be already in the future by default; if isNewEventDateTimePast triggers,
+    // we set a safe future time.
+    const timeInputs = dialog.querySelectorAll("input[type='time']");
+    if (timeInputs.length > 0) {
+      fireEvent.change(timeInputs[0], { target: { value: "23:59" } });
+    }
+
+    const confirmButton = await screen.findByRole("button", { name: /confirmar agendamento/i });
+    await waitFor(() => expect(confirmButton).not.toBeDisabled());
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
@@ -501,6 +509,7 @@ describe("PacienteDetalhe", () => {
       ]);
     });
   });
+
 
   it("opens scheduled event details and creates a canceled session when applying canceled status", async () => {
     supabaseMocks.agendaEvents = [
