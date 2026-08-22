@@ -77,7 +77,8 @@ const AppLayout = ({ children }: AppLayoutProps) => {
   }, [location.pathname, location.search]);
 
   const isPersonalOriginSettings =
-    location.pathname === "/configuracoes" && new URLSearchParams(location.search).get("origem") === "pessoal";
+    (location.pathname.startsWith("/configuracoes") && !location.pathname.startsWith("/clinica")) ||
+    new URLSearchParams(location.search).get("origem") === "pessoal";
 
   const displayName = profile?.full_name || profile?.email || "Usuário";
   const initials = displayName
@@ -118,10 +119,10 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               onClick={() => navigate(isPersonalOriginSettings ? "/espacopessoal" : clinicHomePath)}
               aria-label={isPersonalOriginSettings ? "Ir para o espaço pessoal" : `Ir para a página inicial da clínica ${clinicBrandName}`}
             >
-              {clinic?.logo_url ? (
+              {clinic?.logo_url && !isPersonalOriginSettings ? (
                 <img src={clinic.logo_url} alt={`Logo da ${clinicBrandName}`} className="h-9 max-w-[140px] object-contain" />
               ) : (
-                <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">{clinicBrandName}</span>
+                <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">{isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}</span>
               )}
             </button>
 
@@ -140,16 +141,16 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               <PersonalNotificationsButton />
               <ProfileAccountButton
                 displayName={displayName}
-                subtitle={clinicBrandName}
+                subtitle={isPersonalOriginSettings ? (profile?.email || "Conta pessoal") : clinicBrandName}
                 avatarUrl={profile?.avatar_url}
                 initials={initials}
                 onClick={() => navigate(
-                  isPersonalOriginSettings
+                  isPersonalOriginSettings || !clinic?.route_key
                     ? "/configuracoes/pessoal/perfil"
                     : `${clinicHomePath}/configuracoes/pessoal/perfil`
                 )}
               />
-              {!isPersonalOriginSettings && (
+              {!isPersonalOriginSettings && clinic?.route_key && (
                 <Button
                   variant="ghost"
                   size="icon"

@@ -6,23 +6,19 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 
 const navigateMock = vi.fn();
-const buildSupabaseQueryMock = () => ({
-  delete: vi.fn(() => ({
-    eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-    in: vi.fn().mockResolvedValue({ data: null, error: null }),
-  })),
-  eq: vi.fn().mockReturnThis(),
-  in: vi.fn().mockReturnThis(),
-  limit: vi.fn().mockReturnThis(),
-  order: vi.fn().mockReturnThis(),
-  select: vi.fn().mockReturnThis(),
-  update: vi.fn(() => ({
-    eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-    in: vi.fn(() => ({
-      eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-    })),
-  })),
-});
+const buildSupabaseQueryMock = () => {
+  const query: Record<string, any> = {};
+  query.delete = vi.fn(() => query);
+  query.eq = vi.fn(() => query);
+  query.in = vi.fn(() => query);
+  query.limit = vi.fn(() => query);
+  query.order = vi.fn(() => query);
+  query.select = vi.fn(() => query);
+  query.update = vi.fn(() => query);
+  query.then = (resolve: (value: { data: any; error: any }) => void) =>
+    Promise.resolve(resolve({ data: [], error: null }));
+  return query;
+};
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
@@ -165,7 +161,7 @@ describe("SelecionarClinica", () => {
     expect(screen.getByRole("button", { name: /ver acessos online/i })).toHaveTextContent("3/4");
 
     fireEvent.click(screen.getAllByRole("button", { name: /abrir configurações pessoais/i })[0]!);
-    expect(navigateMock).toHaveBeenCalledWith("/configuracoes?secao=profile&origem=pessoal");
+    expect(navigateMock).toHaveBeenCalledWith("/configuracoes/pessoal/perfil");
 
     fireEvent.click(screen.getAllByRole("button", { name: /clinica aurora/i })[0]!);
 
@@ -284,9 +280,11 @@ describe("SelecionarClinica", () => {
       select: vi.fn().mockReturnThis(),
     };
 
-    vi.mocked(supabase.from)
-      .mockReturnValueOnce(sessionsQuery as never)
-      .mockReturnValueOnce(groupsQuery as never);
+    vi.mocked(supabase.from).mockImplementation((table: string) => {
+      if (table === "sessions") return sessionsQuery as never;
+      if (table === "patient_groups" || table === "groups") return groupsQuery as never;
+      return buildSupabaseQueryMock() as never;
+    });
     vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
 
     render(
@@ -395,9 +393,11 @@ describe("SelecionarClinica", () => {
       select: vi.fn().mockReturnThis(),
     };
 
-    vi.mocked(supabase.from)
-      .mockReturnValueOnce(releasesQuery as never)
-      .mockReturnValueOnce(itemsQuery as never);
+    vi.mocked(supabase.from).mockImplementation((table: string) => {
+      if (table === "platform_releases") return releasesQuery as never;
+      if (table === "platform_release_note_items") return itemsQuery as never;
+      return buildSupabaseQueryMock() as never;
+    });
     vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
 
     render(
@@ -486,7 +486,7 @@ describe("SelecionarClinica", () => {
 
     fireEvent.click(getNavButton(/^Configurações$/i));
 
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/configuracoes?secao=profile&origem=pessoal"));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/configuracoes/pessoal/perfil"));
   });
 
   it("asks before signing out from the personal panel", () => {

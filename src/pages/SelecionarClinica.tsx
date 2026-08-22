@@ -322,7 +322,7 @@ const SelecionarClinica = () => {
 
   useEffect(() => {
     if (activeSection === "settings") {
-      navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes?secao=profile&origem=pessoal`);
+      navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes/pessoal/perfil`);
     }
   }, [activeSection, isDesignLabRoute, navigate]);
 
@@ -1400,7 +1400,7 @@ const SelecionarClinica = () => {
                 subtitle={profile?.email || user?.email || "Conta pessoal"}
                 avatarUrl={profile?.avatar_url}
                 initials={initials}
-                onClick={() => navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes?secao=profile&origem=pessoal`)}
+                onClick={() => navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes/pessoal/perfil`)}
               />
             </div>
             <AlertDialog>

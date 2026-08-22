@@ -54,7 +54,7 @@ export const SettingsLayout = () => {
   const basePath = clinicKey ? `/clinica/${clinicKey}/configuracoes` : "/configuracoes";
 
   // Identifica automaticamente se a sub-rota atual é do espaço pessoal ou da clínica
-  const isPersonalSpace = location.pathname.includes("/pessoal/") || location.pathname.includes("/suporte");
+  const isPersonalSpace = !clinicKey || location.pathname.includes("/pessoal/") || location.pathname.includes("/suporte");
 
   const clinicNavSections: SettingsNavSection[] = useMemo(
     () => [
@@ -207,8 +207,7 @@ export const SettingsLayout = () => {
         {activeNavSections.map((item) => {
           const isActive =
             location.pathname === item.path ||
-            (item.id === "perfil" && location.pathname.endsWith("/perfil")) ||
-            (item.id === "equipe" && location.pathname.endsWith("/equipe"));
+            location.pathname.startsWith(`${item.path}/`);
 
           return (
             <NavLink
@@ -309,7 +308,7 @@ export const SettingsLayout = () => {
             onTouchCancel={finishMobileDockInteraction}
           >
             {activeNavSections.map((item) => {
-              const isActive = location.pathname.includes(item.id);
+              const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
               const isPressed = mobileDockPressedSection === item.id;
 
               return (

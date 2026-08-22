@@ -203,15 +203,17 @@ const App = () => (
                         }
                       >
                         <Route index element={<ConfiguracoesLegacyRedirect />} />
-                        <Route path="perfil" element={<ClinicProfileSection />} />
-                        <Route path="equipe" element={<ClinicTeamSection />} />
-                        <Route path="colaboradores" element={<Navigate to="../equipe" replace />} />
-                        <Route path="seguranca" element={<ClinicSecuritySection />} />
-                        <Route path="assinatura" element={<ClinicBillingSection />} />
-                        <Route path="tesouraria" element={<ClinicTreasurySection />} />
-                        <Route path="formularios" element={<ClinicFormsSection />} />
+                        <Route path="perfil" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="seguranca" element={<Navigate to="pessoal/seguranca" replace />} />
+                        <Route path="notificacoes" element={<Navigate to="pessoal/notificacoes" replace />} />
+                        <Route path="equipe" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="colaboradores" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="assinatura" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="tesouraria" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="formularios" element={<Navigate to="pessoal/perfil" replace />} />
                         <Route path="pessoal/perfil" element={<PersonalProfileSection />} />
                         <Route path="pessoal/seguranca" element={<PersonalSecuritySection />} />
+                        <Route path="pessoal/notificacoes" element={<PersonalNotificationsSection />} />
                         <Route path="suporte" element={<SupportSection />} />
                       </Route>
                       <Route
@@ -225,15 +227,17 @@ const App = () => (
                         }
                       >
                         <Route index element={<ConfiguracoesLegacyRedirect />} />
-                        <Route path="perfil" element={<ClinicProfileSection />} />
-                        <Route path="equipe" element={<ClinicTeamSection />} />
-                        <Route path="colaboradores" element={<Navigate to="../equipe" replace />} />
-                        <Route path="seguranca" element={<ClinicSecuritySection />} />
-                        <Route path="assinatura" element={<ClinicBillingSection />} />
-                        <Route path="tesouraria" element={<ClinicTreasurySection />} />
-                        <Route path="formularios" element={<ClinicFormsSection />} />
+                        <Route path="perfil" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="seguranca" element={<Navigate to="pessoal/seguranca" replace />} />
+                        <Route path="notificacoes" element={<Navigate to="pessoal/notificacoes" replace />} />
+                        <Route path="equipe" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="colaboradores" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="assinatura" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="tesouraria" element={<Navigate to="pessoal/perfil" replace />} />
+                        <Route path="formularios" element={<Navigate to="pessoal/perfil" replace />} />
                         <Route path="pessoal/perfil" element={<PersonalProfileSection />} />
                         <Route path="pessoal/seguranca" element={<PersonalSecuritySection />} />
+                        <Route path="pessoal/notificacoes" element={<PersonalNotificationsSection />} />
                         <Route path="suporte" element={<SupportSection />} />
                       </Route>
                       <Route path="/" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />

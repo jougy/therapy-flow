@@ -31,18 +31,37 @@ export const ConfiguracoesLegacyRedirect = () => {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const secao = searchParams.get("secao");
+  const origem = searchParams.get("origem");
 
   const basePath = clinicKey ? `/clinica/${clinicKey}/configuracoes` : "/configuracoes";
 
+  // Se a origem é pessoal ou rota pessoal explícita
+  if (origem === "pessoal" || secao === "personal" || secao === "personal-profile" || secao === "pessoal-perfil") {
+    if (secao === "personal-security" || secao === "security") {
+      return <Navigate to={`${basePath}/pessoal/seguranca`} replace />;
+    }
+    if (secao === "personal-notifications" || secao === "notifications") {
+      return <Navigate to={`${basePath}/pessoal/notificacoes`} replace />;
+    }
+    return <Navigate to={`${basePath}/pessoal/perfil`} replace />;
+  }
+
   // Mapeamento de compatibilidade de URLs antigas ?secao=...
-  if (secao === "clinic" || secao === "profile") {
+  if (secao === "clinic") {
     return <Navigate to={`${basePath}/perfil`} replace />;
+  }
+  if (secao === "profile") {
+    // Se estiver no escopo pessoal ou legado sem clinicKey, redireciona para perfil pessoal
+    return <Navigate to={clinicKey ? `${basePath}/perfil` : `${basePath}/pessoal/perfil`} replace />;
   }
   if (secao === "team" || secao === "colaboradores") {
     return <Navigate to={`${basePath}/equipe`} replace />;
   }
-  if (secao === "clinic-security" || secao === "security") {
+  if (secao === "clinic-security") {
     return <Navigate to={`${basePath}/seguranca`} replace />;
+  }
+  if (secao === "security") {
+    return <Navigate to={clinicKey ? `${basePath}/seguranca` : `${basePath}/pessoal/seguranca`} replace />;
   }
   if (secao === "billing") {
     return <Navigate to={`${basePath}/assinatura`} replace />;
@@ -59,9 +78,9 @@ export const ConfiguracoesLegacyRedirect = () => {
   if (secao === "personal-notifications" || secao === "notifications") {
     return <Navigate to={`${basePath}/pessoal/notificacoes`} replace />;
   }
-  if (secao === "support") {
+  if (secao === "suporte" || secao === "support") {
     return <Navigate to={`${basePath}/suporte`} replace />;
   }
 
-  return <Navigate to={`${basePath}/perfil`} replace />;
+  return <Navigate to={clinicKey ? `${basePath}/perfil` : `${basePath}/pessoal/perfil`} replace />;
 };
