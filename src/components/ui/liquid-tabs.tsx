@@ -10,6 +10,7 @@ export interface LiquidTabItem {
   buttonClass?: string;
   labelClass?: string;
   iconClass?: string;
+  dataTutorial?: string;
 }
 
 export interface LiquidTabsProps {
@@ -141,6 +142,7 @@ export function LiquidTabs({ tabs, activeTab, onChange, className, tabClassName 
               role="tab"
               aria-selected={isActive}
               data-active={isActive}
+              {...(tab.dataTutorial ? { "data-tutorial": tab.dataTutorial } : {})}
               onClick={() => onChange(tab.id)}
               className={cn(
                 "relative flex items-center justify-center py-1.5 text-sm font-medium transition-colors duration-300 rounded-xl",

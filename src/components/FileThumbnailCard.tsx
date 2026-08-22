@@ -37,10 +37,16 @@ export function FileThumbnailCard({
 
   const isImage = isPatientFileUploadImage(file.original_content_type ?? file.content_type);
   const isDeleting = deletingUploadId === file.id;
+  const rawContentType = (file.original_content_type ?? file.content_type ?? "").split(";")[0].trim().toLowerCase();
+  const isDoc =
+    rawContentType === "application/msword" ||
+    rawContentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    (file.original_filename ?? "").toLowerCase().endsWith(".doc") ||
+    (file.original_filename ?? "").toLowerCase().endsWith(".docx");
 
   const Icon = isImage ? FileImage : FileText;
-  const iconColorClass = isImage ? "text-blue-500" : "text-red-500";
-  const iconBgClass = isImage ? "bg-blue-500/10" : "bg-red-500/10";
+  const iconColorClass = isImage ? "text-blue-500" : isDoc ? "text-blue-700" : "text-red-500";
+  const iconBgClass = isImage ? "bg-blue-500/10" : isDoc ? "bg-blue-700/10" : "bg-red-500/10";
 
   const formattedDate = file.created_at
     ? format(new Date(file.created_at), "dd/MM/yy 'às' HH:mm", { locale: ptBR })

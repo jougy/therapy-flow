@@ -43,7 +43,7 @@ describe("patient file uploads", () => {
     expect(invalid.isValid).toBe(false);
     expect(invalid.errors).toEqual([
       "O arquivo precisa ter nome.",
-      "Envie apenas PDF ou imagens nos formatos JPEG, PNG, WebP, HEIC ou HEIF.",
+      "Envie apenas PDF, DOC/DOCX ou imagens nos formatos JPEG, PNG, WebP, HEIC ou HEIF.",
       "O arquivo precisa ter no máximo 50 MB.",
     ]);
   });

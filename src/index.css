@@ -191,12 +191,90 @@
   38% {
     transform: translateY(0) rotate(12deg) scale(1.02);
   }
-  58% {
-    transform: translateY(-1px) rotate(-8deg) scale(1.03);
-  }
   78% {
-    transform: translateY(0) rotate(5deg) scale(1.01);
+    transform: translateY(0) rotate(4deg) scale(1.01);
   }
+}
+
+@keyframes tutorial-focus-dance {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  20% {
+    transform: translateY(-2px) rotate(-3deg) scale(1.05);
+  }
+  40% {
+    transform: translateY(1px) rotate(3deg) scale(1.03);
+  }
+  60% {
+    transform: translateY(-2px) rotate(-2deg) scale(1.04);
+  }
+  80% {
+    transform: translateY(1px) rotate(2deg) scale(1.02);
+  }
+}
+
+@keyframes tutorial-focus-bounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-6px) scale(1.04);
+  }
+  50% {
+    transform: translateY(0) scale(0.98);
+  }
+  70% {
+    transform: translateY(-3px) scale(1.02);
+  }
+}
+
+@keyframes tutorial-focus-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(198 93% 60% / 0.7), 0 0 20px hsl(198 93% 60% / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 12px hsl(198 93% 60% / 0), 0 0 35px hsl(198 93% 60% / 0.6);
+  }
+}
+
+@keyframes tutorial-neon-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.tutorial-dancing-target {
+  animation: tutorial-focus-dance 1.4s ease-in-out infinite !important;
+  transform-origin: center center;
+}
+
+.tutorial-bouncing-target {
+  animation: tutorial-focus-bounce 1.3s ease-in-out infinite !important;
+  transform-origin: center center;
+}
+
+.tutorial-pulsing-target {
+  animation: tutorial-focus-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+
+.tutorial-spotlight-ring {
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    hsl(198 93% 60% / 0.9),
+    hsl(158 74% 48% / 0.9),
+    hsl(43 96% 58% / 0.9),
+    hsl(266 88% 68% / 0.9),
+    hsl(198 93% 60% / 0.9)
+  );
+  background-size: 200% 100%;
+  animation: tutorial-neon-flow 2s linear infinite;
 }
 
 @keyframes designlab-liquid-transfer {
@@ -1310,7 +1388,7 @@
   --role-permission-color: hsl(var(--primary));
   position: relative;
   display: inline-flex;
-  width: 5.5rem;
+  width: 5.75rem;
   height: 2.25rem;
   align-items: center;
   border: 1px solid hsl(var(--border));
@@ -1322,14 +1400,34 @@
     inset 0 0 0 1px hsl(var(--background) / 0.56),
     0 5px 14px hsl(var(--foreground) / 0.06);
   transition:
-    border-color 700ms ease-in-out,
-    box-shadow 700ms ease-in-out,
-    color 700ms ease-in-out,
-    opacity 700ms ease-in-out;
+    border-color 300ms ease-in-out,
+    box-shadow 300ms ease-in-out,
+    color 300ms ease-in-out,
+    opacity 300ms ease-in-out;
 }
 
 .role-permission-switch[data-kind="edit"] {
   --role-permission-color: hsl(var(--success));
+}
+
+.role-permission-switch[data-kind="delete"] {
+  --role-permission-color: hsl(var(--destructive));
+}
+
+.role-permission-switch[data-kind="share"] {
+  --role-permission-color: #a855f7;
+}
+
+.role-permission-switch[data-kind="finance"] {
+  --role-permission-color: #f59e0b;
+}
+
+.role-permission-switch[data-kind="print"] {
+  --role-permission-color: #3b82f6;
+}
+
+.role-permission-switch[data-kind="manage"] {
+  --role-permission-color: #f97316;
 }
 
 .role-permission-switch--checked {
@@ -1342,7 +1440,7 @@
 
 .role-permission-switch--disabled {
   cursor: not-allowed;
-  opacity: 0.48;
+  opacity: 0.45;
 }
 
 .role-permission-switch__track {
@@ -1354,8 +1452,8 @@
   opacity: 0;
   transform: translateX(-32%);
   transition:
-    opacity 700ms ease-in-out,
-    transform 700ms ease-in-out;
+    opacity 300ms ease-in-out,
+    transform 300ms ease-in-out;
 }
 
 .role-permission-switch--checked .role-permission-switch__track {
@@ -1365,18 +1463,20 @@
 
 .role-permission-switch__label {
   position: absolute;
-  right: 0.75rem;
+  right: 0.65rem;
   z-index: 1;
   font-size: 0.72rem;
   font-weight: 700;
   line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
   transition:
-    opacity 700ms ease-in-out,
-    transform 700ms ease-in-out;
+    opacity 300ms ease-in-out,
+    transform 300ms ease-in-out;
 }
 
 .role-permission-switch--checked .role-permission-switch__label {
-  transform: translateX(-1.5rem);
+  transform: translateX(-1.75rem);
 }
 
 .role-permission-switch__thumb {
@@ -1397,10 +1497,10 @@
     inset 0 0 0 1px hsl(var(--background) / 0.64),
     0 5px 12px hsl(var(--foreground) / 0.16);
   transition:
-    background-color 700ms ease-in-out,
-    box-shadow 700ms ease-in-out,
-    color 700ms ease-in-out,
-    transform 700ms ease-in-out;
+    background-color 300ms ease-in-out,
+    box-shadow 300ms ease-in-out,
+    color 300ms ease-in-out,
+    transform 300ms ease-in-out;
 }
 
 .role-permission-switch--checked .role-permission-switch__thumb {
@@ -1411,7 +1511,7 @@
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--role-permission-color) 24%, transparent),
     0 6px 16px color-mix(in srgb, var(--role-permission-color) 25%, transparent);
-  transform: translateX(3.25rem);
+  transform: translateX(3.5rem);
 }
 
 .role-permission-switch__icon {
@@ -1447,6 +1547,26 @@
   animation: role-permission-pencil-write 900ms ease-in-out;
 }
 
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--delete {
+  animation: role-permission-trash-shake 600ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--share {
+  animation: role-permission-share-pulse 800ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--finance {
+  animation: role-permission-coin-spin 800ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--print {
+  animation: role-permission-print-slide 800ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--manage {
+  animation: role-permission-shield-pulse 800ms ease-in-out;
+}
+
 @keyframes role-permission-eye-blink {
   0%,
   100% {
@@ -1470,6 +1590,64 @@
   }
   70% {
     transform: translate(-1px, 1px) rotate(8deg);
+  }
+}
+
+@keyframes role-permission-trash-shake {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(-6deg) scale(1.08);
+  }
+  50% {
+    transform: rotate(6deg) scale(1.08);
+  }
+  75% {
+    transform: rotate(-3deg) scale(1.04);
+  }
+}
+
+@keyframes role-permission-share-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2) rotate(6deg);
+  }
+}
+
+@keyframes role-permission-coin-spin {
+  0% {
+    transform: rotateY(0deg);
+  }
+  50% {
+    transform: rotateY(180deg) scale(1.15);
+  }
+  100% {
+    transform: rotateY(360deg);
+  }
+}
+
+@keyframes role-permission-print-slide {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.08);
+  }
+}
+
+@keyframes role-permission-shield-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
   }
 }
 
@@ -1589,13 +1767,20 @@
   }
 
   #print-blank-kit-root *,
-  #print-clinic-stats-root * {
+  #print-blank-kit-root *::before,
+  #print-blank-kit-root *::after,
+  #print-clinic-stats-root *,
+  #print-clinic-stats-root *::before,
+  #print-clinic-stats-root *::after {
     visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
 
   @page {
     size: A4 portrait;
-    margin: 10mm 10mm 12mm 10mm;
+    margin: 8mm 10mm 10mm 10mm;
   }
 }
 

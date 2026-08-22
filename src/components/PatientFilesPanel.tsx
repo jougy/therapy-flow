@@ -62,6 +62,7 @@ export const PatientFilesPanel = ({
 }) => {
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const docInputRef = useRef<HTMLInputElement | null>(null);
   const queue = usePatientFileUploadQueue();
   const { files, loading, refreshFiles } = usePatientFilesContext();
   
@@ -182,7 +183,7 @@ export const PatientFilesPanel = ({
 
           {variant === "session" ? (
             <>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-3">
                 <Button type="button" onClick={() => pdfInputRef.current?.click()} disabled={!canUpload}>
                   <FileText className="mr-2 h-4 w-4" />
                   Enviar PDF
@@ -190,6 +191,10 @@ export const PatientFilesPanel = ({
                 <Button type="button" variant="secondary" onClick={() => imageInputRef.current?.click()} disabled={!canUpload}>
                   <FileImage className="mr-2 h-4 w-4" />
                   Enviar imagens
+                </Button>
+                <Button type="button" variant="outline" onClick={() => docInputRef.current?.click()} disabled={!canUpload}>
+                  <FileText className="mr-2 h-4 w-4 text-blue-500" />
+                  Enviar DOC/DOCX
                 </Button>
               </div>
 
@@ -207,6 +212,17 @@ export const PatientFilesPanel = ({
                 ref={imageInputRef}
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  handleFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <input
+                ref={docInputRef}
+                type="file"
+                accept="application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx"
                 multiple
                 className="hidden"
                 onChange={(event) => {

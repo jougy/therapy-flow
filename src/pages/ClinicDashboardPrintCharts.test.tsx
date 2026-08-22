@@ -1,93 +1,109 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import ClinicDashboard from "@/pages/ClinicDashboard";
+
+const renderWithClient = (ui: React.ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+      },
+    },
+  });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+};
 
 // Mock Supabase client
 vi.mock("@/integrations/supabase/client", () => {
-  const sampleSessions = [
-    {
-      id: "s1",
-      patient_id: "p1",
-      professional_id: "prof1",
-      session_date: new Date().toISOString(),
-      payment_status: "pago",
-      payment_method: "pix",
-      total_cents: 15000,
+  const sampleAnalytics = {
+    year: new Date().getFullYear(),
+    totalSessions: 2,
+    paidSessions: 1,
+    canceledSessions: 0,
+    cancellationRate: 0,
+    todaySessions: 2,
+    weekSessions: 2,
+    monthSessions: 2,
+    yearSessions: 2,
+    financialTotals: {
+      paid: 15000,
+      credit: 0,
+      open: 12000,
+      forecastRevenueCents: 27000,
     },
-    {
-      id: "s2",
-      patient_id: "p1",
-      professional_id: "prof1",
-      session_date: new Date().toISOString(),
-      payment_status: "em_aberto",
-      payment_method: "cartao_credito",
-      total_cents: 12000,
+    paymentStatusCounts: {
+      paid: 1,
+      pending: 1,
+      credit: 0,
+      debt: 0,
+      cortesia: 0,
+      notCharged: 0,
     },
-  ];
-
-  const samplePatients = [
-    { id: "p1", name: "Paciente Teste", status: "ativo", updated_at: new Date().toISOString() },
-  ];
-
-  const sampleGroups = [
-    {
-      id: "g1",
-      name: "Terapia Cognitiva",
-      patient_id: "p1",
-      status: "ativo",
-      color: "blue",
-      clinic_group_color_slots: { color_hex: "#0ea5e9" },
+    paymentMethodCounts: {
+      pix: 1,
+      cartao_credito: 1,
     },
-  ];
-
-  const sampleAgendaEvents = [
-    {
-      id: "a1",
-      patient_id: "p1",
-      title: "Sessão Semanal",
-      event_type: "session",
-      status: "confirmed",
-      scheduled_for: new Date().toISOString(),
+    patientStatusCounts: {
+      ativo: 1,
     },
-  ];
-
-  const sampleProfiles = [
-    {
-      id: "prof1",
-      full_name: "Dra. Especialista",
-      email: "especialista@clinica.com",
-      job_title: "Psicóloga",
+    totalPatients: 1,
+    recurringPatients: 0,
+    agendaCounts: {
+      late: 0,
+      confirmed: 1,
+      awaiting: 0,
+      total: 1,
     },
-  ];
+    monthlyRevenue: [
+      { label: "Jan", pago: 150, emAberto: 120, atendimentos: 2 },
+      { label: "Fev", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Mar", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Abr", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Mai", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Jun", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Jul", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Ago", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Set", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Out", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Nov", pago: 0, emAberto: 0, atendimentos: 0 },
+      { label: "Dez", pago: 0, emAberto: 0, atendimentos: 0 },
+    ],
+    last30Days: Array.from({ length: 30 }, (_, i) => ({
+      label: `${String(i + 1).padStart(2, "0")}/08`,
+      atendimentos: i === 29 ? 2 : 0,
+    })),
+    weekdayDistribution: [
+      { label: "Dom", atendimentos: 0 },
+      { label: "Seg", atendimentos: 1 },
+      { label: "Ter", atendimentos: 1 },
+      { label: "Qua", atendimentos: 0 },
+      { label: "Qui", atendimentos: 0 },
+      { label: "Sex", atendimentos: 0 },
+      { label: "Sáb", atendimentos: 0 },
+    ],
+    topGroups: [
+      { name: "Terapia Cognitiva", color: "#0ea5e9", total: 2 },
+    ],
+    collaborators: [
+      { label: "Dra. Especialista", total: 2, receita: 150 },
+    ],
+  };
 
   return {
     supabase: {
-      from: (table: string) => ({
-        select: () => {
-          if (table === "patients") {
-            return { order: () => Promise.resolve({ data: samplePatients, error: null }) };
-          }
-          if (table === "patient_groups") {
-            return Promise.resolve({ data: sampleGroups, error: null });
-          }
-          if (table === "sessions") {
-            return Promise.resolve({ data: sampleSessions, error: null });
-          }
-          if (table === "agenda_events") {
-            return { order: () => Promise.resolve({ data: sampleAgendaEvents, error: null }) };
-          }
-          if (table === "clinic_memberships") {
-            return { eq: () => Promise.resolve({ data: [{ user_id: "prof1" }], error: null }) };
-          }
-          if (table === "profiles") {
-            return {
-              eq: () => Promise.resolve({ data: sampleProfiles, error: null }),
-              in: () => Promise.resolve({ data: sampleProfiles, error: null }),
-            };
-          }
-          return Promise.resolve({ data: [], error: null });
-        },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => Promise.resolve({ data: [], error: null })),
+        })),
+      })),
+      rpc: vi.fn((fnName: string) => {
+        if (fnName === "get_clinic_dashboard_analytics") {
+          return Promise.resolve({ data: sampleAnalytics, error: null });
+        }
+        return Promise.resolve({ data: null, error: null });
       }),
     },
   };
@@ -113,7 +129,7 @@ vi.mock("@/contexts/FeatureFlagsContext", () => ({
 
 describe("ClinicDashboard - Print Stats SVG Rendering Verification", () => {
   it("renders #print-clinic-stats-root with non-zero width and height SVG elements for all Recharts charts", async () => {
-    render(
+    renderWithClient(
       <MemoryRouter>
         <ClinicDashboard />
       </MemoryRouter>

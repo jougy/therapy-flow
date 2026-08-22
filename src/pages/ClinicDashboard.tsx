@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -16,26 +16,33 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, ArrowLeft, BarChart3, CalendarClock, CreditCard, Loader2, PieChart, Printer, TrendingUp, UsersRound, Wallet } from "lucide-react";
+import {
+  Activity,
+  ArrowLeft,
+  BarChart3,
+  CalendarClock,
+  ClipboardList,
+  CreditCard,
+  Printer,
+  TrendingUp,
+  UsersRound,
+  Wallet,
+} from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
-import { logRuntimeError } from "@/lib/runtime-debug";
-import { getLegacyGroupHex } from "@/lib/group-colors";
 import { PATIENT_STATUS_OPTIONS } from "@/lib/patient-statuses";
-import { formatMoneyCents, getPaymentMethodLabel, MAX_SESSION_AMOUNT_CENTS, PAYMENT_METHOD_OPTIONS } from "@/lib/session-operations";
-import type { HomeAgendaEventRecord, HomePatientGroupRecord, HomePatientRecord, HomeSessionRecord } from "@/lib/home-patients-view";
+import { PAYMENT_METHOD_OPTIONS, MAX_SESSION_AMOUNT_CENTS, formatMoneyCents } from "@/lib/session-operations";
 import { ClinicStatsPrintModal, STATS_BLOCKS, type StatsBlockId } from "@/components/ClinicStatsPrintModal";
-
-type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
-type ProfileRow = Pick<Database["public"]["Tables"]["profiles"]["Row"], "email" | "full_name" | "id" | "job_title" | "public_code" | "social_name">;
-type PatientGroupWithColorSlot = PatientGroupRow & {
-  clinic_group_color_slots?: { color_hex: string | null } | null;
-};
+import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
+import {
+  useClinicDashboardAnalyticsQuery,
+  useInvalidateClinicData,
+  DEFAULT_CLINIC_ANALYTICS,
+} from "@/hooks/queries/useClinicDataQueries";
 
 type Segment = {
   color: string;
@@ -58,9 +65,6 @@ const colors = {
   zinc: "#a1a1aa",
 };
 
-const monthLabels = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const weekdayLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-
 const sanitizeCents = (value: number | null | undefined) => {
   if (!Number.isFinite(value ?? 0)) {
     return 0;
@@ -71,32 +75,7 @@ const sanitizeCents = (value: number | null | undefined) => {
 
 const formatMoney = (cents: number) => formatMoneyCents(sanitizeCents(cents));
 
-const toLocalDate = (value: string | Date) => {
-  const date = typeof value === "string" ? new Date(value) : value;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-};
-
-const getDayKey = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-
-const getStartOfWeek = (reference: Date) => {
-  const result = toLocalDate(reference);
-  const weekday = result.getDay();
-  const diff = weekday === 0 ? -6 : 1 - weekday;
-  result.setDate(result.getDate() + diff);
-  return result;
-};
-
-const addDays = (date: Date, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
 const formatPercentage = (value: number) => `${Math.round(Number.isFinite(value) ? value : 0)}%`;
-
-const resolveGroupColor = (group: PatientGroupWithColorSlot) =>
-  group.clinic_group_color_slots?.color_hex ?? getLegacyGroupHex(group.color);
 
 const statusColor = (status: string) =>
   status === "ativo" ? colors.emerald :
@@ -119,7 +98,7 @@ const paymentMethodColor = (method: string) =>
 const compactNumber = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 const dashboardSections: Array<{ icon: typeof TrendingUp; label: string; value: DashboardSection }> = [
   { icon: Activity, label: "Visão geral", value: "overview" },
-  { icon: Wallet, label: "Financeiro", value: "financial" },
+  { icon: Wallet, label: "Financial", value: "financial" },
   { icon: CalendarClock, label: "Agenda", value: "agenda" },
   { icon: UsersRound, label: "Pacientes", value: "patients" },
   { icon: BarChart3, label: "Equipe", value: "team" },
@@ -280,373 +259,146 @@ const MetricCard = ({
 const mobileSectionClass = (section: DashboardSection, activeSection: DashboardSection) =>
   section === activeSection ? "grid" : "hidden md:grid";
 
+const DashboardSkeleton = () => (
+  <main className="mx-auto flex w-full max-w-screen-2xl flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-28 pt-4 sm:p-6 lg:px-8">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-72" />
+      </div>
+      <div className="flex gap-2">
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="h-9 w-24" />
+      </div>
+    </div>
+    <div className="grid gap-3 lg:grid-cols-2">
+      <Skeleton className="h-44 w-full lg:col-span-2" />
+      <Skeleton className="h-44 w-full" />
+      <Skeleton className="h-44 w-full" />
+      <Skeleton className="h-44 w-full" />
+      <Skeleton className="h-44 w-full" />
+    </div>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <Skeleton key={i} className="h-28 w-full" />
+      ))}
+    </div>
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Skeleton className="h-80 w-full" />
+      <Skeleton className="h-80 w-full" />
+    </div>
+  </main>
+);
+
 const ClinicDashboard = () => {
   const navigate = useNavigate();
+  const { clinicKey } = useParams<{ clinicKey?: string }>();
   const { can, clinic, clinicId, profile, user } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
-  const [patients, setPatients] = useState<HomePatientRecord[]>([]);
-  const [groups, setGroups] = useState<HomePatientGroupRecord[]>([]);
-  const [sessions, setSessions] = useState<HomeSessionRecord[]>([]);
-  const [agendaEvents, setAgendaEvents] = useState<HomeAgendaEventRecord[]>([]);
-  const [profiles, setProfiles] = useState<ProfileRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const clinicHomePath = clinicKey ? `/clinica/${clinicKey}` : clinic?.slug ? `/clinica/${clinic.slug}` : "";
+
+  const [selectedYear] = useState<number>(() => new Date().getFullYear());
+  const { data: analyticsData = DEFAULT_CLINIC_ANALYTICS, isLoading: loading } = useClinicDashboardAnalyticsQuery(
+    clinicId,
+    selectedYear,
+    Boolean(user)
+  );
+  const invalidateClinicData = useInvalidateClinicData();
+
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
   const canViewFinancialData = can("treasury.manage");
 
-  const fetchData = useCallback(async () => {
-    if (!user) {
-      return;
-    }
-
-    setLoading(true);
-
-    const [patientsRes, groupsRes, sessionsRes, agendaEventsRes, membershipsRes, allProfilesRes] = await Promise.all([
-      supabase.from("patients").select("*").order("updated_at", { ascending: false }),
-      supabase.from("patient_groups").select("*, clinic_group_color_slots(color_hex)"),
-      supabase.from("sessions").select("*"),
-      supabase
-        .from("agenda_events")
-        .select("id, patient_id, title, event_type, status, scheduled_for")
-        .order("scheduled_for", { ascending: true }),
-      clinicId
-        ? supabase.from("clinic_memberships").select("user_id").eq("clinic_id", clinicId)
-        : supabase.from("clinic_memberships").select("user_id"),
-      supabase.from("profiles").select("id, full_name, social_name, email, job_title, public_code"),
-    ]);
-
-    const sessionsData = (sessionsRes.data ?? []) as HomeSessionRecord[];
-    const membershipUserIds = Array.from(
-      new Set([
-        ...(membershipsRes.data ?? []).map((m) => m.user_id),
-        ...sessionsData.flatMap((s) => [s.provider_id, s.user_id]),
-        user?.id,
-      ].filter(Boolean) as string[])
-    );
-
-    const inProfilesRes = membershipUserIds.length > 0
-      ? await supabase
-          .from("profiles")
-          .select("id, full_name, social_name, email, job_title, public_code")
-          .in("id", membershipUserIds)
-      : { data: [], error: null };
-
-    if (patientsRes.error || groupsRes.error || sessionsRes.error || agendaEventsRes.error || allProfilesRes.error) {
-      logRuntimeError("clinic_dashboard.fetch", patientsRes.error ?? groupsRes.error ?? sessionsRes.error ?? agendaEventsRes.error ?? allProfilesRes.error, {
-        clinicId,
-      });
-    }
-
-    const mergedProfileMap = new Map<string, ProfileRow>();
-    ((allProfilesRes.data ?? []) as ProfileRow[]).forEach((p) => {
-      if (p.id) mergedProfileMap.set(p.id, p);
-    });
-    ((inProfilesRes.data ?? []) as ProfileRow[]).forEach((p) => {
-      if (p.id) mergedProfileMap.set(p.id, p);
-    });
-
-    setPatients((patientsRes.data ?? []) as HomePatientRecord[]);
-    setGroups(((groupsRes.data ?? []) as PatientGroupWithColorSlot[]).map((group) => ({
-      color: resolveGroupColor(group),
-      id: group.id,
-      name: group.name,
-      patient_id: group.patient_id,
-      status: group.status,
-    })));
-    setSessions(sessionsData);
-    setAgendaEvents((agendaEventsRes.data ?? []) as HomeAgendaEventRecord[]);
-    setProfiles(Array.from(mergedProfileMap.values()));
-    setLoading(false);
-  }, [clinicId, user]);
-
-  useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
-
   const analytics = useMemo(() => {
-    const now = new Date();
-    const today = toLocalDate(now);
-    const startOfWeek = getStartOfWeek(now);
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const groupById = new Map(groups.filter((group) => group.id).map((group) => [group.id as string, group]));
-    const patientGroupsByPatientId = new Map<string, HomePatientGroupRecord[]>();
-    const profileById = new Map<string, ProfileRow>();
-    profiles.forEach((profile) => {
-      if (profile.id) profileById.set(profile.id, profile);
-      if (profile.email) {
-        profileById.set(profile.email, profile);
-        profileById.set(profile.email.toLowerCase(), profile);
-      }
-      if (profile.public_code) profileById.set(profile.public_code, profile);
-    });
+    const paymentMethodSegments = PAYMENT_METHOD_OPTIONS.map((option) => ({
+      color: paymentMethodColor(option.value),
+      label: option.label,
+      value: analyticsData.paymentMethodCounts[option.value] ?? 0,
+    })).filter((segment) => segment.value > 0);
 
-    groups.forEach((group) => {
-      patientGroupsByPatientId.set(group.patient_id, [...(patientGroupsByPatientId.get(group.patient_id) ?? []), group]);
-    });
-
-    const getSessionGroup = (session: HomeSessionRecord) => {
-      if (session.group_id) {
-        return groupById.get(session.group_id) ?? null;
-      }
-
-      return patientGroupsByPatientId.get(session.patient_id)?.[0] ?? null;
-    };
-
-    const financialTotals = sessions.reduce(
-      (totals, session) => {
-        if (session.payment_status === "cortesia") {
-          return totals;
-        }
-
-        const charged = sanitizeCents(session.amount_charged_cents);
-        const paid = sanitizeCents(session.amount_paid_cents);
-
-        totals.paid += Math.min(paid, charged);
-        totals.credit += Math.max(0, paid - charged);
-        totals.open += Math.max(0, charged - paid);
-
-        return totals;
+    const paymentStatusSegments = [
+      { color: colors.blue, label: "Crédito", value: analyticsData.paymentStatusCounts.credit ?? 0 },
+      { color: colors.rose, label: "Devendo", value: analyticsData.paymentStatusCounts.debt ?? 0 },
+      { color: colors.amber, label: "Pendente", value: analyticsData.paymentStatusCounts.pending ?? 0 },
+      { color: colors.emerald, label: "Pago", value: analyticsData.paymentStatusCounts.paid ?? 0 },
+      {
+        color: colors.violet,
+        label: "Cortesia",
+        value: (analyticsData.paymentStatusCounts.cortesia ?? analyticsData.paymentStatusCounts.courtesy) ?? 0,
       },
-      { credit: 0, open: 0, paid: 0 },
-    );
-    const forecastRevenueCents = financialTotals.paid + financialTotals.credit + financialTotals.open;
-    const paidSessions = sessions.filter((session) => {
-      const charged = sanitizeCents(session.amount_charged_cents);
-      const paid = sanitizeCents(session.amount_paid_cents);
-      return charged > 0 && paid >= charged;
-    }).length;
-    const canceledSessions = sessions.filter((session) => session.status === "cancelado").length;
-    const activeAgendaEvents = agendaEvents.filter((event) => event.status !== "cancelado" && Number.isFinite(new Date(event.scheduled_for).getTime()));
-    const lateAgendaEvents = activeAgendaEvents.filter((event) => new Date(event.scheduled_for).getTime() < now.getTime()).length;
-    const confirmedAgendaEvents = activeAgendaEvents.filter((event) => new Date(event.scheduled_for).getTime() >= now.getTime() && event.status === "confirmado").length;
-    const awaitingAgendaEvents = activeAgendaEvents.filter((event) => new Date(event.scheduled_for).getTime() >= now.getTime() && event.status !== "confirmado").length;
-    const paymentStatusCounts = sessions.reduce(
-      (counts, session) => {
-        const charged = sanitizeCents(session.amount_charged_cents);
-        const paid = sanitizeCents(session.amount_paid_cents);
+      { color: colors.slate, label: "Não cobrado", value: analyticsData.paymentStatusCounts.notCharged ?? 0 },
+    ].filter((segment) => segment.value > 0);
 
-        if (session.payment_status === "cortesia") counts.courtesy += 1;
-        else if (paid > charged) counts.credit += 1;
-        else if (charged > 0 && paid > 0 && paid < charged) counts.debt += 1;
-        else if (charged > 0 && paid <= 0) counts.pending += 1;
-        else if (charged > 0 && paid >= charged) counts.paid += 1;
-        else counts.notCharged += 1;
-
-        return counts;
-      },
-      { courtesy: 0, credit: 0, debt: 0, notCharged: 0, paid: 0, pending: 0 },
-    );
-    const paymentMethodCounts = sessions.reduce<Record<string, number>>((counts, session) => {
-      const method = session.payment_status === "cortesia"
-        ? "cortesia"
-        : typeof session.payment_method === "string" ? session.payment_method : "nao_informado";
-      counts[method] = (counts[method] ?? 0) + 1;
-      return counts;
-    }, {});
     const patientStatusSegments = PATIENT_STATUS_OPTIONS.filter((option) => option.value !== "pagamento_pendente")
       .map((option) => ({
         color: statusColor(option.value),
         label: option.label,
-        value: patients.filter((patient) => patient.status === option.value).length,
+        value: analyticsData.patientStatusCounts[option.value] ?? 0,
       }))
       .filter((segment) => segment.value > 0);
-    const paymentMethodSegments = PAYMENT_METHOD_OPTIONS.map((option) => ({
-      color: paymentMethodColor(option.value),
-      label: option.label,
-      value: paymentMethodCounts[option.value] ?? 0,
-    })).filter((segment) => segment.value > 0);
-    const paymentStatusSegments = [
-      { color: colors.blue, label: "Crédito", value: paymentStatusCounts.credit },
-      { color: colors.rose, label: "Devendo", value: paymentStatusCounts.debt },
-      { color: colors.amber, label: "Pendente", value: paymentStatusCounts.pending },
-      { color: colors.emerald, label: "Pago", value: paymentStatusCounts.paid },
-      { color: colors.violet, label: "Cortesia", value: paymentStatusCounts.courtesy },
-      { color: colors.slate, label: "Não cobrado", value: paymentStatusCounts.notCharged },
-    ].filter((segment) => segment.value > 0);
-
-    const monthlyRevenue = monthLabels.map((label, month) => {
-      const monthSessions = sessions.filter((session) => {
-        const date = new Date(session.session_date);
-        return date.getFullYear() === now.getFullYear() && date.getMonth() === month;
-      });
-      const totals = monthSessions.reduce(
-        (acc, session) => {
-          if (session.payment_status === "cortesia") {
-            return acc;
-          }
-          const charged = sanitizeCents(session.amount_charged_cents);
-          const paid = sanitizeCents(session.amount_paid_cents);
-          acc.pago += Math.min(paid, charged) / 100;
-          acc.emAberto += Math.max(0, charged - paid) / 100;
-          return acc;
-        },
-        { emAberto: 0, pago: 0 },
-      );
-
-      return {
-        ...totals,
-        atendimentos: monthSessions.length,
-        label,
-      };
-    });
-    const last30Days = Array.from({ length: 30 }, (_, index) => {
-      const date = addDays(today, index - 29);
-      const key = getDayKey(date);
-      const daySessions = sessions.filter((session) => getDayKey(toLocalDate(session.session_date)) === key);
-
-      return {
-        atendimentos: daySessions.length,
-        label: `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`,
-      };
-    });
-    const weekdayDistribution = weekdayLabels.map((label, weekday) => ({
-      atendimentos: sessions.filter((session) => new Date(session.session_date).getDay() === weekday).length,
-      label,
-    }));
-    const groupCounts = new Map<string, { color: string; name: string; total: number }>();
-    sessions.forEach((session) => {
-      const group = getSessionGroup(session);
-      if (!group) {
-        return;
-      }
-      const current = groupCounts.get(group.name) ?? { color: group.color, name: group.name, total: 0 };
-      current.total += 1;
-      groupCounts.set(group.name, current);
-    });
-    const topGroups = Array.from(groupCounts.values()).sort((left, right) => right.total - left.total).slice(0, 8);
-    const isClinicName = (name?: string | null) => {
-      if (!name) return false;
-      const normalized = name.toLowerCase().trim();
-      return (
-        normalized.includes("instituo") ||
-        normalized.includes("instituto") ||
-        normalized.includes("clínica") ||
-        normalized.includes("clinica") ||
-        (clinic?.name && normalized === clinic.name.toLowerCase().trim())
-      );
-    };
-
-    const getProfileDisplayName = (p?: ProfileRow | null) => {
-      if (!p) return "";
-      const full = p.full_name?.trim();
-      const social = p.social_name?.trim();
-      const email = p.email?.trim();
-
-      if (full && !isClinicName(full)) {
-        return full;
-      }
-      if (social && !isClinicName(social)) {
-        return social;
-      }
-      if (p.job_title) {
-        return `${p.job_title}${p.public_code ? ` (${p.public_code})` : ""}`;
-      }
-      return full || social || email || "";
-    };
-
-    const collaboratorCounts = new Map<string, { label: string; receita: number; total: number }>();
-    sessions.forEach((session) => {
-      const collaboratorId = session.provider_id || session.user_id || "desconhecido";
-      const profile =
-        profileById.get(collaboratorId) ||
-        (session.provider_id ? profileById.get(session.provider_id) : undefined) ||
-        (session.user_id ? profileById.get(session.user_id) : undefined);
-      const rawName = getProfileDisplayName(profile);
-      const label = rawName
-        ? rawName
-        : profile?.job_title && profile?.public_code
-          ? `${profile.job_title} (${profile.public_code})`
-          : profile?.public_code
-            ? `Colaborador ${profile.public_code}`
-            : collaboratorId === user?.id
-              ? (user?.email || "Eu (Usuário Atual)")
-              : "";
-
-      const current = collaboratorCounts.get(collaboratorId) ?? {
-        label: "",
-        receita: 0,
-        total: 0,
-      };
-      if (label && (!current.label || current.label.startsWith("Colaborador "))) {
-        current.label = label;
-      }
-      const charged = sanitizeCents(session.amount_charged_cents);
-      const paid = sanitizeCents(session.amount_paid_cents);
-      current.total += 1;
-      current.receita += Math.min(paid, charged) / 100;
-      collaboratorCounts.set(collaboratorId, current);
-    });
-    const sortedCollaboratorList = Array.from(collaboratorCounts.values()).sort((left, right) => right.total - left.total).slice(0, 8);
-    const collaborators = sortedCollaboratorList.map((collab, index) => ({
-      ...collab,
-      label: collab.label || `Colaborador ${index + 1}`,
-    }));
-    const monthSessions = sessions.filter((session) => toLocalDate(session.session_date).getTime() >= startOfMonth.getTime());
-    const yearSessions = sessions.filter((session) => toLocalDate(session.session_date).getTime() >= startOfYear.getTime());
-    const recurringPatients = patients.filter((patient) => (patient.recurring_weekdays ?? []).length > 0).length;
 
     return {
       agendaChart: {
         formatSegmentValue: (value: number) => String(value),
         segments: [
-          { color: colors.rose, label: "Atrasado", value: lateAgendaEvents },
-          { color: colors.emerald, label: "Confirmado", value: confirmedAgendaEvents },
-          { color: colors.amber, label: "Aguardando confirmação", value: awaitingAgendaEvents },
+          { color: colors.rose, label: "Atrasado", value: analyticsData.agendaCounts.late },
+          { color: colors.emerald, label: "Confirmado", value: analyticsData.agendaCounts.confirmed },
+          { color: colors.amber, label: "Aguardando confirmação", value: analyticsData.agendaCounts.awaiting },
         ].filter((segment) => segment.value > 0),
-        subtitle: `${activeAgendaEvents.length} agendamento${activeAgendaEvents.length !== 1 ? "s" : ""} ativo${activeAgendaEvents.length !== 1 ? "s" : ""}`,
+        subtitle: `${analyticsData.agendaCounts.total} agendamento${analyticsData.agendaCounts.total !== 1 ? "s" : ""} ativo${analyticsData.agendaCounts.total !== 1 ? "s" : ""}`,
         title: "Agenda de atendimentos",
-        value: String(activeAgendaEvents.length),
+        value: String(analyticsData.agendaCounts.total),
       },
-      cancellationRate: sessions.length > 0 ? (canceledSessions / sessions.length) * 100 : 0,
+      cancellationRate: analyticsData.cancellationRate,
       cards: [
-        { detail: "atendimentos registrados", icon: CalendarClock, title: "Total de atendimentos", value: String(sessions.length) },
-        { detail: "atendimentos quitados", icon: CreditCard, title: "Pagamentos concluídos", value: String(paidSessions) },
-        { detail: `${canceledSessions} cancelado${canceledSessions !== 1 ? "s" : ""}`, icon: BarChart3, title: "Índice de cancelamento", value: formatPercentage(sessions.length > 0 ? (canceledSessions / sessions.length) * 100 : 0) },
-        { detail: "pacientes com recorrência configurada", icon: UsersRound, title: "Recorrência", value: `${formatPercentage(patients.length > 0 ? (recurringPatients / patients.length) * 100 : 0)}` },
+        { detail: "atendimentos registrados", icon: CalendarClock, title: "Total de atendimentos", value: String(analyticsData.totalSessions) },
+        { detail: "atendimentos quitados", icon: CreditCard, title: "Pagamentos concluídos", value: String(analyticsData.paidSessions) },
+        { detail: `${analyticsData.canceledSessions} cancelado${analyticsData.canceledSessions !== 1 ? "s" : ""}`, icon: BarChart3, title: "Índice de cancelamento", value: formatPercentage(analyticsData.cancellationRate) },
+        { detail: "pacientes com recorrência configurada", icon: UsersRound, title: "Recorrência", value: formatPercentage(analyticsData.totalPatients > 0 ? (analyticsData.recurringPatients / analyticsData.totalPatients) * 100 : 0) },
       ],
-      collaborators,
-      forecastRevenueCents,
-      last30Days,
-      monthSessions: monthSessions.length,
-      monthlyRevenue,
+      collaborators: analyticsData.collaborators,
+      forecastRevenueCents: analyticsData.financialTotals.forecastRevenueCents,
+      last30Days: analyticsData.last30Days,
+      monthSessions: analyticsData.monthSessions,
+      monthlyRevenue: analyticsData.monthlyRevenue,
       patientStatusChart: {
         segments: patientStatusSegments,
-        subtitle: `${patients.length} paciente${patients.length !== 1 ? "s" : ""} no cadastro`,
+        subtitle: `${analyticsData.totalPatients} paciente${analyticsData.totalPatients !== 1 ? "s" : ""} no cadastro`,
         title: "Pacientes por status",
-        value: String(patients.length),
+        value: String(analyticsData.totalPatients),
       },
       paymentChart: {
         formatSegmentValue: formatMoney,
         segments: [
-          { color: colors.emerald, label: "Pago", value: financialTotals.paid },
-          { color: colors.blue, label: "Crédito", value: financialTotals.credit },
-          { color: colors.rose, label: "Em aberto", value: financialTotals.open },
+          { color: colors.emerald, label: "Pago", value: analyticsData.financialTotals.paid },
+          { color: colors.blue, label: "Crédito", value: analyticsData.financialTotals.credit },
+          { color: colors.rose, label: "Em aberto", value: analyticsData.financialTotals.open },
         ].filter((segment) => segment.value > 0),
-        subtitle: `Pago ${formatMoney(financialTotals.paid)} · crédito ${formatMoney(financialTotals.credit)} · em aberto ${formatMoney(financialTotals.open)}`,
+        subtitle: `Pago ${formatMoney(analyticsData.financialTotals.paid)} · crédito ${formatMoney(analyticsData.financialTotals.credit)} · em aberto ${formatMoney(analyticsData.financialTotals.open)}`,
         title: "Receita registrada",
-        value: formatMoney(forecastRevenueCents),
+        value: formatMoney(analyticsData.financialTotals.forecastRevenueCents),
       },
       paymentMethodChart: {
         formatSegmentValue: (value: number) => String(value),
         segments: paymentMethodSegments,
-        subtitle: `${sessions.length} atendimento${sessions.length !== 1 ? "s" : ""} registrado${sessions.length !== 1 ? "s" : ""}`,
+        subtitle: `${analyticsData.totalSessions} atendimento${analyticsData.totalSessions !== 1 ? "s" : ""} registrado${analyticsData.totalSessions !== 1 ? "s" : ""}`,
         title: "Método de pagamento",
-        value: String(sessions.length),
+        value: String(analyticsData.totalSessions),
       },
       paymentStatusChart: {
         formatSegmentValue: (value: number) => String(value),
         segments: paymentStatusSegments,
-        subtitle: `${sessions.length} atendimento${sessions.length !== 1 ? "s" : ""} com status financeiro`,
+        subtitle: `${analyticsData.totalSessions} atendimento${analyticsData.totalSessions !== 1 ? "s" : ""} com status financeiro`,
         title: "Status de pagamento",
-        value: String(sessions.length),
+        value: String(analyticsData.totalSessions),
       },
-      topGroups,
-      todaySessions: sessions.filter((session) => toLocalDate(session.session_date).getTime() === today.getTime()).length,
-      weekSessions: sessions.filter((session) => toLocalDate(session.session_date).getTime() >= startOfWeek.getTime()).length,
-      weekdayDistribution,
-      yearSessions: yearSessions.length,
+      topGroups: analyticsData.topGroups,
+      todaySessions: analyticsData.todaySessions,
+      weekSessions: analyticsData.weekSessions,
+      weekdayDistribution: analyticsData.weekdayDistribution,
+      yearSessions: analyticsData.yearSessions,
+      totalSessions: analyticsData.totalSessions,
     };
-  }, [agendaEvents, groups, patients, profiles, sessions]);
+  }, [analyticsData]);
 
   const canPrintStats = can("system.print") && isFeatureEnabled("print_general") && isFeatureEnabled("print_clinic_stats");
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -687,11 +439,7 @@ const ClinicDashboard = () => {
   }
 
   if (loading) {
-    return (
-      <main className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </main>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (
@@ -702,12 +450,24 @@ const ClinicDashboard = () => {
             <ArrowLeft className="h-4 w-4" />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Estatísticas completas</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Estatísticas completas</h1>
+            <ComponentHelpButton helpId="clinic-kpis-block" size="sm" />
+          </div>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             Analytics operacionais, financeiros e clínicos para acompanhar a saúde da clínica com mais profundidade.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-fit gap-2"
+            onClick={() => navigate(`${clinicHomePath}/configuracoes?secao=forms`)}
+          >
+            <ClipboardList className="h-4 w-4 text-primary" />
+            Formulários & Anamneses
+          </Button>
           {canPrintStats && (
             <Button
               type="button"
@@ -719,14 +479,14 @@ const ClinicDashboard = () => {
               Imprimir
             </Button>
           )}
-          <Button type="button" variant="outline" className="w-fit gap-2" onClick={() => void fetchData()}>
+          <Button type="button" variant="outline" className="w-fit gap-2" onClick={() => void invalidateClinicData(clinicId, ["analytics"])}>
             <TrendingUp className="h-4 w-4" />
             Atualizar
           </Button>
         </div>
       </header>
 
-      <section className={`${mobileSectionClass("overview", activeSection)} min-w-0 gap-3 lg:grid-cols-2`}>
+      <section data-tutorial="clinic-kpis-block" className={`${mobileSectionClass("overview", activeSection)} min-w-0 gap-3 lg:grid-cols-2`}>
         <div className="lg:col-span-2">
           <DashboardProportionCard {...analytics.paymentChart} />
         </div>
@@ -908,7 +668,7 @@ const ClinicDashboard = () => {
           <CardContent className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border bg-muted/20 p-4">
               <p className="text-sm text-muted-foreground">Ticket médio registrado</p>
-              <p className="mt-2 text-2xl font-semibold">{sessions.length > 0 ? formatMoney(Math.round(analytics.forecastRevenueCents / sessions.length)) : formatMoney(0)}</p>
+              <p className="mt-2 text-2xl font-semibold">{analytics.totalSessions > 0 ? formatMoney(Math.round(analytics.forecastRevenueCents / analytics.totalSessions)) : formatMoney(0)}</p>
             </div>
             <div className="rounded-lg border bg-muted/20 p-4">
               <p className="text-sm text-muted-foreground">Cancelamento</p>
@@ -1149,7 +909,7 @@ const ClinicDashboard = () => {
                 <CardContent className="p-2.5 pt-1 grid gap-2 grid-cols-2">
                   <div className="rounded border bg-white p-2">
                     <p className="text-[10px] text-slate-500">Ticket médio</p>
-                    <p className="text-sm font-bold text-slate-900 mt-0.5">{sessions.length > 0 ? formatMoney(Math.round(analytics.forecastRevenueCents / sessions.length)) : formatMoney(0)}</p>
+                    <p className="text-sm font-bold text-slate-900 mt-0.5">{analytics.totalSessions > 0 ? formatMoney(Math.round(analytics.forecastRevenueCents / analytics.totalSessions)) : formatMoney(0)}</p>
                   </div>
                   <div className="rounded border bg-white p-2">
                     <p className="text-[10px] text-slate-500">Cancelamento</p>
@@ -1223,4 +983,3 @@ const ClinicDashboard = () => {
 };
 
 export default ClinicDashboard;
-

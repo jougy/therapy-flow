@@ -23,6 +23,7 @@ export interface SessionFormValues {
   anamnesisTemplateId: string | null;
   complexityScore: number;
   groupId: string | null;
+  careLineIds?: string[];
   amountCharged: string;
   amountOriginal: string;
   amountPaid: string;
@@ -161,12 +162,13 @@ export const buildSessionPayload = ({
     payment_status_date: parseOptionalDateInputValue(values.paymentStatusDate),
     status: statusOverride ?? values.status,
     notes: sanitizeMultilineInput(values.notes, INPUT_LIMITS.clinicalLongText).trim() || null,
-    group_id: values.groupId || null,
+    group_id: (values.careLineIds && values.careLineIds.length > 0 ? values.careLineIds[0] : values.groupId) || null,
     provider_id: creatorUserId,
     anamnesis: {
       observacoes: sanitizeMultilineInput(values.observacoes, INPUT_LIMITS.clinicalLongText),
       queixa: sanitizeMultilineInput(values.queixa, INPUT_LIMITS.clinicalLongText),
       sintomas: sanitizeMultilineInput(values.sintomas, INPUT_LIMITS.clinicalLongText),
+      care_line_ids: values.careLineIds && values.careLineIds.length > 0 ? values.careLineIds : (values.groupId ? [values.groupId] : []),
     },
     treatment: buildTreatmentPayload({
       blocks: values.treatmentBlocks,

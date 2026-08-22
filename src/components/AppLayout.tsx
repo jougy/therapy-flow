@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { LogOut, ShieldCheck, Settings, FlaskConical, SlidersHorizontal, Smartphone, Monitor, UserCog } from "lucide-react";
+import { LogOut, ShieldCheck, Settings, FlaskConical, SlidersHorizontal, Smartphone, Monitor, UserCog, UserPlus, Star } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
@@ -20,8 +20,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
+import { UserFeedbackModal } from "@/components/UserFeedbackModal";
+import { useFeedbackTrigger } from "@/hooks/useFeedbackTrigger";
 import { SimulationFeatureFlagsModal } from "@/components/SimulationFeatureFlagsModal";
 import { SimulationRolePermissionsModal } from "@/components/SimulationRolePermissionsModal";
+import { SimulationGeneratePatientDialog } from "@/components/SimulationGeneratePatientDialog";
 import { MobileTouchSimulator } from "@/components/MobileTouchSimulator";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 import { SubscriptionPlan } from "@/integrations/supabase/types";
@@ -29,6 +32,7 @@ import { useTelemetry } from "@/hooks/useTelemetry";
 import { useAntiPrintProtection } from "@/hooks/useAntiPrintProtection";
 import { AntiPrintOverlay } from "@/components/AntiPrintOverlay";
 import { useGovernance } from "@/hooks/useGovernance";
+import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -46,6 +50,13 @@ const AppLayout = ({ children }: AppLayoutProps) => {
   
   const [flagsModalOpen, setFlagsModalOpen] = useState(false);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
+  const [generatePatientModalOpen, setGeneratePatientModalOpen] = useState(false);
+  const {
+    isOpen: feedbackModalOpen,
+    setIsOpen: setFeedbackModalOpen,
+    triggerSource: feedbackTriggerSource,
+    openManualFeedback,
+  } = useFeedbackTrigger();
   const [viewMode, setViewMode] = useState<"widescreen" | "mobile">("widescreen");
 
   const isPreviewIframe = useMemo(() => {
@@ -66,7 +77,8 @@ const AppLayout = ({ children }: AppLayoutProps) => {
   }, [location.pathname, location.search]);
 
   const isPersonalOriginSettings =
-    location.pathname === "/configuracoes" && new URLSearchParams(location.search).get("origem") === "pessoal";
+    (location.pathname.startsWith("/configuracoes") && !location.pathname.startsWith("/clinica")) ||
+    new URLSearchParams(location.search).get("origem") === "pessoal";
 
   const displayName = profile?.full_name || profile?.email || "Usuário";
   const initials = displayName
@@ -107,32 +119,43 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               onClick={() => navigate(isPersonalOriginSettings ? "/espacopessoal" : clinicHomePath)}
               aria-label={isPersonalOriginSettings ? "Ir para o espaço pessoal" : `Ir para a página inicial da clínica ${clinicBrandName}`}
             >
-              {clinic?.logo_url ? (
+              {clinic?.logo_url && !isPersonalOriginSettings ? (
                 <img src={clinic.logo_url} alt={`Logo da ${clinicBrandName}`} className="h-9 max-w-[140px] object-contain" />
               ) : (
-                <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">{clinicBrandName}</span>
+                <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">{isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}</span>
               )}
             </button>
 
             <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+              <TutorialTriggerButton />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
+                onClick={openManualFeedback}
+                aria-label="Dar feedback e avaliar a plataforma"
+                title="Avaliar a plataforma"
+              >
+                <Star className="h-4 w-4 fill-amber-400/20 text-amber-500" />
+              </Button>
               <PersonalNotificationsButton />
               <ProfileAccountButton
                 displayName={displayName}
-                subtitle={clinicBrandName}
+                subtitle={isPersonalOriginSettings ? (profile?.email || "Conta pessoal") : clinicBrandName}
                 avatarUrl={profile?.avatar_url}
                 initials={initials}
                 onClick={() => navigate(
-                  isPersonalOriginSettings
-                    ? "/configuracoes?secao=profile&origem=pessoal"
-                    : `${clinicHomePath}/configuracoes?secao=profile`
+                  isPersonalOriginSettings || !clinic?.route_key
+                    ? "/configuracoes/pessoal/perfil"
+                    : `${clinicHomePath}/configuracoes/pessoal/perfil`
                 )}
               />
-              {!isPersonalOriginSettings && (
+              {!isPersonalOriginSettings && clinic?.route_key && (
                 <Button
                   variant="ghost"
                   size="icon"
                   className="group/clinic-settings h-8 w-8 justify-center gap-0 overflow-hidden px-0 text-muted-foreground transition-[width,gap,padding,box-shadow,border-color,background-color,color,transform] duration-700 ease-in-out hover:text-foreground sm:hover:w-[144px] sm:hover:justify-start sm:hover:gap-2 sm:hover:px-3 sm:hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.08),0_8px_18px_hsl(var(--primary)/0.08)] sm:focus-visible:w-[144px] sm:focus-visible:justify-start sm:focus-visible:gap-2 sm:focus-visible:px-3"
-                  onClick={() => navigate(`${clinicHomePath}/configuracoes?secao=clinic`)}
+                  onClick={() => navigate(`${clinicHomePath}/configuracoes/perfil`)}
                   aria-label="Editar Clínica"
                 >
                   <Settings className="h-4 w-4 shrink-0 transition-transform duration-700 ease-in-out group-hover/clinic-settings:rotate-180 group-focus-visible/clinic-settings:rotate-180" />
@@ -275,6 +298,21 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                 </span>
               )}
             </Button>
+
+            {/* Gerador de Paciente Teste */}
+            {isSimulationMode && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 border-amber-300 bg-background text-amber-950 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs gap-1.5 font-medium"
+                onClick={() => setGeneratePatientModalOpen(true)}
+                title="Gerar paciente fictício com dados válidos para teste"
+              >
+                <UserPlus className="h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
+                <span>+ Paciente Teste</span>
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1 xl:pt-0">
@@ -337,10 +375,21 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         onOpenChange={setRoleModalOpen}
       />
 
+      <SimulationGeneratePatientDialog
+        open={generatePatientModalOpen}
+        onOpenChange={setGeneratePatientModalOpen}
+        clinicId={clinic?.id}
+      />
+
       {!isPreviewIframe && (
         <>
           <ReleaseNotesDialog />
           <TermsUpdatePromptModal />
+          <UserFeedbackModal
+            open={feedbackModalOpen}
+            onOpenChange={setFeedbackModalOpen}
+            triggerSource={feedbackTriggerSource}
+          />
         </>
       )}
 

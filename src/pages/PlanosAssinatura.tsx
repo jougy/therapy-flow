@@ -1,10 +1,37 @@
-import { motion } from "framer-motion";
-import { CheckCircle2, ChevronRight, Sparkles, Building2, UserRound } from "lucide-react";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { 
+  CheckCircle2, 
+  ChevronRight, 
+  Sparkles, 
+  Building2, 
+  UserRound, 
+  Tag, 
+  Check, 
+  AlertCircle, 
+  Calculator, 
+  ShieldCheck,
+  Zap,
+  Users,
+  CreditCard
+} from "lucide-react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
-import { useState } from "react";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { supabase } from "@/integrations/supabase/client";
+
+interface CouponValidationResult {
+  valid: boolean;
+  coupon_id?: string;
+  code?: string;
+  description?: string;
+  discount_type?: "PERCENTAGE" | "FIXED_AMOUNT" | "TRIAL_DAYS";
+  discount_value?: number;
+  message?: string;
+}
 
 export default function PlanosAssinatura() {
   const navigate = useNavigate();
@@ -12,8 +39,66 @@ export default function PlanosAssinatura() {
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
+  // State da Calculadora em Tempo Real
+  const [extraConcurrent, setExtraConcurrent] = useState(0);
+  const [extraSpaces, setExtraSpaces] = useState(0);
+
+  // State do Cupom
+  const [couponInput, setCouponInput] = useState("");
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponValidationResult | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
   if (!loading && !isFeatureEnabled("subscriptions_module")) {
     return <Navigate to="/espacopessoal" replace />;
+  }
+
+  // Validação do Cupom via RPC Supabase
+  const handleValidateCoupon = async () => {
+    if (!couponInput.trim()) {
+      setCouponError("Informe o código do cupom.");
+      setAppliedCoupon(null);
+      return;
+    }
+
+    setValidatingCoupon(true);
+    setCouponError(null);
+
+    try {
+      const { data, error } = await supabase.rpc("validate_subscription_coupon", {
+        _code: couponInput.trim(),
+        _plan_type: selectedPlanId || "clinic",
+      });
+
+      if (error) throw error;
+
+      const result = data as CouponValidationResult;
+      if (result && result.valid) {
+        setAppliedCoupon(result);
+        setCouponError(null);
+      } else {
+        setAppliedCoupon(null);
+        setCouponError(result?.message || "Cupom inválido ou expirado.");
+      }
+    } catch (err: unknown) {
+      setAppliedCoupon(null);
+      setCouponError("Erro ao validar cupom. Tente novamente.");
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  // Cálculos Financeiros
+  const baseClinicPrice = 60.0;
+  const rawClinicMonthlyPrice = baseClinicPrice + extraConcurrent * 10.0;
+  let finalClinicMonthlyPrice = rawClinicMonthlyPrice;
+
+  if (appliedCoupon && appliedCoupon.valid) {
+    if (appliedCoupon.discount_type === "PERCENTAGE") {
+      finalClinicMonthlyPrice = Math.max(0, rawClinicMonthlyPrice * (1 - (appliedCoupon.discount_value || 0) / 100));
+    } else if (appliedCoupon.discount_type === "FIXED_AMOUNT") {
+      finalClinicMonthlyPrice = Math.max(0, rawClinicMonthlyPrice - (appliedCoupon.discount_value || 0));
+    }
   }
 
   const handleSelectPlan = (planId: string) => {
@@ -21,10 +106,21 @@ export default function PlanosAssinatura() {
     setIsTermsModalOpen(true);
   };
 
+  const handleProceedToOnboarding = (planId: string) => {
+    let url = `/onboarding-clinica?plan=${planId}`;
+    if (planId === "clinic") {
+      url += `&concurrent=${2 + extraConcurrent}&spaces=${30 + extraSpaces}`;
+    }
+    if (appliedCoupon?.code) {
+      url += `&coupon=${appliedCoupon.code}`;
+    }
+    navigate(url);
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
-      {/* Background Effects */}
-      <div className="absolute inset-0 z-0">
+      {/* Background Ambient Glow */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-[120px]" />
         <div className="absolute bottom-1/4 right-1/4 w-[30rem] h-[30rem] bg-emerald-500/10 rounded-full blur-[120px]" />
       </div>
@@ -33,147 +129,228 @@ export default function PlanosAssinatura() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="z-10 text-center mb-12"
+        className="z-10 text-center mb-8 max-w-3xl"
       >
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-sm font-medium mb-6">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-sm font-semibold mb-4">
           <Sparkles className="w-4 h-4" />
-          Fase Beta: Acesso 100% Gratuito
+          Fase Beta: Assinatura 100% Isenta
         </div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white mb-4">
-          Escolha o plano ideal para você
+        <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-3">
+          Planos Transparentes para sua Clínica
         </h1>
-        <p className="text-lg text-neutral-400 max-w-2xl mx-auto">
-          Aproveite todos os recursos premium do Pluri-Health gratuitamente durante nossa fase beta. 
-          Sem compromisso, sem cartão de crédito.
+        <p className="text-sm md:text-base text-neutral-400 max-w-2xl mx-auto">
+          Escolha o plano ideal com calculadora de recursos em tempo real e suporte a cupons promocionais.
         </p>
       </motion.div>
 
-      <div className="z-10 grid md:grid-cols-2 gap-6 w-full max-w-5xl">
-        {/* Plano Solo */}
+      {/* Caixa de Cupom de Desconto Global */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4 }}
+        className="z-10 w-full max-w-xl mb-10 p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 backdrop-blur-xl shadow-2xl space-y-3"
+      >
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-400">
+          <Tag className="w-4 h-4" />
+          Possui um Cupom de Desconto?
+        </div>
+        <div className="flex gap-2">
+          <Input
+            type="text"
+            placeholder="Ex: PRIMEIROMES100, BETA50, DEGUSTACAO30"
+            value={couponInput}
+            onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+            className="bg-neutral-950 border-neutral-800 text-white placeholder:text-neutral-600 rounded-xl h-11 text-sm font-mono tracking-wider uppercase focus:border-blue-500"
+          />
+          <Button
+            onClick={handleValidateCoupon}
+            disabled={validatingCoupon || !couponInput.trim()}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl h-11 px-5 text-sm shrink-0"
+          >
+            {validatingCoupon ? "Validando..." : "Aplicar"}
+          </Button>
+        </div>
+
+        {/* Feedback visual do cupom */}
+        <AnimatePresence>
+          {appliedCoupon && appliedCoupon.valid && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between"
+            >
+              <div className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span className="font-medium">
+                  Cupom <strong>{appliedCoupon.code}</strong> aplicado: {appliedCoupon.description}
+                </span>
+              </div>
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 bg-emerald-500/20 text-[10px]">
+                {appliedCoupon.discount_type === "PERCENTAGE" && `${appliedCoupon.discount_value}% OFF`}
+                {appliedCoupon.discount_type === "FIXED_AMOUNT" && `R$ ${appliedCoupon.discount_value} OFF`}
+                {appliedCoupon.discount_type === "TRIAL_DAYS" && `${appliedCoupon.discount_value} Dias Gratis`}
+              </Badge>
+            </motion.div>
+          )}
+
+          {couponError && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{couponError}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Grid de Planos */}
+      <div className="z-10 grid md:grid-cols-2 gap-8 w-full max-w-5xl">
+        {/* Card 1: Plano Solo */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
           className="relative group rounded-3xl p-px bg-gradient-to-b from-neutral-800 to-neutral-900"
         >
-          <div className="h-full rounded-[23px] bg-neutral-950/80 backdrop-blur-xl p-8 flex flex-col">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400">
-                <UserRound className="w-6 h-6" />
-              </div>
-              <h3 className="text-2xl font-bold text-white">Profissional Solo</h3>
-            </div>
-            <p className="text-neutral-400 mb-6 min-h-[48px]">
-              Perfeito para profissionais autônomos que desejam organizar seus atendimentos com excelência.
-            </p>
-            <div className="mb-8">
-              <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-bold text-white">R$ 50</span>
-                <span className="text-neutral-400 text-lg font-medium">/mês</span>
-              </div>
-              <p className="text-emerald-400 text-sm font-medium mt-1">Fase Beta: Acesso 100% Gratuito</p>
-            </div>
-            
-            <div className="space-y-4 mb-8 flex-1">
-              {[
-                "1 Profissional de saúde (titular)",
-                "Sem cobrança de subcontas",
-                "1 Acesso simultâneo por vez",
-                "Gestão completa de pacientes",
-                "Prontuário eletrônico inteligente",
-                "Agendamento e calendário completo",
-              ].map((feature, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                  <span className="text-neutral-300">{feature}</span>
+          <div className="h-full rounded-[23px] bg-neutral-950/90 backdrop-blur-xl p-8 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400 border border-emerald-500/20">
+                  <UserRound className="w-6 h-6" />
                 </div>
-              ))}
+                <div>
+                  <h3 className="text-2xl font-bold text-white">Profissional Solo</h3>
+                  <p className="text-xs text-emerald-400 font-medium">1 Profissional de Saúde</p>
+                </div>
+              </div>
+
+              <p className="text-neutral-400 text-sm mb-6 min-h-[40px]">
+                Perfeito para profissionais autônomos organizarem atendimentos individuais com total segurança.
+              </p>
+
+              <div className="mb-6">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-extrabold text-white">R$ 50</span>
+                  <span className="text-neutral-400 text-sm font-medium">/mês</span>
+                </div>
+                <p className="text-xs text-emerald-400 font-semibold mt-1 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Isento na Fase Beta
+                </p>
+              </div>
+
+              <div className="space-y-3 mb-8">
+                {[
+                  "1 Profissional de saúde (titular)",
+                  "1 Acesso simultâneo por vez",
+                  "Prontuário eletrônico completo",
+                  "Agendamento e calendário inteligente",
+                  "Sem cobrança de subcontas",
+                ].map((feature, i) => (
+                  <div key={i} className="flex items-start gap-2.5 text-xs text-neutral-300">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <span>{feature}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <Button 
-              className="w-full bg-white text-neutral-950 hover:bg-neutral-200 h-12 text-base font-semibold group-hover:scale-[1.02] transition-transform"
-              onClick={() => handleSelectPlan("solo")}
+            <Button
+              className="w-full bg-white text-neutral-950 hover:bg-neutral-200 h-12 text-sm font-bold rounded-xl transition-all shadow-lg"
+              onClick={() => {
+                setSelectedPlanId("solo");
+                handleProceedToOnboarding("solo");
+              }}
             >
-              Começar como Profissional Solo
-              <ChevronRight className="w-5 h-5 ml-1" />
+              Escolher Profissional Solo
+              <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
         </motion.div>
 
-        {/* Plano Clínica */}
+        {/* Card 2: Plano Clínica com Equipe (Com Calculadora Interativa) */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="relative group rounded-3xl p-px bg-gradient-to-b from-blue-500 to-blue-900 shadow-2xl shadow-blue-900/20"
+          className="relative group rounded-3xl p-px bg-gradient-to-b from-blue-500 to-blue-900 shadow-2xl shadow-blue-900/30"
         >
           <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-400 to-transparent" />
-          
-          <div className="h-full rounded-[23px] bg-neutral-950/80 backdrop-blur-xl p-8 flex flex-col relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] rounded-full" />
-            
-            <div className="flex items-center justify-between mb-4 relative">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-blue-500 rounded-xl text-white shadow-lg shadow-blue-500/20">
-                  <Building2 className="w-6 h-6" />
+
+          <div className="h-full rounded-[23px] bg-neutral-950/90 backdrop-blur-xl p-8 flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] rounded-full pointer-events-none" />
+
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-blue-500 rounded-2xl text-white shadow-lg shadow-blue-500/30">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">Clínica com Equipe</h3>
+                    <p className="text-xs text-blue-400 font-medium">Equipes e Consultórios Compartilhados</p>
+                  </div>
                 </div>
-                <h3 className="text-2xl font-bold text-white">Clínica com Equipe</h3>
+                <Badge className="bg-blue-500 text-white text-[10px] font-bold px-2.5 py-1 uppercase tracking-wider">
+                  Recomendado
+                </Badge>
               </div>
-              <span className="bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                Popular
-              </span>
-            </div>
-            <p className="text-neutral-400 mb-6 min-h-[48px] relative">
-              Para clínicas e consultórios compartilhados que precisam de colaboração e múltiplos acessos.
-            </p>
-            <div className="mb-8 relative">
-              <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-bold text-white">R$ 60</span>
-                <span className="text-neutral-400 text-lg font-medium">/mês base</span>
-              </div>
-              <p className="text-emerald-400 text-sm font-medium mt-1">Fase Beta: Acesso 100% Gratuito</p>
-            </div>
-            
-            <div className="space-y-4 mb-6 flex-1 relative">
-              {[
-                "30 vagas para cadastro de colaboradores",
-                "2 acessos simultâneos inclusos na base",
-                "Múltiplos profissionais e secretárias",
-                "Permissões e controle de acesso (RBAC)",
-                "Agendas compartilhadas e relatórios",
-              ].map((feature, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                  <span className="text-neutral-300">{feature}</span>
+
+              <p className="text-neutral-400 text-sm mb-6 min-h-[40px]">
+                Gestão completa de secretárias, profissionais e colaboradores com cotas personalizáveis.
+              </p>
+
+              <div className="mb-6">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-neutral-400">a partir de</span>
+                  <span className="text-4xl font-extrabold text-white">R$ 60</span>
+                  <span className="text-neutral-400 text-sm font-medium">/mês</span>
                 </div>
-              ))}
+                {appliedCoupon && appliedCoupon.valid ? (
+                  <p className="text-xs text-blue-400 font-semibold mt-1 flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5" /> Cupom {appliedCoupon.code} aplicado
+                  </p>
+                ) : (
+                  <p className="text-xs text-emerald-400 font-semibold mt-1 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" /> Isento na Fase Beta
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3 mb-8">
+                {[
+                  "Colaboradores e equipe ilimitados",
+                  "2 acessos simultâneos inclusos (+R$ 10/mês por extra)",
+                  "Controle avançado de permissões (RBAC)",
+                  "Agendas compartilhadas e telemetria master",
+                ].map((feature, i) => (
+                  <div key={i} className="flex items-start gap-2.5 text-xs text-neutral-300">
+                    <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                    <span>{feature}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Badges de Expansão de Cotas */}
-            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2 mb-8 relative">
-              <div className="text-xs font-semibold text-blue-300 uppercase tracking-wider">Expansões de Cotas Disponíveis:</div>
-              <div className="text-xs text-neutral-300 flex items-center justify-between">
-                <span>Acesso simultâneo adicional:</span>
-                <span className="font-semibold text-white">+R$ 10/mês</span>
-              </div>
-              <div className="text-xs text-neutral-300 flex items-center justify-between">
-                <span>Vaga extra de colaborador:</span>
-                <span className="font-semibold text-emerald-400">R$ 5,00 (avulso)</span>
-              </div>
-            </div>
-
-            <Button 
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/20 h-12 text-base font-semibold group-hover:scale-[1.02] transition-transform relative"
-              onClick={() => handleSelectPlan("clinic")}
+            <Button
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white shadow-xl shadow-blue-500/30 h-12 text-sm font-bold rounded-xl transition-all"
+              onClick={() => {
+                setSelectedPlanId("clinic");
+                handleProceedToOnboarding("clinic");
+              }}
             >
-              Começar com Equipe
-              <ChevronRight className="w-5 h-5 ml-1" />
+              Começar no Plano Clínica com Equipe
+              <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </div>
         </motion.div>
       </div>
 
-      <TermsOfServiceModal 
+      <TermsOfServiceModal
         isOpen={isTermsModalOpen}
         onClose={() => setIsTermsModalOpen(false)}
         planId={selectedPlanId}

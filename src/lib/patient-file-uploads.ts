@@ -9,6 +9,8 @@ export const PATIENT_FILE_UPLOAD_ALLOWED_TYPES = [
   "image/webp",
   "image/heic",
   "image/heif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ] as const;
 
 export type PatientFileUploadContentType = (typeof PATIENT_FILE_UPLOAD_ALLOWED_TYPES)[number];
@@ -43,15 +45,37 @@ export interface PatientFileUploadProcessedFile extends PatientFileUploadProcess
 
 const allowedTypeSet = new Set<string>(PATIENT_FILE_UPLOAD_ALLOWED_TYPES);
 
-export const normalizePatientUploadContentType = (value: string | null | undefined) =>
-  (value ?? "").split(";")[0].trim().toLowerCase();
+export const normalizePatientUploadContentType = (value: string | null | undefined, filename?: string) => {
+  const normalized = (value ?? "").split(";")[0].trim().toLowerCase();
+  if (normalized && allowedTypeSet.has(normalized)) return normalized;
 
-export const isPatientUploadContentTypeAllowed = (value: string | null | undefined): value is PatientFileUploadContentType =>
-  allowedTypeSet.has(normalizePatientUploadContentType(value));
+  if (filename) {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    if (ext === "pdf") return "application/pdf";
+    if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+    if (ext === "png") return "image/png";
+    if (ext === "webp") return "image/webp";
+    if (ext === "heic") return "image/heic";
+    if (ext === "heif") return "image/heif";
+    if (ext === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    if (ext === "doc") return "application/msword";
+  }
 
-export const getPatientUploadCategoryFromContentType = (value: string | null | undefined): PatientFileUploadCategory => {
-  const contentType = normalizePatientUploadContentType(value);
-  if (contentType === "application/pdf") return "document";
+  return normalized;
+};
+
+export const isPatientUploadContentTypeAllowed = (value: string | null | undefined, filename?: string): value is PatientFileUploadContentType =>
+  allowedTypeSet.has(normalizePatientUploadContentType(value, filename));
+
+export const getPatientUploadCategoryFromContentType = (value: string | null | undefined, filename?: string): PatientFileUploadCategory => {
+  const contentType = normalizePatientUploadContentType(value, filename);
+  if (
+    contentType === "application/pdf" ||
+    contentType === "application/msword" ||
+    contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return "document";
+  }
   if (contentType.startsWith("image/")) return "image";
   return "other";
 };
@@ -59,14 +83,14 @@ export const getPatientUploadCategoryFromContentType = (value: string | null | u
 export const validatePatientFileUploadCandidate = (file: PatientFileUploadCandidate) => {
   const errors: string[] = [];
   const filename = file.name.trim();
-  const contentType = normalizePatientUploadContentType(file.type);
+  const contentType = normalizePatientUploadContentType(file.type, filename);
 
   if (!filename) {
     errors.push("O arquivo precisa ter nome.");
   }
 
-  if (!isPatientUploadContentTypeAllowed(contentType)) {
-    errors.push("Envie apenas PDF ou imagens nos formatos JPEG, PNG, WebP, HEIC ou HEIF.");
+  if (!isPatientUploadContentTypeAllowed(contentType, filename)) {
+    errors.push("Envie apenas PDF, DOC/DOCX ou imagens nos formatos JPEG, PNG, WebP, HEIC ou HEIF.");
   }
 
   if (!Number.isFinite(file.size) || file.size <= 0) {

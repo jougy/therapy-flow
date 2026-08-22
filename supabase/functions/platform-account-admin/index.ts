@@ -36,7 +36,10 @@ type Action =
   | "delete_subaccount"
   | "create_patient"
   | "update_patient"
-  | "delete_patient";
+  | "delete_patient"
+  | "resend_invitation"
+  | "confirm_user_email_manually"
+  | "delete_user_attempt";
 
 const accountStatuses = new Set(["active", "payment_pending", "temporarily_paused", "banned"]);
 const operationalRoles = new Set(["admin", "professional", "assistant", "estagiario"]);
@@ -479,17 +482,115 @@ const deletePatient = async (payload: Record<string, unknown>) => {
   return { patient_id: patient.id, clinic_id: patient.clinic_id };
 };
 
+const resendInvitation = async (payload: Record<string, unknown>) => {
+  const invitationId = String(payload.invitationId ?? payload.identifier ?? "").trim();
+  if (!invitationId) throw new Error("ID do convite é obrigatório.");
+
+  const { data, error } = await admin.rpc("resend_clinic_collaborator_invitation", {
+    _invitation_id: invitationId,
+  });
+  if (error) throw new Error(error.message);
+
+  const email = String(data?.email ?? "");
+  const path = String(data?.path ?? "");
+  const token = String(data?.token ?? "");
+
+  // Try generating invite or magiclink
+  const { data: linkData } = await admin.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: { redirectTo: path },
+  });
+
+  return {
+    action_link: linkData?.properties?.action_link,
+    clinic_id: data?.clinic_id,
+    email,
+    invitation_id: invitationId,
+    path,
+    remaining_cooldown: 30,
+    token,
+  };
+};
+
+const confirmUserEmailManually = async (payload: Record<string, unknown>) => {
+  const identifier = String(payload.identifier ?? payload.userId ?? payload.email ?? "").trim();
+  if (!identifier) throw new Error("Identificador do usuário ou e-mail é obrigatório.");
+
+  const isEmail = identifier.includes("@");
+  let userId = identifier;
+  let email = identifier;
+
+  if (isEmail) {
+    const { data: userList, error: listError } = await admin.auth.admin.listUsers();
+    if (listError) throw new Error(listError.message);
+    const found = userList.users.find((u) => u.email?.toLowerCase() === identifier.toLowerCase());
+    if (!found) throw new Error("Usuário não encontrado no sistema de autenticação.");
+    userId = found.id;
+    email = found.email ?? identifier;
+  } else {
+    const { data: userData, error: userError } = await admin.auth.admin.getUserById(userId);
+    if (userError || !userData.user) throw new Error("Usuário não encontrado.");
+    email = userData.user.email ?? "";
+  }
+
+  const { error: updateError } = await admin.auth.admin.updateUserById(userId, {
+    email_confirm: true,
+  });
+  if (updateError) throw new Error(updateError.message);
+
+  await admin.from("profiles").update({ updated_at: new Date().toISOString() }).eq("id", userId);
+
+  return { confirmed: true, email, user_id: userId };
+};
+
+const deleteUserAttempt = async (payload: Record<string, unknown>) => {
+  const identifier = String(payload.identifier ?? payload.email ?? payload.userId ?? "").trim();
+  if (!identifier) throw new Error("Identificador do usuário ou convite é obrigatório.");
+
+  const isEmail = identifier.includes("@");
+  let targetEmail = isEmail ? identifier.toLowerCase() : "";
+  let targetUserId = !isEmail ? identifier : "";
+
+  if (isEmail) {
+    const { data: userList } = await admin.auth.admin.listUsers();
+    const found = userList?.users?.find((u) => u.email?.toLowerCase() === targetEmail);
+    if (found) targetUserId = found.id;
+  } else {
+    const { data: userData } = await admin.auth.admin.getUserById(targetUserId);
+    if (userData?.user?.email) targetEmail = userData.user.email.toLowerCase();
+  }
+
+  if (targetEmail) {
+    await admin.from("clinic_collaborator_invitations").delete().eq("email", targetEmail);
+  }
+  if (!isEmail) {
+    await admin.from("clinic_collaborator_invitations").delete().eq("id", identifier);
+  }
+
+  if (targetUserId) {
+    await admin.from("clinic_memberships").delete().eq("user_id", targetUserId);
+    await admin.from("profiles").delete().eq("id", targetUserId);
+    await admin.auth.admin.deleteUser(targetUserId);
+  }
+
+  return { deleted: true, email: targetEmail, user_id: targetUserId };
+};
+
 const handlers: Record<Action, (payload: Record<string, unknown>) => Promise<Record<string, unknown>>> = {
+  confirm_user_email_manually: confirmUserEmailManually,
   create_owner_account: createOwnerAccount,
+  create_patient: createPatient,
   create_subaccount: createSubaccount,
+  delete_clinic_package: deleteClinicPackage,
+  delete_patient: deletePatient,
+  delete_subaccount: deleteSubaccount,
+  delete_user_attempt: deleteUserAttempt,
+  resend_invitation: resendInvitation,
   update_clinic_access: updateClinicAccess,
   update_owner_access: updateOwnerAccess,
-  update_subaccount_access: updateSubaccountAccess,
-  delete_clinic_package: deleteClinicPackage,
-  delete_subaccount: deleteSubaccount,
-  create_patient: createPatient,
   update_patient: updatePatient,
-  delete_patient: deletePatient,
+  update_subaccount_access: updateSubaccountAccess,
 };
 
 Deno.serve(async (request) => {

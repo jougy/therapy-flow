@@ -20,6 +20,7 @@ import {
 import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/lib/patient-registration";
 import { formatPatientOriginDetails, getPatientOriginLabel } from "@/lib/patient-origin";
 import { fetchPatientByRef, getPatientPath, getPatientRouteKey } from "@/lib/patient-routing";
+import { SharePatientRegistrationModal } from "@/components/patients/SharePatientRegistrationModal";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientClinicalSnapshot = Database["public"]["Tables"]["patient_clinical_snapshots"]["Row"];
@@ -219,7 +220,7 @@ const PacienteResumo = () => {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [clinicalSnapshots, setClinicalSnapshots] = useState<PatientClinicalSnapshot[]>([]);
-  const [generatingShareLink, setGeneratingShareLink] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [selectedClinicalHistoryIndex, setSelectedClinicalHistoryIndex] = useState(0);
 
   const fetchData = useCallback(async () => {
@@ -227,30 +228,36 @@ const PacienteResumo = () => {
       return;
     }
 
-    const patientRes = await fetchPatientByRef(id, clinicId);
-    if (patientRes.error || !patientRes.data) {
-      toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
-      navigate(clinicHomePath);
-      return;
+    try {
+      const patientRes = await fetchPatientByRef(id, clinicId);
+      if (patientRes.error || !patientRes.data) {
+        toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
+        navigate(clinicHomePath);
+        return;
+      }
+
+      const realPatientId = patientRes.data.id;
+      const canonicalRouteKey = getPatientRouteKey(patientRes.data);
+      const targetClinicKey = clinic?.route_key || clinicKey;
+
+      if (id !== canonicalRouteKey && targetClinicKey) {
+        navigate(`/clinica/${targetClinicKey}/pacientes/${canonicalRouteKey}/resumo${location.search}`, { replace: true });
+      }
+
+      const [profilesRes, snapshotsRes] = await Promise.all([
+        clinicId ? supabase.from("profiles").select("id, full_name, email").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
+        supabase.from("patient_clinical_snapshots").select("*").eq("patient_id", realPatientId).order("created_at", { ascending: false }),
+      ]);
+
+      setPatient(patientRes.data);
+      setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
+      setClinicalSnapshots((snapshotsRes.data ?? []) as PatientClinicalSnapshot[]);
+    } catch (err) {
+      console.error("Erro ao carregar resumo do paciente:", err);
+      toast({ title: "Erro", description: "Não foi possível carregar o resumo do paciente.", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-
-    const realPatientId = patientRes.data.id;
-    const canonicalRouteKey = getPatientRouteKey(patientRes.data);
-    const targetClinicKey = clinic?.route_key || clinicKey;
-
-    if (id !== canonicalRouteKey && targetClinicKey) {
-      navigate(`/clinica/${targetClinicKey}/pacientes/${canonicalRouteKey}/resumo${location.search}`, { replace: true });
-    }
-
-    const [profilesRes, snapshotsRes] = await Promise.all([
-      clinicId ? supabase.from("profiles").select("id, full_name, email").eq("clinic_id", clinicId) : Promise.resolve({ data: [] }),
-      supabase.from("patient_clinical_snapshots").select("*").eq("patient_id", realPatientId).order("created_at", { ascending: false }),
-    ]);
-
-    setPatient(patientRes.data);
-    setProfiles((profilesRes.data ?? []) as ProfileSummary[]);
-    setClinicalSnapshots((snapshotsRes.data ?? []) as PatientClinicalSnapshot[]);
-    setLoading(false);
   }, [clinicHomePath, clinicId, clinicKey, clinic?.route_key, id, location.search, navigate]);
 
   useEffect(() => {
@@ -292,55 +299,6 @@ const PacienteResumo = () => {
   useEffect(() => {
     setSelectedClinicalHistoryIndex((currentIndex) => Math.min(currentIndex, Math.max(clinicalHistoryVersions.length - 1, 0)));
   }, [clinicalHistoryVersions.length]);
-
-  const handleOpenShareDialog = useCallback(async () => {
-    if (!patient || !clinicId || !user) {
-      return;
-    }
-
-    const password = getPatientRegistrationPassword(patient.cpf);
-    if (!password) {
-      toast({
-        title: "CPF incompleto",
-        description: "O paciente precisa ter um CPF com ao menos 6 dígitos para gerar o compartilhamento.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setGeneratingShareLink(true);
-    const { data, error } = await supabase.rpc("create_patient_registration_link", {
-      _patient_id: patient.id,
-    });
-    setGeneratingShareLink(false);
-
-    if (error || !data || typeof data !== "object" || Array.isArray(data)) {
-      toast({
-        title: "Erro ao gerar compartilhamento",
-        description: error?.message ?? "Tente novamente em alguns instantes.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const shareData = data as { token?: string };
-    if (!shareData.token) {
-      toast({
-        title: "Erro ao gerar compartilhamento",
-        description: "Resposta inválida ao criar o link do paciente.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const shareUrl = buildPatientRegistrationUrl(window.location.origin, shareData.token);
-
-    await navigator.clipboard.writeText(`${shareUrl}\nSenha: ${password}`);
-    toast({
-      title: "Link copiado",
-      description: "O link e a senha do cadastro foram copiados para a área de transferência.",
-    });
-  }, [clinicId, patient, user]);
 
   if (loading) {
     return (
@@ -390,8 +348,8 @@ const PacienteResumo = () => {
             <ClipboardEdit className="mr-2 h-4 w-4" />
             Editar cadastro
           </Button>
-          <Button variant="outline" onClick={() => void handleOpenShareDialog()} disabled={generatingShareLink || patient.registration_complete}>
-            {generatingShareLink ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Share2 className="mr-2 h-4 w-4" />}
+          <Button variant="outline" onClick={() => setShareDialogOpen(true)}>
+            <Share2 className="mr-2 h-4 w-4" />
             Compartilhar cadastro
           </Button>
         </div>
@@ -506,6 +464,13 @@ const PacienteResumo = () => {
           />
         </TabsContent>
       </Tabs>
+
+      <SharePatientRegistrationModal
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        patient={patient}
+        clinicName={clinic?.name}
+      />
     </motion.div>
   );
 };

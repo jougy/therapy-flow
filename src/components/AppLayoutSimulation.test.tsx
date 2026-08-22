@@ -107,4 +107,25 @@ describe("AppLayout Simulation Mode TopBar", () => {
 
     expect(screen.getByText(/Permissões do Papel: Owner/i)).toBeInTheDocument();
   });
+
+  it("opens Simulation Test Patient Generator Dialog when clicking + Paciente Teste button", () => {
+    render(
+      <MemoryRouter>
+        <FeatureFlagsProvider>
+          <AppLayout>
+            <div>Conteúdo Paciente Teste</div>
+          </AppLayout>
+        </FeatureFlagsProvider>
+      </MemoryRouter>
+    );
+
+    const testPatientButton = screen.getByRole("button", { name: /\+ Paciente Teste/i });
+    expect(testPatientButton).toBeInTheDocument();
+
+    fireEvent.click(testPatientButton);
+
+    expect(screen.getByText("Gerador de Paciente Teste")).toBeInTheDocument();
+    expect(screen.getByText("Adulto Padrão")).toBeInTheDocument();
+    expect(screen.getByText("Menor com Responsável")).toBeInTheDocument();
+  });
 });

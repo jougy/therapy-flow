@@ -93,10 +93,10 @@ describe("AppLayout", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /abrir configurações pessoais/i }));
-    expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1/configuracoes?secao=profile");
+    expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1/configuracoes/pessoal/perfil");
 
     fireEvent.click(screen.getByRole("button", { name: /editar clínica/i }));
-    expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1/configuracoes?secao=clinic");
+    expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1/configuracoes/perfil");
   });
 
   it("hides clinic settings when personal settings were opened from the personal space", () => {

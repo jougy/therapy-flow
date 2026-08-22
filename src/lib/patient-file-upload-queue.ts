@@ -267,9 +267,14 @@ const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) 
   patchItem(jobId, { fileName: processed.filename, progress: 35, status: "uploading" });
   const processedContext = getUploadContext(input, processed);
 
-  const uploadData = await invokePatientFileEdgeFunction<{ headers?: Record<string, string>; uploadId?: string; uploadUrl?: string }>("b2-upload-url", {
+  const uploadData = await invokePatientFileEdgeFunction<{
+    deduplicatedFrom?: string;
+    headers?: Record<string, string>;
+    uploadId?: string;
+    uploadUrl?: string | null;
+  }>("b2-upload-url", {
     byteSize: processed.storedByteSize,
-    category: getPatientUploadCategoryFromContentType(processed.originalContentType),
+    category: getPatientUploadCategoryFromContentType(processed.originalContentType, processed.filename),
     checksumSha256: processed.checksumSha256,
     clinicId: input.clinicId,
     compressionProfile: processed.compressionProfile,
@@ -287,11 +292,38 @@ const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) 
     storedContentType: processed.storedContentType,
   }, processedContext, "Preparar upload");
 
-  const uploadUrl = String(uploadData?.uploadUrl ?? "");
   const uploadId = String(uploadData?.uploadId ?? "");
-  const headers = (uploadData?.headers ?? {}) as Record<string, string>;
+  if (!uploadId) {
+    throw createUploadDiagnosticException({
+      context: processedContext,
+      error: new Error("O servidor não retornou o ID de upload."),
+      functionName: "b2-upload-url",
+      stage: "Preparar upload",
+      technicalDetails: uploadData,
+    });
+  }
 
-  if (!uploadUrl || !uploadId) {
+  patchItem(jobId, { progress: 42, uploadId });
+
+  // Caminho de deduplicação: o servidor reconheceu o arquivo pelo SHA-256 e
+  // apontou para uma entrada existente. Não há necessidade de enviar o binário ao B2
+  // nem de confirmar — o status já foi registrado como "uploaded" pelo servidor.
+  if (uploadData?.deduplicatedFrom) {
+    patchItem(jobId, { progress: 100, status: "uploaded" });
+    window.dispatchEvent(new CustomEvent("patient-file-uploads-updated", {
+      detail: {
+        deduplicatedFrom: uploadData.deduplicatedFrom,
+        patientId: input.patientId,
+        sessionId: input.sessionId ?? null,
+        uploadId,
+      },
+    }));
+    return;
+  }
+
+  const uploadUrl = String(uploadData?.uploadUrl ?? "");
+  const headers = (uploadData?.headers ?? {}) as Record<string, string>;
+  if (!uploadUrl) {
     throw createUploadDiagnosticException({
       context: processedContext,
       error: new Error("O servidor não retornou a URL de upload."),
@@ -301,7 +333,6 @@ const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) 
     });
   }
 
-  patchItem(jobId, { progress: 42, uploadId });
   await uploadWithProgress({ blob: processed.blob, context: { ...processedContext, uploadId }, headers, jobId, uploadUrl });
 
   patchItem(jobId, { progress: 95, status: "confirming" });

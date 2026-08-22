@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "@/hooks/use-toast";
 import { deleteUploadedPatientFile, removePatientFileUploadQueueItem, isPatientFileUploadImage } from "@/lib/patient-file-upload-queue";
+import { patientFileBlobCache } from "@/lib/patient-file-blob-cache";
 import { isUuid, fetchPatientByRef } from "@/lib/patient-routing";
 
 export type PatientFileUploadRow = Database["public"]["Tables"]["patient_file_uploads"]["Row"] & {
@@ -145,19 +146,32 @@ export function PatientFilesProvider({
 
   const handleDownload = async (file: PatientFileUploadRow) => {
     try {
+      const isImage = isPatientFileUploadImage(file.original_content_type ?? file.content_type);
+      const cached = patientFileBlobCache.get(file.id);
+
+      if (cached && cached.objectUrl) {
+        const anchor = document.createElement("a");
+        anchor.href = cached.objectUrl;
+        anchor.download = cached.filename || file.original_filename;
+        anchor.click();
+        return;
+      }
+
       const download = await getDownload(file.id);
       if (!download.downloadUrl) throw new Error("URL de download ausente.");
 
-      if (download.storageEncoding) {
+      if (download.storageEncoding || isImage) {
         const blob = await readBlobForPreview(download);
-        const url = URL.createObjectURL(new Blob([blob], { type: download.originalContentType ?? file.content_type }));
+        const resolvedType = download.originalContentType ?? file.content_type;
+        const objectUrl = patientFileBlobCache.set(file.id, blob, download.filename ?? file.original_filename, resolvedType);
+        
         const anchor = document.createElement("a");
-        anchor.href = url;
+        anchor.href = objectUrl;
         anchor.download = download.filename ?? file.original_filename;
         anchor.click();
-        URL.revokeObjectURL(url);
         return;
       }
+
       window.open(download.downloadUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       toast({ title: "Erro ao baixar arquivo", description: error instanceof Error ? error.message : "Tente novamente.", variant: "destructive" });
@@ -166,21 +180,31 @@ export function PatientFilesProvider({
 
   const handlePreview = async (file: PatientFileUploadRow) => {
     try {
+      const isImage = isPatientFileUploadImage(file.original_content_type ?? file.content_type);
+      setPreviewIsImage(isImage);
+      setPreviewTitle(file.original_filename);
+
+      // 1. Verifica se já está em cache na memória da sessão
+      const cached = patientFileBlobCache.get(file.id);
+      if (cached && cached.objectUrl) {
+        setPreviewUrl(cached.objectUrl);
+        setPreviewOpen(true);
+        return;
+      }
+
+      // 2. Se não estiver em cache, obtém a URL assinada e armazena o blob no cache
       const download = await getDownload(file.id);
       if (!download.downloadUrl) throw new Error("URL de visualização ausente.");
-      const isImage = isPatientFileUploadImage(file.original_content_type ?? file.content_type);
-
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
 
       if (download.storageEncoding || isImage) {
         const blob = await readBlobForPreview(download);
-        setPreviewUrl(URL.createObjectURL(new Blob([blob], { type: download.originalContentType ?? file.content_type })));
+        const resolvedType = download.originalContentType ?? file.content_type;
+        const objectUrl = patientFileBlobCache.set(file.id, blob, file.original_filename, resolvedType);
+        setPreviewUrl(objectUrl);
       } else {
         setPreviewUrl(download.downloadUrl);
       }
 
-      setPreviewIsImage(isImage);
-      setPreviewTitle(file.original_filename);
       setPreviewOpen(true);
     } catch (error) {
       toast({ title: "Erro ao visualizar arquivo", description: error instanceof Error ? error.message : "Tente novamente.", variant: "destructive" });
@@ -191,6 +215,7 @@ export function PatientFilesProvider({
     if (!clinicId) return;
     try {
       setDeletingUploadId(file.id);
+      patientFileBlobCache.delete(file.id);
       await deleteUploadedPatientFile({
         clinicId,
         fileName: file.original_filename,
