@@ -10,6 +10,7 @@
     "dev:local:compose": "sh scripts/compose-local.sh up",
     "dev:local:compose:down": "sh scripts/compose-local.sh down",
     "build": "vite build",
+    "deploy": "vite build && wrangler deploy",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",

@@ -892,13 +892,25 @@ export function useFormEditorState() {
         const rootDraggedIds = isMultiDrag ? selectedFieldIds : [draggedId];
 
         const blockIds = new Set<string>();
+        
+        const collectDescendants = (parentId: string) => {
+          prev.forEach((child) => {
+            if (child.groupKey === parentId) {
+              if (!blockIds.has(child.id)) {
+                blockIds.add(child.id);
+                if (isContainerField(child)) {
+                  collectDescendants(child.id);
+                }
+              }
+            }
+          });
+        };
+
         rootDraggedIds.forEach((id) => {
           blockIds.add(id);
           const f = prev.find((item) => item.id === id);
           if (f && isContainerField(f)) {
-            prev.forEach((child) => {
-              if (child.groupKey === id) blockIds.add(child.id);
-            });
+            collectDescendants(id);
           }
         });
 
