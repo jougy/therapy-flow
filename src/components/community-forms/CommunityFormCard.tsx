@@ -273,7 +273,7 @@ export const CommunityFormCard: React.FC<CommunityFormCardProps> = ({
             <div className="flex items-center gap-2.5 shrink-0">
               <span className="flex items-center gap-1 text-[11px]" title="Campos cadastrados">
                 <Layers className="h-3 w-3 opacity-70" />
-                {fieldsCount}
+                {displayFieldsCount}
               </span>
 
               <button
