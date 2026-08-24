@@ -72,9 +72,6 @@ export const FormLibraryPreviewModal: React.FC<FormLibraryPreviewModalProps> = (
     (f) => f.type === "section" || f.type === "horizontal_section" || f.type === "section_selector"
   ).length;
 
-  // Alias for compatibility with compiled code expecting fieldsCount
-  const fieldsCount = totalFields;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
