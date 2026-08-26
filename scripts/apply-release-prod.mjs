@@ -31,10 +31,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 async function deployProdRelease() {
   console.log('Conectando ao Supabase de Produção em:', SUPABASE_URL);
 
-  const version = 'alfa-26.08.22-01';
-  const version_order = 2026082201;
-  const title = 'Novo Editor de Formulários, Sistema de Tags, Tutoriais Guiados e Redesenho de Configurações';
-  const summary = 'Grande atualização com o novo construtor modular de formulários de anamnese, evolução dos grupos de atendimento para Sistema de Tags e Linhas de Cuidado, novo visual da tela de atendimentos, área de configurações e perfil totalmente reestruturadas, sistema interativo de tutoriais em toda a plataforma e Biblioteca Comunitária de modelos.';
+  const version = 'alfa-26.08.26-01';
+  const version_order = 2026082601;
+  const title = 'Evolução Clínica de Pacientes, Otimização de Performance e Deploy Contínuo';
+  const summary = 'Atualização com suporte à estruturação de grupos e linhagem de evolução clínica para pacientes, otimização profunda de performance no seletor de clínicas e no dashboard, arrastar recursivo no editor de formulários e pipeline automatizado de deploy contínuo.';
 
   // 1. Desativar releases ativas anteriores em produção
   const { error: deactivateError } = await supabase
@@ -46,7 +46,7 @@ async function deployProdRelease() {
     console.warn('Aviso ao desativar versões anteriores em produção:', deactivateError.message);
   }
 
-  // 2. Upsert da release alfa-26.08.22-01
+  // 2. Upsert da release alfa-26.08.26-01
   const { data: releaseData, error: releaseError } = await supabase
     .from('platform_releases')
     .upsert({
@@ -65,7 +65,7 @@ async function deployProdRelease() {
     process.exit(1);
   }
 
-  console.log('Release alfa-26.08.22-01 gravada com sucesso em produção! ID:', releaseData.id);
+  console.log('Release alfa-26.08.26-01 gravada com sucesso em produção! ID:', releaseData.id);
 
   // 3. Limpar itens antigos dessa release se existirem
   await supabase
@@ -73,97 +73,62 @@ async function deployProdRelease() {
     .delete()
     .eq('release_id', releaseData.id);
 
-  // 4. Inserir todos os 13 tópicos filtrados (sem dados confidenciais de backoffice)
+  // 4. Inserir todos os tópicos filtrados (sem dados confidenciais de backoffice)
   const items = [
     {
       release_id: releaseData.id,
       category: 'added',
-      title: 'Sistema Completo de Tutoriais Guiados',
-      body: 'Nova experiência interativa com guias passo a passo ilustrados por toda a plataforma, ajudando profissionais e recepcionistas a aproveitarem todos os recursos de prontuário, agenda e configurações.',
+      title: 'Estruturação de Ciclos e Grupos de Evolução Clínica',
+      body: 'Nova camada de evolução para vincular e agrupar atendimentos ao longo do tratamento do paciente, permitindo histórico contínuo e linhagem entre sessões.',
       sort_order: 10,
     },
     {
       release_id: releaseData.id,
       category: 'added',
-      title: 'Biblioteca Pública da Comunidade de Formulários',
-      body: 'Galeria colaborativa para descobrir, pré-visualizar, curtir, comentar e clonar modelos de anamneses e fichas de avaliação compartilhados por outros profissionais da saúde.',
+      title: 'Pipeline Automatizado de Deploy Contínuo (CI/CD)',
+      body: 'Automação de compilação, testes e publicação no Cloudflare Workers para garantir entregas ágeis e alta disponibilidade do sistema.',
       sort_order: 20,
     },
     {
       release_id: releaseData.id,
-      category: 'added',
-      title: 'Compartilhamento e Pré-Cadastro de Pacientes via Link',
-      body: 'Envie um link seguro para o próprio paciente preencher seu cadastro antes da consulta, com salvamento automático de rascunhos e validação dinâmica.',
+      category: 'changed',
+      title: 'Otimização de Performance no Seletor de Clínicas e Sessões',
+      body: 'Implementação de novos índices compostos e parciais no banco de dados, reduzindo o tempo de resposta e acelerando a alternância entre clínicas.',
+      sort_order: 10,
+    },
+    {
+      release_id: releaseData.id,
+      category: 'changed',
+      title: 'Agilização de Métricas do Dashboard da Clínica',
+      body: 'Aprimoramento do motor analítico de consultas para cálculo instantâneo de produtividade, faturamento e fluxo de atendimentos sem lentidão.',
+      sort_order: 20,
+    },
+    {
+      release_id: releaseData.id,
+      category: 'changed',
+      title: 'Arrastar e Reordenar Recursivo no Editor de Formulários',
+      body: 'Melhoria no construtor de anamneses para mover blocos de campos filhos e contêineres de maneira íntegra e fluida na árvore do formulário.',
       sort_order: 30,
     },
     {
       release_id: releaseData.id,
-      category: 'added',
-      title: 'Gestão Completa de Convites Pendentes de Colaboradores',
-      body: 'Painel dedicado nas configurações da clínica para visualizar convites pendentes, reenviar links de acesso, editar cargos/permissões ou cancelar convites.',
-      sort_order: 40,
-    },
-    {
-      release_id: releaseData.id,
-      category: 'added',
-      title: 'Impressão de Kits Offline e Fichas em Branco',
-      body: 'Exportação e impressão rápida de kits e formulários em branco com termos de responsabilidade para preenchimento físico offline.',
-      sort_order: 50,
-    },
-    {
-      release_id: releaseData.id,
-      category: 'changed',
-      title: 'Novo Construtor e Editor Modular de Formulários',
-      body: 'Editor de anamneses totalmente reformulado com paleta lateral inteligente, edição e ações em lote, pré-visualização ao vivo, recuperação de rascunho e paletas de cores personalizadas por seção.',
-      sort_order: 10,
-    },
-    {
-      release_id: releaseData.id,
-      category: 'changed',
-      title: 'Evolução dos Grupos de Atendimento para Sistema de Tags',
-      body: 'Substituição dos grupos fixos por um moderno Sistema de Tags e Linhas de Cuidado com cores customizáveis e classificação rápida para filtrar e organizar prontuários.',
-      sort_order: 20,
-    },
-    {
-      release_id: releaseData.id,
-      category: 'changed',
-      title: 'Novo Visual e Experiência na Tela de Atendimentos',
-      body: 'Interface do atendimento redesenhada com cabeçalho de navegação ágil entre sessões, resumo clínico integrado, formulários em runtime fluido e registro simplificado de valores.',
-      sort_order: 30,
-    },
-    {
-      release_id: releaseData.id,
-      category: 'changed',
-      title: 'Redesenho das Configurações da Clínica e "Meu Perfil"',
-      body: 'Estrutura separada em abas dedicadas para dados pessoais, notificações e segurança individual, além de gestão de equipe, modelos, faturamento e dados da clínica.',
-      sort_order: 40,
-    },
-    {
-      release_id: releaseData.id,
-      category: 'changed',
-      title: 'Dashboard da Clínica com Gráficos e Rótulos Claros',
-      body: 'Inclusão de rótulos visuais de valores nas linhas e barras de faturamento e atendimentos, identificação nominal de colaboradores e filtros aprimorados.',
-      sort_order: 50,
-    },
-    {
-      release_id: releaseData.id,
       category: 'fixed',
-      title: 'Fluxo de Entrada e Aceitação de Convites de Colaboradores',
-      body: 'Detecção inteligente de e-mails já cadastrados na plataforma com alternância direta entre criação de conta e login seguro.',
+      title: 'Exibição e Contagem de Campos na Biblioteca Comunitária',
+      body: 'Ajuste na contagem de campos exibida nos cards e modal de pré-visualização de modelos da comunidade, evitando inconsistências visuais.',
       sort_order: 10,
     },
     {
       release_id: releaseData.id,
       category: 'fixed',
-      title: 'Performance e Carregamento Client-First',
-      body: 'Otimização com persistência em IndexedDB, redução de chamadas repetidas ao carregar dados do paciente e sincronização estável de arquivos e anexos.',
+      title: 'Otimização nas Políticas de Leitura de Perfis',
+      body: 'Refinamento das consultas de segurança com subqueries escalares para acelerar o carregamento de membros e colaboradores.',
       sort_order: 20,
     },
     {
       release_id: releaseData.id,
       category: 'fixed',
-      title: 'Ajustes de Rolagem e Responsividade Mobile',
-      body: 'Correções em contêineres de scroll, modais e seletores touch para garantir navegação fluida em celulares e tablets.',
+      title: 'Estabilidade na Suíte de Testes e Simulações',
+      body: 'Ajustes em mocks de tela, fallbacks do cliente de dados e isolamento de ambiente para testes automatizados mais rápidos e consistentes.',
       sort_order: 30,
     },
   ];
@@ -177,7 +142,7 @@ async function deployProdRelease() {
     process.exit(1);
   }
 
-  console.log('✅ 13 tópicos de novidades publicados com sucesso na base de PRODUÇÃO!');
+  console.log('✅ 8 tópicos de novidades publicados com sucesso na base de PRODUÇÃO!');
 }
 
 deployProdRelease().catch(err => {

@@ -13,6 +13,7 @@ export type AnamnesisFieldType =
   | "section"
   | "horizontal_section"
   | "section_selector"
+  | "radar_section"
   | "address_block";
 
 export interface AnamnesisFieldOption {
@@ -434,12 +435,13 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
   { type: "section", label: "Seção" },
   { type: "horizontal_section", label: "Seção horizontal" },
   { type: "section_selector", label: "Seletor de seções" },
+  { type: "radar_section", label: "Polígono de Status" },
 ];
 
 const ANAMNESIS_FIELD_TYPES = new Set<AnamnesisFieldType>(ANAMNESIS_FIELD_LIBRARY.map((field) => field.type));
 
 export const isContainerFieldType = (type: AnamnesisFieldType) =>
-  type === "section" || type === "horizontal_section" || type === "section_selector";
+  type === "section" || type === "horizontal_section" || type === "section_selector" || type === "radar_section";
 export const isContainerField = (field: AnamnesisField) => isContainerFieldType(field.type);
 export const hasScrollableOptionEditor = (type: AnamnesisFieldType) =>
   type === "checklist" || type === "multiple_choice";
@@ -596,11 +598,21 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
     };
   }
 
-  if (type === "section" || type === "horizontal_section") {
+  if (type === "section" || type === "horizontal_section" || type === "radar_section") {
     return {
       ...baseField,
-      label: type === "horizontal_section" ? "Nova seção horizontal" : "Nova seção",
-      helpText: type === "horizontal_section" ? "Agrupe campos lado a lado com rolagem horizontal." : "Texto introdutório da seção.",
+      label:
+        type === "horizontal_section"
+          ? "Nova seção horizontal"
+          : type === "radar_section"
+            ? "Polígono de Status"
+            : "Nova seção",
+      helpText:
+        type === "horizontal_section"
+          ? "Agrupe campos lado a lado com rolagem horizontal."
+          : type === "radar_section"
+            ? "Gráfico de radar RPG com sliders/métricas multidimensionais."
+            : "Texto introdutório da seção.",
     };
   }
 
@@ -785,6 +797,11 @@ export const getVisibleTemplateFields = (
         Object.entries(value).forEach(([id, isActive]) => {
           if (isActive) activeSectionIds.add(id);
         });
+      } else if (value === undefined || value === null) {
+        fields
+          .filter((child) => child.groupKey === field.id)
+          .forEach((child) => activeSectionIds.add(child.id));
+        (field.options ?? []).forEach((opt) => activeSectionIds.add(opt.id));
       }
     });
 
@@ -842,7 +859,7 @@ export const isAnamnesisTemplateSchema = (value: unknown): value is AnamnesisTem
 export interface TemplateLayoutSection {
   field: AnamnesisField;
   items: TemplateLayoutItem[];
-  type: "section" | "horizontal_section" | "section_selector";
+  type: "section" | "horizontal_section" | "section_selector" | "radar_section";
 }
 
 export interface TemplateLayoutField {
@@ -869,12 +886,12 @@ const canContainerAcceptChild = (container: AnamnesisField, child: AnamnesisFiel
     return false;
   }
 
-  // A horizontal_section cannot contain other containers
-  if (container.type === "horizontal_section" && isContainerField(child)) {
+  // A horizontal_section or radar_section cannot contain other containers
+  if ((container.type === "horizontal_section" || container.type === "radar_section") && isContainerField(child)) {
     return false;
   }
 
-  // A section_selector accepts sections, horizontal_sections, and standard fields
+  // A section_selector accepts sections, horizontal_sections, radar_sections, and standard fields
   if (container.type === "section_selector") {
     return true;
   }

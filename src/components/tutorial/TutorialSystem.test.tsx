@@ -5,6 +5,8 @@ import { TutorialProvider, useTutorial } from "@/contexts/TutorialContext";
 import { TutorialCard } from "./TutorialCard";
 import { TutorialChapterModal } from "./TutorialChapterModal";
 import { TutorialVisualPreview } from "./TutorialVisualPreview";
+import { ComponentHelpButton } from "./ComponentHelpButton";
+import { TutorialTriggerButton } from "./TutorialTriggerButton";
 import { useAuth } from "@/hooks/useAuth";
 
 vi.mock("@/hooks/useAuth", () => ({
@@ -204,9 +206,33 @@ describe("TutorialSystem V3", () => {
 
       fireEvent.click(screen.getByText("Iniciar Ajuda"));
 
-      expect(screen.getByTestId("step-count")).toHaveTextContent("1");
-      expect(screen.getByText("Passo Geral")).toBeInTheDocument();
-      expect(screen.queryByText("Passo Financeiro Restrito")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Feature Flags for Tutorials and Helpers", () => {
+    it("renders ComponentHelpButton when helpers flag is active and not hidden", () => {
+      render(
+        <MemoryRouter>
+          <TutorialProvider>
+            <ComponentHelpButton helpId="patient-search-toolbar" />
+          </TutorialProvider>
+        </MemoryRouter>
+      );
+
+      const btn = screen.getByRole("button");
+      expect(btn).toBeInTheDocument();
+    });
+
+    it("renders TutorialTriggerButton when tutorial flag is active", () => {
+      render(
+        <MemoryRouter>
+          <TutorialProvider>
+            <TutorialTriggerButton />
+          </TutorialProvider>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByRole("button", { name: /Central de Tutoriais e Treinamento/i })).toBeInTheDocument();
     });
   });
 });

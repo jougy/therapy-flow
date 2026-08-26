@@ -366,3 +366,67 @@ export const getFunctionalIndependenceLabel = (value: string | null | undefined)
 
 export const getPatientRiskFlagLabel = (value: string) =>
   PATIENT_RISK_FLAG_OPTIONS.find((option) => option.value === value)?.label ?? value;
+
+export const splitClinicalAlertItems = (value: string | null | undefined): string[] =>
+  (value ?? "")
+    .split(/\n|;|,/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item) {
+        return false;
+      }
+
+      const normalized = item
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLocaleLowerCase("pt-BR");
+
+      return (
+        !/^(nao|não|nenhuma?|sem|nega|desconhece|n\/a|na)$/i.test(normalized) &&
+        !normalized.startsWith("sem alerg") &&
+        !normalized.startsWith("sem queda") &&
+        !normalized.startsWith("nao possui") &&
+        !normalized.startsWith("não possui")
+      );
+    });
+
+export interface PatientAlertItemsSummary {
+  allergyAlerts: string[];
+  fallRiskAlerts: string[];
+  structuredRiskAlerts: string[];
+}
+
+export const getPatientAlertItems = (patient: {
+  allergies?: string | null;
+  clinical_profile?: Json | null;
+} | null | undefined): PatientAlertItemsSummary => {
+  if (!patient) {
+    return { allergyAlerts: [], fallRiskAlerts: [], structuredRiskAlerts: [] };
+  }
+
+  const parsedProfile = parseClinicalProfile(patient.clinical_profile);
+  const allergyAlertItems = splitClinicalAlertItems(patient.allergies);
+
+  const fallRiskAlertItems = [
+    ...(parsedProfile.risk_flags.includes("fall_risk") ? ["Risco marcado no cadastro"] : []),
+    ...splitClinicalAlertItems(parsedProfile.falls_history),
+    ...(parsedProfile.functional_independence === "parcialmente_dependente" || parsedProfile.functional_independence === "dependente"
+      ? [`Contexto funcional: ${getFunctionalIndependenceLabel(parsedProfile.functional_independence)}`]
+      : []),
+  ];
+
+  const structuredRiskAlertItems = parsedProfile.risk_flags
+    .filter((risk) => risk !== "fall_risk" && risk !== "allergy")
+    .map(getPatientRiskFlagLabel);
+
+  const allAllergyAlertItems = [
+    ...(parsedProfile.risk_flags.includes("allergy") ? ["Alergia marcada no cadastro"] : []),
+    ...allergyAlertItems,
+  ];
+
+  return {
+    allergyAlerts: allAllergyAlertItems,
+    fallRiskAlerts: fallRiskAlertItems,
+    structuredRiskAlerts: structuredRiskAlertItems,
+  };
+};

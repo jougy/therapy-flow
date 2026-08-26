@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   FolderInput,
+  Hexagon,
   Palette,
   Settings2,
   ToggleLeft,
@@ -530,6 +531,17 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Os switches deste Seletor são gerados automaticamente pelas <strong>Seções</strong> adicionadas dentro
                   dele. Para incluir novos módulos, basta arrastar seções para o interior deste contêiner.
+                </p>
+              </div>
+            )}
+            {selectedField.type === "radar_section" && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3.5 space-y-2">
+                <div className="flex items-center gap-2 text-primary font-semibold text-xs">
+                  <Hexagon className="h-4 w-4" />
+                  <span>Polígono de Status RPG</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Os vértices e valores do polígono são gerados automaticamente a partir dos campos <strong>Slidebar</strong> ou <strong>Numéricos</strong> inseridos dentro desta seção. No painel do paciente, todas as métricas são consolidadas em um gráfico multi-série interativo.
                 </p>
               </div>
             )}

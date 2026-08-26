@@ -6,9 +6,12 @@ import {
   Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingFeedback } from "@/components/ui/loading-feedback";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { GroupColorPaletteField, type ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import { SessionShareDialog } from "@/components/SessionShareDialog";
@@ -71,8 +75,8 @@ import {
   type PatientAnamnesisChartType,
   type PatientAnamnesisDashboardTemplate,
 } from "@/lib/patient-anamnesis-dashboard";
-import type { PatientGroupStatus } from "@/lib/patient-groups";
 import { getSessionPersonLabel } from "@/lib/session-people";
+import { EvolveSessionModal } from "@/components/sessions";
 import { getSessionPreviewContent, getSessionPreviewIndicators } from "@/lib/session-preview";
 import { EDITABLE_PATIENT_STATUS_OPTIONS, type EditablePatientStatus } from "@/lib/patient-statuses";
 import {
@@ -100,7 +104,10 @@ import {
   getSessionCareLineIds,
   shouldAutoCompleteInternDraft,
   shouldShowSessionCreatorInternBadge,
+  type EvolutionGroupMetadata,
 } from "@/lib/patient-sessions-view";
+import { buildSessionPayload, getCurrentDateTimeInputValue } from "@/lib/session-payload";
+import type { PatientPaymentPlanRow } from "@/lib/payment-plans";
 import {
   DEFAULT_GROUP_COLOR_SLOT_SEEDS,
   getLegacyGroupHex,
@@ -214,27 +221,21 @@ interface PatientHeaderAlertProps {
 }
 
 const PatientHeaderAlert = ({ icon, items, tone, title }: PatientHeaderAlertProps) => {
-  const [open, setOpen] = useState(false);
-
   if (items.length === 0) {
     return null;
   }
 
   const toneClassName =
     tone === "rose"
-      ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-      : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100";
+      ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-300"
+      : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300";
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <HoverCard openDelay={80} closeDelay={150}>
+      <HoverCardTrigger asChild>
         <button
           type="button"
-          onBlur={() => setOpen(false)}
-          onFocus={() => setOpen(true)}
-          onMouseEnter={() => setOpen(true)}
-          onMouseLeave={() => setOpen(false)}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium shadow-sm transition hover:-translate-y-0.5 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${toneClassName}`}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium shadow-sm transition hover:-translate-y-0.5 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer select-none ${toneClassName}`}
           aria-label={title}
         >
           {icon}
@@ -243,25 +244,27 @@ const PatientHeaderAlert = ({ icon, items, tone, title }: PatientHeaderAlertProp
             {items.length}
           </Badge>
         </button>
-      </PopoverTrigger>
-      <PopoverContent
+      </HoverCardTrigger>
+      <HoverCardContent
         align="start"
-        className="w-72"
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
+        sideOffset={6}
+        className="w-72 p-3 shadow-lg z-50 pointer-events-auto"
       >
-        <div className="space-y-3">
-          <p className="text-sm font-semibold">{title}</p>
-          <ul className="space-y-2 text-sm text-muted-foreground">
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+            {icon}
+            <span>{title} ({items.length})</span>
+          </p>
+          <ul className="space-y-1.5 text-xs text-muted-foreground max-h-60 overflow-y-auto">
             {items.map((item, index) => (
-              <li key={`${item}-${index}`} className="rounded-md bg-muted/40 px-3 py-2">
+              <li key={`${item}-${index}`} className="rounded-md bg-muted/40 px-3 py-2 font-medium text-foreground">
                 {item}
               </li>
             ))}
           </ul>
         </div>
-      </PopoverContent>
-    </Popover>
+      </HoverCardContent>
+    </HoverCard>
   );
 };
 
@@ -491,10 +494,16 @@ const SessionCard = memo(({
   canViewFinancialData,
   creatorName,
   creatorIsIntern,
+  isCompact,
+  isExpanded,
   isSelected,
   navigateTo,
+  onEvolve,
+  onLinkGroup,
+  isEvolving,
   onPressCancel,
   onPressStart,
+  onToggleExpand,
   onToggleSelect,
   onViewShareRecipients,
   shareSummary,
@@ -507,10 +516,16 @@ const SessionCard = memo(({
   canViewFinancialData: boolean;
   creatorName: string;
   creatorIsIntern: boolean;
+  isCompact?: boolean;
+  isExpanded?: boolean;
   isSelected: boolean;
   navigateTo: () => void;
+  onEvolve?: () => void;
+  onLinkGroup?: () => void;
+  isEvolving?: boolean;
   onPressCancel: () => void;
   onPressStart: () => void;
+  onToggleExpand?: () => void;
   onToggleSelect: () => void;
   onViewShareRecipients: () => void;
   selectionMode: boolean;
@@ -532,6 +547,232 @@ const SessionCard = memo(({
     session.payment_status !== "nao_cobrado" || Boolean(session.amount_charged_cents || session.amount_paid_cents);
   const hasOperationalInfo =
     Boolean(session.scheduled_start_at || session.patient_arrived_at) || (canViewFinancialData && hasPaymentInfo);
+
+  if (isCompact) {
+    return (
+      <Card
+        className={`border-l-4 cursor-pointer select-none hover:shadow-xs transition-all ${isSelected ? "ring-2 ring-primary ring-offset-2" : ""}`}
+        style={borderColor ? { borderLeftColor: borderColor } : undefined}
+        onClick={(e) => {
+          if (longPressOccurredRef.current) {
+            longPressOccurredRef.current = false;
+            return;
+          }
+          if (selectionMode) {
+            onToggleSelect();
+          } else {
+            navigateTo();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          if (selectionMode) {
+            onToggleSelect();
+          } else {
+            navigateTo();
+          }
+        }}
+        onPointerDown={(e) => {
+          if (selectionMode || (e.button !== undefined && e.button !== 0)) return;
+          touchStartPosRef.current = { x: e.clientX, y: e.clientY };
+          setTimeout(() => {
+            if (touchStartPosRef.current) longPressOccurredRef.current = true;
+          }, 400);
+          onPressStart();
+        }}
+        onPointerMove={(e) => {
+          if (selectionMode || !touchStartPosRef.current) return;
+          const dx = Math.abs(e.clientX - touchStartPosRef.current.x);
+          const dy = Math.abs(e.clientY - touchStartPosRef.current.y);
+          if (dx > 10 || dy > 10) {
+            touchStartPosRef.current = null;
+            onPressCancel();
+          }
+        }}
+        onPointerUp={() => {
+          touchStartPosRef.current = null;
+          if (!selectionMode) onPressCancel();
+        }}
+        onPointerCancel={() => {
+          touchStartPosRef.current = null;
+          if (!selectionMode) onPressCancel();
+        }}
+      >
+        <CardContent className="p-2.5 sm:p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <span className="font-semibold text-xs tracking-tight">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
+              <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${statusColors[session.status] || ""}`}>{session.status}</Badge>
+              <span className="text-xs text-muted-foreground truncate max-w-[120px]">{creatorName}</span>
+              {creatorIsIntern && (
+                <Badge variant="outline" className="text-[10px] h-5 px-1">Estagiário</Badge>
+              )}
+              {sessionGroups && sessionGroups.length > 0 && (
+                <div className="flex items-center gap-1 flex-wrap">
+                  {sessionGroups.slice(0, 3).map((tag) => (
+                    <Badge
+                      key={tag.id}
+                      variant="outline"
+                      className="text-[10px] h-5 px-1.5 font-medium gap-1"
+                      style={{
+                        borderColor: getLegacyGroupHex(tag.color),
+                        backgroundColor: `${getLegacyGroupHex(tag.color)}18`,
+                        color: getReadableTextColor(getLegacyGroupHex(tag.color)) === "#111827" ? "#111827" : undefined,
+                      }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: getLegacyGroupHex(tag.color) }} />
+                      {tag.name}
+                    </Badge>
+                  ))}
+                  {sessionGroups.length > 3 && (
+                    <span className="text-[10px] text-muted-foreground font-medium">+{sessionGroups.length - 3}</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+              {indicators.length > 0 && (
+                <div className="flex items-center gap-1 text-[11px] font-medium bg-muted/60 px-2 py-0.5 rounded-md">
+                  <span className="text-muted-foreground">{indicators[0].label.replace("Escala de ", "")}:</span>
+                  <span>{indicators[0].score}/{indicators[0].max}</span>
+                </div>
+              )}
+
+              {shareCount > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onViewShareRecipients();
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                  <span className="text-[10px]">{shareCount}</span>
+                </Button>
+              )}
+
+              {selectionMode && (
+                <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
+                  {isSelected ? "Selecionado" : "Selecionar"}
+                </Badge>
+              )}
+
+              {onEvolve && !selectionMode && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1 border-primary/20 hover:bg-primary/10 hover:text-primary transition-colors"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onEvolve();
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  disabled={isEvolving}
+                  title="Evoluir atendimento (iniciar novo a partir deste)"
+                >
+                  {isEvolving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                  <span className="text-[11px] font-medium">Evoluir</span>
+                </Button>
+              )}
+
+              {onLinkGroup && !selectionMode && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onLinkGroup();
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  title="Vincular a grupo de evolução"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline text-[11px]">Grupo</span>
+                </Button>
+              )}
+
+              {onToggleExpand && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleExpand();
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  title={isExpanded ? "Recolher detalhes" : "Expandir detalhes rápidos"}
+                >
+                  {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Inline Preview when expanded in compact mode */}
+          {isExpanded && (
+            <div className="mt-3 pt-3 border-t space-y-3" onClick={(e) => e.stopPropagation()}>
+              {hasOperationalInfo ? (
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  {session.scheduled_start_at || session.patient_arrived_at ? (
+                    <span className="rounded-full bg-muted px-2 py-1" title={session.payment_adjustment_reason ?? undefined}>
+                      Agendado {formatOperationalTime(session.scheduled_start_at)} · Chegou {formatOperationalTime(session.patient_arrived_at)}
+                      {delayMinutes && delayMinutes > 0 ? ` · atraso ${delayMinutes}min` : ""}
+                    </span>
+                  ) : null}
+                  {canViewFinancialData && hasPaymentInfo ? (
+                    <span className="rounded-full bg-muted px-2 py-1">
+                      {getPaymentStatusLabel(session.payment_status)} · {formatMoneyCents(session.amount_paid_cents)} de{" "}
+                      {sessionHasPaymentAdjustment ? (
+                        <>
+                          <span className="line-through">{formatMoneyCents(originalAmountCents)}</span>{" "}
+                          {formatMoneyCents(session.amount_charged_cents)}
+                          <span className={adjustmentCents > 0 ? "ml-1 font-semibold text-success" : "ml-1 font-semibold text-destructive"}>
+                            {adjustmentCents > 0 ? "+" : ""}
+                            {adjustmentPercent}%
+                          </span>
+                        </>
+                      ) : (
+                        formatMoneyCents(session.amount_charged_cents)
+                      )}
+                      {balanceCents > 0 ? ` · aberto ${formatMoneyCents(balanceCents)}` : ""}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="flex flex-col lg:flex-row gap-4">
+                <div className="min-w-0 flex-1">
+                  <SessionTabsPreview baseSchema={baseSchema} session={session} />
+                </div>
+                {indicators.length > 0 && (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:w-[220px] lg:shrink-0 lg:grid-cols-1">
+                    {indicators.map((indicator) => (
+                      <div key={indicator.id}>
+                        <span className="text-xs text-muted-foreground block">{indicator.label}</span>
+                        <ScaleIndicator score={indicator.score} min={indicator.min} max={indicator.max} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card
@@ -636,6 +877,41 @@ const SessionCard = memo(({
                 <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
                   {isSelected ? "Selecionado" : "Toque para selecionar"}
                 </Badge>
+              )}
+              {onEvolve && !selectionMode && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1 border-primary/20 hover:bg-primary/10 hover:text-primary transition-colors"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onEvolve();
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  disabled={isEvolving}
+                  title="Evoluir atendimento (iniciar novo a partir deste)"
+                >
+                  {isEvolving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                  <span className="text-[11px] font-medium">Evoluir caso</span>
+                </Button>
+              )}
+              {onLinkGroup && !selectionMode && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onLinkGroup();
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  title="Vincular a grupo de evolução"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                  <span className="text-[11px]">Grupo</span>
+                </Button>
               )}
             </div>
 
@@ -768,6 +1044,7 @@ const PacienteDetalhe = () => {
     optimisticUpdatePatient,
     optimisticUpdateSessionStatus,
     optimisticMoveSessions,
+    optimisticMoveSessionsToEvolutionGroup,
     optimisticDeleteSessions,
     optimisticAddOrUpdateGroup,
     optimisticDeleteGroup,
@@ -924,6 +1201,49 @@ const PacienteDetalhe = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sessionStatusFilter, setSessionStatusFilter] = useState("all");
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>("all");
+  const [sessionViewMode, setSessionViewMode] = useState<"detailed" | "compact">(() => {
+    try {
+      if (typeof window !== "undefined" && typeof window.localStorage?.getItem === "function") {
+        const stored = window.localStorage.getItem("therapy-flow:session-view-mode");
+        if (stored === "compact" || stored === "detailed") return stored;
+      }
+    } catch {
+      // ignore
+    }
+    return "detailed";
+  });
+  const [expandedSessionIds, setExpandedSessionIds] = useState<string[]>([]);
+  const [collapsedEvolutionGroupIds, setCollapsedEvolutionGroupIds] = useState<string[]>([]);
+  const [evolutionGroupsMetadata, setEvolutionGroupsMetadata] = useState<EvolutionGroupMetadata[]>([]);
+  const [paymentPlans, setPaymentPlans] = useState<PatientPaymentPlanRow[]>([]);
+  const [editingEvolutionGroup, setEditingEvolutionGroup] = useState<{ id: string; name: string } | null>(null);
+  const [savingEvolutionGroupName, setSavingEvolutionGroupName] = useState(false);
+  const [evolvingSessionId, setEvolvingSessionId] = useState<string | null>(null);
+  const [sessionToEvolve, setSessionToEvolve] = useState<Session | null>(null);
+  const [sessionToLinkGroup, setSessionToLinkGroup] = useState<Session | null>(null);
+  const [groupByEvolution, setGroupByEvolution] = useState<boolean>(() => {
+    try {
+      if (typeof window !== "undefined" && typeof window.localStorage?.getItem === "function") {
+        const stored = window.localStorage.getItem("therapy-flow:group-by-evolution");
+        if (stored !== null) return stored === "true";
+      }
+    } catch {
+      // ignore
+    }
+    return true;
+  });
+
+  const handleToggleGroupByEvolution = (checked: boolean) => {
+    setGroupByEvolution(checked);
+    try {
+      if (typeof window !== "undefined" && typeof window.localStorage?.setItem === "function") {
+        window.localStorage.setItem("therapy-flow:group-by-evolution", String(checked));
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const [recordsView, setRecordsView] = useState<PatientRecordsView>("list");
   const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState("all");
   const [dashboardChartPreferences, setDashboardChartPreferences] = useState<Record<string, PatientAnamnesisChartType>>({});
@@ -1337,6 +1657,214 @@ const PacienteDetalhe = () => {
     [profiles]
   );
 
+  const paymentPlanMap = useMemo(
+    () => new Map(paymentPlans.map((p) => [p.id, p])),
+    [paymentPlans]
+  );
+
+  useEffect(() => {
+    if (!realPatientId || !clinicId) return;
+
+    let isMounted = true;
+
+    Promise.all([
+      supabase.from("patient_evolution_groups").select("id, custom_name").eq("patient_id", realPatientId),
+      supabase.from("patient_payment_plans").select("*").eq("patient_id", realPatientId).order("created_at", { ascending: false }),
+    ]).then(([evoRes, plansRes]) => {
+      if (!isMounted) return;
+      if (evoRes.data) {
+        setEvolutionGroupsMetadata(evoRes.data as EvolutionGroupMetadata[]);
+      }
+      if (plansRes.data) {
+        setPaymentPlans(plansRes.data as PatientPaymentPlanRow[]);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [clinicId, realPatientId]);
+
+  const handleSetSessionViewMode = (mode: "detailed" | "compact") => {
+    setSessionViewMode(mode);
+    try {
+      if (typeof window !== "undefined" && typeof window.localStorage?.setItem === "function") {
+        window.localStorage.setItem("therapy-flow:session-view-mode", mode);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const toggleSessionExpansion = (sessionId: string) => {
+    setExpandedSessionIds((current) =>
+      current.includes(sessionId) ? current.filter((item) => item !== sessionId) : [...current, sessionId]
+    );
+  };
+
+  const toggleEvolutionGroupCollapse = (groupId: string) => {
+    setCollapsedEvolutionGroupIds((current) =>
+      current.includes(groupId) ? current.filter((item) => item !== groupId) : [...current, groupId]
+    );
+  };
+
+  const handleSaveEvolutionGroupName = async () => {
+    if (!editingEvolutionGroup) return;
+    setSavingEvolutionGroupName(true);
+    const { error } = await supabase
+      .from("patient_evolution_groups")
+      .update({ custom_name: editingEvolutionGroup.name.trim() || null })
+      .eq("id", editingEvolutionGroup.id);
+
+    if (error) {
+      toast({ title: "Erro ao salvar nome do ciclo", variant: "destructive" });
+    } else {
+      toast({ title: "Nome do ciclo atualizado com sucesso" });
+      setEvolutionGroupsMetadata((prev) =>
+        prev.map((g) =>
+          g.id === editingEvolutionGroup.id
+            ? { ...g, custom_name: editingEvolutionGroup.name.trim() || null }
+            : g
+        )
+      );
+      setEditingEvolutionGroup(null);
+    }
+    setSavingEvolutionGroupName(false);
+  };
+
+  const handleEvolveSession = async (session: Session, options?: { mode?: "copy" | "blank"; templateId?: string | null }) => {
+    if (!id || !user) return;
+    setEvolvingSessionId(session.id);
+    setSessionToEvolve(null);
+
+    try {
+      let targetPatientId = realPatientId || id;
+      const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
+      const activeClinicId = clinicRes.data ?? session.clinic_id ?? clinicId;
+
+      let targetEvolutionGroupId = session.evolution_group_id;
+      if (!targetEvolutionGroupId && activeClinicId && targetPatientId) {
+        const { data: newGroup, error: groupErr } = await supabase
+          .from("patient_evolution_groups")
+          .insert({
+            clinic_id: activeClinicId,
+            patient_id: targetPatientId,
+          })
+          .select("id")
+          .maybeSingle();
+
+        if (!groupErr && newGroup) {
+          targetEvolutionGroupId = newGroup.id;
+          setEvolutionGroupsMetadata((prev) => [...prev, { id: newGroup.id, custom_name: null }]);
+          await supabase
+            .from("sessions")
+            .update({ evolution_group_id: targetEvolutionGroupId })
+            .eq("id", session.id);
+        }
+      }
+
+      const isBlank = options?.mode === "blank";
+      const treatment = (session.treatment && typeof session.treatment === "object" ? session.treatment : {}) as any;
+      const anamnesis = (session.anamnesis && typeof session.anamnesis === "object" ? session.anamnesis : {}) as any;
+      const rawCareLineIds = anamnesis.care_line_ids;
+      const careLineIds = Array.isArray(rawCareLineIds) ? rawCareLineIds : session.group_id ? [session.group_id] : [];
+      const chosenTemplateId = options?.templateId !== undefined ? options.templateId : (isBlank ? (anamnesisTemplates[0]?.id ?? null) : session.anamnesis_template_id);
+
+      const targetValues = isBlank
+        ? {
+            amountCharged: "",
+            amountOriginal: "",
+            amountPaid: "",
+            anamnesisFormResponse: {},
+            anamnesisTemplateId: chosenTemplateId,
+            careLineIds,
+            complexityScore: 0,
+            groupId: session.group_id,
+            notes: "",
+            observacoes: "",
+            painScore: 0,
+            patientArrivedAt: "",
+            paymentAdjustmentReason: "",
+            paymentInstallments: 1,
+            paymentMethod: "nao_informado" as const,
+            paymentStatus: "nao_cobrado" as const,
+            paymentStatusDate: "",
+            queixa: "",
+            scheduledStartAt: "",
+            sintomas: "",
+            status: "rascunho" as const,
+            treatmentBlocks: [],
+            treatmentGeneralGuidance: "",
+          }
+        : {
+            amountCharged: session.amount_charged_cents ? (session.amount_charged_cents / 100).toFixed(2).replace(".", ",") : "",
+            amountOriginal: session.amount_original_cents ? (session.amount_original_cents / 100).toFixed(2).replace(".", ",") : "",
+            amountPaid: session.amount_paid_cents ? (session.amount_paid_cents / 100).toFixed(2).replace(".", ",") : "",
+            anamnesisFormResponse: (session.anamnesis_form_response as any) || {},
+            anamnesisTemplateId: chosenTemplateId,
+            careLineIds,
+            complexityScore: session.complexity_score ?? 0,
+            groupId: session.group_id,
+            notes: session.notes ?? "",
+            observacoes: anamnesis.observacoes ?? "",
+            painScore: session.pain_score ?? 0,
+            patientArrivedAt: "",
+            paymentAdjustmentReason: session.payment_adjustment_reason ?? "",
+            paymentInstallments: session.payment_installments ?? 1,
+            paymentMethod: (session.payment_method as any) ?? "nao_informado",
+            paymentStatus: (session.payment_status as any) ?? "nao_cobrado",
+            paymentStatusDate: session.payment_status_date ?? "",
+            queixa: anamnesis.queixa ?? "",
+            scheduledStartAt: "",
+            sintomas: anamnesis.sintomas ?? "",
+            status: "rascunho" as const,
+            treatmentBlocks: Array.isArray(treatment.blocks) ? treatment.blocks : [],
+            treatmentGeneralGuidance: treatment.generalGuidance ?? "",
+          };
+
+      const newSessionData = buildSessionPayload({
+        clinicId: activeClinicId,
+        creatorUserId: user.id,
+        patientId: targetPatientId,
+        sessionDate: getCurrentDateTimeInputValue(),
+        statusOverride: "rascunho",
+        parentSessionId: session.id,
+        evolutionGroupId: targetEvolutionGroupId,
+        values: targetValues,
+      });
+
+      const { data, error } = await supabase
+        .from("sessions")
+        .insert(newSessionData)
+        .select("id")
+        .single();
+
+      if (error) {
+        toast({
+          title: "Erro ao evoluir atendimento",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: isBlank ? "Novo atendimento em branco iniciado" : "Novo atendimento de evolução iniciado",
+          description: isBlank ? "Uma nova ficha vinculada a este ciclo está pronta para preenchimento." : "Os dados foram copiados e o atendimento está pronto para preenchimento.",
+        });
+        navigate(`/pacientes/${id}/sessao/${data.id}?edit=true`, {
+          state: { startInEditMode: true },
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Erro ao evoluir atendimento",
+        description: err.message || "Ocorreu um erro inesperado",
+        variant: "destructive",
+      });
+    } finally {
+      setEvolvingSessionId(null);
+    }
+  };
+
   const getSessionSearchText = useCallback(
     (session: Session) => {
       const preview = getSessionPreviewContent(session, baseSchema);
@@ -1361,9 +1889,10 @@ const PacienteDetalhe = () => {
           sessionStatus: sessionStatusFilter,
           selectedTagId: selectedTagFilter,
         },
+        evolutionGroupsMetadata,
         getSessionText: getSessionSearchText,
       }),
-    [getSessionSearchText, groups, searchTerm, sessionStatusFilter, selectedTagFilter, sessions]
+    [evolutionGroupsMetadata, getSessionSearchText, groups, searchTerm, sessionStatusFilter, selectedTagFilter, sessions]
   );
 
   const dashboardStorageKey = clinicId && id ? `therapy-flow:patient-anamnesis-dashboard:v1:${clinicId}:${id}` : null;
@@ -1462,6 +1991,92 @@ const PacienteDetalhe = () => {
     setBulkUpdating(false);
   };
 
+  const handleBulkLinkEvolutionGroup = async (targetGroupId: string) => {
+    if (selectedSessionIds.length === 0 || !realPatientId || !clinicId) return;
+
+    let finalGroupId: string | null = targetGroupId === "none" ? null : targetGroupId;
+
+    if (targetGroupId === "__new__") {
+      const { data: newGroup, error: groupErr } = await supabase
+        .from("patient_evolution_groups")
+        .insert({
+          clinic_id: clinicId,
+          patient_id: realPatientId,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (groupErr || !newGroup) {
+        toast({ title: "Erro ao criar grupo de evolução", description: groupErr?.message, variant: "destructive" });
+        return;
+      }
+      finalGroupId = newGroup.id;
+      setEvolutionGroupsMetadata((prev) => [...prev, { id: newGroup.id, custom_name: null }]);
+    }
+
+    optimisticMoveSessionsToEvolutionGroup(selectedSessionIds, finalGroupId);
+    handleExitSelectionMode();
+
+    setBulkUpdating(true);
+    const { error } = await supabase
+      .from("sessions")
+      .update({ evolution_group_id: finalGroupId })
+      .in("id", selectedSessionIds);
+
+    if (error) {
+      toast({ title: "Erro ao vincular ao grupo de evolução", description: error.message, variant: "destructive" });
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+    } else {
+      toast({
+        title: finalGroupId ? "Atendimentos vinculados ao grupo de evolução" : "Atendimentos desvinculados do grupo",
+      });
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+    }
+    setBulkUpdating(false);
+  };
+
+  const handleLinkSessionEvolutionGroup = async (session: Session, targetGroupId: string) => {
+    if (!realPatientId || !clinicId) return;
+
+    let finalGroupId: string | null = targetGroupId === "none" ? null : targetGroupId;
+
+    if (targetGroupId === "__new__") {
+      const { data: newGroup, error: groupErr } = await supabase
+        .from("patient_evolution_groups")
+        .insert({
+          clinic_id: clinicId,
+          patient_id: realPatientId,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (groupErr || !newGroup) {
+        toast({ title: "Erro ao criar grupo de evolução", description: groupErr?.message, variant: "destructive" });
+        return;
+      }
+      finalGroupId = newGroup.id;
+      setEvolutionGroupsMetadata((prev) => [...prev, { id: newGroup.id, custom_name: null }]);
+    }
+
+    optimisticMoveSessionsToEvolutionGroup([session.id], finalGroupId);
+    setSessionToLinkGroup(null);
+
+    const { error } = await supabase
+      .from("sessions")
+      .update({ evolution_group_id: finalGroupId })
+      .eq("id", session.id);
+
+    if (error) {
+      toast({ title: "Erro ao vincular atendimento ao grupo", description: error.message, variant: "destructive" });
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+    } else {
+      toast({
+        title: finalGroupId ? "Atendimento vinculado ao grupo de evolução" : "Atendimento desvinculado do grupo",
+      });
+      if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+    }
+  };
+
   const handleBulkStatusUpdate = async (nextStatus: string) => {
     if (selectedSessionIds.length === 0) {
       return;
@@ -1534,7 +2149,56 @@ const PacienteDetalhe = () => {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+    return (
+      <div className="space-y-6 pb-12 animate-in fade-in duration-300">
+        {/* Cabeçalho superior simulado */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-9 w-9 rounded-lg" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-3.5 w-28" />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-9 w-24 rounded-md" />
+            <Skeleton className="h-9 w-32 rounded-md" />
+          </div>
+        </div>
+
+        {/* Card de feedback humanizado de carregamento */}
+        <Card className="border border-border/60 shadow-sm bg-card/60 backdrop-blur-sm">
+          <CardContent className="p-4 sm:p-6">
+            <LoadingFeedback
+              message="Carregando prontuário do paciente..."
+              onRetry={() => void invalidatePatientData(realPatientId || id)}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Silhueta de abas e estatísticas operacionais */}
+        <div className="space-y-4">
+          <div className="flex gap-2 border-b pb-2">
+            <Skeleton className="h-8 w-28 rounded-md" />
+            <Skeleton className="h-8 w-28 rounded-md" />
+            <Skeleton className="h-8 w-28 rounded-md" />
+            <Skeleton className="h-8 w-28 rounded-md" />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Skeleton className="h-24 rounded-xl" />
+            <Skeleton className="h-24 rounded-xl" />
+            <Skeleton className="h-24 rounded-xl" />
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <Skeleton className="h-16 rounded-xl" />
+            <Skeleton className="h-16 rounded-xl" />
+            <Skeleton className="h-16 rounded-xl" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!patient) {
@@ -2231,7 +2895,7 @@ const PacienteDetalhe = () => {
         )}
 
         <Card>
-          <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr),200px,220px]">
+          <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr),180px,200px,auto] items-end">
             <div className="space-y-2">
               <Label htmlFor="sessions-search">Buscar no prontuário</Label>
               <div className="relative">
@@ -2274,6 +2938,19 @@ const PacienteDetalhe = () => {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground block">Agrupamento</Label>
+              <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-background/50">
+                <Switch
+                  id="group-by-evolution-toggle"
+                  checked={groupByEvolution}
+                  onCheckedChange={handleToggleGroupByEvolution}
+                />
+                <Label htmlFor="group-by-evolution-toggle" className="text-xs font-medium cursor-pointer select-none whitespace-nowrap">
+                  Visualizar grupos
+                </Label>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -2291,8 +2968,26 @@ const PacienteDetalhe = () => {
                 <CheckCircle2 className="h-4 w-4" />
                 Concluir Selecionados
               </Button>
+              <Select onValueChange={(value) => void handleBulkLinkEvolutionGroup(value)} disabled={bulkUpdating || selectedSessionIds.length === 0}>
+                <SelectTrigger className="w-[230px] bg-background">
+                  <SelectValue placeholder="Vincular a Grupo de Evolução" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Remover de Grupo (Tornar Avulso)</SelectItem>
+                  <SelectItem value="__new__">+ Criar Novo Grupo de Evolução</SelectItem>
+                  {evolutionGroupsMetadata.map((group) => {
+                    const matchedGroupView = sessionView.evolutionGroups.find((g) => g.id === group.id);
+                    const label = group.custom_name || (matchedGroupView?.tagGroups.map(g => g.name).join(" · ")) || `Ciclo (${group.id.slice(0, 6)})`;
+                    return (
+                      <SelectItem key={group.id} value={group.id}>
+                        {label}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
               <Select onValueChange={(value) => void handleBulkMove(value)} disabled={bulkUpdating || selectedSessionIds.length === 0}>
-                <SelectTrigger className="w-[240px] bg-background">
+                <SelectTrigger className="w-[230px] bg-background">
                   <SelectValue placeholder="Vincular a Sintoma / Tag" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2354,8 +3049,32 @@ const PacienteDetalhe = () => {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Linha do tempo cronológica com filtros rápidos por sintomas e motivos de tratamento
+                Linha do tempo cronológica com ciclos de evolução e filtros rápidos
               </p>
+            </div>
+
+            {/* Toggle Visão Detalhada / Compacta */}
+            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg border self-start sm:self-auto">
+              <Button
+                type="button"
+                variant={sessionViewMode === "detailed" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 text-xs px-2.5 gap-1.5 font-medium shadow-none"
+                onClick={() => handleSetSessionViewMode("detailed")}
+              >
+                <ClipboardList className="h-3.5 w-3.5" />
+                <span>Detalhado</span>
+              </Button>
+              <Button
+                type="button"
+                variant={sessionViewMode === "compact" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 text-xs px-2.5 gap-1.5 font-medium shadow-none"
+                onClick={() => handleSetSessionViewMode("compact")}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <span>Compacto</span>
+              </Button>
             </div>
           </div>
 
@@ -2420,37 +3139,240 @@ const PacienteDetalhe = () => {
           </div>
         </div>
 
-        {/* Linha do Tempo Cronológica Unificada */}
+        {/* Linha do Tempo Cronológica com Ciclos de Evolução ou Lista Contínua */}
         {sessionView.chronologicalSessions.length > 0 ? (
-          <div className="space-y-3">
-            {sessionView.chronologicalSessions.map((session) => {
-              const careLineIds = getSessionCareLineIds(session);
-              const sessionGroups = careLineIds
-                .map((id) => groups.find((g) => g.id === id))
-                .filter(Boolean) as PatientGroup[];
-              const primaryColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : undefined;
+          <div className="space-y-4">
+            {/* Grupos de Evolução Retráteis (quando ativado na visualização) */}
+            {groupByEvolution && sessionView.evolutionGroups.length > 0 ? (
+              <div className="space-y-3">
+                {sessionView.evolutionGroups.map((evoGroup) => {
+                  const isCollapsed = collapsedEvolutionGroupIds.includes(evoGroup.id);
+                  const matchedPlan = evoGroup.paymentPlanIds.length > 0 ? paymentPlanMap.get(evoGroup.paymentPlanIds[0]) : null;
+                  const primaryColor = evoGroup.tagGroups[0]?.color ? getLegacyGroupHex(evoGroup.tagGroups[0].color) : undefined;
+                  const groupTitle = evoGroup.customName || (evoGroup.tagGroups.length > 0 ? evoGroup.tagGroups.map((g) => g.name).join(" · ") : "Ciclo de Evolução");
+                  const latestSessionInGroup = evoGroup.sessions[0];
 
-              return (
-                <SessionCard
-                  key={session.id}
-                  baseSchema={baseSchema}
-                  canViewFinancialData={canViewFinancialData}
-                  creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
-                  creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
-                  session={session}
-                  sessionGroups={sessionGroups}
-                  shareSummary={sessionShareSummaries[session.id]}
-                  isSelected={selectedSessionIds.includes(session.id)}
-                  selectionMode={!isIntern && selectionMode}
-                  borderColor={primaryColor}
-                  onPressStart={() => handleSessionPressStart(session.id)}
-                  onPressCancel={handleSessionPressCancel}
-                  onToggleSelect={() => toggleSessionSelection(session.id)}
-                  onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
-                  navigateTo={() => handleSessionNavigate(session.id)}
-                />
-              );
-            })}
+                  return (
+                    <div key={evoGroup.id} className="rounded-2xl border bg-card shadow-xs overflow-hidden transition-all">
+                      {/* Header do Ciclo de Evolução */}
+                      <div
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-muted/25 hover:bg-muted/40 cursor-pointer transition-colors border-b select-none"
+                        onClick={() => toggleEvolutionGroupCollapse(evoGroup.id)}
+                      >
+                        <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleEvolutionGroupCollapse(evoGroup.id);
+                            }}
+                          >
+                            {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                          </Button>
+
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="h-3 w-3 rounded-full shrink-0"
+                              style={{ backgroundColor: primaryColor || "var(--primary)" }}
+                            />
+                            <h3 className="font-bold text-sm tracking-tight text-foreground truncate max-w-[280px] sm:max-w-md">
+                              {groupTitle}
+                            </h3>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingEvolutionGroup({ id: evoGroup.id, name: evoGroup.customName || "" });
+                              }}
+                              title="Personalizar nome do ciclo de evolução"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge variant="secondary" className="text-[11px] font-semibold px-2 py-0.5">
+                              {evoGroup.sessionCount} {evoGroup.sessionCount === 1 ? "atendimento" : "atendimentos"}
+                            </Badge>
+
+                            {evoGroup.firstSessionDate && (
+                              <Badge variant="outline" className="text-[10px] font-normal px-2 py-0.5 text-muted-foreground">
+                                {new Date(evoGroup.firstSessionDate).toLocaleDateString("pt-BR")}
+                                {evoGroup.latestSessionDate && evoGroup.firstSessionDate !== evoGroup.latestSessionDate
+                                  ? ` até ${new Date(evoGroup.latestSessionDate).toLocaleDateString("pt-BR")}`
+                                  : ""}
+                              </Badge>
+                            )}
+
+                            {matchedPlan && (
+                              <Badge variant="outline" className="text-[10px] font-medium border-primary/30 bg-primary/10 text-primary gap-1">
+                                <Package className="h-3 w-3" />
+                                <span>{matchedPlan.name} ({matchedPlan.used_sessions}/{matchedPlan.total_sessions})</span>
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                          {latestSessionInGroup && !selectionMode && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs px-2.5 gap-1.5 font-medium border-primary/30 hover:bg-primary/10 hover:text-primary transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSessionToEvolve(latestSessionInGroup);
+                              }}
+                              disabled={evolvingSessionId === latestSessionInGroup.id}
+                            >
+                              {evolvingSessionId === latestSessionInGroup.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Plus className="h-3.5 w-3.5" />
+                              )}
+                              <span>Evoluir da última</span>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Sessões do Grupo */}
+                      {!isCollapsed && (
+                        <div className="p-3 space-y-2.5 bg-background/50">
+                          {evoGroup.sessions.map((session) => {
+                            const careLineIds = getSessionCareLineIds(session);
+                            const sessionGroups = careLineIds
+                              .map((groupId) => groups.find((g) => g.id === groupId))
+                              .filter(Boolean) as PatientGroup[];
+                            const cardColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : primaryColor;
+
+                            return (
+                              <SessionCard
+                                key={session.id}
+                                baseSchema={baseSchema}
+                                canViewFinancialData={canViewFinancialData}
+                                creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
+                                creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
+                                session={session}
+                                sessionGroups={sessionGroups}
+                                shareSummary={sessionShareSummaries[session.id]}
+                                isSelected={selectedSessionIds.includes(session.id)}
+                                selectionMode={!isIntern && selectionMode}
+                                borderColor={cardColor}
+                                isCompact={sessionViewMode === "compact"}
+                                isExpanded={expandedSessionIds.includes(session.id)}
+                                onToggleExpand={() => toggleSessionExpansion(session.id)}
+                                onEvolve={() => setSessionToEvolve(session)}
+                                onLinkGroup={() => setSessionToLinkGroup(session)}
+                                isEvolving={evolvingSessionId === session.id}
+                                onPressStart={() => handleSessionPressStart(session.id)}
+                                onPressCancel={handleSessionPressCancel}
+                                onToggleSelect={() => toggleSessionSelection(session.id)}
+                                onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
+                                navigateTo={() => handleSessionNavigate(session.id)}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Atendimentos Avulsos (se houver grupos e também atendimentos avulsos) */}
+                {sessionView.standaloneSessions.length > 0 && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center gap-2 pt-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Atendimentos Avulsos ({sessionView.standaloneSessions.length})
+                      </h4>
+                      <div className="h-px flex-1 bg-border/60" />
+                    </div>
+                    <div className="space-y-2.5">
+                      {sessionView.standaloneSessions.map((session) => {
+                        const careLineIds = getSessionCareLineIds(session);
+                        const sessionGroups = careLineIds
+                          .map((groupId) => groups.find((g) => g.id === groupId))
+                          .filter(Boolean) as PatientGroup[];
+                        const cardColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : undefined;
+
+                        return (
+                          <SessionCard
+                            key={session.id}
+                            baseSchema={baseSchema}
+                            canViewFinancialData={canViewFinancialData}
+                            creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
+                            creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
+                            session={session}
+                            sessionGroups={sessionGroups}
+                            shareSummary={sessionShareSummaries[session.id]}
+                            isSelected={selectedSessionIds.includes(session.id)}
+                            selectionMode={!isIntern && selectionMode}
+                            borderColor={cardColor}
+                            isCompact={sessionViewMode === "compact"}
+                            isExpanded={expandedSessionIds.includes(session.id)}
+                            onToggleExpand={() => toggleSessionExpansion(session.id)}
+                            onEvolve={() => setSessionToEvolve(session)}
+                            onLinkGroup={() => setSessionToLinkGroup(session)}
+                            isEvolving={evolvingSessionId === session.id}
+                            onPressStart={() => handleSessionPressStart(session.id)}
+                            onPressCancel={handleSessionPressCancel}
+                            onToggleSelect={() => toggleSessionSelection(session.id)}
+                            onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
+                            navigateTo={() => handleSessionNavigate(session.id)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Visão Contínua / Flat (quando visualização por grupos está desativada ou não há grupos) */
+              <div className="space-y-2.5">
+                {sessionView.chronologicalSessions.map((session) => {
+                  const careLineIds = getSessionCareLineIds(session);
+                  const sessionGroups = careLineIds
+                    .map((groupId) => groups.find((g) => g.id === groupId))
+                    .filter(Boolean) as PatientGroup[];
+                  const primaryColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : undefined;
+
+                  return (
+                    <SessionCard
+                      key={session.id}
+                      baseSchema={baseSchema}
+                      canViewFinancialData={canViewFinancialData}
+                      creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
+                      creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
+                      session={session}
+                      sessionGroups={sessionGroups}
+                      shareSummary={sessionShareSummaries[session.id]}
+                      isSelected={selectedSessionIds.includes(session.id)}
+                      selectionMode={!isIntern && selectionMode}
+                      borderColor={primaryColor}
+                      isCompact={sessionViewMode === "compact"}
+                      isExpanded={expandedSessionIds.includes(session.id)}
+                      onToggleExpand={() => toggleSessionExpansion(session.id)}
+                      onEvolve={() => setSessionToEvolve(session)}
+                      onLinkGroup={() => setSessionToLinkGroup(session)}
+                      isEvolving={evolvingSessionId === session.id}
+                      onPressStart={() => handleSessionPressStart(session.id)}
+                      onPressCancel={handleSessionPressCancel}
+                      onToggleSelect={() => toggleSessionSelection(session.id)}
+                      onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
+                      navigateTo={() => handleSessionNavigate(session.id)}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : (
           <Card className="p-8 text-center border-dashed">
@@ -2478,6 +3400,53 @@ const PacienteDetalhe = () => {
           </>
         )}
       </div>
+
+      {/* Dialog para renomear Ciclo de Evolução */}
+      <Dialog open={Boolean(editingEvolutionGroup)} onOpenChange={(open) => !open && setEditingEvolutionGroup(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nome do Ciclo de Evolução</DialogTitle>
+            <DialogDescription>
+              Dê um nome personalizado para este ciclo de atendimentos (ex: "Tratamento de Lombalgia 2026").
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label htmlFor="evolution-group-name">Nome do Ciclo</Label>
+            <Input
+              id="evolution-group-name"
+              placeholder="Ex: Tratamento Lombar Fase 1"
+              value={editingEvolutionGroup?.name ?? ""}
+              onChange={(e) =>
+                setEditingEvolutionGroup((curr) => (curr ? { ...curr, name: e.target.value } : null))
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleSaveEvolutionGroupName();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingEvolutionGroup(null)}
+              disabled={savingEvolutionGroupName}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSaveEvolutionGroupName()}
+              disabled={savingEvolutionGroupName}
+            >
+              {savingEvolutionGroupName ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Group create/edit dialog */}
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
@@ -3051,6 +4020,98 @@ const PacienteDetalhe = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog para vincular atendimento individual a grupo de evolução */}
+      <Dialog open={Boolean(sessionToLinkGroup)} onOpenChange={(open) => !open && setSessionToLinkGroup(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Vincular a Grupo de Evolução</DialogTitle>
+            <DialogDescription>
+              Selecione o ciclo de evolução para o atendimento de {sessionToLinkGroup ? new Date(sessionToLinkGroup.session_date).toLocaleDateString("pt-BR") : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2.5 py-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start text-left h-auto py-2.5 px-3 rounded-xl border-dashed hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30 transition-colors"
+              onClick={() => {
+                if (sessionToLinkGroup) void handleLinkSessionEvolutionGroup(sessionToLinkGroup, "none");
+              }}
+            >
+              <div>
+                <p className="font-semibold text-xs">Tornar Atendimento Avulso</p>
+                <p className="text-[11px] text-muted-foreground">Desvincula este atendimento de qualquer grupo de evolução.</p>
+              </div>
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start text-left h-auto py-2.5 px-3 rounded-xl border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors"
+              onClick={() => {
+                if (sessionToLinkGroup) void handleLinkSessionEvolutionGroup(sessionToLinkGroup, "__new__");
+              }}
+            >
+              <div>
+                <p className="font-semibold text-xs text-primary">+ Criar Novo Grupo de Evolução</p>
+                <p className="text-[11px] text-muted-foreground">Inicia um novo ciclo de evolução a partir deste atendimento.</p>
+              </div>
+            </Button>
+
+            {evolutionGroupsMetadata.length > 0 && (
+              <div className="space-y-2 pt-2 border-t">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Grupos Existentes</p>
+                <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+                  {evolutionGroupsMetadata.map((group) => {
+                    const matchedGroupView = sessionView.evolutionGroups.find((g) => g.id === group.id);
+                    const label = group.custom_name || (matchedGroupView?.tagGroups.map((g) => g.name).join(" · ")) || `Ciclo (${group.id.slice(0, 6)})`;
+                    const count = matchedGroupView?.sessionCount ?? 0;
+                    const isCurrent = sessionToLinkGroup?.evolution_group_id === group.id;
+
+                    return (
+                      <Button
+                        key={group.id}
+                        type="button"
+                        variant={isCurrent ? "secondary" : "outline"}
+                        className={`w-full justify-between text-left h-auto py-2.5 px-3 rounded-xl ${isCurrent ? "ring-1 ring-primary/40" : ""}`}
+                        onClick={() => {
+                          if (sessionToLinkGroup) void handleLinkSessionEvolutionGroup(sessionToLinkGroup, group.id);
+                        }}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <p className="font-medium text-xs truncate">{label}</p>
+                          <p className="text-[10px] text-muted-foreground">{count} {count === 1 ? "atendimento" : "atendimentos"}</p>
+                        </div>
+                        {isCurrent ? <CheckCircle2 className="h-4 w-4 text-primary shrink-0" /> : null}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setSessionToLinkGroup(null)}>
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <EvolveSessionModal
+        isOpen={Boolean(sessionToEvolve)}
+        onClose={() => setSessionToEvolve(null)}
+        onEvolveCopy={() => {
+          if (sessionToEvolve) void handleEvolveSession(sessionToEvolve, { mode: "copy" });
+        }}
+        onEvolveBlank={(templateId) => {
+          if (sessionToEvolve) void handleEvolveSession(sessionToEvolve, { mode: "blank", templateId });
+        }}
+        templates={anamnesisTemplates as any}
+        defaultTemplateId={sessionToEvolve?.anamnesis_template_id ?? null}
+        isEvolving={Boolean(evolvingSessionId)}
+      />
       </motion.div>
     </PatientFilesProvider>
   );

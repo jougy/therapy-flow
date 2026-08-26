@@ -494,52 +494,106 @@ export function usePrefetchPatientDetail(clinicId?: string | null) {
   const queryClient = useQueryClient();
 
   return useCallback(
-    (patientId?: string | null) => {
-      if (!clinicId || !patientId) return;
+    (patientId?: string | null, patientCode?: string | null) => {
+      if (!clinicId || (!patientId && !patientCode)) return;
 
-      void queryClient.prefetchQuery({
-        queryKey: ["patient", patientId, "clinic", clinicId],
-        queryFn: async () => {
-          const cacheKey = `patient_detail_${clinicId || "global"}_${patientId}`;
-          const cached = await getLocalCacheItem(cacheKey);
-          if (cached) return cached;
+      // 1. Pré-carrega o chunk JavaScript da página em segundo plano
+      void import("@/pages/PacienteDetalhe");
 
-          const { data, error } = await supabase
-            .from("patients")
-            .select("*")
-            .eq("id", patientId)
-            .eq("clinic_id", clinicId)
-            .maybeSingle();
+      // 2. Prefetch do paciente por ID ou Código
+      const prefetchByRef = (ref: string) => {
+        void queryClient.prefetchQuery({
+          queryKey: ["patient", ref, "clinic", clinicId],
+          queryFn: async () => {
+            const cacheKey = `patient_detail_${clinicId || "global"}_${ref}`;
+            const cached = await getLocalCacheItem(cacheKey);
+            if (cached) return cached;
 
-          if (error) throw error;
-          if (data) {
-            void setLocalCacheItem(cacheKey, data);
-          }
-          return data;
-        },
-        staleTime: 60 * 1000,
-      });
+            const { data, error } = await supabase
+              .from("patients")
+              .select("*")
+              .eq(ref.startsWith("PAC-") ? "patient_code" : "id", ref)
+              .eq("clinic_id", clinicId)
+              .maybeSingle();
 
-      void queryClient.prefetchQuery({
-        queryKey: ["patient-sessions", patientId],
-        queryFn: async () => {
-          const cacheKey = `patient_sessions_${patientId}`;
-          const cached = await getLocalCacheItem(cacheKey);
-          if (cached) return cached;
+            if (error) throw error;
+            if (data) {
+              void setLocalCacheItem(cacheKey, data);
+            }
+            return data;
+          },
+          staleTime: 60 * 1000,
+        });
+      };
 
-          const { data, error } = await supabase
-            .from("sessions")
-            .select("*")
-            .eq("patient_id", patientId)
-            .order("session_date", { ascending: false });
+      if (patientId) prefetchByRef(patientId);
+      if (patientCode && patientCode !== patientId) prefetchByRef(patientCode);
 
-          if (error) throw error;
-          const records = data ?? [];
-          void setLocalCacheItem(cacheKey, records);
-          return records;
-        },
-        staleTime: 60 * 1000,
-      });
+      // 3. Prefetch de sessões, grupos e agenda
+      if (patientId) {
+        void queryClient.prefetchQuery({
+          queryKey: ["patient-sessions", patientId],
+          queryFn: async () => {
+            const cacheKey = `patient_sessions_${patientId}`;
+            const cached = await getLocalCacheItem(cacheKey);
+            if (cached) return cached;
+
+            const { data, error } = await supabase
+              .from("sessions")
+              .select("*")
+              .eq("patient_id", patientId)
+              .order("session_date", { ascending: false });
+
+            if (error) throw error;
+            const records = data ?? [];
+            void setLocalCacheItem(cacheKey, records);
+            return records;
+          },
+          staleTime: 60 * 1000,
+        });
+
+        void queryClient.prefetchQuery({
+          queryKey: ["patient-groups", patientId],
+          queryFn: async () => {
+            const cacheKey = `patient_groups_${patientId}`;
+            const cached = await getLocalCacheItem(cacheKey);
+            if (cached) return cached;
+
+            const { data, error } = await supabase
+              .from("patient_groups")
+              .select("*")
+              .eq("patient_id", patientId)
+              .order("created_at", { ascending: true });
+
+            if (error) throw error;
+            const records = data ?? [];
+            void setLocalCacheItem(cacheKey, records);
+            return records;
+          },
+          staleTime: 60 * 1000,
+        });
+
+        void queryClient.prefetchQuery({
+          queryKey: ["patient-agenda", patientId],
+          queryFn: async () => {
+            const cacheKey = `patient_agenda_${patientId}`;
+            const cached = await getLocalCacheItem(cacheKey);
+            if (cached) return cached;
+
+            const { data, error } = await supabase
+              .from("agenda_events")
+              .select("*")
+              .eq("patient_id", patientId)
+              .order("event_date", { ascending: false });
+
+            if (error) throw error;
+            const records = data ?? [];
+            void setLocalCacheItem(cacheKey, records);
+            return records;
+          },
+          staleTime: 60 * 1000,
+        });
+      }
     },
     [clinicId, queryClient]
   );

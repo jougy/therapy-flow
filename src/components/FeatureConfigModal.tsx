@@ -5,10 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
 import { featureFlagsCatalog } from "@/lib/feature-flags-catalog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { HelpersConfigModal } from "@/components/tutorial/HelpersConfigModal";
 
 export interface FeatureConfigModalProps {
   featureKey: string | null;
@@ -22,6 +22,20 @@ export interface FeatureConfigModalProps {
 }
 
 export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initialData, scope = "global", tagId, clinicId }: FeatureConfigModalProps) {
+  if (featureKey === "system_helpers") {
+    return (
+      <HelpersConfigModal
+        isOpen={isOpen}
+        onClose={onClose}
+        initialData={initialData}
+        onSave={onSave}
+        scope={scope}
+        tagId={tagId}
+        clinicId={clinicId}
+      />
+    );
+  }
+
   const feature = featureFlagsCatalog.find(f => f.key === featureKey);
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [isSaving, setIsSaving] = useState(false);

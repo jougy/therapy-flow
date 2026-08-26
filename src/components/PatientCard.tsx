@@ -41,7 +41,7 @@ export interface PatientCardData {
 
 interface PatientCardProps {
   patient: PatientCardData;
-  onPrefetch?: (id: string) => void;
+  onPrefetch?: (id: string, patientCode?: string | null) => void;
 }
 
 const formatCpf = (cpf: string) =>
@@ -94,12 +94,17 @@ const PatientCard = ({ patient, onPrefetch }: PatientCardProps) => {
     ? `https://wa.me/${phoneDigits.startsWith("55") ? phoneDigits : `55${phoneDigits}`}`
     : null;
 
+  const handleTriggerPrefetch = () => {
+    onPrefetch?.(patient.id, patient.patient_code);
+  };
+
   return (
     <Card
       className="p-4 cursor-pointer hover:shadow-md transition-shadow duration-150 group select-none"
       onClick={() => navigate(getPatientPath(patient))}
-      onPointerEnter={() => onPrefetch?.(patient.id)}
-      onFocus={() => onPrefetch?.(patient.id)}
+      onPointerEnter={handleTriggerPrefetch}
+      onFocus={handleTriggerPrefetch}
+      onTouchStart={handleTriggerPrefetch}
       role="button"
       tabIndex={0}
       aria-label={`Ver detalhes de ${patient.name}`}

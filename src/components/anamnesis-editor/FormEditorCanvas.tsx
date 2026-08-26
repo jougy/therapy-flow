@@ -6,6 +6,7 @@ import {
   Folder,
   GripVertical,
   HelpCircle,
+  Hexagon,
   Plus,
   Sparkles,
   ToggleLeft,
@@ -32,6 +33,7 @@ import {
 } from "./types";
 import { HorizontalScrollNavigator } from "./HorizontalScrollNavigator";
 import { FormEditorLivePreview } from "./FormEditorLivePreview";
+import { StatusPolygonRadar } from "@/components/anamnesis/StatusPolygonRadar";
 import type { useFormEditorState } from "./useFormEditorState";
 
 export interface FormEditorCanvasProps {
@@ -560,8 +562,43 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
 
                           if (canvasMode === "test" && !isChildVisible) return null;
 
+                          const span = child.field.columnSpan;
+                          let childFlex = `${estimateLayoutWeight(child.field)} 1 ${preferredWidth}px`;
+                          let childMinWidth: string | number = Math.min(
+                            preferredWidth,
+                            maxWidth ?? preferredWidth
+                          );
+                          let childMaxWidth: string | number | undefined = maxWidth ?? undefined;
+
+                          if (span === "1/4") {
+                            childFlex = "0 0 calc(25% - 12px)";
+                            childMinWidth = 160;
+                          } else if (span === "1/3") {
+                            childFlex = "0 0 calc(33.333% - 12px)";
+                            childMinWidth = 180;
+                          } else if (span === "1/2") {
+                            childFlex = "0 0 calc(50% - 12px)";
+                            childMinWidth = 220;
+                          } else if (span === "2/3") {
+                            childFlex = "0 0 calc(66.666% - 12px)";
+                            childMinWidth = 260;
+                          } else if (span === "full") {
+                            childFlex = "0 0 100%";
+                            childMinWidth = "100%";
+                            childMaxWidth = "100%";
+                          }
+
                           return (
-                            <div key={child.field.id} className="relative min-w-0 flex items-stretch">
+                            <div
+                              key={child.field.id}
+                              className="relative min-w-0 flex items-stretch shrink-0"
+                              style={{
+                                flex: childFlex,
+                                maxWidth: childMaxWidth,
+                                minHeight: horizontalRowMinHeight,
+                                minWidth: childMinWidth,
+                              }}
+                            >
                               {/* Horizontal Drop Line Indicators */}
                               {isChildDragOver && dragOverPosition === "before" && (
                                 <div className="absolute -left-2 top-0 bottom-0 z-30 flex flex-col items-center pointer-events-none">
@@ -578,136 +615,100 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                                 </div>
                               )}
 
-                              {(() => {
-                                const span = child.field.columnSpan;
-                                let childFlex = `${estimateLayoutWeight(child.field)} 1 ${preferredWidth}px`;
-                                let childMinWidth: string | number = Math.min(
-                                  preferredWidth,
-                                  maxWidth ?? preferredWidth
-                                );
-                                let childMaxWidth: string | number | undefined = maxWidth ?? undefined;
+                              <div
+                                ref={(node) => {
+                                  editorCardRefs.current[child.field.id] = node;
+                                }}
+                                draggable={canvasMode === "edit"}
+                                onDragStart={(e) => {
+                                  if (canvasMode !== "edit") return;
+                                  e.stopPropagation();
+                                  setDraggedFieldId(child.field.id);
+                                  e.dataTransfer.setData("text/plain", child.field.id);
+                                }}
+                                onDragOver={(e) => {
+                                  if (canvasMode !== "edit") return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (draggedFieldId === child.field.id) return;
 
-                                if (span === "1/4") {
-                                  childFlex = "0 0 calc(25% - 12px)";
-                                  childMinWidth = 160;
-                                } else if (span === "1/3") {
-                                  childFlex = "0 0 calc(33.333% - 12px)";
-                                  childMinWidth = 180;
-                                } else if (span === "1/2") {
-                                  childFlex = "0 0 calc(50% - 12px)";
-                                  childMinWidth = 220;
-                                } else if (span === "2/3") {
-                                  childFlex = "0 0 calc(66.666% - 12px)";
-                                  childMinWidth = 260;
-                                } else if (span === "full") {
-                                  childFlex = "0 0 100%";
-                                  childMinWidth = "100%";
-                                  childMaxWidth = "100%";
-                                }
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                  const relativeX = e.clientX - rect.left;
+                                  const pos: "before" | "after" = relativeX < rect.width * 0.5 ? "before" : "after";
 
-                                return (
-                                  <div
-                                    ref={(node) => {
-                                      editorCardRefs.current[child.field.id] = node;
-                                    }}
-                                    draggable={canvasMode === "edit"}
-                                    onDragStart={(e) => {
-                                      if (canvasMode !== "edit") return;
-                                      e.stopPropagation();
-                                      setDraggedFieldId(child.field.id);
-                                      e.dataTransfer.setData("text/plain", child.field.id);
-                                    }}
-                                    onDragOver={(e) => {
-                                      if (canvasMode !== "edit") return;
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      if (draggedFieldId === child.field.id) return;
-
-                                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                      const relativeX = e.clientX - rect.left;
-                                      const pos: "before" | "after" = relativeX < rect.width * 0.5 ? "before" : "after";
-
-                                      if (dragOverFieldId !== child.field.id || dragOverPosition !== pos) {
-                                        setDragOverFieldId(child.field.id);
-                                        setDragOverPosition(pos);
-                                      }
-                                    }}
-                                    onDragLeave={(e) => {
-                                      if (canvasMode !== "edit") return;
-                                      e.stopPropagation();
-                                      if (dragOverFieldId === child.field.id) {
-                                        setDragOverFieldId(null);
-                                        setDragOverPosition(null);
-                                      }
-                                    }}
-                                    onDrop={(e) => handleDropOnTarget(child.field.id, dragOverPosition ?? "after", e)}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      selectFieldAndOpenMobileInspector(child.field.id, e);
-                                    }}
-                                    onTouchStart={() => handleCardTouchStart(child.field.id)}
-                                    onTouchEnd={handleCardTouchEnd}
-                                    onTouchCancel={handleCardTouchEnd}
-                                    className={`group relative flex-1 cursor-pointer rounded-lg border p-3 transition-all ${
-                                      isChildSelected
-                                        ? "border-primary bg-primary/[0.05] ring-2 ring-primary ring-offset-1 shadow-sm"
-                                        : "border-border/60 hover:border-primary/50 hover:bg-muted/20"
-                                    } ${isChildDragging ? "opacity-40" : ""} ${
-                                      !isChildVisible && canvasMode === "edit" ? "opacity-60 border-dashed" : ""
-                                    }`}
-                                    style={{
-                                      flex: childFlex,
-                                      maxWidth: childMaxWidth,
-                                      minHeight: horizontalRowMinHeight,
-                                      minWidth: childMinWidth,
-                                    }}
-                                  >
-                                    <div className="flex h-full min-h-0 flex-col">
-                                      <div className="flex items-center justify-between gap-2 mb-2">
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          {(isMultiSelecting || isChildSelected) && (
-                                            <div
-                                              className={cn(
-                                                "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors",
-                                                isChildSelected
-                                                  ? "border-primary bg-primary text-primary-foreground"
-                                                  : "border-muted-foreground/40 bg-background"
-                                              )}
-                                            >
-                                              {isChildSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
-                                            </div>
+                                  if (dragOverFieldId !== child.field.id || dragOverPosition !== pos) {
+                                    setDragOverFieldId(child.field.id);
+                                    setDragOverPosition(pos);
+                                  }
+                                }}
+                                onDragLeave={(e) => {
+                                  if (canvasMode !== "edit") return;
+                                  e.stopPropagation();
+                                  if (dragOverFieldId === child.field.id) {
+                                    setDragOverFieldId(null);
+                                    setDragOverPosition(null);
+                                  }
+                                }}
+                                onDrop={(e) => handleDropOnTarget(child.field.id, dragOverPosition ?? "after", e)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectFieldAndOpenMobileInspector(child.field.id, e);
+                                }}
+                                onTouchStart={() => handleCardTouchStart(child.field.id)}
+                                onTouchEnd={handleCardTouchEnd}
+                                onTouchCancel={handleCardTouchEnd}
+                                className={`group relative w-full flex-1 cursor-pointer rounded-lg border p-3 transition-all ${
+                                  isChildSelected
+                                    ? "border-primary bg-primary/[0.05] ring-2 ring-primary ring-offset-1 shadow-sm"
+                                    : "border-border/60 hover:border-primary/50 hover:bg-muted/20"
+                                } ${isChildDragging ? "opacity-40" : ""} ${
+                                  !isChildVisible && canvasMode === "edit" ? "opacity-60 border-dashed" : ""
+                                }`}
+                              >
+                                <div className="flex h-full min-h-0 flex-col">
+                                  <div className="flex items-center justify-between gap-2 mb-2">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      {(isMultiSelecting || isChildSelected) && (
+                                        <div
+                                          className={cn(
+                                            "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors",
+                                            isChildSelected
+                                              ? "border-primary bg-primary text-primary-foreground"
+                                              : "border-muted-foreground/40 bg-background"
                                           )}
-                                          <Badge
-                                            variant="outline"
-                                            className="text-[9px] px-1 py-0 font-normal text-muted-foreground"
-                                          >
-                                            {getFieldTypeLabel(child.field.type)}
-                                          </Badge>
-                                          {span && span !== "auto" && (
-                                            <Badge
-                                              variant="secondary"
-                                              className="text-[9px] px-1 py-0 text-muted-foreground"
-                                            >
-                                              {span}
-                                            </Badge>
-                                          )}
+                                        >
+                                          {isChildSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
                                         </div>
-                                        {renderFieldQuickActions(child.field)}
-                                      </div>
-                                      {child.type === "field" ? (
-                                        <FormEditorLivePreview
-                                          field={child.field}
-                                          testAnswers={testAnswers}
-                                          setFieldTestAnswer={setFieldTestAnswer}
-                                          onFieldFocus={(id) => selectFieldAndOpenMobileInspector(id)}
-                                        />
-                                      ) : (
-                                        renderPreviewLayout([child])
+                                      )}
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[9px] px-1 py-0 font-normal text-muted-foreground"
+                                      >
+                                        {getFieldTypeLabel(child.field.type)}
+                                      </Badge>
+                                      {span && span !== "auto" && (
+                                        <Badge
+                                          variant="secondary"
+                                          className="text-[9px] px-1 py-0 text-muted-foreground"
+                                        >
+                                          {span}
+                                        </Badge>
                                       )}
                                     </div>
+                                    {renderFieldQuickActions(child.field)}
                                   </div>
-                                );
-                              })()}
+                                  {child.type === "field" ? (
+                                    <FormEditorLivePreview
+                                      field={child.field}
+                                      testAnswers={testAnswers}
+                                      setFieldTestAnswer={setFieldTestAnswer}
+                                      onFieldFocus={(id) => selectFieldAndOpenMobileInspector(id)}
+                                    />
+                                  ) : (
+                                    renderPreviewLayout([child])
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           );
                         })}
@@ -924,6 +925,179 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                         })
                       )
                     )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          );
+        }
+
+        if (item.type === "radar_section") {
+          const accentColor = getFieldAccentColor(item.field);
+          const accentAlpha = getFieldAccentAlpha(item.field);
+          const isSelected = selectedFieldIds.includes(item.field.id);
+          const isContainerDragOver = dragOverFieldId === item.field.id && dragOverPosition === "inside";
+
+          const radarItems = item.items.map((child) => {
+            const raw = testAnswers[child.field.id];
+            const val =
+              typeof raw === "number"
+                ? raw
+                : typeof raw === "string" && !isNaN(Number(raw)) && raw.trim() !== ""
+                  ? Number(raw)
+                  : child.field.min ?? 5;
+            return {
+              id: child.field.id,
+              label: child.field.label,
+              max: child.field.max ?? 10,
+              min: child.field.min ?? 0,
+              value: val,
+            };
+          });
+
+          return (
+            <div key={item.field.id} className="relative">
+              {/* Visual Drop Line Indicator (Top) */}
+              {isDragOver && dragOverPosition === "before" && (
+                <div className="absolute -top-2 left-0 right-0 z-30 flex items-center pointer-events-none">
+                  <div className="h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background shadow-md -ml-1" />
+                  <div className="h-1 flex-1 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary)/0.8)]" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background shadow-md -mr-1" />
+                </div>
+              )}
+
+              {/* Visual Drop Line Indicator (Bottom) */}
+              {isDragOver && dragOverPosition === "after" && (
+                <div className="absolute -bottom-2 left-0 right-0 z-30 flex items-center pointer-events-none">
+                  <div className="h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background shadow-md -ml-1" />
+                  <div className="h-1 flex-1 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary)/0.8)]" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background shadow-md -mr-1" />
+                </div>
+              )}
+
+              <Card
+                ref={(node) => {
+                  editorCardRefs.current[item.field.id] = node;
+                }}
+                draggable={canvasMode === "edit"}
+                onDragStart={(e) => {
+                  if (canvasMode !== "edit") return;
+                  e.stopPropagation();
+                  setDraggedFieldId(item.field.id);
+                  e.dataTransfer.setData("text/plain", item.field.id);
+                }}
+                onDragOver={(e) => {
+                  if (canvasMode !== "edit") return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (draggedFieldId === item.field.id) return;
+
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  const relativeY = e.clientY - rect.top;
+
+                  let pos: "before" | "inside" | "after" = "inside";
+                  if (relativeY < 30) pos = "before";
+                  else if (relativeY > rect.height - 30) pos = "after";
+
+                  if (dragOverFieldId !== item.field.id || dragOverPosition !== pos) {
+                    setDragOverFieldId(item.field.id);
+                    setDragOverPosition(pos);
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (canvasMode !== "edit") return;
+                  e.stopPropagation();
+                  if (dragOverFieldId === item.field.id) {
+                    setDragOverFieldId(null);
+                    setDragOverPosition(null);
+                  }
+                }}
+                onDrop={(e) => handleDropOnTarget(item.field.id, dragOverPosition ?? "inside", e)}
+                className={cn(
+                  "group relative overflow-hidden rounded-xl border transition-all cursor-pointer",
+                  isSelected
+                    ? "ring-2 ring-primary ring-offset-2 shadow-md"
+                    : "border-border/80 hover:border-primary/50 shadow-xs",
+                  isContainerDragOver ? "ring-2 ring-primary bg-primary/[0.04]" : "",
+                  isDraggingThis ? "opacity-40" : "",
+                  !isVisibleInTest && canvasMode === "edit" ? "opacity-60" : ""
+                )}
+                style={{
+                  background: getSoftAccentBackground(accentColor, accentAlpha),
+                  borderColor: toRgbaString(accentColor, Math.max(accentAlpha * 0.65, 30)),
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  selectFieldAndOpenMobileInspector(item.field.id, e);
+                }}
+                onTouchStart={() => handleCardTouchStart(item.field.id)}
+                onTouchEnd={handleCardTouchEnd}
+                onTouchCancel={handleCardTouchEnd}
+              >
+                <CardContent className="p-0">
+                  {/* Header bar */}
+                  <div
+                    className="flex flex-col gap-2 p-4 border-b border-border/40"
+                    style={{
+                      backgroundColor: toRgbaString(accentColor, Math.max(accentAlpha * 0.45, 12)),
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {canvasMode === "edit" && (
+                          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground opacity-50 group-hover:opacity-100" />
+                        )}
+                        {(isMultiSelecting || isSelected) && (
+                          <div
+                            className={cn(
+                              "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                              isSelected
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-muted-foreground/40 bg-background"
+                            )}
+                          >
+                            {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                          </div>
+                        )}
+                        <Hexagon className="h-5 w-5 text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm truncate">{item.field.label}</p>
+                          {item.field.helpText && (
+                            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{item.field.helpText}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className="text-[10px] font-medium border-primary/40 text-primary">
+                          Polígono RPG ({item.items.length} {item.items.length === 1 ? "vértice" : "vértices"})
+                        </Badge>
+                        {renderFieldQuickActions(item.field)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Body with radar + sliders */}
+                  <div className="p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                    <div className="lg:col-span-5 flex flex-col items-center justify-center bg-background/50 rounded-lg p-3 border border-border/40 min-h-[260px]">
+                      <StatusPolygonRadar
+                        items={radarItems}
+                        accentColor={accentColor}
+                        height={240}
+                        title="Prévia do Polígono (Status RPG)"
+                      />
+                    </div>
+                    <div className="lg:col-span-7 space-y-4 min-w-0">
+                      {item.items.length === 0 ? (
+                        <div className="py-8 px-4 text-center text-xs text-muted-foreground border-2 border-dashed border-primary/20 rounded-lg bg-background/50">
+                          <p className="font-medium text-foreground">Nenhum atributo adicionado</p>
+                          <p className="mt-1">
+                            Arraste Slidebars ou campos numéricos para cá para formar os vértices do polígono.
+                          </p>
+                        </div>
+                      ) : (
+                        renderPreviewLayout(item.items)
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTutorial } from "@/contexts/TutorialContext";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 
 interface TutorialTriggerButtonProps {
   className?: string;
@@ -17,8 +18,9 @@ export const TutorialTriggerButton = ({
   showLabel = true,
 }: TutorialTriggerButtonProps) => {
   const { setIsChapterModalOpen, isOpen } = useTutorial();
+  const { isFeatureEnabled } = useFeatureFlags();
 
-  if (isOpen) return null;
+  if (isOpen || !isFeatureEnabled("tutorial_training_center")) return null;
 
   return (
     <TooltipProvider>

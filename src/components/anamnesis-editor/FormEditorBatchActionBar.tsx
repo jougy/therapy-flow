@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckSquare, Columns, Copy, Folder, RotateCcw, Trash2 } from "lucide-react";
+import { CheckSquare, Columns, Copy, Folder, Hexagon, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface FormEditorBatchActionBarProps {
@@ -8,7 +8,7 @@ export interface FormEditorBatchActionBarProps {
   selectedFieldIds: string[];
   isAllSelected: boolean;
   handleToggleSelectAll: () => void;
-  encapsulateSelectedFields: (type: "section" | "horizontal_section") => void;
+  encapsulateSelectedFields: (type: "section" | "horizontal_section" | "radar_section") => void;
   duplicateSelectedFields: () => void;
   deleteSelectedFields: () => void;
   setSelectedFieldIds: (ids: string[]) => void;
@@ -75,6 +75,18 @@ export const FormEditorBatchActionBar: React.FC<FormEditorBatchActionBarProps> =
           >
             <Columns className="h-3.5 w-3.5 text-primary" />
             <span className="hidden md:inline">Seção Horizontal</span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 text-xs text-foreground hover:bg-primary/10 hover:text-primary rounded-full px-2.5 sm:px-3"
+            onClick={() => encapsulateSelectedFields("radar_section")}
+            title="Encapsular em Polígono de Status (Radar RPG)"
+          >
+            <Hexagon className="h-3.5 w-3.5 text-primary" />
+            <span className="hidden md:inline">Polígono RPG</span>
           </Button>
 
           <Button

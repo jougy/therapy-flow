@@ -108,6 +108,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Inventario de inputs]]
 - [[Feature Flags - Guia]]
 - [[Prevencao de TDZ e ordem de hooks no React]]
+- [[Otimizacao de Carregamento e Feedback Humanizado de Rede]]
 - [[Site Institucional Astro]]
 - [[Plano de Otimizacao de Performance e Loads]]
 - [[Arquitetura Client-First e Otimizacao de Performance da Homepage]]

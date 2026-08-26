@@ -63,6 +63,12 @@ vi.mock("recharts", () => {
     LineChart: Component,
     Pie: Component,
     PieChart: Component,
+    PolarAngleAxis: Component,
+    PolarGrid: Component,
+    PolarRadiusAxis: Component,
+    Radar: Component,
+    RadarChart: Component,
+    ResponsiveContainer: Component,
     XAxis: Component,
     YAxis: Component,
   };
@@ -181,6 +187,20 @@ vi.mock("@/integrations/supabase/client", () => {
       session_date: "2026-01-03T12:00:00.000Z",
       status: "rascunho",
     },
+    {
+      anamnesis: {},
+      anamnesis_form_response: {
+        rpg_str: 9,
+        rpg_agi: 7,
+        rpg_res: 8,
+      },
+      anamnesis_template_id: "template-rpg",
+      complexity_score: null,
+      id: "session-3",
+      pain_score: 2,
+      session_date: "2026-01-05T12:00:00.000Z",
+      status: "concluído",
+    },
   ];
 
   const templates = [
@@ -200,6 +220,16 @@ vi.mock("@/integrations/supabase/client", () => {
           type: "select",
         },
         { groupKey: "template_section", id: "notes", label: "Notas", type: "long_text" },
+      ],
+    },
+    {
+      id: "template-rpg",
+      name: "Ficha RPG Status",
+      schema: [
+        { id: "radar_sec", label: "Polígono de Status RPG", type: "radar_section" },
+        { groupKey: "radar_sec", id: "rpg_str", label: "Força", min: 0, max: 10, type: "slider" },
+        { groupKey: "radar_sec", id: "rpg_agi", label: "Agilidade", min: 0, max: 10, type: "slider" },
+        { groupKey: "radar_sec", id: "rpg_res", label: "Resistência", min: 0, max: 10, type: "slider" },
       ],
     },
   ];
@@ -268,5 +298,20 @@ describe("PacienteAnamnesisDashboard", () => {
     fireEvent.change(selects[0], { target: { value: "template-1" } });
     expect(screen.queryByRole("heading", { name: "Bloco padrão" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ficha ortopédica" })).toBeInTheDocument();
+  });
+
+  it("renders radar_section status polygon and allows switching chart views", async () => {
+    render(
+      <MemoryRouter>
+        <PacienteAnamnesisDashboard />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Dashboard de Anamnese")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ficha RPG Status" })).toBeInTheDocument();
+    expect(screen.getAllByText("Polígono de Status RPG").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Força:")).toBeInTheDocument();
+    expect(screen.getByText("Agilidade:")).toBeInTheDocument();
+    expect(screen.getByText("Resistência:")).toBeInTheDocument();
   });
 });

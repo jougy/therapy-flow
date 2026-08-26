@@ -12,6 +12,9 @@ export type SearchableSession = {
   id: string;
   session_date: string;
   status: string;
+  evolution_group_id?: string | null;
+  parent_session_id?: string | null;
+  payment_plan_id?: string | null;
 };
 
 type SearchableOwnedSession = SearchableSession & {
@@ -26,11 +29,17 @@ export type SessionSearchFilters = {
   selectedTagId?: string | null;
 };
 
+export type EvolutionGroupMetadata = {
+  id: string;
+  custom_name: string | null;
+};
+
 type BuildPatientSessionsViewArgs<TGroup extends SearchablePatientGroup, TSession extends SearchableSession> = {
   filters: SessionSearchFilters;
   getSessionText: (session: TSession) => string;
   groups: TGroup[];
   sessions: TSession[];
+  evolutionGroupsMetadata?: EvolutionGroupMetadata[];
 };
 
 type SearchVisibilityArgs<TSession extends SearchableSession> = {
@@ -46,6 +55,17 @@ export type PatientSessionGroupView<TGroup extends SearchablePatientGroup, TSess
   latestSessionDate: string | null;
   sessionCount: number;
   sessions: TSession[];
+};
+
+export type PatientEvolutionGroupView<TGroup extends SearchablePatientGroup, TSession extends SearchableSession> = {
+  id: string;
+  customName: string | null;
+  tagGroups: TGroup[];
+  sessions: TSession[];
+  sessionCount: number;
+  firstSessionDate: string | null;
+  latestSessionDate: string | null;
+  paymentPlanIds: string[];
 };
 
 export const getSessionCareLineIds = (session: SearchableSession): string[] => {
@@ -111,6 +131,7 @@ export const buildPatientSessionsView = <
   getSessionText,
   groups,
   sessions,
+  evolutionGroupsMetadata,
 }: BuildPatientSessionsViewArgs<TGroup, TSession>) => {
   const groupMap = new Map(groups.map((g) => [g.id, g]));
 
@@ -229,10 +250,99 @@ export const buildPatientSessionsView = <
     });
   });
 
+  // Evolution Groups Grouping with Lineage Healing
+  const evoMetaMap = new Map((evolutionGroupsMetadata ?? []).map((m) => [m.id, m]));
+  const evoGroupSessionsMap = new Map<string, TSession[]>();
+  const standaloneSessions: TSession[] = [];
+
+  // Bidirectional Lineage Propagation:
+  // Propagates evolution_group_id across parent_session_id connections in both directions
+  const resolvedEvolutionGroupMap = new Map<string, string>();
+  sessions.forEach((s) => {
+    if (s.evolution_group_id) {
+      resolvedEvolutionGroupMap.set(s.id, s.evolution_group_id);
+    }
+  });
+
+  let changed = true;
+  let iterations = 0;
+  while (changed && iterations < 10) {
+    changed = false;
+    iterations++;
+    sessions.forEach((s) => {
+      // 1. If child has no group but parent has a group, inherit parent's group
+      if (!resolvedEvolutionGroupMap.has(s.id) && s.parent_session_id) {
+        const parentGroupId = resolvedEvolutionGroupMap.get(s.parent_session_id);
+        if (parentGroupId) {
+          resolvedEvolutionGroupMap.set(s.id, parentGroupId);
+          changed = true;
+        }
+      }
+      // 2. If parent has no group but child has a group, propagate child's group to parent
+      if (s.parent_session_id && resolvedEvolutionGroupMap.has(s.id)) {
+        const childGroupId = resolvedEvolutionGroupMap.get(s.id);
+        if (childGroupId && !resolvedEvolutionGroupMap.has(s.parent_session_id)) {
+          resolvedEvolutionGroupMap.set(s.parent_session_id, childGroupId);
+          changed = true;
+        }
+      }
+    });
+  }
+
+  filteredChronological.forEach((session) => {
+    const evoGroupId = resolvedEvolutionGroupMap.get(session.id) || session.evolution_group_id;
+    if (evoGroupId) {
+      const existing = evoGroupSessionsMap.get(evoGroupId) || [];
+      existing.push(session);
+      evoGroupSessionsMap.set(evoGroupId, existing);
+    } else {
+      standaloneSessions.push(session);
+    }
+  });
+
+  const evolutionGroups: PatientEvolutionGroupView<TGroup, TSession>[] = Array.from(
+    evoGroupSessionsMap.entries()
+  ).map(([groupId, groupSessions]) => {
+    const meta = evoMetaMap.get(groupId);
+    const sessionDates = groupSessions
+      .map((s) => s.session_date)
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+    const uniqueCareLineIdSet = new Set<string>();
+    groupSessions.forEach((s) => {
+      getSessionCareLineIds(s).forEach((id) => uniqueCareLineIdSet.add(id));
+    });
+
+    const tagGroups = Array.from(uniqueCareLineIdSet)
+      .map((id) => groupMap.get(id))
+      .filter(Boolean) as TGroup[];
+
+    const paymentPlanIds = Array.from(
+      new Set(groupSessions.map((s) => s.payment_plan_id).filter(Boolean) as string[])
+    );
+
+    return {
+      id: groupId,
+      customName: meta?.custom_name ?? null,
+      tagGroups,
+      sessions: groupSessions,
+      sessionCount: groupSessions.length,
+      firstSessionDate: sessionDates[0] ?? null,
+      latestSessionDate: sessionDates.at(-1) ?? null,
+      paymentPlanIds,
+    };
+  }).sort((a, b) => {
+    const timeA = a.latestSessionDate ? new Date(a.latestSessionDate).getTime() : 0;
+    const timeB = b.latestSessionDate ? new Date(b.latestSessionDate).getTime() : 0;
+    return timeB - timeA;
+  });
+
   return {
     groups: grouped,
     ungrouped,
     chronologicalSessions: filteredChronological,
+    evolutionGroups,
+    standaloneSessions,
     tagStats,
     ungroupedCount,
     totalCount: sessions.length,

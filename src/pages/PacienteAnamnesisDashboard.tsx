@@ -15,12 +15,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowLeft, BarChart3, ClipboardEdit, ClipboardList, FileText, Loader2 } from "lucide-react";
+import { ArrowLeft, BarChart3, ClipboardEdit, ClipboardList, FileText, Hexagon, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { StatusPolygonRadar } from "@/components/anamnesis/StatusPolygonRadar";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -53,6 +54,7 @@ const chartLabels: Record<PatientAnamnesisChartType, string> = {
   line: "Linha",
   pie: "Pizza",
   proportion: "Proporção",
+  radar: "Polígono (Radar)",
 };
 
 const formatNumber = (value: number | undefined) => {
@@ -109,6 +111,52 @@ const getMetricChart = (
 };
 
 const MetricStats = ({ metric }: { metric: PatientAnamnesisDashboardMetric }) => {
+  if (metric.isRadarGroup) {
+    return (
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+          <div className="rounded-lg bg-muted/30 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Atendimentos</p>
+            <p className="font-semibold">{metric.count}</p>
+          </div>
+          <div className="rounded-lg bg-muted/30 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Média Geral</p>
+            <p className="font-semibold">{formatNumber(metric.average)}</p>
+          </div>
+          <div className="rounded-lg bg-muted/30 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Mínimo</p>
+            <p className="font-semibold">{formatNumber(metric.min)}</p>
+          </div>
+          <div className="rounded-lg bg-muted/30 px-3 py-2">
+            <p className="text-xs text-muted-foreground">Máximo</p>
+            <p className="font-semibold">{formatNumber(metric.max)}</p>
+          </div>
+        </div>
+        {metric.radarItems && metric.radarItems.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {metric.radarItems.map((item, idx) => (
+              <span
+                key={item.id}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1 text-xs"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{
+                    backgroundColor:
+                      metric.seriesKeys?.[idx]?.color ??
+                      ["#0ea5e9", "#10b981", "#f59e0b", "#f43f5e", "#8b5cf6", "#14b8a6", "#64748b", "#ec4899"][idx % 8],
+                  }}
+                />
+                <span className="font-medium text-muted-foreground">{item.label}:</span>
+                <span className="font-bold text-foreground">{item.value}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (metric.kind !== "number") {
     return (
       <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
@@ -155,6 +203,176 @@ const MetricChart = ({
   chart: PatientAnamnesisChartType;
   metric: PatientAnamnesisDashboardMetric;
 }) => {
+  // Handle aggregated radar section (RPG status polygon & multi-series)
+  if (metric.isRadarGroup) {
+    if (chart === "radar") {
+      return (
+        <StatusPolygonRadar
+          series={metric.radarSeries}
+          items={metric.radarItems}
+          showLegend={true}
+          height={280}
+        />
+      );
+    }
+
+    const multiConfig: ChartConfig = {};
+    (metric.seriesKeys ?? []).forEach((key) => {
+      multiConfig[key.id] = {
+        color: key.color,
+        label: key.label,
+      };
+    });
+
+    if (chart === "bar") {
+      return (
+        <div className="space-y-4">
+          <ChartContainer config={multiConfig} className="h-64 w-full sm:h-72">
+            <BarChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} />
+              <YAxis tickLine={false} axisLine={false} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              {(metric.seriesKeys ?? []).map((key) => (
+                <Bar key={key.id} dataKey={key.id} name={key.label} fill={key.color} radius={[4, 4, 0, 0]} />
+              ))}
+            </BarChart>
+          </ChartContainer>
+          <div className="flex flex-wrap items-center justify-center gap-3 text-xs pt-1">
+            {(metric.seriesKeys ?? []).map((key) => (
+              <div key={key.id} className="flex items-center gap-1.5 font-medium">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
+                <span className="text-muted-foreground">{key.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (chart === "area") {
+      return (
+        <div className="space-y-4">
+          <ChartContainer config={multiConfig} className="h-64 w-full sm:h-72">
+            <AreaChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} />
+              <YAxis tickLine={false} axisLine={false} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              {(metric.seriesKeys ?? []).map((key) => (
+                <Area
+                  key={key.id}
+                  type="monotone"
+                  dataKey={key.id}
+                  name={key.label}
+                  stroke={key.color}
+                  fill={key.color}
+                  fillOpacity={0.2}
+                />
+              ))}
+            </AreaChart>
+          </ChartContainer>
+          <div className="flex flex-wrap items-center justify-center gap-3 text-xs pt-1">
+            {(metric.seriesKeys ?? []).map((key) => (
+              <div key={key.id} className="flex items-center gap-1.5 font-medium">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
+                <span className="text-muted-foreground">{key.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (chart === "proportion" || chart === "pie") {
+      const categoryData = metric.categoryData ?? [];
+      const total = categoryData.reduce((sum, item) => sum + item.value, 0);
+
+      if (chart === "pie") {
+        return (
+          <ChartContainer config={multiConfig} className="h-64 w-full sm:h-72">
+            <RechartsPieChart>
+              <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+              <Pie data={categoryData} dataKey="value" nameKey="label" innerRadius={48} outerRadius={88} paddingAngle={2}>
+                {categoryData.map((item) => (
+                  <Cell key={item.id} fill={item.color} />
+                ))}
+              </Pie>
+            </RechartsPieChart>
+          </ChartContainer>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          <div className="flex h-8 overflow-hidden rounded-full bg-muted">
+            {categoryData.map((item) => {
+              const percent = total > 0 ? (item.value / total) * 100 : 0;
+              return (
+                <div
+                  key={item.id}
+                  className="h-full min-w-1 transition-all"
+                  style={{
+                    backgroundColor: item.color,
+                    width: `${Math.max(percent, item.value > 0 ? 2 : 0)}%`,
+                  }}
+                  title={`${item.label}: ${item.value} (${Math.round(percent)}%)`}
+                />
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+            {categoryData.map((item) => {
+              const percent = total > 0 ? Math.round((item.value / total) * 100) : 0;
+              return (
+                <span key={item.id} className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span>
+                    {item.label}: {item.value} ({percent}%)
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // Default to multi-line chart
+    return (
+      <div className="space-y-4">
+        <ChartContainer config={multiConfig} className="h-64 w-full sm:h-72">
+          <LineChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} />
+            <YAxis tickLine={false} axisLine={false} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            {(metric.seriesKeys ?? []).map((key) => (
+              <Line
+                key={key.id}
+                type="monotone"
+                dataKey={key.id}
+                name={key.label}
+                stroke={key.color}
+                strokeWidth={2.5}
+                dot={{ r: 3 }}
+                activeDot={{ r: 5 }}
+              />
+            ))}
+          </LineChart>
+        </ChartContainer>
+        <div className="flex flex-wrap items-center justify-center gap-3 text-xs pt-1">
+          {(metric.seriesKeys ?? []).map((key) => (
+            <div key={key.id} className="flex items-center gap-1.5 font-medium">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
+              <span className="text-muted-foreground">{key.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (metric.kind === "number" && metric.numberData) {
     if (chart === "proportion" || chart === "pie") {
       const distributionData = buildNumberDistribution(metric);

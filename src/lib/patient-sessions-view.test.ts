@@ -44,6 +44,8 @@ const sessions: SearchableSession[] = [
   },
 ];
 
+const session = sessions[0];
+
 describe("shouldSessionBeVisibleInSearch", () => {
   it("matches group name, session status and custom text", () => {
     expect(
@@ -116,6 +118,55 @@ describe("buildPatientSessionsView", () => {
     expect(byStatus.groups[0].group.id).toBe("group-lombar");
     expect(byStatus.groups[0].sessions).toHaveLength(1);
     expect(byStatus.ungrouped).toHaveLength(0);
+  });
+
+  it("groups sessions by evolution_group_id and supports custom names", () => {
+    const sessionsWithEvolution = [
+      {
+        id: "evo-1",
+        session_date: "2026-03-01T10:00:00.000Z",
+        status: "concluído",
+        group_id: "group-lombar",
+        evolution_group_id: "evo-group-1",
+      },
+      {
+        id: "evo-2",
+        session_date: "2026-03-08T10:00:00.000Z",
+        status: "concluído",
+        group_id: "group-lombar",
+        evolution_group_id: "evo-group-1",
+        parent_session_id: "evo-1",
+      },
+      {
+        id: "standalone-1",
+        session_date: "2026-03-15T10:00:00.000Z",
+        status: "rascunho",
+        group_id: "group-ombro",
+      },
+    ];
+
+    const view = buildPatientSessionsView({
+      groups,
+      sessions: sessionsWithEvolution,
+      filters: {
+        searchTerm: "",
+        sessionStatus: "all",
+        groupStatus: "all",
+      },
+      evolutionGroupsMetadata: [
+        { id: "evo-group-1", custom_name: "Ciclo Lombalgia 2026" },
+      ],
+      getSessionText: () => "",
+    });
+
+    expect(view.evolutionGroups).toHaveLength(1);
+    expect(view.evolutionGroups[0].id).toBe("evo-group-1");
+    expect(view.evolutionGroups[0].customName).toBe("Ciclo Lombalgia 2026");
+    expect(view.evolutionGroups[0].sessionCount).toBe(2);
+    expect(view.evolutionGroups[0].firstSessionDate).toBe("2026-03-01T10:00:00.000Z");
+    expect(view.evolutionGroups[0].latestSessionDate).toBe("2026-03-08T10:00:00.000Z");
+    expect(view.standaloneSessions).toHaveLength(1);
+    expect(view.standaloneSessions[0].id).toBe("standalone-1");
   });
 });
 
@@ -307,4 +358,38 @@ describe("shouldAutoCompleteInternDraft", () => {
   });
 });
 
-const session = sessions[0];
+describe("buildPatientSessionsView - Evolution Lineage Healing", () => {
+  it("propagates evolution group across parent_session_id chain even if child or parent has null evolution_group_id", () => {
+    const parentSession = {
+      ...sessions[0],
+      id: "parent-1",
+      evolution_group_id: "group-alpha",
+      parent_session_id: null,
+    };
+    const childSession = {
+      ...sessions[1],
+      id: "child-2",
+      evolution_group_id: null, // accidentally cleared on save
+      parent_session_id: "parent-1",
+    };
+    const grandChildSession = {
+      ...sessions[0],
+      id: "child-3",
+      evolution_group_id: null,
+      parent_session_id: "child-2",
+    };
+
+    const result = buildPatientSessionsView({
+      filters: { groupStatus: "all", searchTerm: "", selectedTagId: "all", sessionStatus: "all" },
+      getSessionText: () => "",
+      groups,
+      sessions: [parentSession, childSession, grandChildSession],
+      evolutionGroupsMetadata: [{ id: "group-alpha", custom_name: "Ciclo Coluna" }],
+    });
+
+    expect(result.evolutionGroups).toHaveLength(1);
+    expect(result.evolutionGroups[0].id).toBe("group-alpha");
+    expect(result.evolutionGroups[0].sessions).toHaveLength(3);
+    expect(result.standaloneSessions).toHaveLength(0);
+  });
+});

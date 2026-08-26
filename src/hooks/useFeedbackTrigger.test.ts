@@ -87,9 +87,9 @@ describe("useFeedbackTrigger Hook", () => {
     expect(result.current.triggerSource).toBe("session_completed");
   });
 
-  it("blocks automatic feedback if user submitted recently (in cooldown)", () => {
-    // Registra envio há 10 minutos (cooldown é 24h)
-    localStorageMock.setItem(STORAGE_KEYS.LAST_SUBMITTED, String(Date.now() - 10 * 60 * 1000));
+  it("blocks automatic feedback if user submitted recently (in 4-day cooldown)", () => {
+    // Registra envio há 2 dias (cooldown é de 4 dias)
+    localStorageMock.setItem(STORAGE_KEYS.LAST_SUBMITTED, String(Date.now() - 2 * 24 * 60 * 60 * 1000));
 
     const { result } = renderHook(() => useFeedbackTrigger());
 
@@ -101,9 +101,9 @@ describe("useFeedbackTrigger Hook", () => {
     expect(result.current.isOpen).toBe(false);
   });
 
-  it("blocks automatic feedback if user dismissed recently (in cooldown)", () => {
-    // Registra dispensa há 5 minutos (cooldown de dispensa é 45m)
-    localStorageMock.setItem(STORAGE_KEYS.LAST_DISMISSED, String(Date.now() - 5 * 60 * 1000));
+  it("blocks automatic feedback if user dismissed recently (in 24-hour cooldown)", () => {
+    // Registra dispensa há 12 horas (cooldown de dispensa é 24 horas / 1x ao dia)
+    localStorageMock.setItem(STORAGE_KEYS.LAST_DISMISSED, String(Date.now() - 12 * 60 * 60 * 1000));
 
     const { result } = renderHook(() => useFeedbackTrigger());
 

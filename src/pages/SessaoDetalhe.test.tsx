@@ -30,12 +30,23 @@ vi.mock("@/lib/patient-routing", () => ({
   fetchPatientByRef: vi.fn().mockResolvedValue({
     data: {
       id: "patient-123",
+      patient_code: "PAC-123",
       name: "Carlos Eduardo Silva",
       clinic_id: "clinic-1",
+      allergies: "Dipirona; Penicilina",
+      blood_type: "O+",
+      status: "ativo",
+      registration_complete: true,
+      clinical_profile: {
+        risk_flags: ["fall_risk", "allergy", "diabetes"],
+        clinical_alerts: "Alergia severa a dipirona",
+      },
     },
     error: null,
   }),
   getPatientPath: vi.fn(),
+  getClinicPatientPath: vi.fn(),
+  getPatientRouteKey: (patient: any) => patient?.patient_code || patient?.id || "patient-123",
   isUuid: () => true,
 }));
 
@@ -207,6 +218,89 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       expect(screen.getByText("Nome da Linha de Cuidado / Motivo")).toBeInTheDocument();
       expect(screen.getByText("Status da linha de cuidado")).toBeInTheDocument();
       expect(screen.getByText("Cor")).toBeInTheDocument();
+    });
+  });
+
+  it("prompts confirmation modal with 3 choices when attempting to leave with unsaved changes", async () => {
+    render(
+      <MemoryRouter initialEntries={["/pacientes/patient-123/sessao/novo"]}>
+        <Routes>
+          <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Descreva a queixa principal/i)).toBeInTheDocument();
+    });
+
+    // Make an edit
+    const textarea = screen.getByPlaceholderText(/Descreva a queixa principal/i);
+    fireEvent.change(textarea, { target: { value: "Alteração não salva" } });
+
+    // Click back button in header
+    const backBtn = screen.getByRole("button", { name: /Voltar para paciente/i });
+    fireEvent.click(backBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Atendimento em andamento")).toBeInTheDocument();
+      expect(screen.getByText(/Você possui alterações que ainda não foram salvas no prontuário/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Sair e salvar como rascunho/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Sair sem salvar/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Continuar atendimento/i })).toBeInTheDocument();
+    });
+  });
+
+  it("opens 'Evoluir Atendimento' modal with 3 action choices when clicking evolve button", async () => {
+    render(
+      <MemoryRouter initialEntries={["/pacientes/patient-123/sessao/session-123"]}>
+        <Routes>
+          <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Evoluir Atendimento/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Evoluir Atendimento/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Escolha como deseja iniciar a evolução deste caso no histórico do paciente:")).toBeInTheDocument();
+      expect(screen.getByText("Iniciar atendimento a partir deste")).toBeInTheDocument();
+      expect(screen.getByText("Iniciar atendimento em branco")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Cancelar/i })).toBeInTheDocument();
+    });
+  });
+
+  it("renders patient risk tags and opens clinical summary modal from header", async () => {
+    render(
+      <MemoryRouter initialEntries={["/pacientes/patient-123/sessao/session-123"]}>
+        <Routes>
+          <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Resumo clínico/i })).toBeInTheDocument();
+    });
+
+    // Check risk tags are present
+    expect(screen.getByRole("button", { name: /Alergias/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Risco de queda/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Riscos/i })).toBeInTheDocument();
+
+    // Click Resumo clínico button
+    fireEvent.click(screen.getByRole("button", { name: /Resumo clínico/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Resumo do paciente" })).toBeInTheDocument();
+      expect(screen.getByText("Saúde base")).toBeInTheDocument();
+      expect(screen.getByText("Histórico rápido")).toBeInTheDocument();
+      expect(screen.getByText("Dipirona; Penicilina")).toBeInTheDocument();
+      expect(screen.getByText("Alergia severa a dipirona")).toBeInTheDocument();
     });
   });
 });

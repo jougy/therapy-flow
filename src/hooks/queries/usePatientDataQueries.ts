@@ -45,6 +45,8 @@ export const PATIENT_BASE_SCHEMA_CACHE_KEY = (clinicId: string) => `clinic_base_
  * Hook para carregar dados cadastrais do paciente com cache local em IndexedDB e stale-while-revalidate.
  */
 export function usePatientDetailQuery(patientRef?: string | null, clinicId?: string | null, enabled = true) {
+  const queryClient = useQueryClient();
+
   return useQuery({
     queryKey: PATIENT_QUERY_KEYS.patient(patientRef, clinicId),
     queryFn: async (): Promise<PatientRow | null> => {
@@ -71,6 +73,22 @@ export function usePatientDetailQuery(patientRef?: string | null, clinicId?: str
       }
 
       return cached ?? null;
+    },
+    placeholderData: () => {
+      if (!patientRef) return undefined;
+      const cachedDirect = queryClient.getQueryData<PatientRow>(PATIENT_QUERY_KEYS.patient(patientRef, clinicId));
+      if (cachedDirect) return cachedDirect;
+
+      if (clinicId) {
+        const clinicPatients = queryClient.getQueryData<HomePatientRecord[]>(CLINIC_QUERY_KEYS.patients(clinicId));
+        if (clinicPatients) {
+          const found = clinicPatients.find((p) => p.id === patientRef || p.patient_code === patientRef);
+          if (found) {
+            return found as unknown as PatientRow;
+          }
+        }
+      }
+      return undefined;
     },
     enabled: Boolean(patientRef) && enabled,
     staleTime: 60 * 1000,
@@ -479,6 +497,24 @@ export function useOptimisticPatientDetailUpdates(patientId?: string | null, cli
     [clinicId, patientId, queryClient]
   );
 
+  const optimisticMoveSessionsToEvolutionGroup = useCallback(
+    (sessionIds: string[], nextEvolutionGroupId: string | null) => {
+      if (!patientId || sessionIds.length === 0) return;
+
+      const key = PATIENT_QUERY_KEYS.sessions(patientId);
+      queryClient.setQueryData<SessionRow[]>(key, (current = []) => {
+        const next = current.map((session) =>
+          sessionIds.includes(session.id)
+            ? { ...session, evolution_group_id: nextEvolutionGroupId, updated_at: new Date().toISOString() }
+            : session
+        );
+        void setLocalCacheItem(PATIENT_SESSIONS_CACHE_KEY(patientId), next);
+        return next;
+      });
+    },
+    [patientId, queryClient]
+  );
+
   const optimisticDeleteSessions = useCallback(
     (sessionIds: string[]) => {
       if (!patientId || sessionIds.length === 0) return;
@@ -594,6 +630,7 @@ export function useOptimisticPatientDetailUpdates(patientId?: string | null, cli
     optimisticAddAgendaEvent,
     optimisticUpdateAgendaEvent,
     optimisticDeleteAgendaEvent,
+    optimisticMoveSessionsToEvolutionGroup,
   };
 }
 

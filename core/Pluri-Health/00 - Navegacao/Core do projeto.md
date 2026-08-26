@@ -9,7 +9,7 @@ aliases:
   - Core do projeto
   - CORE
 ---
-# Pronto Health - Fisio Core
+# Pluri Health - Core
 
 ## Objetivo
 

@@ -225,8 +225,19 @@ describe("anamnesis forms helpers", () => {
     });
   });
 
-  it("exposes date in the field library", () => {
-    expect(ANAMNESIS_FIELD_LIBRARY.some((field) => field.type === "date" && field.label === "Data")).toBe(true);
+  it("creates radar_section fields with default properties", () => {
+    expect(createAnamnesisField("radar_section", 0)).toMatchObject({
+      type: "radar_section",
+      label: "Polígono de Status",
+    });
+  });
+
+  it("exposes radar_section in the field library", () => {
+    expect(
+      ANAMNESIS_FIELD_LIBRARY.some(
+        (field) => field.type === "radar_section" && field.label === "Polígono de Status"
+      )
+    ).toBe(true);
   });
 
   it("exports and re-imports a template model without changing its schema", () => {
@@ -354,6 +365,15 @@ describe("anamnesis forms helpers", () => {
     expect(layout[0]?.type).toBe("section_selector");
 
     // Visibility dynamically toggles based on active section IDs
+    const visibleDefault = getVisibleTemplateFields(schema, {});
+    expect(visibleDefault.map((f) => f.id)).toEqual([
+      "selector_1",
+      "sec_coluna",
+      "field_dor_coluna",
+      "sec_ombro",
+      "field_adm_ombro",
+    ]);
+
     const visibleWithColuna = getVisibleTemplateFields(schema, { selector_1: { sec_coluna: true, sec_ombro: false } });
     expect(visibleWithColuna.map((f) => f.id)).toEqual(["selector_1", "sec_coluna", "field_dor_coluna"]);
 

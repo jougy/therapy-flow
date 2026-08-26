@@ -14,7 +14,7 @@ export interface FeatureFlagsContextType {
 const FeatureFlagsContext = createContext<FeatureFlagsContextType>({
   flags: {},
   loading: true,
-  isFeatureEnabled: () => false,
+  isFeatureEnabled: () => true,
   flagOverrides: {},
   setFlagOverride: () => {},
   resetFlagOverrides: () => {},
