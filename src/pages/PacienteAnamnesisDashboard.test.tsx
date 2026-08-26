@@ -190,11 +190,11 @@ vi.mock("@/integrations/supabase/client", () => {
     {
       anamnesis: {},
       anamnesis_form_response: {
-        rpg_str: 9,
-        rpg_agi: 7,
-        rpg_res: 8,
+        dim_str: 9,
+        dim_agi: 7,
+        dim_res: 8,
       },
-      anamnesis_template_id: "template-rpg",
+      anamnesis_template_id: "template-radar",
       complexity_score: null,
       id: "session-3",
       pain_score: 2,
@@ -223,13 +223,13 @@ vi.mock("@/integrations/supabase/client", () => {
       ],
     },
     {
-      id: "template-rpg",
-      name: "Ficha RPG Status",
+      id: "template-radar",
+      name: "Ficha de Status Clínico",
       schema: [
-        { id: "radar_sec", label: "Polígono de Status RPG", type: "radar_section" },
-        { groupKey: "radar_sec", id: "rpg_str", label: "Força", min: 0, max: 10, type: "slider" },
-        { groupKey: "radar_sec", id: "rpg_agi", label: "Agilidade", min: 0, max: 10, type: "slider" },
-        { groupKey: "radar_sec", id: "rpg_res", label: "Resistência", min: 0, max: 10, type: "slider" },
+        { id: "radar_sec", label: "Polígono de Status", type: "radar_section" },
+        { groupKey: "radar_sec", id: "dim_str", label: "Força", min: 0, max: 10, type: "slider" },
+        { groupKey: "radar_sec", id: "dim_agi", label: "Agilidade", min: 0, max: 10, type: "slider" },
+        { groupKey: "radar_sec", id: "dim_res", label: "Resistência", min: 0, max: 10, type: "slider" },
       ],
     },
   ];
@@ -308,8 +308,8 @@ describe("PacienteAnamnesisDashboard", () => {
     );
 
     expect(await screen.findByText("Dashboard de Anamnese")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ficha RPG Status" })).toBeInTheDocument();
-    expect(screen.getAllByText("Polígono de Status RPG").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("heading", { name: "Ficha de Status Clínico" })).toBeInTheDocument();
+    expect(screen.getAllByText("Polígono de Status").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Força:")).toBeInTheDocument();
     expect(screen.getByText("Agilidade:")).toBeInTheDocument();
     expect(screen.getByText("Resistência:")).toBeInTheDocument();

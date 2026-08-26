@@ -173,7 +173,7 @@ describe("buildPatientAnamnesisDashboard", () => {
 
   it("aggregates radar_section attributes into a unified multi-series and radar metric", () => {
     const radarTemplateSchema: AnamnesisTemplateSchema = [
-      { id: "radar_sec", label: "Status Físico (RPG)", type: "radar_section" },
+      { id: "radar_sec", label: "Status Físico", type: "radar_section" },
       { groupKey: "radar_sec", id: "strength", label: "Força", min: 0, max: 10, type: "slider" },
       { groupKey: "radar_sec", id: "agility", label: "Agilidade", min: 0, max: 10, type: "slider" },
       { groupKey: "radar_sec", id: "endurance", label: "Resistência", min: 0, max: 10, type: "slider" },
@@ -183,7 +183,7 @@ describe("buildPatientAnamnesisDashboard", () => {
       baseSchema: [],
       sessions: [
         makeSession({
-          anamnesis_template_id: "template-rpg",
+          anamnesis_template_id: "template-radar",
           id: "session-1",
           session_date: "2026-01-01T12:00:00.000Z",
           anamnesis_form_response: {
@@ -193,7 +193,7 @@ describe("buildPatientAnamnesisDashboard", () => {
           },
         }),
         makeSession({
-          anamnesis_template_id: "template-rpg",
+          anamnesis_template_id: "template-radar",
           id: "session-2",
           session_date: "2026-01-10T12:00:00.000Z",
           anamnesis_form_response: {
@@ -203,12 +203,12 @@ describe("buildPatientAnamnesisDashboard", () => {
           },
         }),
       ],
-      templates: [{ id: "template-rpg", name: "Ficha RPG", schema: radarTemplateSchema }],
+      templates: [{ id: "template-radar", name: "Ficha de Status", schema: radarTemplateSchema }],
     });
 
     expect(dashboard.groups).toHaveLength(1);
     expect(dashboard.groups[0].sections).toHaveLength(1);
-    expect(dashboard.groups[0].sections[0].title).toBe("Status Físico (RPG)");
+    expect(dashboard.groups[0].sections[0].title).toBe("Status Físico");
 
     const radarMetric = dashboard.groups[0].sections[0].metrics[0];
     expect(radarMetric.isRadarGroup).toBe(true);

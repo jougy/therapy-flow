@@ -1069,7 +1069,7 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <Badge variant="outline" className="text-[10px] font-medium border-primary/40 text-primary">
-                          Polígono RPG ({item.items.length} {item.items.length === 1 ? "vértice" : "vértices"})
+                          Polígono ({item.items.length} {item.items.length === 1 ? "vértice" : "vértices"})
                         </Badge>
                         {renderFieldQuickActions(item.field)}
                       </div>
@@ -1083,7 +1083,7 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                         items={radarItems}
                         accentColor={accentColor}
                         height={240}
-                        title="Prévia do Polígono (Status RPG)"
+                        title="Prévia do Polígono de Status"
                       />
                     </div>
                     <div className="lg:col-span-7 space-y-4 min-w-0">

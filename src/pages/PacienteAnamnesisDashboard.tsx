@@ -203,7 +203,7 @@ const MetricChart = ({
   chart: PatientAnamnesisChartType;
   metric: PatientAnamnesisDashboardMetric;
 }) => {
-  // Handle aggregated radar section (RPG status polygon & multi-series)
+  // Handle aggregated radar section (status polygon & multi-series)
   if (metric.isRadarGroup) {
     if (chart === "radar") {
       return (

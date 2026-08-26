@@ -611,7 +611,7 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
         type === "horizontal_section"
           ? "Agrupe campos lado a lado com rolagem horizontal."
           : type === "radar_section"
-            ? "Gráfico de radar RPG com sliders/métricas multidimensionais."
+            ? "Gráfico de radar com sliders e métricas multidimensionais."
             : "Texto introdutório da seção.",
     };
   }

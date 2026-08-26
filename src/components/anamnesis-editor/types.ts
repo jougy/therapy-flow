@@ -89,7 +89,7 @@ export const COMPONENT_CATEGORIES = [
       { type: "section" as const, label: "Seção sanfona", icon: Folder, description: "Agrupador vertical retrátil" },
       { type: "horizontal_section" as const, label: "Seção horizontal", icon: Columns, description: "Colunas com rolagem lateral" },
       { type: "section_selector" as const, label: "Seletor de seções", icon: ToggleLeft, description: "Switches de visibilidade condicional" },
-      { type: "radar_section" as const, label: "Polígono de Status (RPG)", icon: Hexagon, description: "Radar de atributos com sliders e métricas" },
+      { type: "radar_section" as const, label: "Polígono de Status", icon: Hexagon, description: "Radar de atributos com sliders e métricas" },
     ],
   },
   {
