@@ -1738,7 +1738,7 @@ const PacienteDetalhe = () => {
     setSessionToEvolve(null);
 
     try {
-      let targetPatientId = realPatientId || id;
+      const targetPatientId = realPatientId || id;
       const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
       const activeClinicId = clinicRes.data ?? session.clinic_id ?? clinicId;
 

@@ -22,6 +22,16 @@ export interface FeatureConfigModalProps {
 }
 
 export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initialData, scope = "global", tagId, clinicId }: FeatureConfigModalProps) {
+  const feature = featureFlagsCatalog.find(f => f.key === featureKey);
+  const [formData, setFormData] = useState<Record<string, unknown>>({});
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormData((initialData as Record<string, unknown>) || {});
+    }
+  }, [isOpen, initialData]);
+
   if (featureKey === "system_helpers") {
     return (
       <HelpersConfigModal
@@ -35,16 +45,6 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
       />
     );
   }
-
-  const feature = featureFlagsCatalog.find(f => f.key === featureKey);
-  const [formData, setFormData] = useState<Record<string, unknown>>({});
-  const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setFormData((initialData as Record<string, unknown>) || {});
-    }
-  }, [isOpen, initialData]);
 
   if (!feature) {
     return null;

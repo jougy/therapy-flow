@@ -689,7 +689,9 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        patient_evolution_groups: {
+        Relationships: []
+      }
+      patient_evolution_groups: {
         Row: {
           clinic_id: string
           created_at: string
