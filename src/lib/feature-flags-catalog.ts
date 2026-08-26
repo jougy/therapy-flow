@@ -7,6 +7,7 @@ export type FeatureFlagCategory =
   | 'Prontuário/Atendimentos'
   | 'Impressão'
   | 'UI/Experiência'
+  | 'Tutoriais & Ajuda'
   | 'Assinaturas';
 
 export interface FeatureFlagDefinition {
@@ -168,6 +169,24 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Libera temas extras e opções de densidade visual na interface da plataforma.',
     category: 'UI/Experiência',
     hasConfiguration: true,
+  },
+
+  // Tutoriais & Ajuda
+  {
+    key: 'tutorial_training_center',
+    label: 'Central de Treinamento & Mini Cursos',
+    description: 'Habilita o botão de Guia/Tutorial, a Central de Treinamento com mini cursos em capítulos e o assistente de jornada linear.',
+    category: 'Tutoriais & Ajuda',
+    hasConfiguration: false,
+    hasToggle: true,
+  },
+  {
+    key: 'system_helpers',
+    label: 'Botões de Ajuda Rápida & Helpers Contextuais (?)',
+    description: 'Controla a exibição dos botões de interrogação (?) com explicações contextuais por página, permitindo ocultar/exibir itens e editar as mensagens de ajuda.',
+    category: 'Tutoriais & Ajuda',
+    hasConfiguration: true,
+    hasToggle: true,
   },
 ];
 

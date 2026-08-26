@@ -1,7 +1,8 @@
 import { HelpCircle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTutorial } from "@/contexts/TutorialContext";
-import type { TutorialPlacement } from "./tutorial-registry";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import type { TutorialPlacement, HelpersFeatureFlagValue } from "./tutorial-registry";
 
 export interface ComponentHelpButtonProps {
   helpId?: string;
@@ -27,19 +28,41 @@ export const ComponentHelpButton = ({
   ariaLabel,
 }: ComponentHelpButtonProps) => {
   const { showComponentHelp } = useTutorial();
+  const { flags, isFeatureEnabled } = useFeatureFlags();
+
+  // Verifica se a feature flag global de helpers está ativa
+  const helpersEnabled = isFeatureEnabled("system_helpers");
+  if (!helpersEnabled) {
+    return null;
+  }
+
+  // Verifica se este helper específico foi ocultado nas configurações
+  const helpersFlagVal = flags?.["system_helpers"] as HelpersFeatureFlagValue | undefined;
+  const helperCustomConfig = helpId && helpersFlagVal?.helpers ? helpersFlagVal.helpers[helpId] : undefined;
+
+  if (helperCustomConfig?.hidden) {
+    return null;
+  }
+
+  const effectiveTitle = helperCustomConfig?.title || title;
+  const effectiveDescription = helperCustomConfig?.description || description;
+  const effectiveTip = helperCustomConfig?.tip || tip;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
 
-    if (helpId) {
+    if (helpId && !helperCustomConfig?.title && !helperCustomConfig?.description && !helperCustomConfig?.tip) {
+      showComponentHelp(helpId);
+    } else if (helpId) {
+      // Se houver texto customizado para o helpId
       showComponentHelp(helpId);
     } else {
       showComponentHelp({
         targetSelector,
-        title: title || "Ajuda do Componente 💡",
-        description: description || "",
-        tip,
+        title: effectiveTitle || "Ajuda do Componente 💡",
+        description: effectiveDescription || "",
+        tip: effectiveTip,
         placement,
       });
     }

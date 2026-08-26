@@ -54,10 +54,10 @@ const PlatformMfa = lazy(() => import("./pages/PlatformMfa"));
 const PlanosAssinatura = lazy(() => import("./pages/PlanosAssinatura"));
 const DesignLabApp = lazy(() => import("./pages/DesignLabPlaceholder"));
 
-const LoadingScreen = () => (
-  <div className="min-h-screen flex items-center justify-center">
-    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-  </div>
+import { LoadingFeedback } from "@/components/ui/loading-feedback";
+
+const LoadingScreen = ({ message }: { message?: string }) => (
+  <LoadingFeedback fullScreen message={message ?? "Carregando sistema..."} />
 );
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {

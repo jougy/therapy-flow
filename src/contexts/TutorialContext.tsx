@@ -9,10 +9,12 @@ import {
   type TutorialChapter,
   type TutorialStep,
   type TutorialLearnMoreAction,
+  type HelpersFeatureFlagValue,
 } from "@/components/tutorial/tutorial-registry";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 
 export type TutorialAnimation = "dance" | "pulse" | "bounce" | "glow";
 export type TutorialPlacement = "top" | "bottom" | "left" | "right" | "center";
@@ -65,6 +67,7 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const auth = useAuth();
+  const { flags, isFeatureEnabled } = useFeatureFlags();
 
   const canPermission = useCallback(
     (perm?: string) => {
@@ -168,6 +171,14 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
 
   const startChapter = useCallback(
     (chapterId: string, force = true) => {
+      if (!isFeatureEnabled("tutorial_training_center")) {
+        toast({
+          title: "Recurso Indisponível",
+          description: "A Central de Treinamento está temporariamente desativada nas Feature Flags.",
+        });
+        return;
+      }
+
       const chapter = TUTORIAL_CHAPTERS.find((c) => c.id === chapterId);
       if (!chapter || chapter.steps.length === 0) return;
 
@@ -201,17 +212,29 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
       setIsPaused(false);
       setIsChapterModalOpen(false);
     },
-    [completedTutorials, canPermission]
+    [completedTutorials, canPermission, isFeatureEnabled]
   );
 
   const showComponentHelp = useCallback(
     (stepOrConfig: Partial<TutorialStep> | TutorialStep[] | string) => {
+      if (!isFeatureEnabled("system_helpers")) {
+        return;
+      }
+
       let resolvedSteps: TutorialStep[];
 
       if (typeof stepOrConfig === "string") {
+        const helpersVal = flags["system_helpers"] as HelpersFeatureFlagValue | undefined;
+        const customConfig = helpersVal?.helpers?.[stepOrConfig];
+
+        // Se estiver explicitamente oculto, não abre
+        if (customConfig?.hidden) {
+          return;
+        }
+
         const found = COMPONENT_HELP_REGISTRY[stepOrConfig];
         if (Array.isArray(found)) {
-          resolvedSteps = found;
+          resolvedSteps = [...found];
         } else if (found) {
           resolvedSteps = [found];
         } else {
@@ -224,6 +247,19 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
               placement: "bottom",
               animation: "glow",
             },
+          ];
+        }
+
+        // Aplica textos customizados se existirem
+        if (customConfig && resolvedSteps.length > 0) {
+          resolvedSteps = [
+            {
+              ...resolvedSteps[0],
+              title: customConfig.title || resolvedSteps[0].title,
+              description: customConfig.description || resolvedSteps[0].description,
+              tip: customConfig.tip !== undefined ? customConfig.tip : resolvedSteps[0].tip,
+            },
+            ...resolvedSteps.slice(1),
           ];
         }
       } else if (Array.isArray(stepOrConfig)) {
@@ -267,11 +303,19 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
       setIsPaused(false);
       setIsChapterModalOpen(false);
     },
-    [canPermission]
+    [canPermission, isFeatureEnabled, flags]
   );
 
   const startMasterJourney = useCallback(
     (force = true) => {
+      if (!isFeatureEnabled("tutorial_training_center")) {
+        toast({
+          title: "Recurso Indisponível",
+          description: "A Central de Treinamento está temporariamente desativada nas Feature Flags.",
+        });
+        return;
+      }
+
       setIsMasterJourneyActive(true);
       setIsSingleHelpMode(false);
       const firstChapter = TUTORIAL_CHAPTERS[0];

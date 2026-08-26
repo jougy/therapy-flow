@@ -8,9 +8,9 @@ export interface FeedbackTriggerOptions {
   initialTimeThresholdMs?: number;
   /** Intervalo em milissegundos entre disparos periódicos por tempo (padrão: 45 min = 2.700.000ms) */
   recurringIntervalMs?: number;
-  /** Cooldown após envio com sucesso em milissegundos (padrão: 24 horas = 86.400.000ms) */
+  /** Cooldown após envio com sucesso em milissegundos (padrão: 4 dias = 345.600.000ms) */
   submittedCooldownMs?: number;
-  /** Cooldown após dispensa manual ("Agora não" / fechar) em milissegundos (padrão: 45 min = 2.700.000ms) */
+  /** Cooldown após dispensa manual ("Agora não" / fechar) em milissegundos (padrão: 24 horas = 86.400.000ms) */
   dismissedCooldownMs?: number;
 }
 
@@ -48,8 +48,8 @@ export function useFeedbackTrigger(options: FeedbackTriggerOptions = {}) {
   const {
     initialTimeThresholdMs = 15 * 60 * 1000, // 15 minutos
     recurringIntervalMs = 45 * 60 * 1000,    // 45 minutos
-    submittedCooldownMs = 24 * 60 * 60 * 1000, // 24 horas
-    dismissedCooldownMs = 45 * 60 * 1000,    // 45 minutos
+    submittedCooldownMs = 4 * 24 * 60 * 60 * 1000, // 4 dias
+    dismissedCooldownMs = 24 * 60 * 60 * 1000,    // 24 horas (1 vez por dia)
   } = options;
 
   const { user } = useAuth();
@@ -129,11 +129,13 @@ export function useFeedbackTrigger(options: FeedbackTriggerOptions = {}) {
           if (!isInCooldown()) {
             setTriggerSource(source);
             setIsOpen(true);
+            dismissFeedback();
           }
         }, delayMs);
       } else {
         setTriggerSource(source);
         setIsOpen(true);
+        dismissFeedback();
       }
 
       return true;

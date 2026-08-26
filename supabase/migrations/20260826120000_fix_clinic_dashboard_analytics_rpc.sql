@@ -1,5 +1,5 @@
--- Migration: Add RPC get_clinic_dashboard_analytics for server-side analytical aggregations
--- Date: 2026-08-22
+-- Migration: Fix RPC get_clinic_dashboard_analytics for patient aggregations and null resilience
+-- Date: 2026-08-26
 
 CREATE OR REPLACE FUNCTION public.get_clinic_dashboard_analytics(
   _clinic_id uuid,
@@ -53,6 +53,7 @@ BEGIN
   IF NOT (
     public.current_user_can('treasury.manage', _clinic_id) OR
     public.current_user_can('sessions.read', _clinic_id) OR
+    public.current_user_can('patients.read', _clinic_id) OR
     public.is_platform_owner_mfa_verified(_user_id)
   ) THEN
     RAISE EXCEPTION 'Sem permissão para visualizar estatísticas desta clínica.';
@@ -62,14 +63,14 @@ BEGIN
   SELECT
     COUNT(*)::int,
     COUNT(*) FILTER (WHERE status = 'cancelado')::int,
-    COUNT(*) FILTER (WHERE amount_charged_cents > 0 AND amount_paid_cents >= amount_charged_cents)::int,
+    COUNT(*) FILTER (WHERE COALESCE(amount_charged_cents, 0) > 0 AND COALESCE(amount_paid_cents, 0) >= COALESCE(amount_charged_cents, 0))::int,
     COUNT(*) FILTER (WHERE session_date::date = CURRENT_DATE)::int,
     COUNT(*) FILTER (WHERE session_date >= date_trunc('week', now()))::int,
     COUNT(*) FILTER (WHERE session_date >= date_trunc('month', now()))::int,
     COUNT(*) FILTER (WHERE session_date >= date_trunc('year', now()))::int,
-    COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN LEAST(amount_paid_cents, amount_charged_cents) ELSE 0 END), 0)::bigint,
-    COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN GREATEST(0, amount_paid_cents - amount_charged_cents) ELSE 0 END), 0)::bigint,
-    COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN GREATEST(0, amount_charged_cents - amount_paid_cents) ELSE 0 END), 0)::bigint
+    COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN LEAST(COALESCE(amount_paid_cents, 0), COALESCE(amount_charged_cents, 0)) ELSE 0 END), 0)::bigint,
+    COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN GREATEST(0, COALESCE(amount_paid_cents, 0) - COALESCE(amount_charged_cents, 0)) ELSE 0 END), 0)::bigint,
+    COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN GREATEST(0, COALESCE(amount_charged_cents, 0) - COALESCE(amount_paid_cents, 0)) ELSE 0 END), 0)::bigint
   INTO
     _total_sessions,
     _canceled_sessions,
@@ -89,11 +90,11 @@ BEGIN
   -- 2. Status de Pagamento (Contagens)
   SELECT jsonb_build_object(
     'cortesia', COUNT(*) FILTER (WHERE payment_status = 'cortesia')::int,
-    'credit', COUNT(*) FILTER (WHERE payment_status <> 'cortesia' AND amount_paid_cents > amount_charged_cents)::int,
-    'debt', COUNT(*) FILTER (WHERE payment_status <> 'cortesia' AND amount_charged_cents > 0 AND amount_paid_cents > 0 AND amount_paid_cents < amount_charged_cents)::int,
-    'pending', COUNT(*) FILTER (WHERE payment_status <> 'cortesia' AND amount_charged_cents > 0 AND amount_paid_cents <= 0)::int,
-    'paid', COUNT(*) FILTER (WHERE payment_status <> 'cortesia' AND amount_charged_cents > 0 AND amount_paid_cents >= amount_charged_cents)::int,
-    'notCharged', COUNT(*) FILTER (WHERE payment_status <> 'cortesia' AND (amount_charged_cents <= 0 OR amount_charged_cents IS NULL) AND (amount_paid_cents <= 0 OR amount_paid_cents IS NULL))::int
+    'credit', COUNT(*) FILTER (WHERE COALESCE(payment_status, '') <> 'cortesia' AND COALESCE(amount_paid_cents, 0) > COALESCE(amount_charged_cents, 0))::int,
+    'debt', COUNT(*) FILTER (WHERE COALESCE(payment_status, '') <> 'cortesia' AND COALESCE(amount_charged_cents, 0) > 0 AND COALESCE(amount_paid_cents, 0) > 0 AND COALESCE(amount_paid_cents, 0) < COALESCE(amount_charged_cents, 0))::int,
+    'pending', COUNT(*) FILTER (WHERE COALESCE(payment_status, '') <> 'cortesia' AND COALESCE(amount_charged_cents, 0) > 0 AND COALESCE(amount_paid_cents, 0) <= 0)::int,
+    'paid', COUNT(*) FILTER (WHERE COALESCE(payment_status, '') <> 'cortesia' AND COALESCE(amount_charged_cents, 0) > 0 AND COALESCE(amount_paid_cents, 0) >= COALESCE(amount_charged_cents, 0))::int,
+    'notCharged', COUNT(*) FILTER (WHERE COALESCE(payment_status, '') <> 'cortesia' AND COALESCE(amount_charged_cents, 0) <= 0 AND COALESCE(amount_paid_cents, 0) <= 0)::int
   )
   INTO _payment_status_counts
   FROM public.sessions
@@ -158,8 +159,8 @@ BEGIN
   monthly_agg AS (
     SELECT
       EXTRACT(MONTH FROM session_date)::int AS m_idx,
-      COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN LEAST(amount_paid_cents, amount_charged_cents) ELSE 0 END), 0)::numeric / 100.0 AS pago,
-      COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN GREATEST(0, amount_charged_cents - amount_paid_cents) ELSE 0 END), 0)::numeric / 100.0 AS em_aberto,
+      COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN LEAST(COALESCE(amount_paid_cents, 0), COALESCE(amount_charged_cents, 0)) ELSE 0 END), 0)::numeric / 100.0 AS pago,
+      COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN GREATEST(0, COALESCE(amount_charged_cents, 0) - COALESCE(amount_paid_cents, 0)) ELSE 0 END), 0)::numeric / 100.0 AS em_aberto,
       COUNT(*)::int AS atendimentos
     FROM public.sessions
     WHERE clinic_id = _clinic_id
@@ -273,7 +274,7 @@ BEGIN
   WITH collab_sessions AS (
     SELECT
       COALESCE(s.provider_id, s.user_id, '00000000-0000-0000-0000-000000000000'::uuid) AS collaborator_id,
-      CASE WHEN s.payment_status <> 'cortesia' THEN LEAST(s.amount_paid_cents, s.amount_charged_cents) ELSE 0 END AS paid_cents
+      CASE WHEN s.payment_status <> 'cortesia' THEN LEAST(COALESCE(s.amount_paid_cents, 0), COALESCE(s.amount_charged_cents, 0)) ELSE 0 END AS paid_cents
     FROM public.sessions s
     WHERE s.clinic_id = _clinic_id
   ),

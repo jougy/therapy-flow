@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
+import { Badge } from "@/components/ui/badge";
 import {
   addTableRow,
   getTableRows,
@@ -23,16 +24,13 @@ import {
   type AnamnesisField,
   type AnamnesisFormResponse,
   type AnamnesisFormValue,
+  type TemplateLayoutItem,
 } from "@/lib/anamnesis-forms";
+import { cn } from "@/lib/utils";
 import type { SuggestedCareLine } from "@/lib/care-lines-classifier";
-import { CheckCircle2, Plus, Sparkles, Trash2 } from "lucide-react";
+import { CheckCircle2, Layers, Plus, Sparkles, ToggleLeft, Trash2 } from "lucide-react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { HorizontalScrollNavigator } from "./SessionHorizontalScrollNavigator";
-
-type TemplateLayoutItem =
-  | { type: "field"; field: AnamnesisField }
-  | { type: "horizontal_section"; field: AnamnesisField; items: TemplateLayoutItem[] }
-  | { type: "accordion"; field: AnamnesisField; items: TemplateLayoutItem[] };
 
 const estimateLayoutWeight = (field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">) => {
   const labelLength = (field.label ?? "").trim().length;
@@ -794,6 +792,121 @@ export const SessionAnamnesisRuntime = ({
                       {child.type === "field" ? renderDynamicField(child.field) : renderLayoutItems([child])}
                     </div>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        }
+
+        if (item.type === "section_selector") {
+          const value = anamnesisFormResponse[item.field.id];
+          const isPlainObject = (v: unknown): v is Record<string, boolean> =>
+            typeof v === "object" && v !== null && !Array.isArray(v);
+
+          const childModules = item.items;
+
+          const isChildActive = (childId: string): boolean => {
+            if (Array.isArray(value)) {
+              return (value as string[]).includes(childId);
+            }
+            if (isPlainObject(value)) {
+              return value[childId] ?? true;
+            }
+            return true;
+          };
+
+          const toggleChildModule = (childId: string) => {
+            if (locked) return;
+            if (Array.isArray(value)) {
+              const currentArray = (value as string[]).filter((id): id is string => typeof id === "string");
+              const next = currentArray.includes(childId)
+                ? currentArray.filter((id) => id !== childId)
+                : [...currentArray, childId];
+              updateFormResponse(item.field.id, next);
+            } else {
+              const currentRecord = isPlainObject(value) ? { ...value } : {};
+              const currentState = isChildActive(childId);
+              const nextRecord = { ...currentRecord, [childId]: !currentState };
+              updateFormResponse(item.field.id, nextRecord);
+            }
+          };
+
+          const activeChildItems = item.items.filter((child) => isChildActive(child.field.id));
+
+          return (
+            <Card key={item.field.id} className="overflow-hidden border-2 border-primary/25 bg-card/90 shadow-sm transition-all">
+              <CardContent className="p-0">
+                <div className="border-b border-primary/20 bg-primary/5 px-5 py-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-xs">
+                        <ToggleLeft className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-foreground">{item.field.label}</p>
+                        {item.field.helpText && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">{item.field.helpText}</p>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[11px] font-medium border-primary/30 text-primary self-start sm:self-auto bg-primary/10">
+                      Seletor Modular ({childModules.length} {childModules.length === 1 ? "módulo" : "módulos"})
+                    </Badge>
+                  </div>
+
+                  {childModules.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-primary/30 bg-background/60 p-3 text-center text-xs text-muted-foreground">
+                      Nenhum módulo modular configurado neste seletor.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                      {childModules.map((childModule) => {
+                        const childId = childModule.field.id;
+                        const isChecked = isChildActive(childId);
+                        return (
+                          <div
+                            key={childId}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={isChecked}
+                            className={cn(
+                              "inline-flex items-center gap-2.5 rounded-lg border px-3 py-1.5 transition-all select-none",
+                              locked ? "cursor-not-allowed opacity-70" : "cursor-pointer",
+                              isChecked
+                                ? "border-primary/50 bg-background shadow-xs ring-1 ring-primary/25 font-semibold text-foreground"
+                                : "border-border/60 bg-background/50 text-muted-foreground opacity-60 hover:opacity-100"
+                            )}
+                            onClick={() => toggleChildModule(childId)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleChildModule(childId);
+                              }
+                            }}
+                          >
+                            <span className="text-xs">{childModule.field.label}</span>
+                            <Switch
+                              checked={isChecked}
+                              disabled={locked}
+                              onCheckedChange={() => toggleChildModule(childId)}
+                              className="scale-90"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 space-y-4">
+                  {activeChildItems.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 py-8 px-4 text-center text-xs text-muted-foreground">
+                      Nenhum módulo selecionado no momento. Ative um ou mais módulos acima para preencher os campos.
+                    </div>
+                  ) : (
+                    renderLayoutItems(activeChildItems)
+                  )}
                 </div>
               </CardContent>
             </Card>

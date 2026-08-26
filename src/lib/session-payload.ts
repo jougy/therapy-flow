@@ -51,6 +51,8 @@ interface BuildSessionPayloadParams {
   values: SessionFormValues;
   statusOverride?: string;
   sessionDate?: string;
+  parentSessionId?: string | null;
+  evolutionGroupId?: string | null;
 }
 
 const isDateTimeInAllowedRange = (value: string | null | undefined) => {
@@ -130,6 +132,8 @@ export const buildSessionPayload = ({
   sessionDate,
   values,
   statusOverride,
+  parentSessionId,
+  evolutionGroupId,
 }: BuildSessionPayloadParams): SessionInsert => {
   const amountChargedCents = parseCurrencyToCents(values.amountCharged);
   const parsedOriginalAmountCents = parseCurrencyToCents(values.amountOriginal);
@@ -164,6 +168,8 @@ export const buildSessionPayload = ({
     notes: sanitizeMultilineInput(values.notes, INPUT_LIMITS.clinicalLongText).trim() || null,
     group_id: (values.careLineIds && values.careLineIds.length > 0 ? values.careLineIds[0] : values.groupId) || null,
     provider_id: creatorUserId,
+    parent_session_id: parentSessionId || null,
+    evolution_group_id: evolutionGroupId || null,
     anamnesis: {
       observacoes: sanitizeMultilineInput(values.observacoes, INPUT_LIMITS.clinicalLongText),
       queixa: sanitizeMultilineInput(values.queixa, INPUT_LIMITS.clinicalLongText),

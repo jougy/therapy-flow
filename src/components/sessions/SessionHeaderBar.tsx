@@ -1,9 +1,14 @@
-import { ArrowLeft, CheckCircle2, Copy, Loader2, Pencil, Printer, Save, Share2, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, CheckCircle2, Copy, FileText, Loader2, Pencil, Printer, Save, Share2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { PatientRiskAlerts, PatientClinicalSummaryDialog } from "@/components/patients";
 import type { SessionDocumentKind } from "@/lib/session-documents";
+import type { Database } from "@/integrations/supabase/types";
+
+type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
 
 export interface SessionHeaderBarProps {
   canDeleteSession: boolean;
@@ -15,6 +20,7 @@ export interface SessionHeaderBarProps {
   isEditing: boolean;
   isNew: boolean;
   locked: boolean;
+  patient?: PatientRow | null;
   patientId: string | undefined;
   patientName: string;
   saving: boolean;
@@ -41,6 +47,7 @@ export const SessionHeaderBar = ({
   isEditing,
   isNew,
   locked,
+  patient,
   patientName,
   saving,
   sessionDate,
@@ -56,6 +63,8 @@ export const SessionHeaderBar = ({
   onStartFromThis,
   onStatusChange,
 }: SessionHeaderBarProps) => {
+  const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
+
   const statusColors: Record<string, string> = {
     concluído: "bg-success/15 text-success border-success/20",
     rascunho: "bg-warning/15 text-warning border-warning/20",
@@ -82,12 +91,33 @@ export const SessionHeaderBar = ({
             <p className="text-sm text-muted-foreground">{patientName}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-wrap justify-end">
+
+        {/* Alertas de Risco do Paciente e Resumo Clínico */}
+        <div className="flex items-center gap-2.5 flex-wrap justify-end">
+          <PatientRiskAlerts patient={patient} size="sm" />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setSummaryDialogOpen(true)}
+            disabled={!patient}
+            className="h-8 rounded-full border-primary/25 bg-background hover:border-primary/50 hover:bg-primary/5 text-xs font-medium gap-1.5 px-3 shadow-2xs cursor-pointer"
+            title="Abrir resumo clínico do paciente"
+          >
+            <FileText className="h-3.5 w-3.5 text-primary" />
+            <span>Resumo clínico</span>
+          </Button>
           <Badge variant="outline" className={statusColors[status] || ""}>
             {status}
           </Badge>
         </div>
       </div>
+
+      <PatientClinicalSummaryDialog
+        open={summaryDialogOpen}
+        onOpenChange={setSummaryDialogOpen}
+        patient={patient}
+      />
 
       {/* Action Bar */}
       <div className="flex gap-2 flex-wrap items-center">
@@ -133,16 +163,17 @@ export const SessionHeaderBar = ({
             <span>Compartilhar com colaboradores</span>
           </Button>
         )}
-        {!isNew && (
+        {!isNew && !isEditing && (
           <Button
             size="sm"
             variant="outline"
             onClick={onStartFromThis}
             disabled={startingFromThis || !canStartNewSessionFromThis}
             title={!canStartNewSessionFromThis ? "Compartilhado com permissão apenas de visualização" : undefined}
+            className="gap-1.5"
           >
-            {startingFromThis ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
-            <span>Iniciar Novo Atendimento a Partir Deste</span>
+            {startingFromThis ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1 text-primary" />}
+            <span>Evoluir Atendimento</span>
           </Button>
         )}
         {(isNew || isEditing) && (

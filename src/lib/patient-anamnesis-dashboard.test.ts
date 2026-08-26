@@ -170,4 +170,59 @@ describe("buildPatientAnamnesisDashboard", () => {
     expect(dashboard.groups.map((group) => group.title)).toEqual(["Ficha A", "Ficha B"]);
     expect(dashboard.groups.map((group) => group.sections[0].metrics[0].numberData?.[0].value)).toEqual([1, 9]);
   });
+
+  it("aggregates radar_section attributes into a unified multi-series and radar metric", () => {
+    const radarTemplateSchema: AnamnesisTemplateSchema = [
+      { id: "radar_sec", label: "Status Físico", type: "radar_section" },
+      { groupKey: "radar_sec", id: "strength", label: "Força", min: 0, max: 10, type: "slider" },
+      { groupKey: "radar_sec", id: "agility", label: "Agilidade", min: 0, max: 10, type: "slider" },
+      { groupKey: "radar_sec", id: "endurance", label: "Resistência", min: 0, max: 10, type: "slider" },
+    ];
+
+    const dashboard = buildPatientAnamnesisDashboard({
+      baseSchema: [],
+      sessions: [
+        makeSession({
+          anamnesis_template_id: "template-radar",
+          id: "session-1",
+          session_date: "2026-01-01T12:00:00.000Z",
+          anamnesis_form_response: {
+            strength: 4,
+            agility: 6,
+            endurance: 5,
+          },
+        }),
+        makeSession({
+          anamnesis_template_id: "template-radar",
+          id: "session-2",
+          session_date: "2026-01-10T12:00:00.000Z",
+          anamnesis_form_response: {
+            strength: 8,
+            agility: 9,
+            endurance: 7,
+          },
+        }),
+      ],
+      templates: [{ id: "template-radar", name: "Ficha de Status", schema: radarTemplateSchema }],
+    });
+
+    expect(dashboard.groups).toHaveLength(1);
+    expect(dashboard.groups[0].sections).toHaveLength(1);
+    expect(dashboard.groups[0].sections[0].title).toBe("Status Físico");
+
+    const radarMetric = dashboard.groups[0].sections[0].metrics[0];
+    expect(radarMetric.isRadarGroup).toBe(true);
+    expect(radarMetric.defaultChart).toBe("radar");
+    expect(radarMetric.allowedCharts).toEqual(["radar", "line", "bar", "area", "proportion", "pie"]);
+    expect(radarMetric.seriesKeys).toHaveLength(3);
+    expect(radarMetric.seriesKeys?.map((k) => k.label)).toEqual(["Força", "Agilidade", "Resistência"]);
+    expect(radarMetric.multiSeriesData).toHaveLength(2);
+    expect(radarMetric.radarItems).toHaveLength(3);
+    // latest session values
+    expect(radarMetric.radarItems?.map((i) => i.value)).toEqual([8, 9, 7]);
+    // comparative series (first vs latest)
+    expect(radarMetric.radarSeries).toHaveLength(2);
+    expect(radarMetric.radarSeries?.[0].data).toEqual({ Força: 4, Agilidade: 6, Resistência: 5 });
+    expect(radarMetric.radarSeries?.[1].data).toEqual({ Força: 8, Agilidade: 9, Resistência: 7 });
+  });
 });

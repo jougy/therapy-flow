@@ -797,7 +797,7 @@ export function useFormEditorState() {
   }, [selectedFieldIds, setTemplateFields, templateFields]);
 
   const encapsulateSelectedFields = useCallback(
-    (containerType: "section" | "horizontal_section") => {
+    (containerType: "section" | "horizontal_section" | "radar_section") => {
       if (selectedFieldIds.length === 0) return;
 
       if (templateFields.length + 1 > ANAMNESIS_SCHEMA_FIELD_LIMIT) {
@@ -810,7 +810,12 @@ export function useFormEditorState() {
       }
 
       const newContainer = createAnamnesisField(containerType, templateFields.length + 1) as DesignLabAnamnesisField;
-      newContainer.label = containerType === "section" ? "Nova Seção Agrupada" : "Nova Seção Horizontal";
+      newContainer.label =
+        containerType === "radar_section"
+          ? "Polígono de Status"
+          : containerType === "section"
+            ? "Nova Seção Agrupada"
+            : "Nova Seção Horizontal";
 
       const firstSelectedIndex = templateFields.findIndex((f) => selectedFieldIds.includes(f.id));
       const targetGroupKey = firstSelectedIndex >= 0 ? templateFields[firstSelectedIndex].groupKey : null;
@@ -836,7 +841,12 @@ export function useFormEditorState() {
       }
 
       toast({
-        title: containerType === "section" ? "Encapsulado em Seção Sanfona" : "Encapsulado em Seção Horizontal",
+        title:
+          containerType === "radar_section"
+            ? "Encapsulado em Polígono de Status"
+            : containerType === "section"
+              ? "Encapsulado em Seção Sanfona"
+              : "Encapsulado em Seção Horizontal",
         description: `${selectedFieldIds.length} item(ns) foram agrupados na nova seção.`,
       });
     },

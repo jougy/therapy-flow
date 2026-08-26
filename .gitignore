@@ -15,6 +15,7 @@ dist__permission_backup_*/
 
 # Local-only config
 *.local
+opencode.json
 
 # Environment and secrets
 .env

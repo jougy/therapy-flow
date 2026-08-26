@@ -634,6 +634,9 @@ const Index = () => {
               <button
                 type="button"
                 className="font-medium text-foreground hover:underline"
+                onPointerEnter={() => prefetchPatient(session.patient_id, patient?.patient_code)}
+                onFocus={() => prefetchPatient(session.patient_id, patient?.patient_code)}
+                onTouchStart={() => prefetchPatient(session.patient_id, patient?.patient_code)}
                 onClick={(event) => {
                   event.stopPropagation();
                   navigate(patientPath);

@@ -9,7 +9,7 @@ import {
   type AnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
 
-export type PatientAnamnesisChartType = "area" | "bar" | "line" | "pie" | "proportion";
+export type PatientAnamnesisChartType = "area" | "bar" | "line" | "pie" | "proportion" | "radar";
 export type PatientAnamnesisMetricKind = "category" | "date" | "number" | "table" | "text";
 
 export interface PatientAnamnesisDashboardSession {
@@ -50,6 +50,27 @@ export interface PatientAnamnesisDashboardTextEntry {
   value: string;
 }
 
+export interface PatientAnamnesisDashboardSeriesKey {
+  color: string;
+  id: string;
+  label: string;
+}
+
+export interface PatientAnamnesisDashboardRadarSeries {
+  color: string;
+  data: Record<string, number>;
+  id: string;
+  name: string;
+}
+
+export interface PatientAnamnesisDashboardRadarItem {
+  id: string;
+  label: string;
+  max?: number;
+  min?: number;
+  value: number;
+}
+
 export interface PatientAnamnesisDashboardMetric {
   allowedCharts: PatientAnamnesisChartType[];
   average?: number;
@@ -59,11 +80,16 @@ export interface PatientAnamnesisDashboardMetric {
   fieldId: string;
   fieldLabel: string;
   fieldType: AnamnesisField["type"];
+  isRadarGroup?: boolean;
   key: string;
   kind: PatientAnamnesisMetricKind;
   max?: number;
   min?: number;
+  multiSeriesData?: Record<string, unknown>[];
   numberData?: PatientAnamnesisDashboardNumberPoint[];
+  radarItems?: PatientAnamnesisDashboardRadarItem[];
+  radarSeries?: PatientAnamnesisDashboardRadarSeries[];
+  seriesKeys?: PatientAnamnesisDashboardSeriesKey[];
   tableRowCount?: number;
   textEntries?: PatientAnamnesisDashboardTextEntry[];
 }
@@ -388,6 +414,182 @@ const buildMetric = (
   return null;
 };
 
+const buildRadarSectionMetric = (
+  groupKey: string,
+  container: AnamnesisField,
+  childFields: AnamnesisField[],
+  sessions: PatientAnamnesisDashboardSession[],
+): PatientAnamnesisDashboardMetric | null => {
+  const numericChildFields = childFields.filter((f) => f.type === "slider" || f.type === "number");
+  if (numericChildFields.length === 0) {
+    return null;
+  }
+
+  const sortedSessions = [...sessions].sort(
+    (left, right) => new Date(left.session_date).getTime() - new Date(right.session_date).getTime()
+  );
+
+  const multiSeriesData: Record<string, unknown>[] = [];
+  const allValues: number[] = [];
+
+  sortedSessions.forEach((session) => {
+    let hasAnyVal = false;
+    const row: Record<string, unknown> = {
+      date: session.session_date,
+      label: formatDateLabel(session.session_date),
+      sessionId: session.id,
+    };
+
+    numericChildFields.forEach((field) => {
+      const val = readResponseValue(field, session);
+      if (typeof val === "number" && Number.isFinite(val)) {
+        row[field.id] = val;
+        row[`${field.id}__label`] = field.label;
+        allValues.push(val);
+        hasAnyVal = true;
+      } else if (typeof val === "string" && !isNaN(Number(val)) && val.trim() !== "") {
+        const num = Number(val);
+        row[field.id] = num;
+        row[`${field.id}__label`] = field.label;
+        allValues.push(num);
+        hasAnyVal = true;
+      }
+    });
+
+    if (hasAnyVal) {
+      multiSeriesData.push(row);
+    }
+  });
+
+  if (multiSeriesData.length === 0) {
+    return null;
+  }
+
+  const seriesKeys: PatientAnamnesisDashboardSeriesKey[] = numericChildFields.map((field, idx) => ({
+    color: chartColors[idx % chartColors.length],
+    id: field.id,
+    label: field.label,
+  }));
+
+  const latestSession = sortedSessions[sortedSessions.length - 1];
+  const radarItems: PatientAnamnesisDashboardRadarItem[] = numericChildFields.map((field) => {
+    const raw = readResponseValue(field, latestSession);
+    const num =
+      typeof raw === "number"
+        ? raw
+        : typeof raw === "string" && !isNaN(Number(raw)) && raw.trim() !== ""
+          ? Number(raw)
+          : 0;
+
+    return {
+      id: field.id,
+      label: field.label,
+      max: field.max ?? 10,
+      min: field.min ?? 0,
+      value: num,
+    };
+  });
+
+  const radarSeries: PatientAnamnesisDashboardRadarSeries[] = [];
+  if (multiSeriesData.length === 1) {
+    const s = sortedSessions[sortedSessions.length - 1];
+    const data: Record<string, number> = {};
+    numericChildFields.forEach((f) => {
+      const v = readResponseValue(f, s);
+      data[f.label] =
+        typeof v === "number"
+          ? v
+          : typeof v === "string" && !isNaN(Number(v)) && v.trim() !== ""
+            ? Number(v)
+            : 0;
+    });
+    radarSeries.push({
+      color: "#0ea5e9",
+      data,
+      id: "latest",
+      name: `Sessão (${formatDateLabel(s.session_date)})`,
+    });
+  } else if (multiSeriesData.length > 1) {
+    const firstS = sortedSessions[0];
+    const lastS = sortedSessions[sortedSessions.length - 1];
+    const firstData: Record<string, number> = {};
+    const lastData: Record<string, number> = {};
+    numericChildFields.forEach((f) => {
+      const v1 = readResponseValue(f, firstS);
+      const v2 = readResponseValue(f, lastS);
+      firstData[f.label] =
+        typeof v1 === "number"
+          ? v1
+          : typeof v1 === "string" && !isNaN(Number(v1)) && v1.trim() !== ""
+            ? Number(v1)
+            : 0;
+      lastData[f.label] =
+        typeof v2 === "number"
+          ? v2
+          : typeof v2 === "string" && !isNaN(Number(v2)) && v2.trim() !== ""
+            ? Number(v2)
+            : 0;
+    });
+    radarSeries.push({
+      color: "#10b981",
+      data: firstData,
+      id: "first",
+      name: `1ª Sessão (${formatDateLabel(firstS.session_date)})`,
+    });
+    radarSeries.push({
+      color: "#0ea5e9",
+      data: lastData,
+      id: "latest",
+      name: `Última Sessão (${formatDateLabel(lastS.session_date)})`,
+    });
+  }
+
+  // Category distribution representing attribute proportions
+  const categoryData: PatientAnamnesisDashboardCategoryPoint[] = numericChildFields.map((field, idx) => {
+    let sum = 0;
+    let count = 0;
+    sortedSessions.forEach((s) => {
+      const v = readResponseValue(field, s);
+      if (typeof v === "number" && Number.isFinite(v)) {
+        sum += v;
+        count += 1;
+      }
+    });
+    const avg = count > 0 ? Number((sum / count).toFixed(1)) : 0;
+    return {
+      color: chartColors[idx % chartColors.length],
+      id: field.id,
+      label: field.label,
+      value: avg,
+    };
+  });
+
+  const sum = allValues.reduce((acc, val) => acc + val, 0);
+  const average = allValues.length > 0 ? Number((sum / allValues.length).toFixed(1)) : 0;
+  const min = allValues.length > 0 ? Math.min(...allValues) : 0;
+  const max = allValues.length > 0 ? Math.max(...allValues) : 0;
+
+  return {
+    allowedCharts: ["radar", "line", "bar", "area", "proportion", "pie"],
+    average,
+    categoryData,
+    count: multiSeriesData.length,
+    defaultChart: "radar",
+    fieldId: container.id,
+    fieldLabel: container.label,
+    fieldType: "radar_section",
+    isRadarGroup: true,
+    key: `${groupKey}:radar:${container.id}`,
+    kind: "number",
+    max,
+    min,
+    multiSeriesData,
+    radarItems,
+    radarSeries,
+    seriesKeys,
+  };
+};
+
 const buildGroup = ({
   groupKey,
   sessions,
@@ -404,9 +606,31 @@ const buildGroup = ({
   const fieldsById = new Map(schema.map((field) => [field.id, field]));
   const sections = new Map<string, PatientAnamnesisDashboardSection>();
 
+  // Process radar_section containers first to create aggregated radar multi-series metrics
+  schema
+    .filter((field) => field.type === "radar_section")
+    .forEach((container) => {
+      const childFields = schema.filter((child) => child.groupKey === container.id);
+      const radarMetric = buildRadarSectionMetric(groupKey, container, childFields, sessions);
+      if (radarMetric) {
+        const sectionKey = `${groupKey}:section:${container.id}`;
+        sections.set(sectionKey, {
+          key: sectionKey,
+          metrics: [radarMetric],
+          title: container.label,
+        });
+      }
+    });
+
   schema
     .filter((field) => !isContainerField(field))
     .forEach((field) => {
+      const parentContainer = field.groupKey ? fieldsById.get(field.groupKey) : null;
+      // If field belongs to a radar_section, it's already represented in the consolidated radar metric
+      if (parentContainer?.type === "radar_section") {
+        return;
+      }
+
       const sessionsWithVisibleField = sessions.filter((session) => {
         const response = isFormResponse(session.anamnesis_form_response) ? session.anamnesis_form_response : {};
         return getVisibleTemplateFields(schema, response).some((visibleField) => visibleField.id === field.id);

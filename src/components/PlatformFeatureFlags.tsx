@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { featureFlagsCatalog, FeatureFlagCategory } from "@/lib/feature-flags-catalog";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag, RefreshCw, CreditCard, Printer, Save, X, AlertTriangle, CheckCircle2, Loader2, Shield, RotateCcw } from "lucide-react";
+import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag, RefreshCw, CreditCard, Printer, Save, X, AlertTriangle, CheckCircle2, Loader2, Shield, RotateCcw, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -26,6 +26,7 @@ const getCategoryIcon = (category: FeatureFlagCategory) => {
     case 'Prontuário/Atendimentos': return <ClipboardList className="w-4 h-4" />;
     case 'Impressão': return <Printer className="w-4 h-4" />;
     case 'UI/Experiência': return <Sparkles className="w-4 h-4" />;
+    case 'Tutoriais & Ajuda': return <HelpCircle className="w-4 h-4 text-sky-500" />;
     case 'Assinaturas': return <CreditCard className="w-4 h-4" />;
     default: return <Settings className="w-4 h-4" />;
   }

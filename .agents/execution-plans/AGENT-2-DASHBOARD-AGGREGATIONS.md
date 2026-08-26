@@ -51,7 +51,8 @@ Durante a auditoria da plataforma:
 ---
 
 ## 3. Critérios de Conclusão (Definition of Done)
-- [ ] Migration SQL incremental criada com testes de permissão e RLS.
-- [ ] O `ClinicDashboard.tsx` não baixa mais arrays de sessões brutas para somar no cliente.
-- [ ] Todos os gráficos e modais de impressão continuam funcionando perfeitamente.
-- [ ] O tempo de carregamento da tela de estatísticas se mantém abaixo de 200ms mesmo simulando grandes bases.
+- [x] Migration SQL incremental criada com testes de permissão e RLS (`20260826120000_fix_clinic_dashboard_analytics_rpc.sql`).
+- [x] O `ClinicDashboard.tsx` não baixa mais arrays de sessões brutas para somar no cliente.
+- [x] Todos os gráficos e modais de impressão continuam funcionando perfeitamente.
+- [x] O tempo de carregamento da tela de estatísticas se mantém abaixo de 200ms mesmo simulando grandes bases.
+- [x] Agregações robustas de pacientes, sessões, status financeiros e agenda corrigidas e validadas.

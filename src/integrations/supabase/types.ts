@@ -691,6 +691,33 @@ export type Database = {
         }
         Relationships: []
       }
+      patient_evolution_groups: {
+        Row: {
+          clinic_id: string
+          created_at: string
+          custom_name: string | null
+          id: string
+          patient_id: string
+          updated_at: string
+        }
+        Insert: {
+          clinic_id: string
+          created_at?: string
+          custom_name?: string | null
+          id?: string
+          patient_id: string
+          updated_at?: string
+        }
+        Update: {
+          clinic_id?: string
+          created_at?: string
+          custom_name?: string | null
+          id?: string
+          patient_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       patient_payment_plans: {
         Row: {
           clinic_id: string
@@ -1482,10 +1509,12 @@ export type Database = {
           clinic_id: string | null
           complexity_score: number | null
           created_at: string
+          evolution_group_id: string | null
           group_id: string | null
           id: string
           notes: string | null
           pain_score: number | null
+          parent_session_id: string | null
           patient_id: string
           patient_arrived_at: string | null
           payment_adjustment_reason: string | null
@@ -1513,10 +1542,12 @@ export type Database = {
           clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
+          evolution_group_id?: string | null
           group_id?: string | null
           id?: string
           notes?: string | null
           pain_score?: number | null
+          parent_session_id?: string | null
           patient_id: string
           patient_arrived_at?: string | null
           payment_adjustment_reason?: string | null
@@ -1544,10 +1575,12 @@ export type Database = {
           clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
+          evolution_group_id?: string | null
           group_id?: string | null
           id?: string
           notes?: string | null
           pain_score?: number | null
+          parent_session_id?: string | null
           patient_id?: string
           patient_arrived_at?: string | null
           payment_adjustment_reason?: string | null

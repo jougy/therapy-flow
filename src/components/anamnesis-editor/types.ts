@@ -10,6 +10,7 @@ import {
   Folder,
   FolderOpen,
   Hash,
+  Hexagon,
   MapPin,
   Sliders,
   Table,
@@ -88,6 +89,7 @@ export const COMPONENT_CATEGORIES = [
       { type: "section" as const, label: "Seção sanfona", icon: Folder, description: "Agrupador vertical retrátil" },
       { type: "horizontal_section" as const, label: "Seção horizontal", icon: Columns, description: "Colunas com rolagem lateral" },
       { type: "section_selector" as const, label: "Seletor de seções", icon: ToggleLeft, description: "Switches de visibilidade condicional" },
+      { type: "radar_section" as const, label: "Polígono de Status", icon: Hexagon, description: "Radar de atributos com sliders e métricas" },
     ],
   },
   {
@@ -183,6 +185,7 @@ export const estimateHorizontalSectionRowHeight = (items: DesignLabTemplateLayou
 export const getFieldTypeIcon = (type: AnamnesisField["type"], isContainer: boolean, isCollapsed: boolean) => {
   if (type === "section") return isCollapsed ? Folder : FolderOpen;
   if (type === "horizontal_section") return Columns;
+  if (type === "radar_section") return Hexagon;
   if (type === "short_text") return Type;
   if (type === "long_text") return AlignLeft;
   if (type === "date") return Calendar;
