@@ -25,3 +25,14 @@ Object.defineProperty(window, "scrollTo", {
   value: () => {},
 });
 
+if (!globalThis.fetch || typeof globalThis.fetch !== "function") {
+  globalThis.fetch = vi.fn().mockImplementation(() =>
+    Promise.resolve(
+      new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    )
+  );
+}
+

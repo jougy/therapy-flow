@@ -18,9 +18,63 @@ vi.mock("@/hooks/useAuth", () => ({
   useAuth: vi.fn(),
 }));
 
+vi.mock("@/hooks/useGovernance", () => ({
+  useGovernance: () => ({
+    activePunishments: [],
+    loading: false,
+    isReadOnly: false,
+    isSuspended: false,
+    isWarningModal: false,
+    isPrintExportRevoked: false,
+    isSyncThrottled: false,
+    suspensionReason: null,
+    refetch: vi.fn(),
+    refetchGovernance: vi.fn(),
+  }),
+}));
+
+vi.mock("@/hooks/useTelemetry", () => ({
+  useTelemetry: () => ({
+    trackEvent: vi.fn(),
+    triggerDomainSync: vi.fn(),
+  }),
+}));
+
+vi.mock("@/hooks/useAntiPrintProtection", () => ({
+  useAntiPrintProtection: () => ({
+    isBlurred: false,
+    unblur: vi.fn(),
+  }),
+}));
+
+vi.mock("@/components/ReleaseNotesDialog", () => ({
+  default: () => null,
+}));
+
+vi.mock("@/components/TermsUpdatePromptModal", () => ({
+  TermsUpdatePromptModal: () => null,
+}));
+
+vi.mock("@/components/PersonalNotificationsButton", () => ({
+  default: () => null,
+}));
+
+vi.mock("@/components/FreeTrialUsageBanner", () => ({
+  FreeTrialUsageBanner: () => null,
+}));
+
+vi.mock("@/components/SimulationDebugPanel", () => ({
+  SimulationDebugPanel: () => null,
+}));
+
+vi.mock("@/components/UserFeedbackModal", () => ({
+  UserFeedbackModal: () => null,
+}));
+
 describe("AppLayout", () => {
   beforeEach(() => {
     navigateMock.mockClear();
+    vi.clearAllMocks();
   });
 
   const setupAuthMock = () => {
