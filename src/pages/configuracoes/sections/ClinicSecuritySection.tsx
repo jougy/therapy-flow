@@ -116,12 +116,16 @@ export const ClinicSecuritySection = () => {
       }
       setLoading(true);
 
-      const [{ data: membersData }, { data: eventsData }] = await Promise.all([
+      const [membershipsRes, profilesRes, { data: eventsData }] = await Promise.all([
         supabase
           .from("clinic_memberships")
-          .select("id, user_id, operational_role, membership_status, profiles(full_name, email, last_seen_at)")
+          .select("id, user_id, operational_role, membership_status, is_active")
           .eq("clinic_id", clinicId)
           .eq("membership_status", "active"),
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, last_seen_at")
+          .eq("clinic_id", clinicId),
         supabase
           .from("security_events")
           .select("*")
@@ -131,27 +135,36 @@ export const ClinicSecuritySection = () => {
 
       if (!active) return;
 
-      if (membersData) {
+      if (membershipsRes.data) {
+        const profilesList = (profilesRes.data ?? []) as Array<{
+          id: string;
+          full_name: string | null;
+          email: string | null;
+          last_seen_at: string | null;
+        }>;
+        const profileMap = new Map(profilesList.map((p) => [p.id, p]));
         const now = Date.now();
         const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-        const mapped: ActiveMemberSession[] = membersData.map((item: any) => {
-          const profile = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles;
-          const lastSeen = profile?.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
-          const isOnline = lastSeen > 0 && now - lastSeen < 5 * 60 * 1000;
-          const isInactive = lastSeen === 0 || now - lastSeen > THIRTY_DAYS_MS;
+        const mapped: ActiveMemberSession[] = membershipsRes.data
+          .filter((item) => (item.membership_status === "active" || !item.membership_status) && item.is_active !== false)
+          .map((item: any) => {
+            const profile = profileMap.get(item.user_id);
+            const lastSeen = profile?.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
+            const isOnline = lastSeen > 0 && now - lastSeen < 5 * 60 * 1000;
+            const isInactive = lastSeen === 0 || now - lastSeen > THIRTY_DAYS_MS;
 
-          return {
-            id: item.id,
-            user_id: item.user_id,
-            full_name: profile?.full_name || "Colaborador",
-            email: profile?.email || "",
-            operational_role: item.operational_role || "professional",
-            last_seen_at: profile?.last_seen_at || null,
-            is_online: isOnline,
-            is_inactive: isInactive,
-          };
-        });
+            return {
+              id: item.id,
+              user_id: item.user_id,
+              full_name: profile?.full_name || "Colaborador",
+              email: profile?.email || "",
+              operational_role: item.operational_role || "professional",
+              last_seen_at: profile?.last_seen_at || null,
+              is_online: isOnline,
+              is_inactive: isInactive,
+            };
+          });
         setActiveSessions(mapped);
       }
 

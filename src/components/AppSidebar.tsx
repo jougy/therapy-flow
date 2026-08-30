@@ -4,12 +4,14 @@ import {
   DollarSign,
   Settings,
   FileText,
+  Download,
   LogOut,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
 import {
   Sidebar,
   SidebarContent,
@@ -30,10 +32,6 @@ const mainItems = [
   { title: "Fichas", url: "/fichas", icon: FileText },
 ];
 
-const settingsItems = [
-  { title: "Configurações", url: "/configuracoes", icon: Settings },
-];
-
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
@@ -41,6 +39,12 @@ export function AppSidebar() {
   const currentPath = location.pathname;
   const { can, signOut } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
+  const { isApp } = usePWAInstall();
+
+  const settingsItems = [
+    ...(!isApp ? [{ title: "Baixar App", url: "/download", icon: Download }] : []),
+    { title: "Configurações", url: "/configuracoes", icon: Settings },
+  ];
 
   const visibleMainItems = mainItems.filter((item) => {
     if (item.url === "/financeiro") {

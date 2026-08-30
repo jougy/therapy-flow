@@ -610,7 +610,7 @@ export const renderSessionDocumentText = (model: SessionDocumentModel) =>
 const renderSessionDocumentMarkup = (model: SessionDocumentModel) => `
   <main>
     <header>
-      ${model.brandLogoUrl ? `<img class="brand-logo" src="${escapeHtml(model.brandLogoUrl)}" alt="${escapeHtml(model.brandTitle)}" />` : ""}
+      ${model.brandLogoUrl ? `<img class="brand-logo" src="${escapeHtml(model.brandLogoUrl)}" alt="${escapeHtml(model.brandTitle)}" />` : `<img class="brand-logo" src="/branding/logo/pluri_health_icon_gradient.svg" alt="${escapeHtml(model.brandTitle)}" />`}
       <h1>${escapeHtml(model.brandTitle)}</h1>
       <p class="brand-caption">${escapeHtml(model.brandSubtitle)}</p>
       <p class="subtitle">${escapeHtml(model.subtitle)}</p>

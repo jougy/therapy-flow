@@ -533,7 +533,8 @@ export const ClinicTeamSection = () => {
 
     try {
       const [
-        { data: membershipsData },
+        membershipsRes,
+        profilesRes,
         { data: pendingData },
         { data: roleDefsData },
         { data: roleCapsData },
@@ -541,31 +542,47 @@ export const ClinicTeamSection = () => {
       ] = await Promise.all([
         supabase
           .from("clinic_memberships")
-          .select("id, user_id, operational_role, membership_status, created_at, profiles(full_name, email, job_title, specialty, last_seen_at)")
+          .select("id, user_id, operational_role, membership_status, created_at, is_active")
           .eq("clinic_id", clinicId)
           .eq("membership_status", "active"),
+        supabase
+          .from("profiles")
+          .select("id, full_name, email, job_title, specialty, last_seen_at")
+          .eq("clinic_id", clinicId),
         supabase.rpc("get_clinic_pending_collaborator_invitations", { _clinic_id: clinicId }),
         supabase.from("clinic_operational_roles").select("*").eq("clinic_id", clinicId),
         supabase.from("clinic_operational_role_capabilities").select("*").eq("clinic_id", clinicId),
         supabase.rpc("get_clinic_concurrent_access_overview", { _clinic_id: clinicId }),
       ]);
 
-      if (membershipsData) {
-        const mapped: ActiveMember[] = membershipsData.map((item: any) => {
-          const profile = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles;
-          return {
-            id: item.id,
-            user_id: item.user_id,
-            operational_role: item.operational_role || "professional",
-            membership_status: item.membership_status || "active",
-            created_at: item.created_at,
-            full_name: profile?.full_name || "Colaborador",
-            email: profile?.email || "",
-            job_title: profile?.job_title || null,
-            specialty: profile?.specialty || null,
-            last_seen_at: profile?.last_seen_at || null,
-          };
-        });
+      if (membershipsRes.data) {
+        const profilesList = (profilesRes.data ?? []) as Array<{
+          id: string;
+          full_name: string | null;
+          email: string | null;
+          job_title: string | null;
+          specialty: string | null;
+          last_seen_at: string | null;
+        }>;
+        const profileMap = new Map(profilesList.map((p) => [p.id, p]));
+
+        const mapped: ActiveMember[] = membershipsRes.data
+          .filter((item) => (item.membership_status === "active" || !item.membership_status) && item.is_active !== false)
+          .map((item: any) => {
+            const profile = profileMap.get(item.user_id);
+            return {
+              id: item.id,
+              user_id: item.user_id,
+              operational_role: item.operational_role || "professional",
+              membership_status: item.membership_status || "active",
+              created_at: item.created_at,
+              full_name: profile?.full_name || "Colaborador",
+              email: profile?.email || "",
+              job_title: profile?.job_title || null,
+              specialty: profile?.specialty || null,
+              last_seen_at: profile?.last_seen_at || null,
+            };
+          });
         setMembers(mapped);
       }
 

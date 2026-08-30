@@ -820,8 +820,10 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
         featureKey={configFlagKey}
         isOpen={configModalOpen}
         onClose={() => setConfigModalOpen(false)}
+        initialData={configFlagKey ? (pendingRawFlags[configFlagKey] as Record<string, unknown> | undefined) : undefined}
         scope={contextType}
         tagId={selectedTagId}
+        clinicId={clinicId}
         onSave={() => loadFlags()}
       />
 

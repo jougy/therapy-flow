@@ -50,6 +50,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
 import {
   calculateAgeDetails,
   formatNameTitleCase,
@@ -140,6 +141,7 @@ const PRONOUN_OPTIONS = [
 const NovoPaciente = () => {
   const navigate = useNavigate();
   const { clinic, clinicId, user } = useAuth();
+  const quota = useClinicPlanQuota(clinicId);
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
 
   const [submitting, setSubmitting] = useState(false);
@@ -322,6 +324,15 @@ const NovoPaciente = () => {
       else if (firstErrorKey === "phone") phoneInputRef.current?.focus();
       else if (firstErrorKey === "email") emailInputRef.current?.focus();
 
+      return;
+    }
+
+    if (quota.isFreeTrial && quota.patients.isLimitReached) {
+      toast({
+        title: "Limite de Pacientes Atingido",
+        description: `Seu plano de teste grátis atingiu a cota máxima de ${quota.patients.max} pacientes. Faça o upgrade para cadastrar pacientes ilimitados.`,
+        variant: "destructive",
+      });
       return;
     }
 

@@ -1912,6 +1912,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_clinic_free_trial: {
+        Args: {
+          _clinic_id: string
+          _plan_type?: Database["public"]["Enums"]["subscription_plan"]
+        }
+        Returns: Json
+      }
       create_clinic_subaccount: {
         Args: {
           _clinic_id?: string

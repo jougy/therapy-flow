@@ -1,29 +1,69 @@
 import { supabase } from "@/integrations/supabase/client";
+import { logRuntimeRpc, logRuntimeError } from "@/lib/runtime-debug";
 import type { AccountOperation, DetailKind, PlatformDirectoryItem } from "./types";
 
-export const callRpc = (fn: string, args?: Record<string, unknown>) =>
-  supabase.rpc(fn as never, args as never) as Promise<{ data: unknown; error: { message?: string } | null }>;
+export const callRpc = async (fn: string, args?: Record<string, unknown>) => {
+  const startedAt = performance.now();
+  const result = (await supabase.rpc(fn as never, args as never)) as {
+    data: unknown;
+    error: { message?: string } | null;
+  };
+  const durationMs = Math.round(performance.now() - startedAt);
+  logRuntimeRpc(`rpc:${fn}`, durationMs, !result.error, {
+    args,
+    error: result.error?.message,
+  });
+  if (result.error) {
+    logRuntimeError("platform.rpc", `Erro ao executar RPC ${fn}: ${result.error.message}`, {
+      args,
+      error: result.error,
+    });
+  }
+  return result;
+};
 
 export const callPlatformAccountAdmin = async (action: string, payload: Record<string, unknown>, reason: string) => {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (!token) throw new Error("Sessão master indisponível.");
+  const startedAt = performance.now();
 
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/platform-account-admin`, {
-    body: JSON.stringify({ action, payload, reason }),
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    },
-    method: "POST",
+  const { data, error } = await supabase.functions.invoke("platform-account-admin", {
+    body: { action, payload, reason },
   });
 
-  const body = (await response.json().catch(() => ({}))) as { data?: unknown; error?: string };
-  if (!response.ok) {
-    throw new Error(body.error || "Operação administrativa não pôde ser executada.");
+  const durationMs = Math.round(performance.now() - startedAt);
+
+  if (error) {
+    let errorMsg = error.message || "Operação administrativa não pôde ser executada.";
+    if ("context" in error && error.context && typeof (error.context as Response).json === "function") {
+      try {
+        const errorJson = (await (error.context as Response).json()) as { error?: string; msg?: string; message?: string };
+        if (errorJson?.error) errorMsg = errorJson.error;
+        else if (errorJson?.msg) errorMsg = errorJson.msg;
+        else if (errorJson?.message) errorMsg = errorJson.message;
+      } catch {
+        // ignore fallback
+      }
+    }
+    logRuntimeRpc(`functions/platform-account-admin:${action}`, durationMs, false, {
+      error: errorMsg,
+      payload,
+      reason,
+    });
+    logRuntimeError("platform.admin", `Falha na ação ${action}: ${errorMsg}`, {
+      payload,
+      reason,
+      error,
+    });
+    throw new Error(errorMsg);
   }
-  return body.data;
+
+  logRuntimeRpc(`functions/platform-account-admin:${action}`, durationMs, true, {
+    action,
+    payload,
+    reason,
+  });
+
+  const responseBody = data as { data?: unknown } | null;
+  return responseBody?.data ?? data;
 };
 
 export const formatDateTime = (value: string | null | undefined) => {

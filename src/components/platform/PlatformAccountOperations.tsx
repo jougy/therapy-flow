@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import type { AccountOperation } from "./types";
 import {
   accountOperationLabels,
@@ -79,6 +80,7 @@ export const PlatformAccountOperations = ({
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
   const [form, setForm] = useState<Record<string, string>>({
     clinicId: clinicId ?? "",
     concurrentAccessLimit,
@@ -102,6 +104,7 @@ export const PlatformAccountOperations = ({
   const updateOperation = (value: AccountOperation) => {
     setOperation(value);
     setConfirmation("");
+    setMfaCode("");
     setForm((current) => ({
       ...current,
       status: value === "update_clinic_access" ? clinicAccessStatus : current.status === "delete" ? "active" : current.status,
@@ -153,15 +156,44 @@ export const PlatformAccountOperations = ({
 
   const handleSubmit = async () => {
     setSaving(true);
+    const actionToExecute = isDeletingClinic ? "delete_clinic_package" : operation;
+    const payloadToExecute = isDeletingClinic ? { clinicId: effectiveClinicId } : buildPayload();
     try {
-      await callPlatformAccountAdmin(operation, buildPayload(), reason);
-      toast({ title: "Operação concluída", description: `${accountOperationLabels[operation]} foi registrada na auditoria master.` });
+      if (isDestructive) {
+        const cleanMfaCode = mfaCode.trim().replace(/\D/g, "");
+        if (cleanMfaCode.length !== 6) {
+          throw new Error("Informe o código 2FA/MFA de 6 dígitos do seu autenticador (Ente Auth).");
+        }
+
+        const { data: factorData, error: factorError } = await supabase.auth.mfa.listFactors();
+        if (factorError) throw factorError;
+
+        const totpFactors = Array.isArray(factorData?.totp) ? factorData.totp : [];
+        const verifiedFactor = totpFactors.find((factor) => factor.status === "verified") ?? totpFactors[0];
+
+        if (!verifiedFactor) {
+          throw new Error("Nenhum segundo fator (2FA/MFA) verificado encontrado na sua conta master.");
+        }
+
+        const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
+          factorId: verifiedFactor.id,
+          code: cleanMfaCode,
+        });
+
+        if (verifyError) {
+          throw new Error(`Código MFA inválido ou expirado: ${verifyError.message}`);
+        }
+      }
+
+      await callPlatformAccountAdmin(actionToExecute, payloadToExecute, reason);
+      toast({ title: "Operação concluída", description: `${accountOperationLabels[operation] || actionToExecute} foi registrada na auditoria master.` });
       setConfirmation("");
+      setMfaCode("");
       onDone();
     } catch (error) {
       toast({
         title: "Operação administrativa falhou",
-        description: getErrorMessage(error),
+        description: `${getErrorMessage(error)} (Pressione Cmd+Ctrl+D para ver o log de debug)`,
         variant: "destructive",
       });
     } finally {
@@ -278,25 +310,56 @@ export const PlatformAccountOperations = ({
           </div>
         )}
       </div>
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+      <div className={`grid gap-3 ${isDestructive ? "lg:grid-cols-[minmax(0,1fr)_180px_180px]" : "lg:grid-cols-[minmax(0,1fr)_220px]"}`}>
         <div className="space-y-1">
           <Label>Motivo auditável</Label>
-          <Textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} />
+          <Textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            maxLength={1000}
+            placeholder="Informe a justificativa da ação administrativa..."
+          />
         </div>
         {isDestructive && (
-          <div className="space-y-1">
-            <Label>Confirmação</Label>
-            <Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="Digite EXCLUIR" />
-            <p className="text-xs text-destructive">Ação destrutiva auditada e sem atalho visual.</p>
-          </div>
+          <>
+            <div className="space-y-1">
+              <Label>Confirmação</Label>
+              <Input
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                placeholder="Digite EXCLUIR"
+              />
+              <p className="text-xs text-destructive">Digite EXCLUIR</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="flex items-center gap-1">
+                <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
+                Código 2FA / MFA
+              </Label>
+              <Input
+                value={mfaCode}
+                onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                maxLength={6}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+              />
+              <p className="text-xs text-muted-foreground">App autenticador (Ente Auth)</p>
+            </div>
+          </>
         )}
       </div>
       <Button
-        disabled={saving || reason.trim().length < 8 || (isDestructive && confirmation !== "EXCLUIR")}
+        disabled={
+          saving ||
+          reason.trim().length < 8 ||
+          (isDestructive && (confirmation !== "EXCLUIR" || mfaCode.trim().length !== 6))
+        }
         onClick={() => void handleSubmit()}
+        variant={isDestructive ? "destructive" : "default"}
       >
         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Executar ação administrativa
+        {isDestructive ? "Confirmar e excluir com 2FA" : "Executar ação administrativa"}
       </Button>
     </div>
   );

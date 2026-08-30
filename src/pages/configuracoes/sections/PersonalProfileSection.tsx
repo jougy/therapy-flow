@@ -381,7 +381,7 @@ export const PersonalProfileSection = () => {
             </div>
 
             {/* Toggle de Tema Noturno Animado */}
-            <div className="rounded-xl border p-4 bg-card transition-colors hover:bg-muted/20">
+            <div data-tutorial="settings-profile-theme" className="rounded-xl border p-4 bg-card transition-colors hover:bg-muted/20">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3">
                   <div className="rounded-xl bg-primary/10 p-2.5 text-primary">

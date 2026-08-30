@@ -4,15 +4,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Building2, HelpCircle, Loader2, Tag, Check, AlertCircle, Calculator, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Building2, HelpCircle, Loader2, ShieldCheck } from "lucide-react";
+import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
-import { isOwnerDocumentValid, validateCPF, validateCNPJ } from "@/lib/owner-document";
+import { isOwnerDocumentValid } from "@/lib/owner-document";
 import { toast } from "sonner";
 
 const formatCPF = (v: string) => {
@@ -65,16 +68,6 @@ type BusinessHours = {
   description?: string;
 };
 
-interface CouponValidationResult {
-  valid: boolean;
-  coupon_id?: string;
-  code?: string;
-  description?: string;
-  discount_type?: "PERCENTAGE" | "FIXED_AMOUNT" | "TRIAL_DAYS";
-  discount_value?: number;
-  message?: string;
-}
-
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message;
   if (error && typeof error === "object" && "message" in error) {
@@ -88,8 +81,10 @@ export default function OnboardingClinica() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { clinic, profile, session, selectClinic, refreshAuthState } = useAuth();
+  const { isFeatureEnabled } = useFeatureFlags();
+  
   const plan = (searchParams.get("plan") as "solo" | "clinic" | null) || "solo";
-  const initialCoupon = searchParams.get("coupon") || "";
+  const isTrial = searchParams.get("trial") === "true";
   const initialConcurrent = parseInt(searchParams.get("concurrent") || (plan === "clinic" ? "2" : "1"), 10);
   const initialSpaces = parseInt(searchParams.get("spaces") || (plan === "clinic" ? "30" : "1"), 10);
 
@@ -97,14 +92,12 @@ export default function OnboardingClinica() {
   const isCurrentClinicOwnedByMe = Boolean(clinic?.account_owner_user_id && session?.user?.id && clinic.account_owner_user_id === session.user.id);
   const isCreateMode = !clinic || !isCurrentClinicOwnedByMe || isExplicitCreate;
 
+  const requireOwnerTerms = isFeatureEnabled("require_owner_terms_on_clinic_creation");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [fetchingCep, setFetchingCep] = useState(false);
-
-  // State do Cupom de Desconto
-  const [couponCode, setCouponCode] = useState(initialCoupon);
-  const [appliedCoupon, setAppliedCoupon] = useState<CouponValidationResult | null>(null);
-  const [couponError, setCouponError] = useState<string | null>(null);
-  const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   const [formData, setFormData] = useState({
     name: !isCreateMode ? (clinic?.name || "") : "",
@@ -173,41 +166,6 @@ export default function OnboardingClinica() {
     };
   }, [clinic?.id, isCreateMode]);
 
-  // Autovalidar cupom inicial vindo da URL
-  useEffect(() => {
-    if (initialCoupon) {
-      validateCoupon(initialCoupon);
-    }
-  }, [initialCoupon]);
-
-  const validateCoupon = async (codeToValidate: string) => {
-    if (!codeToValidate.trim()) return;
-    setValidatingCoupon(true);
-    setCouponError(null);
-
-    try {
-      const { data, error } = await supabase.rpc("validate_subscription_coupon", {
-        _code: codeToValidate.trim().toUpperCase(),
-        _plan_type: plan,
-      });
-
-      if (error) throw error;
-      const result = data as CouponValidationResult;
-      if (result && result.valid) {
-        setAppliedCoupon(result);
-        setCouponError(null);
-      } else {
-        setAppliedCoupon(null);
-        setCouponError(result?.message || "Cupom inválido.");
-      }
-    } catch (err) {
-      setAppliedCoupon(null);
-      setCouponError("Erro ao validar cupom.");
-    } finally {
-      setValidatingCoupon(false);
-    }
-  };
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fieldName = e.target.name;
     let value = e.target.value;
@@ -252,20 +210,7 @@ export default function OnboardingClinica() {
     }
   };
 
-  // Cálculos Financeiros Dinâmicos em Tempo Real
   const parsedConcurrent = Math.max(plan === "clinic" ? 2 : 1, parseInt(formData.concurrent_access_limit || "2", 10));
-  const extraConcurrentSeats = Math.max(0, parsedConcurrent - (plan === "clinic" ? 2 : 1));
-  const basePrice = plan === "clinic" ? 60.0 : 50.0;
-  const rawPrice = basePrice + extraConcurrentSeats * 10.0;
-
-  let finalPrice = rawPrice;
-  if (appliedCoupon && appliedCoupon.valid) {
-    if (appliedCoupon.discount_type === "PERCENTAGE") {
-      finalPrice = Math.max(0, rawPrice * (1 - (appliedCoupon.discount_value || 0) / 100));
-    } else if (appliedCoupon.discount_type === "FIXED_AMOUNT") {
-      finalPrice = Math.max(0, rawPrice - (appliedCoupon.discount_value || 0));
-    }
-  }
 
   const [duplicateCnpjModalOpen, setDuplicateCnpjModalOpen] = useState(false);
   const [existingClinicNameForCnpj, setExistingClinicNameForCnpj] = useState("");
@@ -275,6 +220,11 @@ export default function OnboardingClinica() {
 
     if (!session?.user?.id) {
       toast.error("Sessão expirada. Faça login novamente.");
+      return;
+    }
+
+    if (requireOwnerTerms && !termsAccepted) {
+      toast.error("Você precisa aceitar os Termos de Uso e Responsabilidade do Titular para prosseguir.");
       return;
     }
 
@@ -317,8 +267,9 @@ export default function OnboardingClinica() {
 
         if (rpcError) {
           const msg = rpcError.message || "";
+          const docLabel = cleanCnpj ? "CNPJ" : "CPF";
           if (msg.includes("CNPJ_REGISTERED_TO_OTHER_USER")) {
-            toast.error("Este CNPJ já está sendo utilizado pela conta de outro proprietário na plataforma. Caso este seja o seu CNPJ oficial, entre em contato com nosso suporte.");
+            toast.error(`Este ${docLabel} já está sendo utilizado pela conta de outro proprietário na plataforma. Caso este seja o seu documento oficial, entre em contato com nosso suporte.`);
             setLoading(false);
             return;
           }
@@ -386,34 +337,23 @@ export default function OnboardingClinica() {
 
       if (clinicError) throw clinicError;
 
-      // Atualizar CPF no perfil do usuário
+      // Atualizar termos e CPF no perfil do usuário
+      const profileUpdates: Database["public"]["Tables"]["profiles"]["Update"] = {
+        owner_terms_accepted_at: new Date().toISOString(),
+      };
       if (cleanCpf) {
-        await supabase.from("profiles").update({ cpf: cleanCpf }).eq("id", session.user.id);
+        profileUpdates.cpf = cleanCpf;
       }
+      await supabase.from("profiles").update(profileUpdates).eq("id", session.user.id);
 
-      // Registrar/Iniciar Assinatura no Asaas através da Edge Function
-      if (supabase.functions && typeof supabase.functions.invoke === "function") {
-        try {
-          const edgeRes = await supabase.functions.invoke("asaas-subscription", {
-            body: {
-              action: "CREATE",
-              clinic_id: targetClinicId,
-              plan_type: plan,
-              additional_seats_count: extraConcurrentSeats,
-              coupon_code: appliedCoupon?.valid ? appliedCoupon.code : couponCode,
-              billing_type: "PIX",
-              cpf_cnpj: documentToUse,
-              billing_name: formData.name,
-              billing_email: formData.email || session.user.email,
-            },
-          });
+      if (isTrial) {
+        // Criar/ativar registro de assinatura Trial no banco via RPC centralizada
+        const { error: trialError } = await supabase.rpc("activate_clinic_free_trial", {
+          _clinic_id: targetClinicId,
+          _plan_type: (plan === "clinic" ? "clinic" : "solo"),
+        });
 
-          if (edgeRes?.error) {
-            console.warn("Aviso ao ativar assinatura no Asaas:", edgeRes.error);
-          }
-        } catch (subErr) {
-          console.warn("Erro ao invocar asaas-subscription:", subErr);
-        }
+        if (trialError) throw trialError;
       }
 
       if (isCreateMode && targetClinicId) {
@@ -430,8 +370,9 @@ export default function OnboardingClinica() {
       }
 
       isSuccess = true;
-      toast.success(isCreateMode ? "Sua clínica foi cadastrada com sucesso!" : "Dados salvos com sucesso!");
-      navigate("/espacopessoal", { replace: true });
+
+      toast.success("Clínica cadastrada com sucesso! Escolha o plano ideal para o seu espaço.");
+      navigate(`/planos?clinicId=${targetClinicId}`, { replace: true });
     } catch (error: unknown) {
       const errorMessage = getErrorMessage(error);
       toast.error(errorMessage);
@@ -449,17 +390,17 @@ export default function OnboardingClinica() {
 
   const FieldLabel = ({ label, tooltip, htmlFor, required = false }: { label: string; tooltip: string; htmlFor: string; required?: boolean }) => (
     <div className="flex items-center gap-2 mb-2">
-      <Label htmlFor={htmlFor} className="text-sm font-medium text-neutral-300">
+      <Label htmlFor={htmlFor} className="text-sm font-medium text-foreground/90">
         {label}
       </Label>
-      {required && <span className="text-red-500">*</span>}
+      {required && <span className="text-destructive">*</span>}
       <Popover>
         <PopoverTrigger asChild>
-          <button type="button" tabIndex={-1} className="rounded-full outline-none focus:ring-2 focus:ring-blue-500/50">
-            <HelpCircle className="h-4 w-4 text-neutral-500 hover:text-neutral-300 transition-colors" />
+          <button type="button" tabIndex={-1} className="rounded-full outline-none focus:ring-2 focus:ring-primary/50">
+            <HelpCircle className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
           </button>
         </PopoverTrigger>
-        <PopoverContent side="right" className="max-w-[300px] bg-neutral-900 border-neutral-800 text-neutral-200 p-3 text-sm z-50">
+        <PopoverContent side="right" className="max-w-[300px] bg-popover border-border text-popover-foreground p-3 text-sm z-50">
           {tooltip}
         </PopoverContent>
       </Popover>
@@ -467,10 +408,10 @@ export default function OnboardingClinica() {
   );
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex flex-col items-center py-6 px-4 sm:py-12 sm:px-6 relative overflow-hidden">
+    <div className="min-h-screen bg-background text-foreground flex flex-col items-center py-6 px-4 sm:py-12 sm:px-6 relative overflow-y-auto overflow-x-hidden">
       {/* Background Glow */}
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-blue-500/10 rounded-full blur-[100px] sm:blur-[120px]" />
+        <div className="absolute top-0 left-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-primary/10 rounded-full blur-[100px] sm:blur-[120px]" />
         <div className="absolute bottom-0 right-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-emerald-500/10 rounded-full blur-[100px] sm:blur-[120px]" />
       </div>
 
@@ -483,7 +424,7 @@ export default function OnboardingClinica() {
             size="sm"
             onClick={() => navigate("/espacopessoal")}
             disabled={loading}
-            className="text-neutral-400 hover:text-white hover:bg-neutral-900 border border-neutral-800/80 rounded-xl px-3 py-2 text-xs sm:text-sm font-medium transition-colors inline-flex items-center gap-2"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted border border-border rounded-xl px-3 py-2 text-xs sm:text-sm font-medium transition-colors inline-flex items-center gap-2 min-h-[44px]"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Voltar ao Espaço Pessoal</span>
@@ -496,7 +437,7 @@ export default function OnboardingClinica() {
               size="sm"
               onClick={() => navigate("/planos")}
               disabled={loading}
-              className="text-neutral-400 hover:text-white text-xs sm:text-sm inline-flex items-center gap-1.5"
+              className="text-muted-foreground hover:text-foreground text-xs sm:text-sm inline-flex items-center gap-1.5 min-h-[44px]"
             >
               Trocar plano
             </Button>
@@ -504,85 +445,94 @@ export default function OnboardingClinica() {
         </div>
 
         {/* Header */}
-        <div className="text-left">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs sm:text-sm font-medium mb-3">
-            <Building2 className="w-3.5 h-3.5 shrink-0" />
-            <span>{isCreateMode ? (plan === "clinic" ? "Novo Espaço: Clínica com Equipe" : "Novo Espaço: Profissional Solo") : "Configuração da Clínica"}</span>
+        <div className="text-left flex items-start gap-4">
+          <img
+            src="/branding/logo/pluri_health_icon_gradient.svg"
+            alt="Pluri-Health"
+            className="h-12 w-12 shrink-0 drop-shadow-md hidden sm:block mt-1"
+          />
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs sm:text-sm font-medium mb-3">
+              <Building2 className="w-3.5 h-3.5 shrink-0" />
+              <span>{isCreateMode ? (plan === "clinic" ? "Novo Espaço: Clínica com Equipe" : "Novo Espaço: Profissional Solo") : "Configuração da Clínica"}</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-2">
+              {isCreateMode ? "Cadastre seu Próprio Espaço" : "Configure sua Clínica"}
+            </h1>
+            <p className="text-xs sm:text-base text-muted-foreground max-w-2xl">
+              {isTrial
+                ? "Preencha os dados abaixo para ativar seu espaço em Modo Degustação Gratuita (20 atendimentos)."
+                : "Preencha os dados abaixo para configurar o ambiente de atendimento e prosseguir ao checkout seguro."}
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2">
-            {isCreateMode ? "Cadastre seu Próprio Espaço" : "Configure sua Clínica"}
-          </h1>
-          <p className="text-xs sm:text-base text-neutral-400 max-w-2xl">
-            Preencha os dados abaixo para configurar o ambiente de atendimento da sua clínica.
-          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-8">
           {/* Identidade e Contato */}
-          <Card className="bg-neutral-900/60 border-neutral-800 backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
-            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-neutral-800/50">
-              <CardTitle className="text-lg sm:text-xl text-white font-semibold">Identidade e Contato</CardTitle>
-              <CardDescription className="text-xs sm:text-sm text-neutral-400">Como sua clínica será identificada.</CardDescription>
+          <Card className="bg-card/80 border-border backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
+            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-border/50">
+              <CardTitle className="text-lg sm:text-xl text-foreground font-semibold">Identidade e Contato</CardTitle>
+              <CardDescription className="text-xs sm:text-sm text-muted-foreground">Como sua clínica será identificada.</CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 sm:grid-cols-2">
               <div className="space-y-1">
                 <FieldLabel htmlFor="name" label="Nome da Clínica" tooltip="Nome fantasia ou comercial exibido aos pacientes." required />
-                <Input id="name" name="name" required value={formData.name} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="Ex: Clínica Bem Estar" />
+                <Input id="name" name="name" required value={formData.name} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder="Ex: Clínica Bem Estar" />
               </div>
               <div className="space-y-1">
                 <FieldLabel htmlFor="logo_url" label="URL do Logo" tooltip="Link da imagem do seu logotipo." />
-                <Input id="logo_url" name="logo_url" value={formData.logo_url} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="https://..." />
+                <Input id="logo_url" name="logo_url" value={formData.logo_url} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder="https://..." />
               </div>
               <div className="space-y-1">
                 <FieldLabel htmlFor="email" label="E-mail Institucional" tooltip="E-mail de contato e faturamento." />
-                <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="contato@clinica.com" />
+                <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder="contato@clinica.com" />
               </div>
               <div className="space-y-1">
                 <FieldLabel htmlFor="phone" label="Telefone / WhatsApp" tooltip="Telefone de atendimento da clínica." />
-                <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="(00) 00000-0000" />
+                <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder="(00) 00000-0000" />
               </div>
             </CardContent>
           </Card>
 
           {/* Dados Jurídicos e Validação Rigorosa */}
-          <Card className="bg-neutral-900/60 border-neutral-800 backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
-            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-neutral-800/50">
-              <CardTitle className="text-lg sm:text-xl text-white font-semibold">Dados Jurídicos (CPF ou CNPJ)</CardTitle>
-              <CardDescription className="text-xs sm:text-sm text-neutral-400">Preencha o CPF do responsável OU o CNPJ da clínica para emissão das faturas.</CardDescription>
+          <Card className="bg-card/80 border-border backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
+            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-border/50">
+              <CardTitle className="text-lg sm:text-xl text-foreground font-semibold">Dados Jurídicos (CPF ou CNPJ)</CardTitle>
+              <CardDescription className="text-xs sm:text-sm text-muted-foreground">Preencha o CPF do responsável OU o CNPJ da clínica para emissão das faturas.</CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 sm:grid-cols-2">
               <div className="sm:col-span-2 space-y-1">
                 <FieldLabel htmlFor="legal_name" label="Razão Social" tooltip="Nome jurídico oficial registrado." />
-                <Input id="legal_name" name="legal_name" value={formData.legal_name} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="Empresa Saúde LTDA" />
+                <Input id="legal_name" name="legal_name" value={formData.legal_name} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder="Empresa Saúde LTDA" />
               </div>
               <div className="space-y-1">
                 <FieldLabel htmlFor="cpf" label="CPF do Responsável" tooltip="CPF válido do responsável legal." required={!cleanDigits(formData.cnpj)} />
-                <Input id="cpf" name="cpf" value={formData.cpf} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="000.000.000-00" required={!cleanDigits(formData.cnpj)} />
+                <Input id="cpf" name="cpf" value={formData.cpf} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder="000.000.000-00" required={!cleanDigits(formData.cnpj)} />
               </div>
               <div className="space-y-1">
                 <FieldLabel htmlFor="cnpj" label="CNPJ da Clínica" tooltip="CNPJ oficial para emissão via Asaas." required={!cleanDigits(formData.cpf)} />
-                <Input id="cnpj" name="cnpj" value={formData.cnpj} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="00.000.000/0001-00" required={!cleanDigits(formData.cpf)} />
+                <Input id="cnpj" name="cnpj" value={formData.cnpj} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder="00.000.000/0001-00" required={!cleanDigits(formData.cpf)} />
               </div>
               <div className="sm:col-span-2 space-y-1">
                 <FieldLabel htmlFor="business_hours" label="Horário de Funcionamento" tooltip="Descreva os horários de atendimento." />
-                <Input id="business_hours" name="business_hours" value={formData.business_hours} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder="Ex: Seg-Sex, 08h-18h" />
+                <Input id="business_hours" name="business_hours" value={formData.business_hours} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder="Ex: Seg-Sex, 08h-18h" />
               </div>
             </CardContent>
           </Card>
 
           {/* Endereço Completo */}
-          <Card className="bg-neutral-900/60 border-neutral-800 backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
-            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-neutral-800/50">
-              <CardTitle className="text-lg sm:text-xl text-white font-semibold">Endereço do Estabelecimento</CardTitle>
+          <Card className="bg-card/80 border-border backdrop-blur-md shadow-xl rounded-2xl overflow-hidden">
+            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-border/50">
+              <CardTitle className="text-lg sm:text-xl text-foreground font-semibold">Endereço do Estabelecimento</CardTitle>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-6">
               <div className="sm:col-span-6 space-y-1">
                 <FieldLabel htmlFor="country" label="País" tooltip="País do estabelecimento." required />
                 <Select value={formData.country} onValueChange={(val) => handleSelectChange("country", val)}>
-                  <SelectTrigger className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl">
+                  <SelectTrigger className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl">
                     <SelectValue placeholder="Selecione o país" />
                   </SelectTrigger>
-                  <SelectContent className="bg-neutral-900 border-neutral-800 text-neutral-200">
+                  <SelectContent className="bg-popover border-border text-popover-foreground">
                     <SelectItem value="BR">Brasil</SelectItem>
                     <SelectItem value="US">United States</SelectItem>
                     <SelectItem value="CA">Canada</SelectItem>
@@ -595,43 +545,43 @@ export default function OnboardingClinica() {
               <div className="sm:col-span-2 space-y-1 relative">
                 <FieldLabel htmlFor="cep" label={formData.country === "BR" ? "CEP" : "Zip Code"} tooltip="Preenchimento automático do endereço via ViaCEP." />
                 <div className="relative">
-                  <Input id="cep" name="cep" value={formData.cep} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" placeholder={formData.country === "BR" ? "00000-000" : ""} />
-                  {fetchingCep && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-neutral-500" />}
+                  <Input id="cep" name="cep" value={formData.cep} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" placeholder={formData.country === "BR" ? "00000-000" : ""} />
+                  {fetchingCep && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />}
                 </div>
               </div>
               <div className="sm:col-span-4 space-y-1">
                 <FieldLabel htmlFor="street" label="Logradouro" tooltip="Rua, avenida ou alameda." required />
-                <Input id="street" name="street" required value={formData.street} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
+                <Input id="street" name="street" required value={formData.street} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" />
               </div>
               <div className="sm:col-span-2 space-y-1">
                 <FieldLabel htmlFor="number" label="Número" tooltip="Número do imóvel." />
-                <Input id="number" name="number" value={formData.number} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
+                <Input id="number" name="number" value={formData.number} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" />
               </div>
               <div className="sm:col-span-4 space-y-1">
                 <FieldLabel htmlFor="complement" label="Complemento" tooltip="Sala, andar ou bloco." />
-                <Input id="complement" name="complement" value={formData.complement} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
+                <Input id="complement" name="complement" value={formData.complement} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" />
               </div>
               <div className="sm:col-span-2 space-y-1">
                 <FieldLabel htmlFor="neighborhood" label="Bairro" tooltip="Bairro." />
-                <Input id="neighborhood" name="neighborhood" value={formData.neighborhood} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
+                <Input id="neighborhood" name="neighborhood" value={formData.neighborhood} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" />
               </div>
               <div className="sm:col-span-3 space-y-1">
                 <FieldLabel htmlFor="city" label="Cidade" tooltip="Cidade." required />
-                <Input id="city" name="city" required value={formData.city} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" />
+                <Input id="city" name="city" required value={formData.city} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" />
               </div>
               <div className="sm:col-span-1 space-y-1">
                 <FieldLabel htmlFor="state" label="UF" tooltip="Estado." required />
-                <Input id="state" name="state" required value={formData.state} onChange={handleChange} className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-blue-500" maxLength={2} placeholder="SP" />
+                <Input id="state" name="state" required value={formData.state} onChange={handleChange} className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl focus:border-primary" maxLength={2} placeholder="SP" />
               </div>
             </CardContent>
           </Card>
 
           {/* Equipe e Acessos para Plano Clínica */}
           {plan === "clinic" && (
-            <Card className="bg-blue-900/10 border-blue-500/20 backdrop-blur-md rounded-2xl overflow-hidden">
-              <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-blue-500/10">
-                <CardTitle className="text-lg sm:text-xl text-blue-400 font-semibold">Equipe e Acessos</CardTitle>
-                <CardDescription className="text-xs sm:text-sm text-neutral-400">Configure os limites de uso para o plano Clínica com Equipe.</CardDescription>
+            <Card className="bg-primary/5 border-primary/20 backdrop-blur-md rounded-2xl overflow-hidden">
+              <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-primary/10">
+                <CardTitle className="text-lg sm:text-xl text-primary font-semibold">Equipe e Acessos</CardTitle>
+                <CardDescription className="text-xs sm:text-sm text-muted-foreground">Configure os limites de uso para o plano Clínica com Equipe.</CardDescription>
               </CardHeader>
               <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 sm:grid-cols-2">
                 <div className="space-y-1">
@@ -649,14 +599,14 @@ export default function OnboardingClinica() {
                     required 
                     value={formData.subaccount_limit} 
                     onChange={handleChange} 
-                    className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl" 
+                    className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl" 
                   />
                 </div>
                 <div className="space-y-1">
                   <FieldLabel 
                     htmlFor="concurrent_access_limit" 
                     label="Acessos Simultâneos" 
-                    tooltip="Quantos acessos simultâneos precisará na clínica? (2 inclusos na base + R$10/mês por extra)" 
+                    tooltip="Quantos acessos simultâneos precisará na clínica? (2 inclusos na base + R$ 10 a R$ 13/mês por extra)" 
                     required
                   />
                   <Input 
@@ -667,189 +617,131 @@ export default function OnboardingClinica() {
                     required 
                     value={formData.concurrent_access_limit} 
                     onChange={handleChange} 
-                    className="bg-neutral-950/80 border-neutral-800 text-neutral-100 h-11 sm:h-10 text-base sm:text-sm rounded-xl" 
+                    className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl" 
                   />
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Resumo da Assinatura e Cupom de Desconto */}
-          <Card className="bg-blue-900/10 border-blue-500/30 backdrop-blur-md rounded-2xl overflow-hidden">
-            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-blue-500/20">
-              <CardTitle className="text-lg sm:text-xl text-blue-400 font-semibold flex items-center gap-2">
-                <Calculator className="w-5 h-5" />
-                Resumo da Assinatura e Cupom de Desconto
-              </CardTitle>
-              <CardDescription className="text-xs sm:text-sm text-neutral-400">
-                Confira o valor recorrente e aplique seu cupom de desconto.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6 space-y-6">
-              {/* Cupom Input */}
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5">
-                  <Tag className="w-4 h-4 text-blue-400" /> Cupom de Desconto
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    placeholder="DIGITE O CUPOM (EX: BETA50)"
-                    value={couponCode}
-                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                    className="bg-neutral-950 border-neutral-800 text-white font-mono uppercase h-10 text-xs sm:text-sm rounded-xl"
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => validateCoupon(couponCode)}
-                    disabled={validatingCoupon || !couponCode.trim()}
-                    className="bg-blue-600 hover:bg-blue-700 text-white h-10 px-4 text-xs font-semibold rounded-xl"
-                  >
-                    {validatingCoupon ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validar"}
-                  </Button>
-                </div>
+          {/* Termo de Consentimento e Responsabilidade do Titular */}
+          <div className="rounded-2xl border border-border/80 bg-card/80 p-4 sm:p-5 space-y-2 backdrop-blur-md shadow-md">
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="owner-terms-consent"
+                checked={termsAccepted}
+                onCheckedChange={(checked) => setTermsAccepted(Boolean(checked))}
+                className="mt-0.5"
+              />
+              <label
+                htmlFor="owner-terms-consent"
+                className="text-xs sm:text-sm leading-relaxed text-foreground cursor-pointer select-none"
+              >
+                Declaro que li e concordo com os{" "}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsTermsModalOpen(true);
+                  }}
+                  className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+                >
+                  Termos de Uso e Responsabilidade do Titular
+                </button>{" "}
+                do Pluri-Health.
+              </label>
+            </div>
+            {requireOwnerTerms && !termsAccepted && (
+              <p className="text-xs text-muted-foreground pl-7">
+                * O aceite dos termos é obrigatório para cadastrar seu espaço.
+              </p>
+            )}
+          </div>
 
-                {appliedCoupon && appliedCoupon.valid && (
-                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Check className="w-4 h-4 shrink-0" />
-                      <span>Cupom <strong>{appliedCoupon.code}</strong> ativo com sucesso!</span>
-                    </div>
-                    <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-                      {appliedCoupon.discount_type === "PERCENTAGE" && `${appliedCoupon.discount_value}% OFF`}
-                      {appliedCoupon.discount_type === "FIXED_AMOUNT" && `R$ ${appliedCoupon.discount_value} OFF`}
-                      {appliedCoupon.discount_type === "TRIAL_DAYS" && `${appliedCoupon.discount_value} dias degustação`}
-                    </Badge>
-                  </div>
-                )}
-
-                {couponError && (
-                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{couponError}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Quadro Resumo */}
-              <div className="p-4 rounded-xl bg-neutral-950/90 border border-neutral-800 space-y-3">
-                <div className="flex items-center justify-between text-xs border-b border-neutral-800 pb-2">
-                  <span className="font-semibold text-blue-400 uppercase tracking-wider">Detalhamento dos Recursos</span>
-                  <span className="text-emerald-400 font-medium px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">Fase Beta: 100% Isento</span>
-                </div>
-
-                <div className="space-y-1.5 text-xs text-neutral-300">
-                  <div className="flex justify-between">
-                    <span>Plano Selecionado:</span>
-                    <span className="font-semibold text-white">{plan === "clinic" ? "Clínica com Equipe" : "Profissional Solo"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Mensalidade Base:</span>
-                    <span className="font-semibold text-white">R$ {basePrice.toFixed(2)}/mês</span>
-                  </div>
-                  {plan === "clinic" && extraConcurrentSeats > 0 && (
-                    <div className="flex justify-between text-blue-300">
-                      <span>Acessos Simultâneos Extras ({extraConcurrentSeats}x R$ 10,00):</span>
-                      <span className="font-semibold">+R$ {(extraConcurrentSeats * 10).toFixed(2)}/mês</span>
-                    </div>
-                  )}
-
-                  {appliedCoupon && appliedCoupon.valid && rawPrice !== finalPrice && (
-                    <div className="flex justify-between text-emerald-400 font-semibold border-t border-neutral-800/80 pt-1.5">
-                      <span>Desconto do Cupom ({appliedCoupon.code}):</span>
-                      <span>-R$ {(rawPrice - finalPrice).toFixed(2)}</span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between border-t border-neutral-800 pt-2 text-sm sm:text-base font-bold text-white">
-                    <span>Valor Recorrente Final:</span>
-                    <div className="text-right">
-                      {appliedCoupon && appliedCoupon.valid && rawPrice !== finalPrice && (
-                        <span className="text-xs text-neutral-500 line-through mr-2 font-mono">
-                          R$ {rawPrice.toFixed(2)}
-                        </span>
-                      )}
-                      <span className="text-emerald-400">R$ {finalPrice.toFixed(2)}/mês</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Asaas PCI-DSS Security Compliance Banner */}
-          <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 text-xs text-neutral-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          {/* Asaas Security Compliance Banner */}
+          <div className="p-4 rounded-2xl bg-card border border-border text-xs text-muted-foreground flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <p className="font-semibold text-white text-xs">Processamento Financeiro Seguro via Asaas (PCI-DSS)</p>
-                <p className="text-[11px] text-neutral-400 mt-0.5">
-                  Os dados cadastrais acima são utilizados exclusivamente para emissão do cadastro na instituição financeira parceira Asaas. O Pluri-Health <strong>nunca armazena números de cartão de crédito</strong> em seus servidores.
+                <p className="font-semibold text-foreground text-xs">Processamento Financeiro Seguro via Asaas (PCI-DSS)</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Ao prosseguir, você será direcionado para a seleção e checkout de pagamento integrado ao gateway Asaas. O Pluri-Health <strong>nunca armazena números de cartão de crédito</strong> em seus servidores.
                 </p>
               </div>
             </div>
-            <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-[10px] whitespace-nowrap shrink-0">
+            <Badge variant="outline" className="border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 text-[10px] whitespace-nowrap shrink-0">
               Gateway Asaas Oficial
             </Badge>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-3 pt-4 sm:pt-6 border-t border-neutral-800/60">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-3 pt-4 sm:pt-6 border-t border-border">
             <Button
               type="button"
               onClick={() => navigate("/espacopessoal")}
               disabled={loading}
-              className="w-full sm:w-auto h-12 px-6 text-base font-medium bg-neutral-900 border border-neutral-800 text-neutral-300 hover:bg-neutral-800 hover:text-white rounded-xl transition-colors"
+              variant="outline"
+              className="w-full sm:w-auto h-12 px-6 text-base font-medium rounded-xl transition-colors min-h-[48px]"
             >
               Cancelar
             </Button>
             <Button
               type="submit"
-              disabled={loading}
-              className="w-full sm:w-auto min-w-[220px] h-12 px-6 text-base font-semibold bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-xl shadow-lg shadow-blue-600/20 transition-all"
+              disabled={loading || (requireOwnerTerms && !termsAccepted)}
+              className="w-full sm:w-auto min-w-[220px] h-12 px-6 text-base font-semibold bg-primary hover:bg-primary/90 active:scale-[0.98] text-primary-foreground rounded-xl shadow-lg transition-all min-h-[48px]"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
-              {loading ? (isCreateMode ? "Conectando ao Asaas..." : "Salvando...") : "Ativar Assinatura no Asaas"}
+              {loading ? (isCreateMode ? "Criando espaço..." : "Salvando...") : "Salvar e Escolher Plano"}
             </Button>
           </div>
         </form>
       </div>
 
-      {/* Modal de Confirmação de CNPJ Duplicado do Próprio Owner */}
+      {/* Modal de Termos de Uso e Consentimento */}
+      <TermsOfServiceModal
+        isOpen={isTermsModalOpen}
+        onClose={() => setIsTermsModalOpen(false)}
+        onAccept={() => {
+          setTermsAccepted(true);
+          setIsTermsModalOpen(false);
+        }}
+      />
+
+      {/* Modal de Confirmação de CPF/CNPJ Duplicado do Próprio Owner */}
       <Dialog open={duplicateCnpjModalOpen} onOpenChange={setDuplicateCnpjModalOpen}>
-        <DialogContent className="bg-neutral-900 border-neutral-800 text-white sm:max-w-md rounded-2xl">
+        <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-md rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-blue-400" />
-              CNPJ Já Possui um Espaço Cadastrado
+              <Building2 className="w-5 h-5 text-primary" />
+              {cleanDigits(formData.cnpj) ? "CNPJ" : "CPF"} Já Possui um Espaço Cadastrado
             </DialogTitle>
-            <DialogDescription className="text-neutral-400 text-xs mt-1">
-              Você já possui a clínica <strong>"{existingClinicNameForCnpj}"</strong> cadastrada sob o CNPJ <strong>{formData.cnpj || formData.cpf}</strong>.
+            <DialogDescription className="text-muted-foreground text-xs mt-1">
+              Você já possui a clínica <strong>"{existingClinicNameForCnpj}"</strong> cadastrada sob o {cleanDigits(formData.cnpj) ? "CNPJ" : "CPF"} <strong>{formData.cnpj || formData.cpf}</strong>.
             </DialogDescription>
           </DialogHeader>
 
-          <p className="text-xs text-neutral-300 py-2">
-            Deseja prosseguir e cadastrar este novo espaço/unidade adicional sob o mesmo CNPJ?
+          <p className="text-xs text-muted-foreground py-2">
+            Deseja prosseguir e cadastrar este novo espaço/unidade adicional sob o mesmo {cleanDigits(formData.cnpj) ? "CNPJ" : "CPF"}?
           </p>
 
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               variant="outline"
               onClick={() => setDuplicateCnpjModalOpen(false)}
-              className="border-neutral-800 text-neutral-300 hover:bg-neutral-800 rounded-xl text-xs"
+              className="border-border text-foreground hover:bg-muted rounded-xl text-xs min-h-[40px]"
             >
-              Não, Revisar CNPJ
+              Não, Revisar {cleanDigits(formData.cnpj) ? "CNPJ" : "CPF"}
             </Button>
             <Button
               onClick={() => {
                 setDuplicateCnpjModalOpen(false);
                 executeSignupProcess(true);
               }}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl text-xs min-h-[40px]"
             >
-              Sim, Criar Nova Unidade sob este CNPJ
+              Sim, Criar Nova Unidade sob este {cleanDigits(formData.cnpj) ? "CNPJ" : "CPF"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -857,3 +749,4 @@ export default function OnboardingClinica() {
     </div>
   );
 }
+

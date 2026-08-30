@@ -12,6 +12,8 @@ export type StatsBlockId =
   | "payment_status_chart"
   | "patient_status_chart"
   | "payment_method_chart"
+  | "packages_summary"
+  | "packages_list"
   | "metrics_cards"
   | "revenue_area_chart"
   | "last30days_chart"
@@ -23,7 +25,7 @@ export type StatsBlockId =
 export interface StatsBlockDefinition {
   id: StatsBlockId;
   title: string;
-  category: "finance" | "overview" | "agenda" | "patients" | "team";
+  category: "finance" | "overview" | "agenda" | "patients" | "team" | "packages";
   description: string;
 }
 
@@ -33,17 +35,20 @@ export const STATS_BLOCKS: StatsBlockDefinition[] = [
   { id: "payment_status_chart", title: "Status de Pagamento", category: "finance", description: "Distribuição dos atendimentos por situação financeira." },
   { id: "patient_status_chart", title: "Pacientes por Status", category: "patients", description: "Proporção de pacientes ativos, pausados e inativos." },
   { id: "payment_method_chart", title: "Método de Pagamento", category: "finance", description: "Formas de pagamento utilizadas pelos pacientes." },
+  { id: "packages_summary", title: "Resumo de Pacotes de Sessões", category: "packages", description: "Total de pacotes fechados, em andamento, concluídos e saldo financeiro." },
+  { id: "packages_list", title: "Listagem Detalhada de Pacotes", category: "packages", description: "Andamento individual e sessões restantes de cada pacote." },
   { id: "metrics_cards", title: "Cards de Métricas Gerais", category: "overview", description: "Volume total, quitados, taxa de cancelamento e quantidades por período." },
   { id: "revenue_area_chart", title: "Receita e Atendimentos no Ano", category: "finance", description: "Gráfico de área com evolução mensal da receita e volume." },
   { id: "last30days_chart", title: "Atendimentos nos Últimos 30 Dias", category: "overview", description: "Oscilação do volume diário de atendimentos prestados." },
   { id: "weekday_chart", title: "Distribuição por Dia da Semana", category: "agenda", description: "Concentração da demanda ao longo dos dias da semana." },
-  { id: "groups_list", title: "Grupos Mais Recorrentes", category: "patients", description: "Top grupos com mais presenças e atendimentos." },
+  { id: "groups_list", title: "Sintomas Mais Recorrentes", category: "patients", description: "Top sintomas e linhas de cuidado mais frequentes nos atendimentos." },
   { id: "collaborators_chart", title: "Produtividade por Colaborador", category: "team", description: "Volume de atendimentos e receita por profissional." },
   { id: "executive_summary", title: "Leitura Executiva", category: "overview", description: "Ticket médio, média diária e indicadores chave." },
 ];
 
 const categoryLabels: Record<StatsBlockDefinition["category"], string> = {
   finance: "Financeiro",
+  packages: "Pacotes",
   overview: "Visão Geral",
   agenda: "Agenda",
   patients: "Pacientes",

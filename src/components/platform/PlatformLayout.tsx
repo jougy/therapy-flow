@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   BookOpen,
@@ -11,14 +11,17 @@ import {
   Sparkles,
   Tags,
   UsersRound,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import { PlatformMobileDock } from "@/components/PlatformMobileDock";
+import { SimulationDebugPanel } from "@/components/SimulationDebugPanel";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { useRuntimeDebugEvents } from "@/lib/runtime-debug";
 import { cn } from "@/lib/utils";
 import { getErrorMessage } from "./platform-api";
 
@@ -97,6 +100,25 @@ export const PlatformLayout = ({
   const location = useLocation();
   const { startPlatformClinicSimulation } = useAuth();
   const [startingSim, setStartingSim] = useState(false);
+  const [debugModalOpen, setDebugModalOpen] = useState(false);
+  const debugEvents = useRuntimeDebugEvents();
+  const errorCount = useMemo(() => debugEvents.filter((e) => e.type === "error").length, [debugEvents]);
+
+  // Atalho global Cmd+Ctrl+D (Mac) ou Ctrl+Alt+D (Windows/Linux) para abrir painel de debug no backoffice
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isKeyD = e.key === "D" || e.key === "d";
+      const isMacCmdCtrl = e.metaKey && e.ctrlKey && isKeyD;
+      const isCtrlAlt = e.ctrlKey && e.altKey && isKeyD;
+      if (isMacCmdCtrl || isCtrlAlt) {
+        e.preventDefault();
+        e.stopPropagation();
+        setDebugModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleStartSimulation = async () => {
     if (!startPlatformClinicSimulation) return;
@@ -138,14 +160,42 @@ export const PlatformLayout = ({
     <div className="min-h-screen bg-background overflow-x-hidden">
       <header className="border-b bg-card px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm text-muted-foreground">Pluri-Health</p>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground truncate">{title}</h1>
-            {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src="/branding/logo/pluri_health_icon_gradient.svg"
+              alt="Pluri-Health"
+              className="h-10 w-10 shrink-0 drop-shadow-xs"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pluri-Health</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground truncate">{title}</h1>
+              {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <PersonalNotificationsButton />
             <Badge className="bg-primary/10 text-primary hover:bg-primary/10">platform_owner</Badge>
+
+            {/* Painel de Debug em Tempo Real */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs"
+              onClick={() => setDebugModalOpen(true)}
+              title="Abrir Painel de Diagnóstico e Debug em Tempo Real (Atalho: Cmd+Ctrl+D / Ctrl+Alt+D)"
+            >
+              <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse" />
+              <span>Debug</span>
+              {errorCount > 0 ? (
+                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
+                  {errorCount}
+                </span>
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-emerald-500" title="Sistema saudável" />
+              )}
+            </Button>
+
             <Button
               type="button"
               disabled={startingSim}
@@ -201,6 +251,8 @@ export const PlatformLayout = ({
 
         {children}
       </main>
+
+      <SimulationDebugPanel open={debugModalOpen} onOpenChange={setDebugModalOpen} />
     </div>
   );
 };

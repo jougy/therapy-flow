@@ -112,6 +112,8 @@ import {
   DEFAULT_GROUP_COLOR_SLOT_SEEDS,
   getLegacyGroupHex,
   getReadableTextColor,
+  normalizeGroupName,
+  sanitizeColorSlotId,
 } from "@/lib/group-colors";
 import { LiquidTabs } from "@/components/ui/liquid-tabs";
 import { getDesignLabButtonClass, designLabLabelClass, designLabIconClass } from "@/lib/design-animations";
@@ -1331,7 +1333,7 @@ const PacienteDetalhe = () => {
     setGroupName("");
     setGroupComboboxOpen(false);
     setGroupColor(defaultSlot?.color_hex ?? getLegacyGroupHex("lavender"));
-    setGroupColorSlotId(defaultSlot?.id ?? null);
+    setGroupColorSlotId(sanitizeColorSlotId(defaultSlot?.id));
     setGroupStatus("em_andamento");
     setGroupDialogOpen(true);
   };
@@ -1346,7 +1348,7 @@ const PacienteDetalhe = () => {
     setGroupName(g.name);
     setGroupComboboxOpen(false);
     setGroupColor(getLegacyGroupHex(g.color));
-    setGroupColorSlotId(g.clinic_color_slot_id);
+    setGroupColorSlotId(sanitizeColorSlotId(g.clinic_color_slot_id));
     setGroupStatus((g.status as PatientGroupStatus) || "em_andamento");
     setGroupDialogOpen(true);
   };
@@ -1355,7 +1357,7 @@ const PacienteDetalhe = () => {
     setGroupName(suggestion.name);
     const slot = getSlotById(suggestion.clinic_color_slot_id);
     setGroupColor(slot?.color_hex ?? getLegacyGroupHex(suggestion.color || "lavender"));
-    setGroupColorSlotId(slot?.id ?? null);
+    setGroupColorSlotId(sanitizeColorSlotId(slot?.id ?? suggestion.clinic_color_slot_id));
     setGroupStatus((suggestion.status as PatientGroupStatus) || "em_andamento");
     setGroupComboboxOpen(false);
   };
@@ -1381,7 +1383,7 @@ const PacienteDetalhe = () => {
     await supabase.from("patient_group_templates").upsert(
       {
         clinic_id: clinicId,
-        clinic_color_slot_id: clinicColorSlotId,
+        clinic_color_slot_id: sanitizeColorSlotId(clinicColorSlotId),
         color,
         created_by: user.id,
         name,
@@ -1417,13 +1419,15 @@ const PacienteDetalhe = () => {
       : undefined;
     const suggestionSlot = getSlotById(reusableSuggestion?.clinic_color_slot_id ?? null);
     const resolvedGroupColor = suggestionSlot?.color_hex || (reusableSuggestion?.color ? getLegacyGroupHex(reusableSuggestion.color) : groupColor);
-    const resolvedGroupColorSlotId = suggestionSlot?.id ?? reusableSuggestion?.clinic_color_slot_id ?? groupColorSlotId;
+    const rawSlotId = suggestionSlot?.id ?? reusableSuggestion?.clinic_color_slot_id ?? groupColorSlotId;
+    const resolvedGroupColorSlotId = sanitizeColorSlotId(rawSlotId);
     const resolvedGroupStatus = (reusableSuggestion?.status as PatientGroupStatus | null) || groupStatus;
 
     if (editingGroup) {
+      const sanitizedEditSlotId = sanitizeColorSlotId(groupColorSlotId);
       const updatedGroup: PatientGroup = {
         ...editingGroup,
-        clinic_color_slot_id: groupColorSlotId,
+        clinic_color_slot_id: sanitizedEditSlotId,
         name: groupName.trim(),
         color: groupColor,
         status: groupStatus,
@@ -1432,13 +1436,13 @@ const PacienteDetalhe = () => {
 
       const { error } = await supabase
         .from("patient_groups")
-        .update({ clinic_color_slot_id: groupColorSlotId, name: groupName.trim(), color: groupColor, status: groupStatus })
+        .update({ clinic_color_slot_id: sanitizedEditSlotId, name: groupName.trim(), color: groupColor, status: groupStatus })
         .eq("id", editingGroup.id);
       if (error) {
         toast({ title: "Erro ao atualizar grupo", variant: "destructive" });
         if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["groups"]);
       } else {
-        await upsertGroupTemplate({ clinicColorSlotId: groupColorSlotId, color: groupColor, name: groupName.trim(), status: groupStatus });
+        await upsertGroupTemplate({ clinicColorSlotId: sanitizedEditSlotId, color: groupColor, name: groupName.trim(), status: groupStatus });
         toast({ title: "Grupo atualizado" });
       }
     } else {

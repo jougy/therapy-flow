@@ -155,4 +155,77 @@ describe("ClinicTeamSection", () => {
     await waitFor(() => expect(screen.getByDisplayValue("Profissional")).toBeInTheDocument());
     expect(screen.getByDisplayValue("Profissional")).not.toBeDisabled();
   });
+
+  it("loads and displays active collaborators in the team directory", async () => {
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_memberships") {
+        const chain: any = Promise.resolve({
+          data: [
+            {
+              id: "mem-1",
+              user_id: "user-1",
+              operational_role: "admin",
+              membership_status: "active",
+              is_active: true,
+              created_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              id: "mem-2",
+              user_id: "user-2",
+              operational_role: "professional",
+              membership_status: "active",
+              is_active: true,
+              created_at: "2026-01-02T00:00:00Z",
+            },
+          ],
+          error: null,
+        });
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        return chain;
+      }
+      if (table === "profiles") {
+        const chain: any = Promise.resolve({
+          data: [
+            {
+              id: "user-1",
+              full_name: "Arthur Mendes Carvalho",
+              email: "arthur@example.com",
+              job_title: "Fisioterapeuta",
+              specialty: "Ortopedia",
+              last_seen_at: null,
+            },
+            {
+              id: "user-2",
+              full_name: "Dra. Beatriz Santos",
+              email: "beatriz@example.com",
+              job_title: "Psicóloga",
+              specialty: "TCC",
+              last_seen_at: null,
+            },
+          ],
+          error: null,
+        });
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        return chain;
+      }
+
+      const defaultChain: any = Promise.resolve({ data: [], error: null });
+      defaultChain.select = () => defaultChain;
+      defaultChain.eq = () => defaultChain;
+      return defaultChain;
+    });
+
+    render(<ClinicTeamSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Arthur Mendes Carvalho")).toBeInTheDocument();
+      expect(screen.getByText("Dra. Beatriz Santos")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("arthur@example.com")).toBeInTheDocument();
+    expect(screen.getByText("beatriz@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Colaboradores ativos vinculados à clínica (2 membros).")).toBeInTheDocument();
+  });
 });

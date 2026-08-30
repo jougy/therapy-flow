@@ -18,8 +18,16 @@ export const TutorialOverlay = () => {
   const { isOpen, isPaused, currentStep, currentStepIndex, handleTargetClick } = useTutorial();
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
   const [cardPosition, setCardPosition] = useState<React.CSSProperties>({});
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
+  const isDraggingRef = useRef(false);
+  const dragStartPosRef = useRef({ mouseX: 0, mouseY: 0, initialLeft: 0, initialTop: 0 });
   const activeElementRef = useRef<HTMLElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset drag position when changing step
+  useEffect(() => {
+    setDragOffset(null);
+  }, [currentStepIndex, isOpen]);
 
   // Update target rect & calculate card position with strict boundary collision avoidance
   const updateRect = useCallback(() => {
@@ -173,6 +181,69 @@ export const TutorialOverlay = () => {
     observer.observe(cardRef.current);
     return () => observer.disconnect();
   }, [updateRect, isOpen]);
+
+  // Drag and Drop implementation with global pointer capture
+  const handleDragPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const cardRect = cardRef.current.getBoundingClientRect();
+    isDraggingRef.current = true;
+    dragStartPosRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      initialLeft: cardRect.left,
+      initialTop: cardRect.top,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      const deltaX = moveEvent.clientX - dragStartPosRef.current.mouseX;
+      const deltaY = moveEvent.clientY - dragStartPosRef.current.mouseY;
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const margin = 12;
+
+      const newLeft = Math.max(
+        margin,
+        Math.min(dragStartPosRef.current.initialLeft + deltaX, viewportWidth - (cardRect.width || 420) - margin)
+      );
+      const newTop = Math.max(
+        margin,
+        Math.min(dragStartPosRef.current.initialTop + deltaY, viewportHeight - (cardRect.height || 350) - margin)
+      );
+
+      setDragOffset({ x: newLeft, y: newTop });
+    };
+
+    const handlePointerUp = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  }, []);
+
+  const resetDragPosition = useCallback(() => {
+    setDragOffset(null);
+    updateRect();
+  }, [updateRect]);
+
+  const effectiveCardStyle: React.CSSProperties = dragOffset
+    ? {
+        position: "fixed",
+        left: `${dragOffset.x}px`,
+        top: `${dragOffset.y}px`,
+        transform: "none",
+        transition: "none",
+      }
+    : cardPosition;
 
   // Clean up animation classes on unmount or step change
   useEffect(() => {
@@ -345,7 +416,13 @@ export const TutorialOverlay = () => {
 
         {/* Floating Guided Card */}
         <div className="pointer-events-auto">
-          <TutorialCard ref={cardRef} style={cardPosition} />
+          <TutorialCard
+            ref={cardRef}
+            style={effectiveCardStyle}
+            onDragPointerDown={handleDragPointerDown}
+            isDragged={Boolean(dragOffset)}
+            onResetPosition={resetDragPosition}
+          />
         </div>
       </div>
     </>,

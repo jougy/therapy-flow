@@ -198,50 +198,32 @@ const invokePatientFileEdgeFunction = async <TData>(
   context: Record<string, string | number | null>,
   stage: AppDiagnosticStage,
 ) => {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !sessionData.session?.access_token) {
-    throw createUploadDiagnosticException({
-      context,
-      error: sessionError ?? new Error("Sessão ausente para chamar a Edge Function."),
-      functionName,
-      stage,
-      status: 401,
-    });
-  }
-
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`, {
-    body: JSON.stringify(body),
-    headers: {
-      Authorization: `Bearer ${sessionData.session.access_token}`,
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-      "content-type": "application/json",
-    },
-    method: "POST",
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body,
   });
-  const responseText = await response.text();
-  let payload: unknown = responseText;
-  try {
-    payload = responseText ? JSON.parse(responseText) : null;
-  } catch {
-    payload = responseText;
-  }
 
-  if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "error" in payload
-        ? String((payload as { error?: unknown }).error)
-        : `Edge Function returned a non-2xx status code (${response.status}).`;
+  if (error) {
+    let status = 400;
+    const message = error.message;
+    const technicalDetails: unknown = error;
+
+    // Se o erro tiver contexto de resposta
+    if ("context" in error && error.context && typeof error.context === "object") {
+      const resp = error.context as Response;
+      if (resp.status) status = resp.status;
+    }
+
     throw createUploadDiagnosticException({
       context,
       error: new Error(message),
       functionName,
       stage,
-      status: response.status,
-      technicalDetails: payload,
+      status,
+      technicalDetails,
     });
   }
 
-  return payload as TData;
+  return data as TData;
 };
 
 const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) => {

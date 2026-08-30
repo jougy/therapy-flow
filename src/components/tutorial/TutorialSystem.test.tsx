@@ -206,6 +206,46 @@ describe("TutorialSystem V3", () => {
 
       fireEvent.click(screen.getByText("Iniciar Ajuda"));
 
+      expect(screen.getByTestId("step-count")).toHaveTextContent("1");
+      expect(screen.getByText("Passo Geral")).toBeInTheDocument();
+      expect(screen.queryByText("Passo Financeiro Restrito")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("TutorialCard Drag and Move", () => {
+    it("renders drag handle and handles reset position button", () => {
+      const TestDragComponent = () => {
+        const { showComponentHelp } = useTutorial();
+        return (
+          <div>
+            <button
+              onClick={() =>
+                showComponentHelp({
+                  id: "test-drag-step",
+                  title: "Card Móvel de Demonstração",
+                  description: "Este card pode ser movido livremente pelo usuário.",
+                })
+              }
+            >
+              Abrir Ajuda
+            </button>
+            <TutorialCard isDragged={true} onResetPosition={() => {}} />
+          </div>
+        );
+      };
+
+      render(
+        <MemoryRouter>
+          <TutorialProvider>
+            <TestDragComponent />
+          </TutorialProvider>
+        </MemoryRouter>
+      );
+
+      fireEvent.click(screen.getByText("Abrir Ajuda"));
+
+      expect(screen.getByText(/Mover livremente/i)).toBeInTheDocument();
+      expect(screen.getByTitle(/Restaurar posição original/i)).toBeInTheDocument();
     });
   });
 

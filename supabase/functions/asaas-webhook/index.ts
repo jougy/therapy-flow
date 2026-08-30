@@ -13,7 +13,7 @@ serve(async (req) => {
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   const asaasWebhookSecret = Deno.env.get('ASAAS_WEBHOOK_SECRET') || '';
 
-  // Validar token de autenticação do Asaas Webhook
+  // Validar token de autenticação do Asaas Webhook se configurado
   const receivedToken = req.headers.get('asaas-access-token');
   if (asaasWebhookSecret && receivedToken !== asaasWebhookSecret) {
     return new Response(JSON.stringify({ error: 'Token de webhook inválido.' }), {
@@ -28,9 +28,10 @@ serve(async (req) => {
 
   try {
     payload = await req.json();
-    eventId = payload.id || payload.eventId || `evt_${Date.now()}`;
+    eventId = payload.id || payload.eventId || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     eventType = payload.event || 'UNKNOWN';
     const payment = payload.payment || {};
+    const subscription = payload.subscription || {};
 
     if (!eventId || !eventType) {
       return new Response(JSON.stringify({ error: 'Payload de webhook inválido.' }), {
@@ -41,169 +42,156 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Verificar Idempotência em asaas_webhook_events
-    const { data: existingEvent } = await supabase
-      .from('asaas_webhook_events')
-      .select('id, processed')
-      .eq('asaas_event_id', eventId)
-      .single();
+    // 1. Registro Idempotente via RPC
+    const { data: recordRes, error: recordErr } = await supabase.rpc('record_asaas_webhook_event', {
+      _event_id: eventId,
+      _event_type: eventType,
+      _payload: payload,
+      _signature: receivedToken || null,
+    });
 
-    if (existingEvent && existingEvent.processed) {
-      return new Response(JSON.stringify({ message: 'Evento já processado anteriormente.' }), {
+    if (!recordErr && recordRes?.already_processed) {
+      console.log(`[asaas-webhook] Evento ${eventId} já processado anteriormente.`);
+      return new Response(JSON.stringify({ message: 'Evento já processado anteriormente.', event_id: eventId }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Registrar início do log de webhook se não existir
-    if (!existingEvent) {
-      await supabase.from('asaas_webhook_events').insert({
-        asaas_event_id: eventId,
-        event_type: eventType,
-        payload: payload,
-        processed: false,
-        signature: receivedToken || null,
-      });
-    }
+    // 2. Identificar a Clínica Alvo
+    let targetClinicId: string | null = null;
 
-    // 2. Processar Evento de Acordo com o Tipo
-    if (eventType === 'PAYMENT_RECEIVED' || eventType === 'PAYMENT_CONFIRMED') {
-      const paymentId = payment.id;
-      const externalReferenceRaw = payment.externalReference;
-      let externalData: Record<string, unknown> = {};
-
+    // Tentativa A: via externalReference do payment
+    const externalRef = payment.externalReference || subscription.externalReference;
+    if (externalRef) {
       try {
-        if (externalReferenceRaw && externalReferenceRaw.startsWith('{')) {
-          externalData = JSON.parse(externalReferenceRaw);
+        if (typeof externalRef === 'string' && externalRef.startsWith('{')) {
+          const parsed = JSON.parse(externalRef);
+          targetClinicId = parsed.clinic_id || null;
+        } else if (typeof externalRef === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalRef.trim())) {
+          targetClinicId = externalRef.trim();
         }
       } catch (e) {
-        console.warn('Aviso: externalReference não é um JSON estruturado:', e);
+        console.warn('[asaas-webhook] Aviso ao interpretar externalReference:', e);
       }
+    }
 
-      // Atualizar fatura na tabela subscription_invoices
-      if (paymentId) {
+    // Tentativa B: via asaas_subscription_id ou asaas_customer_id
+    const targetSubId = payment.subscription || subscription.id;
+    const targetCustId = payment.customer || subscription.customer;
+
+    if (!targetClinicId && targetSubId) {
+      const { data: subData } = await supabase
+        .from('clinic_subscriptions')
+        .select('clinic_id')
+        .eq('asaas_subscription_id', targetSubId)
+        .maybeSingle();
+      if (subData?.clinic_id) targetClinicId = subData.clinic_id;
+    }
+
+    if (!targetClinicId && payment.id) {
+      const { data: invData } = await supabase
+        .from('subscription_invoices')
+        .select('clinic_id')
+        .eq('asaas_payment_id', payment.id)
+        .maybeSingle();
+      if (invData?.clinic_id) targetClinicId = invData.clinic_id;
+    }
+
+    if (!targetClinicId && targetCustId) {
+      const { data: subData } = await supabase
+        .from('clinic_subscriptions')
+        .select('clinic_id')
+        .eq('asaas_customer_id', targetCustId)
+        .maybeSingle();
+      if (subData?.clinic_id) targetClinicId = subData.clinic_id;
+    }
+
+    console.log(`[asaas-webhook] Processando evento: ${eventType} | Clínica: ${targetClinicId} | Payment: ${payment.id}`);
+
+    // 3. Processar de Acordo com o Tipo do Evento
+    const isPaymentConfirmed =
+      eventType === 'PAYMENT_RECEIVED' ||
+      eventType === 'PAYMENT_CONFIRMED' ||
+      eventType === 'PAYMENT_RECEIVED_IN_CASH' ||
+      eventType === 'PAYMENT_DUNNING_RECEIVED';
+
+    if (isPaymentConfirmed && payment.id) {
+      const paymentDate = payment.paymentDate || payment.clientPaymentDate || new Date().toISOString();
+      const paidValue = payment.value || payment.netValue;
+      const billingType = payment.billingType || 'PIX';
+
+      if (targetClinicId) {
+        // Ativação atômica via RPC confirm_asaas_subscription_payment
+        await supabase.rpc('confirm_asaas_subscription_payment', {
+          _asaas_payment_id: payment.id,
+          _clinic_id: targetClinicId,
+          _paid_value: paidValue,
+          _payment_date: new Date(paymentDate).toISOString(),
+          _billing_type: billingType,
+        });
+      } else {
+        // Se ainda não descobriu a clínica, atualiza ao menos a fatura
         await supabase
           .from('subscription_invoices')
           .update({
-            status: 'CONFIRMED',
-            payment_date: payment.paymentDate || new Date().toISOString(),
+            status: 'RECEIVED',
+            payment_date: new Date(paymentDate).toISOString(),
+            paid_at: new Date(paymentDate).toISOString(),
             net_value: payment.netValue || null,
           })
-          .eq('asaas_payment_id', paymentId);
-      }
-
-      // A) Se for cobrança avulsa de vagas (ONE_TIME_SUBACCOUNT_EXPANSION)
-      if (externalData.charge_type === 'ONE_TIME_SUBACCOUNT_EXPANSION' && externalData.clinic_id && externalData.quantity) {
-        const clinicId = String(externalData.clinic_id);
-        const boughtQuantity = parseInt(String(externalData.quantity), 10) || 0;
-
-        const { data: currentSub } = await supabase
-          .from('clinic_subscriptions')
-          .select('purchased_subaccount_extra_count')
-          .eq('clinic_id', clinicId)
-          .single();
-
-        const currentExtras = currentSub?.purchased_subaccount_extra_count || 0;
-        const newExtras = currentExtras + boughtQuantity;
-
-        // Atualizar assinatura (o trigger sync_clinic_limits_from_subscription atualizará subaccount_limit em clinics)
-        await supabase
-          .from('clinic_subscriptions')
-          .update({
-            purchased_subaccount_extra_count: newExtras,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('clinic_id', clinicId);
-      }
-      // B) Se for pagamento de Assinatura Recorrente
-      else {
-        const customerId = payment.customer;
-        const subscriptionId = payment.subscription;
-
-        if (subscriptionId || customerId) {
-          const query = supabase.from('clinic_subscriptions').update({
-            status: 'ACTIVE',
-            updated_at: new Date().toISOString(),
-          });
-
-          if (subscriptionId) {
-            query.eq('asaas_subscription_id', subscriptionId);
-          } else {
-            query.eq('asaas_customer_id', customerId);
-          }
-
-          const { data: updatedSubs } = await query.select('clinic_id');
-
-          if (updatedSubs && updatedSubs.length > 0) {
-            for (const sub of updatedSubs) {
-              await supabase
-                .from('clinics')
-                .update({ access_status: 'active', updated_at: new Date().toISOString() })
-                .eq('id', sub.clinic_id);
-            }
-          }
-        }
+          .eq('asaas_payment_id', payment.id);
       }
     } else if (eventType === 'PAYMENT_OVERDUE') {
-      const paymentId = payment.id;
-      const customerId = payment.customer;
-      const subscriptionId = payment.subscription;
-
-      if (paymentId) {
+      if (payment.id) {
         await supabase
           .from('subscription_invoices')
           .update({ status: 'OVERDUE' })
-          .eq('asaas_payment_id', paymentId);
+          .eq('asaas_payment_id', payment.id);
       }
 
-      if (subscriptionId || customerId) {
-        const query = supabase.from('clinic_subscriptions').update({
-          status: 'OVERDUE',
-          updated_at: new Date().toISOString(),
-        });
-
-        if (subscriptionId) {
-          query.eq('asaas_subscription_id', subscriptionId);
-        } else {
-          query.eq('asaas_customer_id', customerId);
-        }
-
-        const { data: updatedSubs } = await query.select('clinic_id');
-
-        if (updatedSubs && updatedSubs.length > 0) {
-          for (const sub of updatedSubs) {
-            await supabase
-              .from('clinics')
-              .update({ access_status: 'payment_pending', updated_at: new Date().toISOString() })
-              .eq('id', sub.clinic_id);
-          }
-        }
-      }
-    } else if (eventType === 'SUBSCRIPTION_DELETED' || eventType === 'SUBSCRIPTION_DISABLED') {
-      const subscriptionId = payload.subscription?.id || payment?.subscription;
-
-      if (subscriptionId) {
-        const { data: updatedSubs } = await supabase
+      if (targetClinicId) {
+        await supabase
           .from('clinic_subscriptions')
-          .update({
-            status: 'CANCELED',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('asaas_subscription_id', subscriptionId)
-          .select('clinic_id');
+          .update({ status: 'OVERDUE', updated_at: new Date().toISOString() })
+          .eq('clinic_id', targetClinicId);
 
-        if (updatedSubs && updatedSubs.length > 0) {
-          for (const sub of updatedSubs) {
-            await supabase
-              .from('clinics')
-              .update({ access_status: 'temporarily_paused', updated_at: new Date().toISOString() })
-              .eq('id', sub.clinic_id);
-          }
-        }
+        await supabase
+          .from('clinics')
+          .update({ access_status: 'payment_pending', updated_at: new Date().toISOString() })
+          .eq('id', targetClinicId);
+      }
+    } else if (eventType === 'PAYMENT_REFUNDED' || eventType === 'PAYMENT_CHARGEBACK') {
+      if (payment.id) {
+        await supabase
+          .from('subscription_invoices')
+          .update({ status: 'REFUNDED', updated_at: new Date().toISOString() })
+          .eq('asaas_payment_id', payment.id);
+      }
+    } else if (eventType === 'PAYMENT_DELETED') {
+      if (payment.id) {
+        await supabase
+          .from('subscription_invoices')
+          .update({ status: 'DELETED', updated_at: new Date().toISOString() })
+          .eq('asaas_payment_id', payment.id);
+      }
+    } else if (eventType === 'SUBSCRIPTION_DELETED' || eventType === 'SUBSCRIPTION_DISABLED' || eventType === 'SUBSCRIPTION_CANCELED') {
+      const subIdToCancel = targetSubId || subscription.id;
+      if (subIdToCancel) {
+        await supabase
+          .from('clinic_subscriptions')
+          .update({ status: 'CANCELED', updated_at: new Date().toISOString() })
+          .eq('asaas_subscription_id', subIdToCancel);
+      }
+      if (targetClinicId) {
+        await supabase
+          .from('clinics')
+          .update({ access_status: 'temporarily_paused', updated_at: new Date().toISOString() })
+          .eq('id', targetClinicId);
       }
     }
 
-    // Marca o evento como processado com sucesso
+    // 4. Marcar evento como processado com sucesso
     await supabase
       .from('asaas_webhook_events')
       .update({
@@ -212,15 +200,15 @@ serve(async (req) => {
       })
       .eq('asaas_event_id', eventId);
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, event_id: eventId }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error('[asaas-webhook] Erro ao processar:', err);
 
-    // Salva o erro no log de webhooks para auditoria no backoffice
     if (eventId) {
       const supabase = createClient(supabaseUrl, supabaseServiceKey);
       await supabase
@@ -232,9 +220,10 @@ serve(async (req) => {
         .eq('asaas_event_id', eventId);
     }
 
-    return new Response(JSON.stringify({ error: message || 'Erro no processamento do webhook.' }), {
+    return new Response(JSON.stringify({ error: message || 'Erro interno no processamento do webhook.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
+

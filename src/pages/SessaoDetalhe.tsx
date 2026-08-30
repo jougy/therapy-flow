@@ -16,8 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { type ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
-import { DEFAULT_GROUP_COLOR_SLOT_SEEDS, normalizeGroupName } from "@/lib/group-colors";
+import { DEFAULT_GROUP_COLOR_SLOT_SEEDS, normalizeGroupName, sanitizeColorSlotId } from "@/lib/group-colors";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -39,6 +38,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type PointerEvent as
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { notifySessionCompletedFeedback } from "@/hooks/useFeedbackTrigger";
@@ -133,6 +133,7 @@ const SessaoDetalhe = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { can, user, clinic, clinicId, operationalRole, profile } = useAuth();
+  const quota = useClinicPlanQuota(clinicId);
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const isNew = sessionId === "novo";
   const newSessionState = location.state as { agendaEventId?: string; scheduledFor?: string } | null;
@@ -1137,7 +1138,7 @@ const SessaoDetalhe = () => {
         patient_id: targetPatientId,
         name: name.trim(),
         color,
-        clinic_color_slot_id: colorSlotId,
+        clinic_color_slot_id: sanitizeColorSlotId(colorSlotId),
         group_kind: "custom",
         status,
         is_default: false,
@@ -1183,6 +1184,17 @@ const SessaoDetalhe = () => {
 
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
     const targetClinicId = clinicRes.data ?? clinicId;
+
+    if (isNew && targetStatus !== "rascunho" && quota.isFreeTrial && quota.attendances.isLimitReached) {
+      toast({
+        title: "Limite de Atendimentos Atingido",
+        description: `Seu plano de teste grátis atingiu o limite de ${quota.attendances.max} atendimentos. Faça o upgrade para continuar evoluindo e registrando novos atendimentos.`,
+        variant: "destructive",
+      });
+      setSaving(false);
+      return;
+    }
+
     const sessionData = buildCurrentSessionPayload(targetClinicId, targetPatientId, targetStatus);
 
     if (paymentPlanForm.createPlan && targetClinicId && targetPatientId) {
@@ -1314,6 +1326,14 @@ const SessaoDetalhe = () => {
 
   const handleStartFromThis = async (options?: { mode?: "copy" | "blank"; templateId?: string | null }) => {
     if (!patientId || !user || isNew) return;
+    if (quota.isFreeTrial && quota.attendances.isLimitReached) {
+      toast({
+        title: "Limite de Atendimentos Atingido",
+        description: `Seu plano de teste grátis atingiu o limite de ${quota.attendances.max} atendimentos. Faça o upgrade para continuar evoluindo novos atendimentos.`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (!canStartNewSessionFromThis) {
       toast({
         title: "Acesso de visualização apenas",

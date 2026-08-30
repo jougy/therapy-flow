@@ -28,3 +28,19 @@ enabled = false
 
 [storage.vector]
 enabled = false
+
+[functions.asaas-subscription]
+verify_jwt = false
+
+[functions.asaas-one-time-charge]
+verify_jwt = false
+
+[functions.asaas-webhook]
+verify_jwt = false
+
+[functions.platform-account-admin]
+verify_jwt = false
+
+[functions.send-clinic-invitation]
+verify_jwt = false
+

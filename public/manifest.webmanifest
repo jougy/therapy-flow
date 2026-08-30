@@ -1,0 +1,55 @@
+{
+  "name": "Pluri-Health - Gestão Clínica",
+  "short_name": "Pluri-Health",
+  "description": "Gestão clínica, prontuário eletrônico e agenda para profissionais e equipes de saúde.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#0284c7",
+  "lang": "pt-BR",
+  "categories": ["medical", "health", "productivity", "business"],
+  "icons": [
+    {
+      "src": "/brand/plurihealth-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/plurihealth.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/plurihealth-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/brand/plurihealth.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Entrar no Sistema",
+      "short_name": "Entrar",
+      "description": "Acessar prontuário e gestão clínica",
+      "url": "/auth",
+      "icons": [{ "src": "/brand/plurihealth-icon.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Espaço Pessoal",
+      "short_name": "Meu Espaço",
+      "description": "Abrir clínicas e atendimentos",
+      "url": "/espacopessoal",
+      "icons": [{ "src": "/brand/plurihealth-icon.png", "sizes": "192x192" }]
+    }
+  ]
+}
