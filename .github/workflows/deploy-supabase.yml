@@ -47,8 +47,9 @@ jobs:
           fi
           echo "Secrets SUPABASE_DB_PASSWORD e SUPABASE_ACCESS_TOKEN presentes."
 
-      - name: Link project
-        run: supabase link --project-ref "$PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
-
       - name: Push migrations to production
-        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+        shell: bash
+        run: |
+          ENCODED_PASSWORD=$(node -e "console.log(encodeURIComponent(process.env.SUPABASE_DB_PASSWORD))")
+          DB_URL="postgresql://postgres.${PROJECT_ID}:${ENCODED_PASSWORD}@aws-1-sa-east-1.pooler.supabase.com:5432/postgres"
+          supabase db push --db-url "$DB_URL"
