@@ -204,8 +204,8 @@ const invokePatientFileEdgeFunction = async <TData>(
 
   if (error) {
     let status = 400;
-    let message = error.message;
-    let technicalDetails: unknown = error;
+    const message = error.message;
+    const technicalDetails: unknown = error;
 
     // Se o erro tiver contexto de resposta
     if ("context" in error && error.context && typeof error.context === "object") {

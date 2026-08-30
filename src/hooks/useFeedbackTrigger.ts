@@ -113,6 +113,19 @@ export function useFeedbackTrigger(options: FeedbackTriggerOptions = {}) {
   }, []);
 
   /**
+   * Registra dispensa ("Agora não" ou fechamento sem envio)
+   */
+  const dismissFeedback = useCallback(() => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem(STORAGE_KEYS.LAST_DISMISSED, String(Date.now()));
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  /**
    * Tenta abrir o modal por gatilho automático (respeitando cooldown)
    */
   const triggerAutomaticFeedback = useCallback(
@@ -140,21 +153,8 @@ export function useFeedbackTrigger(options: FeedbackTriggerOptions = {}) {
 
       return true;
     },
-    [user?.id, isInCooldown]
+    [user?.id, isInCooldown, dismissFeedback]
   );
-
-  /**
-   * Registra dispensa ("Agora não" ou fechamento sem envio)
-   */
-  const dismissFeedback = useCallback(() => {
-    try {
-      if (typeof window !== "undefined") {
-        localStorage.setItem(STORAGE_KEYS.LAST_DISMISSED, String(Date.now()));
-      }
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
 
   /**
    * Manipulador para mudança de estado aberto/fechado

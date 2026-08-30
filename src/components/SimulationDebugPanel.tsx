@@ -582,7 +582,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                   <p><span className="text-neutral-500">Papel Simulado:</span> <Badge variant="outline" className="ml-1 border-amber-400/30 text-amber-300 text-[10px] uppercase font-bold">{operationalRole ?? "owner"}</Badge></p>
                   <p><span className="text-neutral-500">Plano Simulado:</span> <Badge variant="outline" className="ml-1 border-blue-400/30 text-blue-300 text-[10px] uppercase font-bold">{subscriptionPlan ?? "clinic"}</Badge></p>
                   <p><span className="text-neutral-500">Overrides de Permissão:</span> {Object.keys(simulatedRoleCapabilityOverrides).length} ativos</p>
-                  <p><span className="text-neutral-500">Acesso Mestre Ativo:</span> {Boolean(platformAccess) ? "Sim (Sessão Registrada)" : "Não"}</p>
+                  <p><span className="text-neutral-500">Acesso Mestre Ativo:</span> {platformAccess ? "Sim (Sessão Registrada)" : "Não"}</p>
                 </div>
               </div>
             </div>
