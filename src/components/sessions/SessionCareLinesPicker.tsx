@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { GroupColorPaletteField, type ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { CARE_LINE_PRESETS } from "@/lib/care-lines-classifier";
-import { getLegacyGroupHex, getReadableTextColor, normalizeGroupName } from "@/lib/group-colors";
+import { getLegacyGroupHex, getReadableTextColor, normalizeGroupName, sanitizeColorSlotId } from "@/lib/group-colors";
 import { ChevronsUpDown, Lightbulb, Loader2, Plus } from "lucide-react";
 import { useState, useMemo } from "react";
 import type { ClinicColorSlotRow, GroupSuggestion, PatientGroup, PatientGroupStatus } from "./types";
@@ -74,7 +74,7 @@ export const SessionCareLinesPicker = ({
     const chosenColor = slot?.color_hex || (suggestion.color ? getLegacyGroupHex(suggestion.color) : newCareLineColor);
     setNewCareLineName(suggestion.name);
     setNewCareLineColor(chosenColor);
-    setNewCareLineColorSlotId(slot?.id ?? suggestion.clinic_color_slot_id ?? null);
+    setNewCareLineColorSlotId(sanitizeColorSlotId(slot?.id ?? suggestion.clinic_color_slot_id));
     setNewCareLineStatus((suggestion.status as PatientGroupStatus) || "em_andamento");
     setGroupComboboxOpen(false);
   };
@@ -210,7 +210,7 @@ export const SessionCareLinesPicker = ({
             const randomSlot =
               availableSlots.length > 0 ? availableSlots[Math.floor(Math.random() * availableSlots.length)] : null;
             setNewCareLineColor(randomSlot?.color_hex || "#C4B5FD");
-            setNewCareLineColorSlotId(randomSlot?.id && !randomSlot.id.startsWith("seed-") ? randomSlot.id : null);
+            setNewCareLineColorSlotId(sanitizeColorSlotId(randomSlot?.id));
             setNewCareLineStatus("em_andamento");
             setCareLineDialogOpen(true);
           }}
@@ -322,7 +322,7 @@ export const SessionCareLinesPicker = ({
                 defaultOpen={false}
                 onPaletteSave={onSaveClinicColorSlot}
                 onSelectSlot={(slot) => {
-                  setNewCareLineColorSlotId(slot.id);
+                  setNewCareLineColorSlotId(sanitizeColorSlotId(slot.id));
                   setNewCareLineColor(slot.color_hex);
                 }}
                 previewColorHex={newCareLineColor}

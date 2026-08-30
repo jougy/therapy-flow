@@ -72,6 +72,47 @@ export interface ClinicDashboardAnalytics {
     total: number;
     receita: number;
   }>;
+  packageAnalytics?: ClinicPackageAnalytics;
+}
+
+export interface PackagePlanItem {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientCode?: string | null;
+  planName: string;
+  totalSessions: number;
+  usedSessions: number;
+  remainingSessions: number;
+  progressPercentage: number;
+  totalAmountCents: number;
+  paymentStatus: string;
+  paymentMethod: string;
+  paymentInstallments: number;
+  isCompleted: boolean;
+  startDate?: string | null;
+  createdAt: string;
+}
+
+export interface ClinicPackageAnalytics {
+  total: number;
+  inProgress: number;
+  completed: number;
+  canceled: number;
+  totalRevenueCents: number;
+  paidRevenueCents: number;
+  openRevenueCents: number;
+  totalSessionsContracted: number;
+  totalSessionsUsed: number;
+  totalSessionsRemaining: number;
+  statusCounts: {
+    pago?: number;
+    parcial?: number;
+    pendente?: number;
+    cancelado?: number;
+    [key: string]: number | undefined;
+  };
+  plansList: PackagePlanItem[];
 }
 
 export const DEFAULT_CLINIC_ANALYTICS: ClinicDashboardAnalytics = {
@@ -134,6 +175,25 @@ export const DEFAULT_CLINIC_ANALYTICS: ClinicDashboardAnalytics = {
   ],
   topGroups: [],
   collaborators: [],
+  packageAnalytics: {
+    total: 0,
+    inProgress: 0,
+    completed: 0,
+    canceled: 0,
+    totalRevenueCents: 0,
+    paidRevenueCents: 0,
+    openRevenueCents: 0,
+    totalSessionsContracted: 0,
+    totalSessionsUsed: 0,
+    totalSessionsRemaining: 0,
+    statusCounts: {
+      pago: 0,
+      parcial: 0,
+      pendente: 0,
+      cancelado: 0,
+    },
+    plansList: [],
+  },
 };
 
 type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -255,13 +315,15 @@ export function useClinicDashboardAnalyticsQuery(
     queryFn: async (): Promise<ClinicDashboardAnalytics> => {
       if (!clinicId) return DEFAULT_CLINIC_ANALYTICS;
 
+      const startTime = performance.now();
       const { data, error } = await supabase.rpc("get_clinic_dashboard_analytics", {
         _clinic_id: clinicId,
         _year: currentYear,
       });
+      const durationMs = Math.round(performance.now() - startTime);
 
       if (error) {
-        logRuntimeError("useClinicDashboardAnalyticsQuery", error, { clinicId, year: currentYear });
+        logRuntimeError("useClinicDashboardAnalyticsQuery", error, { clinicId, year: currentYear, durationMs });
         throw error;
       }
 

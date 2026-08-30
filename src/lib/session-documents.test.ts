@@ -185,7 +185,7 @@ describe("buildSessionDocument", () => {
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<img src=x");
     expect(html).not.toContain("javascript:alert");
-    expect(html).not.toContain('class="brand-logo"');
+    expect(html).toContain('src="/branding/logo/pluri_health_icon_gradient.svg"');
     expect(html).toContain("&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;");
   });
 });

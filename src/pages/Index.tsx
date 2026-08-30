@@ -770,6 +770,7 @@ const Index = () => {
           <HomeDashboardModal
             open={dashboardDialogOpen}
             onOpenChange={setDashboardDialogOpen}
+            clinicId={clinicId}
             patients={patients}
             sessions={sessions}
             agendaEvents={agendaEvents}

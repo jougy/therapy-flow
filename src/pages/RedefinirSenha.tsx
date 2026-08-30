@@ -69,9 +69,14 @@ const RedefinirSenha = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
+        <div className="mb-6 text-center flex flex-col items-center">
+          <img
+            src="/branding/logo/pluri_health_icon_gradient.svg"
+            alt="Pluri-Health"
+            className="h-14 w-14 mb-3 drop-shadow-md"
+          />
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Pluri-Health</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Recuperação segura de acesso</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Recuperação segura de acesso</p>
         </div>
 
         <Card>

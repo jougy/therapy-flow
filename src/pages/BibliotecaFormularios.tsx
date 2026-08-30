@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
 import { supabase } from "@/integrations/supabase/client";
 import {
   COMMUNITY_FORM_CATEGORIES,
@@ -66,6 +67,7 @@ import {
 
 export const BibliotecaFormularios = () => {
   const { clinic, clinicId, user, can } = useAuth();
+  const quota = useClinicPlanQuota(clinicId);
   const navigate = useNavigate();
   const canManage = can("forms.manage");
 
@@ -225,6 +227,14 @@ export const BibliotecaFormularios = () => {
   };
 
   const handleStartImport = (template: CommunityFormTemplate) => {
+    if (quota.isFreeTrial && quota.forms.isLimitReached) {
+      toast({
+        title: "Limite de Formulários Atingido",
+        description: `O plano de teste grátis permite até ${quota.forms.max} modelo de formulário personalizado ativo. Faça o upgrade para criar modelos ilimitados.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setImportingTemplate(template);
     setImportCustomTitle(template.title);
     setImportSuccessId(null);

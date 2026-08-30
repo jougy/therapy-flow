@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { BarChart3, ClipboardList } from "lucide-react";
+import { BarChart3, ClipboardList, Package } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -116,6 +116,9 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
   open,
   onOpenChange,
   clinicId: propClinicId,
+  patients: propPatients,
+  sessions: propSessions,
+  agendaEvents: propAgendaEvents,
   onNavigateForms,
   onNavigateDashboard,
 }: HomeDashboardModalProps) {
@@ -128,14 +131,111 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
     open && Boolean(clinicId) && Boolean(user)
   );
 
+  const resolvedAnalytics = useMemo<ClinicDashboardAnalytics>(() => {
+    // Se a RPC retornou dados agregados com pacientes ou sessões, prioriza a RPC
+    if (analyticsData && (analyticsData.totalPatients > 0 || analyticsData.totalSessions > 0)) {
+      return analyticsData;
+    }
+
+    // Se a RPC retornou vazia ou está carregando mas temos propPatients da homepage, constrói fallback resiliente
+    if (propPatients && propPatients.length > 0) {
+      const patientStatusCounts: Record<string, number> = {};
+      let recurringPatients = 0;
+      propPatients.forEach((p) => {
+        const s = p.status || "ativo";
+        patientStatusCounts[s] = (patientStatusCounts[s] ?? 0) + 1;
+        if (p.is_recurring || (Array.isArray(p.recurring_weekdays) && p.recurring_weekdays.length > 0)) {
+          recurringPatients += 1;
+        }
+      });
+
+      const paymentMethodCounts: Record<string, number> = {};
+      const paymentStatusCounts: Record<string, number> = {};
+      let paidSessions = 0;
+      let canceledSessions = 0;
+      let financialPaid = 0;
+      let financialCredit = 0;
+      let financialOpen = 0;
+
+      (propSessions ?? []).forEach((sess) => {
+        if (sess.status === "cancelado") {
+          canceledSessions += 1;
+        }
+        if (sess.payment_method) {
+          paymentMethodCounts[sess.payment_method] = (paymentMethodCounts[sess.payment_method] ?? 0) + 1;
+        }
+        const charged = sess.amount_charged_cents ?? 0;
+        const paid = sess.amount_paid_cents ?? 0;
+        if (charged > 0 && paid >= charged) {
+          paidSessions += 1;
+          paymentStatusCounts["paid"] = (paymentStatusCounts["paid"] ?? 0) + 1;
+        } else if (charged > 0 && paid > 0 && paid < charged) {
+          paymentStatusCounts["debt"] = (paymentStatusCounts["debt"] ?? 0) + 1;
+        } else if (charged > 0 && paid <= 0) {
+          paymentStatusCounts["pending"] = (paymentStatusCounts["pending"] ?? 0) + 1;
+        } else if (paid > charged) {
+          paymentStatusCounts["credit"] = (paymentStatusCounts["credit"] ?? 0) + 1;
+        }
+
+        financialPaid += Math.min(paid, charged);
+        financialCredit += Math.max(0, paid - charged);
+        financialOpen += Math.max(0, charged - paid);
+      });
+
+      let agendaLate = 0;
+      let agendaConfirmed = 0;
+      let agendaAwaiting = 0;
+      const now = new Date();
+      (propAgendaEvents ?? []).forEach((ev) => {
+        if (ev.status === "cancelado") return;
+        const dt = ev.scheduled_for ? new Date(ev.scheduled_for) : null;
+        if (dt && dt < now) {
+          agendaLate += 1;
+        } else if (ev.status === "confirmado") {
+          agendaConfirmed += 1;
+        } else {
+          agendaAwaiting += 1;
+        }
+      });
+
+      const totalSessions = propSessions?.length ?? 0;
+      return {
+        ...DEFAULT_CLINIC_ANALYTICS,
+        totalPatients: propPatients.length,
+        recurringPatients,
+        patientStatusCounts,
+        totalSessions,
+        paidSessions,
+        canceledSessions,
+        cancellationRate: totalSessions > 0 ? Math.round((canceledSessions / totalSessions) * 100) : 0,
+        financialTotals: {
+          paid: financialPaid,
+          credit: financialCredit,
+          open: financialOpen,
+          forecastRevenueCents: financialPaid + financialCredit + financialOpen,
+        },
+        paymentMethodCounts,
+        paymentStatusCounts,
+        agendaCounts: {
+          late: agendaLate,
+          confirmed: agendaConfirmed,
+          awaiting: agendaAwaiting,
+          total: (propAgendaEvents ?? []).filter((e) => e.status !== "cancelado").length,
+        },
+      };
+    }
+
+    return analyticsData;
+  }, [analyticsData, propPatients, propSessions, propAgendaEvents]);
+
   const data = useMemo(() => {
     if (!open) return null;
 
-    const totalPatients = analyticsData.totalPatients;
-    const totalSessions = analyticsData.totalSessions;
-    const canceledSessions = analyticsData.canceledSessions;
-    const paidSessions = analyticsData.paidSessions;
-    const financialTotals = analyticsData.financialTotals;
+    const totalPatients = resolvedAnalytics.totalPatients;
+    const totalSessions = resolvedAnalytics.totalSessions;
+    const canceledSessions = resolvedAnalytics.canceledSessions;
+    const paidSessions = resolvedAnalytics.paidSessions;
+    const financialTotals = resolvedAnalytics.financialTotals;
     const forecastRevenueCents = financialTotals.forecastRevenueCents;
 
     const patientStatusCounts = PATIENT_STATUS_OPTIONS.filter((opt) => opt.value !== "pagamento_pendente")
@@ -151,7 +251,7 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
             ? dashboardColors.slate
             : dashboardColors.zinc,
         label: statusOption.label,
-        value: analyticsData.patientStatusCounts[statusOption.value] ?? 0,
+        value: resolvedAnalytics.patientStatusCounts[statusOption.value] ?? 0,
       }))
       .filter((segment) => segment.value > 0);
 
@@ -175,7 +275,7 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
           ? dashboardColors.lime
           : dashboardColors.zinc,
       label: option.label,
-      value: analyticsData.paymentMethodCounts[option.value] ?? 0,
+      value: resolvedAnalytics.paymentMethodCounts[option.value] ?? 0,
     })).filter((segment) => segment.value > 0);
 
     return {
@@ -185,7 +285,7 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
         {
           detail: `${canceledSessions} cancelado${canceledSessions !== 1 ? "s" : ""}`,
           title: "Índice de cancelamento",
-          value: formatPercentage(analyticsData.cancellationRate),
+          value: formatPercentage(resolvedAnalytics.cancellationRate),
         },
       ],
       paymentChart: {
@@ -208,27 +308,27 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
       agendaChart: {
         formatSegmentValue: (value: number) => String(value),
         segments: [
-          { color: dashboardColors.rose, label: "Atrasado", value: analyticsData.agendaCounts.late },
-          { color: dashboardColors.emerald, label: "Confirmado", value: analyticsData.agendaCounts.confirmed },
-          { color: dashboardColors.amber, label: "Aguardando confirmação", value: analyticsData.agendaCounts.awaiting },
+          { color: dashboardColors.rose, label: "Atrasado", value: resolvedAnalytics.agendaCounts.late },
+          { color: dashboardColors.emerald, label: "Confirmado", value: resolvedAnalytics.agendaCounts.confirmed },
+          { color: dashboardColors.amber, label: "Aguardando confirmação", value: resolvedAnalytics.agendaCounts.awaiting },
         ].filter((segment) => segment.value > 0),
-        subtitle: `${analyticsData.agendaCounts.total} agendamento${analyticsData.agendaCounts.total !== 1 ? "s" : ""} ativo${analyticsData.agendaCounts.total !== 1 ? "s" : ""}`,
+        subtitle: `${resolvedAnalytics.agendaCounts.total} agendamento${resolvedAnalytics.agendaCounts.total !== 1 ? "s" : ""} ativo${resolvedAnalytics.agendaCounts.total !== 1 ? "s" : ""}`,
         title: "Agenda de atendimentos",
-        value: String(analyticsData.agendaCounts.total),
+        value: String(resolvedAnalytics.agendaCounts.total),
       },
       paymentStatusChart: {
         formatSegmentValue: (value: number) => String(value),
         segments: [
-          { color: dashboardColors.blue, label: "Crédito", value: analyticsData.paymentStatusCounts.credit ?? 0 },
-          { color: dashboardColors.rose, label: "Devendo", value: analyticsData.paymentStatusCounts.debt ?? 0 },
-          { color: dashboardColors.amber, label: "Pendente", value: analyticsData.paymentStatusCounts.pending ?? 0 },
-          { color: dashboardColors.emerald, label: "Pago", value: analyticsData.paymentStatusCounts.paid ?? 0 },
+          { color: dashboardColors.blue, label: "Crédito", value: resolvedAnalytics.paymentStatusCounts.credit ?? 0 },
+          { color: dashboardColors.rose, label: "Devendo", value: resolvedAnalytics.paymentStatusCounts.debt ?? 0 },
+          { color: dashboardColors.amber, label: "Pendente", value: resolvedAnalytics.paymentStatusCounts.pending ?? 0 },
+          { color: dashboardColors.emerald, label: "Pago", value: resolvedAnalytics.paymentStatusCounts.paid ?? 0 },
           {
             color: dashboardColors.violet,
             label: "Cortesia",
-            value: (analyticsData.paymentStatusCounts.cortesia ?? analyticsData.paymentStatusCounts.courtesy) ?? 0,
+            value: (resolvedAnalytics.paymentStatusCounts.cortesia ?? resolvedAnalytics.paymentStatusCounts.courtesy) ?? 0,
           },
-          { color: dashboardColors.slate, label: "Não cobrado", value: analyticsData.paymentStatusCounts.notCharged ?? 0 },
+          { color: dashboardColors.slate, label: "Não cobrado", value: resolvedAnalytics.paymentStatusCounts.notCharged ?? 0 },
         ].filter((segment) => segment.value > 0),
         subtitle: `${totalSessions} atendimento${totalSessions !== 1 ? "s" : ""} com status financeiro`,
         title: "Status de pagamento",
@@ -241,25 +341,36 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
         title: "Método de pagamento",
         value: String(totalSessions),
       },
+      packageStatusChart: {
+        formatSegmentValue: (value: number) => String(value),
+        segments: [
+          { color: dashboardColors.blue, label: "Em andamento", value: resolvedAnalytics.packageAnalytics?.inProgress ?? 0 },
+          { color: dashboardColors.emerald, label: "Concluído", value: resolvedAnalytics.packageAnalytics?.completed ?? 0 },
+          { color: dashboardColors.rose, label: "Cancelado", value: resolvedAnalytics.packageAnalytics?.canceled ?? 0 },
+        ].filter((s) => s.value > 0),
+        subtitle: `${resolvedAnalytics.packageAnalytics?.total ?? 0} pacote${(resolvedAnalytics.packageAnalytics?.total ?? 0) !== 1 ? "s" : ""} · ${resolvedAnalytics.packageAnalytics?.totalSessionsRemaining ?? 0} sessões restantes a realizar`,
+        title: "Pacotes de sessões",
+        value: String(resolvedAnalytics.packageAnalytics?.total ?? 0),
+      },
       volumeMetrics: [
         {
           detail: "atendimentos hoje",
           title: "Quantidade por dia",
-          value: String(analyticsData.todaySessions),
+          value: String(resolvedAnalytics.todaySessions),
         },
         {
           detail: "atendimentos nesta semana",
           title: "Quantidade por semana",
-          value: String(analyticsData.weekSessions),
+          value: String(resolvedAnalytics.weekSessions),
         },
         {
           detail: "atendimentos neste mês",
           title: "Quantidade por mês",
-          value: String(analyticsData.monthSessions),
+          value: String(resolvedAnalytics.monthSessions),
         },
       ],
     };
-  }, [open, analyticsData]);
+  }, [open, resolvedAnalytics]);
 
   if (!open) return null;
 
@@ -313,6 +424,7 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
               <div className="sm:col-span-2">
                 <DashboardProportionCard {...data.paymentChart} />
               </div>
+              <DashboardProportionCard {...data.packageStatusChart} />
               <DashboardProportionCard {...data.agendaChart} />
               <DashboardProportionCard {...data.paymentStatusChart} />
               <DashboardProportionCard {...data.patientStatusChart} />

@@ -35,10 +35,10 @@ describe("Clinic Stats Print Flow - Unit & Integration Test Suite", () => {
       screen.getByText("Selecione quais blocos e gráficos farão parte do documento gerado para impressão ou exportação PDF.")
     ).toBeInTheDocument();
 
-    // Verify default state: 12 of 12 blocks selected
-    expect(screen.getByText("12 de 12 blocos selecionados")).toBeInTheDocument();
+    // Verify default state: all blocks selected
+    expect(screen.getByText(`${STATS_BLOCKS.length} de ${STATS_BLOCKS.length} blocos selecionados`)).toBeInTheDocument();
 
-    // Verify all 12 blocks are present by title
+    // Verify all blocks are present by title
     STATS_BLOCKS.forEach((block) => {
       expect(screen.getByText(block.title)).toBeInTheDocument();
     });
@@ -49,7 +49,7 @@ describe("Clinic Stats Print Flow - Unit & Integration Test Suite", () => {
 
     // Click 'Desmarcar todos'
     fireEvent.click(toggleAllBtn);
-    expect(screen.getByText("0 de 12 blocos selecionados")).toBeInTheDocument();
+    expect(screen.getByText(`0 de ${STATS_BLOCKS.length} blocos selecionados`)).toBeInTheDocument();
 
     // Verify submit button is disabled when 0 blocks selected
     const continueBtn = screen.getByRole("button", { name: /continuar para impressão \(0\)/i });
@@ -58,7 +58,7 @@ describe("Clinic Stats Print Flow - Unit & Integration Test Suite", () => {
     // Click 'Selecionar todos'
     const selectAllBtn = screen.getByRole("button", { name: /selecionar todos/i });
     fireEvent.click(selectAllBtn);
-    expect(screen.getByText("12 de 12 blocos selecionados")).toBeInTheDocument();
+    expect(screen.getByText(`${STATS_BLOCKS.length} de ${STATS_BLOCKS.length} blocos selecionados`)).toBeInTheDocument();
   });
 
   it("Requirement 4: Allows selecting specific blocks and advancing to PrintResponsibilityModal", async () => {
@@ -83,7 +83,7 @@ describe("Clinic Stats Print Flow - Unit & Integration Test Suite", () => {
     fireEvent.click(block1);
     fireEvent.click(block2);
 
-    expect(screen.getByText("2 de 12 blocos selecionados")).toBeInTheDocument();
+    expect(screen.getByText(`2 de ${STATS_BLOCKS.length} blocos selecionados`)).toBeInTheDocument();
 
     // Click 'Continuar para Impressão (2)'
     const continueBtn = screen.getByRole("button", { name: /continuar para impressão \(2\)/i });

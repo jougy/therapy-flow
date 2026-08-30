@@ -23,8 +23,32 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
   // Assinaturas & Financeiro
   {
     key: 'subscriptions_module',
-    label: 'Módulo de Assinaturas e Cobrança Asaas',
-    description: 'Controla a exibição da página de planos (/planos), aba de assinaturas nas configurações da clínica e modais de upgrade/compras avulsas.',
+    label: 'Módulo de Assinaturas e Cobrança',
+    description: 'Controla a exibição e funcionamento global do sistema de faturamento recorrente, catálogo de planos (/planos), checkout e faturamento.',
+    category: 'Assinaturas',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'subscription_free_trial_enabled',
+    label: 'Degustação Gratuita (Free Tier / Trial)',
+    description: 'Habilita o período e cota de degustação gratuita no onboarding e seleção de planos sem exigir cartão de crédito inicial.',
+    category: 'Assinaturas',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'subscription_payment_methods',
+    label: 'Métodos de Pagamento (PIX, Cartão, Boleto)',
+    description: 'Configura e habilita os métodos de pagamento suportados no checkout com as respectivas regras de desconto e parcelamento.',
+    category: 'Assinaturas',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'subscription_coupons_enabled',
+    label: 'Cupons de Desconto Promocionais',
+    description: 'Habilita a validação e aplicação de cupons promocionais na página de planos e no checkout oficial da plataforma.',
     category: 'Assinaturas',
     hasConfiguration: true,
     hasToggle: true,
@@ -32,8 +56,8 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
   // Storage/Arquivos
   {
     key: 'storage_s3_integration',
-    label: 'Integração S3/MinIO/Backblaze',
-    description: 'Habilita o uso de buckets externos compatíveis com S3 para armazenamento de arquivos e mídias.',
+    label: 'Anexo de Arquivos & Mídias (Storage)',
+    description: 'Habilita o módulo de anexo de documentos, PDFs e imagens clínicas de pacientes e atendimentos.',
     category: 'Storage/Arquivos',
     hasConfiguration: true,
   },
@@ -155,6 +179,14 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Governança',
     hasConfiguration: true,
     hasToggle: false,
+  },
+  {
+    key: 'require_owner_terms_on_clinic_creation',
+    label: 'Exigir Termos de Consentimento do Titular na Criação de Clínica',
+    description: 'Exige o consentimento explícito dos Termos de Uso e Responsabilidade do Titular antes de criar um novo espaço.',
+    category: 'Governança',
+    hasConfiguration: false,
+    hasToggle: true,
   },
   {
     key: 'ui_animations_toggle',

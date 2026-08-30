@@ -259,9 +259,16 @@ const CadastroContaAlfa = () => {
           Voltar para o login
         </Button>
 
-        <div className="mb-6">
-          <p className="text-sm font-medium text-muted-foreground">Pluri-Health</p>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Criar conta</h1>
+        <div className="mb-6 flex items-center gap-3">
+          <img
+            src="/branding/logo/pluri_health_icon_gradient.svg"
+            alt="Pluri-Health"
+            className="h-10 w-10 shrink-0 drop-shadow-sm"
+          />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pluri-Health</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Criar conta</h1>
+          </div>
         </div>
 
         <Card>

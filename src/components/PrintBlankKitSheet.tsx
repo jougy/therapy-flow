@@ -508,12 +508,11 @@ export const PrintBlankKitSheet: React.FC<PrintBlankKitSheetProps> = ({
             {clinicLogoUrl ? (
               <img src={clinicLogoUrl} alt={clinicName} className="h-12 max-w-[160px] object-contain rounded" />
             ) : (
-              <div
-                className="w-11 h-11 rounded-lg text-white flex items-center justify-center font-bold text-xl shadow-xs"
-                style={{ backgroundColor: isColor ? "#0284c7" : "#1e293b" }}
-              >
-                {clinicName.charAt(0)}
-              </div>
+              <img
+                src={isColor ? "/branding/logo/pluri_health_icon_gradient.svg" : "/branding/logo/pluri_health_icon_black.svg"}
+                alt={clinicName}
+                className="h-11 w-11 object-contain shrink-0"
+              />
             )}
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-900">{clinicName}</h1>

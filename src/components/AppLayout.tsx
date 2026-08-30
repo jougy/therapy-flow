@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { LogOut, ShieldCheck, Settings, FlaskConical, SlidersHorizontal, Smartphone, Monitor, UserCog, UserPlus, Star } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { LogOut, ShieldCheck, Settings, FlaskConical, SlidersHorizontal, Smartphone, Monitor, UserCog, UserPlus, Star, Zap } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
@@ -25,6 +25,8 @@ import { useFeedbackTrigger } from "@/hooks/useFeedbackTrigger";
 import { SimulationFeatureFlagsModal } from "@/components/SimulationFeatureFlagsModal";
 import { SimulationRolePermissionsModal } from "@/components/SimulationRolePermissionsModal";
 import { SimulationGeneratePatientDialog } from "@/components/SimulationGeneratePatientDialog";
+import { SimulationDebugPanel } from "@/components/SimulationDebugPanel";
+import { useRuntimeDebugEvents } from "@/lib/runtime-debug";
 import { MobileTouchSimulator } from "@/components/MobileTouchSimulator";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 import { SubscriptionPlan } from "@/integrations/supabase/types";
@@ -33,6 +35,7 @@ import { useAntiPrintProtection } from "@/hooks/useAntiPrintProtection";
 import { AntiPrintOverlay } from "@/components/AntiPrintOverlay";
 import { useGovernance } from "@/hooks/useGovernance";
 import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
+import { FreeTrialUsageBanner } from "@/components/FreeTrialUsageBanner";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -51,6 +54,10 @@ const AppLayout = ({ children }: AppLayoutProps) => {
   const [flagsModalOpen, setFlagsModalOpen] = useState(false);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [generatePatientModalOpen, setGeneratePatientModalOpen] = useState(false);
+  const [debugModalOpen, setDebugModalOpen] = useState(false);
+  const debugEvents = useRuntimeDebugEvents();
+  const errorCount = useMemo(() => debugEvents.filter((e) => e.type === "error").length, [debugEvents]);
+
   const {
     isOpen: feedbackModalOpen,
     setIsOpen: setFeedbackModalOpen,
@@ -58,6 +65,22 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     openManualFeedback,
   } = useFeedbackTrigger();
   const [viewMode, setViewMode] = useState<"widescreen" | "mobile">("widescreen");
+
+  // Atalho global Cmd+Ctrl+D (Mac) ou Ctrl+Alt+D (Windows/Linux) para abrir painel de debug do backoffice
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isKeyD = e.key === "D" || e.key === "d";
+      const isMacCmdCtrl = e.metaKey && e.ctrlKey && isKeyD;
+      const isCtrlAlt = e.ctrlKey && e.altKey && isKeyD;
+      if (isMacCmdCtrl || isCtrlAlt) {
+        e.preventDefault();
+        e.stopPropagation();
+        setDebugModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const isPreviewIframe = useMemo(() => {
     try {
@@ -122,7 +145,16 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               {clinic?.logo_url && !isPersonalOriginSettings ? (
                 <img src={clinic.logo_url} alt={`Logo da ${clinicBrandName}`} className="h-9 max-w-[140px] object-contain" />
               ) : (
-                <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">{isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}</span>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src="/branding/logo/pluri_health_icon_gradient.svg"
+                    alt="Pluri-Health"
+                    className="h-8 w-8 shrink-0 drop-shadow-xs"
+                  />
+                  <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
+                    {isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}
+                  </span>
+                </div>
               )}
             </button>
 
@@ -215,6 +247,9 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         </header>
       )}
 
+      {/* Banner Informativo de Cota de Teste Grátis */}
+      {!isPreviewIframe && <FreeTrialUsageBanner clinicId={clinic?.id} />}
+
       {isPlatformSupportMode && !isPreviewIframe && (
         <div className="sticky top-0 z-40 flex flex-col gap-2.5 border-b border-amber-300 bg-amber-500/15 backdrop-blur-md px-4 py-2 text-sm text-amber-950 dark:text-amber-200 xl:flex-row xl:items-center xl:justify-between sm:px-6 shadow-xs">
           <div className="flex flex-wrap items-center gap-3">
@@ -299,6 +334,26 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               )}
             </Button>
 
+            {/* Painel de Debug em Tempo Real */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs"
+              onClick={() => setDebugModalOpen(true)}
+              title="Abrir Painel de Diagnóstico e Debug em Tempo Real (Atalho: Cmd+Ctrl+D / Ctrl+Alt+D)"
+            >
+              <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse" />
+              <span>Debug</span>
+              {errorCount > 0 ? (
+                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
+                  {errorCount}
+                </span>
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-emerald-500" title="Sistema saudável" />
+              )}
+            </Button>
+
             {/* Gerador de Paciente Teste */}
             {isSimulationMode && (
               <Button
@@ -379,6 +434,11 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         open={generatePatientModalOpen}
         onOpenChange={setGeneratePatientModalOpen}
         clinicId={clinic?.id}
+      />
+
+      <SimulationDebugPanel
+        open={debugModalOpen}
+        onOpenChange={setDebugModalOpen}
       />
 
       {!isPreviewIframe && (

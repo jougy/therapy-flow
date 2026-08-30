@@ -9,6 +9,7 @@ import {
   rgbToCmyk,
   rgbToHex,
   rgbToHsv,
+  sanitizeColorSlotId,
   toRgbaString,
 } from "@/lib/group-colors";
 
@@ -39,5 +40,13 @@ describe("group color helpers", () => {
   it("falls back from legacy names to hex", () => {
     expect(getLegacyGroupHex("lavender")).toBe("#C4B5FD");
     expect(getLegacyGroupHex("#010203")).toBe("#010203");
+  });
+
+  it("sanitizes seed color slot ids to null for database UUID safety", () => {
+    expect(sanitizeColorSlotId("seed-3")).toBeNull();
+    expect(sanitizeColorSlotId("seed-0")).toBeNull();
+    expect(sanitizeColorSlotId(null)).toBeNull();
+    expect(sanitizeColorSlotId(undefined)).toBeNull();
+    expect(sanitizeColorSlotId("550e8400-e29b-41d4-a716-446655440000")).toBe("550e8400-e29b-41d4-a716-446655440000");
   });
 });

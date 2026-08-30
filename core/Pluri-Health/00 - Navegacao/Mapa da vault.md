@@ -40,6 +40,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Compartilhamento de fichas de atendimento]]
 - [[Grupos reutilizaveis de atendimentos]]
 - [[Acesso mestre e painel administrativo global]]
+- [[Painel de Debug em Tempo Real do Backoffice]]
 - [[Reenvio de convites com cooldown e Gestao de Pendencias no Diretorio Mestre]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
@@ -83,6 +84,8 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 - [[README - Produto]]
 - [[00 - Hub de Tutoriais da Plataforma]]
+- [[00 - Plano Geral de Assinaturas e Asaas]]
+- [[Gestao de Assinatura e Integracao Asaas]]
 - [[Clinica e colaborador no MVP]]
 - [[Identidade global do usuario e seletor de clinicas]]
 - [[Hierarquias de colaboradores e acessos]]
@@ -102,6 +105,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Ambiente e operacao]]
 - [[Ambiente Mobile e Scrcpy]]
 - [[Deploy - Cloudflare Pages]]
+- [[Distribuicao e App Stores PWA]]
 - [[Empacotamento PWA Mobile e Desktop Cross-Platform]]
 - [[Backup do Supabase antes de deploy]]
 - [[TDD e checks]]
@@ -123,6 +127,20 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Subplano Supabase Postgres RLS e RPCs]]
 - [[Subplano autorizacao RBAC clinicas e colaboradores]]
 - [[Subplano formularios publicos e compartilhamentos]]
+
+### Release e Lançamento Oficial
+
+- [[Deploy prod Supabase - 2026-08-30 novidades alfa-26.08.30-01]]
+- [[Deploy prod Supabase - 2026-08-26 novidades alfa-26.08.26-01]]
+- [[00_MASTER_PLANO_DE_LANCAMENTO_4_DIAS]]
+- [[01_Thread_Asaas_Producao_e_Checkout]]
+- [[02_Thread_Backoffice_Assinaturas_e_Cupons]]
+- [[03_Thread_Alfa_Testers_Comunicacao_e_Cupom]]
+- [[04_Thread_Migracao_Dominio_Infra_e_Seguranca]]
+- [[05_Thread_Backblaze_B2_Uploads_e_Documentos]]
+- [[06_Thread_Tutoriais_QA_e_Mobile_First]]
+- [[07_Thread_Landing_Page_Astro_e_Deploy]]
+- [[08_Thread_Identidade_Visual_Logos_e_Instagram]]
 
 ### Prompts e execucao orientada
 

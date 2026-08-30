@@ -64,7 +64,7 @@ export const PlatformClinicDetailPage = ({
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEvent[]>([]);
   const [, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [clinicTags, setClinicTags] = useState<{ id: string; name: string; color: string }[]>([]);
-  const [formsSummary, setFormsSummary] = useState<PlatformClinicFormsSummary | null>(null);
+  const [clinicSubscription, setClinicSubscription] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [supportReason, setSupportReason] = useState("");
   const [supportRole, setSupportRole] = useState<SupportRole>("owner");
@@ -86,11 +86,12 @@ export const PlatformClinicDetailPage = ({
       const loadedClinicId = String(loadedDetail?.clinic?.id ?? "");
       if (!loadedClinicId) throw new Error("Clínica não encontrada para esta rota mascarada.");
 
-      const [auditRes, flagsRes, formsRes, tagsRes] = await Promise.all([
+      const [auditRes, flagsRes, formsRes, tagsRes, subRes] = await Promise.all([
         callRpc("list_platform_audit_events", { _clinic_id: loadedClinicId, _limit: 80 }),
         callRpc("list_feature_flags", { _clinic_id: loadedClinicId }),
         callRpc("get_platform_clinic_forms_summary_by_route_key", { _route_key: clinicKey }),
         supabase.from("clinic_tag_relations").select("clinic_tags(id, name, color)").eq("clinic_id", loadedClinicId),
+        supabase.from("clinic_subscriptions").select("*").eq("clinic_id", loadedClinicId).maybeSingle(),
       ]);
 
       if (auditRes.error) throw auditRes.error;
@@ -98,6 +99,7 @@ export const PlatformClinicDetailPage = ({
       if (formsRes.error) throw formsRes.error;
 
       setDetail(loadedDetail);
+      setClinicSubscription(subRes.data ?? null);
       setAuditEvents((auditRes.data ?? []) as PlatformAuditEvent[]);
       setFeatureFlags((flagsRes.data ?? []) as FeatureFlag[]);
       setFormsSummary((formsRes.data ?? null) as PlatformClinicFormsSummary | null);
@@ -344,6 +346,49 @@ export const PlatformClinicDetailPage = ({
               </Card>
               <div className="flex flex-col gap-4">
                 <Card>
+                  <CardHeader><CardTitle>Assinatura e ciclo de membro</CardTitle></CardHeader>
+                  <CardContent>
+                    {clinicSubscription ? (
+                      <PlatformInfoGrid
+                        items={[
+                          ["Ciclo contratado", clinicSubscription.billing_cycle === "ANNUAL" ? "Anual (365 dias)" : clinicSubscription.billing_cycle === "QUARTERLY" ? "Trimestral (90 dias)" : "Mensal (30 dias)"],
+                          ["Status faturamento", clinicSubscription.status || "Ativo (Beta)"],
+                          ["Renovação automática", clinicSubscription.auto_renew !== false ? "Ativada" : "Desligada"],
+                          [
+                            "Vencimento / Expiração",
+                            clinicSubscription.expires_at
+                              ? new Date(clinicSubscription.expires_at).toLocaleDateString("pt-BR")
+                              : clinicSubscription.current_period_end
+                              ? new Date(clinicSubscription.current_period_end).toLocaleDateString("pt-BR")
+                              : "Período Beta Contínuo",
+                          ],
+                          [
+                            "Dias restantes",
+                            clinicSubscription.expires_at || clinicSubscription.current_period_end
+                              ? `${Math.max(
+                                  0,
+                                  Math.ceil(
+                                    (new Date(clinicSubscription.expires_at || clinicSubscription.current_period_end).getTime() - Date.now()) /
+                                      (1000 * 60 * 60 * 24)
+                                  )
+                                )} dia(s)`
+                              : "Ilimitado (Beta)",
+                          ],
+                          [
+                            "Permissão da clínica",
+                            (clinicSubscription.expires_at && new Date(clinicSubscription.expires_at) < new Date()) && !["BETA", "TRIAL"].includes(clinicSubscription.status)
+                              ? "⚠️ Somente Leitura (Expirada)"
+                              : "✅ Leitura e Escrita (Total)",
+                          ],
+                        ]}
+                      />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Isenção Beta / Sem assinatura Asaas vinculada.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
                   <CardHeader><CardTitle>Limites e operação</CardTitle></CardHeader>
                   <CardContent>
                     <PlatformInfoGrid
@@ -356,6 +401,7 @@ export const PlatformClinicDetailPage = ({
                     />
                   </CardContent>
                 </Card>
+
                 <Card>
                   <CardHeader><CardTitle>Tags ativas</CardTitle></CardHeader>
                   <CardContent>

@@ -16,6 +16,7 @@ import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
 
 
 const Auth = lazy(() => import("./pages/Auth"));
+const DownloadApp = lazy(() => import("./pages/DownloadApp"));
 const CadastroCompleto = lazy(() => import("./pages/CadastroCompleto"));
 const CadastroContaAlfa = lazy(() => import("./pages/CadastroContaAlfa"));
 const CadastroPacienteCompartilhado = lazy(() => import("./pages/CadastroPacienteCompartilhado"));
@@ -43,6 +44,7 @@ const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const NovoPaciente = lazy(() => import("./pages/NovoPaciente"));
 const OnboardingClinica = lazy(() => import("./pages/OnboardingClinica"));
+const PagamentoClinica = lazy(() => import("./pages/PagamentoClinica"));
 const PacienteAnamnesisDashboard = lazy(() => import("./pages/PacienteAnamnesisDashboard"));
 const PacienteDetalhe = lazy(() => import("./pages/PacienteDetalhe"));
 const PacienteResumo = lazy(() => import("./pages/PacienteResumo"));
@@ -174,6 +176,9 @@ const App = () => (
                     <Routes>
                       <Route path="/designlab/*" element={<DesignLabApp />} />
                       <Route path="/designlabs/*" element={<DesignLabApp />} />
+                      <Route path="/download" element={<DownloadApp />} />
+                      <Route path="/baixar" element={<Navigate to="/download" replace />} />
+                      <Route path="/app" element={<Navigate to="/download" replace />} />
                       <Route path="/auth" element={<AuthRoute><Auth /></AuthRoute>} />
                       <Route path="/auth/cadastro" element={<AuthRoute><CadastroContaAlfa /></AuthRoute>} />
                       <Route path="/auth/criar-conta" element={<Navigate to="/auth/cadastro" replace />} />
@@ -189,6 +194,8 @@ const App = () => (
                       <Route path="/espacopessoal" element={<ProtectedRoute><SelecionarClinica /></ProtectedRoute>} />
                       <Route path="/planos" element={<ProtectedRoute><PlanosAssinatura /></ProtectedRoute>} />
                       <Route path="/onboarding-clinica" element={<ProtectedRoute><OnboardingClinica /></ProtectedRoute>} />
+                      <Route path="/pagamento/:clinicId" element={<ProtectedRoute><PagamentoClinica /></ProtectedRoute>} />
+                      <Route path="/pagamento" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                       <Route path="/clinicas" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                       <Route path="/platform/mfa" element={<PlatformMfaRoute><PlatformMfa /></PlatformMfaRoute>} />
                       <Route path="/platform/*" element={<PlatformRoute><PlatformAdmin /></PlatformRoute>} />

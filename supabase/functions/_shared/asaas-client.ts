@@ -20,7 +20,7 @@ export interface AsaasSubscriptionData {
   billingType: 'CREDIT_CARD' | 'PIX' | 'BOLETO' | 'UNDEFINED';
   value: number;
   nextDueDate: string; // YYYY-MM-DD
-  cycle: 'MONTHLY' | 'ANNUAL';
+  cycle: 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUALLY' | 'ANNUALLY';
   description?: string;
   discount?: {
     value: number;
@@ -48,7 +48,10 @@ export interface AsaasSubscriptionData {
 export interface AsaasOneTimePaymentData {
   customer: string;
   billingType: 'CREDIT_CARD' | 'PIX' | 'BOLETO' | 'UNDEFINED';
-  value: number;
+  value?: number;
+  totalValue?: number;
+  installmentCount?: number;
+  installmentValue?: number;
   dueDate: string; // YYYY-MM-DD
   description?: string;
   externalReference?: string;
@@ -97,8 +100,18 @@ export class AsaasClient {
     const json = await response.json();
 
     if (!response.ok) {
-      const errorMessage = json.errors?.[0]?.description || response.statusText || 'Erro na API Asaas';
-      throw new Error(`Asaas API Error (${response.status}): ${errorMessage}`);
+      let errorMessage = 'Erro na API Asaas';
+      if (Array.isArray(json?.errors) && json.errors.length > 0) {
+        errorMessage = json.errors.map((e: any) => e.description || e.message || JSON.stringify(e)).join(' | ');
+      } else if (json?.message) {
+        errorMessage = json.message;
+      } else if (json?.error) {
+        errorMessage = json.error;
+      } else if (response.statusText) {
+        errorMessage = response.statusText;
+      }
+      console.error(`[AsaasClient] Erro HTTP ${response.status} em ${endpoint}:`, errorMessage, json);
+      throw new Error(`Asaas (${response.status}): ${errorMessage}`);
     }
 
     return json as T;
@@ -146,13 +159,35 @@ export class AsaasClient {
     });
   }
 
-  async getSubscriptionPayments(subscriptionId: string): Promise<{ data: Array<{ id: string; status: string; value: number; dueDate: string; invoiceUrl?: string; bankSlipUrl?: string }> }> {
+  async getSubscriptionPayments(subscriptionId: string): Promise<{ data: Array<{ id: string; status: string; value: number; dueDate: string; invoiceUrl?: string; bankSlipUrl?: string; paymentDate?: string; clientPaymentDate?: string }> }> {
     return this.request(`/subscriptions/${subscriptionId}/payments`, {
       method: 'GET',
     });
   }
 
   // Payments / Cobranças Avulsas
+  async getPayment(paymentId: string): Promise<{
+    id: string;
+    status: string;
+    value: number;
+    netValue?: number;
+    dueDate: string;
+    invoiceUrl?: string;
+    bankSlipUrl?: string;
+    paymentDate?: string;
+    clientPaymentDate?: string;
+  }> {
+    return this.request(`/payments/${paymentId}`, {
+      method: 'GET',
+    });
+  }
+
+  async getCustomerPayments(customerId: string, limit = 10): Promise<{ data: Array<{ id: string; status: string; value: number; dueDate: string; paymentDate?: string; clientPaymentDate?: string }> }> {
+    return this.request(`/payments?customer=${customerId}&limit=${limit}`, {
+      method: 'GET',
+    });
+  }
+
   async createPayment(data: AsaasOneTimePaymentData): Promise<{
     id: string;
     status: string;
@@ -168,7 +203,7 @@ export class AsaasClient {
     });
   }
 
-  async getPaymentQrCode(paymentId: string): Promise<{ encodedImage: string; payload: string; expirationDate: string }> {
+  async getPaymentQrCode(paymentId: string): Promise<{ encodedImage: string; payload: string; expirationDate?: string }> {
     return this.request(`/payments/${paymentId}/pixQrCode`, {
       method: 'GET',
     });

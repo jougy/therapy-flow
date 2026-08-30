@@ -16,99 +16,130 @@ import {
   HelpCircle,
   ShieldAlert,
   ArrowRight,
+  GripHorizontal,
+  RotateCcw,
 } from "lucide-react";
 
 export interface TutorialCardProps {
   style?: React.CSSProperties;
+  onDragPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void;
+  isDragged?: boolean;
+  onResetPosition?: () => void;
 }
 
-export const TutorialCard = forwardRef<HTMLDivElement, TutorialCardProps>(({ style }, ref) => {
-  const {
-    activeTutorial,
-    activeChapter,
-    isSingleHelpMode,
-    currentStepIndex,
-    currentStep,
-    totalSteps,
-    nextStep,
-    prevStep,
-    skipTutorial,
-    finishTutorial,
-    setIsChapterModalOpen,
-    executeLearnMoreAction,
-  } = useTutorial();
+export const TutorialCard = forwardRef<HTMLDivElement, TutorialCardProps>(
+  ({ style, onDragPointerDown, isDragged, onResetPosition }, ref) => {
+    const {
+      activeTutorial,
+      activeChapter,
+      isSingleHelpMode,
+      currentStepIndex,
+      currentStep,
+      totalSteps,
+      nextStep,
+      prevStep,
+      skipTutorial,
+      finishTutorial,
+      setIsChapterModalOpen,
+      executeLearnMoreAction,
+    } = useTutorial();
 
-  if (!activeTutorial || !currentStep) return null;
+    if (!activeTutorial || !currentStep) return null;
 
-  const isLastStep = currentStepIndex === totalSteps - 1;
-  const progressPercent = Math.round(((currentStepIndex + 1) / totalSteps) * 100);
+    const isLastStep = currentStepIndex === totalSteps - 1;
+    const progressPercent = Math.round(((currentStepIndex + 1) / totalSteps) * 100);
 
-  return (
-    <div
-      ref={ref}
-      style={style}
-      className="z-[99999] w-[min(420px,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-primary/30 bg-background/95 p-4 sm:p-5 shadow-2xl backdrop-blur-md transition-all duration-300 animate-in fade-in zoom-in-95"
-    >
-      {/* Header with Chapter/Block and Step badge */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge
-            variant="default"
-            className="bg-primary/20 text-primary border-primary/30 text-[10px] font-bold uppercase tracking-wider gap-1"
-          >
-            {isSingleHelpMode ? (
-              totalSteps > 1 ? (
-                <>
-                  <Sparkles className="h-3 w-3 text-primary" />
-                  Guia do Bloco (?)
-                </>
-              ) : (
-                <>
-                  <HelpCircle className="h-3 w-3 text-primary" />
-                  Ajuda Rápida (?)
-                </>
-              )
-            ) : (
-              <>
-                <Sparkles className="h-3 w-3" />
-                {activeChapter
-                  ? `${activeChapter.badge} · ${activeChapter.shortTitle}`
-                  : activeTutorial.badge || "Tutorial"}
-              </>
-            )}
-          </Badge>
-          {totalSteps > 1 && (
-            <span className="text-[11px] font-semibold text-muted-foreground">
-              {isSingleHelpMode ? `Componente ${currentStepIndex + 1} de ${totalSteps}` : `Passo ${currentStepIndex + 1} de ${totalSteps}`}
-            </span>
-          )}
+    return (
+      <div
+        ref={ref}
+        style={style}
+        className="z-[99999] w-[min(420px,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-primary/30 bg-background/95 p-4 sm:p-5 shadow-2xl backdrop-blur-md transition-shadow duration-200 select-none animate-in fade-in zoom-in-95"
+      >
+        {/* Drag Handle Bar */}
+        <div
+          onPointerDown={onDragPointerDown}
+          className="group/drag -mx-4 -mt-4 mb-2 flex cursor-grab items-center justify-center rounded-t-2xl bg-muted/40 py-1.5 transition-colors hover:bg-muted/70 active:cursor-grabbing sm:-mx-5 sm:-mt-5 select-none touch-none"
+          title="Clique e arraste para mover este card livremente pela tela"
+          aria-label="Arrastar janela de explicação"
+        >
+          <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground/80 group-hover/drag:text-foreground">
+            <GripHorizontal className="h-4 w-4 text-muted-foreground transition-transform group-hover/drag:scale-110" />
+            <span className="text-[10px] tracking-wide uppercase font-semibold">Mover livremente</span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          {!isSingleHelpMode && (
+        {/* Header with Chapter/Block and Step badge */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge
+              variant="default"
+              className="bg-primary/20 text-primary border-primary/30 text-[10px] font-bold uppercase tracking-wider gap-1"
+            >
+              {isSingleHelpMode ? (
+                totalSteps > 1 ? (
+                  <>
+                    <Sparkles className="h-3 w-3 text-primary" />
+                    Guia do Bloco (?)
+                  </>
+                ) : (
+                  <>
+                    <HelpCircle className="h-3 w-3 text-primary" />
+                    Ajuda Rápida (?)
+                  </>
+                )
+              ) : (
+                <>
+                  <Sparkles className="h-3 w-3" />
+                  {activeChapter
+                    ? `${activeChapter.badge} · ${activeChapter.shortTitle}`
+                    : activeTutorial.badge || "Tutorial"}
+                </>
+              )}
+            </Badge>
+            {totalSteps > 1 && (
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                {isSingleHelpMode ? `Componente ${currentStepIndex + 1} de ${totalSteps}` : `Passo ${currentStepIndex + 1} de ${totalSteps}`}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            {isDragged && onResetPosition && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onResetPosition}
+                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                title="Restaurar posição original"
+                aria-label="Restaurar posição original"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {!isSingleHelpMode && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsChapterModalOpen(true)}
+                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                title="Abrir Menu de Capítulos"
+                aria-label="Abrir Menu de Capítulos"
+              >
+                <Compass className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setIsChapterModalOpen(true)}
+              onClick={skipTutorial}
               className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-              title="Abrir Menu de Capítulos"
-              aria-label="Abrir Menu de Capítulos"
+              title="Fechar"
+              aria-label="Fechar"
             >
-              <Compass className="h-4 w-4" />
+              <X className="h-4 w-4" />
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={skipTutorial}
-            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-            title="Fechar"
-            aria-label="Fechar"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          </div>
         </div>
-      </div>
 
       {/* Title and Description */}
       <div className="mt-2.5 space-y-1.5">

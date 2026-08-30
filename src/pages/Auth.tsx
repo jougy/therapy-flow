@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Eye, EyeOff, KeyRound, Loader2, LogIn, Mail } from "lucide-react";
+import { ArrowLeft, Download, Eye, EyeOff, KeyRound, Loader2, LogIn, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,11 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { toast } from "@/hooks/use-toast";
 import { formatCpf } from "@/lib/profile-settings";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
+import { BrowserAppDownloadBanner } from "@/components/BrowserAppDownloadBanner";
 
 const normalizeCpf = (value: string) => value.replace(/\D/g, "").slice(0, 11);
 
 const Auth = () => {
   const navigate = useNavigate();
+  const { isApp } = usePWAInstall();
   const [mode, setMode] = useState<"login" | "recovery">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -83,16 +86,26 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="w-full max-w-sm"
-      >
-        <div className="text-center mb-6">
+    <div className="min-h-screen flex flex-col bg-background">
+      <BrowserAppDownloadBanner variant="top" />
+      <div className="flex-1 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="w-full max-w-sm"
+        >
+        <div className="text-center mb-6 flex flex-col items-center">
+          <div className="mb-3 flex justify-center">
+            {/* Logo adaptável: Gradiente ciano/azul com ícone nítido */}
+            <img
+              src="/branding/logo/pluri_health_icon_gradient.svg"
+              alt="Pluri-Health"
+              className="h-16 w-16 drop-shadow-md transition-transform hover:scale-105"
+            />
+          </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Pluri-Health</h1>
-          <p className="text-sm text-muted-foreground mt-1">Gestão clínica simplificada</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Gestão clínica simplificada</p>
         </div>
 
         <Card>
@@ -234,12 +247,23 @@ const Auth = () => {
                   >
                     Não tem uma conta? Criar conta
                   </button>
+                  {!isApp && (
+                    <button
+                      type="button"
+                      onClick={() => navigate("/download")}
+                      className="w-full text-center text-xs font-medium text-primary/80 transition-colors hover:text-primary inline-flex items-center justify-center gap-1.5 pt-1"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Baixar aplicativo (Windows, Mac, Linux, Celular)
+                    </button>
+                  )}
                 </div>
               </form>
             )}
           </CardContent>
         </Card>
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 };

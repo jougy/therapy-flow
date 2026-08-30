@@ -8,7 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
-import { Calendar, Clock, CreditCard, Gift, Info, Package, Sparkles } from "lucide-react";
+import { Calendar, Clock, Clock3, CheckCircle2, CreditCard, Gift, Info, Package, Sparkles, AlertTriangle } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
 import {
   PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH,
   PAYMENT_INSTALLMENT_OPTIONS,
@@ -184,6 +186,9 @@ export const SessionPaymentSection = ({
   onAmountOriginalChange,
   onAmountPaidChange,
 }: SessionPaymentSectionProps) => {
+  const { clinic } = useAuth();
+  const quota = useClinicPlanQuota(clinic?.id);
+
   // Determina a modalidade ativa: 'pacote', 'cortesia' ou 'avulso'
   const currentMode: "avulso" | "pacote" | "cortesia" = useMemo(() => {
     if (currentNormalizedPaymentStatus === "cortesia") {
@@ -338,6 +343,21 @@ export const SessionPaymentSection = ({
             </div>
           </div>
 
+          {/* Alerta Preventivo de Cota de Teste Grátis */}
+          {quota.isFreeTrial && (quota.attendances.current + (parseInt(String(paymentPlanForm.totalSessions), 10) || 1)) > quota.attendances.max && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-400 shrink-0" />
+              <div className="space-y-0.5">
+                <p className="font-semibold text-amber-300">
+                  Aviso de Cota do Plano de Teste Grátis
+                </p>
+                <p className="text-[11px] text-neutral-300">
+                  Este pacote de <strong>{paymentPlanForm.totalSessions} sessões</strong> fará sua clínica totalizar <strong>{quota.attendances.current + (parseInt(String(paymentPlanForm.totalSessions), 10) || 1)} atendimentos</strong> (seu plano gratuito possui {quota.attendances.remaining} restantes de {quota.attendances.max}). O pacote e todos os pré-agendamentos serão salvos normalmente na agenda, mas a evolução clínica a partir do 21º atendimento exigirá a contratação de um plano ilimitado.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Grid Principal do Pacote */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {/* Nome do Pacote */}
@@ -384,7 +404,7 @@ export const SessionPaymentSection = ({
           </div>
 
           {/* Grid Pagamento do Pacote */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {/* Método de Pagamento */}
             <div className="space-y-1.5">
               <Label htmlFor="plan-payment-method">Método de pagamento</Label>
@@ -429,32 +449,6 @@ export const SessionPaymentSection = ({
               </Select>
             </div>
 
-            {/* Status do Pagamento do Pacote */}
-            <div className="space-y-1.5">
-              <Label htmlFor="plan-payment-status">Status do pagamento</Label>
-              <Select
-                value={paymentPlanForm.paymentStatus}
-                onValueChange={(val) =>
-                  onPaymentPlanFormChange((prev) => ({
-                    ...prev,
-                    paymentStatus: val as PaymentPlanFormValues["paymentStatus"],
-                  }))
-                }
-                disabled={locked}
-              >
-                <SelectTrigger id="plan-payment-status">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_PLAN_STATUS_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Card de Valor Unitário Calculado */}
             <div className="flex flex-col justify-end">
               <div className="rounded-lg border bg-muted/30 p-2.5">
@@ -466,6 +460,41 @@ export const SessionPaymentSection = ({
                 </span>
               </div>
             </div>
+          </div>
+
+          {/* Indicador Inteligente de Quitação do Pacote */}
+          <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              {paymentPlanForm.paymentStatus === "pago" ? (
+                <div className="flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>Pacote considerado <strong>pago no ato</strong> (créditos liberados automaticamente)</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+                  <Clock3 className="h-4 w-4 shrink-0" />
+                  <span>Cobrança <strong>pendente</strong> (a faturar / receber posteriormente)</span>
+                </div>
+              )}
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2.5 text-xs self-start sm:self-auto"
+              disabled={locked}
+              onClick={() =>
+                onPaymentPlanFormChange((prev) => ({
+                  ...prev,
+                  paymentStatus: prev.paymentStatus === "pago" ? "pendente" : "pago",
+                }))
+              }
+            >
+              {paymentPlanForm.paymentStatus === "pago"
+                ? "Alternar para pendente"
+                : "Marcar como pago no ato"}
+            </Button>
           </div>
 
           {/* Pré-agendamento das Próximas Sessões */}

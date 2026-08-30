@@ -5,6 +5,17 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { 
+  ShieldCheck, 
+  Sparkles, 
+  QrCode, 
+  Receipt, 
+  CreditCard, 
+  Tag, 
+  UserRound, 
+  Building2 
+} from "lucide-react";
 import { featureFlagsCatalog } from "@/lib/feature-flags-catalog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -52,10 +63,7 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
 
   const isValid = () => {
     if (feature?.category === "Storage/Arquivos") {
-      if (!formData.endpoint || !formData.region || !formData.bucketName || !formData.accessKey || !formData.secretKey) {
-        return false;
-      }
-      if (formData.maxSizeMb <= 0) return false;
+      if (formData.maxSizeMb && Number(formData.maxSizeMb) <= 0) return false;
     }
     if (feature?.category === "Notificações") {
       if (formData.retentionDays <= 0) return false;
@@ -127,79 +135,21 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
   const renderStorageForm = () => {
     return (
       <div className="grid gap-6">
-        <div className="grid gap-2">
-          <Label>Provedor</Label>
-          <Select 
-            value={formData.provider || "s3"} 
-            onValueChange={(val) => setFormData({ ...formData, provider: val })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione o provedor externo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="s3">AWS S3</SelectItem>
-              <SelectItem value="minio">MinIO</SelectItem>
-              <SelectItem value="backblaze">Backblaze B2</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3.5 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground mb-1">Armazenamento Seguro em Nuvem (Backblaze B2 / S3)</p>
+          <p>
+            As credenciais e endpoints de conexão do storage são gerenciados de forma segura e criptografada pelo servidor backend (Edge Functions), evitando qualquer exposição de chaves de infraestrutura no navegador.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Endpoint URL <span className="text-red-500">*</span></Label>
-                <Input 
-                  placeholder="https://..." 
-                  value={formData.endpoint || ""}
-                  onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Região <span className="text-red-500">*</span></Label>
-                <Input 
-                  placeholder="us-east-1" 
-                  value={formData.region || ""}
-                  onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Nome do Bucket <span className="text-red-500">*</span></Label>
-              <Input 
-                placeholder="meu-bucket-clinica" 
-                value={formData.bucketName || ""}
-                onChange={(e) => setFormData({ ...formData, bucketName: e.target.value })}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Access Key <span className="text-red-500">*</span></Label>
-                <Input 
-                  type="password"
-                  placeholder="***" 
-                  value={formData.accessKey || ""}
-                  onChange={(e) => setFormData({ ...formData, accessKey: e.target.value })}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Secret Key <span className="text-red-500">*</span></Label>
-                <Input 
-                  type="password"
-                  placeholder="***" 
-                  value={formData.secretKey || ""}
-                  onChange={(e) => setFormData({ ...formData, secretKey: e.target.value })}
-                />
-              </div>
-            </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
           <div className="grid gap-2">
-            <Label>Tamanho máximo (MB) <span className="text-red-500">*</span></Label>
+            <Label>Tamanho máximo por arquivo (MB)</Label>
             <Input 
               type="number"
               min="1"
-              placeholder="10" 
+              max="50"
+              placeholder="50" 
               value={formData.maxSizeMb || ""}
               onChange={(e) => setFormData({ ...formData, maxSizeMb: Math.max(1, Number(e.target.value)) })}
             />
@@ -207,7 +157,7 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
           <div className="grid gap-2">
             <Label>Extensões permitidas</Label>
             <Input 
-              placeholder=".pdf, .jpg, .png" 
+              placeholder=".pdf, .jpg, .png, .webp" 
               value={formData.allowedExtensions || ""}
               onChange={(e) => setFormData({ ...formData, allowedExtensions: e.target.value })}
             />
@@ -577,95 +527,280 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
   };
 
   const renderSubscriptionsConfig = () => {
+    if (feature.key === "subscription_free_trial_enabled") {
+      return (
+        <div className="grid gap-6">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 mb-1 text-emerald-700 dark:text-emerald-400 font-semibold text-sm">
+              <Sparkles className="w-4 h-4" />
+              Degustação Gratuita (Trial Volumétrico / Free Tier)
+            </div>
+            <p>
+              Permite que novos profissionais e clínicas experimentem a plataforma sem fornecer cartão de crédito durante o onboarding.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Duração da Degustação (Dias)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={90}
+                placeholder="30"
+                value={formData.trialDurationDays !== undefined ? String(formData.trialDurationDays) : "30"}
+                onChange={(e) => setFormData({ ...formData, trialDurationDays: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Cota Inicial de Atendimentos</Label>
+              <Input
+                type="number"
+                min={0}
+                placeholder="0 (Ilimitado)"
+                value={formData.trialMaxSessions !== undefined ? String(formData.trialMaxSessions) : "0"}
+                onChange={(e) => setFormData({ ...formData, trialMaxSessions: Number(e.target.value) })}
+              />
+              <span className="text-[11px] text-muted-foreground">0 = sem limite de atendimentos durante os dias de teste.</span>
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-2 border-t">
+            <Label className="text-xs font-semibold">Comportamento ao Expirar o Período</Label>
+            <Select
+              value={(formData.expiredBehavior as string) || "read_only"}
+              onValueChange={(val) => setFormData({ ...formData, expiredBehavior: val })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o comportamento..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="read_only">Modo Somente Leitura (Bloqueia escrita mantendo prontuários acessíveis)</SelectItem>
+                <SelectItem value="block_all">Bloqueio Total com Redirecionamento para Pagamento</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      );
+    }
+
+    if (feature.key === "subscription_payment_methods") {
+      return (
+        <div className="grid gap-6">
+          <div className="space-y-1">
+            <Label className="text-base font-semibold">Métodos de Pagamento Habilitados</Label>
+            <p className="text-xs text-muted-foreground">
+              Selecione as formas de pagamento disponíveis no checkout e defina regras de desconto e parcelamento.
+            </p>
+          </div>
+
+          <div className="rounded-xl border p-4 space-y-4 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="font-semibold text-sm cursor-pointer flex items-center gap-2">
+                  <QrCode className="w-4 h-4 text-emerald-600" />
+                  PIX Instantâneo
+                </Label>
+                <p className="text-xs text-muted-foreground">Geração de QR Code dinâmico e chave Copia e Cola via Asaas.</p>
+              </div>
+              <Switch
+                checked={formData.allowPix !== false}
+                onCheckedChange={(v) => setFormData({ ...formData, allowPix: v })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t">
+              <div className="space-y-0.5">
+                <Label className="font-semibold text-sm cursor-pointer flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-blue-600" />
+                  Cartão de Crédito
+                </Label>
+                <p className="text-xs text-muted-foreground">Processamento online com validação de algoritmo de Luhn e bandeira.</p>
+              </div>
+              <Switch
+                checked={formData.allowCreditCard !== false}
+                onCheckedChange={(v) => setFormData({ ...formData, allowCreditCard: v })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t">
+              <div className="space-y-0.5">
+                <Label className="font-semibold text-sm cursor-pointer flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-amber-600" />
+                  Boleto Bancário
+                </Label>
+                <p className="text-xs text-muted-foreground">Emissão de boleto registrado com link direto gerado pelo Asaas.</p>
+              </div>
+              <Switch
+                checked={formData.allowBoleto !== false}
+                onCheckedChange={(v) => setFormData({ ...formData, allowBoleto: v })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Desconto Automático no PIX (%)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={30}
+                value={formData.pixDiscountPercent !== undefined ? String(formData.pixDiscountPercent) : "5"}
+                onChange={(e) => setFormData({ ...formData, pixDiscountPercent: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Parcelamento Máximo no Cartão Sem Juros</Label>
+              <Select
+                value={formData.maxCardInstallments !== undefined ? String(formData.maxCardInstallments) : "12"}
+                onValueChange={(val) => setFormData({ ...formData, maxCardInstallments: Number(val) })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o parcelamento..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1x (À vista)</SelectItem>
+                  <SelectItem value="3">Até 3x (Ciclo Trimestral)</SelectItem>
+                  <SelectItem value="6">Até 6x</SelectItem>
+                  <SelectItem value="12">Até 12x (Ciclo Anual)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (feature.key === "subscription_coupons_enabled") {
+      return (
+        <div className="grid gap-6">
+          <div className="space-y-1">
+            <Label className="text-base font-semibold">Políticas de Cupons Promocionais</Label>
+            <p className="text-xs text-muted-foreground">
+              Gerencie a validação e aplicabilidade de cupons de desconto no fluxo de compra.
+            </p>
+          </div>
+
+          <div className="rounded-xl border p-4 space-y-4 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="font-semibold text-sm cursor-pointer flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-blue-500" />
+                  Habilitar Campo de Cupom no Checkout
+                </Label>
+                <p className="text-xs text-muted-foreground">Exibe o input de cupom promocional durante o checkout.</p>
+              </div>
+              <Switch
+                checked={formData.showCouponInCheckout !== false}
+                onCheckedChange={(v) => setFormData({ ...formData, showCouponInCheckout: v })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t">
+              <div className="space-y-0.5">
+                <Label className="font-semibold text-sm cursor-pointer">
+                  Acumular Cupom com Desconto PIX (5%)
+                </Label>
+                <p className="text-xs text-muted-foreground">Aplica o desconto do cupom e calcula os 5% do PIX sobre o saldo restante.</p>
+              </div>
+              <Switch
+                checked={formData.allowCumulativePix !== false}
+                onCheckedChange={(v) => setFormData({ ...formData, allowCumulativePix: v })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t">
+              <div className="space-y-0.5">
+                <Label className="font-semibold text-sm cursor-pointer">
+                  Permitir Cupons em Planos com Desconto de Ciclo (Trimestral/Anual)
+                </Label>
+                <p className="text-xs text-muted-foreground">Permite aplicar cupom mesmo em planos anuais (-25%) e trimestrais (-10%).</p>
+              </div>
+              <Switch
+                checked={formData.allowOnDiscountedCycles !== false}
+                onCheckedChange={(v) => setFormData({ ...formData, allowOnDiscountedCycles: v })}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Default: subscriptions_module (Matriz Oficial de Preços e Visão Geral)
     return (
       <div className="grid gap-6">
-        <div className="space-y-1">
-          <Label className="text-base font-semibold">Customização de Tipos de Planos</Label>
-          <p className="text-xs text-muted-foreground">
-            Configure as regras de valores, cotas base e recursos oferecidos em cada tipo de plano da plataforma.
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 mb-1.5 text-emerald-700 dark:text-emerald-400 font-semibold text-sm">
+            <ShieldCheck className="w-5 h-5 shrink-0" />
+            Ambiente Seguro & Proteção de Credenciais
+          </div>
+          <p className="leading-relaxed">
+            As chaves do gateway Asaas (<code className="font-mono text-emerald-800 dark:text-emerald-300">ASAAS_API_KEY</code>, <code className="font-mono text-emerald-800 dark:text-emerald-300">ASAAS_WEBHOOK_TOKEN</code> e <code className="font-mono text-emerald-800 dark:text-emerald-300">ASAAS_ENV</code>) e as credenciais de banco de dados são isoladas exclusivamente nas Edge Functions Deno do Supabase, sem nunca transitar no front-end ou vazar para o cliente.
           </p>
         </div>
 
-        {/* Plano Solo */}
-        <div className="rounded-xl border border-neutral-200 p-4 space-y-3 bg-neutral-50/50">
+        <div className="space-y-1">
+          <Label className="text-base font-semibold">Tabela de Preços e Ciclos Oficiais (Matriz Canônica)</Label>
+          <p className="text-xs text-muted-foreground">
+            Valores base sincronizados com a calculadora oficial da plataforma (<code className="font-mono text-[11px]">subscriptionPricing.ts</code>).
+          </p>
+        </div>
+
+        {/* Matriz Solo */}
+        <div className="rounded-xl border p-4 space-y-3 bg-muted/30">
           <div className="flex justify-between items-center">
-            <Label className="font-bold text-sm text-neutral-900">Plano Profissional Solo</Label>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">1 Acesso / 0 Subcontas</span>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Valor Recorrente (R$/mês)</Label>
-              <Input
-                type="number"
-                value={formData.soloPrice !== undefined ? String(formData.soloPrice) : "50"}
-                onChange={(e) => setFormData({ ...formData, soloPrice: Number(e.target.value) })}
-              />
+            <div className="flex items-center gap-2">
+              <UserRound className="w-4 h-4 text-emerald-600" />
+              <Label className="font-bold text-sm">Plano Profissional Solo (1 Profissional / 1 Acesso)</Label>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Acessos Simultâneos Inclusos</Label>
-              <Input
-                type="number"
-                disabled
-                value="1"
-              />
-            </div>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">Individual</span>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Descrição / Benefícios</Label>
-            <Input
-              value={formData.soloDescription !== undefined ? String(formData.soloDescription) : "1 Profissional de saúde (titular), sem cobrança de subcontas, 1 acesso simultâneo por vez."}
-              onChange={(e) => setFormData({ ...formData, soloDescription: e.target.value })}
-            />
+
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="p-2.5 rounded-lg border bg-background space-y-1">
+              <span className="text-muted-foreground block">Mensal (1 mês)</span>
+              <span className="font-bold text-sm text-foreground">R$ 52,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+              <span className="text-[10px] text-muted-foreground block">Total: R$ 52,00</span>
+            </div>
+            <div className="p-2.5 rounded-lg border bg-background space-y-1">
+              <span className="text-muted-foreground block">Trimestral (-10%)</span>
+              <span className="font-bold text-sm text-foreground">R$ 48,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 144,00</span>
+            </div>
+            <div className="p-2.5 rounded-lg border bg-background space-y-1">
+              <span className="text-muted-foreground block">Anual (-25%)</span>
+              <span className="font-bold text-sm text-foreground">R$ 40,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 480,00</span>
+            </div>
           </div>
         </div>
 
-        {/* Plano Clínica */}
-        <div className="rounded-xl border border-neutral-200 p-4 space-y-3 bg-neutral-50/50">
+        {/* Matriz Clínica */}
+        <div className="rounded-xl border p-4 space-y-3 bg-muted/30">
           <div className="flex justify-between items-center">
-            <Label className="font-bold text-sm text-neutral-900">Plano Clínica com Equipe</Label>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800">Múltiplos Acessos</span>
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-blue-600" />
+              <Label className="font-bold text-sm">Plano Clínica com Equipe (Colaboradores Ilimitados)</Label>
+            </div>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">Equipe</span>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Mensalidade Base (R$/mês)</Label>
-              <Input
-                type="number"
-                value={formData.clinicBasePrice !== undefined ? String(formData.clinicBasePrice) : "60"}
-                onChange={(e) => setFormData({ ...formData, clinicBasePrice: Number(e.target.value) })}
-              />
+
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="p-2.5 rounded-lg border bg-background space-y-1">
+              <span className="text-muted-foreground block">Mensal (1 mês)</span>
+              <span className="font-bold text-sm text-foreground">R$ 78,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+              <span className="text-[10px] text-muted-foreground block">+R$ 13/acesso extra</span>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Vagas de Colaboradores Inclusas</Label>
-              <Input
-                type="number"
-                value={formData.clinicBaseSubaccountLimit !== undefined ? String(formData.clinicBaseSubaccountLimit) : "30"}
-                onChange={(e) => setFormData({ ...formData, clinicBaseSubaccountLimit: Number(e.target.value) })}
-              />
+            <div className="p-2.5 rounded-lg border bg-background space-y-1">
+              <span className="text-muted-foreground block">Trimestral (-10%)</span>
+              <span className="font-bold text-sm text-foreground">R$ 72,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">+R$ 12/acesso extra</span>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Acessos Simultâneos Inclusos</Label>
-              <Input
-                type="number"
-                value={formData.clinicBaseConcurrentLimit !== undefined ? String(formData.clinicBaseConcurrentLimit) : "2"}
-                onChange={(e) => setFormData({ ...formData, clinicBaseConcurrentLimit: Number(e.target.value) })}
-              />
+            <div className="p-2.5 rounded-lg border bg-background space-y-1">
+              <span className="text-muted-foreground block">Anual (-25%)</span>
+              <span className="font-bold text-sm text-foreground">R$ 60,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">+R$ 10/acesso extra</span>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Preço Acesso Extra (R$/mês)</Label>
-              <Input
-                type="number"
-                value={formData.clinicExtraConcurrentPrice !== undefined ? String(formData.clinicExtraConcurrentPrice) : "10"}
-                onChange={(e) => setFormData({ ...formData, clinicExtraConcurrentPrice: Number(e.target.value) })}
-              />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Preço Vaga Avulsa de Colaborador (R$ único)</Label>
-            <Input
-              type="number"
-              value={formData.clinicExtraSeatPrice !== undefined ? String(formData.clinicExtraSeatPrice) : "5"}
-              onChange={(e) => setFormData({ ...formData, clinicExtraSeatPrice: Number(e.target.value) })}
-            />
           </div>
         </div>
       </div>

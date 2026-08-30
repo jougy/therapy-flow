@@ -1236,7 +1236,7 @@ const SelecionarClinica = () => {
                   <ComponentHelpButton helpId="personal-clinics-block" size="xs" />
                   <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
                 </div>
-                <Button data-tutorial="create-clinic-btn" variant="outline" size="sm" onClick={() => navigate("/planos")} className="w-fit">
+                <Button data-tutorial="create-clinic-btn" variant="outline" size="sm" onClick={() => navigate("/onboarding-clinica?mode=create")} className="w-fit">
                   <Building2 className="mr-2 h-4 w-4" />
                   Comprar meu próprio espaço
                 </Button>
@@ -1384,9 +1384,14 @@ const SelecionarClinica = () => {
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card px-4 py-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
-          <div data-tutorial="personal-welcome" className="flex items-center gap-2">
+          <div data-tutorial="personal-welcome" className="flex items-center gap-3">
+            <img
+              src="/branding/logo/pluri_health_icon_gradient.svg"
+              alt="Pluri-Health"
+              className="h-9 w-9 shrink-0 drop-shadow-xs"
+            />
             <div>
-              <p className="text-sm text-muted-foreground">Pluri-Health</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pluri-Health</p>
               <h1 className="text-xl font-semibold tracking-tight text-foreground">Espaço pessoal</h1>
             </div>
             <ComponentHelpButton helpId="personal-welcome-block" size="sm" />

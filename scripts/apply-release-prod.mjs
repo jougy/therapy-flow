@@ -31,10 +31,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 async function deployProdRelease() {
   console.log('Conectando ao Supabase de Produção em:', SUPABASE_URL);
 
-  const version = 'alfa-26.08.26-01';
-  const version_order = 2026082601;
-  const title = 'Evolução Clínica de Pacientes, Otimização de Performance e Deploy Contínuo';
-  const summary = 'Atualização com suporte à estruturação de grupos e linhagem de evolução clínica para pacientes, otimização profunda de performance no seletor de clínicas e no dashboard, arrastar recursivo no editor de formulários e pipeline automatizado de deploy contínuo.';
+  const version = 'alfa-26.08.30-01';
+  const version_order = 2026083001;
+  const title = 'Métricas de Pacotes no Dashboard, Ciclos de Assinatura e Aplicativo PWA';
+  const summary = 'Lançamento com acompanhamento analítico e gestão de pacotes de sessões no dashboard da clínica, novos ciclos de assinatura flexíveis com checkout transparente, período de teste gratuito (Free Trial), central de instalação como aplicativo (PWA) e aprimoramentos nas avaliações clínicas.';
 
   // 1. Desativar releases ativas anteriores em produção
   const { error: deactivateError } = await supabase
@@ -46,7 +46,7 @@ async function deployProdRelease() {
     console.warn('Aviso ao desativar versões anteriores em produção:', deactivateError.message);
   }
 
-  // 2. Upsert da release alfa-26.08.26-01
+  // 2. Upsert da release alfa-26.08.30-01
   const { data: releaseData, error: releaseError } = await supabase
     .from('platform_releases')
     .upsert({
@@ -65,7 +65,7 @@ async function deployProdRelease() {
     process.exit(1);
   }
 
-  console.log('Release alfa-26.08.26-01 gravada com sucesso em produção! ID:', releaseData.id);
+  console.log('Release alfa-26.08.30-01 gravada com sucesso em produção! ID:', releaseData.id);
 
   // 3. Limpar itens antigos dessa release se existirem
   await supabase
@@ -78,57 +78,71 @@ async function deployProdRelease() {
     {
       release_id: releaseData.id,
       category: 'added',
-      title: 'Estruturação de Ciclos e Grupos de Evolução Clínica',
-      body: 'Nova camada de evolução para vincular e agrupar atendimentos ao longo do tratamento do paciente, permitindo histórico contínuo e linhagem entre sessões.',
+      title: 'Gestão e Métricas de Pacotes de Sessões no Dashboard',
+      body: 'Acompanhamento analítico completo de pacotes de sessões contratados pelos pacientes diretamente no dashboard da clínica, incluindo visualização de sessões consumidas versus restantes, taxa de utilização e métricas consolidadas.',
       sort_order: 10,
     },
     {
       release_id: releaseData.id,
       category: 'added',
-      title: 'Pipeline Automatizado de Deploy Contínuo (CI/CD)',
-      body: 'Automação de compilação, testes e publicação no Cloudflare Workers para garantir entregas ágeis e alta disponibilidade do sistema.',
+      title: 'Planos de Assinatura com Ciclos Flexíveis e Checkout Transparente',
+      body: 'Disponibilização de opções de assinatura com ciclos mensal, semestral e anual com descontos progressivos, além de fluxo de contratação com prévia detalhada de faturas e suporte a cupons promocionais.',
       sort_order: 20,
     },
     {
       release_id: releaseData.id,
+      category: 'added',
+      title: 'Período de Teste Gratuito (Free Trial) com Indicadores de Quota',
+      body: 'Ativação de período de degustação gratuita para novas clínicas explorarem todos os recursos da plataforma, com exibição visual dos dias restantes e do consumo de cotas de profissionais e pacientes em tempo real.',
+      sort_order: 30,
+    },
+    {
+      release_id: releaseData.id,
+      category: 'added',
+      title: 'Suporte a Aplicativo Web Progressivo (PWA) e Central de Instalação',
+      body: 'Possibilidade de instalar o Pluri-Health como aplicativo nativo no computador (Chrome, Edge, Brave) e em dispositivos móveis (Android e iOS), com acesso rápido e página dedicada de download.',
+      sort_order: 40,
+    },
+    {
+      release_id: releaseData.id,
       category: 'changed',
-      title: 'Otimização de Performance no Seletor de Clínicas e Sessões',
-      body: 'Implementação de novos índices compostos e parciais no banco de dados, reduzindo o tempo de resposta e acelerando a alternância entre clínicas.',
+      title: 'Gráficos de Avaliação Física e Geração de Kits de Impressão em Branco',
+      body: 'Aprimoramentos visuais nos gráficos de radar das fichas de avaliação clínica e geração otimizada de folhas de anamnese em branco com identidade visual padronizada da clínica para prontuários físicos.',
       sort_order: 10,
     },
     {
       release_id: releaseData.id,
       category: 'changed',
-      title: 'Agilização de Métricas do Dashboard da Clínica',
-      body: 'Aprimoramento do motor analítico de consultas para cálculo instantâneo de produtividade, faturamento e fluxo de atendimentos sem lentidão.',
+      title: 'Gerenciamento de Múltiplas Unidades e Filiais por CNPJ',
+      body: 'Flexibilização no cadastro de clínicas que permite ao mesmo proprietário criar e administrar múltiplas filiais sob o mesmo CNPJ com total isolamento de dados.',
       sort_order: 20,
     },
     {
       release_id: releaseData.id,
       category: 'changed',
-      title: 'Arrastar e Reordenar Recursivo no Editor de Formulários',
-      body: 'Melhoria no construtor de anamneses para mover blocos de campos filhos e contêineres de maneira íntegra e fluida na árvore do formulário.',
+      title: 'Aprimoramento na Navegação de Configurações e Planos',
+      body: 'Reorganização intuitiva dos painéis de perfil pessoal e configurações da clínica, facilitando a transição entre planos, dados cadastrais e opções de segurança.',
       sort_order: 30,
     },
     {
       release_id: releaseData.id,
       category: 'fixed',
-      title: 'Exibição e Contagem de Campos na Biblioteca Comunitária',
-      body: 'Ajuste na contagem de campos exibida nos cards e modal de pré-visualização de modelos da comunidade, evitando inconsistências visuais.',
+      title: 'Resiliência no Motor Analítico e Permissões do Dashboard',
+      body: 'Correção no cálculo de agregações e permissões para garantir que todos os colaboradores autorizados visualizem métricas de produtividade e faturamento sem inconsistências.',
       sort_order: 10,
     },
     {
       release_id: releaseData.id,
       category: 'fixed',
-      title: 'Otimização nas Políticas de Leitura de Perfis',
-      body: 'Refinamento das consultas de segurança com subqueries escalares para acelerar o carregamento de membros e colaboradores.',
+      title: 'Preservação de Histórico para Planos em Modo Somente Leitura',
+      body: 'Tratamento aprimorado para clínicas com planos expirados, assegurando que o histórico de prontuários e atendimentos permaneça consultável com segurança e integridade.',
       sort_order: 20,
     },
     {
       release_id: releaseData.id,
       category: 'fixed',
-      title: 'Estabilidade na Suíte de Testes e Simulações',
-      body: 'Ajustes em mocks de tela, fallbacks do cliente de dados e isolamento de ambiente para testes automatizados mais rápidos e consistentes.',
+      title: 'Estabilidade na Sincronização de Indicadores de Uso e Alertas',
+      body: 'Ajuste fino na atualização em tempo real de contadores de colaboradores ativos e cotas de uso do plano para evitar atrasos na interface.',
       sort_order: 30,
     },
   ];
@@ -142,7 +156,7 @@ async function deployProdRelease() {
     process.exit(1);
   }
 
-  console.log('✅ 8 tópicos de novidades publicados com sucesso na base de PRODUÇÃO!');
+  console.log('✅ 10 tópicos de novidades publicados com sucesso na base de PRODUÇÃO!');
 }
 
 deployProdRelease().catch(err => {
