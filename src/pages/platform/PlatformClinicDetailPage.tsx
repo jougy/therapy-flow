@@ -65,6 +65,7 @@ export const PlatformClinicDetailPage = ({
   const [, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [clinicTags, setClinicTags] = useState<{ id: string; name: string; color: string }[]>([]);
   const [clinicSubscription, setClinicSubscription] = useState<any | null>(null);
+  const [formsSummary, setFormsSummary] = useState<PlatformClinicFormsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [supportReason, setSupportReason] = useState("");
   const [supportRole, setSupportRole] = useState<SupportRole>("owner");
