@@ -209,7 +209,7 @@ export function PlatformBillingMaster() {
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Gestão de Assinaturas e Auditoria de Webhooks</h2>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Gerencie planos de clínicas, execute overrides auditados e inspecione eventos do Asaas Sandbox.
+            Gerencie planos de clínicas, execute overrides auditados e inspecione eventos do gateway Asaas.
           </p>
         </div>
 
@@ -344,7 +344,7 @@ export function PlatformBillingMaster() {
             <CardHeader className="p-4 sm:p-6 pb-3 border-b">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <CardTitle className="text-lg font-bold text-foreground">Auditoria de Webhooks Asaas Sandbox</CardTitle>
+                  <CardTitle className="text-lg font-bold text-foreground">Auditoria de Webhooks Asaas</CardTitle>
                   <CardDescription className="text-xs text-muted-foreground">
                     Logs de eventos recebidos em tempo real para rastreabilidade de pagamentos e falhas.
                   </CardDescription>
