@@ -75,18 +75,32 @@ export interface AsaasOneTimePaymentData {
 export class AsaasClient {
   private apiKey: string;
   private baseUrl: string;
+  private environment: 'production' | 'sandbox';
 
-  constructor() {
-    this.apiKey = Deno.env.get('ASAAS_API_KEY') || '';
-    const env = Deno.env.get('ASAAS_ENV') || 'sandbox';
-    this.baseUrl = env === 'production'
-      ? 'https://api.asaas.com/v3'
-      : 'https://sandbox.asaas.com/api/v3';
+  constructor(envOverride?: 'production' | 'sandbox') {
+    const defaultEnv = (Deno.env.get('ASAAS_ENV') || 'sandbox').toLowerCase() as 'production' | 'sandbox';
+    this.environment = envOverride || (defaultEnv === 'production' ? 'production' : 'sandbox');
+
+    if (this.environment === 'production') {
+      this.apiKey = Deno.env.get('ASAAS_API_KEY') || Deno.env.get('ASAAS_PROD_API_KEY') || '';
+      this.baseUrl = 'https://api.asaas.com/v3';
+    } else {
+      this.apiKey = Deno.env.get('ASAAS_SANDBOX_API_KEY') || Deno.env.get('ASAAS_API_KEY_SANDBOX') || '';
+      this.baseUrl = 'https://sandbox.asaas.com/api/v3';
+    }
+  }
+
+  public getEnvironment(): 'production' | 'sandbox' {
+    return this.environment;
+  }
+
+  public getBaseUrl(): string {
+    return this.baseUrl;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     if (!this.apiKey) {
-      throw new Error('ASAAS_API_KEY não configurada no ambiente.');
+      throw new Error(`Chave da API Asaas não configurada para o ambiente [${this.environment}]. Verifique ASAAS_API_KEY / ASAAS_PROD_API_KEY / ASAAS_SANDBOX_API_KEY.`);
     }
 
     const url = `${this.baseUrl}${endpoint}`;

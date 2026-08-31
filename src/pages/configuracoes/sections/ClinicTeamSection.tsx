@@ -18,7 +18,9 @@ import {
   Loader2,
   Mail,
   MoreHorizontal,
+  Pause,
   Pencil,
+  Play,
   Plus,
   Printer,
   RotateCw,
@@ -28,12 +30,15 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   Tag,
   Trash2,
   UserCheck,
+  UserMinus,
   UserPlus,
   Users,
   UsersRound,
+  UserX,
   X,
   XCircle,
 } from "lucide-react";
@@ -52,6 +57,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { supabase } from "@/integrations/supabase/client";
@@ -94,12 +107,14 @@ type ActiveMember = {
   id: string;
   user_id: string;
   operational_role: SubaccountOperationalRole | "owner";
-  membership_status: string;
+  membership_status: "active" | "suspended" | "inactive" | "invited" | string;
+  is_active: boolean;
   created_at: string;
   full_name: string;
   email: string;
   job_title?: string | null;
   specialty?: string | null;
+  working_hours?: string | null;
   last_seen_at?: string | null;
 };
 
@@ -255,21 +270,23 @@ const ROLE_PERMISSION_ITEMS: RolePermissionItem[] = [
     category: "team",
     key: "subaccounts",
     title: "Colaboradores da clínica",
-    description: "Convites, suspensão, desligamento e cadastro de membros da equipe.",
-    details: "Controla a lista de colaboradores, envio de convites e gestão de status de acesso.",
+    description: "Cadastro, convites, alteração de cargos e revogação de acessos da equipe.",
+    details: "Controla a visualização da lista, envio de novos convites, edição de cargos/especialidades/status e exclusão/revogação do vínculo na clínica.",
     actions: [
-      { kind: "view", capability: "subaccounts.manage", label: "Ver" },
-      { kind: "manage", capability: "subaccounts.manage", label: "Gerenciar" },
+      { kind: "view", capability: "subaccounts.read", label: "Ver" },
+      { kind: "edit", capability: "subaccounts.write", label: "Convidar" },
+      { kind: "manage", capability: "subaccounts.manage", label: "Editar" },
+      { kind: "delete", capability: "subaccounts.delete", label: "Excluir" },
     ],
   },
   {
     category: "team",
     key: "roles",
     title: "Papéis operacionais & Hierarquias",
-    description: "Configuração de poderes e personalização dos papéis da clínica.",
-    details: "Controla a criação e personalização da matriz de permissões e papéis operacionais.",
+    description: "Configuração de poderes e personalização da matriz de permissões.",
+    details: "Controla a visualização e edição da matriz de permissões e papéis operacionais da clínica.",
     actions: [
-      { kind: "view", capability: "subaccounts_roles.manage", label: "Ver" },
+      { kind: "view", capability: "subaccounts_roles.read", label: "Ver" },
       { kind: "manage", capability: "subaccounts_roles.manage", label: "Gerenciar" },
     ],
   },
@@ -520,9 +537,26 @@ export const ClinicTeamSection = () => {
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [cancelingId, setCancelingId] = useState<string | null>(null);
 
+  // Gestão e Edição de Membros
+  const [editingMember, setEditingMember] = useState<ActiveMember | null>(null);
+  const [editMemberRole, setEditMemberRole] = useState<string>("professional");
+  const [editMemberJobTitle, setEditMemberJobTitle] = useState("");
+  const [editMemberSpecialty, setEditMemberSpecialty] = useState("");
+  const [editMemberWorkingHours, setEditMemberWorkingHours] = useState("");
+  const [editMemberStatus, setEditMemberStatus] = useState<"active" | "suspended" | "inactive">("active");
+  const [savingMember, setSavingMember] = useState(false);
+
+  // Revogação de Acesso
+  const [revokingMember, setRevokingMember] = useState<ActiveMember | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
+
+  // Toggle rápido de status (pausa / reativação)
+  const [togglingMemberId, setTogglingMemberId] = useState<string | null>(null);
+
   // Filtros de equipe
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "suspended" | "inactive">("all");
 
   const loadTeamData = async () => {
     if (!clinicId) {
@@ -544,10 +578,10 @@ export const ClinicTeamSection = () => {
           .from("clinic_memberships")
           .select("id, user_id, operational_role, membership_status, created_at, is_active")
           .eq("clinic_id", clinicId)
-          .eq("membership_status", "active"),
+          .neq("membership_status", "invited"),
         supabase
           .from("profiles")
-          .select("id, full_name, email, job_title, specialty, last_seen_at")
+          .select("id, full_name, email, job_title, specialty, working_hours, last_seen_at")
           .eq("clinic_id", clinicId),
         supabase.rpc("get_clinic_pending_collaborator_invitations", { _clinic_id: clinicId }),
         supabase.from("clinic_operational_roles").select("*").eq("clinic_id", clinicId),
@@ -562,24 +596,30 @@ export const ClinicTeamSection = () => {
           email: string | null;
           job_title: string | null;
           specialty: string | null;
+          working_hours: string | null;
           last_seen_at: string | null;
         }>;
         const profileMap = new Map(profilesList.map((p) => [p.id, p]));
 
         const mapped: ActiveMember[] = membershipsRes.data
-          .filter((item) => (item.membership_status === "active" || !item.membership_status) && item.is_active !== false)
+          .filter((item: any) => item.membership_status !== "invited")
           .map((item: any) => {
             const profile = profileMap.get(item.user_id);
+            const status = (item.membership_status as "active" | "suspended" | "inactive") ||
+              (item.is_active !== false ? "active" : "inactive");
+
             return {
               id: item.id,
               user_id: item.user_id,
               operational_role: item.operational_role || "professional",
-              membership_status: item.membership_status || "active",
+              membership_status: status,
+              is_active: item.is_active !== false,
               created_at: item.created_at,
               full_name: profile?.full_name || "Colaborador",
               email: profile?.email || "",
               job_title: profile?.job_title || null,
               specialty: profile?.specialty || null,
+              working_hours: profile?.working_hours || null,
               last_seen_at: profile?.last_seen_at || null,
             };
           });
@@ -683,7 +723,13 @@ export const ClinicTeamSection = () => {
 
   // Regras estritas de autorização e hierarquia vertical:
   const isAccountOwner = accountRole === "account_owner" || operationalRole === "owner";
-  const hasRolesManagePermission = isAccountOwner || can("subaccounts_roles.manage");
+  const canViewTeam = isAccountOwner || can("subaccounts.read") || can("subaccounts.manage");
+  const canInviteCollaborators = isAccountOwner || can("subaccounts.write") || can("subaccounts.manage");
+  const canEditCollaborators = isAccountOwner || can("subaccounts.manage");
+  const canDeleteCollaborators = isAccountOwner || can("subaccounts.delete") || can("subaccounts.manage");
+  const canManageRoles = isAccountOwner || can("subaccounts_roles.manage");
+  const canViewRoles = isAccountOwner || can("subaccounts_roles.manage") || can("subaccounts_roles.read");
+  const hasRolesManagePermission = canManageRoles;
   const actorRoleKey = isAccountOwner ? "owner" : (operationalRole || "professional");
   const actorRoleIndex = sortedOperationalRoleDefinitions.findIndex((r) => r.role_key === actorRoleKey);
   const selectedRoleIndex = sortedOperationalRoleDefinitions.findIndex((r) => r.role_key === selectedRoleDefinition.role_key);
@@ -1043,16 +1089,133 @@ export const ClinicTeamSection = () => {
     setCancelingId(null);
   };
 
+  const canManageMember = (targetMember: ActiveMember) => {
+    if (targetMember.operational_role === "owner") return false;
+    if (targetMember.user_id === user?.id) return false;
+    if (isAccountOwner) return true;
+
+    if (!canEditCollaborators && !canDeleteCollaborators && !canManageRoles) return false;
+
+    const targetRoleIndex = sortedOperationalRoleDefinitions.findIndex((r) => r.role_key === targetMember.operational_role);
+    return actorRoleIndex >= 0 && targetRoleIndex > actorRoleIndex;
+  };
+
+  const assignableRoleDefinitions = useMemo(() => {
+    return sortedOperationalRoleDefinitions.filter((role) => {
+      if (role.role_key === "owner") return false;
+      if (isAccountOwner) return true;
+      if (!canManageRoles) return false;
+      const roleIndex = sortedOperationalRoleDefinitions.findIndex((r) => r.role_key === role.role_key);
+      return actorRoleIndex >= 0 && roleIndex > actorRoleIndex;
+    });
+  }, [sortedOperationalRoleDefinitions, isAccountOwner, canManageRoles, actorRoleIndex]);
+
+  const handleOpenEditMember = (member: ActiveMember) => {
+    setEditingMember(member);
+    setEditMemberRole(member.operational_role);
+    setEditMemberJobTitle(member.job_title || "");
+    setEditMemberSpecialty(member.specialty || "");
+    setEditMemberWorkingHours(member.working_hours || "");
+    setEditMemberStatus((member.membership_status as "active" | "suspended" | "inactive") || "active");
+  };
+
+  const handleSaveMember = async () => {
+    if (!editingMember || !clinicId) return;
+    setSavingMember(true);
+
+    try {
+      const { error } = await supabase.rpc("update_clinic_member_operational_fields", {
+        _membership_id: editingMember.id,
+        _job_title: editMemberJobTitle.trim() || undefined,
+        _specialty: editMemberSpecialty.trim() || undefined,
+        _working_hours: editMemberWorkingHours.trim() || undefined,
+        _operational_role: editMemberRole as any,
+        _membership_status: editMemberStatus as any,
+      });
+
+      if (error) throw new Error(error.message);
+
+      toast({
+        title: "Colaborador atualizado",
+        description: `Os dados de ${editingMember.full_name} foram salvos com sucesso.`,
+      });
+
+      setEditingMember(null);
+      void loadTeamData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao atualizar colaborador.";
+      toast({ title: "Erro ao salvar", description: msg, variant: "destructive" });
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
+  const handleToggleMemberStatus = async (member: ActiveMember, nextStatus: "active" | "suspended") => {
+    if (!clinicId) return;
+    setTogglingMemberId(member.id);
+
+    try {
+      const { error } = await supabase.rpc("update_clinic_member_operational_fields", {
+        _membership_id: member.id,
+        _membership_status: nextStatus as any,
+      });
+
+      if (error) throw new Error(error.message);
+
+      toast({
+        title: nextStatus === "active" ? "Acesso reativado" : "Acesso pausado",
+        description: nextStatus === "active"
+          ? `O acesso de ${member.full_name} foi reativado.`
+          : `O acesso de ${member.full_name} foi temporariamente pausado.`,
+      });
+
+      void loadTeamData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao alterar status do colaborador.";
+      toast({ title: "Erro ao alterar status", description: msg, variant: "destructive" });
+    } finally {
+      setTogglingMemberId(null);
+    }
+  };
+
+  const handleConfirmRevokeAccess = async () => {
+    if (!revokingMember || !clinicId) return;
+    setIsRevoking(true);
+
+    try {
+      const { error } = await supabase.rpc("revoke_clinic_member_access", {
+        _membership_id: revokingMember.id,
+      });
+
+      if (error) throw new Error(error.message);
+
+      toast({
+        title: "Acesso revogado",
+        description: `O acesso de ${revokingMember.full_name} à clínica foi revogado e as sessões ativas foram encerradas.`,
+      });
+
+      setRevokingMember(null);
+      void loadTeamData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao revogar acesso do colaborador.";
+      toast({ title: "Erro ao revogar acesso", description: msg, variant: "destructive" });
+    } finally {
+      setIsRevoking(false);
+    }
+  };
+
   const filteredMembers = useMemo(() => {
     return members.filter((m) => {
       const matchSearch =
         m.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         m.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (m.job_title && m.job_title.toLowerCase().includes(searchTerm.toLowerCase()));
+        (m.job_title && m.job_title.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (m.specialty && m.specialty.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchRole = roleFilter === "all" || m.operational_role === roleFilter;
-      return matchSearch && matchRole;
+      const matchStatus = statusFilter === "all" || m.membership_status === statusFilter;
+      return matchSearch && matchRole && matchStatus;
     });
-  }, [members, searchTerm, roleFilter]);
+  }, [members, searchTerm, roleFilter, statusFilter]);
 
   const concurrentAccessCapacity = useMemo(() => {
     const sessionList = (activeSessions ?? []).map((s) => ({
@@ -1496,16 +1659,23 @@ export const ClinicTeamSection = () => {
             </div>
           )}
 
-          <div className="flex justify-end pt-1">
-            <Button
-              data-tutorial="settings-team-invite-btn"
-              onClick={() => void handleSendInvite()}
-              disabled={sendingInvite || !inviteEmail.trim()}
-              className="bg-primary text-primary-foreground gap-2"
-            >
-              {sendingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-              Enviar convite por e-mail
-            </Button>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
+            {!canInviteCollaborators && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Seu papel atual não possui permissão para convidar novos colaboradores.
+              </p>
+            )}
+            <div className="flex justify-end w-full sm:w-auto ml-auto">
+              <Button
+                data-tutorial="settings-team-invite-btn"
+                onClick={() => void handleSendInvite()}
+                disabled={sendingInvite || !inviteEmail.trim() || !canInviteCollaborators}
+                className="bg-primary text-primary-foreground gap-2 w-full sm:w-auto"
+              >
+                {sendingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                Enviar convite por e-mail
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1561,7 +1731,7 @@ export const ClinicTeamSection = () => {
                         size="sm"
                         variant="outline"
                         onClick={() => void handleResendInvite(invitation)}
-                        disabled={isResending}
+                        disabled={isResending || !canInviteCollaborators}
                       >
                         {isResending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <RotateCw className="h-3.5 w-3.5 mr-1.5" />}
                         Reenviar convite
@@ -1582,7 +1752,7 @@ export const ClinicTeamSection = () => {
                         variant="ghost"
                         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => void handleCancelInvite(invitation.id)}
-                        disabled={cancelingId === invitation.id}
+                        disabled={cancelingId === invitation.id || (!canDeleteCollaborators && !canInviteCollaborators)}
                       >
                         <XCircle className="h-3.5 w-3.5 mr-1.5" />
                         Cancelar
@@ -1596,7 +1766,7 @@ export const ClinicTeamSection = () => {
         </Card>
       )}
 
-      {/* Lista de Membros Ativos da Equipe */}
+      {/* Lista de Membros da Equipe */}
       <Card data-tutorial="settings-team-directory-box">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1606,10 +1776,10 @@ export const ClinicTeamSection = () => {
                 <ComponentHelpButton helpId="settings-team-directory-block" size="sm" />
               </div>
               <CardDescription className="text-xs">
-                Colaboradores ativos vinculados à clínica ({members.length} membros).
+                Colaboradores vinculados à clínica ({members.length} membros).
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -1621,15 +1791,26 @@ export const ClinicTeamSection = () => {
               </div>
               <Select value={roleFilter} onValueChange={setRoleFilter}>
                 <SelectTrigger className="h-9 text-xs w-36">
-                  <SelectValue placeholder="Papel" />
+                  <SelectValue placeholder="Todos os papéis" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os papéis</SelectItem>
-                  <SelectItem value="owner">Proprietário</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                  <SelectItem value="professional">Profissional</SelectItem>
-                  <SelectItem value="assistant">Assistente</SelectItem>
-                  <SelectItem value="estagiario">Estagiário</SelectItem>
+                  {sortedOperationalRoleDefinitions.map((role) => (
+                    <SelectItem key={role.role_key} value={role.role_key}>
+                      {role.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+                <SelectTrigger className="h-9 text-xs w-36">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os status</SelectItem>
+                  <SelectItem value="active">Ativos</SelectItem>
+                  <SelectItem value="suspended">Suspensos</SelectItem>
+                  <SelectItem value="inactive">Inativos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1645,23 +1826,38 @@ export const ClinicTeamSection = () => {
             <div className="divide-y rounded-xl border">
               {filteredMembers.map((member) => {
                 const isOwner = member.operational_role === "owner";
-                const roleLabel = OPERATIONAL_ROLE_LABELS[member.operational_role] || member.operational_role;
+                const roleDef = sortedOperationalRoleDefinitions.find((r) => r.role_key === member.operational_role);
+                const roleLabel = roleDef?.label || OPERATIONAL_ROLE_LABELS[member.operational_role] || member.operational_role;
+                const canManage = canManageMember(member);
+                const isToggling = togglingMemberId === member.id;
 
                 return (
                   <div
                     key={member.id}
                     className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between hover:bg-muted/30 transition-colors"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-sm">
                         {member.full_name.charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-foreground text-sm">{member.full_name}</p>
-                          {isOwner && (
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-foreground text-sm truncate">{member.full_name}</p>
+                          {isOwner ? (
                             <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100 border-amber-200 text-[10px] dark:bg-amber-950 dark:text-amber-200">
                               Proprietário
+                            </Badge>
+                          ) : member.membership_status === "active" ? (
+                            <Badge variant="outline" className="text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 text-[10px]">
+                              Ativo
+                            </Badge>
+                          ) : member.membership_status === "suspended" ? (
+                            <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800 text-[10px]">
+                              Suspenso
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-slate-600 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 text-[10px]">
+                              Inativo
                             </Badge>
                           )}
                         </div>
@@ -1683,14 +1879,88 @@ export const ClinicTeamSection = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <Badge variant="outline" className="text-xs font-medium">
-                        {roleLabel}
-                      </Badge>
-                      {member.last_seen_at && (
-                        <span className="text-[11px] text-muted-foreground">
-                          Último acesso: {new Date(member.last_seen_at).toLocaleDateString("pt-BR")}
-                        </span>
+                    <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                      <div className="flex flex-col sm:items-end gap-0.5">
+                        <Badge variant="outline" className="text-xs font-medium w-fit">
+                          {roleLabel}
+                        </Badge>
+                        {member.last_seen_at && (
+                          <span className="text-[11px] text-muted-foreground">
+                            Último acesso: {new Date(member.last_seen_at).toLocaleDateString("pt-BR")}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Menu de Ações do Colaborador */}
+                      {isOwner ? (
+                        <div className="w-8 flex justify-center">
+                          <ShieldCheck className="h-4 w-4 text-primary" title="Conta Proprietária" />
+                        </div>
+                      ) : canManage ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label={`Opções para ${member.full_name}`}
+                              disabled={isToggling}
+                            >
+                              {isToggling ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuLabel className="text-xs font-semibold">
+                              Gerenciar Colaborador
+                            </DropdownMenuLabel>
+                            {canEditCollaborators && (
+                              <DropdownMenuItem
+                                onClick={() => handleOpenEditMember(member)}
+                                className="cursor-pointer"
+                              >
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Editar dados e cargo
+                              </DropdownMenuItem>
+                            )}
+
+                            {canEditCollaborators && (
+                              member.membership_status === "active" ? (
+                                <DropdownMenuItem
+                                  onClick={() => void handleToggleMemberStatus(member, "suspended")}
+                                  className="cursor-pointer text-amber-600 focus:text-amber-700"
+                                >
+                                  <Pause className="h-4 w-4 mr-2" />
+                                  Pausar acesso
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  onClick={() => void handleToggleMemberStatus(member, "active")}
+                                  className="cursor-pointer text-emerald-600 focus:text-emerald-700"
+                                >
+                                  <Play className="h-4 w-4 mr-2" />
+                                  Reativar acesso
+                                </DropdownMenuItem>
+                              )
+                            )}
+
+                            {canDeleteCollaborators && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => setRevokingMember(member)}
+                                  className="cursor-pointer text-destructive focus:text-destructive"
+                                >
+                                  <UserMinus className="h-4 w-4 mr-2" />
+                                  Revogar acesso
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <Badge variant="outline" className="text-[11px] text-muted-foreground">
+                          Somente leitura
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -1700,6 +1970,153 @@ export const ClinicTeamSection = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal de Edição de Colaborador */}
+      <Dialog open={editingMember !== null} onOpenChange={(open) => !open && setEditingMember(null)}>
+        <DialogContent className="max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Editar Colaborador</DialogTitle>
+            <DialogDescription>
+              Altere o cargo, papel operacional, especialidades e status de acesso à clínica.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingMember && (
+            <div className="space-y-4 py-2 overflow-y-auto pr-1">
+              <div className="rounded-lg bg-muted/40 p-3 border text-xs space-y-1">
+                <p className="font-semibold text-foreground text-sm">{editingMember.full_name}</p>
+                <p className="text-muted-foreground">{editingMember.email}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-member-role">Papel Operacional</Label>
+                <Select value={editMemberRole} onValueChange={setEditMemberRole} disabled={!canManageRoles}>
+                  <SelectTrigger id="edit-member-role">
+                    <SelectValue placeholder="Selecione o papel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignableRoleDefinitions.map((role) => (
+                      <SelectItem key={role.role_key} value={role.role_key}>
+                        {role.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  {canManageRoles
+                    ? "Define o conjunto de poderes e permissões no sistema."
+                    : "Seu papel não possui permissão para alterar a hierarquia operacional de colaboradores."}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-member-job">Cargo pré-definido</Label>
+                <Input
+                  id="edit-member-job"
+                  placeholder="Ex: Fisioterapeuta, Psicólogo(a)..."
+                  value={editMemberJobTitle}
+                  onChange={(e) => setEditMemberJobTitle(e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Profissão ou função exercida na clínica.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-member-specialty">Especialidade(s)</Label>
+                <Input
+                  id="edit-member-specialty"
+                  placeholder="Ex: Ortopedia; Pediatria; TCC"
+                  value={editMemberSpecialty}
+                  onChange={(e) => setEditMemberSpecialty(e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Separe múltiplas especialidades com ponto e vírgula (;).
+                </p>
+                <SpecialtyTagsPreview
+                  value={editMemberSpecialty}
+                  onRemove={(tag) =>
+                    removeSpecialtyTag(tag, editMemberSpecialty, setEditMemberSpecialty)
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-member-hours">Horário / Carga Horária (Opcional)</Label>
+                <Input
+                  id="edit-member-hours"
+                  placeholder="Ex: Seg a Sex, 08h às 18h"
+                  value={editMemberWorkingHours}
+                  onChange={(e) => setEditMemberWorkingHours(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-member-status">Status de Acesso à Clínica</Label>
+                <Select
+                  value={editMemberStatus}
+                  onValueChange={(val) => setEditMemberStatus(val as "active" | "suspended" | "inactive")}
+                >
+                  <SelectTrigger id="edit-member-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Ativo (Acesso normal liberado)</SelectItem>
+                    <SelectItem value="suspended">Suspenso (Acesso pausado temporariamente)</SelectItem>
+                    <SelectItem value="inactive">Inativo (Acesso desativado)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Colaboradores suspensos ou inativos não conseguem acessar os dados da clínica.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="border-t pt-3 flex flex-row items-center justify-end gap-2">
+            <Button variant="outline" type="button" onClick={() => setEditingMember(null)} disabled={savingMember}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={() => void handleSaveMember()} disabled={savingMember}>
+              {savingMember ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}
+              Salvar Alterações
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Confirmação de Revogação de Acesso */}
+      <Dialog open={revokingMember !== null} onOpenChange={(open) => !open && setRevokingMember(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              <DialogTitle>Revogar Acesso à Clínica</DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-foreground">
+              Tem certeza que deseja revogar o acesso de <strong>{revokingMember?.full_name}</strong> ({revokingMember?.email}) à clínica?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive space-y-1 my-2">
+            <p className="font-semibold">Atenção:</p>
+            <p>
+              O colaborador perderá imediatamente o acesso aos prontuários, atendimentos e agenda da clínica.
+              Todas as sessões ativas serão desconectadas na hora.
+            </p>
+          </div>
+
+          <DialogFooter className="flex flex-row items-center justify-end gap-2 pt-2">
+            <Button variant="outline" type="button" onClick={() => setRevokingMember(null)} disabled={isRevoking}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" type="button" onClick={() => void handleConfirmRevokeAccess()} disabled={isRevoking}>
+              {isRevoking ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <UserMinus className="h-4 w-4 mr-1.5" />}
+              Revogar Acesso
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

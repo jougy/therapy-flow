@@ -93,7 +93,42 @@ serve(async (req) => {
       customer_id,
     } = body;
 
-    const asaas = new AsaasClient();
+    // Determinar ambiente ativo (Sandbox vs Produção) via Feature Flags hierárquicas
+    let activeEnv: 'production' | 'sandbox' = (Deno.env.get('ASAAS_ENV') || 'sandbox').toLowerCase() as 'production' | 'sandbox';
+    try {
+      if (clinic_id) {
+        const { data: flagData } = await supabase.rpc('get_clinic_feature_flags', { _clinic_id: clinic_id });
+        if (flagData && typeof flagData === 'object') {
+          const subFlag = (flagData as Record<string, unknown>)['subscriptions_module'];
+          if (subFlag && typeof subFlag === 'object') {
+            const envFromFlag = (subFlag as Record<string, unknown>).asaas_environment;
+            if (envFromFlag === 'production' || envFromFlag === 'sandbox') {
+              activeEnv = envFromFlag;
+            }
+          }
+        }
+      } else {
+        // Consulta flag global
+        const { data: globalFlag } = await supabase
+          .from('feature_flags')
+          .select('value')
+          .eq('key', 'subscriptions_module')
+          .eq('scope', 'global')
+          .maybeSingle();
+
+        if (globalFlag?.value && typeof globalFlag.value === 'object') {
+          const envFromFlag = (globalFlag.value as Record<string, unknown>).asaas_environment;
+          if (envFromFlag === 'production' || envFromFlag === 'sandbox') {
+            activeEnv = envFromFlag;
+          }
+        }
+      }
+    } catch (flagErr) {
+      console.warn('[asaas-subscription] Não foi possível consultar flag de ambiente, usando padrão:', flagErr);
+    }
+
+    const asaas = new AsaasClient(activeEnv);
+    console.log(`[asaas-subscription] Executando ação [${action}] no ambiente Asaas: [${asaas.getEnvironment()}]`);
 
     // =========================================================================
     // AÇÃO EXTRA 1: GET_PIX_QR_CODE

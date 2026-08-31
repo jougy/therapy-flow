@@ -14,7 +14,8 @@ import {
   CreditCard, 
   Tag, 
   UserRound, 
-  Building2 
+  Building2,
+  Globe 
 } from "lucide-react";
 import { featureFlagsCatalog } from "@/lib/feature-flags-catalog";
 import { supabase } from "@/integrations/supabase/client";
@@ -726,16 +727,85 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
       );
     }
 
-    // Default: subscriptions_module (Matriz Oficial de Preços e Visão Geral)
+    // Default: subscriptions_module (Ambiente Asaas, Matriz Oficial de Preços e Visão Geral)
+    const currentAsaasEnv = (formData.asaas_environment as string) || "production";
+    const isProduction = currentAsaasEnv === "production";
+
     return (
       <div className="grid gap-6">
+        {/* Seletor de Ambiente: Produção Oficial vs Sandbox */}
+        <div className="rounded-xl border p-4 space-y-4 bg-muted/30">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Globe className={`w-4 h-4 ${isProduction ? "text-emerald-500" : "text-amber-500"}`} />
+                <Label className="text-sm font-bold">
+                  Ambiente do Gateway Asaas: {isProduction ? "Oficial (Produção)" : "Sandbox (Testes)"}
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {isProduction
+                  ? "Cobranças bancárias e cartões reais processados na API de produção (https://api.asaas.com/v3)."
+                  : "Transações simuladas e sem valor monetário real na API de testes (https://sandbox.asaas.com/api/v3)."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                isProduction ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20" : "bg-amber-500/10 text-amber-600 border border-amber-500/20"
+              }`}>
+                {isProduction ? "PRODUÇÃO" : "SANDBOX"}
+              </span>
+              <Switch
+                checked={isProduction}
+                onCheckedChange={(checked) => setFormData({ ...formData, asaas_environment: checked ? "production" : "sandbox" })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-2 text-xs">
+            <div
+              onClick={() => setFormData({ ...formData, asaas_environment: "sandbox" })}
+              className={`cursor-pointer rounded-xl p-3 border transition-all ${
+                !isProduction
+                  ? "border-amber-500 bg-amber-500/10 shadow-sm"
+                  : "border-border bg-background hover:bg-muted/50"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-bold text-foreground">🟡 Sandbox (Testes)</span>
+                {!isProduction && <span className="text-[10px] bg-amber-500 text-white font-bold px-1.5 py-0.2 rounded">Ativo</span>}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Gera QR Codes fictícios e valida fluxos de checkout sem cobrança monetária real.
+              </p>
+            </div>
+
+            <div
+              onClick={() => setFormData({ ...formData, asaas_environment: "production" })}
+              className={`cursor-pointer rounded-xl p-3 border transition-all ${
+                isProduction
+                  ? "border-emerald-500 bg-emerald-500/10 shadow-sm"
+                  : "border-border bg-background hover:bg-muted/50"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-bold text-foreground">🟢 Oficial (Produção)</span>
+                {isProduction && <span className="text-[10px] bg-emerald-500 text-white font-bold px-1.5 py-0.2 rounded">Ativo</span>}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Processamento oficial com emissão de PIX real, cartão e compensação bancária.
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-2 mb-1.5 text-emerald-700 dark:text-emerald-400 font-semibold text-sm">
             <ShieldCheck className="w-5 h-5 shrink-0" />
             Ambiente Seguro & Proteção de Credenciais
           </div>
           <p className="leading-relaxed">
-            As chaves do gateway Asaas (<code className="font-mono text-emerald-800 dark:text-emerald-300">ASAAS_API_KEY</code>, <code className="font-mono text-emerald-800 dark:text-emerald-300">ASAAS_WEBHOOK_TOKEN</code> e <code className="font-mono text-emerald-800 dark:text-emerald-300">ASAAS_ENV</code>) e as credenciais de banco de dados são isoladas exclusivamente nas Edge Functions Deno do Supabase, sem nunca transitar no front-end ou vazar para o cliente.
+            As chaves de API (<code className="font-mono text-emerald-800 dark:text-emerald-300">ASAAS_API_KEY</code> para Produção Oficial e <code className="font-mono text-emerald-800 dark:text-emerald-300">ASAAS_SANDBOX_API_KEY</code> para Sandbox) e tokens de webhook são mantidos de forma estritamente segura nas Edge Functions Deno do Supabase. O front-end apenas sinaliza qual ambiente deve processar a requisição.
           </p>
         </div>
 
