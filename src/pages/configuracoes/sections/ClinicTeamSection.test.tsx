@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClinicTeamSection } from "./ClinicTeamSection";
 
@@ -24,6 +25,17 @@ vi.mock("@/contexts/TutorialContext", () => ({
   useTutorial: () => ({
     showComponentHelp: vi.fn(),
   }),
+}));
+
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuLabel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick, className }: { children: ReactNode; onClick?: () => void; className?: string }) => (
+    <button type="button" onClick={onClick} className={className}>{children}</button>
+  ),
+  DropdownMenuSeparator: () => <hr />,
 }));
 
 describe("ClinicTeamSection", () => {
@@ -65,6 +77,7 @@ describe("ClinicTeamSection", () => {
         p.select = fn;
         p.eq = fn;
         p.neq = fn;
+        p.in = fn;
         p.order = fn;
         p.upsert = vi.fn(() => Promise.resolve({ data: null, error: null }));
         p.delete = fn;
@@ -182,6 +195,8 @@ describe("ClinicTeamSection", () => {
         });
         chain.select = () => chain;
         chain.eq = () => chain;
+        chain.neq = () => chain;
+        chain.in = () => chain;
         return chain;
       }
       if (table === "profiles") {
@@ -208,12 +223,16 @@ describe("ClinicTeamSection", () => {
         });
         chain.select = () => chain;
         chain.eq = () => chain;
+        chain.neq = () => chain;
+        chain.in = () => chain;
         return chain;
       }
 
       const defaultChain: any = Promise.resolve({ data: [], error: null });
       defaultChain.select = () => defaultChain;
       defaultChain.eq = () => defaultChain;
+      defaultChain.neq = () => defaultChain;
+      defaultChain.in = () => defaultChain;
       return defaultChain;
     });
 
@@ -226,6 +245,314 @@ describe("ClinicTeamSection", () => {
 
     expect(screen.getByText("arthur@example.com")).toBeInTheDocument();
     expect(screen.getByText("beatriz@example.com")).toBeInTheDocument();
-    expect(screen.getByText("Colaboradores ativos vinculados à clínica (2 membros).")).toBeInTheDocument();
+    expect(screen.getByText("Colaboradores vinculados à clínica (2 membros).")).toBeInTheDocument();
+  });
+
+  it("allows owner to open edit collaborator modal and save changes via RPC", async () => {
+    supabaseMocks.rpc.mockImplementation((fn: string) => {
+      if (fn === "update_clinic_member_operational_fields") {
+        return Promise.resolve({ data: { membership_id: "mem-2" }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_memberships") {
+        const chain: any = Promise.resolve({
+          data: [
+            {
+              id: "mem-2",
+              user_id: "user-2",
+              operational_role: "professional",
+              membership_status: "active",
+              is_active: true,
+              created_at: "2026-01-02T00:00:00Z",
+            },
+          ],
+          error: null,
+        });
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        chain.neq = () => chain;
+        return chain;
+      }
+      if (table === "profiles") {
+        const chain: any = Promise.resolve({
+          data: [
+            {
+              id: "user-2",
+              full_name: "Dra. Beatriz Santos",
+              email: "beatriz@example.com",
+              job_title: "Psicóloga",
+              specialty: "TCC",
+              working_hours: "Seg a Sex, 08h às 17h",
+              last_seen_at: null,
+            },
+          ],
+          error: null,
+        });
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        return chain;
+      }
+      const defaultChain: any = Promise.resolve({ data: [], error: null });
+      defaultChain.select = () => defaultChain;
+      defaultChain.eq = () => defaultChain;
+      return defaultChain;
+    });
+
+    render(<ClinicTeamSection />);
+
+    await waitFor(() => expect(screen.getByText("Dra. Beatriz Santos")).toBeInTheDocument());
+
+    const menuBtn = screen.getByRole("button", { name: /opções para dra\. beatriz santos/i });
+    expect(menuBtn).toBeInTheDocument();
+    fireEvent.click(menuBtn);
+
+    const editItem = screen.getByText("Editar dados e cargo");
+    expect(editItem).toBeInTheDocument();
+    fireEvent.click(editItem);
+
+    await waitFor(() => expect(screen.getByText("Editar Colaborador")).toBeInTheDocument());
+    expect(screen.getByDisplayValue("Psicóloga")).toBeInTheDocument();
+
+    const jobInput = screen.getByDisplayValue("Psicóloga");
+    fireEvent.change(jobInput, { target: { value: "Neuropsicóloga" } });
+
+    const saveBtn = screen.getByRole("button", { name: /salvar alterações/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("update_clinic_member_operational_fields", expect.objectContaining({
+        _membership_id: "mem-2",
+        _job_title: "Neuropsicóloga",
+      }));
+    });
+  });
+
+  it("allows owner to revoke collaborator access with confirmation dialog", async () => {
+    supabaseMocks.rpc.mockImplementation((fn: string) => {
+      if (fn === "revoke_clinic_member_access") {
+        return Promise.resolve({ data: { membership_id: "mem-2", status: "inactive" }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_memberships") {
+        const chain: any = Promise.resolve({
+          data: [
+            {
+              id: "mem-2",
+              user_id: "user-2",
+              operational_role: "professional",
+              membership_status: "active",
+              is_active: true,
+              created_at: "2026-01-02T00:00:00Z",
+            },
+          ],
+          error: null,
+        });
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        chain.neq = () => chain;
+        return chain;
+      }
+      if (table === "profiles") {
+        const chain: any = Promise.resolve({
+          data: [
+            {
+              id: "user-2",
+              full_name: "Dra. Beatriz Santos",
+              email: "beatriz@example.com",
+              job_title: "Psicóloga",
+              specialty: "TCC",
+              last_seen_at: null,
+            },
+          ],
+          error: null,
+        });
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        return chain;
+      }
+      const defaultChain: any = Promise.resolve({ data: [], error: null });
+      defaultChain.select = () => defaultChain;
+      defaultChain.eq = () => defaultChain;
+      return defaultChain;
+    });
+
+    render(<ClinicTeamSection />);
+
+    await waitFor(() => expect(screen.getByText("Dra. Beatriz Santos")).toBeInTheDocument());
+
+    const menuBtn = screen.getByRole("button", { name: /opções para dra\. beatriz santos/i });
+    fireEvent.click(menuBtn);
+
+    const revokeMenuItem = screen.getByText("Revogar acesso");
+    fireEvent.click(revokeMenuItem);
+
+    await waitFor(() => expect(screen.getByText("Revogar Acesso à Clínica")).toBeInTheDocument());
+
+    const confirmBtn = screen.getByRole("button", { name: /revogar acesso/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("revoke_clinic_member_access", {
+        _membership_id: "mem-2",
+      });
+    });
+  });
+
+  it("enforces vertical power hierarchy in team directory for non-owner admin", async () => {
+    mockUseAuth.mockReturnValue({
+      accountRole: "subaccount",
+      operationalRole: "admin",
+      clinicId: "clinic-1",
+      subscriptionPlan: "clinic",
+      can: (cap: string) => cap === "subaccounts.manage" || cap === "subaccounts_roles.manage",
+      user: { id: "admin-user-1" },
+    });
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_memberships") {
+        const chain: any = Promise.resolve({
+          data: [
+            {
+              id: "mem-owner",
+              user_id: "user-owner",
+              operational_role: "owner",
+              membership_status: "active",
+              is_active: true,
+              created_at: "2026-01-01T00:00:00Z",
+            },
+            {
+              id: "mem-peer-admin",
+              user_id: "user-peer-admin",
+              operational_role: "admin",
+              membership_status: "active",
+              is_active: true,
+              created_at: "2026-01-02T00:00:00Z",
+            },
+            {
+              id: "mem-sub-pro",
+              user_id: "user-sub-pro",
+              operational_role: "professional",
+              membership_status: "active",
+              is_active: true,
+              created_at: "2026-01-03T00:00:00Z",
+            },
+          ],
+          error: null,
+        });
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        chain.neq = () => chain;
+        return chain;
+      }
+      if (table === "profiles") {
+        const chain: any = Promise.resolve({
+          data: [
+            {
+              id: "user-owner",
+              full_name: "Proprietário da Silva",
+              email: "owner@example.com",
+              job_title: "Diretor Clínico",
+              specialty: "Gestão",
+              last_seen_at: null,
+            },
+            {
+              id: "user-peer-admin",
+              full_name: "Administrador Par",
+              email: "admin2@example.com",
+              job_title: "Gerente",
+              specialty: "Administração",
+              last_seen_at: null,
+            },
+            {
+              id: "user-sub-pro",
+              full_name: "Profissional Subordinado",
+              email: "pro@example.com",
+              job_title: "Fisioterapeuta",
+              specialty: "Pilates",
+              last_seen_at: null,
+            },
+          ],
+          error: null,
+        });
+        chain.select = () => chain;
+        chain.eq = () => chain;
+        return chain;
+      }
+      const defaultChain: any = Promise.resolve({ data: [], error: null });
+      defaultChain.select = () => defaultChain;
+      defaultChain.eq = () => defaultChain;
+      return defaultChain;
+    });
+
+    render(<ClinicTeamSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Proprietário da Silva")).toBeInTheDocument();
+      expect(screen.getByText("Administrador Par")).toBeInTheDocument();
+      expect(screen.getByText("Profissional Subordinado")).toBeInTheDocument();
+    });
+
+    // Owner has owner shield
+    expect(screen.getByTitle("Conta Proprietária")).toBeInTheDocument();
+
+    // Peer admin has "Somente leitura" badge
+    expect(screen.getByText("Somente leitura")).toBeInTheDocument();
+
+    // Subordinate professional has actionable menu button
+    const proMenuBtn = screen.getByRole("button", { name: /opções para profissional subordinado/i });
+    expect(proMenuBtn).toBeInTheDocument();
+  });
+
+  it("renders granular CRUD switches for colaboradores and allows toggling in operational roles modal", async () => {
+    render(<ClinicTeamSection />);
+
+    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /gerenciar papéis operacionais/i }));
+
+    await waitFor(() => expect(screen.getByText("Hierarquias")).toBeInTheDocument());
+
+    // Switch category filter to "Equipe"
+    const equipeTab = screen.getByRole("button", { name: /^Equipe/i });
+    fireEvent.click(equipeTab);
+
+    await waitFor(() => {
+      expect(screen.getByText("Colaboradores da clínica")).toBeInTheDocument();
+      expect(screen.getAllByRole("switch", { name: /^Ver$/i }).length).toBeGreaterThan(0);
+      expect(screen.getByRole("switch", { name: /^Convidar$/i })).toBeInTheDocument();
+      expect(screen.getByRole("switch", { name: /^Editar$/i })).toBeInTheDocument();
+      expect(screen.getByRole("switch", { name: /^Excluir$/i })).toBeInTheDocument();
+    });
+
+    const inviteSwitch = screen.getByRole("switch", { name: /^Convidar$/i });
+    fireEvent.click(inviteSwitch);
+
+    await waitFor(() => {
+      expect(supabaseMocks.from).toHaveBeenCalledWith("clinic_operational_role_capabilities");
+    });
+  });
+
+  it("disables invite button for collaborator without subaccounts.write or subaccounts.manage capability", async () => {
+    mockUseAuth.mockReturnValue({
+      accountRole: "subaccount",
+      operationalRole: "assistant",
+      clinicId: "clinic-1",
+      subscriptionPlan: "clinic",
+      can: (cap: string) => cap === "subaccounts.read",
+      user: { id: "assistant-user-1" },
+    });
+
+    render(<ClinicTeamSection />);
+
+    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
+
+    const inviteBtn = screen.getByRole("button", { name: /enviar convite por e-mail/i });
+    expect(inviteBtn).toBeDisabled();
+    expect(screen.getByText(/seu papel atual não possui permissão para convidar novos colaboradores/i)).toBeInTheDocument();
   });
 });

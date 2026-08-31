@@ -6,7 +6,11 @@ export type MembershipStatus = "invited" | "active" | "inactive" | "suspended";
 export type AccessCapability =
   | "clinic_profile.manage"
   | "forms.manage"
+  | "subaccounts.read"
+  | "subaccounts.write"
   | "subaccounts.manage"
+  | "subaccounts.delete"
+  | "subaccounts_roles.read"
   | "subaccounts_roles.manage"
   | "subscription_billing.manage"
   | "treasury.manage"
@@ -32,7 +36,11 @@ export type AccessCapability =
 export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "clinic_profile.manage",
   "forms.manage",
+  "subaccounts.read",
+  "subaccounts.write",
   "subaccounts.manage",
+  "subaccounts.delete",
+  "subaccounts_roles.read",
   "subaccounts_roles.manage",
   "subscription_billing.manage",
   "treasury.manage",
@@ -125,13 +133,29 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
     description: "Pode editar atendimentos e registros criados por outros profissionais.",
     label: "Editar atendimentos de outros colaboradores",
   },
+  "subaccounts.delete": {
+    description: "Pode revogar acessos e desvincular colaboradores da clínica.",
+    label: "Excluir colaboradores",
+  },
   "subaccounts.manage": {
-    description: "Pode criar, editar, suspender e deslogar colaboradores.",
-    label: "Gerenciar colaboradores",
+    description: "Pode editar dados, cargos, especialidades e status de colaboradores.",
+    label: "Editar colaboradores",
+  },
+  "subaccounts.read": {
+    description: "Pode visualizar a equipe e diretório de colaboradores da clínica.",
+    label: "Visualizar colaboradores",
+  },
+  "subaccounts.write": {
+    description: "Pode emitir convites e cadastrar novos colaboradores na equipe.",
+    label: "Convidar colaboradores",
   },
   "subaccounts_analytics.read": {
     description: "Pode visualizar analytics e desenvolvimento da equipe.",
     label: "Ver analytics da equipe",
+  },
+  "subaccounts_roles.read": {
+    description: "Pode visualizar a matriz de papéis e permissões da clínica.",
+    label: "Visualizar papéis operacionais",
   },
   "subaccounts_roles.manage": {
     description: "Pode alterar hierarquias e poderes dos papéis operacionais.",
@@ -195,7 +219,11 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "patients.delete":
       return hasOperationalRole(context, ["owner", "admin"]);
 
+    case "subaccounts.read":
+    case "subaccounts.write":
     case "subaccounts.manage":
+    case "subaccounts.delete":
+    case "subaccounts_roles.read":
     case "subaccounts_roles.manage":
       return canHaveSubaccounts(context.subscriptionPlan) && hasOperationalRole(context, ["owner", "admin"]);
 

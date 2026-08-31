@@ -11,11 +11,21 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const asaasWebhookSecret = Deno.env.get('ASAAS_WEBHOOK_SECRET') || '';
+  const asaasWebhookSecretProd = Deno.env.get('ASAAS_WEBHOOK_SECRET_PRODUCTION') || Deno.env.get('ASAAS_PROD_WEBHOOK_SECRET') || '';
+  const asaasWebhookSecretSandbox = Deno.env.get('ASAAS_WEBHOOK_SECRET_SANDBOX') || Deno.env.get('ASAAS_SANDBOX_WEBHOOK_SECRET') || '';
+  const asaasWebhookSecretDefault = Deno.env.get('ASAAS_WEBHOOK_SECRET') || '';
 
   // Validar token de autenticação do Asaas Webhook se configurado
   const receivedToken = req.headers.get('asaas-access-token');
-  if (asaasWebhookSecret && receivedToken !== asaasWebhookSecret) {
+  const hasConfiguredSecrets = !!(asaasWebhookSecretProd || asaasWebhookSecretSandbox || asaasWebhookSecretDefault);
+  const isValidToken =
+    !hasConfiguredSecrets ||
+    (asaasWebhookSecretProd && receivedToken === asaasWebhookSecretProd) ||
+    (asaasWebhookSecretSandbox && receivedToken === asaasWebhookSecretSandbox) ||
+    (asaasWebhookSecretDefault && receivedToken === asaasWebhookSecretDefault);
+
+  if (!isValidToken) {
+    console.warn('[asaas-webhook] Rejeição de webhook: Token de autenticação não coincide.');
     return new Response(JSON.stringify({ error: 'Token de webhook inválido.' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

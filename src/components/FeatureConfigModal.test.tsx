@@ -34,15 +34,21 @@ describe("FeatureConfigModal - Assinaturas", () => {
     });
   });
 
-  it("renders subscription_module official pricing matrix and security shield without exposing secrets", () => {
+  it("renders subscription_module official pricing matrix and Asaas environment switcher", async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: null, error: null });
+
+    const onSave = vi.fn();
     render(
       <FeatureConfigModal
         featureKey="subscriptions_module"
         isOpen={true}
         onClose={vi.fn()}
+        onSave={onSave}
+        initialData={{ asaas_environment: "production" }}
       />
     );
 
+    expect(screen.getByText(/Ambiente do Gateway Asaas: Oficial \(Produção\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Tabela de Preços e Ciclos Oficiais/i)).toBeInTheDocument();
     expect(screen.getByText(/Plano Profissional Solo/i)).toBeInTheDocument();
     expect(screen.getByText(/Plano Clínica com Equipe/i)).toBeInTheDocument();
@@ -50,6 +56,25 @@ describe("FeatureConfigModal - Assinaturas", () => {
     expect(screen.getByText(/ASAAS_API_KEY/i)).toBeInTheDocument();
     expect(screen.getAllByText(/R\$ 52,00/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/R\$ 78,00/i).length).toBeGreaterThan(0);
+
+    // Toggle to sandbox
+    const sandboxCard = screen.getByText(/🟡 Sandbox \(Testes\)/i);
+    fireEvent.click(sandboxCard);
+
+    expect(screen.getByText(/Ambiente do Gateway Asaas: Sandbox \(Testes\)/i)).toBeInTheDocument();
+
+    const saveBtn = screen.getByRole("button", { name: /Salvar configurações/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("upsert_feature_flag", expect.objectContaining({
+        _key: "subscriptions_module",
+        _value: expect.objectContaining({
+          asaas_environment: "sandbox",
+        }),
+      }));
+      expect(onSave).toHaveBeenCalled();
+    });
   });
 
   it("renders subscription_free_trial_enabled config and allows customizing duration and max sessions", async () => {
