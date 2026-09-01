@@ -97,6 +97,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Configuracoes - Desenvolvimento da equipe]]
 - [[Plano de Telemetria Auditoria e Estatisticas do Backoffice]]
 - [[Criador de formularios do DesignLab - Arquitetura e Interacoes]]
+- [[Componente de tags customizadas no editor de formularios]]
 - [[Biblioteca comunitaria de modelos de formularios]]
 - [[Correcao load infinito no cadastro completo de paciente]]
 

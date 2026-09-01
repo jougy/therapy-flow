@@ -10,6 +10,7 @@ export type AnamnesisFieldType =
   | "select"
   | "table"
   | "slider"
+  | "tags"
   | "section"
   | "horizontal_section"
   | "section_selector"
@@ -21,6 +22,8 @@ export interface AnamnesisFieldOption {
   label: string;
   description?: string;
   row?: number;
+  color?: string;
+  colorSlotId?: string | null;
 }
 
 export interface AddressBlockValue {
@@ -38,6 +41,13 @@ export interface AddressBlockValue {
   longitude?: number | null;
   accuracy?: number | null;
   capturedAt?: string | null;
+}
+
+export interface AnamnesisTagItem {
+  id: string;
+  label: string;
+  color?: string;
+  colorSlotId?: string | null;
 }
 
 export interface AnamnesisField {
@@ -60,11 +70,21 @@ export interface AnamnesisField {
   columnSpan?: "auto" | "1/4" | "1/3" | "1/2" | "2/3" | "full";
   accentColor?: string;
   accentAlpha?: number;
+  tagMode?: "multiple" | "single";
+  allowCustomTags?: boolean;
 }
 
 export type AnamnesisTemplateSchema = AnamnesisField[];
 export type AnamnesisTableRow = Record<string, string>;
-export type AnamnesisFormValue = string | number | string[] | boolean | AnamnesisTableRow[] | AddressBlockValue | null;
+export type AnamnesisFormValue =
+  | string
+  | number
+  | string[]
+  | boolean
+  | AnamnesisTableRow[]
+  | AddressBlockValue
+  | AnamnesisTagItem[]
+  | null;
 export type AnamnesisFormResponse = Record<string, AnamnesisFormValue>;
 export type AnamnesisTemplateExchangeKind = "base" | "template";
 
@@ -141,12 +161,16 @@ const sanitizeOption = (option: unknown, index: number, usedIds: Set<string>): A
   const label = sanitizedLabel !== undefined
     ? (sanitizedLabel === "" && rawLabel === "" ? "" : (sanitizedLabel || `Opção ${index + 1}`))
     : `Opção ${index + 1}`;
+  const rawColor = typeof source.color === "string" && source.color.trim() ? sanitizeSingleLineInput(source.color, 20).trim() : undefined;
+  const rawColorSlotId = typeof source.colorSlotId === "string" && source.colorSlotId.trim() ? sanitizeId(source.colorSlotId, "") : undefined;
 
   return {
     id: makeUniqueId(getStringValue(source.id), usedIds, `option_${index + 1}`),
     label,
     ...(description !== undefined ? { description: sanitizeMultilineInput(description, INPUT_LIMITS.formHelpText) } : {}),
     row: Number.isFinite(source.row) ? clamp(Math.round(Number(source.row)), 0, 99) : 0,
+    ...(rawColor ? { color: rawColor } : {}),
+    ...(rawColorSlotId ? { colorSlotId: rawColorSlotId } : {}),
   };
 };
 
@@ -155,6 +179,7 @@ const fieldNeedsOptions = (type: AnamnesisFieldType) =>
   type === "multiple_choice" ||
   type === "select" ||
   type === "table" ||
+  type === "tags" ||
   type === "section_selector";
 
 export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTemplateSchema => {
@@ -223,6 +248,11 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         ? (source.columnSpan as AnamnesisField["columnSpan"])
         : undefined;
 
+      const tagMode =
+        source.tagMode === "single" ? "single" : type === "tags" ? "multiple" : undefined;
+      const allowCustomTags =
+        type === "tags" ? source.allowCustomTags !== false : typeof source.allowCustomTags === "boolean" ? source.allowCustomTags : undefined;
+
       return {
         id: fieldId,
         label,
@@ -242,9 +272,10 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         ...(systemKey ? { systemKey } : {}),
         ...(rawAccentColor ? { accentColor: rawAccentColor } : {}),
         ...(rawAccentAlpha !== undefined ? { accentAlpha: rawAccentAlpha } : {}),
+        ...(tagMode !== undefined ? { tagMode } : {}),
+        ...(allowCustomTags !== undefined ? { allowCustomTags } : {}),
       };
     });
-
 
   const fieldIds = new Set(fields.map((field) => field.id));
   const selectorOptionIds = new Set(
@@ -295,6 +326,8 @@ export const compactAnamnesisTemplateSchema = (schema: AnamnesisTemplateSchema):
     if (field.sliderMinLabel) compact.sliderMinLabel = field.sliderMinLabel;
     if (field.sliderMaxLabel) compact.sliderMaxLabel = field.sliderMaxLabel;
     if (field.columnSpan && field.columnSpan !== "auto") compact.columnSpan = field.columnSpan;
+    if (field.tagMode && field.tagMode !== "multiple") compact.tagMode = field.tagMode;
+    if (field.allowCustomTags !== undefined && field.allowCustomTags !== true) compact.allowCustomTags = field.allowCustomTags;
 
     return compact;
   });
@@ -320,24 +353,48 @@ export const sanitizeAnamnesisFormResponse = (response: AnamnesisFormResponse): 
         }
 
         if (Array.isArray(value)) {
-          const normalized = value.slice(0, ANAMNESIS_TABLE_ROW_LIMIT).map((item) => {
-            if (typeof item === "string") {
-              return sanitizeSingleLineInput(item, INPUT_LIMITS.formOptionLabel).trim();
-            }
+          const normalized = value
+            .slice(0, ANAMNESIS_TABLE_ROW_LIMIT)
+            .map((item) => {
+              if (typeof item === "string") {
+                return sanitizeSingleLineInput(item, INPUT_LIMITS.formOptionLabel).trim();
+              }
 
-            if (item && typeof item === "object" && !Array.isArray(item)) {
-              return Object.fromEntries(
-                Object.entries(item as AnamnesisTableRow)
-                  .slice(0, ANAMNESIS_OPTION_LIMIT)
-                  .map(([columnId, cellValue]) => [
-                    sanitizeId(columnId, "column"),
-                    sanitizeMultilineInput(String(cellValue ?? ""), ANAMNESIS_RESPONSE_TEXT_LIMIT),
-                  ])
-              );
-            }
+              if (item && typeof item === "object" && !Array.isArray(item)) {
+                const rec = item as Record<string, unknown>;
 
-            return null;
-          }).filter((item): item is string | AnamnesisTableRow => item !== null);
+                // Handle tag item object ({ id, label, color, colorSlotId })
+                if ("label" in rec || "name" in rec) {
+                  const rawLabel = typeof rec.label === "string" ? rec.label : typeof rec.name === "string" ? rec.name : "";
+                  const rawId = typeof rec.id === "string" ? rec.id : "";
+                  const rawColor = typeof rec.color === "string" ? sanitizeSingleLineInput(rec.color, 20).trim() : undefined;
+                  const rawSlotId = typeof rec.colorSlotId === "string" && rec.colorSlotId.trim() ? sanitizeId(rec.colorSlotId, "") : undefined;
+                  const sanitizedLabel = sanitizeSingleLineInput(rawLabel, INPUT_LIMITS.formOptionLabel).trim();
+
+                  if (!sanitizedLabel) return null;
+
+                  return {
+                    id: sanitizeId(rawId, "tag"),
+                    label: sanitizedLabel,
+                    ...(rawColor ? { color: rawColor } : {}),
+                    ...(rawSlotId ? { colorSlotId: rawSlotId } : {}),
+                  } as AnamnesisTagItem;
+                }
+
+                // Handle table row object
+                return Object.fromEntries(
+                  Object.entries(item as AnamnesisTableRow)
+                    .slice(0, ANAMNESIS_OPTION_LIMIT)
+                    .map(([columnId, cellValue]) => [
+                      sanitizeId(columnId, "column"),
+                      sanitizeMultilineInput(String(cellValue ?? ""), ANAMNESIS_RESPONSE_TEXT_LIMIT),
+                    ])
+                );
+              }
+
+              return null;
+            })
+            .filter((item): item is string | AnamnesisTableRow | AnamnesisTagItem => item !== null);
 
           return [safeFieldId, normalized];
         }
@@ -429,6 +486,7 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
   { type: "checklist", label: "Checklist" },
   { type: "multiple_choice", label: "Múltipla escolha" },
   { type: "select", label: "Droplist" },
+  { type: "tags", label: "Campo de tags" },
   { type: "table", label: "Tabela" },
   { type: "slider", label: "Slidebar" },
   { type: "address_block", label: "Bloco de Endereço" },
@@ -571,6 +629,21 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
     return {
       ...baseField,
       options: [createFieldOption("Opção 1", 0), createFieldOption("Opção 2", 1)],
+    };
+  }
+
+  if (type === "tags") {
+    return {
+      ...baseField,
+      label: "Tags / Categorias",
+      tagMode: "multiple",
+      allowCustomTags: true,
+      placeholder: "Buscar ou adicionar tag...",
+      options: [
+        { id: `tag_${Date.now()}_1`, label: "Tag 1", color: "#C4B5FD", row: 0 },
+        { id: `tag_${Date.now()}_2`, label: "Tag 2", color: "#FDE047", row: 0 },
+        { id: `tag_${Date.now()}_3`, label: "Tag 3", color: "#93C5FD", row: 0 },
+      ],
     };
   }
 

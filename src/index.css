@@ -1743,12 +1743,13 @@
 }
 
 @media print {
-  body > *:not(#print-blank-kit-root):not(#print-clinic-stats-root) {
+  body > *:not(#print-blank-kit-root):not(#print-clinic-stats-root):not(#print-patient-stats-root) {
     display: none !important;
   }
 
   #print-blank-kit-root,
-  #print-clinic-stats-root {
+  #print-clinic-stats-root,
+  #print-patient-stats-root {
     display: block !important;
     position: static !important;
     width: 100% !important;
@@ -1761,7 +1762,10 @@
   }
 
   #print-clinic-stats-root .card,
-  #print-clinic-stats-root [class*="card"] {
+  #print-clinic-stats-root [class*="card"],
+  #print-patient-stats-root .card,
+  #print-patient-stats-root [class*="card"],
+  #print-patient-stats-root section {
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -1771,7 +1775,10 @@
   #print-blank-kit-root *::after,
   #print-clinic-stats-root *,
   #print-clinic-stats-root *::before,
-  #print-clinic-stats-root *::after {
+  #print-clinic-stats-root *::after,
+  #print-patient-stats-root *,
+  #print-patient-stats-root *::before,
+  #print-patient-stats-root *::after {
     visibility: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;

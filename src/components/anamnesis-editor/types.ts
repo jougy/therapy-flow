@@ -14,6 +14,7 @@ import {
   MapPin,
   Sliders,
   Table,
+  Tags,
   ToggleLeft,
   Type,
 } from "lucide-react";
@@ -80,6 +81,7 @@ export const COMPONENT_CATEGORIES = [
       { type: "select" as const, label: "Droplist", icon: ChevronDownSquare, description: "Menu suspenso de escolha única" },
       { type: "multiple_choice" as const, label: "Múltipla escolha", icon: CircleDot, description: "Opções exclusivas (radio)" },
       { type: "checklist" as const, label: "Checklist", icon: CheckSquare, description: "Múltiplas opções de marcação" },
+      { type: "tags" as const, label: "Campo de tags", icon: Tags, description: "Tags coloridas e criação dinâmica" },
       { type: "slider" as const, label: "Slidebar", icon: Sliders, description: "Escala deslizante numérica" },
     ],
   },
@@ -146,6 +148,7 @@ export const getSoftAccentBackground = (color: string, alpha: number) => {
 
 export const estimateLayoutWeight = (field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">) => {
   if (field.type === "long_text" || field.type === "table") return 2;
+  if (field.type === "tags") return 1.5;
   if (field.type === "checklist" || field.type === "multiple_choice") {
     const optionLength = (field.options ?? []).reduce((sum, option) => sum + option.label.length, 0);
     return optionLength > 80 ? 2 : 1.25;
@@ -155,6 +158,7 @@ export const estimateLayoutWeight = (field: Pick<AnamnesisField, "helpText" | "l
 
 export const estimateFieldPreferredWidth = (field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">) => {
   if (field.type === "long_text" || field.type === "table") return 520;
+  if (field.type === "tags") return 400;
   if (field.type === "checklist" || field.type === "multiple_choice") {
     const optionCount = field.options?.length ?? 0;
     const longestOption = Math.max(0, ...(field.options ?? []).map((option) => option.label.length));
@@ -164,7 +168,7 @@ export const estimateFieldPreferredWidth = (field: Pick<AnamnesisField, "helpTex
 };
 
 export const getFieldMaxWidth = (field: Pick<AnamnesisField, "type">) => {
-  if (field.type === "checklist" || field.type === "multiple_choice") return 760;
+  if (field.type === "checklist" || field.type === "multiple_choice" || field.type === "tags") return 760;
   if (field.type === "short_text" || field.type === "number" || field.type === "date" || field.type === "select") return 560;
   return null;
 };
@@ -174,6 +178,7 @@ export const estimateHorizontalSectionRowHeight = (items: DesignLabTemplateLayou
     120,
     ...items.map((item) => {
       if (item.field.type === "long_text" || item.field.type === "table") return 180;
+      if (item.field.type === "tags") return 140;
       if (item.field.type === "checklist" || item.field.type === "multiple_choice") {
         const rows = getOptionMatrixRows(item.field.options ?? []).length;
         return 84 + rows * 54;
@@ -191,6 +196,7 @@ export const getFieldTypeIcon = (type: AnamnesisField["type"], isContainer: bool
   if (type === "date") return Calendar;
   if (type === "number") return Hash;
   if (type === "select") return ChevronDownSquare;
+  if (type === "tags") return Tags;
   if (type === "checklist") return CheckSquare;
   if (type === "multiple_choice") return CircleDot;
   if (type === "slider") return Sliders;

@@ -2006,6 +2006,8 @@ const SessaoDetalhe = () => {
                     queixa={queixa}
                     sintomas={sintomas}
                     suggestedCareLine={suggestedCareLine}
+                    clinicColorSlots={resolvedClinicColorSlots}
+                    groupSuggestions={groupSuggestions}
                     onAnamnesisFormResponseChange={setAnamnesisFormResponse}
                     onComplexityScoreChange={setComplexityScore}
                     onObservacoesChange={setObservacoes}
@@ -2165,6 +2167,8 @@ const SessaoDetalhe = () => {
                           queixa={queixa}
                           sintomas={sintomas}
                           suggestedCareLine={suggestedCareLine}
+                          clinicColorSlots={resolvedClinicColorSlots}
+                          groupSuggestions={groupSuggestions}
                           onAnamnesisFormResponseChange={setAnamnesisFormResponse}
                           onComplexityScoreChange={setComplexityScore}
                           onObservacoesChange={setObservacoes}

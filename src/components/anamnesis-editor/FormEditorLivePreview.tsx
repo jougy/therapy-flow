@@ -1,7 +1,7 @@
-import React from "react";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
+import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -279,6 +279,23 @@ export const FormEditorLivePreview: React.FC<FormEditorLivePreviewProps> = ({
             </div>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (field.type === "tags") {
+    return (
+      <div className="min-w-0">
+        <TagFieldInput
+          field={field}
+          value={testAnswers[field.id]}
+          onChange={(val) => {
+            triggerFocus();
+            setFieldTestAnswer(field.id, val);
+          }}
+          onFocus={triggerFocus}
+          disabled={false}
+        />
       </div>
     );
   }

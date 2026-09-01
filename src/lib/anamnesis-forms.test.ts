@@ -554,4 +554,59 @@ describe("anamnesis forms helpers", () => {
     const expanded = sanitizeAnamnesisTemplateSchema(compacted);
     expect(expanded).toEqual(sanitizedOriginal);
   });
+
+  it("creates, sanitizes and compacts tags field with colors and custom options", () => {
+    const field = createAnamnesisField("tags", 1);
+    expect(field.type).toBe("tags");
+    expect(field.tagMode).toBe("multiple");
+    expect(field.allowCustomTags).toBe(true);
+    expect(Array.isArray(field.options)).toBe(true);
+    expect(field.options?.length).toBeGreaterThanOrEqual(1);
+    expect(field.options?.[0].color).toBeDefined();
+
+    const rawSchema: AnamnesisTemplateSchema = [
+      {
+        id: "tags_field",
+        label: "Regiões Afetadas",
+        type: "tags",
+        tagMode: "single",
+        allowCustomTags: false,
+        options: [
+          { id: "opt_cervical", label: "Cervical", color: "#C4B5FD", colorSlotId: "slot_1" },
+          { id: "opt_lombar", label: "Lombar", color: "#FDE047", colorSlotId: "slot_2" },
+        ],
+      },
+    ];
+
+    const sanitized = sanitizeAnamnesisTemplateSchema(rawSchema);
+    expect(sanitized[0].type).toBe("tags");
+    expect(sanitized[0].tagMode).toBe("single");
+    expect(sanitized[0].allowCustomTags).toBe(false);
+    expect(sanitized[0].options?.[0].color).toBe("#C4B5FD");
+    expect(sanitized[0].options?.[0].colorSlotId).toBe("slot_1");
+
+    const compacted = compactAnamnesisTemplateSchema(sanitized);
+    expect((compacted[0] as Record<string, unknown>).tagMode).toBe("single");
+    expect((compacted[0] as Record<string, unknown>).allowCustomTags).toBe(false);
+
+    const reExpanded = sanitizeAnamnesisTemplateSchema(compacted);
+    expect(reExpanded).toEqual(sanitized);
+  });
+
+  it("sanitizes anamnesis form responses for tags cleanly and strips control characters", () => {
+    const response = {
+      tag_field: [
+        { id: "tag_1", label: "Coluna Cervical 😀\u0000\u202E", color: "#C4B5FD" },
+        { id: "tag_2", label: "Liberação Miofascial", colorSlotId: "slot_2" },
+        "Dor Aguda 😀\u202E",
+      ],
+    };
+
+    const sanitized = sanitizeAnamnesisFormResponse(response);
+    expect(sanitized.tag_field).toEqual([
+      { id: "tag_1", label: "Coluna Cervical", color: "#C4B5FD" },
+      { id: "tag_2", label: "Liberação Miofascial", colorSlotId: "slot_2" },
+      "Dor Aguda",
+    ]);
+  });
 });
