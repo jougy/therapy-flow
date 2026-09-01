@@ -25,6 +25,7 @@ import {
   Activity,
   MapPin,
   Table as TableIcon,
+  Tags,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -198,6 +199,11 @@ export const ClinicFormAnalyticsDashboard: React.FC<ClinicFormAnalyticsDashboard
                     {/* 2. CHECKLIST (MÚLTIPLA SELEÇÃO) */}
                     {field.type === "checklist" && (
                       <ChecklistQuestionAnalytics field={field} values={answeredValues} totalAnswered={answeredCount} />
+                    )}
+
+                    {/* 2.1 TAGS (TAGS PERSONALIZADAS E COLORIDAS) */}
+                    {field.type === "tags" && (
+                      <TagsQuestionAnalytics field={field} values={answeredValues} totalAnswered={answeredCount} />
                     )}
 
                     {/* 3. SLIDER / ESCALA DE DOR (EVA) */}
@@ -394,6 +400,104 @@ const ChecklistQuestionAnalytics: React.FC<{
             <Progress value={item.pct} className="h-2" />
           </div>
         ))}
+      </div>
+    </div>
+  );
+};
+
+const TagsQuestionAnalytics: React.FC<{
+  field: AnamnesisField;
+  values: unknown[];
+  totalAnswered: number;
+}> = ({ field, values, totalAnswered }) => {
+  const optionsMap = useMemo(() => {
+    const map = new Map<string, { label: string; color?: string }>();
+    (field.options ?? []).forEach((opt) => map.set(opt.label.toLowerCase(), { label: opt.label, color: opt.color }));
+    return map;
+  }, [field.options]);
+
+  const stats = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number; color?: string }>();
+
+    values.forEach((val) => {
+      if (Array.isArray(val)) {
+        val.forEach((item) => {
+          if (typeof item === "string" && item.trim()) {
+            const key = item.trim().toLowerCase();
+            const existing = counts.get(key);
+            const opt = optionsMap.get(key);
+            counts.set(key, {
+              label: opt?.label || item.trim(),
+              count: (existing?.count ?? 0) + 1,
+              color: opt?.color || existing?.color,
+            });
+          } else if (item && typeof item === "object") {
+            const rec = item as Record<string, unknown>;
+            const rawLabel = typeof rec.label === "string" ? rec.label : typeof rec.name === "string" ? rec.name : "";
+            const rawColor = typeof rec.color === "string" ? rec.color : undefined;
+            if (rawLabel.trim()) {
+              const key = rawLabel.trim().toLowerCase();
+              const existing = counts.get(key);
+              const opt = optionsMap.get(key);
+              counts.set(key, {
+                label: opt?.label || rawLabel.trim(),
+                count: (existing?.count ?? 0) + 1,
+                color: rawColor || opt?.color || existing?.color,
+              });
+            }
+          }
+        });
+      } else if (typeof val === "string" && val.trim()) {
+        const key = val.trim().toLowerCase();
+        const existing = counts.get(key);
+        const opt = optionsMap.get(key);
+        counts.set(key, {
+          label: opt?.label || val.trim(),
+          count: (existing?.count ?? 0) + 1,
+          color: opt?.color || existing?.color,
+        });
+      }
+    });
+
+    const data: Array<{ name: string; count: number; pct: number; color?: string }> = [];
+    counts.forEach(({ label, count, color }) => {
+      const pct = Math.round((count / totalAnswered) * 100);
+      data.push({ name: label, count, pct, color });
+    });
+
+    data.sort((a, b) => b.count - a.count);
+    return data;
+  }, [values, optionsMap, totalAnswered]);
+
+  return (
+    <div className="space-y-4">
+      {/* Helper explicativo */}
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/40 px-2.5 py-1 rounded-md">
+        <Tags className="h-3.5 w-3.5 text-primary" />
+        <span>💡 Frequência de tags e categorias registradas nos atendimentos.</span>
+      </div>
+
+      <div className="space-y-3">
+        {stats.map((item, idx) => {
+          const color = item.color || PALETTE[idx % PALETTE.length];
+          return (
+            <div key={item.name} className="space-y-1">
+              <div className="flex justify-between text-xs font-medium">
+                <span className="flex items-center gap-1.5 truncate">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  <span className="truncate text-foreground">{item.name}</span>
+                </span>
+                <span className="text-muted-foreground shrink-0 font-mono">
+                  {item.count} {item.count === 1 ? "paciente" : "pacientes"} ({item.pct}%)
+                </span>
+              </div>
+              <Progress value={item.pct} className="h-2" />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

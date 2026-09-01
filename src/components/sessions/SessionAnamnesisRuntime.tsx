@@ -13,6 +13,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
+import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
+import type { ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
+import type { GroupSuggestion } from "./types";
 import { Badge } from "@/components/ui/badge";
 import {
   addTableRow,
@@ -198,6 +201,8 @@ export interface SessionAnamnesisRuntimeProps {
   sintomas: string;
   observacoes: string;
   suggestedCareLine: SuggestedCareLine | null;
+  clinicColorSlots?: ClinicGroupColorSlot[];
+  groupSuggestions?: GroupSuggestion[];
   onAnamnesisFormResponseChange: React.Dispatch<React.SetStateAction<AnamnesisFormResponse>>;
   onComplexityScoreChange: (val: number[]) => void;
   onObservacoesChange: (val: string) => void;
@@ -205,6 +210,7 @@ export interface SessionAnamnesisRuntimeProps {
   onQueixaChange: (val: string) => void;
   onSintomasChange: (val: string) => void;
   onSelectCareLinePreset: (presetName: string) => Promise<void>;
+  onSaveNewClinicTag?: (name: string, color: string, colorSlotId?: string | null) => Promise<void> | void;
   scrollHorizontalSectionToRatio: (key: string, ratio: number, behavior?: ScrollBehavior) => void;
   scrollHorizontalSectionToSibling: (key: string, direction: "left" | "right") => void;
   beginHorizontalDrag: (key: string, event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -225,6 +231,8 @@ export const SessionAnamnesisRuntime = ({
   sintomas,
   observacoes,
   suggestedCareLine,
+  clinicColorSlots,
+  groupSuggestions,
   onAnamnesisFormResponseChange,
   onComplexityScoreChange,
   onObservacoesChange,
@@ -232,6 +240,7 @@ export const SessionAnamnesisRuntime = ({
   onQueixaChange,
   onSintomasChange,
   onSelectCareLinePreset,
+  onSaveNewClinicTag,
   scrollHorizontalSectionToRatio,
   scrollHorizontalSectionToSibling,
   beginHorizontalDrag,
@@ -683,6 +692,22 @@ export const SessionAnamnesisRuntime = ({
               </div>
             ))}
           </div>
+        </div>
+      );
+    }
+
+    if (field.type === "tags") {
+      return (
+        <div key={field.id} className="min-w-0">
+          <TagFieldInput
+            field={field}
+            value={value}
+            onChange={(next) => updateFormResponse(field.id, next)}
+            disabled={locked}
+            clinicColorSlots={clinicColorSlots}
+            groupSuggestions={groupSuggestions}
+            onSaveNewClinicTag={onSaveNewClinicTag}
+          />
         </div>
       );
     }

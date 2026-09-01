@@ -232,16 +232,35 @@ const buildCategoryMetric = (
   sessions: PatientAnamnesisDashboardSession[],
 ): PatientAnamnesisDashboardMetric | null => {
   const counts = new Map<string, number>();
+  const tagColors = new Map<string, string>();
+  const tagLabels = new Map<string, string>();
 
   sessions.forEach((session) => {
     const value = readResponseValue(field, session);
-    const values = Array.isArray(value)
-      ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-      : typeof value === "string" && value.trim()
-        ? [value]
-        : [];
+    const normalizedValues: string[] = [];
 
-    values.forEach((optionId) => counts.set(optionId, (counts.get(optionId) ?? 0) + 1));
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (typeof item === "string" && item.trim()) {
+          normalizedValues.push(item.trim());
+        } else if (item && typeof item === "object") {
+          const rec = item as Record<string, unknown>;
+          const rawLabel = typeof rec.label === "string" ? rec.label : typeof rec.name === "string" ? rec.name : "";
+          const rawId = typeof rec.id === "string" ? rec.id : rawLabel;
+          const rawColor = typeof rec.color === "string" ? rec.color : undefined;
+          if (rawLabel.trim()) {
+            const id = rawId || rawLabel.trim();
+            tagLabels.set(id, rawLabel.trim());
+            if (rawColor) tagColors.set(id, rawColor);
+            normalizedValues.push(id);
+          }
+        }
+      });
+    } else if (typeof value === "string" && value.trim()) {
+      normalizedValues.push(value.trim());
+    }
+
+    normalizedValues.forEach((optionId) => counts.set(optionId, (counts.get(optionId) ?? 0) + 1));
   });
 
   if (counts.size === 0) {
@@ -250,9 +269,9 @@ const buildCategoryMetric = (
 
   const categoryData = Array.from(counts.entries())
     .map(([id, value], index) => ({
-      color: chartColors[index % chartColors.length],
+      color: tagColors.get(id) || chartColors[index % chartColors.length],
       id,
-      label: getOptionLabel(field, id),
+      label: tagLabels.get(id) || getOptionLabel(field, id),
       value,
     }))
     .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label));
@@ -395,7 +414,13 @@ const buildMetric = (
     return buildNumberMetric(groupKey, field, sessions);
   }
 
-  if (field.type === "checklist" || field.type === "multiple_choice" || field.type === "select" || field.type === "section_selector") {
+  if (
+    field.type === "checklist" ||
+    field.type === "multiple_choice" ||
+    field.type === "select" ||
+    field.type === "tags" ||
+    field.type === "section_selector"
+  ) {
     return buildCategoryMetric(groupKey, field, sessions);
   }
 

@@ -1,4 +1,3 @@
-import React, { type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -9,6 +8,7 @@ import {
   Hexagon,
   Palette,
   Settings2,
+  Tags,
   ToggleLeft,
   Trash2,
   Workflow,
@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { OptionListEditor } from "@/components/anamnesis/OptionListEditor";
 import { OptionMatrixEditor } from "@/components/anamnesis/OptionMatrixEditor";
+import { TagOptionListEditor } from "@/components/anamnesis/TagOptionListEditor";
 import { SectionColorPaletteField } from "@/components/anamnesis/SectionColorPaletteField";
 import {
   ANAMNESIS_FIELD_LIBRARY,
@@ -543,6 +544,52 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Os vértices e valores do polígono são gerados automaticamente a partir dos campos <strong>Slidebar</strong> ou <strong>Numéricos</strong> inseridos dentro desta seção. No painel do paciente, todas as métricas são consolidadas em um gráfico multi-série interativo.
                 </p>
+              </div>
+            )}
+            {selectedField.type === "tags" && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Modo de seleção de tags</Label>
+                  <Select
+                    value={selectedField.tagMode ?? "multiple"}
+                    onValueChange={(val) =>
+                      updateField(selectedField.id, { tagMode: val as "multiple" | "single" })
+                    }
+                  >
+                    <SelectTrigger onClick={(e) => e.stopPropagation()}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent onCloseAutoFocus={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()}>
+                      <SelectItem value="multiple">Múltiplas tags (selecionar várias)</SelectItem>
+                      <SelectItem value="single">Tag única (escolha exclusiva)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                  <div>
+                    <p className="text-sm font-medium">Criar tags no atendimento</p>
+                    <p className="text-xs text-muted-foreground">
+                      Permite ao profissional criar novas tags personalizadas com cores durante a sessão.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={selectedField.allowCustomTags !== false}
+                    onCheckedChange={(checked) => updateField(selectedField.id, { allowCustomTags: checked })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tags pré-definidas com cores</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Configure as opções iniciais e suas respectivas cores de destaque.
+                  </p>
+                  <TagOptionListEditor
+                    options={selectedField.options}
+                    maxOptions={ANAMNESIS_OPTION_LIMIT}
+                    onChange={(options) => updateField(selectedField.id, { options })}
+                  />
+                </div>
               </div>
             )}
             {(selectedField.type === "checklist" ||

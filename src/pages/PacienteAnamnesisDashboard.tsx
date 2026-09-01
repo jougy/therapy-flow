@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -15,13 +16,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowLeft, BarChart3, ClipboardEdit, ClipboardList, FileText, Hexagon, Loader2 } from "lucide-react";
+import { ArrowLeft, BarChart3, ClipboardEdit, ClipboardList, FileText, Hexagon, Loader2, Printer } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { StatusPolygonRadar } from "@/components/anamnesis/StatusPolygonRadar";
+import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -48,7 +50,7 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-const chartLabels: Record<PatientAnamnesisChartType, string> = {
+export const chartLabels: Record<PatientAnamnesisChartType, string> = {
   area: "Área",
   bar: "Barras",
   line: "Linha",
@@ -102,7 +104,7 @@ const readChartPreferences = (storageKey: string | null) => {
   }
 };
 
-const getMetricChart = (
+export const getMetricChart = (
   metric: PatientAnamnesisDashboardMetric,
   preferences: Record<string, PatientAnamnesisChartType>,
 ) => {
@@ -570,7 +572,7 @@ const MetricCard = ({
   selectedChart,
 }: {
   metric: PatientAnamnesisDashboardMetric;
-  onChartChange: (metricKey: string, chart: PatientAnamnesisChartType) => void;
+  onChartChange?: (metricKey: string, chart: PatientAnamnesisChartType) => void;
   selectedChart: PatientAnamnesisChartType;
 }) => (
   <Card className="min-w-0 overflow-hidden">
@@ -581,7 +583,7 @@ const MetricCard = ({
           {metric.kind === "number" ? "Evolução numérica" : metric.kind === "category" ? "Distribuição de respostas" : metric.kind === "text" ? "Últimas respostas" : metric.kind === "date" ? "Datas registradas" : "Resumo da tabela"}
         </CardDescription>
       </div>
-      {metric.allowedCharts.length > 1 ? (
+      {onChartChange && metric.allowedCharts.length > 1 ? (
         <Select value={selectedChart} onValueChange={(value) => onChartChange(metric.key, value as PatientAnamnesisChartType)}>
           <SelectTrigger className="h-10 w-full shrink-0 sm:w-36">
             <SelectValue />
@@ -605,12 +607,14 @@ export const PatientAnamnesisDashboardContent = ({
   chartPreferences,
   dashboard,
   onChartChange,
+  onPrintRequest,
   onSelectedTemplateIdChange,
   selectedTemplateId,
 }: {
   chartPreferences: Record<string, PatientAnamnesisChartType>;
   dashboard: PatientAnamnesisDashboard;
   onChartChange: (metricKey: string, chart: PatientAnamnesisChartType) => void;
+  onPrintRequest?: () => void;
   onSelectedTemplateIdChange: (templateId: string) => void;
   selectedTemplateId: string;
 }) => {
@@ -626,17 +630,30 @@ export const PatientAnamnesisDashboardContent = ({
             <CardTitle className="text-lg">Fichas analisadas</CardTitle>
             <CardDescription>Todo o histórico do paciente, incluindo rascunhos e atendimentos concluídos.</CardDescription>
           </div>
-          <Select value={selectedTemplateId} onValueChange={onSelectedTemplateIdChange}>
-            <SelectTrigger className="h-10 w-full shrink-0 sm:w-64">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as fichas</SelectItem>
-              {dashboard.groups.map((group) => (
-                <SelectItem key={group.key} value={group.templateId}>{group.title}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={selectedTemplateId} onValueChange={onSelectedTemplateIdChange}>
+              <SelectTrigger className="h-10 w-full shrink-0 sm:w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as fichas</SelectItem>
+                {dashboard.groups.map((group) => (
+                  <SelectItem key={group.key} value={group.templateId}>{group.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {onPrintRequest && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 gap-2 border-primary/40 text-primary hover:bg-primary/5 shrink-0"
+                onClick={onPrintRequest}
+              >
+                <Printer className="h-4 w-4" />
+                Imprimir
+              </Button>
+            )}
+          </div>
         </CardHeader>
       </Card>
 
@@ -676,10 +693,112 @@ export const PatientAnamnesisDashboardContent = ({
   );
 };
 
+export const PatientStatsPrintView = ({
+  chartPreferences,
+  clinic,
+  dashboard,
+  patient,
+  profile,
+  selectedTemplateId,
+  user,
+}: {
+  chartPreferences: Record<string, PatientAnamnesisChartType>;
+  clinic: { logo_url?: string | null; name?: string | null } | null;
+  dashboard: PatientAnamnesisDashboard;
+  patient: { age?: number | null; name: string };
+  profile: { full_name?: string | null; social_name?: string | null } | null;
+  selectedTemplateId: string;
+  user: { email?: string | null } | null;
+}) => {
+  const selectedTemplateName = useMemo(() => {
+    if (selectedTemplateId === "all") return "Todas as fichas";
+    const matched = dashboard.groups.find((g) => g.templateId === selectedTemplateId);
+    return matched?.title ?? "Ficha selecionada";
+  }, [dashboard.groups, selectedTemplateId]);
+
+  const visibleGroups = useMemo(() => {
+    return selectedTemplateId === "all"
+      ? dashboard.groups
+      : dashboard.groups.filter((group) => group.templateId === selectedTemplateId);
+  }, [dashboard.groups, selectedTemplateId]);
+
+  return createPortal(
+    <div id="print-patient-stats-root" className="hidden print:block font-sans p-4 space-y-4 bg-white text-slate-900">
+      <header className="border-b pb-3 mb-4 flex justify-between items-start">
+        <div className="flex items-center gap-3">
+          {clinic?.logo_url ? (
+            <img src={clinic.logo_url} alt="" className="h-10 max-w-[130px] object-contain rounded" />
+          ) : (
+            <img src="/branding/logo/pluri_health_icon_gradient.svg" alt="Pluri-Health" className="h-10 w-10 object-contain" />
+          )}
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 leading-tight">{clinic?.name ?? "Pluri-Health"}</h1>
+            <h2 className="text-xs text-slate-600 font-medium">Relatório de Evolução e Estatísticas de Anamnese</h2>
+          </div>
+        </div>
+        <div className="text-right text-[10px] text-slate-600 space-y-0.5">
+          <p><span className="font-medium text-slate-500">Gerado em:</span> {new Date().toLocaleDateString("pt-BR")} às {new Date().toLocaleTimeString("pt-BR")}</p>
+          <p><span className="font-semibold text-slate-700">Impresso por:</span> {profile?.full_name || profile?.social_name || user?.email || "Usuário do sistema"}</p>
+        </div>
+      </header>
+
+      <div className="rounded-lg border bg-slate-50/50 p-3 text-xs space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="font-bold text-slate-900 text-sm">{patient.name}</span>
+            {patient.age ? <span className="text-slate-600 ml-2">({patient.age} anos)</span> : null}
+          </div>
+          <div className="text-slate-600">
+            <span className="font-semibold">Filtro de Fichas:</span> {selectedTemplateName}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-4 text-slate-600 pt-1">
+          <span><strong>{dashboard.totalSessions}</strong> atendimento{dashboard.totalSessions !== 1 ? "s" : ""} analisado{dashboard.totalSessions !== 1 ? "s" : ""}</span>
+          <span><strong>{dashboard.totalAnsweredFields}</strong> campo{dashboard.totalAnsweredFields !== 1 ? "s" : ""} preenchido{dashboard.totalAnsweredFields !== 1 ? "s" : ""}</span>
+        </div>
+      </div>
+
+      {visibleGroups.length === 0 ? (
+        <div className="p-8 text-center text-slate-500 text-sm border rounded-lg">
+          Nenhuma resposta de anamnese encontrada para o filtro selecionado.
+        </div>
+      ) : (
+        visibleGroups.map((group) => (
+          <section key={group.key} className="space-y-3 pt-2">
+            <h2 className="text-base font-bold text-slate-900 border-b pb-1">{group.title}</h2>
+            {group.sections.map((section) => (
+              <div key={section.key} className="space-y-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">{section.title}</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {section.metrics.map((metric) => (
+                    <div key={metric.key} className="rounded-lg border bg-white p-3 space-y-2">
+                      <div className="border-b pb-1">
+                        <h4 className="font-semibold text-xs text-slate-900">{metric.fieldLabel}</h4>
+                        <p className="text-[10px] text-slate-500">
+                          {chartLabels[getMetricChart(metric, chartPreferences)]} · {metric.kind === "number" ? "Evolução numérica" : metric.kind === "category" ? "Distribuição de respostas" : metric.kind === "text" ? "Últimas respostas" : metric.kind === "date" ? "Datas registradas" : "Resumo da tabela"}
+                        </p>
+                      </div>
+                      <MetricStats metric={metric} />
+                      <div className="pt-1">
+                        <MetricChart chart={getMetricChart(metric, chartPreferences)} metric={metric} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </section>
+        ))
+      )}
+    </div>,
+    document.body
+  );
+};
+
 const PacienteAnamnesisDashboard = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { clinic, clinicId } = useAuth();
+  const { can, clinic, clinicId, profile, user } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const storageKey = getStorageKey(clinicId, id);
@@ -690,6 +809,9 @@ const PacienteAnamnesisDashboard = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState("all");
   const [sessions, setSessions] = useState<PatientAnamnesisDashboardSession[]>([]);
   const [templates, setTemplates] = useState<PatientAnamnesisDashboardTemplate[]>([]);
+  const [showResponsibilityModal, setShowResponsibilityModal] = useState(false);
+
+  const canPrint = Boolean(typeof can === "function" ? can("system.print") : true) && isFeatureEnabled("print_general");
 
   useEffect(() => {
     setChartPreferences(readChartPreferences(storageKey));
@@ -760,6 +882,21 @@ const PacienteAnamnesisDashboard = () => {
     }
   };
 
+  const handleExecutePrint = () => {
+    setShowResponsibilityModal(false);
+    const previousTitle = document.title;
+    const patientCleanName = (patient?.name ?? "Paciente").replace(/[^a-zA-Z0-9-_\s]/g, " ").replaceAll(/\s+/g, " ").trim();
+    const clinicCleanName = (clinic?.name ?? "Clínica").replace(/[^a-zA-Z0-9-_\s]/g, " ").replaceAll(/\s+/g, " ").trim();
+    document.title = `Estatísticas de Anamnese - ${patientCleanName} - ${clinicCleanName}`;
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.title = previousTitle;
+      }, 1000);
+    }, 150);
+  };
+
   if (!isFeatureEnabled("dashboards_patient")) {
     return (
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 p-4 sm:p-6">
@@ -786,50 +923,81 @@ const PacienteAnamnesisDashboard = () => {
   }
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <Button variant="ghost" className="-ml-3 w-fit px-3" onClick={() => navigate(getPatientPath(patient))}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Voltar ao paciente
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-primary" />
-              <h1 className="text-2xl font-bold tracking-tight">Dashboard de Anamnese</h1>
+    <>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="mx-auto max-w-6xl space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
+            <Button variant="ghost" className="-ml-3 w-fit px-3" onClick={() => navigate(getPatientPath(patient))}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Voltar ao paciente
+            </Button>
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                <h1 className="text-2xl font-bold tracking-tight">Dashboard de Anamnese</h1>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{patient.name}</p>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">{patient.name}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{dashboard.totalSessions} atendimento{dashboard.totalSessions !== 1 ? "s" : ""}</Badge>
+              <Badge variant="outline">{dashboard.totalAnsweredFields} campo{dashboard.totalAnsweredFields !== 1 ? "s" : ""} com resposta</Badge>
+            </div>
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{dashboard.totalSessions} atendimento{dashboard.totalSessions !== 1 ? "s" : ""}</Badge>
-            <Badge variant="outline">{dashboard.totalAnsweredFields} campo{dashboard.totalAnsweredFields !== 1 ? "s" : ""} com resposta</Badge>
+            {canPrint && (
+              <Button
+                variant="outline"
+                className="border-primary/40 text-primary hover:bg-primary/5"
+                onClick={() => setShowResponsibilityModal(true)}
+              >
+                <Printer className="mr-2 h-4 w-4" />
+                Imprimir
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => navigate(clinicHomePath ? `${clinicHomePath}/configuracoes?secao=forms` : `/configuracoes?secao=forms`)}>
+              <ClipboardList className="mr-2 h-4 w-4 text-primary" />
+              Gerenciar Formulários
+            </Button>
+            <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "resumo"))}>
+              <FileText className="mr-2 h-4 w-4" />
+              Resumo
+            </Button>
+            <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "cadastro"))}>
+              <ClipboardEdit className="mr-2 h-4 w-4" />
+              Cadastro
+            </Button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => navigate(clinicHomePath ? `${clinicHomePath}/configuracoes?secao=forms` : `/configuracoes?secao=forms`)}>
-            <ClipboardList className="mr-2 h-4 w-4 text-primary" />
-            Gerenciar Formulários
-          </Button>
-          <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "resumo"))}>
-            <FileText className="mr-2 h-4 w-4" />
-            Resumo
-          </Button>
-          <Button variant="outline" onClick={() => navigate(getPatientPath(patient, "cadastro"))}>
-            <ClipboardEdit className="mr-2 h-4 w-4" />
-            Cadastro
-          </Button>
-        </div>
-      </div>
+        <PatientAnamnesisDashboardContent
+          chartPreferences={chartPreferences}
+          dashboard={dashboard}
+          onChartChange={handleChartChange}
+          onPrintRequest={canPrint ? () => setShowResponsibilityModal(true) : undefined}
+          onSelectedTemplateIdChange={setSelectedTemplateId}
+          selectedTemplateId={selectedTemplateId}
+        />
+      </motion.div>
 
-      <PatientAnamnesisDashboardContent
+      {/* ÁREA DE IMPRESSÃO (Renderizada via React Portal diretamente no document.body) */}
+      <PatientStatsPrintView
         chartPreferences={chartPreferences}
+        clinic={clinic}
         dashboard={dashboard}
-        onChartChange={handleChartChange}
-        onSelectedTemplateIdChange={setSelectedTemplateId}
+        patient={patient}
+        profile={profile}
         selectedTemplateId={selectedTemplateId}
+        user={user}
       />
-    </motion.div>
+
+      <PrintResponsibilityModal
+        isOpen={showResponsibilityModal}
+        onConfirm={handleExecutePrint}
+        onCancel={() => setShowResponsibilityModal(false)}
+        documentTitle={`estatísticas do paciente ${patient.name}`}
+      />
+    </>
   );
 };
 

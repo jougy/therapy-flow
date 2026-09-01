@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
+import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
 import { type AnamnesisField, type AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 
 interface InteractiveFormLivePreviewProps {
@@ -276,6 +277,17 @@ export const InteractiveFormLivePreview: React.FC<InteractiveFormLivePreviewProp
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {field.type === "tags" && (
+                  <div className="pt-1">
+                    <TagFieldInput
+                      field={field}
+                      value={value}
+                      onChange={(next) => handleValueChange(field.id, next)}
+                      disabled={false}
+                    />
                   </div>
                 )}
 

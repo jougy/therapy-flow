@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
-  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle
+  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,8 +35,9 @@ import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { PatientFilesPanel } from "@/components/PatientFilesPanel";
 import { PatientFilesProvider, usePatientFilesContext } from "@/contexts/PatientFilesContext";
 import { FileThumbnailCard } from "@/components/FileThumbnailCard";
-import { PatientAnamnesisDashboardContent } from "@/pages/PacienteAnamnesisDashboard";
+import { PatientAnamnesisDashboardContent, PatientStatsPrintView } from "@/pages/PacienteAnamnesisDashboard";
 import { SharePatientRegistrationModal } from "@/components/patients/SharePatientRegistrationModal";
+import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
@@ -1016,7 +1018,7 @@ const PacienteDetalhe = () => {
   const { id, clinicKey } = useParams<{ id?: string; clinicKey?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { can, clinic, clinicId, operationalRole, user } = useAuth();
+  const { can, clinic, clinicId, operationalRole, profile, user } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const canViewPatientContact = can("patients.manage");
@@ -1249,6 +1251,7 @@ const PacienteDetalhe = () => {
   const [recordsView, setRecordsView] = useState<PatientRecordsView>("list");
   const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState("all");
   const [dashboardChartPreferences, setDashboardChartPreferences] = useState<Record<string, PatientAnamnesisChartType>>({});
+  const [showDashboardPrintModal, setShowDashboardPrintModal] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
   const [bulkUpdating, setBulkUpdating] = useState(false);
@@ -1927,6 +1930,21 @@ const PacienteDetalhe = () => {
     if (dashboardStorageKey) {
       window.localStorage.setItem(dashboardStorageKey, JSON.stringify(next));
     }
+  };
+
+  const handleExecuteDashboardPrint = () => {
+    setShowDashboardPrintModal(false);
+    const previousTitle = document.title;
+    const patientCleanName = (patient?.name ?? "Paciente").replace(/[^a-zA-Z0-9-_\s]/g, " ").replaceAll(/\s+/g, " ").trim();
+    const clinicCleanName = (clinic?.name ?? "Clínica").replace(/[^a-zA-Z0-9-_\s]/g, " ").replaceAll(/\s+/g, " ").trim();
+    document.title = `Estatísticas de Anamnese - ${patientCleanName} - ${clinicCleanName}`;
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.title = previousTitle;
+      }, 1000);
+    }, 150);
   };
 
   const normalizedGroupName = normalizeGroupName(groupName);
@@ -2841,7 +2859,18 @@ const PacienteDetalhe = () => {
             tabClassName="flex-1 sm:flex-none"
           />
           {recordsView === "dashboard" && !isIntern && (
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end gap-2">
+              {can("system.print") && isFeatureEnabled("print_general") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDashboardPrintModal(true)}
+                  className="gap-2 text-xs border-primary/40 text-primary hover:bg-primary/5"
+                >
+                  <Printer className="h-4 w-4" />
+                  Imprimir Estatísticas
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -2860,6 +2889,7 @@ const PacienteDetalhe = () => {
             chartPreferences={dashboardChartPreferences}
             dashboard={anamnesisDashboard}
             onChartChange={handleDashboardChartChange}
+            onPrintRequest={can("system.print") && isFeatureEnabled("print_general") ? () => setShowDashboardPrintModal(true) : undefined}
             onSelectedTemplateIdChange={setDashboardTemplateFilter}
             selectedTemplateId={dashboardTemplateFilter}
           />
@@ -4116,6 +4146,27 @@ const PacienteDetalhe = () => {
         defaultTemplateId={sessionToEvolve?.anamnesis_template_id ?? null}
         isEvolving={Boolean(evolvingSessionId)}
       />
+
+      {patient && (
+        <PatientStatsPrintView
+          chartPreferences={dashboardChartPreferences}
+          clinic={clinic}
+          dashboard={anamnesisDashboard}
+          patient={patient}
+          profile={profile}
+          selectedTemplateId={dashboardTemplateFilter}
+          user={user}
+        />
+      )}
+
+      {patient && (
+        <PrintResponsibilityModal
+          isOpen={showDashboardPrintModal}
+          onConfirm={handleExecuteDashboardPrint}
+          onCancel={() => setShowDashboardPrintModal(false)}
+          documentTitle={`estatísticas do paciente ${patient.name}`}
+        />
+      )}
       </motion.div>
     </PatientFilesProvider>
   );

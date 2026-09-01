@@ -34,9 +34,9 @@ vi.mock("@/hooks/use-toast", () => ({
 
 vi.mock("@/contexts/FeatureFlagsContext", () => ({
   useFeatureFlags: () => ({
-    flags: { dashboards_patient: true },
+    flags: { dashboards_patient: true, print_general: true },
     loading: false,
-    isFeatureEnabled: (key: string) => key === "dashboards_patient",
+    isFeatureEnabled: (key: string) => key === "dashboards_patient" || key === "print_general",
   }),
 }));
 
@@ -282,11 +282,11 @@ describe("PacienteAnamnesisDashboard", () => {
     );
 
     expect(await screen.findByText("Dashboard de Anamnese")).toBeInTheDocument();
-    expect(screen.getByText("Maria Silva")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Bloco padrão" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ficha ortopédica" })).toBeInTheDocument();
-    expect(screen.getByText("Mobilidade")).toBeInTheDocument();
-    expect(screen.getByText("Retorno com menos dor.")).toBeInTheDocument();
+    expect(screen.getAllByText("Maria Silva").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("heading", { name: "Bloco padrão" }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("heading", { name: "Ficha ortopédica" }).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Mobilidade").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Retorno com menos dor.").length).toBeGreaterThanOrEqual(1);
 
     const selects = screen.getAllByRole("combobox");
     fireEvent.change(selects[1], { target: { value: "bar" } });
@@ -297,7 +297,7 @@ describe("PacienteAnamnesisDashboard", () => {
 
     fireEvent.change(selects[0], { target: { value: "template-1" } });
     expect(screen.queryByRole("heading", { name: "Bloco padrão" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ficha ortopédica" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Ficha ortopédica" }).length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders radar_section status polygon and allows switching chart views", async () => {
@@ -308,10 +308,55 @@ describe("PacienteAnamnesisDashboard", () => {
     );
 
     expect(await screen.findByText("Dashboard de Anamnese")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ficha de Status Clínico" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Ficha de Status Clínico" }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Polígono de Status").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Força:")).toBeInTheDocument();
-    expect(screen.getByText("Agilidade:")).toBeInTheDocument();
-    expect(screen.getByText("Resistência:")).toBeInTheDocument();
+    expect(screen.getAllByText("Força:").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Agilidade:").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Resistência:").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders print button and renders #print-patient-stats-root matching active configuration", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      can: () => true,
+      clinic: { id: "clinic-1", name: "Clínica Pluri Teste", route_key: "clinica-teste" },
+      clinicId: "clinic-1",
+      profile: { full_name: "Dr. Terapeuta", email: "terapeuta@teste.com" },
+      user: { email: "terapeuta@teste.com" },
+    } as unknown as ReturnType<typeof useAuth>);
+
+    render(
+      <MemoryRouter>
+        <PacienteAnamnesisDashboard />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Dashboard de Anamnese")).toBeInTheDocument();
+
+    // Check print button presence
+    const printButtons = screen.getAllByRole("button", { name: /imprimir/i });
+    expect(printButtons.length).toBeGreaterThanOrEqual(1);
+
+    // Verify print portal is rendered in document.body
+    const printRoot = document.body.querySelector("#print-patient-stats-root");
+    expect(printRoot).not.toBeNull();
+    expect(printRoot).toHaveClass("print:block");
+    expect(printRoot?.textContent).toContain("Clínica Pluri Teste");
+    expect(printRoot?.textContent).toContain("Relatório de Evolução e Estatísticas de Anamnese");
+    expect(printRoot?.textContent).toContain("Maria Silva");
+    expect(printRoot?.textContent).toContain("Impresso por: Dr. Terapeuta");
+    expect(printRoot?.textContent).toContain("Filtro de Fichas: Todas as fichas");
+
+    // Change chart type on pain_score to bar
+    const selects = screen.getAllByRole("combobox");
+    fireEvent.change(selects[1], { target: { value: "bar" } });
+
+    // Print root should reflect active chart type (Barras)
+    expect(printRoot?.textContent).toContain("Barras · Evolução numérica");
+
+    // Change filter to template-1
+    fireEvent.change(selects[0], { target: { value: "template-1" } });
+    expect(printRoot?.textContent).toContain("Filtro de Fichas: Ficha ortopédica");
+    expect(printRoot?.textContent).not.toContain("Bloco padrão");
+    expect(printRoot?.textContent).toContain("Ficha ortopédica");
   });
 });
