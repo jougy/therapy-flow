@@ -5,7 +5,6 @@ import { ClinicProfileSection } from "./sections/ClinicProfileSection";
 import { ClinicTeamSection } from "./sections/ClinicTeamSection";
 import { ClinicSecuritySection } from "./sections/ClinicSecuritySection";
 import { ClinicBillingSection } from "./sections/ClinicBillingSection";
-import { ClinicTreasurySection } from "./sections/ClinicTreasurySection";
 import { ClinicFormsSection } from "./sections/ClinicFormsSection";
 import { PersonalProfileSection } from "./sections/PersonalProfileSection";
 import { PersonalSecuritySection } from "./sections/PersonalSecuritySection";
@@ -18,7 +17,6 @@ export {
   ClinicTeamSection,
   ClinicSecuritySection,
   ClinicBillingSection,
-  ClinicTreasurySection,
   ClinicFormsSection,
   PersonalProfileSection,
   PersonalSecuritySection,
@@ -67,7 +65,7 @@ export const ConfiguracoesLegacyRedirect = () => {
     return <Navigate to={`${basePath}/assinatura`} replace />;
   }
   if (secao === "treasury") {
-    return <Navigate to={`${basePath}/tesouraria`} replace />;
+    return <Navigate to={`${basePath}/perfil`} replace />;
   }
   if (secao === "forms") {
     return <Navigate to={`${basePath}/formularios`} replace />;
