@@ -28,7 +28,6 @@ import {
   ClinicTeamSection,
   ClinicSecuritySection,
   ClinicBillingSection,
-  ClinicTreasurySection,
   ClinicFormsSection,
   PersonalProfileSection,
   PersonalSecuritySection,
@@ -263,7 +262,7 @@ const App = () => (
                                   <Route path="colaboradores" element={<Navigate to="../equipe" replace />} />
                                   <Route path="seguranca" element={<ClinicSecuritySection />} />
                                   <Route path="assinatura" element={<ClinicBillingSection />} />
-                                  <Route path="tesouraria" element={<ClinicTreasurySection />} />
+                                  <Route path="tesouraria" element={<Navigate to="../perfil" replace />} />
                                   <Route path="formularios" element={<ClinicFormsSection />} />
                                   <Route path="pessoal/perfil" element={<PersonalProfileSection />} />
                                   <Route path="pessoal/seguranca" element={<PersonalSecuritySection />} />
@@ -277,7 +276,7 @@ const App = () => (
                                   <Route path="colaboradores" element={<Navigate to="../equipe" replace />} />
                                   <Route path="seguranca" element={<ClinicSecuritySection />} />
                                   <Route path="assinatura" element={<ClinicBillingSection />} />
-                                  <Route path="tesouraria" element={<ClinicTreasurySection />} />
+                                  <Route path="tesouraria" element={<Navigate to="../perfil" replace />} />
                                   <Route path="formularios" element={<ClinicFormsSection />} />
                                   <Route path="pessoal/perfil" element={<PersonalProfileSection />} />
                                   <Route path="pessoal/seguranca" element={<PersonalSecuritySection />} />

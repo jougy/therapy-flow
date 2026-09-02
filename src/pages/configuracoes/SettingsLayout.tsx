@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   UserRound,
   UsersRound,
-  Wallet,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -88,14 +87,6 @@ export const SettingsLayout = () => {
         description: "Plano contratado, faturas e capacidade de acessos.",
         icon: CreditCard,
         path: `${basePath}/assinatura`,
-        space: "clinic",
-      },
-      {
-        id: "tesouraria",
-        title: "Tesouraria",
-        description: "Configurações financeiras e dados bancários.",
-        icon: Wallet,
-        path: `${basePath}/tesouraria`,
         space: "clinic",
       },
       {

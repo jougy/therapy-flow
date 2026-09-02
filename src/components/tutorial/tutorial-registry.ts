@@ -1624,19 +1624,6 @@ export const COMPONENT_HELP_REGISTRY: Record<string, ComponentHelpEntry> = {
     },
   ],
 
-  "settings-treasury-block": [
-    {
-      id: "help-settings-treasury-guide",
-      targetSelector: "[data-tutorial='settings-treasury-card']",
-      title: "💳 Tesouraria & Configurações Financeiras",
-      description: "Configure chaves Pix da clínica, contas bancárias padrão, regras de parcelamento de pacotes e modelos de recibos.",
-      requiredPermission: "treasury.manage",
-      visualPreview: { type: "payment-status" },
-      placement: "bottom",
-      animation: "glow",
-    },
-  ],
-
   "settings-billing-block": [
     {
       id: "help-settings-billing-guide",
@@ -2282,12 +2269,6 @@ export const HELPERS_PAGE_GROUPS: HelperPageGroup[] = [
         name: "Políticas de Segurança da Clínica",
         description: "Regras de auditoria e controle de acesso.",
         targetSelector: "[data-tutorial='settings-security-clinic-block']",
-      },
-      {
-        id: "settings-treasury-block",
-        name: "Tesouraria & Repasses",
-        description: "Regras de comissionamento e repasses da equipe.",
-        targetSelector: "[data-tutorial='settings-treasury-block']",
       },
       {
         id: "settings-billing-block",
