@@ -45,7 +45,7 @@ const UNKNOWN_MEMBERSHIP_STATUS_META = {
   label: "Status desconhecido",
 };
 
-const normalizeTeamSearch = (value: string | null | undefined) =>
+export const normalizeTeamSearch = (value: string | null | undefined) =>
   (value ?? "")
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")

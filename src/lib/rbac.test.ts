@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canHaveSubaccounts, hasCapability, type AccessCapability, type MembershipContext } from "@/lib/rbac";
+import {
+  ACCESS_CAPABILITIES,
+  canHaveSubaccounts,
+  hasCapability,
+  type AccessCapability,
+  type MembershipContext,
+} from "@/lib/rbac";
 
 const ownerContext: MembershipContext = {
   accountRole: "account_owner",
@@ -49,38 +55,20 @@ describe("canHaveSubaccounts", () => {
 });
 
 describe("hasCapability", () => {
-  it.each<AccessCapability>([
-    "clinic_profile.manage",
-    "forms.manage",
-    "subaccounts.manage",
-    "subaccounts_roles.manage",
-    "subscription_billing.manage",
-    "treasury.manage",
-    "agenda.delete_events",
-    "subaccounts_analytics.read",
-    "team_development.manage",
-    "patients.read",
-    "patients.write",
-    "patients.delete",
-    "patients.manage_groups",
-    "schedule.read",
-    "schedule.write",
-    "schedule.write_others",
-    "sessions.read",
-    "sessions.write",
-    "sessions.read_all",
-    "sessions.write_others",
-    "sessions.share",
-    "sessions.delete",
-    "session.delete_draft",
-  ])("grants every capability to account owner", (capability) => {
+  it.each<AccessCapability>(ACCESS_CAPABILITIES)("grants capability %s to account owner", (capability) => {
     expect(hasCapability(ownerContext, capability)).toBe(true);
   });
 
   it("grants admin operational management but not billing ownership", () => {
+    expect(hasCapability(adminContext, "clinic_profile.read")).toBe(true);
+    expect(hasCapability(adminContext, "clinic_profile.manage")).toBe(true);
+    expect(hasCapability(adminContext, "forms.read")).toBe(true);
     expect(hasCapability(adminContext, "forms.manage")).toBe(true);
+    expect(hasCapability(adminContext, "treasury.read")).toBe(true);
     expect(hasCapability(adminContext, "treasury.manage")).toBe(true);
+    expect(hasCapability(adminContext, "subscription_billing.read")).toBe(false);
     expect(hasCapability(adminContext, "subscription_billing.manage")).toBe(false);
+    expect(hasCapability(adminContext, "schedule.read_all")).toBe(true);
     expect(hasCapability(adminContext, "sessions.read_all")).toBe(true);
     expect(hasCapability(adminContext, "sessions.write_others")).toBe(true);
   });
@@ -88,31 +76,44 @@ describe("hasCapability", () => {
   it("keeps professional focused on clinical work", () => {
     expect(hasCapability(professionalContext, "sessions.write")).toBe(true);
     expect(hasCapability(professionalContext, "patients.write")).toBe(true);
+    expect(hasCapability(professionalContext, "patients_groups.read")).toBe(true);
+    expect(hasCapability(professionalContext, "forms.read")).toBe(true);
+    expect(hasCapability(professionalContext, "forms.manage")).toBe(false);
+    expect(hasCapability(professionalContext, "treasury.read")).toBe(false);
+    expect(hasCapability(professionalContext, "treasury.manage")).toBe(false);
+    expect(hasCapability(professionalContext, "schedule.read_all")).toBe(false);
     expect(hasCapability(professionalContext, "sessions.read_all")).toBe(false);
     expect(hasCapability(professionalContext, "sessions.write_others")).toBe(false);
-    expect(hasCapability(professionalContext, "forms.manage")).toBe(false);
-    expect(hasCapability(professionalContext, "treasury.manage")).toBe(false);
   });
 
   it("keeps assistant out of clinical and financial sensitive areas", () => {
+    expect(hasCapability(assistantContext, "schedule.read")).toBe(true);
+    expect(hasCapability(assistantContext, "schedule.read_all")).toBe(true);
     expect(hasCapability(assistantContext, "schedule.write")).toBe(true);
     expect(hasCapability(assistantContext, "patients.write")).toBe(true);
+    expect(hasCapability(assistantContext, "patients_groups.read")).toBe(true);
     expect(hasCapability(assistantContext, "sessions.write")).toBe(false);
+    expect(hasCapability(assistantContext, "forms.read")).toBe(false);
     expect(hasCapability(assistantContext, "forms.manage")).toBe(false);
+    expect(hasCapability(assistantContext, "treasury.read")).toBe(false);
   });
 
   it("keeps estagiario limited to profile/security context and own-session workflows", () => {
     expect(hasCapability(internContext, "patients.read")).toBe(true);
     expect(hasCapability(internContext, "patients.write")).toBe(true);
+    expect(hasCapability(internContext, "patients_groups.read")).toBe(true);
     expect(hasCapability(internContext, "sessions.read")).toBe(true);
     expect(hasCapability(internContext, "sessions.write")).toBe(true);
     expect(hasCapability(internContext, "sessions.read_all")).toBe(false);
     expect(hasCapability(internContext, "sessions.write_others")).toBe(false);
     expect(hasCapability(internContext, "session.delete_draft")).toBe(false);
     expect(hasCapability(internContext, "schedule.read")).toBe(false);
+    expect(hasCapability(internContext, "schedule.read_all")).toBe(false);
     expect(hasCapability(internContext, "schedule.write")).toBe(false);
+    expect(hasCapability(internContext, "forms.read")).toBe(false);
     expect(hasCapability(internContext, "forms.manage")).toBe(false);
     expect(hasCapability(internContext, "subaccounts.manage")).toBe(false);
+    expect(hasCapability(internContext, "treasury.read")).toBe(false);
   });
 
   it("blocks inactive memberships", () => {

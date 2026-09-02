@@ -4,7 +4,9 @@ export type OperationalRole = "owner" | "admin" | "professional" | "assistant" |
 export type MembershipStatus = "invited" | "active" | "inactive" | "suspended";
 
 export type AccessCapability =
+  | "clinic_profile.read"
   | "clinic_profile.manage"
+  | "forms.read"
   | "forms.manage"
   | "subaccounts.read"
   | "subaccounts.write"
@@ -12,7 +14,9 @@ export type AccessCapability =
   | "subaccounts.delete"
   | "subaccounts_roles.read"
   | "subaccounts_roles.manage"
+  | "subscription_billing.read"
   | "subscription_billing.manage"
+  | "treasury.read"
   | "treasury.manage"
   | "agenda.delete_events"
   | "subaccounts_analytics.read"
@@ -20,8 +24,10 @@ export type AccessCapability =
   | "patients.read"
   | "patients.write"
   | "patients.delete"
+  | "patients_groups.read"
   | "patients.manage_groups"
   | "schedule.read"
+  | "schedule.read_all"
   | "schedule.write"
   | "schedule.write_others"
   | "sessions.read"
@@ -34,7 +40,9 @@ export type AccessCapability =
   | "system.print";
 
 export const ACCESS_CAPABILITIES: AccessCapability[] = [
+  "clinic_profile.read",
   "clinic_profile.manage",
+  "forms.read",
   "forms.manage",
   "subaccounts.read",
   "subaccounts.write",
@@ -42,7 +50,9 @@ export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "subaccounts.delete",
   "subaccounts_roles.read",
   "subaccounts_roles.manage",
+  "subscription_billing.read",
   "subscription_billing.manage",
+  "treasury.read",
   "treasury.manage",
   "agenda.delete_events",
   "subaccounts_analytics.read",
@@ -50,8 +60,10 @@ export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "patients.read",
   "patients.write",
   "patients.delete",
+  "patients_groups.read",
   "patients.manage_groups",
   "schedule.read",
+  "schedule.read_all",
   "schedule.write",
   "schedule.write_others",
   "sessions.read",
@@ -69,9 +81,17 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
     description: "Pode excluir eventos da agenda da clínica.",
     label: "Excluir eventos da agenda",
   },
+  "clinic_profile.read": {
+    description: "Pode visualizar os dados institucionais, endereço e informações da clínica.",
+    label: "Visualizar perfil da clínica",
+  },
   "clinic_profile.manage": {
     description: "Pode editar dados institucionais, marca e preferências da clínica.",
     label: "Gerenciar perfil da clínica",
+  },
+  "forms.read": {
+    description: "Pode visualizar e consultar os modelos de formulários da clínica.",
+    label: "Visualizar formulários",
   },
   "forms.manage": {
     description: "Pode criar, editar, importar e remover modelos de formulários.",
@@ -93,9 +113,17 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
     description: "Pode criar e editar cadastros e dados operacionais de pacientes.",
     label: "Editar pacientes",
   },
+  "patients_groups.read": {
+    description: "Pode visualizar grupos, categorias e marcadores de pacientes.",
+    label: "Visualizar grupos de pacientes",
+  },
   "schedule.read": {
     description: "Pode visualizar agenda e compromissos da clínica.",
     label: "Visualizar agenda",
+  },
+  "schedule.read_all": {
+    description: "Pode visualizar a agenda de todos os profissionais da clínica.",
+    label: "Visualizar agenda da equipe",
   },
   "schedule.write": {
     description: "Pode criar e editar eventos na própria agenda.",
@@ -161,6 +189,10 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
     description: "Pode alterar hierarquias e poderes dos papéis operacionais.",
     label: "Gerenciar papéis operacionais",
   },
+  "subscription_billing.read": {
+    description: "Pode visualizar plano, faturas e limites comerciais da clínica.",
+    label: "Visualizar assinatura",
+  },
   "subscription_billing.manage": {
     description: "Pode ver e alterar assinatura, cobrança e limites comerciais.",
     label: "Gerenciar assinatura",
@@ -172,6 +204,10 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
   "team_development.manage": {
     description: "Pode avaliar, definir metas e acompanhar evolução interna de colaboradores.",
     label: "Gerenciar desenvolvimento da equipe",
+  },
+  "treasury.read": {
+    description: "Pode visualizar dados financeiros, lançamentos e fluxo de caixa.",
+    label: "Visualizar tesouraria",
   },
   "treasury.manage": {
     description: "Pode visualizar e gerenciar dados financeiros e tesouraria.",
@@ -207,8 +243,10 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
   }
 
   switch (capability) {
+    case "clinic_profile.read":
     case "clinic_profile.manage":
     case "forms.manage":
+    case "treasury.read":
     case "treasury.manage":
     case "agenda.delete_events":
     case "subaccounts_analytics.read":
@@ -219,6 +257,9 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "patients.delete":
       return hasOperationalRole(context, ["owner", "admin"]);
 
+    case "forms.read":
+      return hasOperationalRole(context, ["owner", "admin", "professional"]);
+
     case "subaccounts.read":
     case "subaccounts.write":
     case "subaccounts.manage":
@@ -227,11 +268,13 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "subaccounts_roles.manage":
       return canHaveSubaccounts(context.subscriptionPlan) && hasOperationalRole(context, ["owner", "admin"]);
 
+    case "subscription_billing.read":
     case "subscription_billing.manage":
       return false;
 
     case "patients.read":
     case "patients.write":
+    case "patients_groups.read":
     case "patients.manage_groups":
     case "system.print":
       return hasOperationalRole(context, ["owner", "admin", "professional", "assistant", "estagiario"]);
@@ -240,6 +283,7 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "schedule.write":
       return hasOperationalRole(context, ["owner", "admin", "professional", "assistant"]);
 
+    case "schedule.read_all":
     case "schedule.write_others":
       return hasOperationalRole(context, ["owner", "admin", "assistant"]);
 
