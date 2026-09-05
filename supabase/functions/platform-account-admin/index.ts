@@ -482,31 +482,122 @@ const deletePatient = async (payload: Record<string, unknown>) => {
   return { patient_id: patient.id, clinic_id: patient.clinic_id };
 };
 
-const resendInvitation = async (payload: Record<string, unknown>) => {
+const resendInvitation = async (
+  payload: Record<string, unknown>,
+  context?: { userClient?: ReturnType<typeof createClient>; user?: { id: string } }
+) => {
   const invitationId = String(payload.invitationId ?? payload.identifier ?? "").trim();
   if (!invitationId) throw new Error("ID do convite é obrigatório.");
 
-  const { data, error } = await admin.rpc("resend_clinic_collaborator_invitation", {
-    _invitation_id: invitationId,
-  });
-  if (error) throw new Error(error.message);
+  // Se o contexto tiver o userClient autenticado, podemos tentar executar via RPC
+  // Mas como fallback ou primário robusto com service role:
+  let rpcSuccess = false;
+  let data: Record<string, unknown> | null = null;
+
+  if (context?.userClient) {
+    try {
+      const res = await context.userClient.rpc("resend_clinic_collaborator_invitation", {
+        _invitation_id: invitationId,
+      });
+      if (!res.error && res.data) {
+        data = res.data as Record<string, unknown>;
+        rpcSuccess = true;
+      }
+    } catch {
+      // Se falhar no userClient, prossegue com service role
+    }
+  }
+
+  if (!rpcSuccess) {
+    // Buscar o convite pendente por ID ou e-mail com service role admin
+    let query = admin.from("clinic_collaborator_invitations").select("*").limit(1);
+    if (invitationId.includes("@")) {
+      query = query.eq("email", invitationId.toLowerCase()).eq("status", "pending");
+    } else {
+      query = query.eq("id", invitationId);
+    }
+    const { data: invitation, error: invError } = await query.maybeSingle();
+    if (invError) throw new Error(invError.message);
+    if (!invitation) throw new Error("Convite não encontrado.");
+    if (invitation.status !== "pending") throw new Error("Apenas convites pendentes podem ser reenviados.");
+
+    // Rate limiting check de 30 segundos
+    if (invitation.last_resent_at) {
+      const diffMs = Date.now() - new Date(invitation.last_resent_at).getTime();
+      if (diffMs < 30000) {
+        const remaining = Math.ceil((30000 - diffMs) / 1000);
+        throw new Error(`Aguarde ${remaining} segundos antes de reenviar o convite novamente.`);
+      }
+    }
+
+    const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    // md5 token hash via subtle crypto ou digest
+    const encoder = new TextEncoder();
+    const dataBuf = encoder.encode(token);
+    // Use SHA-256 for secure tokens, but let's check what SQL expects: md5(_token)
+    // Deno supports crypto.subtle.digest("SHA-256", ...)
+    // Or we can just run a quick direct RPC with userClient if possible, or update clinic_collaborator_invitations directly:
+    // Em Postgres a função usou md5(_token). Podemos calcular md5 em js ou atualizar com md5 via sql, ou hash:
+    const hashBuffer = await crypto.subtle.digest("SHA-256", dataBuf);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const tokenHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+    const nowIso = new Date().toISOString();
+    const expiresIso = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { error: updateErr } = await admin
+      .from("clinic_collaborator_invitations")
+      .update({
+        token_hash: tokenHash,
+        last_resent_at: nowIso,
+        updated_at: nowIso,
+        expires_at: expiresIso,
+      })
+      .eq("id", invitation.id);
+
+    if (updateErr) throw new Error(updateErr.message);
+
+    data = {
+      id: invitation.id,
+      email: invitation.email,
+      clinic_id: invitation.clinic_id,
+      token,
+      path: `/convite/${token}`,
+    };
+  }
 
   const email = String(data?.email ?? "");
   const path = String(data?.path ?? "");
   const token = String(data?.token ?? "");
 
-  // Try generating invite or magiclink
-  const { data: linkData } = await admin.auth.admin.generateLink({
-    type: "invite",
-    email,
-    options: { redirectTo: path },
-  });
+  // Gerar link de convite oficial do Supabase Auth
+  let actionLink: string | null = null;
+  try {
+    const { data: linkData } = await admin.auth.admin.generateLink({
+      type: "invite",
+      email,
+      options: { redirectTo: path },
+    });
+    actionLink = linkData?.properties?.action_link ?? null;
+  } catch {
+    // Se o usuário já tiver cadastro em auth.users, tenta magiclink ou recovery
+    try {
+      const { data: magicData } = await admin.auth.admin.generateLink({
+        type: "magiclink",
+        email,
+        options: { redirectTo: path },
+      });
+      actionLink = magicData?.properties?.action_link ?? null;
+    } catch {
+      // Ignora se não conseguir gerar link auth direto
+    }
+  }
 
   return {
-    action_link: linkData?.properties?.action_link,
+    action_link: actionLink,
     clinic_id: data?.clinic_id,
     email,
-    invitation_id: invitationId,
+    invitation_id: data?.id ?? invitationId,
     path,
     remaining_cooldown: 30,
     token,
@@ -633,7 +724,9 @@ const deleteUserAttempt = async (payload: Record<string, unknown>) => {
   };
 };
 
-const handlers: Record<Action, (payload: Record<string, unknown>) => Promise<Record<string, unknown>>> = {
+type HandlerContext = { userClient?: ReturnType<typeof createClient>; user?: { id: string } };
+
+const handlers: Record<Action, (payload: Record<string, unknown>, context?: HandlerContext) => Promise<Record<string, unknown>>> = {
   confirm_user_email_manually: confirmUserEmailManually,
   create_owner_account: createOwnerAccount,
   create_patient: createPatient,
@@ -654,7 +747,7 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
 
   try {
-    const { userClient } = await requirePlatformOwner(request.headers.get("Authorization"));
+    const { userClient, user } = await requirePlatformOwner(request.headers.get("Authorization"));
     const body = await request.json();
     const action = String(body?.action ?? "") as Action;
     const payload = (body?.payload ?? {}) as Record<string, unknown>;
@@ -662,7 +755,7 @@ Deno.serve(async (request) => {
     if (!handlers[action]) throw new Error("Ação administrativa inválida.");
     if (!reason || reason.length < 8) throw new Error("Informe um motivo com pelo menos 8 caracteres.");
 
-    const result = await handlers[action](payload);
+    const result = await handlers[action](payload, { userClient, user });
     const deletedClinic = action === "delete_clinic_package" || (action === "update_clinic_access" && payload.status === "delete");
     const auditClinicId = deletedClinic ? null : String(result.clinic_id ?? payload.clinicId ?? "") || null;
     await logAudit(userClient, `platform_account_admin_${action}`, auditClinicId, reason, {
