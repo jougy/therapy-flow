@@ -29,6 +29,10 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
 type Action =
   | "create_owner_account"
   | "create_subaccount"
+  | "create_simple_user"
+  | "assign_user_to_clinic"
+  | "remove_user_from_clinic"
+  | "update_membership_role"
   | "update_owner_access"
   | "update_subaccount_access"
   | "update_clinic_access"
@@ -301,6 +305,217 @@ const createSubaccount = async (payload: Record<string, unknown>) => {
   return { clinic_id: clinic.id, user_id: userId, email, role };
 };
 
+const createSimpleUser = async (payload: Record<string, unknown>) => {
+  const email = normalizeEmail(payload.email);
+  const password = normalizePassword(payload.password);
+  const status = normalizeStatus(payload.status);
+  const role = payload.role ? normalizeRole(payload.role) : "professional";
+  const fullName = normalizeText(payload.fullName, 120);
+  const cpf = payload.cpf ? digits(payload.cpf) : null;
+  const phone = payload.phone ? digits(payload.phone) : null;
+
+  if (!email) throw new Error("E-mail é obrigatório.");
+
+  let clinicId: string | null = null;
+  if (payload.clinicId || payload.clinic) {
+    const clinic = await getClinic(payload.clinicId ?? payload.clinic);
+    clinicId = clinic.id;
+  }
+
+  const { data, error } = await admin.auth.admin.createUser({
+    app_metadata: { admin_status: status },
+    email,
+    email_confirm: true,
+    password,
+    user_metadata: {
+      full_name: fullName,
+      cpf,
+      phone,
+    },
+  });
+  if (error) throw new Error(error.message);
+
+  const userId = data.user.id;
+  try {
+    const { error: profileError } = await admin.from("profiles").insert({
+      clinic_id: clinicId,
+      cpf,
+      email,
+      full_name: fullName,
+      phone,
+      id: userId,
+    });
+    if (profileError) throw new Error(profileError.message);
+
+    const { error: roleError } = await admin.from("user_roles").upsert(
+      { role: "user", user_id: userId },
+      { onConflict: "user_id,role" },
+    );
+    if (roleError) throw new Error(roleError.message);
+
+    if (clinicId) {
+      const { error: membershipError } = await admin.from("clinic_memberships").insert({
+        account_role: null,
+        clinic_id: clinicId,
+        is_active: boolFromStatus(status),
+        membership_status: toMembershipStatus(status),
+        operational_role: role,
+        user_id: userId,
+      });
+      if (membershipError) throw new Error(membershipError.message);
+    }
+  } catch (error) {
+    await admin.auth.admin.deleteUser(userId);
+    throw error;
+  }
+
+  return { user_id: userId, email, clinic_id: clinicId, role };
+};
+
+const assignUserToClinic = async (payload: Record<string, unknown>) => {
+  const account = await getAccountProfile(payload.identifier ?? payload.userId);
+  const clinic = await getClinic(payload.clinicId ?? payload.clinic);
+  const role = normalizeRole(payload.role ?? "professional");
+  const status = normalizeStatus(payload.status ?? "active");
+
+  const { data: existing, error: checkError } = await admin
+    .from("clinic_memberships")
+    .select("id, account_role, is_active, membership_status, operational_role")
+    .eq("clinic_id", clinic.id)
+    .eq("user_id", account.id)
+    .maybeSingle();
+
+  if (checkError) throw new Error(checkError.message);
+
+  if (existing) {
+    // Se já existia, reativa e atualiza o papel
+    const { error: updateError } = await admin
+      .from("clinic_memberships")
+      .update({
+        is_active: boolFromStatus(status),
+        membership_status: toMembershipStatus(status),
+        operational_role: role,
+        ended_at: null,
+      })
+      .eq("id", existing.id);
+    if (updateError) throw new Error(updateError.message);
+  } else {
+    // Insere novo membership
+    const { error: insertError } = await admin.from("clinic_memberships").insert({
+      account_role: null,
+      clinic_id: clinic.id,
+      is_active: boolFromStatus(status),
+      membership_status: toMembershipStatus(status),
+      operational_role: role,
+      user_id: account.id,
+    });
+    if (insertError) throw new Error(insertError.message);
+  }
+
+  // Se o perfil não tiver clinic_id primário, atualiza
+  if (!account.clinic_id) {
+    await admin.from("profiles").update({ clinic_id: clinic.id }).eq("id", account.id);
+  }
+
+  return { user_id: account.id, clinic_id: clinic.id, operational_role: role };
+};
+
+const removeUserFromClinic = async (payload: Record<string, unknown>) => {
+  const account = await getAccountProfile(payload.identifier ?? payload.userId);
+  const clinic = await getClinic(payload.clinicId ?? payload.clinic);
+
+  const { data: membership, error: lookupError } = await admin
+    .from("clinic_memberships")
+    .select("id, account_role, operational_role")
+    .eq("clinic_id", clinic.id)
+    .eq("user_id", account.id)
+    .maybeSingle();
+
+  if (lookupError) throw new Error(lookupError.message);
+  if (!membership) throw new Error("Vínculo do usuário com esta clínica não foi encontrado.");
+
+  if (membership.account_role === "account_owner" || clinic.account_owner_user_id === account.id) {
+    throw new Error("A conta proprietária (owner) não pode ser desvinculada da clínica. Caso deseje encerrar a clínica, use 'Excluir definitivamente' na clínica.");
+  }
+
+  // Excluir membership
+  const { error: deleteMembershipError } = await admin
+    .from("clinic_memberships")
+    .delete()
+    .eq("id", membership.id);
+  if (deleteMembershipError) throw new Error(deleteMembershipError.message);
+
+  // Limpar sessões ativas e contexto da clínica
+  try {
+    await admin.from("user_security_sessions").update({
+      ended_at: new Date().toISOString(),
+      force_signed_out_at: new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+    }).eq("clinic_id", clinic.id).eq("user_id", account.id).is("ended_at", null);
+
+    await admin.from("user_active_clinic_contexts").delete()
+      .eq("clinic_id", clinic.id)
+      .eq("user_id", account.id);
+  } catch {
+    // tabelas auxiliares opcionais
+  }
+
+  // Se o perfil tinha essa clínica como primária, reatribuir para outra existente ou null
+  if (account.clinic_id === clinic.id) {
+    const { data: otherMembership } = await admin
+      .from("clinic_memberships")
+      .select("clinic_id")
+      .eq("user_id", account.id)
+      .limit(1)
+      .maybeSingle();
+
+    await admin.from("profiles").update({
+      clinic_id: otherMembership?.clinic_id ?? null,
+    }).eq("id", account.id);
+  }
+
+  return { user_id: account.id, clinic_id: clinic.id, removed: true };
+};
+
+const updateMembershipRole = async (payload: Record<string, unknown>) => {
+  const account = await getAccountProfile(payload.identifier ?? payload.userId);
+  const clinic = await getClinic(payload.clinicId ?? payload.clinic);
+  const role = normalizeRole(payload.role);
+
+  const { data: membership, error: lookupError } = await admin
+    .from("clinic_memberships")
+    .select("id, account_role, operational_role")
+    .eq("clinic_id", clinic.id)
+    .eq("user_id", account.id)
+    .maybeSingle();
+
+  if (lookupError) throw new Error(lookupError.message);
+  if (!membership) throw new Error("Vínculo do usuário com esta clínica não foi encontrado.");
+
+  if (membership.account_role === "account_owner") {
+    throw new Error("O papel operacional da conta principal compradora (owner) não pode ser alterado.");
+  }
+
+  const update: Record<string, unknown> = {
+    operational_role: role,
+  };
+
+  if (payload.status !== undefined) {
+    const status = normalizeStatus(payload.status);
+    update.is_active = boolFromStatus(status);
+    update.membership_status = toMembershipStatus(status);
+  }
+
+  const { error: updateError } = await admin
+    .from("clinic_memberships")
+    .update(update)
+    .eq("id", membership.id);
+
+  if (updateError) throw new Error(updateError.message);
+
+  return { user_id: account.id, clinic_id: clinic.id, operational_role: role };
+};
+
 const updateOwnerAccess = async (payload: Record<string, unknown>) => {
   const account = await getOwnerProfile(payload);
   if (normalizeText(payload.cnpj, 18) && account.clinic_id) {
@@ -489,65 +704,69 @@ const resendInvitation = async (
   const invitationId = String(payload.invitationId ?? payload.identifier ?? "").trim();
   if (!invitationId) throw new Error("ID do convite é obrigatório.");
 
-  // Se o contexto tiver o userClient autenticado, podemos tentar executar via RPC
-  // Mas como fallback ou primário robusto com service role:
-  let rpcSuccess = false;
-  let data: Record<string, unknown> | null = null;
+  // 1. Tentar localizar o convite por ID ou por e-mail com admin (service role)
+  let invitation: Record<string, unknown> | null = null;
+  let targetEmail = invitationId.includes("@") ? invitationId.toLowerCase() : "";
 
-  if (context?.userClient) {
-    try {
-      const res = await context.userClient.rpc("resend_clinic_collaborator_invitation", {
-        _invitation_id: invitationId,
-      });
-      if (!res.error && res.data) {
-        data = res.data as Record<string, unknown>;
-        rpcSuccess = true;
-      }
-    } catch {
-      // Se falhar no userClient, prossegue com service role
+  let query = admin.from("clinic_collaborator_invitations").select("*").limit(1);
+  if (targetEmail) {
+    query = query.eq("email", targetEmail).order("created_at", { ascending: false });
+  } else {
+    query = query.eq("id", invitationId);
+  }
+  const { data: invFound, error: invError } = await query.maybeSingle();
+  if (invError) throw new Error(invError.message);
+  invitation = invFound;
+
+  if (!invitation && !targetEmail) {
+    // Pode ser que invitationId seja o user_id do auth
+    const { data: uData } = await admin.auth.admin.getUserById(invitationId);
+    if (uData?.user?.email) {
+      targetEmail = uData.user.email.toLowerCase();
+      const { data: invByEmail } = await admin
+        .from("clinic_collaborator_invitations")
+        .select("*")
+        .eq("email", targetEmail)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      invitation = invByEmail;
     }
   }
 
-  if (!rpcSuccess) {
-    // Buscar o convite pendente por ID ou e-mail com service role admin
-    let query = admin.from("clinic_collaborator_invitations").select("*").limit(1);
-    if (invitationId.includes("@")) {
-      query = query.eq("email", invitationId.toLowerCase()).eq("status", "pending");
-    } else {
-      query = query.eq("id", invitationId);
+  if (invitation?.email) {
+    targetEmail = String(invitation.email).toLowerCase();
+  }
+
+  if (!targetEmail && !invitation) {
+    throw new Error("Convite ou usuário não encontrado para o identificador informado.");
+  }
+
+  // Rate limiting check de 30 segundos
+  if (invitation?.last_resent_at) {
+    const diffMs = Date.now() - new Date(String(invitation.last_resent_at)).getTime();
+    if (diffMs < 30000) {
+      const remaining = Math.ceil((30000 - diffMs) / 1000);
+      throw new Error(`Aguarde ${remaining} segundos antes de reenviar o convite novamente.`);
     }
-    const { data: invitation, error: invError } = await query.maybeSingle();
-    if (invError) throw new Error(invError.message);
-    if (!invitation) throw new Error("Convite não encontrado.");
-    if (invitation.status !== "pending") throw new Error("Apenas convites pendentes podem ser reenviados.");
+  }
 
-    // Rate limiting check de 30 segundos
-    if (invitation.last_resent_at) {
-      const diffMs = Date.now() - new Date(invitation.last_resent_at).getTime();
-      if (diffMs < 30000) {
-        const remaining = Math.ceil((30000 - diffMs) / 1000);
-        throw new Error(`Aguarde ${remaining} segundos antes de reenviar o convite novamente.`);
-      }
-    }
+  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(token));
+  const tokenHash = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
 
-    const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-    // md5 token hash via subtle crypto ou digest
-    const encoder = new TextEncoder();
-    const dataBuf = encoder.encode(token);
-    // Use SHA-256 for secure tokens, but let's check what SQL expects: md5(_token)
-    // Deno supports crypto.subtle.digest("SHA-256", ...)
-    // Or we can just run a quick direct RPC with userClient if possible, or update clinic_collaborator_invitations directly:
-    // Em Postgres a função usou md5(_token). Podemos calcular md5 em js ou atualizar com md5 via sql, ou hash:
-    const hashBuffer = await crypto.subtle.digest("SHA-256", dataBuf);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const tokenHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const nowIso = new Date().toISOString();
+  const expiresIso = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
-    const nowIso = new Date().toISOString();
-    const expiresIso = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  let clinicId = invitation?.clinic_id ? String(invitation.clinic_id) : null;
 
+  if (invitation?.id) {
+    // Se estava cancelado ou expirado, reativa para 'pending'
     const { error: updateErr } = await admin
       .from("clinic_collaborator_invitations")
       .update({
+        status: "pending",
         token_hash: tokenHash,
         last_resent_at: nowIso,
         updated_at: nowIso,
@@ -556,35 +775,24 @@ const resendInvitation = async (
       .eq("id", invitation.id);
 
     if (updateErr) throw new Error(updateErr.message);
-
-    data = {
-      id: invitation.id,
-      email: invitation.email,
-      clinic_id: invitation.clinic_id,
-      token,
-      path: `/convite/${token}`,
-    };
   }
 
-  const email = String(data?.email ?? "");
-  const path = String(data?.path ?? "");
-  const token = String(data?.token ?? "");
+  const path = `/convite/${token}`;
 
-  // Gerar link de convite oficial do Supabase Auth
+  // Gerar link oficial do Supabase Auth
   let actionLink: string | null = null;
   try {
     const { data: linkData } = await admin.auth.admin.generateLink({
       type: "invite",
-      email,
+      email: targetEmail,
       options: { redirectTo: path },
     });
     actionLink = linkData?.properties?.action_link ?? null;
   } catch {
-    // Se o usuário já tiver cadastro em auth.users, tenta magiclink ou recovery
     try {
       const { data: magicData } = await admin.auth.admin.generateLink({
         type: "magiclink",
-        email,
+        email: targetEmail,
         options: { redirectTo: path },
       });
       actionLink = magicData?.properties?.action_link ?? null;
@@ -595,9 +803,9 @@ const resendInvitation = async (
 
   return {
     action_link: actionLink,
-    clinic_id: data?.clinic_id,
-    email,
-    invitation_id: data?.id ?? invitationId,
+    clinic_id: clinicId,
+    email: targetEmail,
+    invitation_id: invitation?.id ?? invitationId,
     path,
     remaining_cooldown: 30,
     token,
@@ -727,16 +935,20 @@ const deleteUserAttempt = async (payload: Record<string, unknown>) => {
 type HandlerContext = { userClient?: ReturnType<typeof createClient>; user?: { id: string } };
 
 const handlers: Record<Action, (payload: Record<string, unknown>, context?: HandlerContext) => Promise<Record<string, unknown>>> = {
+  assign_user_to_clinic: assignUserToClinic,
   confirm_user_email_manually: confirmUserEmailManually,
   create_owner_account: createOwnerAccount,
   create_patient: createPatient,
+  create_simple_user: createSimpleUser,
   create_subaccount: createSubaccount,
   delete_clinic_package: deleteClinicPackage,
   delete_patient: deletePatient,
   delete_subaccount: deleteSubaccount,
   delete_user_attempt: deleteUserAttempt,
+  remove_user_from_clinic: removeUserFromClinic,
   resend_invitation: resendInvitation,
   update_clinic_access: updateClinicAccess,
+  update_membership_role: updateMembershipRole,
   update_owner_access: updateOwnerAccess,
   update_patient: updatePatient,
   update_subaccount_access: updateSubaccountAccess,
