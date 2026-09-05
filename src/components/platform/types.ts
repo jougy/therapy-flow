@@ -1,8 +1,15 @@
 import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 
-export type DirectoryKind = "all" | "clinic" | "account" | "patient" | "pending_account";
+export type DirectoryKind = "all" | "clinic" | "owner" | "account" | "patient" | "pending_account";
+export type DirectoryStatusFilter = "all" | "active" | "pending" | "expiring_soon" | "expired" | "banned" | "paused";
 export type DetailKind = "clinic" | "account" | "patient";
 export type SupportRole = "owner" | "admin" | "professional" | "assistant" | "estagiario";
+
+export interface PlatformTagItem {
+  id: string;
+  name: string;
+  color?: string | null;
+}
 
 export type PlatformDirectoryItem = {
   clinic_id: string | null;

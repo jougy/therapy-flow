@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, BarChart3, Calendar, CheckCircle2, ChevronLeft, ChevronRight, ClipboardEdit, FileText, HeartPulse, Loader2, MapPin, Phone, Share2, User } from "lucide-react";
+import { ArrowLeft, BarChart3, Calendar, CheckCircle2, ChevronLeft, ChevronRight, ClipboardEdit, FileDown, FileText, HeartPulse, Loader2, MapPin, Phone, Printer, Share2, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import {
   buildPatientClinicalSnapshotState,
@@ -21,6 +28,9 @@ import { buildPatientRegistrationUrl, getPatientRegistrationPassword } from "@/l
 import { formatPatientOriginDetails, getPatientOriginLabel } from "@/lib/patient-origin";
 import { fetchPatientByRef, getPatientPath, getPatientRouteKey } from "@/lib/patient-routing";
 import { SharePatientRegistrationModal } from "@/components/patients/SharePatientRegistrationModal";
+import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
+import { PatientRegistrationPrintView } from "@/components/patients/PatientRegistrationPrintView";
+import { buildPatientExportData, downloadPatientDataJson } from "@/lib/patient-export";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 type PatientClinicalSnapshot = Database["public"]["Tables"]["patient_clinical_snapshots"]["Row"];
@@ -214,7 +224,8 @@ const PacienteResumo = () => {
   const { id, clinicKey } = useParams<{ id?: string; clinicKey?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { clinic, clinicId, user } = useAuth();
+  const { clinic, clinicId, profile, user, can } = useAuth();
+  const { isFeatureEnabled } = useFeatureFlags();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -222,6 +233,20 @@ const PacienteResumo = () => {
   const [clinicalSnapshots, setClinicalSnapshots] = useState<PatientClinicalSnapshot[]>([]);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [selectedClinicalHistoryIndex, setSelectedClinicalHistoryIndex] = useState(0);
+  const [showPrintResponsibilityModal, setShowPrintResponsibilityModal] = useState(false);
+
+  const canPrint = Boolean(typeof can === "function" ? can("system.print") : true) && isFeatureEnabled("print_general");
+
+  const handlePrintRegistration = () => {
+    setShowPrintResponsibilityModal(true);
+  };
+
+  const handleExecutePrint = () => {
+    setShowPrintResponsibilityModal(false);
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
 
   const fetchData = useCallback(async () => {
     if (!id) {
@@ -300,6 +325,32 @@ const PacienteResumo = () => {
     setSelectedClinicalHistoryIndex((currentIndex) => Math.min(currentIndex, Math.max(clinicalHistoryVersions.length - 1, 0)));
   }, [clinicalHistoryVersions.length]);
 
+  const handleExportJson = useCallback(() => {
+    if (!patient) return;
+    try {
+      const payload = buildPatientExportData({
+        patient,
+        clinicalProfile: parsedClinicalProfile,
+        emergencyContact: parsedEmergencyContact,
+        snapshots: clinicalSnapshots,
+        clinicName: clinic?.name || "Clínica Pluri-Health",
+        exportedBy: profile?.full_name || profile?.social_name || user?.email || "Profissional autorizado",
+      });
+      downloadPatientDataJson(payload, patient.name);
+      toast({
+        title: "Exportação concluída",
+        description: "Arquivo JSON gerado e baixado com sucesso em conformidade com a LGPD.",
+      });
+    } catch (err) {
+      console.error("Erro ao exportar dados do paciente:", err);
+      toast({
+        title: "Erro na exportação",
+        description: "Não foi possível gerar o arquivo de exportação.",
+        variant: "destructive",
+      });
+    }
+  }, [clinic?.name, clinicalSnapshots, parsedClinicalProfile, parsedEmergencyContact, patient, profile?.full_name, profile?.social_name, user?.email]);
+
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -352,6 +403,30 @@ const PacienteResumo = () => {
             <Share2 className="mr-2 h-4 w-4" />
             Compartilhar cadastro
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Printer className="h-4 w-4 text-primary" />
+                <span>Imprimir / Exportar</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={handlePrintRegistration} disabled={!canPrint} className="cursor-pointer">
+                <Printer className="mr-2 h-4 w-4 text-primary" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Imprimir cadastro (PDF)</span>
+                  <span className="text-[11px] text-muted-foreground">Dossiê completo diagramado A4</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportJson} className="cursor-pointer">
+                <FileDown className="mr-2 h-4 w-4 text-primary" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Exportar dados (JSON)</span>
+                  <span className="text-[11px] text-muted-foreground">Portabilidade LGPD (Art. 18, V)</span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -470,6 +545,24 @@ const PacienteResumo = () => {
         onOpenChange={setShareDialogOpen}
         patient={patient}
         clinicName={clinic?.name}
+      />
+
+      <PatientRegistrationPrintView
+        patient={patient}
+        clinic={clinic}
+        profile={profile}
+        user={user}
+        clinicalProfile={parsedClinicalProfile}
+        emergencyContact={parsedEmergencyContact}
+        snapshots={clinicalSnapshots}
+        profileNameById={profileNameById}
+      />
+
+      <PrintResponsibilityModal
+        isOpen={showPrintResponsibilityModal}
+        onConfirm={handleExecutePrint}
+        onCancel={() => setShowPrintResponsibilityModal(false)}
+        documentTitle={`cadastro completo do paciente ${patient.name}`}
       />
     </motion.div>
   );

@@ -1,11 +1,11 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { motion } from "framer-motion";
-import { Clock3, ChevronRight, Plus, X } from "lucide-react";
+import { Clock3, ChevronRight, Maximize2, Plus, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
@@ -95,11 +95,18 @@ const PatientCardSkeleton = () => (
 );
 
 const Index = () => {
-  const { can, clinicId, user } = useAuth();
+  const { can, clinic, clinicId, user } = useAuth();
+  const { clinicKey } = useParams<{ clinicKey?: string }>();
   const { isFeatureEnabled, flags } = useFeatureFlags();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+
+  const isDesignLab = location.pathname.startsWith("/designlab");
+  const effectiveClinicKey = clinicKey || clinic?.route_key;
+  const fullAgendaPath = effectiveClinicKey
+    ? `/designlab/clinica/${effectiveClinicKey}/agenda`
+    : "/designlab/agenda";
 
   const deletedPatientId =
     typeof (location.state as { deletedPatientId?: unknown } | null)?.deletedPatientId === "string"
@@ -757,9 +764,27 @@ const Index = () => {
         {/* Agenda Dialog */}
         <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
           <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
-            <DialogHeader className="text-left">
-              <DialogTitle>Agenda</DialogTitle>
-              <DialogDescription>Veja e gerencie os agendamentos da clínica.</DialogDescription>
+            <DialogHeader className="text-left flex flex-row items-start justify-between gap-2 pr-6">
+              <div>
+                <DialogTitle>Agenda</DialogTitle>
+                <DialogDescription>Veja e gerencie os agendamentos da clínica.</DialogDescription>
+              </div>
+              {isDesignLab && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs shrink-0 rounded-lg text-primary border-primary/20 hover:bg-primary/5"
+                  onClick={() => {
+                    setAgendaDialogOpen(false);
+                    navigate(fullAgendaPath);
+                  }}
+                  title="Abrir agenda em tela cheia"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                  <span>Expandir</span>
+                </Button>
+              )}
             </DialogHeader>
             <AgendaWidget />
           </DialogContent>

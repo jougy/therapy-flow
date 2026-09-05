@@ -2752,6 +2752,10 @@ const PacienteDetalhe = () => {
                   <Share2 className="mr-2 h-4 w-4" />
                   Compartilhar cadastro
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(getPatientPath(patient, "resumo"))}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Imprimir / Exportar cadastro
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setRecurrenceDialogOpen(true)}>
                   <CalendarClock className="mr-2 h-4 w-4" />
                   Configurar recorrência

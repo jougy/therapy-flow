@@ -2,18 +2,29 @@ import { supabase } from "@/integrations/supabase/client";
 import { logRuntimeRpc, logRuntimeError } from "@/lib/runtime-debug";
 import type { AccountOperation, DetailKind, PlatformDirectoryItem } from "./types";
 
-export const callRpc = async (fn: string, args?: Record<string, unknown>) => {
+export const callRpc = async (
+  fn: string,
+  args?: Record<string, unknown>,
+  options?: { silentError?: boolean }
+) => {
   const startedAt = performance.now();
   const result = (await supabase.rpc(fn as never, args as never)) as {
     data: unknown;
     error: { message?: string } | null;
   };
   const durationMs = Math.round(performance.now() - startedAt);
-  logRuntimeRpc(`rpc:${fn}`, durationMs, !result.error, {
-    args,
-    error: result.error?.message,
-  });
-  if (result.error) {
+  const status = result.error ? "error" : "success";
+
+  logRuntimeRpc(
+    fn,
+    args ?? {},
+    status,
+    durationMs,
+    result.data,
+    result.error
+  );
+
+  if (result.error && !options?.silentError) {
     logRuntimeError("platform.rpc", `Erro ao executar RPC ${fn}: ${result.error.message}`, {
       args,
       error: result.error,
@@ -43,11 +54,14 @@ export const callPlatformAccountAdmin = async (action: string, payload: Record<s
         // ignore fallback
       }
     }
-    logRuntimeRpc(`functions/platform-account-admin:${action}`, durationMs, false, {
-      error: errorMsg,
+    logRuntimeRpc(
+      `functions/platform-account-admin:${action}`,
       payload,
-      reason,
-    });
+      "error",
+      durationMs,
+      null,
+      errorMsg
+    );
     logRuntimeError("platform.admin", `Falha na ação ${action}: ${errorMsg}`, {
       payload,
       reason,
@@ -56,11 +70,13 @@ export const callPlatformAccountAdmin = async (action: string, payload: Record<s
     throw new Error(errorMsg);
   }
 
-  logRuntimeRpc(`functions/platform-account-admin:${action}`, durationMs, true, {
-    action,
+  logRuntimeRpc(
+    `functions/platform-account-admin:${action}`,
     payload,
-    reason,
-  });
+    "success",
+    durationMs,
+    data
+  );
 
   const responseBody = data as { data?: unknown } | null;
   return responseBody?.data ?? data;
@@ -105,6 +121,25 @@ export const itemLabels: Record<DetailKind, string> = {
   account: "Conta",
   clinic: "Clínica",
   patient: "Paciente",
+};
+
+export const directoryKindLabels: Record<string, string> = {
+  all: "Todos os tipos",
+  clinic: "Clínicas",
+  owner: "Owners (Proprietários)",
+  account: "Usuários comuns",
+  patient: "Pacientes",
+  pending_account: "Pendências de cadastro",
+};
+
+export const directoryStatusLabels: Record<string, string> = {
+  all: "Todos os status",
+  active: "Ativo / Regular",
+  pending: "Pendente de ativação",
+  expiring_soon: "Próximo do vencimento (≤ 7d)",
+  expired: "Vencido / Expirado",
+  banned: "Bloqueado / Banido",
+  paused: "Pausado temporariamente",
 };
 
 export const eventLabel: Record<string, string> = {

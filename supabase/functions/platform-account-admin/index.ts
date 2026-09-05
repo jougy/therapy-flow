@@ -545,36 +545,92 @@ const confirmUserEmailManually = async (payload: Record<string, unknown>) => {
 };
 
 const deleteUserAttempt = async (payload: Record<string, unknown>) => {
-  const identifier = String(payload.identifier ?? payload.email ?? payload.userId ?? "").trim();
-  if (!identifier) throw new Error("Identificador do usuário ou convite é obrigatório.");
+  const rawIdentifier = String(payload.identifier ?? payload.email ?? payload.cpf ?? payload.userId ?? "").trim();
+  if (!rawIdentifier) throw new Error("Identificador (e-mail, CPF ou ID) é obrigatório.");
 
-  const isEmail = identifier.includes("@");
-  let targetEmail = isEmail ? identifier.toLowerCase() : "";
-  let targetUserId = !isEmail ? identifier : "";
+  const isEmail = rawIdentifier.includes("@");
+  const cleanDigits = rawIdentifier.replace(/\D/g, "");
+  const isCpf = !isEmail && cleanDigits.length === 11;
 
-  if (isEmail) {
+  let targetEmail = isEmail ? rawIdentifier.toLowerCase() : "";
+  let targetUserId = (!isEmail && !isCpf) ? rawIdentifier : "";
+
+  // 1. Se for CPF, buscar no profiles e nos metadados de auth.users
+  if (isCpf) {
+    const { data: profileByCpf } = await admin
+      .from("profiles")
+      .select("id, email")
+      .eq("cpf", cleanDigits)
+      .maybeSingle();
+
+    if (profileByCpf) {
+      targetUserId = profileByCpf.id;
+      if (profileByCpf.email) targetEmail = profileByCpf.email.toLowerCase();
+    } else {
+      // Procurar em auth.users via metadados
+      const { data: userList } = await admin.auth.admin.listUsers();
+      const found = userList?.users?.find((u) => {
+        const metaCpf = String(u.user_metadata?.cpf ?? "").replace(/\D/g, "");
+        return metaCpf === cleanDigits;
+      });
+      if (found) {
+        targetUserId = found.id;
+        if (found.email) targetEmail = found.email.toLowerCase();
+      }
+    }
+  } else if (isEmail) {
     const { data: userList } = await admin.auth.admin.listUsers();
     const found = userList?.users?.find((u) => u.email?.toLowerCase() === targetEmail);
-    if (found) targetUserId = found.id;
-  } else {
+    if (found) {
+      targetUserId = found.id;
+    } else {
+      // Buscar se existe perfil com esse email
+      const { data: profileByEmail } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("email", targetEmail)
+        .maybeSingle();
+      if (profileByEmail) targetUserId = profileByEmail.id;
+    }
+  } else if (targetUserId) {
     const { data: userData } = await admin.auth.admin.getUserById(targetUserId);
     if (userData?.user?.email) targetEmail = userData.user.email.toLowerCase();
+    if (!targetEmail) {
+      const { data: profileById } = await admin.from("profiles").select("email").eq("id", targetUserId).maybeSingle();
+      if (profileById?.email) targetEmail = profileById.email.toLowerCase();
+    }
   }
 
+  // 2. Limpar convites pendentes
   if (targetEmail) {
     await admin.from("clinic_collaborator_invitations").delete().eq("email", targetEmail);
   }
-  if (!isEmail) {
-    await admin.from("clinic_collaborator_invitations").delete().eq("id", identifier);
+  if (!isEmail && !isCpf) {
+    await admin.from("clinic_collaborator_invitations").delete().eq("id", rawIdentifier);
   }
 
+  // 3. Limpar tabelas relacionais do perfil e do usuário
   if (targetUserId) {
     await admin.from("clinic_memberships").delete().eq("user_id", targetUserId);
+    await admin.from("user_roles").delete().eq("user_id", targetUserId);
     await admin.from("profiles").delete().eq("id", targetUserId);
-    await admin.auth.admin.deleteUser(targetUserId);
+    try {
+      await admin.auth.admin.deleteUser(targetUserId);
+    } catch {
+      // Se já não existia em auth.users, ignora
+    }
   }
 
-  return { deleted: true, email: targetEmail, user_id: targetUserId };
+  if (!targetUserId && !targetEmail) {
+    throw new Error("Nenhum usuário ou cadastro pendente foi encontrado para o identificador informado.");
+  }
+
+  return {
+    deleted: true,
+    email: targetEmail || null,
+    user_id: targetUserId || null,
+    identifier: rawIdentifier,
+  };
 };
 
 const handlers: Record<Action, (payload: Record<string, unknown>) => Promise<Record<string, unknown>>> = {
