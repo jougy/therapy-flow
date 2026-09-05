@@ -31,6 +31,8 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Clinica e colaborador no MVP]]
 - [[Sistema de Feedbacks e Avaliacoes]]
 - [[Redesenho de Fluxo de Atendimentos e Linhas de Cuidado]]
+- [[Modulo de Expansao da Agenda]]
+- [[Planos Futuros e Ideias de Produto]]
 
 ### Equipe, acessos e configuracoes
 
@@ -42,6 +44,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Acesso mestre e painel administrativo global]]
 - [[Painel de Debug em Tempo Real do Backoffice]]
 - [[Reenvio de convites com cooldown e Gestao de Pendencias no Diretorio Mestre]]
+- [[Filtros Sob Demanda e Reset de Cadastros no Backoffice]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
 
@@ -100,6 +103,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Componente de tags customizadas no editor de formularios]]
 - [[Biblioteca comunitaria de modelos de formularios]]
 - [[Correcao load infinito no cadastro completo de paciente]]
+- [[Planos Futuros e Ideias de Produto]]
 
 ### Engenharia
 

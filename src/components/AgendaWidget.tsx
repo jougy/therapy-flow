@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format, isSameDay, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Loader2, Plus, X, Play } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Loader2, Maximize2, Plus, X, Play } from "lucide-react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -125,11 +125,20 @@ interface AgendaWidgetProps {
   headerAccessory?: React.ReactNode;
   onStartAttendance?: () => void;
   startAttendanceLabel?: string;
+  showExpandButton?: boolean;
 }
 
-const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startAttendanceLabel }: AgendaWidgetProps) => {
+const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startAttendanceLabel, showExpandButton }: AgendaWidgetProps) => {
   const navigate = useNavigate();
-  const { can, clinicId, user } = useAuth();
+  const location = useLocation();
+  const { clinicKey } = useParams<{ clinicKey?: string }>();
+  const { can, clinic, clinicId, user } = useAuth();
+  const isDesignLab = location.pathname.startsWith("/designlab");
+  const effectiveClinicKey = clinicKey || clinic?.route_key;
+  const canExpand = isDesignLab && (showExpandButton ?? true);
+  const fullAgendaPath = effectiveClinicKey
+    ? `/designlab/clinica/${effectiveClinicKey}/agenda`
+    : "/designlab/agenda";
   const fixedPatientId = fixedPatient?.id ?? null;
   const fixedPatientName = fixedPatient?.name ?? null;
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -522,6 +531,19 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
           </div>
           <div className="flex items-center gap-2">
             {headerAccessory}
+            {canExpand && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+                onClick={() => navigate(fullAgendaPath)}
+                title="Expandir agenda para tela cheia"
+                aria-label="Expandir agenda para tela cheia"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            )}
             <div className="rounded-lg bg-primary/10 p-2">
               <CalendarDays className="h-4 w-4 text-primary" />
             </div>
