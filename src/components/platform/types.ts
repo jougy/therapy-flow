@@ -94,6 +94,10 @@ export type PersonDetail = {
 
 export type AccountOperation =
   | "create_subaccount"
+  | "create_simple_user"
+  | "assign_user_to_clinic"
+  | "remove_user_from_clinic"
+  | "update_membership_role"
   | "update_clinic_access"
   | "update_owner_access"
   | "update_subaccount_access"

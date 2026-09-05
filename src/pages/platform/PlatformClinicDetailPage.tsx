@@ -442,7 +442,7 @@ export const PlatformClinicDetailPage = ({
               </CardHeader>
               <CardContent className="space-y-2">
                 <PlatformAccountOperations
-                  allowedOperations={["create_subaccount", "update_owner_access", "update_subaccount_access", "delete_subaccount"]}
+                  allowedOperations={["create_subaccount", "assign_user_to_clinic", "update_membership_role", "update_owner_access", "update_subaccount_access", "remove_user_from_clinic", "delete_subaccount"]}
                   clinicId={resolvedClinicId}
                   clinicAccessStatus={String(clinic?.access_status ?? "active")}
                   concurrentAccessLimit={String(clinic?.concurrent_access_limit ?? clinic?.subaccount_limit ?? 4)}

@@ -29,13 +29,22 @@ import {
 
 const getMembershipOperationScope = (memberships: Array<Record<string, unknown>>, isPending = false): AccountOperation[] => {
   if (isPending) {
-    return ["resend_invitation", "confirm_user_email_manually", "delete_user_attempt", "update_subaccount_access"];
+    return ["resend_invitation", "confirm_user_email_manually", "delete_user_attempt", "assign_user_to_clinic", "update_subaccount_access"];
   }
   const firstMembership = memberships[0];
   if (firstMembership?.account_role === "account_owner" || firstMembership?.operational_role === "owner") {
-    return ["update_owner_access", "confirm_user_email_manually"];
+    return ["update_owner_access", "assign_user_to_clinic", "confirm_user_email_manually"];
   }
-  return ["update_subaccount_access", "resend_invitation", "confirm_user_email_manually", "delete_user_attempt", "delete_subaccount"];
+  return [
+    "update_membership_role",
+    "assign_user_to_clinic",
+    "remove_user_from_clinic",
+    "update_subaccount_access",
+    "resend_invitation",
+    "confirm_user_email_manually",
+    "delete_user_attempt",
+    "delete_subaccount",
+  ];
 };
 
 export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "account" | "patient"; itemId: string }) => {
@@ -293,21 +302,106 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
                 </>
               ) : (
                 <>
-                  <p className="text-sm text-muted-foreground">{memberships.length} vínculo(s) com clínica.</p>
-                  {memberships.map((membership) => (
-                    <button
-                      key={String(membership.membership_id)}
-                      type="button"
-                      className="w-full rounded-lg border p-3 text-left hover:border-primary/50 hover:bg-accent/40"
-                      onClick={() => openClinicDetail(membership.clinic_route_key)}
-                      disabled={!membership.clinic_route_key}
-                    >
-                      <p className="font-medium">{String(membership.clinic_name ?? "Clínica")}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {String(membership.account_role ?? "user")} • {String(membership.operational_role ?? "-")}
-                      </p>
-                    </button>
-                  ))}
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">{memberships.length} vínculo(s) com clínica.</p>
+                  </div>
+                  {memberships.map((membership) => {
+                    const isOwner = membership.account_role === "account_owner" || membership.operational_role === "owner";
+                    return (
+                      <div
+                        key={String(membership.membership_id)}
+                        className="w-full rounded-lg border p-3 space-y-2 bg-card transition-colors hover:border-primary/50"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <button
+                              type="button"
+                              className="text-left font-medium hover:underline text-foreground"
+                              onClick={() => openClinicDetail(membership.clinic_route_key)}
+                              disabled={!membership.clinic_route_key}
+                            >
+                              {String(membership.clinic_name ?? "Clínica")}
+                            </button>
+                            <p className="text-xs text-muted-foreground">
+                              {String(membership.account_role ?? "membro")} • Status: {String(membership.membership_status ?? "ativo")}
+                            </p>
+                          </div>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                            isOwner
+                              ? "bg-purple-500/10 text-purple-700 border-purple-300 dark:text-purple-300"
+                              : "bg-primary/10 text-primary border-primary/20"
+                          }`}>
+                            {String(membership.operational_role ?? "-")}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t">
+                          {membership.clinic_route_key && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs px-2"
+                              onClick={() => openClinicDetail(membership.clinic_route_key)}
+                            >
+                              Abrir clínica
+                            </Button>
+                          )}
+                          {!isOwner && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs px-2 text-destructive hover:bg-destructive/10 border-destructive/30"
+                              disabled={actionLoading}
+                              onClick={async () => {
+                                const clinicName = String(membership.clinic_name ?? "esta clínica");
+                                const reasonInput = window.prompt(
+                                  `Confirma a desvinculação de ${title} de ${clinicName}? Informe o motivo auditável (mínimo 8 caracteres):`
+                                );
+                                if (!reasonInput || reasonInput.trim().length < 8) {
+                                  if (reasonInput !== null) {
+                                    toast({
+                                      title: "Motivo obrigatório",
+                                      description: "A justificativa auditável precisa ter no mínimo 8 caracteres.",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                  return;
+                                }
+                                setActionLoading(true);
+                                try {
+                                  await callPlatformAccountAdmin(
+                                    "remove_user_from_clinic",
+                                    {
+                                      clinicId: membership.clinic_id,
+                                      identifier: itemId,
+                                    },
+                                    reasonInput.trim()
+                                  );
+                                  toast({
+                                    title: "Vínculo removido",
+                                    description: `O usuário foi desvinculado de ${clinicName}.`,
+                                  });
+                                  setReloadKey((curr) => curr + 1);
+                                } catch (err) {
+                                  toast({
+                                    title: "Erro ao desvincular",
+                                    description: getErrorMessage(err),
+                                    variant: "destructive",
+                                  });
+                                } finally {
+                                  setActionLoading(false);
+                                }
+                              }}
+                            >
+                              Desvincular
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </>
               )}
             </CardContent>

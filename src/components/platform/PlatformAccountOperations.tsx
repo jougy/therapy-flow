@@ -117,8 +117,17 @@ export const PlatformAccountOperations = ({
 
   const buildPayload = () => {
     const base = { clinicId: effectiveClinicId };
-    if (operation === "create_subaccount") {
-      return { ...base, email: form.email, fullName: form.fullName, password: form.password, role: form.role, status: form.status };
+    if (operation === "create_subaccount" || operation === "create_simple_user") {
+      return { ...base, cpf: form.cpf, email: form.email, fullName: form.fullName, password: form.password, phone: form.phone, role: form.role, status: form.status };
+    }
+    if (operation === "assign_user_to_clinic") {
+      return { clinicId: effectiveClinicId, identifier: form.identifier, role: form.role, status: form.status };
+    }
+    if (operation === "remove_user_from_clinic") {
+      return { clinicId: effectiveClinicId, identifier: form.identifier };
+    }
+    if (operation === "update_membership_role") {
+      return { clinicId: effectiveClinicId, identifier: form.identifier, role: form.role, status: form.status };
     }
     if (operation === "update_clinic_access") {
       return {
@@ -219,13 +228,13 @@ export const PlatformAccountOperations = ({
             </SelectContent>
           </Select>
         </div>
-        {!clinicId && (
+        {!clinicId && (operation !== "create_simple_user" || form.clinicId) && (
           <div className="space-y-1">
-            <Label>ID/CNPJ da clínica</Label>
+            <Label>ID/CNPJ da clínica {operation === "create_simple_user" ? "(opcional)" : ""}</Label>
             <Input value={form.clinicId} onChange={(event) => updateField("clinicId", event.target.value)} maxLength={60} />
           </div>
         )}
-        {(operation.includes("subaccount") || operation === "update_owner_access" || operation === "resend_invitation" || operation === "confirm_user_email_manually" || operation === "delete_user_attempt") && operation !== "create_subaccount" && (
+        {(operation.includes("subaccount") || operation.includes("user_to_clinic") || operation === "remove_user_from_clinic" || operation === "update_membership_role" || operation === "update_owner_access" || operation === "resend_invitation" || operation === "confirm_user_email_manually" || operation === "delete_user_attempt") && operation !== "create_subaccount" && operation !== "create_simple_user" && (
           <div className="space-y-1">
             <Label>E-mail, ID da conta ou convite</Label>
             <Input value={form.identifier} onChange={(event) => updateField("identifier", event.target.value)} maxLength={160} />
@@ -237,13 +246,13 @@ export const PlatformAccountOperations = ({
             <Input value={form.patientId} onChange={(event) => updateField("patientId", event.target.value)} maxLength={60} />
           </div>
         )}
-        {(operation === "create_subaccount" || operation === "create_patient") && (
+        {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "create_patient") && (
           <div className="space-y-1">
             <Label>{operation === "create_patient" ? "Nome do paciente" : "Nome da conta"}</Label>
             <Input value={operation === "create_patient" ? form.name : form.fullName} onChange={(event) => updateField(operation === "create_patient" ? "name" : "fullName", event.target.value)} maxLength={120} />
           </div>
         )}
-        {(operation === "create_subaccount" || operation === "create_patient") && (
+        {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "create_patient") && (
           <div className="space-y-1">
             <Label>E-mail</Label>
             <Input value={form.email} onChange={(event) => updateField("email", event.target.value)} maxLength={160} />
@@ -255,19 +264,19 @@ export const PlatformAccountOperations = ({
             <Input value={form.newEmail} onChange={(event) => updateField("newEmail", event.target.value)} maxLength={160} />
           </div>
         )}
-        {(operation === "create_subaccount" || operation === "update_owner_access" || operation === "update_subaccount_access") && (
+        {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "update_owner_access" || operation === "update_subaccount_access") && (
           <div className="space-y-1">
-            <Label>{operation === "create_subaccount" ? "Senha inicial" : "Nova senha"}</Label>
+            <Label>{operation === "create_subaccount" || operation === "create_simple_user" ? "Senha inicial" : "Nova senha"}</Label>
             <Input value={form.password} onChange={(event) => updateField("password", event.target.value)} type="password" maxLength={128} />
           </div>
         )}
-        {(operation === "create_subaccount" || operation === "update_subaccount_access") && (
+        {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "assign_user_to_clinic" || operation === "update_membership_role" || operation === "update_subaccount_access") && (
           <div className="space-y-1">
-            <Label>Papel operacional</Label>
+            <Label>Papel operacional (Hierarquia)</Label>
             <OperationalRoleSelect value={form.role} onValueChange={(value) => updateField("role", value)} />
           </div>
         )}
-        {(operation === "create_subaccount" || operation.startsWith("update_") || operation === "create_patient") && (
+        {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "assign_user_to_clinic" || operation === "update_membership_role" || operation.startsWith("update_") || operation === "create_patient") && operation !== "update_owner_access" && (
           <div className="space-y-1">
             <Label>{operation === "update_clinic_access" ? "Status da clínica" : "Status"}</Label>
             {operation === "update_clinic_access" ? (
@@ -279,7 +288,7 @@ export const PlatformAccountOperations = ({
             )}
           </div>
         )}
-        {(operation === "create_patient" || operation === "update_patient" || operation === "update_owner_access") && (
+        {(operation === "create_simple_user" || operation === "create_patient" || operation === "update_patient" || operation === "update_owner_access") && (
           <div className="space-y-1">
             <Label>{operation === "update_owner_access" ? "CPF/CNPJ" : "CPF"}</Label>
             <Input value={form.cpf} onChange={(event) => updateField("cpf", event.target.value)} maxLength={18} />

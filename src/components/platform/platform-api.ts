@@ -102,20 +102,29 @@ export const clinicAccessStatusLabels: Record<string, string> = {
 export const formatClinicAccessStatus = (value: string) => clinicAccessStatusLabels[value] ?? value;
 
 export const accountOperationLabels: Record<AccountOperation, string> = {
+  assign_user_to_clinic: "Vincular à clínica",
   confirm_user_email_manually: "Confirmar e-mail manualmente",
   create_patient: "Criar paciente",
+  create_simple_user: "Criar usuário simples",
   create_subaccount: "Criar subconta",
   delete_patient: "Excluir paciente",
   delete_subaccount: "Excluir subconta",
   delete_user_attempt: "Excluir tentativa de cadastro",
+  remove_user_from_clinic: "Desvincular da clínica",
   resend_invitation: "Reenviar convite / ativação",
   update_clinic_access: "Editar acesso da clínica",
+  update_membership_role: "Editar hierarquia / papel",
   update_owner_access: "Editar acesso do owner",
   update_patient: "Editar paciente",
   update_subaccount_access: "Editar acesso da subconta",
 };
 
-export const destructiveOperations = new Set<AccountOperation>(["delete_patient", "delete_subaccount", "delete_user_attempt"]);
+export const destructiveOperations = new Set<AccountOperation>([
+  "delete_patient",
+  "delete_subaccount",
+  "delete_user_attempt",
+  "remove_user_from_clinic",
+]);
 
 export const itemLabels: Record<DetailKind, string> = {
   account: "Conta",
