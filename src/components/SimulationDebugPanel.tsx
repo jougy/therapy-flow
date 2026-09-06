@@ -369,8 +369,14 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                   {location.pathname}
                 </p>
                 <p className="text-[10px] text-neutral-500">
-                  {location.pathname.includes("dashboard")
+                  {location.pathname.includes("configuracoes/equipe")
+                    ? "Configurações de Equipe e Papéis"
+                    : location.pathname.includes("configuracoes")
+                    ? "Configurações da Clínica"
+                    : location.pathname.includes("dashboard")
                     ? "Estatísticas Completas da Clínica"
+                    : location.pathname.includes("pacientes")
+                    ? "Gestão de Pacientes"
                     : location.pathname.startsWith("/clinica/")
                     ? "Homepage da Clínica (Prontuário)"
                     : "Área da Plataforma"}
@@ -411,13 +417,17 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                       <XCircle className="h-3 w-3 mr-1" /> Erro na RPC
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-[10px]">
-                      <Clock className="h-3 w-3 mr-1" /> Aguardando Consulta
+                    <Badge variant="outline" className="border-neutral-500/30 bg-neutral-500/10 text-neutral-300 text-[10px]">
+                      <Clock className="h-3 w-3 mr-1" /> {location.pathname.includes("dashboard") ? "Aguardando Consulta" : "Sob demanda"}
                     </Badge>
                   )}
                 </div>
                 <p className="text-[10px] text-neutral-400">
-                  {analyticsData ? `${analyticsData.totalPatients} pacientes no cache` : "Sem dados no cache"}
+                  {analyticsData
+                    ? `${analyticsData.totalPatients} pacientes no cache`
+                    : location.pathname.includes("dashboard")
+                    ? "Sem dados no cache"
+                    : "Carregado no Dashboard"}
                 </p>
               </div>
             </div>
@@ -520,10 +530,14 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                   <div className="p-4 rounded-lg bg-neutral-950/80 border border-amber-500/20 text-amber-200">
                     <p className="font-semibold flex items-center gap-1.5">
                       <AlertCircle className="h-4 w-4 text-amber-400" />
-                      Dados de analytics não carregados pelo React Query
+                      {location.pathname.includes("dashboard")
+                        ? "Dados de analytics não carregados pelo React Query"
+                        : "Dados de analytics pertencem à página Dashboard"}
                     </p>
                     <p className="text-[11px] text-neutral-400 mt-1">
-                      Clique no botão &quot;Testar RPC em Tempo Real&quot; acima para disparar uma requisição direta ao Supabase e inspecionar a resposta.
+                      {location.pathname.includes("dashboard")
+                        ? 'Clique no botão "Testar RPC em Tempo Real" acima para disparar uma requisição direta ao Supabase e inspecionar a resposta.'
+                        : 'Nesta rota, os dados operacionais são gerenciados localmente. Para inspecionar chamadas de RPCs, Edge Functions ou erros desta página, consulte a aba "Logs em Tempo Real", ou clique em "Testar RPC em Tempo Real" para validar a resposta remota.'}
                     </p>
                   </div>
                 )}

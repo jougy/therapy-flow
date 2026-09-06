@@ -118,6 +118,8 @@ const toErrorLike = (error: unknown) => {
   return { message: String(error) };
 };
 
+let isInternalLogging = false;
+
 export const logRuntimeError = (scope: string, error: unknown, context?: RuntimeDebugContext) => {
   const errorLike = toErrorLike(error);
 
@@ -127,18 +129,47 @@ export const logRuntimeError = (scope: string, error: unknown, context?: Runtime
     stack: "stack" in errorLike && typeof errorLike.stack === "string" ? errorLike.stack : undefined,
   });
 
-  console.groupCollapsed(`${RUNTIME_DEBUG_PREFIX} ${scope}`);
-  console.error(errorLike);
+  isInternalLogging = true;
+  try {
+    console.groupCollapsed(`${RUNTIME_DEBUG_PREFIX} ${scope}`);
+    console.error(errorLike);
 
-  if (context && Object.keys(context).length > 0) {
-    console.info("context", context);
+    if (context && Object.keys(context).length > 0) {
+      console.info("context", context);
+    }
+
+    console.groupEnd();
+  } finally {
+    isInternalLogging = false;
   }
-
-  console.groupEnd();
 };
 
 export const logRuntimeInfo = (scope: string, message: string, context?: RuntimeDebugContext) => {
   addDebugEvent("info", scope, message, context);
+};
+
+export const logRuntimeFunction = (
+  functionName: string,
+  status: "success" | "error",
+  durationMs: number,
+  details?: unknown,
+  error?: unknown
+) => {
+  const isErr = status === "error";
+  addDebugEvent(
+    isErr ? "error" : "info",
+    `edge-function.${functionName}`,
+    isErr
+      ? `Edge Function ${functionName} falhou (${durationMs}ms)`
+      : `Edge Function ${functionName} executada (${durationMs}ms)`,
+    {
+      durationMs,
+      status,
+      details,
+      error: error ? toErrorLike(error) : undefined,
+    },
+    error ? toErrorLike(error) : undefined
+  );
 };
 
 export const logRuntimeRpc = (
@@ -191,6 +222,95 @@ export const installGlobalRuntimeDebugHandlers = () => {
       type: "unhandledrejection",
     });
   });
+
+  // Interceptar console.error para capturar erros tratados e logs de componentes/hooks
+  const originalConsoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    originalConsoleError.apply(console, args);
+
+    if (isInternalLogging) return;
+    if (typeof args[0] === "string" && args[0].startsWith(RUNTIME_DEBUG_PREFIX)) return;
+
+    try {
+      isInternalLogging = true;
+      let scope = "console.error";
+      let errorObj: unknown = null;
+
+      if (typeof args[0] === "string") {
+        const match = args[0].match(/^\[([^\]]+)\]/);
+        if (match) {
+          scope = match[1];
+        }
+      }
+
+      for (const arg of args) {
+        if (arg instanceof Error) {
+          errorObj = arg;
+          break;
+        }
+      }
+
+      const message = args
+        .map((arg) => {
+          if (typeof arg === "string") return arg;
+          if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
+          try {
+            return JSON.stringify(arg);
+          } catch {
+            return String(arg);
+          }
+        })
+        .join(" ");
+
+      const errorDetails = errorObj instanceof Error
+        ? { name: errorObj.name, message: errorObj.message, stack: errorObj.stack }
+        : undefined;
+
+      addDebugEvent("error", scope, message, { args: args.length > 1 ? args.slice(1) : undefined }, errorDetails);
+    } catch {
+      // Ignora para resiliência
+    } finally {
+      isInternalLogging = false;
+    }
+  };
+
+  // Interceptar console.warn para capturar avisos importantes da aplicação
+  const originalConsoleWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    originalConsoleWarn.apply(console, args);
+
+    if (isInternalLogging) return;
+    if (typeof args[0] === "string" && args[0].startsWith(RUNTIME_DEBUG_PREFIX)) return;
+
+    try {
+      isInternalLogging = true;
+      let scope = "console.warn";
+      if (typeof args[0] === "string") {
+        const match = args[0].match(/^\[([^\]]+)\]/);
+        if (match) {
+          scope = match[1];
+        }
+      }
+
+      const message = args
+        .map((arg) => {
+          if (typeof arg === "string") return arg;
+          if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
+          try {
+            return JSON.stringify(arg);
+          } catch {
+            return String(arg);
+          }
+        })
+        .join(" ");
+
+      addDebugEvent("warn", scope, message, { args: args.length > 1 ? args.slice(1) : undefined });
+    } catch {
+      // Ignora para resiliência
+    } finally {
+      isInternalLogging = false;
+    }
+  };
 
   runtimeWindow[GLOBAL_RUNTIME_DEBUG_FLAG] = true;
 };
