@@ -17,8 +17,8 @@ ALTER TABLE public.clinic_subscriptions
 
 -- 3. Atualizar função public.current_user_can para garantir que clínicas com cortesia nunca expirem
 CREATE OR REPLACE FUNCTION public.current_user_can(
-  _clinic_id uuid,
-  _capability text
+  _capability text,
+  _clinic_id uuid DEFAULT NULL
 )
 RETURNS boolean
 LANGUAGE plpgsql
@@ -27,53 +27,55 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  _current_user_id uuid := auth.uid();
+  _user_id uuid := auth.uid();
   _resolved_clinic_id uuid;
-  _account_role text;
-  _operational_role text;
-  _membership_status text;
+  _account_role public.account_role_type;
+  _operational_role public.operational_role_type;
+  _membership_status public.membership_status_type;
   _is_active boolean;
-  _sub public.clinic_subscriptions%ROWTYPE;
+  _subscription_plan public.subscription_plan;
+  _override_enabled boolean;
+  _sub record;
   _is_subscription_expired boolean := false;
 BEGIN
-  IF _current_user_id IS NULL THEN
+  IF _user_id IS NULL THEN
     RETURN false;
   END IF;
 
-  -- Se o clinic_id não foi passado, tenta obter a clínica ativa do usuário
-  IF _clinic_id IS NULL THEN
-    SELECT last_accessed_clinic_id INTO _resolved_clinic_id
-    FROM public.profiles
-    WHERE id = _current_user_id;
-  ELSE
-    _resolved_clinic_id := _clinic_id;
+  _resolved_clinic_id := COALESCE(_clinic_id, public.get_user_clinic_id(_user_id));
+
+  -- Bypass para Platform Owner em contexto ativo
+  IF _resolved_clinic_id IS NOT NULL
+    AND public.is_platform_owner(_user_id)
+    AND public.get_active_platform_clinic_id(_user_id) = _resolved_clinic_id THEN
+    RETURN true;
   END IF;
 
-  IF _resolved_clinic_id IS NULL THEN
-    RETURN false;
-  END IF;
-
-  -- Busca membership ativo do usuário na clínica especificada
   SELECT
-    account_role::text,
-    operational_role::text,
-    membership_status::text,
-    is_active
+    clinic_memberships.account_role,
+    clinic_memberships.operational_role,
+    clinic_memberships.membership_status,
+    clinic_memberships.is_active,
+    clinics.subscription_plan
   INTO
     _account_role,
     _operational_role,
     _membership_status,
-    _is_active
+    _is_active,
+    _subscription_plan
   FROM public.clinic_memberships
-  WHERE clinic_id = _resolved_clinic_id
-    AND user_id = _current_user_id
+  JOIN public.clinics ON clinics.id = clinic_memberships.clinic_id
+  WHERE clinic_memberships.user_id = _user_id
+    AND clinic_memberships.clinic_id = _resolved_clinic_id
   LIMIT 1;
 
-  IF NOT FOUND OR _is_active IS NOT TRUE OR _membership_status NOT IN ('active', 'invited') THEN
+  IF _resolved_clinic_id IS NULL
+    OR _is_active IS DISTINCT FROM true
+    OR _membership_status IS DISTINCT FROM 'active' THEN
     RETURN false;
   END IF;
 
-  -- Checagem Rigorosa de Assinatura Expirada no Kernel do Postgres
+  -- 1. Checagem Rigorosa de Assinatura Expirada no Kernel do Postgres (ignora se cortesia/trial/beta)
   SELECT * INTO _sub
   FROM public.clinic_subscriptions
   WHERE clinic_id = _resolved_clinic_id
@@ -92,9 +94,26 @@ BEGIN
     IF _capability = 'subscription_billing.manage' AND (_account_role = 'account_owner' OR _operational_role = 'owner') THEN
       RETURN true;
     END IF;
-    IF _capability IN ('patients.read', 'schedule.read', 'sessions.read', 'sessions.read_all', 'patient_groups.read', 'subaccounts_analytics.read', 'subaccounts.read', 'subaccounts_roles.read') THEN
+    -- Permite apenas consultas de leitura
+    IF _capability IN (
+      'patients.read',
+      'schedule.read',
+      'schedule.read_all',
+      'sessions.read',
+      'sessions.read_all',
+      'patient_groups.read',
+      'patients_groups.read',
+      'subaccounts_analytics.read',
+      'subaccounts.read',
+      'subaccounts_roles.read',
+      'clinic_profile.read',
+      'forms.read',
+      'treasury.read',
+      'subscription_billing.read'
+    ) THEN
       RETURN true;
     END IF;
+    -- Qualquer escrita e bloqueada
     RETURN false;
   END IF;
 
@@ -107,8 +126,92 @@ BEGIN
     RETURN false;
   END IF;
 
-  RETURN public.role_has_capability(_operational_role, _capability);
+  -- 2. Checagem de Override na tabela clinic_operational_role_capabilities
+  SELECT enabled
+  INTO _override_enabled
+  FROM public.clinic_operational_role_capabilities
+  WHERE clinic_id = _resolved_clinic_id
+    AND operational_role = _operational_role::text
+    AND capability = _capability;
+
+  IF FOUND THEN
+    RETURN _override_enabled;
+  END IF;
+
+  -- 3. Matriz Padrao Canonica de Permissoes
+  CASE _capability
+    WHEN 'clinic_profile.read' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'clinic_profile.manage' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'forms.read' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional');
+    WHEN 'forms.manage' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'subaccounts.read' THEN
+      RETURN _subscription_plan = 'clinic' AND _operational_role IN ('owner', 'admin');
+    WHEN 'subaccounts.write' THEN
+      RETURN _subscription_plan = 'clinic' AND _operational_role IN ('owner', 'admin');
+    WHEN 'subaccounts.manage' THEN
+      RETURN _subscription_plan = 'clinic' AND _operational_role IN ('owner', 'admin');
+    WHEN 'subaccounts.delete' THEN
+      RETURN _subscription_plan = 'clinic' AND _operational_role IN ('owner', 'admin');
+    WHEN 'subaccounts_roles.read' THEN
+      RETURN _subscription_plan = 'clinic' AND _operational_role IN ('owner', 'admin');
+    WHEN 'subaccounts_roles.manage' THEN
+      RETURN _subscription_plan = 'clinic' AND _operational_role IN ('owner', 'admin');
+    WHEN 'subscription_billing.read' THEN
+      RETURN _account_role = 'account_owner' OR _operational_role = 'owner';
+    WHEN 'team_development.manage' THEN
+      RETURN _subscription_plan = 'clinic' AND _operational_role IN ('owner', 'admin');
+    WHEN 'treasury.read' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'treasury.manage' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'agenda.delete_events' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'subaccounts_analytics.read' THEN
+      RETURN _subscription_plan = 'clinic' AND _operational_role IN ('owner', 'admin');
+    WHEN 'patients.read' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+    WHEN 'patients.write' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+    WHEN 'patients.delete' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'patients.manage_groups' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional');
+    WHEN 'patient_groups.read' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+    WHEN 'patients_groups.read' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+    WHEN 'schedule.read' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant');
+    WHEN 'schedule.read_all' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'assistant');
+    WHEN 'schedule.write' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant');
+    WHEN 'schedule.write_others' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'assistant');
+    WHEN 'sessions.read' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'estagiario');
+    WHEN 'sessions.read_all' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional');
+    WHEN 'sessions.write' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'estagiario');
+    WHEN 'sessions.write_others' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'sessions.share' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional');
+    WHEN 'sessions.delete' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'session.delete_draft' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional');
+    WHEN 'system.print' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant');
+    ELSE
+      RETURN false;
+  END CASE;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.current_user_can(uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.current_user_can(text, uuid) TO authenticated, anon;

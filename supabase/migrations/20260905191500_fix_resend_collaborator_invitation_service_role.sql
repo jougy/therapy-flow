@@ -13,10 +13,10 @@ DECLARE
   _token text := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
   _token_hash text := md5(_token);
   _remaining_seconds integer;
-  _account_state text := 'invite_sent;
+  _account_state text := 'invite_sent';
   _existing_user auth.users%ROWTYPE;
   _clinic_route_key text;
-  _is_service_role boolean := (coalesce(current_setting('request.jwt.claim.role, true), '') = 'service_role);
+  _is_service_role boolean := (coalesce(current_setting('request.jwt.claim.role', true), '') = 'service_role');
 BEGIN
   -- Se não for service_role, requer autenticação do chamador
   IF NOT _is_service_role THEN
@@ -37,7 +37,7 @@ BEGIN
   -- Se não for service_role, verifica permissões de clínica ou platform owner
   IF NOT _is_service_role THEN
     IF NOT (
-      public.current_user_can('subaccounts.manage, _invitation.clinic_id) OR
+      public.current_user_can('subaccounts.manage', _invitation.clinic_id) OR
       public.is_platform_owner_mfa_verified(_requester_id)
     ) THEN
       RAISE EXCEPTION 'Sem permissão para reenviar convites desta clínica.';
@@ -52,7 +52,7 @@ BEGIN
 
   -- Update status to pending (caso estivesse cancelled ou expired), token e resend timestamp
   UPDATE public.clinic_collaborator_invitations
-  SET status = 'pending,
+  SET status = 'pending',
       token_hash = _token_hash,
       last_resent_at = now(),
       updated_at = now(),
@@ -67,9 +67,9 @@ BEGIN
 
   IF _existing_user.id IS NOT NULL THEN
     IF _existing_user.email_confirmed_at IS NULL THEN
-      _account_state := 'registered_unconfirmed;
+      _account_state := 'registered_unconfirmed';
     ELSE
-      _account_state := 'registered_confirmed_pending_acceptance;
+      _account_state := 'registered_confirmed_pending_acceptance';
     END IF;
   END IF;
 
@@ -78,15 +78,17 @@ BEGIN
   WHERE id = _invitation.clinic_id;
 
   RETURN jsonb_build_object(
-    'success, true,
-    'id, _invitation.id,
-    'token, _token,
-    'path, '/convite/' || _token,
-    'email, _invitation.email,
-    'clinic_id, _invitation.clinic_id,
-    'clinic_route_key, _clinic_route_key,
-    'account_state, _account_state,
-    'remaining_cooldown, 30
+    'success', true,
+    'id', _invitation.id,
+    'token', _token,
+    'path', '/convite/' || _token,
+    'email', _invitation.email,
+    'clinic_id', _invitation.clinic_id,
+    'clinic_route_key', _clinic_route_key,
+    'account_state', _account_state,
+    'remaining_cooldown', 30
   );
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION public.resend_clinic_collaborator_invitation(uuid) TO authenticated, service_role;
