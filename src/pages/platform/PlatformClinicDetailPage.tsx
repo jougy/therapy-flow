@@ -353,11 +353,18 @@ export const PlatformClinicDetailPage = ({
                       <PlatformInfoGrid
                         items={[
                           ["Ciclo contratado", clinicSubscription.billing_cycle === "ANNUAL" ? "Anual (365 dias)" : clinicSubscription.billing_cycle === "QUARTERLY" ? "Trimestral (90 dias)" : "Mensal (30 dias)"],
-                          ["Status faturamento", clinicSubscription.status || "Ativo (Beta)"],
-                          ["Renovação automática", clinicSubscription.auto_renew !== false ? "Ativada" : "Desligada"],
+                          [
+                            "Status faturamento",
+                            clinicSubscription.is_courtesy || clinicSubscription.status === "COURTESY"
+                              ? "Cortesia Parceira (Vitalício)"
+                              : clinicSubscription.status || "Ativo (Beta)",
+                          ],
+                          ["Renovação automática", clinicSubscription.is_courtesy || clinicSubscription.status === "COURTESY" ? "Isenta (Sem cobrança)" : clinicSubscription.auto_renew !== false ? "Ativada" : "Desligada"],
                           [
                             "Vencimento / Expiração",
-                            clinicSubscription.expires_at
+                            clinicSubscription.is_courtesy || clinicSubscription.status === "COURTESY"
+                              ? "Vitalício (Cortesia Parceira)"
+                              : clinicSubscription.expires_at
                               ? new Date(clinicSubscription.expires_at).toLocaleDateString("pt-BR")
                               : clinicSubscription.current_period_end
                               ? new Date(clinicSubscription.current_period_end).toLocaleDateString("pt-BR")
@@ -365,7 +372,9 @@ export const PlatformClinicDetailPage = ({
                           ],
                           [
                             "Dias restantes",
-                            clinicSubscription.expires_at || clinicSubscription.current_period_end
+                            clinicSubscription.is_courtesy || clinicSubscription.status === "COURTESY"
+                              ? "Ilimitado (Parceria)"
+                              : clinicSubscription.expires_at || clinicSubscription.current_period_end
                               ? `${Math.max(
                                   0,
                                   Math.ceil(
@@ -377,7 +386,11 @@ export const PlatformClinicDetailPage = ({
                           ],
                           [
                             "Permissão da clínica",
-                            (clinicSubscription.expires_at && new Date(clinicSubscription.expires_at) < new Date()) && !["BETA", "TRIAL"].includes(clinicSubscription.status)
+                            !clinicSubscription.is_courtesy &&
+                            clinicSubscription.status !== "COURTESY" &&
+                            clinicSubscription.expires_at &&
+                            new Date(clinicSubscription.expires_at) < new Date() &&
+                            !["BETA", "TRIAL"].includes(clinicSubscription.status)
                               ? "⚠️ Somente Leitura (Expirada)"
                               : "✅ Leitura e Escrita (Total)",
                           ],
@@ -426,7 +439,9 @@ export const PlatformClinicDetailPage = ({
                 compact
                 onDone={() => void loadDetail()}
                 subaccountLimit={String(clinic?.subaccount_limit ?? 4)}
-                title="Acesso da clínica"
+                subscriptionPlan={clinic?.subscription_plan ?? "clinic"}
+                subscriptionData={clinicSubscription}
+                title="Acesso e plano da clínica"
               />
             </div>
           </TabsContent>

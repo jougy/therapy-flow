@@ -24,6 +24,29 @@ import {
   type SubaccountOperationalRole,
 } from "../types";
 
+const extractEdgeFunctionErrorMessage = async (error: unknown, fallbackMessage: string): Promise<string> => {
+  if (!error || typeof error !== "object") return fallbackMessage;
+  const errObj = error as Record<string, unknown>;
+  try {
+    const ctx = errObj.context;
+    if (ctx && typeof (ctx as any).clone === "function") {
+      const cloned = (ctx as any).clone();
+      if (typeof cloned.json === "function") {
+        const body = await cloned.json();
+        if (body?.error) return String(body.error);
+        if (body?.message) return String(body.message);
+      }
+    } else if (ctx && typeof (ctx as any).json === "function") {
+      const body = await (ctx as any).json();
+      if (body?.error) return String(body.error);
+      if (body?.message) return String(body.message);
+    }
+  } catch {
+    // Ignora falha de parse JSON
+  }
+  return typeof errObj.message === "string" && errObj.message ? errObj.message : fallbackMessage;
+};
+
 export const useClinicTeamData = () => {
   const {
     accountRole,
@@ -541,9 +564,14 @@ export const useClinicTeamData = () => {
     });
 
     if (emailError) {
+      const reason = await extractEdgeFunctionErrorMessage(
+        emailError,
+        "Não foi possível despachar o e-mail automaticamente."
+      );
+      console.error("[useClinicTeamData] Falha ao enviar e-mail de convite via Resend:", reason, emailError);
       toast({
-        title: "Convite gerado",
-        description: `E-mail não pôde ser enviado automaticamente. Você pode copiar o link ou enviar no WhatsApp.`,
+        title: "Convite gerado (aviso de envio)",
+        description: `O link foi criado com sucesso, mas o e-mail não pôde ser despachado: ${reason}. Você pode copiar o link ou enviar no WhatsApp.`,
         variant: "destructive",
       });
     } else {
@@ -618,9 +646,14 @@ export const useClinicTeamData = () => {
       });
 
       if (emailError) {
+        const reason = await extractEdgeFunctionErrorMessage(
+          emailError,
+          "Não foi possível reenviar o e-mail automaticamente."
+        );
+        console.error("[useClinicTeamData] Falha ao reenviar e-mail de convite via Resend:", reason, emailError);
         toast({
-          title: "Convite atualizado",
-          description: `Novo link gerado. Copie o link direto caso o e-mail não chegue.`,
+          title: "Convite atualizado (aviso de envio)",
+          description: `Novo link gerado, mas o e-mail não pôde ser despachado: ${reason}. Copie o link direto caso necessário.`,
           variant: "destructive",
         });
       } else {
@@ -822,6 +855,7 @@ export const useClinicTeamData = () => {
 
   return {
     authClinic,
+    subscriptionPlan,
     loading,
     fetchError,
     retryLoadTeamData: loadTeamData,

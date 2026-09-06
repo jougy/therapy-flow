@@ -46,6 +46,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Reenvio de convites com cooldown e Gestao de Pendencias no Diretorio Mestre]]
 - [[Filtros Sob Demanda e Reset de Cadastros no Backoffice]]
 - [[Criacao de Login Simples e Movimentacao de Usuarios no Backoffice]]
+- [[Gestao de Planos Dias e Cortesia no Backoffice]]
 - [[Configuracoes - Seguranca]]
 - [[Configuracoes - Desenvolvimento da equipe]]
 

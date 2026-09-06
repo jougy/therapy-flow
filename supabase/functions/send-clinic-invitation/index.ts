@@ -84,7 +84,11 @@ Deno.serve(async (req) => {
       return json({ error: "Convite não está mais pendente." }, 400);
     }
 
-    const [{ data: canManage }, { data: isPlatformOwner }] = await Promise.all([
+    const [{ data: canWrite }, { data: canManage }, { data: isPlatformOwner }] = await Promise.all([
+      userClient.rpc("current_user_can", {
+        _capability: "subaccounts.write",
+        _clinic_id: clinicId,
+      }),
       userClient.rpc("current_user_can", {
         _capability: "subaccounts.manage",
         _clinic_id: clinicId,
@@ -92,7 +96,7 @@ Deno.serve(async (req) => {
       userClient.rpc("is_platform_owner_mfa_verified"),
     ]);
 
-    if (canManage !== true && isPlatformOwner !== true) {
+    if (canWrite !== true && canManage !== true && isPlatformOwner !== true) {
       return json({ error: "Você não tem permissão para enviar este convite." }, 403);
     }
 
@@ -235,7 +239,8 @@ Deno.serve(async (req) => {
     });
 
     if (emailResult.error) {
-      throw new Error(`Falha ao despachar e-mail: ${emailResult.error.message}`);
+      console.error("[send-clinic-invitation] Resend dispatch error:", emailResult.error);
+      throw new Error(`Falha ao despachar e-mail via Resend: ${emailResult.error.message}`);
     }
 
     return json({
@@ -247,6 +252,7 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao enviar convite.";
+    console.error("[send-clinic-invitation] Error processing invitation:", message, error);
     return json({ error: message }, 400);
   }
 });
