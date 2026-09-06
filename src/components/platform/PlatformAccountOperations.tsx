@@ -1,9 +1,11 @@
-import { useState } from "react";
-import { Loader2, ShieldAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CalendarPlus, Gift, Loader2, ShieldAlert, Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,6 +64,8 @@ export const PlatformAccountOperations = ({
   defaultPatientId = "",
   onDone,
   subaccountLimit = "4",
+  subscriptionPlan: initialSubscriptionPlan = "clinic",
+  subscriptionData,
   title,
 }: {
   allowedOperations?: AccountOperation[];
@@ -73,6 +77,8 @@ export const PlatformAccountOperations = ({
   defaultPatientId?: string;
   onDone: () => void;
   subaccountLimit?: string;
+  subscriptionPlan?: "solo" | "clinic";
+  subscriptionData?: any;
   title: string;
 }) => {
   const operations = allowedOperations?.length ? allowedOperations : (Object.keys(accountOperationLabels) as AccountOperation[]);
@@ -81,6 +87,28 @@ export const PlatformAccountOperations = ({
   const [reason, setReason] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [mfaCode, setMfaCode] = useState("");
+  const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "clinic">(initialSubscriptionPlan ?? "clinic");
+  const [isCourtesy, setIsCourtesy] = useState<boolean>(
+    subscriptionData?.is_courtesy === true || subscriptionData?.status === "COURTESY"
+  );
+  const [daysAdjustment, setDaysAdjustment] = useState<string>("");
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string>(
+    subscriptionData?.status ?? "ACTIVE"
+  );
+
+  useEffect(() => {
+    if (initialSubscriptionPlan) {
+      setSubscriptionPlan(initialSubscriptionPlan);
+    }
+  }, [initialSubscriptionPlan]);
+
+  useEffect(() => {
+    if (subscriptionData) {
+      setIsCourtesy(subscriptionData.is_courtesy === true || subscriptionData.status === "COURTESY");
+      setSubscriptionStatus(subscriptionData.status ?? "ACTIVE");
+    }
+  }, [subscriptionData]);
+
   const [form, setForm] = useState<Record<string, string>>({
     clinicId: clinicId ?? "",
     concurrentAccessLimit,
@@ -100,6 +128,41 @@ export const PlatformAccountOperations = ({
   });
 
   const updateField = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+
+  const handlePlanChange = (newPlan: "solo" | "clinic") => {
+    setSubscriptionPlan(newPlan);
+    if (newPlan === "solo") {
+      updateField("concurrentAccessLimit", "1");
+      updateField("subaccountLimit", "1");
+    } else {
+      updateField("concurrentAccessLimit", "2");
+      updateField("subaccountLimit", "30");
+    }
+  };
+
+  const currentExpiresAt = subscriptionData?.expires_at || subscriptionData?.current_period_end;
+  const currentRemainingDays = currentExpiresAt
+    ? Math.max(0, Math.ceil((new Date(currentExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
+
+  const previewInfo = () => {
+    const days = Number(daysAdjustment);
+    if (!Number.isFinite(days) || days === 0) return null;
+    const now = Date.now();
+    const currentMs = currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0;
+    const baseMs = currentMs > now ? currentMs : now;
+    const targetMs = baseMs + days * 86400000;
+    const newDate = new Date(targetMs);
+    const totalRemaining = Math.max(0, Math.ceil((targetMs - now) / 86400000));
+    return {
+      dateStr: newDate.toLocaleDateString("pt-BR"),
+      daysText: `${totalRemaining} dia(s) restante(s)`,
+      diffText: days > 0 ? `+${days} dias` : `${days} dias`,
+      isPositive: days > 0,
+    };
+  };
+
+  const preview = previewInfo();
 
   const updateOperation = (value: AccountOperation) => {
     setOperation(value);
@@ -133,8 +196,12 @@ export const PlatformAccountOperations = ({
       return {
         ...base,
         concurrentAccessLimit: form.concurrentAccessLimit,
+        daysAdjustment: daysAdjustment ? Number(daysAdjustment) : undefined,
+        isCourtesy,
         status: form.status,
         subaccountLimit: form.subaccountLimit,
+        subscriptionPlan,
+        subscriptionStatus: isCourtesy ? "COURTESY" : subscriptionStatus,
       };
     }
     if (operation === "update_owner_access") {
@@ -276,6 +343,21 @@ export const PlatformAccountOperations = ({
             <OperationalRoleSelect value={form.role} onValueChange={(value) => updateField("role", value)} />
           </div>
         )}
+        {operation === "update_clinic_access" && (
+          <div className="space-y-1">
+            <Label>Tipo de plano</Label>
+            <Select
+              value={subscriptionPlan}
+              onValueChange={(value) => handlePlanChange(value as "solo" | "clinic")}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="solo">Plano Solo (1 profissional)</SelectItem>
+                <SelectItem value="clinic">Plano com Equipe (Clínica)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "assign_user_to_clinic" || operation === "update_membership_role" || operation.startsWith("update_") || operation === "create_patient") && operation !== "update_owner_access" && (
           <div className="space-y-1">
             <Label>{operation === "update_clinic_access" ? "Status da clínica" : "Status"}</Label>
@@ -319,6 +401,112 @@ export const PlatformAccountOperations = ({
           </div>
         )}
       </div>
+
+      {operation === "update_clinic_access" && (
+        <div className="space-y-3 rounded-lg border bg-background/80 p-3 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Gift className="h-4 w-4 text-primary" />
+                <Label htmlFor="courtesy-switch" className="text-sm font-semibold cursor-pointer">
+                  Plano de Cortesia Parceira
+                </Label>
+                {isCourtesy && (
+                  <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-medium border-emerald-500/30">
+                    Vitalício & Gratuito
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Concede isenção permanente para clínicas parceiras/apoiadoras: nunca expira e não gera cobrança até revogação deliberada.
+              </p>
+            </div>
+            <Switch
+              id="courtesy-switch"
+              checked={isCourtesy}
+              onCheckedChange={(checked) => {
+                setIsCourtesy(checked);
+                if (checked) setDaysAdjustment("");
+              }}
+            />
+          </div>
+
+          {!isCourtesy && (
+            <div className="space-y-2 border-t pt-2.5">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-1.5">
+                  <CalendarPlus className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-foreground">Dar / Tirar dias de assinatura</span>
+                </div>
+                {currentExpiresAt ? (
+                  <span className="text-xs text-muted-foreground">
+                    Vencimento atual: <strong>{new Date(currentExpiresAt).toLocaleDateString("pt-BR")}</strong> ({currentRemainingDays} dias restantes)
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Sem vencimento ativo registrado</span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="w-36">
+                  <Input
+                    type="number"
+                    placeholder="+/- dias (ex: 30)"
+                    value={daysAdjustment}
+                    onChange={(event) => setDaysAdjustment(event.target.value)}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  {[7, 15, 30, 60, 90, 365].map((d) => (
+                    <Button
+                      key={d}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 text-xs"
+                      onClick={() => setDaysAdjustment(String((Number(daysAdjustment) || 0) + d))}
+                    >
+                      +{d}d
+                    </Button>
+                  ))}
+                  {[-15, -30].map((d) => (
+                    <Button
+                      key={d}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10"
+                      onClick={() => setDaysAdjustment(String((Number(daysAdjustment) || 0) + d))}
+                    >
+                      {d}d
+                    </Button>
+                  ))}
+                  {daysAdjustment && daysAdjustment !== "0" && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-xs text-muted-foreground"
+                      onClick={() => setDaysAdjustment("")}
+                    >
+                      Limpar
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {preview && (
+                <div className="flex items-center gap-2 rounded-md bg-primary/10 px-3 py-1.5 text-xs text-foreground font-medium">
+                  <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span>
+                    Novo vencimento previsto: <strong>{preview.dateStr}</strong> ({preview.daysText}) [{preview.diffText}]
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <div className={`grid gap-3 ${isDestructive ? "lg:grid-cols-[minmax(0,1fr)_180px_180px]" : "lg:grid-cols-[minmax(0,1fr)_220px]"}`}>
         <div className="space-y-1">
           <Label>Motivo auditável</Label>

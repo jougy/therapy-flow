@@ -33,6 +33,22 @@ import {
 
 export { parseSpecialties, removeSpecialtyTag, SpecialtyTagsPreview };
 
+export const formatDisplayInviteUrl = (url: string): string => {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    const token = parts[parts.length - 1];
+    if (token && token.length > 20) {
+      const shortToken = `${token.slice(0, 10)}...${token.slice(-8)}`;
+      return `${parsed.origin}/convite/clinica/${shortToken}`;
+    }
+    return url;
+  } catch {
+    return url;
+  }
+};
+
 export const CollaboratorInviteCard: React.FC<CollaboratorInviteCardProps> = ({
   canInviteCollaborators,
   clinicName,
@@ -161,7 +177,12 @@ export const CollaboratorInviteCard: React.FC<CollaboratorInviteCardProps> = ({
               <Badge className="bg-sky-600 text-white hover:bg-sky-600 text-[10px]">Válido por 14 dias</Badge>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Input value={lastGeneratedInviteUrl} readOnly className="font-mono text-xs bg-background" />
+              <Input
+                value={formatDisplayInviteUrl(lastGeneratedInviteUrl)}
+                title={lastGeneratedInviteUrl}
+                readOnly
+                className="font-mono text-xs bg-background text-muted-foreground"
+              />
               <div className="flex gap-2 shrink-0">
                 <Button
                   size="sm"

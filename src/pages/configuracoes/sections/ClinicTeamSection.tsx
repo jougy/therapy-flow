@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw, Sparkles, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,6 +16,7 @@ import { RevokeMemberDialog } from "./team/components/RevokeMemberDialog";
 export const ClinicTeamSection: React.FC = () => {
   const {
     authClinic,
+    subscriptionPlan,
     loading,
     fetchError,
     retryLoadTeamData,
@@ -144,6 +145,47 @@ export const ClinicTeamSection: React.FC = () => {
             <Skeleton className="h-12 w-full rounded-lg" />
             <Skeleton className="h-12 w-full rounded-lg" />
             <Skeleton className="h-12 w-full rounded-lg" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (subscriptionPlan === "solo" && !canInviteCollaborators) {
+    const routeKey = authClinic?.route_key;
+    const billingPath = routeKey
+      ? `/clinica/${routeKey}/configuracoes/assinatura`
+      : "/configuracoes/assinatura";
+
+    return (
+      <div className="space-y-6">
+        <Card className="border-amber-200/70 bg-gradient-to-br from-amber-50/60 via-background to-amber-50/30 dark:from-amber-950/20 dark:via-background dark:to-amber-950/10 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/20">
+                <Users className="h-6 w-6" />
+              </div>
+              <div>
+                <CardTitle className="text-xl">Gestão de Equipe e Colaboradores</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Recurso exclusivo a partir do plano Clínica.
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Sua clínica está atualmente no plano <strong>Solo</strong>, ideal para atendimento individual. 
+              Para convidar profissionais, secretárias e estagiários, configurar permissões personalizadas e ter múltiplos acessos simultâneos conectados, faça o upgrade para o <strong>Plano Clínica</strong>.
+            </p>
+            <div className="pt-2">
+              <Button asChild className="gap-2 bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-700 hover:to-amber-600 shadow-sm">
+                <a href={billingPath}>
+                  <Sparkles className="h-4 w-4" />
+                  Conhecer o Plano Clínica
+                </a>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

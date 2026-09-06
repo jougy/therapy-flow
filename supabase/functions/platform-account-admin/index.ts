@@ -575,23 +575,148 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
   const membershipStatus = toMembershipStatus(status);
   const isActive = boolFromStatus(status);
 
+  // 1. Processar Tipo de Plano (Solo vs Equipe/Clínica)
+  let targetPlan = clinic.subscription_plan;
+  if (payload.subscriptionPlan !== undefined) {
+    targetPlan = normalizePlan(payload.subscriptionPlan);
+  }
+
   const clinicUpdate: Record<string, unknown> = {
     access_status: status,
+    subscription_plan: targetPlan,
   };
 
+  let concurrentLimit = clinic.concurrent_access_limit ?? (targetPlan === "solo" ? 1 : 2);
+  let subaccounts = clinic.subaccount_limit ?? (targetPlan === "solo" ? 1 : 30);
+
+  if (targetPlan === "solo" && payload.subscriptionPlan === "solo" && payload.concurrentAccessLimit === undefined) {
+    concurrentLimit = 1;
+    subaccounts = 1;
+  }
+
   if (payload.concurrentAccessLimit !== undefined) {
-    const limit = normalizeLimit(payload.concurrentAccessLimit, 4);
-    clinicUpdate.concurrent_access_limit = limit;
-    clinicUpdate.subaccount_limit = Math.max(limit, clinic.subscription_plan === "clinic" ? 4 : 0);
+    concurrentLimit = normalizeLimit(payload.concurrentAccessLimit, targetPlan === "solo" ? 1 : 2);
   }
 
   if (payload.subaccountLimit !== undefined) {
-    clinicUpdate.subaccount_limit = normalizeLimit(payload.subaccountLimit, clinic.subaccount_limit ?? 4);
+    subaccounts = normalizeLimit(payload.subaccountLimit, targetPlan === "solo" ? 1 : 30);
   }
+
+  if (targetPlan === "solo" && payload.subaccountLimit === undefined) {
+    subaccounts = 1;
+  }
+  if (targetPlan === "solo" && payload.concurrentAccessLimit === undefined) {
+    concurrentLimit = 1;
+  }
+
+  clinicUpdate.concurrent_access_limit = concurrentLimit;
+  clinicUpdate.subaccount_limit = subaccounts;
 
   const { error: clinicError } = await admin.from("clinics").update(clinicUpdate).eq("id", clinic.id);
   if (clinicError) throw new Error(clinicError.message);
 
+  // 2. Buscar ou inicializar clinic_subscriptions
+  const { data: existingSub, error: subFetchError } = await admin
+    .from("clinic_subscriptions")
+    .select("*")
+    .eq("clinic_id", clinic.id)
+    .maybeSingle();
+  if (subFetchError) throw new Error(subFetchError.message);
+
+  const ownerUserId = clinic.account_owner_user_id;
+  let currentSub = existingSub;
+
+  if (!currentSub && ownerUserId) {
+    const { data: newSub, error: createSubError } = await admin
+      .from("clinic_subscriptions")
+      .insert({
+        clinic_id: clinic.id,
+        account_owner_user_id: ownerUserId,
+        plan_type: targetPlan,
+        base_subaccount_limit: targetPlan === "solo" ? 1 : 30,
+        base_concurrent_access_count: targetPlan === "solo" ? 1 : 2,
+        status: status === "active" ? "ACTIVE" : "PENDING",
+      })
+      .select()
+      .single();
+    if (createSubError) throw new Error(createSubError.message);
+    currentSub = newSub;
+  }
+
+  let daysAdjusted: number | null = null;
+  let newExpiresAtIso: string | null = null;
+
+  // 3. Atualizar clinic_subscriptions se existir
+  if (currentSub) {
+    const subUpdate: Record<string, unknown> = {
+      plan_type: targetPlan,
+      base_subaccount_limit: targetPlan === "solo" ? 1 : Math.max(subaccounts, 30),
+      base_concurrent_access_count: targetPlan === "solo" ? 1 : Math.max(concurrentLimit, 2),
+      updated_at: new Date().toISOString(),
+    };
+
+    const isCourtesy = payload.isCourtesy === true || payload.isCourtesy === "true";
+    if (payload.isCourtesy !== undefined) {
+      if (isCourtesy) {
+        subUpdate.is_courtesy = true;
+        subUpdate.status = "COURTESY";
+        subUpdate.expires_at = null;
+        subUpdate.current_period_end = null;
+        subUpdate.courtesy_reason = normalizeText(payload.courtesyReason ?? payload.reason, 300);
+      } else {
+        subUpdate.is_courtesy = false;
+        if (currentSub.status === "COURTESY") {
+          subUpdate.status = "ACTIVE";
+        }
+      }
+    }
+
+    if (!isCourtesy && payload.daysAdjustment !== undefined && payload.daysAdjustment !== 0 && payload.daysAdjustment !== "") {
+      const daysToAdd = Number(payload.daysAdjustment);
+      if (Number.isFinite(daysToAdd)) {
+        daysAdjusted = daysToAdd;
+        const now = Date.now();
+        const currentExpiresAtMs = currentSub.expires_at ? new Date(currentSub.expires_at).getTime() : 0;
+        const baseMs = currentExpiresAtMs > now ? currentExpiresAtMs : now;
+        const targetMs = baseMs + daysToAdd * 86400000;
+        newExpiresAtIso = new Date(targetMs).toISOString();
+
+        subUpdate.expires_at = newExpiresAtIso;
+        subUpdate.current_period_end = newExpiresAtIso;
+        subUpdate.is_courtesy = false;
+
+        if (targetMs > now && (currentSub.status === "EXPIRED" || currentSub.status === "SUSPENDED")) {
+          subUpdate.status = "ACTIVE";
+        }
+      }
+    } else if (!isCourtesy && payload.subscriptionExpiresAt !== undefined) {
+      const rawDate = String(payload.subscriptionExpiresAt).trim();
+      if (rawDate) {
+        const parsed = new Date(rawDate);
+        if (!Number.isNaN(parsed.getTime())) {
+          newExpiresAtIso = parsed.toISOString();
+          subUpdate.expires_at = newExpiresAtIso;
+          subUpdate.current_period_end = newExpiresAtIso;
+          subUpdate.is_courtesy = false;
+        }
+      }
+    }
+
+    if (payload.subscriptionStatus !== undefined && !isCourtesy) {
+      const subStatus = String(payload.subscriptionStatus).trim().toUpperCase();
+      if (subStatus) {
+        subUpdate.status = subStatus;
+      }
+    }
+
+    const { error: updateSubError } = await admin
+      .from("clinic_subscriptions")
+      .update(subUpdate)
+      .eq("id", currentSub.id);
+    if (updateSubError) throw new Error(updateSubError.message);
+  }
+
+  // 4. Sincronizar membros da clínica
   const { error: membershipError } = await admin.from("clinic_memberships").update({
     is_active: isActive,
     membership_status: membershipStatus,
@@ -609,7 +734,15 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
     await setAdminStatus(String(userId), status);
   }
 
-  return { clinic_id: clinic.id, status, affected_users: userIds.length };
+  return {
+    clinic_id: clinic.id,
+    plan_type: targetPlan,
+    status,
+    affected_users: userIds.length,
+    is_courtesy: payload.isCourtesy === true || payload.isCourtesy === "true",
+    days_adjusted: daysAdjusted,
+    new_expires_at: newExpiresAtIso,
+  };
 };
 
 const deleteClinicPackage = async (payload: Record<string, unknown>) => {

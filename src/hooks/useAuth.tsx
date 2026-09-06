@@ -857,11 +857,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (!targetClinicId) {
       try {
-        const { data } = await supabase.rpc("list_platform_directory" as never, {
+        // 1. Tenta list_platform_directory com parâmetros completos
+        const { data, error } = await supabase.rpc("list_platform_directory" as never, {
           _kind: "clinic",
-        } as never) as { data: Array<{ item_id: string }> | null };
-        if (data && data.length > 0) {
+          _limit: 10,
+          _query: null,
+          _status: "all",
+          _tag_id: null,
+        } as never) as { data: Array<{ item_id: string }> | null; error: unknown };
+
+        if (!error && data && data.length > 0) {
           targetClinicId = data[0].item_id;
+        } else {
+          // Fallback para versão de 3 parâmetros
+          const fallbackRes = await supabase.rpc("list_platform_directory" as never, {
+            _kind: "clinic",
+            _limit: 10,
+            _query: null,
+          } as never) as { data: Array<{ item_id: string }> | null };
+          if (fallbackRes.data && fallbackRes.data.length > 0) {
+            targetClinicId = fallbackRes.data[0].item_id;
+          }
         }
       } catch (err) {
         console.error("Erro ao buscar diretório para simulação:", err);
@@ -869,7 +885,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (!targetClinicId) {
-      throw new Error("Nenhuma clínica de teste encontrada para iniciar a simulação.");
+      try {
+        // 2. Fallback para RPC list_platform_clinics
+        const { data: clinicsData } = await supabase.rpc("list_platform_clinics" as never) as {
+          data: Array<{ id: string }> | null;
+        };
+        if (clinicsData && clinicsData.length > 0) {
+          targetClinicId = clinicsData[0].id;
+        }
+      } catch (err) {
+        console.error("Erro ao buscar list_platform_clinics para simulação:", err);
+      }
+    }
+
+    if (!targetClinicId) {
+      try {
+        // 3. Fallback direto na tabela clinics
+        const { data: directClinics } = await supabase
+          .from("clinics")
+          .select("id")
+          .limit(1);
+        if (directClinics && directClinics.length > 0) {
+          targetClinicId = directClinics[0].id;
+        }
+      } catch (err) {
+        console.error("Erro ao consultar tabela clinics para simulação:", err);
+      }
+    }
+
+    if (!targetClinicId) {
+      throw new Error("Nenhuma clínica encontrada no sistema para iniciar a simulação. Crie uma clínica primeiro.");
     }
 
     const access = await startPlatformClinicAccess(

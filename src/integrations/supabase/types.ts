@@ -281,6 +281,8 @@ export type Database = {
           next_due_date: string | null
           current_period_start: string | null
           current_period_end: string | null
+          is_courtesy: boolean
+          courtesy_reason: string | null
           created_at: string
           updated_at: string
         }
@@ -305,6 +307,8 @@ export type Database = {
           next_due_date?: string | null
           current_period_start?: string | null
           current_period_end?: string | null
+          is_courtesy?: boolean
+          courtesy_reason?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -329,6 +333,8 @@ export type Database = {
           next_due_date?: string | null
           current_period_start?: string | null
           current_period_end?: string | null
+          is_courtesy?: boolean
+          courtesy_reason?: string | null
           created_at?: string
           updated_at?: string
         }

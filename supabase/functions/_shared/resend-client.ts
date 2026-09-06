@@ -30,7 +30,7 @@ export class ResendClient {
     this.defaultFrom =
       defaultFrom ||
       Deno.env.get("RESEND_DEFAULT_FROM") ||
-      "Pluri-Health <onboarding@resend.dev>";
+      "Pluri-Health <convite@pluri.health>";
   }
 
   async sendEmail(payload: SendEmailPayload): Promise<SendEmailResponse> {
@@ -40,6 +40,8 @@ export class ResendClient {
       );
     }
 
+    const fromAddress = payload.from || this.defaultFrom;
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -47,7 +49,7 @@ export class ResendClient {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: payload.from || this.defaultFrom,
+        from: fromAddress,
         to: Array.isArray(payload.to) ? payload.to : [payload.to],
         subject: payload.subject,
         html: payload.html,
@@ -59,6 +61,7 @@ export class ResendClient {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
+      console.error("[ResendClient] Erro na API do Resend:", response.status, data, "From:", fromAddress);
       return {
         error: {
           message: data?.message || `Erro ao enviar e-mail via Resend (Status ${response.status})`,

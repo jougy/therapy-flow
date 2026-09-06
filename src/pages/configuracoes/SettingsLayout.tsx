@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+import { useAuth } from "@/hooks/useAuth";
+
 type SettingsNavSection = {
   id: string;
   title: string;
@@ -32,6 +34,9 @@ export const SettingsLayout = () => {
   const { clinicKey } = useParams<{ clinicKey: string }>();
   const location = useLocation();
   const navigate = useNavigate();
+  const { subscriptionPlan, can } = useAuth();
+
+  const canAccessTeam = subscriptionPlan === "clinic" || can("subaccounts.read") || can("subaccounts.manage");
 
   // Menu retrátil / fixo (padrão desafixado para dar máxima largura à tela e conforto visual)
   const [pinnedMenu, setPinnedMenu] = useState(false);
@@ -55,8 +60,8 @@ export const SettingsLayout = () => {
   // Identifica automaticamente se a sub-rota atual é do espaço pessoal ou da clínica
   const isPersonalSpace = !clinicKey || location.pathname.includes("/pessoal/") || location.pathname.includes("/suporte");
 
-  const clinicNavSections: SettingsNavSection[] = useMemo(
-    () => [
+  const clinicNavSections: SettingsNavSection[] = useMemo(() => {
+    const sections: SettingsNavSection[] = [
       {
         id: "perfil",
         title: "Perfil da clínica",
@@ -65,14 +70,20 @@ export const SettingsLayout = () => {
         path: `${basePath}/perfil`,
         space: "clinic",
       },
-      {
+    ];
+
+    if (canAccessTeam) {
+      sections.push({
         id: "equipe",
         title: "Colaboradores e acessos",
         description: "Convites, gestão de membros e papéis operacionais.",
         icon: UsersRound,
         path: `${basePath}/equipe`,
         space: "clinic",
-      },
+      });
+    }
+
+    sections.push(
       {
         id: "seguranca",
         title: "Segurança da clínica",
@@ -96,10 +107,11 @@ export const SettingsLayout = () => {
         icon: ClipboardList,
         path: `${basePath}/formularios`,
         space: "clinic",
-      },
-    ],
-    [basePath]
-  );
+      }
+    );
+
+    return sections;
+  }, [basePath, canAccessTeam]);
 
   const personalNavSections: SettingsNavSection[] = useMemo(
     () => [
