@@ -4,6 +4,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 import {
+  logRuntimeError,
+  logRuntimeInfo,
+  logRuntimeRpc,
+  logRuntimeFunction,
+} from "@/lib/runtime-debug";
+import {
   ACCESS_CAPABILITIES,
   buildCapabilitiesForContext,
   type AccessCapability,
@@ -211,6 +217,7 @@ export const useClinicTeamData = () => {
         }
       }
     } catch (err: any) {
+      logRuntimeError("team.loadTeamData", err, { clinicId });
       console.error("[useClinicTeamData] loadTeamData error:", err);
       setFetchError(err?.message || "Erro ao carregar dados da equipe.");
     } finally {
@@ -538,6 +545,7 @@ export const useClinicTeamData = () => {
     if (!clinicId || !payload.email.trim()) return;
     setSendingInvite(true);
 
+    const rpcStart = performance.now();
     const { data, error } = await supabase.rpc("invite_clinic_collaborator", {
       _clinic_id: clinicId,
       _email: payload.email.trim(),
@@ -545,12 +553,17 @@ export const useClinicTeamData = () => {
       _job_title: payload.jobTitle.trim() || undefined,
       _specialty: payload.specialty.trim() || undefined,
     });
+    const rpcDuration = Math.round(performance.now() - rpcStart);
 
     if (error) {
+      logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: payload.email }, "error", rpcDuration, null, error);
+      logRuntimeError("team.invite_clinic_collaborator", error, { clinicId, email: payload.email });
       toast({ title: "Erro ao emitir convite", description: error.message, variant: "destructive" });
       setSendingInvite(false);
       return;
     }
+
+    logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: payload.email }, "success", rpcDuration, data);
 
     const resData = data as Record<string, unknown> | null;
     const token = resData?.token ? String(resData.token) : "";
@@ -559,15 +572,24 @@ export const useClinicTeamData = () => {
     setLastGeneratedInviteUrl(inviteUrl);
     setLastGeneratedInviteEmail(payload.email.trim());
 
+    const fnStart = performance.now();
     const { error: emailError } = await supabase.functions.invoke("send-clinic-invitation", {
       body: { inviteUrl, token },
     });
+    const fnDuration = Math.round(performance.now() - fnStart);
 
     if (emailError) {
       const reason = await extractEdgeFunctionErrorMessage(
         emailError,
         "Não foi possível despachar o e-mail automaticamente."
       );
+      logRuntimeFunction("send-clinic-invitation", "error", fnDuration, { inviteUrl, reason }, emailError);
+      logRuntimeError("team.send-clinic-invitation", `Falha ao despachar e-mail via Resend: ${reason}`, {
+        inviteUrl,
+        token,
+        emailError,
+        email: payload.email,
+      });
       console.error("[useClinicTeamData] Falha ao enviar e-mail de convite via Resend:", reason, emailError);
       toast({
         title: "Convite gerado (aviso de envio)",
@@ -575,6 +597,8 @@ export const useClinicTeamData = () => {
         variant: "destructive",
       });
     } else {
+      logRuntimeFunction("send-clinic-invitation", "success", fnDuration, { email: payload.email });
+      logRuntimeInfo("team.send-clinic-invitation", `Convite enviado com sucesso para ${payload.email}`);
       toast({
         title: "Convite enviado com sucesso!",
         description: `E-mail oficial enviado para ${payload.email}.`,
@@ -592,6 +616,7 @@ export const useClinicTeamData = () => {
 
   const handleGetInviteLinkOnly = async (invitation: PendingCollaboratorInvitation) => {
     try {
+      const rpcStart = performance.now();
       const { data, error } = await supabase.rpc("invite_clinic_collaborator", {
         _clinic_id: clinicId || undefined,
         _email: invitation.email,
@@ -599,8 +624,15 @@ export const useClinicTeamData = () => {
         _job_title: invitation.job_title || undefined,
         _specialty: invitation.specialty || undefined,
       });
+      const rpcDuration = Math.round(performance.now() - rpcStart);
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: invitation.email }, "error", rpcDuration, null, error);
+        logRuntimeError("team.get_invite_link_only", error, { clinicId, email: invitation.email });
+        throw new Error(error.message);
+      }
+
+      logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: invitation.email }, "success", rpcDuration, data);
 
       const resData = data as Record<string, unknown>;
       const token = resData?.token ? String(resData.token) : "";
@@ -624,6 +656,7 @@ export const useClinicTeamData = () => {
     setResendingId(invitation.id);
 
     try {
+      const rpcStart = performance.now();
       const { data: fallbackData, error } = await supabase.rpc("invite_clinic_collaborator", {
         _clinic_id: clinicId || undefined,
         _email: invitation.email,
@@ -631,8 +664,15 @@ export const useClinicTeamData = () => {
         _job_title: invitation.job_title || undefined,
         _specialty: invitation.specialty || undefined,
       });
+      const rpcDuration = Math.round(performance.now() - rpcStart);
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: invitation.email }, "error", rpcDuration, null, error);
+        logRuntimeError("team.resend_invite_rpc", error, { clinicId, email: invitation.email });
+        throw new Error(error.message);
+      }
+
+      logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: invitation.email }, "success", rpcDuration, fallbackData);
 
       const fData = fallbackData as Record<string, unknown>;
       const token = fData?.token ? String(fData.token) : "";
@@ -641,15 +681,24 @@ export const useClinicTeamData = () => {
       setLastGeneratedInviteUrl(inviteUrl);
       setLastGeneratedInviteEmail(invitation.email);
 
+      const fnStart = performance.now();
       const { error: emailError } = await supabase.functions.invoke("send-clinic-invitation", {
         body: { inviteUrl, token },
       });
+      const fnDuration = Math.round(performance.now() - fnStart);
 
       if (emailError) {
         const reason = await extractEdgeFunctionErrorMessage(
           emailError,
           "Não foi possível reenviar o e-mail automaticamente."
         );
+        logRuntimeFunction("send-clinic-invitation", "error", fnDuration, { inviteUrl, reason }, emailError);
+        logRuntimeError("team.resend-clinic-invitation", `Falha ao reenviar e-mail via Resend: ${reason}`, {
+          inviteUrl,
+          token,
+          emailError,
+          email: invitation.email,
+        });
         console.error("[useClinicTeamData] Falha ao reenviar e-mail de convite via Resend:", reason, emailError);
         toast({
           title: "Convite atualizado (aviso de envio)",
@@ -657,6 +706,8 @@ export const useClinicTeamData = () => {
           variant: "destructive",
         });
       } else {
+        logRuntimeFunction("send-clinic-invitation", "success", fnDuration, { email: invitation.email });
+        logRuntimeInfo("team.send-clinic-invitation", `Convite reenviado com sucesso para ${invitation.email}`);
         toast({
           title: "Convite reenviado!",
           description: `Novo e-mail enviado para ${invitation.email}.`,
