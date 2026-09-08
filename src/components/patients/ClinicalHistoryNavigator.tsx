@@ -43,6 +43,20 @@ export const ClinicalHistoryNavigator: React.FC<ClinicalHistoryNavigatorProps> =
   onChangeIndex,
   versions,
 }) => {
+  // Clamping seguro do índice
+  const safeIndex = versions && versions.length > 0
+    ? Math.min(Math.max(0, currentIndex), Math.max(0, versions.length - 1))
+    : 0;
+  const selectedVersion = versions && versions.length > 0 ? (versions[safeIndex] ?? versions[0]) : null;
+  const canGoOlder = versions && versions.length > 0 ? safeIndex < versions.length - 1 : false;
+  const canGoNewer = versions && versions.length > 0 ? safeIndex > 0 : false;
+
+  // Memoização do Set de changedFields para otimização de render (evita recriação a cada ciclo)
+  const changedFieldsSet = useMemo(
+    () => new Set(selectedVersion?.changedFields || []),
+    [selectedVersion?.changedFields]
+  );
+
   // Tratamento elegante para histórico vazio
   if (!versions || versions.length === 0) {
     return (
@@ -62,18 +76,6 @@ export const ClinicalHistoryNavigator: React.FC<ClinicalHistoryNavigatorProps> =
       </Card>
     );
   }
-
-  // Clamping seguro do índice
-  const safeIndex = Math.min(Math.max(0, currentIndex), Math.max(0, versions.length - 1));
-  const selectedVersion = versions[safeIndex] ?? versions[0];
-  const canGoOlder = safeIndex < versions.length - 1;
-  const canGoNewer = safeIndex > 0;
-
-  // Memoização do Set de changedFields para otimização de render (evita recriação a cada ciclo)
-  const changedFieldsSet = useMemo(
-    () => new Set(selectedVersion?.changedFields || []),
-    [selectedVersion?.changedFields]
-  );
 
   return (
     <Card className="border-border/70 shadow-sm">

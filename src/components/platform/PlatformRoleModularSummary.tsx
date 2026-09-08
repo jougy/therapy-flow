@@ -27,9 +27,11 @@ export const PlatformRoleModularSummary: React.FC<PlatformRoleModularSummaryProp
   onOpenManageRoles,
   compact = false,
 }) => {
-  if (!roleDefinition) return null;
-
   const capabilities = useMemo(() => {
+    if (!roleDefinition) {
+      return {} as Record<AccessCapability, boolean>;
+    }
+
     const overridesMap: Partial<Record<AccessCapability, boolean>> = {};
     for (const row of roleCapabilitiesOverrides) {
       if (row.operational_role === roleDefinition.role_key) {
@@ -79,16 +81,18 @@ export const PlatformRoleModularSummary: React.FC<PlatformRoleModularSummaryProp
   // Permissões-chave para exibição rápida
   const keyPermissions = useMemo(() => {
     const keys: Array<{ label: string; active: boolean }> = [
-      { label: "Ver Pacientes", active: capabilities["patients.read"] },
-      { label: "Editar Pacientes", active: capabilities["patients.write"] },
-      { label: "Atendimentos Próprios", active: capabilities["sessions.write"] },
-      { label: "Atendimentos da Equipe", active: capabilities["sessions.read_all"] },
-      { label: "Agenda da Equipe", active: capabilities["schedule.read_all"] },
-      { label: "Gestão da Equipe", active: capabilities["subaccounts.manage"] },
-      { label: "Financeiro / Tesouraria", active: capabilities["treasury.manage"] },
+      { label: "Ver Pacientes", active: !!capabilities["patients.read"] },
+      { label: "Editar Pacientes", active: !!capabilities["patients.write"] },
+      { label: "Atendimentos Próprios", active: !!capabilities["sessions.write"] },
+      { label: "Atendimentos da Equipe", active: !!capabilities["sessions.read_all"] },
+      { label: "Agenda da Equipe", active: !!capabilities["schedule.read_all"] },
+      { label: "Gestão da Equipe", active: !!capabilities["subaccounts.manage"] },
+      { label: "Financeiro / Tesouraria", active: !!capabilities["treasury.manage"] },
     ];
     return keys;
   }, [capabilities]);
+
+  if (!roleDefinition) return null;
 
   return (
     <div className="rounded-xl border bg-muted/30 p-3.5 space-y-3">
