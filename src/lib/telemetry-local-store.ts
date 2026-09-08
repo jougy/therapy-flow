@@ -11,6 +11,7 @@ export interface ClientTelemetryData {
   printsDetected: number;
   docsPrinted: number;
   pdfExported: number;
+  jsonExported: number;
   dwellTimeSeconds: number;
   routes: Record<string, number>;
   actionHistory: number[]; // timestamps
@@ -30,6 +31,7 @@ const getInitialStore = (): ClientTelemetryData => {
         printsDetected: parsed.printsDetected || 0,
         docsPrinted: parsed.docsPrinted || 0,
         pdfExported: parsed.pdfExported || 0,
+        jsonExported: parsed.jsonExported || 0,
         dwellTimeSeconds: parsed.dwellTimeSeconds || 0,
         routes: parsed.routes || {},
         actionHistory: Array.isArray(parsed.actionHistory) ? parsed.actionHistory : [],
@@ -48,6 +50,7 @@ const getInitialStore = (): ClientTelemetryData => {
     printsDetected: 0,
     docsPrinted: 0,
     pdfExported: 0,
+    jsonExported: 0,
     dwellTimeSeconds: 0,
     routes: {},
     actionHistory: [],
@@ -90,7 +93,7 @@ class ClientTelemetryManager {
 
   // Accumulate local action
   public recordAction(
-    type: "page_view" | "print_screen" | "document_print" | "export_pdf",
+    type: "page_view" | "print_screen" | "document_print" | "export_pdf" | "export_json",
     pathname: string,
     metadata: { dwell_time_seconds?: number } = {}
   ) {
@@ -122,6 +125,8 @@ class ClientTelemetryManager {
       this.store.docsPrinted += 1;
     } else if (type === "export_pdf") {
       this.store.pdfExported += 1;
+    } else if (type === "export_json") {
+      this.store.jsonExported += 1;
     }
 
     // Anti-Spam Defense Check (actions in last 5 minutes)
@@ -183,6 +188,7 @@ class ClientTelemetryManager {
       this.store.printsDetected > 0 ||
       this.store.docsPrinted > 0 ||
       this.store.pdfExported > 0 ||
+      this.store.jsonExported > 0 ||
       this.store.isSpamBlocked;
 
     if (!hasDataToSync && !isSpamAlert) {
@@ -195,6 +201,7 @@ class ClientTelemetryManager {
       printsDetected: this.store.printsDetected,
       docsPrinted: this.store.docsPrinted,
       pdfExported: this.store.pdfExported,
+      jsonExported: this.store.jsonExported,
       dwellTimeSeconds: this.store.dwellTimeSeconds,
       routes: { ...this.store.routes },
       isSpamFlagged: this.store.isSpamBlocked,
@@ -225,6 +232,7 @@ class ClientTelemetryManager {
       this.store.printsDetected = 0;
       this.store.docsPrinted = 0;
       this.store.pdfExported = 0;
+      this.store.jsonExported = 0;
       this.store.dwellTimeSeconds = 0;
       this.store.routes = {};
       this.store.lastSyncTime = now;

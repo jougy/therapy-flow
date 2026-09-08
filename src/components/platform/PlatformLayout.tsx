@@ -138,7 +138,7 @@ export const PlatformLayout = ({
   };
 
   // Resolve current active tab ID from current pathname
-  const currentTabId = React.useMemo(() => {
+  const currentTabId = useMemo(() => {
     const pathname = location.pathname;
     if (pathname.includes("/platform/feedbacks")) return "feedbacks";
     if (pathname.includes("/platform/novidades")) return "news";

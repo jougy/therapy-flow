@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
-  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer
+  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +21,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -38,10 +39,13 @@ import { FileThumbnailCard } from "@/components/FileThumbnailCard";
 import { PatientAnamnesisDashboardContent, PatientStatsPrintView } from "@/pages/PacienteAnamnesisDashboard";
 import { SharePatientRegistrationModal } from "@/components/patients/SharePatientRegistrationModal";
 import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
+import { PatientRegistrationPrintView } from "@/components/patients/PatientRegistrationPrintView";
+import { buildPatientExportData, downloadPatientDataJson } from "@/lib/patient-export";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { useTelemetry } from "@/hooks/useTelemetry";
 import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { fetchPatientByRef, getPatientRouteKey, getClinicPatientPath, getPatientPath } from "@/lib/patient-routing";
@@ -1020,9 +1024,12 @@ const PacienteDetalhe = () => {
   const location = useLocation();
   const { can, clinic, clinicId, operationalRole, profile, user } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
+  const { trackDocumentPrint, trackExportJson } = useTelemetry();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const canViewPatientContact = can("patients.manage");
   const canViewFinancialData = can("treasury.manage");
+  const canPrint = Boolean(typeof can === "function" ? can("system.print") : true) && isFeatureEnabled("print_general");
+  const canExport = Boolean(typeof can === "function" ? can("patients.read") && can("system.print") : true);
 
   // Query Hooks persistidos em IndexedDB
   const {
@@ -1181,6 +1188,8 @@ const PacienteDetalhe = () => {
   const [sessionShareDialogOpen, setSessionShareDialogOpen] = useState(false);
   const [shareRecipientsSessionId, setShareRecipientsSessionId] = useState<string | null>(null);
   const [patientInfoDialogOpen, setPatientInfoDialogOpen] = useState(false);
+  const [showPrintRegistrationModal, setShowPrintRegistrationModal] = useState(false);
+  const [isPrintingRegistration, setIsPrintingRegistration] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [agendaDate, setAgendaDate] = useState(() => getDefaultAgendaInputs().date);
   const [agendaTime, setAgendaTime] = useState(() => getDefaultAgendaInputs().time);
@@ -1945,6 +1954,68 @@ const PacienteDetalhe = () => {
         document.title = previousTitle;
       }, 1000);
     }, 150);
+  };
+
+  const handleExecutePrintRegistration = () => {
+    setShowPrintRegistrationModal(false);
+    setIsPrintingRegistration(true);
+    if (patient) {
+      trackDocumentPrint("patient_registration", patient.id, { patient_code: patient.patient_code });
+    }
+    const previousTitle = document.title;
+    const patientCleanName = (patient?.name ?? "Paciente").replace(/[^a-zA-Z0-9-_\s]/g, " ").replaceAll(/\s+/g, " ").trim();
+    const clinicCleanName = (clinic?.name ?? "Clínica").replace(/[^a-zA-Z0-9-_\s]/g, " ").replaceAll(/\s+/g, " ").trim();
+    document.title = `Cadastro Completo - ${patientCleanName} - ${clinicCleanName}`;
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        document.title = previousTitle;
+        setIsPrintingRegistration(false);
+      }, 1000);
+    }, 150);
+  };
+
+  const handleExportPatientJson = () => {
+    if (!canExport) {
+      toast({
+        title: "Acesso não autorizado",
+        description: "Seu perfil não possui autorização para exportar os dados cadastrais deste paciente (LGPD).",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!patient) return;
+
+    try {
+      const payload = buildPatientExportData({
+        patient,
+        clinicalProfile: parsedClinicalProfile,
+        emergencyContact: parsedEmergencyContact,
+        clinicName: clinic?.name || "Clínica Pluri-Health",
+        exportedBy: profile?.full_name || profile?.social_name || user?.email || "Profissional autorizado",
+      });
+
+      downloadPatientDataJson(payload, patient.name);
+      trackExportJson("patient", patient.id, {
+        patient_code: patient.patient_code,
+        patient_name: patient.name,
+        action: "lgpd_data_export",
+      });
+
+      toast({
+        title: "Exportação concluída",
+        description: "Arquivo JSON gerado e baixado com sucesso em conformidade com a LGPD (Art. 18, V).",
+      });
+    } catch (err) {
+      console.error("Erro ao exportar dados do paciente:", err);
+      toast({
+        title: "Erro na exportação",
+        description: "Não foi possível gerar o arquivo de exportação.",
+        variant: "destructive",
+      });
+    }
   };
 
   const normalizedGroupName = normalizeGroupName(groupName);
@@ -2740,35 +2811,63 @@ const PacienteDetalhe = () => {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Mais opções" className="h-9 w-9 rounded-xl text-muted-foreground hover:text-foreground shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Mais opções"
+                  title="Mais opções do paciente"
+                  className="h-9 rounded-xl border-border/80 bg-background hover:bg-muted/50 text-xs font-medium text-foreground gap-1.5 px-2.5 shrink-0"
+                >
                   <MoreHorizontal className="h-4 w-4" />
+                  <span className="hidden sm:inline">Opções</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                  Opções do paciente
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   data-tutorial="patient-btn-share-form"
                   onClick={() => handleOpenShareDialog()}
+                  className="cursor-pointer"
                 >
-                  <Share2 className="mr-2 h-4 w-4" />
-                  Compartilhar cadastro
+                  <Share2 className="mr-2 h-4 w-4 text-primary" />
+                  <span>Compartilhar cadastro para o paciente preencher</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate(getPatientPath(patient, "resumo"))}>
+                <DropdownMenuItem
+                  onClick={() => navigate(getPatientPath(patient, "resumo"))}
+                  className="cursor-pointer"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  <span>Ver cadastro completo</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setShowPrintRegistrationModal(true)}
+                  disabled={!canPrint}
+                  className="cursor-pointer"
+                >
                   <Printer className="mr-2 h-4 w-4" />
-                  Imprimir / Exportar cadastro
+                  <span>Imprimir cadastro (PDF)</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setRecurrenceDialogOpen(true)}>
-                  <CalendarClock className="mr-2 h-4 w-4" />
-                  Configurar recorrência
+                <DropdownMenuItem
+                  onClick={() => handleExportPatientJson()}
+                  disabled={!canExport}
+                  className="cursor-pointer"
+                >
+                  <FileDown className="mr-2 h-4 w-4" />
+                  <span>Exportar dados (JSON)</span>
                 </DropdownMenuItem>
                 {canDeletePatient && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => setDeletePatientDialogOpen(true)}
-                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                      className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Excluir paciente
+                      <span>Excluir paciente</span>
                     </DropdownMenuItem>
                   </>
                 )}
@@ -4169,6 +4268,28 @@ const PacienteDetalhe = () => {
           onConfirm={handleExecuteDashboardPrint}
           onCancel={() => setShowDashboardPrintModal(false)}
           documentTitle={`estatísticas do paciente ${patient.name}`}
+        />
+      )}
+
+      {/* Dossiê de Impressão do Cadastro (Renderizado sob demanda para proteção LGPD) */}
+      {(showPrintRegistrationModal || isPrintingRegistration) && patient && (
+        <PatientRegistrationPrintView
+          patient={patient}
+          clinic={clinic}
+          profile={profile}
+          user={user}
+          clinicalProfile={parsedClinicalProfile}
+          emergencyContact={parsedEmergencyContact}
+        />
+      )}
+
+      {/* Modal de Confirmação & Termo LGPD de Impressão do Cadastro */}
+      {patient && (
+        <PrintResponsibilityModal
+          isOpen={showPrintRegistrationModal}
+          onConfirm={handleExecutePrintRegistration}
+          onCancel={() => setShowPrintRegistrationModal(false)}
+          documentTitle={`cadastro completo do paciente ${patient.name}`}
         />
       )}
       </motion.div>

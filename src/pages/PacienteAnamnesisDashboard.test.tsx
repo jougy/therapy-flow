@@ -51,7 +51,11 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("recharts", () => {
-  const Component = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  const Component = ({ children, height, width, ...props }: { children?: ReactNode; height?: number | string; width?: number | string; [key: string]: unknown }) => (
+    <div data-testid="recharts-component" data-width={width} data-height={height} {...props}>
+      {children}
+    </div>
+  );
   return {
     Area: Component,
     AreaChart: Component,
@@ -75,7 +79,11 @@ vi.mock("recharts", () => {
 });
 
 vi.mock("@/components/ui/chart", () => ({
-  ChartContainer: ({ children }: { children?: ReactNode }) => <div data-testid="chart">{children}</div>,
+  ChartContainer: ({ children, responsive = true }: { children?: ReactNode; responsive?: boolean; [key: string]: unknown }) => (
+    <div data-testid="chart" data-responsive={String(responsive)}>
+      {children}
+    </div>
+  ),
   ChartTooltip: () => null,
   ChartTooltipContent: () => null,
 }));
@@ -352,6 +360,26 @@ describe("PacienteAnamnesisDashboard", () => {
 
     // Print root should reflect active chart type (Barras)
     expect(printRoot?.textContent).toContain("Barras · Evolução numérica");
+
+    // Verify charts in printRoot have responsive=false and non-zero dimensions
+    const printCharts = printRoot?.querySelectorAll('[data-testid="chart"]');
+    expect(printCharts?.length).toBeGreaterThan(0);
+    printCharts?.forEach((chart) => {
+      expect(chart.getAttribute("data-responsive")).toBe("false");
+    });
+
+    const rechartsComponents = printRoot?.querySelectorAll('[data-testid="recharts-component"]');
+    expect(rechartsComponents?.length).toBeGreaterThan(0);
+
+    // Verify that radar chart and Cartesian charts rendered in print view have explicit dimensions
+    const sizedCharts = Array.from(rechartsComponents ?? []).filter((el) => el.getAttribute("data-width") !== null);
+    expect(sizedCharts.length).toBeGreaterThan(0);
+    sizedCharts.forEach((el) => {
+      const w = Number(el.getAttribute("data-width"));
+      const h = Number(el.getAttribute("data-height"));
+      expect(w).toBeGreaterThan(0);
+      expect(h).toBeGreaterThan(0);
+    });
 
     // Change filter to template-1
     fireEvent.change(selects[0], { target: { value: "template-1" } });

@@ -6,12 +6,12 @@ export type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Verifica se a string informada é um UUID V4 válido (ou ID primário direto).
+ * Verifica se a string informada é estritamente um UUID V4 válido.
  */
 export function isUuid(value: string | undefined | null): boolean {
   if (!value) return false;
   const str = value.trim();
-  return UUID_REGEX.test(str) || str.startsWith("patient-") || str.startsWith("test-");
+  return UUID_REGEX.test(str);
 }
 
 /**
@@ -52,49 +52,123 @@ export function getClinicPatientPath(
 }
 
 /**
- * Busca um paciente por referência de rota (tanto por patient_code quanto por id UUID).
+ * Busca um paciente por referência de rota (tanto por patient_code quanto por id UUID)
+ * com blindagem multi-tenancy rigorosa por clínica.
  */
-export async function fetchPatientByRef(ref: string, clinicId?: string | null) {
+export async function fetchPatientByRef(
+  ref: string,
+  clinicId?: string | null,
+  clinicRouteKey?: string | null
+) {
   if (!ref) {
     return { data: null, error: new Error("Referência de paciente não informada.") };
   }
 
   const cleanRef = ref.trim();
+  let resolvedClinicId = clinicId;
 
-  // 1. Tenta buscar diretamente por ID UUID/mock se for o formato
+  // Se clinicRouteKey foi fornecido mas clinicId não, resolve clinicId pelo route_key
+  if (!resolvedClinicId && clinicRouteKey && clinicRouteKey.trim()) {
+    try {
+      const clinicRes = await supabase
+        .from("clinics")
+        .select("id")
+        .eq("route_key", clinicRouteKey.trim())
+        .single();
+      if (clinicRes.data?.id) {
+        resolvedClinicId = clinicRes.data.id;
+      }
+    } catch {
+      // Falha silenciosa no lookup da clínica
+    }
+  }
+
+  // 1. Tenta buscar diretamente por ID UUID estritamente válido
+  // Se resolvedClinicId estiver disponível, aplica SEMPRE clinic_id para impedir vazamento entre clínicas
   if (isUuid(cleanRef)) {
     try {
-      const idRes = await supabase.from("patients").select("*").eq("id", cleanRef).single();
+      let idQuery = supabase.from("patients").select("*").eq("id", cleanRef);
+      if (resolvedClinicId) {
+        idQuery = idQuery.eq("clinic_id", resolvedClinicId);
+      }
+      const idRes = await idQuery.single();
       if (idRes.data) {
         return idRes;
       }
     } catch {
-      // Continuar se não encontrar por ID
+      // Continuar se não encontrar por ID no escopo informado
     }
   }
 
+  const normalizedCode = cleanRef.toUpperCase();
+
   // 2. Tenta buscar por patient_code com escopo de clínica
-  if (clinicId) {
+  if (resolvedClinicId) {
     try {
-      const codeRes = await supabase.from("patients").select("*").eq("clinic_id", clinicId).eq("patient_code", cleanRef).single();
+      const codeRes = await supabase
+        .from("patients")
+        .select("*")
+        .eq("clinic_id", resolvedClinicId)
+        .eq("patient_code", normalizedCode)
+        .single();
       if (codeRes.data) {
         return codeRes;
       }
     } catch {
-      // Tentar sem limitar por clínica caso o paciente pertença a outra clínica acessível
+      // Tentar sem código normalizado em maiúsculas caso esteja minúsculo
+      if (normalizedCode !== cleanRef) {
+        try {
+          const rawCodeRes = await supabase
+            .from("patients")
+            .select("*")
+            .eq("clinic_id", resolvedClinicId)
+            .eq("patient_code", cleanRef)
+            .single();
+          if (rawCodeRes.data) {
+            return rawCodeRes;
+          }
+        } catch {
+          // Seguir para busca global
+        }
+      }
     }
   }
 
   // 3. Tenta buscar por patient_code sem limitação de clinic_id
+  // Garante tratamento seguro (limit 1 + maybeSingle/single) para evitar erro PGRST116
+  // caso existam múltiplos códigos idênticos em clínicas distintas
   try {
-    const globalCodeRes = await supabase.from("patients").select("*").eq("patient_code", cleanRef).single();
-    if (globalCodeRes.data) {
+    let globalQuery = supabase
+      .from("patients")
+      .select("*")
+      .eq("patient_code", normalizedCode);
+
+    if (typeof (globalQuery as any).limit === "function") {
+      globalQuery = (globalQuery as any).limit(1);
+    }
+
+    const globalCodeRes = typeof (globalQuery as any).maybeSingle === "function"
+      ? await (globalQuery as any).maybeSingle()
+      : await globalQuery.single();
+
+    if (globalCodeRes?.data) {
       return globalCodeRes;
     }
   } catch {
-    // Fallback final
+    // Fallback
   }
 
-  // 4. Fallback final por id UUID
-  return await supabase.from("patients").select("*").eq("id", cleanRef).single();
+  // 4. Fallback final por id UUID - NUNCA execute com cleanRef que não seja UUID válido
+  if (isUuid(cleanRef)) {
+    let fallbackQuery = supabase.from("patients").select("*").eq("id", cleanRef);
+    if (resolvedClinicId) {
+      fallbackQuery = fallbackQuery.eq("clinic_id", resolvedClinicId);
+    }
+    return await fallbackQuery.single();
+  }
+
+  return {
+    data: null,
+    error: new Error(`Paciente com referência "${cleanRef}" não foi encontrado.`),
+  };
 }

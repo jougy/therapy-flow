@@ -47,7 +47,7 @@ type Action =
 
 const accountStatuses = new Set(["active", "payment_pending", "temporarily_paused", "banned"]);
 const operationalRoles = new Set(["admin", "professional", "assistant", "estagiario"]);
-const plans = new Set(["solo", "clinic"]);
+const plans = new Set(["solo", "clinic", "enterprise"]);
 
 const normalizeEmail = (value: unknown) => String(value ?? "").trim().toLowerCase();
 const normalizeText = (value: unknown, max = 500) => {
@@ -69,7 +69,7 @@ const normalizeStatus = (value: unknown) => {
 const normalizePlan = (value: unknown) => {
   const plan = String(value ?? "clinic").trim();
   if (!plans.has(plan)) throw new Error("Plano inválido.");
-  return plan as "solo" | "clinic";
+  return plan as "solo" | "clinic" | "enterprise";
 };
 const normalizeRole = (value: unknown) => {
   const role = String(value ?? "professional").trim();
@@ -140,11 +140,21 @@ const logAudit = async (
   if (error) throw new Error(error.message);
 };
 
+const isUuid = (val: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
 const getClinic = async (clinicIdOrDocument: unknown) => {
   const raw = String(clinicIdOrDocument ?? "").trim();
-  const doc = digits(raw);
+  if (!raw) throw new Error("Identificador da clínica é obrigatório.");
+
   let query = admin.from("clinics").select("*").limit(1);
-  query = doc.length ? query.eq("cnpj", doc) : query.eq("id", raw);
+  if (isUuid(raw)) {
+    query = query.eq("id", raw);
+  } else {
+    const doc = digits(raw);
+    query = doc.length ? query.eq("cnpj", doc) : query.eq("id", raw);
+  }
+
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Clínica não encontrada.");
@@ -216,7 +226,11 @@ const createOwnerAccount = async (payload: Record<string, unknown>) => {
   const document = normalizeDocument(payload.cnpj);
   const plan = normalizePlan(payload.plan);
   const status = normalizeStatus(payload.status);
-  const concurrentLimit = plan === "clinic" ? normalizeLimit(payload.concurrentAccessLimit, 4) : 1;
+  const concurrentLimit = plan === "enterprise"
+    ? normalizeLimit(payload.concurrentAccessLimit, 10)
+    : plan === "clinic"
+    ? normalizeLimit(payload.concurrentAccessLimit, 4)
+    : 1;
 
   if (!email) throw new Error("E-mail é obrigatório.");
 
@@ -239,10 +253,26 @@ const createOwnerAccount = async (payload: Record<string, unknown>) => {
     });
     if (signupError) throw new Error(signupError.message);
 
-    if (plan === "clinic") {
+    if (plan === "clinic" || plan === "enterprise") {
+      const baseSubaccounts = plan === "enterprise" ? 100 : 30;
+      const baseConcurrent = plan === "enterprise" ? 10 : 4;
+      const effectiveConcurrent = Math.max(concurrentLimit, baseConcurrent);
+      const effectiveSubaccounts = Math.max(effectiveConcurrent, baseSubaccounts);
       const { error: clinicError } = await admin
         .from("clinics")
-        .update({ concurrent_access_limit: concurrentLimit, subaccount_limit: Math.max(concurrentLimit, 4) })
+        .update({
+          concurrent_access_limit: effectiveConcurrent,
+          subaccount_limit: effectiveSubaccounts,
+        })
+        .eq("account_owner_user_id", userId);
+      if (clinicError) throw new Error(clinicError.message);
+    } else if (plan === "solo") {
+      const { error: clinicError } = await admin
+        .from("clinics")
+        .update({
+          concurrent_access_limit: 1,
+          subaccount_limit: 1,
+        })
         .eq("account_owner_user_id", userId);
       if (clinicError) throw new Error(clinicError.message);
     }
@@ -256,7 +286,9 @@ const createOwnerAccount = async (payload: Record<string, unknown>) => {
 
 const createSubaccount = async (payload: Record<string, unknown>) => {
   const clinic = await getClinic(payload.clinicId ?? payload.clinic);
-  if (clinic.subscription_plan !== "clinic") throw new Error("A clínica selecionada precisa estar no plano clinic.");
+  if (clinic.subscription_plan !== "clinic" && clinic.subscription_plan !== "enterprise") {
+    throw new Error("A clínica selecionada precisa estar no plano clinic ou enterprise.");
+  }
 
   const email = normalizeEmail(payload.email);
   const password = normalizePassword(payload.password);
@@ -586,27 +618,36 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
     subscription_plan: targetPlan,
   };
 
-  let concurrentLimit = clinic.concurrent_access_limit ?? (targetPlan === "solo" ? 1 : 2);
-  let subaccounts = clinic.subaccount_limit ?? (targetPlan === "solo" ? 1 : 30);
+  const getPlanBaseLimits = (p: string) => {
+    if (p === "enterprise") return { concurrent: 10, subaccounts: 100 };
+    if (p === "clinic") return { concurrent: 4, subaccounts: 30 };
+    return { concurrent: 1, subaccounts: 1 };
+  };
 
-  if (targetPlan === "solo" && payload.subscriptionPlan === "solo" && payload.concurrentAccessLimit === undefined) {
-    concurrentLimit = 1;
-    subaccounts = 1;
+  const defaultLimits = getPlanBaseLimits(targetPlan);
+  let concurrentLimit = clinic.concurrent_access_limit ?? defaultLimits.concurrent;
+  let subaccounts = clinic.subaccount_limit ?? defaultLimits.subaccounts;
+
+  if (payload.subscriptionPlan !== undefined && payload.concurrentAccessLimit === undefined && payload.subaccountLimit === undefined) {
+    concurrentLimit = defaultLimits.concurrent;
+    subaccounts = defaultLimits.subaccounts;
   }
 
   if (payload.concurrentAccessLimit !== undefined) {
-    concurrentLimit = normalizeLimit(payload.concurrentAccessLimit, targetPlan === "solo" ? 1 : 2);
+    concurrentLimit = normalizeLimit(payload.concurrentAccessLimit, defaultLimits.concurrent);
   }
 
   if (payload.subaccountLimit !== undefined) {
-    subaccounts = normalizeLimit(payload.subaccountLimit, targetPlan === "solo" ? 1 : 30);
+    subaccounts = normalizeLimit(payload.subaccountLimit, defaultLimits.subaccounts);
   }
 
-  if (targetPlan === "solo" && payload.subaccountLimit === undefined) {
-    subaccounts = 1;
-  }
-  if (targetPlan === "solo" && payload.concurrentAccessLimit === undefined) {
-    concurrentLimit = 1;
+  if (targetPlan === "solo") {
+    if (payload.subaccountLimit === undefined) {
+      subaccounts = 1;
+    }
+    if (payload.concurrentAccessLimit === undefined) {
+      concurrentLimit = 1;
+    }
   }
 
   clinicUpdate.concurrent_access_limit = concurrentLimit;
@@ -633,8 +674,8 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
         clinic_id: clinic.id,
         account_owner_user_id: ownerUserId,
         plan_type: targetPlan,
-        base_subaccount_limit: targetPlan === "solo" ? 1 : 30,
-        base_concurrent_access_count: targetPlan === "solo" ? 1 : 2,
+        base_subaccount_limit: subaccounts,
+        base_concurrent_access_count: concurrentLimit,
         status: status === "active" ? "ACTIVE" : "PENDING",
       })
       .select()
@@ -650,8 +691,8 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
   if (currentSub) {
     const subUpdate: Record<string, unknown> = {
       plan_type: targetPlan,
-      base_subaccount_limit: targetPlan === "solo" ? 1 : Math.max(subaccounts, 30),
-      base_concurrent_access_count: targetPlan === "solo" ? 1 : Math.max(concurrentLimit, 2),
+      base_subaccount_limit: subaccounts,
+      base_concurrent_access_count: concurrentLimit,
       updated_at: new Date().toISOString(),
     };
 

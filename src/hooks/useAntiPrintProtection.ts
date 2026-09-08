@@ -76,15 +76,21 @@ export function useAntiPrintProtection() {
     void loadConfig();
   }, [loadConfig]);
 
-  // Check if current route is protected
+  // Check if current route is protected with strict boundary checks
   const isRouteProtected = useCallback(() => {
     if (!config?.enabled) return false;
     const routes = config.protectedRoutes || DEFAULT_PROTECTED_ROUTES;
     const current = location.pathname;
+    const normalized = current.replace(/^\/clinica\/[^/]+/, "") || "/";
 
     return routes.some((route) => {
-      if (route === current) return true;
-      if (route !== "/" && current.startsWith(route)) return true;
+      if (route === current || route === normalized) return true;
+      if (route !== "/") {
+        const routePrefix = route.endsWith("/") ? route : `${route}/`;
+        if (current.startsWith(routePrefix) || normalized.startsWith(routePrefix)) {
+          return true;
+        }
+      }
       return false;
     });
   }, [config, location.pathname]);
@@ -151,30 +157,6 @@ export function useAntiPrintProtection() {
       window.removeEventListener("keydown", handleKeyDown, true);
     };
   }, [handlePrintDetection]);
-
-  // Monitor Window Focus / Visibility Changes
-  useEffect(() => {
-    let focusLostTime = 0;
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        focusLostTime = Date.now();
-      } else {
-        // If window lost visibility for a short duration while on protected route, evaluate as potential snipping tool capture
-        const duration = Date.now() - focusLostTime;
-        if (focusLostTime > 0 && duration > 100 && duration < 5000) {
-          if (isRouteProtected()) {
-            handlePrintDetection("Visibility Change / Snipping Tool Detection");
-          }
-        }
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [handlePrintDetection, isRouteProtected]);
 
   const unblur = useCallback(() => {
     setIsBlurred(false);

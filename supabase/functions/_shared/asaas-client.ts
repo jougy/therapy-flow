@@ -1,4 +1,21 @@
-// supabase/functions/_shared/asaas-client.ts
+/**
+ * Cliente HTTP para a API v3 do Gateway de Pagamentos Asaas.
+ *
+ * Racional de Arquitetura & Segurança:
+ * 1. Isolamento de Ambientes:
+ *    - Alterna dinamicamente entre Sandbox (`https://sandbox.asaas.com/api/v3`) e Produção
+ *      (`https://api.asaas.com/v3`) com base na variável `ASAAS_ENV`.
+ *    - Suporta credenciais dedicadas (`ASAAS_API_KEY`, `ASAAS_PROD_API_KEY`, `ASAAS_SANDBOX_API_KEY`).
+ *
+ * 2. Conformidade PCI-DSS (Tokenização de Cartão de Crédito):
+ *    - Os dados de cartão (número, validade, CVV) são enviados via HTTPS exclusivamente para o endpoint
+ *      `/creditCard/tokenize`. Nenhum dado sensível de cartão é gravado em banco de dados Supabase.
+ *    - Apenas o `creditCardToken` seguro resultante é referenciado em transações recorrentes.
+ *
+ * 3. Sanitização e Idempotência:
+ *    - Remove caracteres não numéricos de CPFs/CNPJs na consulta e persistência.
+ *    - Normaliza erros HTTP retornados pela API Asaas em mensagens legíveis e padronizadas.
+ */
 
 export interface AsaasCustomerData {
   name: string;
@@ -13,6 +30,26 @@ export interface AsaasCustomerData {
   province?: string;
   externalReference?: string;
   notificationDisabled?: boolean;
+}
+
+export interface AsaasTokenizeCreditCardData {
+  customer: string;
+  creditCard: {
+    holderName: string;
+    number: string;
+    expiryMonth: string;
+    expiryYear: string;
+    ccv: string;
+  };
+  creditCardHolderInfo?: {
+    name: string;
+    email: string;
+    cpfCnpj: string;
+    postalCode: string;
+    addressNumber: string;
+    phone: string;
+    mobilePhone?: string;
+  };
 }
 
 export interface AsaasSubscriptionData {
@@ -33,6 +70,7 @@ export interface AsaasSubscriptionData {
     expiryYear: string;
     ccv: string;
   };
+  creditCardToken?: string;
   creditCardHolderInfo?: {
     name: string;
     email: string;
@@ -62,6 +100,7 @@ export interface AsaasOneTimePaymentData {
     expiryYear: string;
     ccv: string;
   };
+  creditCardToken?: string;
   creditCardHolderInfo?: {
     name: string;
     email: string;
@@ -220,6 +259,18 @@ export class AsaasClient {
   async getPaymentQrCode(paymentId: string): Promise<{ encodedImage: string; payload: string; expirationDate?: string }> {
     return this.request(`/payments/${paymentId}/pixQrCode`, {
       method: 'GET',
+    });
+  }
+
+  // Credit Card Tokenization
+  async tokenizeCreditCard(data: AsaasTokenizeCreditCardData): Promise<{
+    creditCardToken: string;
+    creditCardNumber: string;
+    creditCardBrand: string;
+  }> {
+    return this.request('/creditCard/tokenize', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 }

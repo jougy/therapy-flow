@@ -36,6 +36,7 @@ import { AntiPrintOverlay } from "@/components/AntiPrintOverlay";
 import { useGovernance } from "@/hooks/useGovernance";
 import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
 import { FreeTrialUsageBanner } from "@/components/FreeTrialUsageBanner";
+import { TrialReadOnlyBanner } from "@/components/TrialReadOnlyBanner";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -246,6 +247,9 @@ const AppLayout = ({ children }: AppLayoutProps) => {
           </div>
         </header>
       )}
+
+      {/* Banner de Modo Leitura para Teste / Degustação Expirada */}
+      {!isPreviewIframe && <TrialReadOnlyBanner clinicId={clinic?.id} />}
 
       {/* Banner Informativo de Cota de Teste Grátis */}
       {!isPreviewIframe && <FreeTrialUsageBanner clinicId={clinic?.id} />}

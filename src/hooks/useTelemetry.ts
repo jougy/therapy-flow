@@ -7,7 +7,8 @@ export type TelemetryEventType =
   | 'print_screen'
   | 'document_print'
   | 'page_view'
-  | 'export_pdf';
+  | 'export_pdf'
+  | 'export_json';
 
 export interface TrackEventOptions {
   eventType: TelemetryEventType;
@@ -177,10 +178,26 @@ export function useTelemetry() {
     [trackEvent]
   );
 
+  const trackExportJson = useCallback(
+    (resourceType: string, resourceId?: string, metadata?: Record<string, unknown>) => {
+      return trackEvent({
+        eventType: "export_json",
+        resourceType,
+        resourceId,
+        metadata: {
+          trigger: "export_json_action",
+          ...metadata,
+        },
+      });
+    },
+    [trackEvent]
+  );
+
   return {
     trackEvent,
     trackDocumentPrint,
     trackExportPdf,
+    trackExportJson,
     triggerDomainSync,
   };
 }

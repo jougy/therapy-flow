@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   Building2, 
@@ -6,16 +6,12 @@ import {
   Sparkles, 
   UserRound, 
   Users, 
-  CheckCircle2, 
   AlertCircle, 
-  Plus, 
   Loader2, 
   ShieldCheck,
   Receipt,
   QrCode,
   Layers,
-  Copy,
-  Check,
   Tag,
   Clock,
   Download,
@@ -30,20 +26,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { calculatePlanPrice, BillingCycle, parsePlanType, parseBillingCycle } from "@/utils/subscriptionPricing";
 import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
 import { toast } from "sonner";
+import {
+  ChangePlanModal,
+  AdjustConcurrentAccessModal,
+  CancelSubscriptionModal,
+  PixPaymentModal,
+} from "./clinic-billing";
 
 interface ClinicBillingSettingsProps {
   clinicId: string;
-  currentPlan: "solo" | "clinic";
+  currentPlan: "solo" | "clinic" | "enterprise";
   accountRole?: string;
   refreshAuthState?: () => Promise<void>;
 }
@@ -52,7 +49,7 @@ interface SubscriptionSummary {
   subscription_id: string | null;
   clinic_id: string;
   account_owner_user_id: string | null;
-  plan_type: "solo" | "clinic";
+  plan_type: "solo" | "clinic" | "enterprise";
   status: string;
   billing_cycle: string;
   payment_method: string;
@@ -124,7 +121,7 @@ export function ClinicBillingSettings({
   const [copiedPix, setCopiedPix] = useState(false);
 
   // Form states
-  const [targetPlan, setTargetPlan] = useState<"solo" | "clinic">(currentPlan);
+  const [targetPlan, setTargetPlan] = useState<"solo" | "clinic" | "enterprise">(currentPlan);
   const [targetCycle, setTargetCycle] = useState<BillingCycle>("annual");
   const [extraConcurrentCount, setExtraConcurrentCount] = useState(0);
 
@@ -193,18 +190,29 @@ export function ClinicBillingSettings({
       return;
     }
 
+    if (!hasActiveRecurringCard) {
+      setIsPlanModalOpen(false);
+      const baseConcurrentParam = targetPlan === "enterprise" ? 10 : targetPlan === "clinic" ? 4 : 1;
+      navigate(`/pagamento/${clinicId}?plan=${targetPlan}&cycle=${targetCycle}${targetPlan !== "solo" && extraConcurrentCount > 0 ? `&concurrent=${baseConcurrentParam + extraConcurrentCount}` : ""}`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       // 1. Chamar Edge Function para sincronizar plano e ciclo no Asaas
-      await supabase.functions.invoke("asaas-subscription", {
+      const { data: asaasData, error: asaasError } = await supabase.functions.invoke("asaas-subscription", {
         body: {
           action: "CHANGE_PLAN",
           clinic_id: clinicId,
           plan_type: targetPlan,
           billing_cycle: targetCycle,
-          additional_seats_count: targetPlan === "clinic" ? extraConcurrentCount : 0,
+          additional_seats_count: targetPlan !== "solo" ? extraConcurrentCount : 0,
         },
       });
+
+      if (asaasError || asaasData?.success === false || asaasData?.error) {
+        throw new Error(asaasData?.error || asaasError?.message || "Falha ao sincronizar alteração com a operadora de pagamentos.");
+      }
 
       // 2. Atualizar via RPC local
       const { error } = await supabase.rpc("manage_clinic_subscription_plan", {
@@ -215,7 +223,13 @@ export function ClinicBillingSettings({
 
       if (error) throw error;
 
-      toast.success(targetPlan === "clinic" ? "Upgrade para o Plano Clínica efetuado com sucesso!" : "Alteração para o Plano Solo efetuada com sucesso!");
+      toast.success(
+        targetPlan === "enterprise"
+          ? "Upgrade para o Plano Enterprise efetuado com sucesso!"
+          : targetPlan === "clinic"
+          ? "Upgrade para o Plano Clínica efetuado com sucesso!"
+          : "Alteração para o Plano Solo efetuada com sucesso!"
+      );
       setIsPlanModalOpen(false);
 
       if (typeof refreshAuthState === "function") {
@@ -237,13 +251,17 @@ export function ClinicBillingSettings({
     setSubmitting(true);
     try {
       // Invocar Edge Function de atualização no Asaas
-      await supabase.functions.invoke("asaas-subscription", {
+      const { data: asaasData, error: asaasError } = await supabase.functions.invoke("asaas-subscription", {
         body: {
           action: "UPDATE_SEATS",
           clinic_id: clinicId,
           additional_seats_count: extraConcurrentCount,
         },
       });
+
+      if (asaasError || asaasData?.success === false || asaasData?.error) {
+        throw new Error(asaasData?.error || asaasError?.message || "Falha ao sincronizar acessos com a operadora de pagamentos.");
+      }
 
       // Invocar RPC de atualização local
       const { error } = await supabase.rpc("update_clinic_concurrent_accesses", {
@@ -298,12 +316,16 @@ export function ClinicBillingSettings({
     if (!clinicId || submitting) return;
     setSubmitting(true);
     try {
-      await supabase.functions.invoke("asaas-subscription", {
+      const { data: asaasData, error: asaasError } = await supabase.functions.invoke("asaas-subscription", {
         body: {
           action: "CANCEL",
           clinic_id: clinicId,
         },
       });
+
+      if (asaasError || asaasData?.success === false || asaasData?.error) {
+        throw new Error(asaasData?.error || asaasError?.message || "Falha ao cancelar assinatura na operadora de pagamentos.");
+      }
 
       await supabase.rpc("toggle_subscription_auto_renew", {
         _clinic_id: clinicId,
@@ -321,47 +343,63 @@ export function ClinicBillingSettings({
     }
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedPix(true);
     toast.success("Código PIX Copia e Cola copiado para a área de transferência!");
     setTimeout(() => setCopiedPix(false), 3000);
-  };
+  }, []);
 
   const activePlan = summary?.plan_type || currentPlan;
   const isSolo = activePlan === "solo";
+  const isEnterprise = activePlan === "enterprise";
   const isTrial = summary?.status === "TRIAL" || summary?.is_free_trial === true || quota.isFreeTrial;
   const activeCycle = parseBillingCycle(summary?.billing_cycle);
   const extraConcurrent = summary?.additional_concurrent_access_count ?? 0;
-  const baseConcurrent = summary?.base_concurrent_access_count ?? (isSolo ? 1 : 2);
-  const totalConcurrent = summary?.total_concurrent_access_limit ?? (isSolo ? 1 : 2);
+  const defaultBase = isSolo ? 1 : isEnterprise ? 10 : 4;
+  const baseConcurrent = summary?.base_concurrent_access_count ?? defaultBase;
+  const totalConcurrent = summary?.total_concurrent_access_limit ?? defaultBase;
 
-  const pricing = calculatePlanPrice({
+  const couponParam = useMemo(() => summary?.coupon_code ? {
+    valid: true,
+    code: summary.coupon_code,
+    discount_type: (summary.discount_percentage ? "PERCENTAGE" : "FIXED_AMOUNT") as "PERCENTAGE" | "FIXED_AMOUNT",
+    discount_value: summary.discount_percentage || summary.discount_fixed_amount || 0,
+  } : undefined, [summary?.coupon_code, summary?.discount_percentage, summary?.discount_fixed_amount]);
+
+  const pricing = useMemo(() => calculatePlanPrice({
     planType: activePlan,
     billingCycle: activeCycle,
     additionalSeats: extraConcurrent,
-    coupon: summary?.coupon_code ? {
-      valid: true,
-      code: summary.coupon_code,
-      discount_type: summary.discount_percentage ? "PERCENTAGE" : "FIXED_AMOUNT",
-      discount_value: summary.discount_percentage || summary.discount_fixed_amount || 0,
-    } : undefined,
-  });
+    coupon: couponParam,
+  }), [activePlan, activeCycle, extraConcurrent, couponParam]);
 
   const totalMonthlyPrice = isTrial ? 0 : (summary?.total_recurring_monthly_price ?? pricing.monthlyEquivalent);
   const isOwner = accountRole === "account_owner" || !accountRole;
 
-  // Cálculos no Modal de Mudança de Plano
-  const modalPricingSolo = calculatePlanPrice({
+  const hasActiveRecurringCard = Boolean(
+    summary?.asaas_subscription_id &&
+    summary?.payment_method === "CREDIT_CARD" &&
+    summary?.status === "ACTIVE"
+  );
+
+  // Cálculos memoizados para os Modais de Mudança de Plano (Big-O O(1))
+  const modalPricingSolo = useMemo(() => calculatePlanPrice({
     planType: "solo",
     billingCycle: targetCycle,
-  });
+  }), [targetCycle]);
 
-  const modalPricingClinic = calculatePlanPrice({
+  const modalPricingClinic = useMemo(() => calculatePlanPrice({
     planType: "clinic",
     billingCycle: targetCycle,
-    additionalSeats: extraConcurrentCount,
-  });
+    additionalSeats: targetPlan === "clinic" ? extraConcurrentCount : 0,
+  }), [targetCycle, targetPlan, extraConcurrentCount]);
+
+  const modalPricingEnterprise = useMemo(() => calculatePlanPrice({
+    planType: "enterprise",
+    billingCycle: targetCycle,
+    additionalSeats: targetPlan === "enterprise" ? extraConcurrentCount : 0,
+  }), [targetCycle, targetPlan, extraConcurrentCount]);
 
   if (loading) {
     return (
@@ -379,13 +417,19 @@ export function ClinicBillingSettings({
         <CardHeader className="p-6 pb-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className={`p-3 rounded-2xl ${isSolo ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-blue-500/10 text-blue-600 dark:text-blue-400"}`}>
-                {isSolo ? <UserRound className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+              <div className={`p-3 rounded-2xl ${
+                isSolo 
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" 
+                  : isEnterprise 
+                  ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                  : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+              }`}>
+                {isSolo ? <UserRound className="w-6 h-6" /> : isEnterprise ? <Sparkles className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xl font-bold text-foreground">
-                    {isSolo ? "Profissional Solo" : "Clínica com Equipe"}
+                    {isSolo ? "Profissional Solo" : isEnterprise ? "Enterprise (Alta Escala)" : "Clínica Pro"}
                   </h3>
                   <Badge variant="outline" className={`border-emerald-500/30 text-xs font-semibold ${isTrial ? "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30" : "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"}`}>
                     <Sparkles className="w-3 h-3 mr-1" />
@@ -404,6 +448,8 @@ export function ClinicBillingSettings({
                     ? "Espaço em período de degustação gratuito com limites volumétricos."
                     : isSolo
                     ? "Ideal para profissionais autônomos organizarem seus atendimentos."
+                    : isEnterprise
+                    ? "Para grandes clínicas com alta escala: base de 10 acessos com tarifas reduzidas."
                     : "Para clínicas compartilhadas com gestão de colaboradores e acessos simultâneos."}
                 </p>
               </div>
@@ -504,7 +550,7 @@ export function ClinicBillingSettings({
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {isTrial ? "Limite Volumétrico (Sem expiração em dias)" : pricing.cycleTitle}
+              {isTrial ? "Degustação de 7 dias ou até 20 atendimentos" : pricing.cycleTitle}
             </p>
           </div>
 
@@ -515,7 +561,9 @@ export function ClinicBillingSettings({
                 <CalendarClock className="w-4 h-4 text-blue-500 shrink-0" />
                 <span className="text-sm font-bold text-foreground">
                   {isTrial
-                    ? "Sem prazo de expiração"
+                    ? summary?.days_remaining !== undefined && summary?.days_remaining !== null
+                      ? `${summary.days_remaining} dia(s) restantes (ou até 20 atendimentos)`
+                      : "Degustação de 7 dias ou até 20 atendimentos"
                     : summary?.days_remaining !== undefined && summary?.days_remaining !== null
                     ? summary.days_remaining > 0
                       ? `${summary.days_remaining} dia(s) restantes`
@@ -525,7 +573,9 @@ export function ClinicBillingSettings({
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {isTrial
-                  ? "Válido até atingir o volume contratado"
+                  ? summary?.expires_at
+                    ? `Vence em ${new Date(summary.expires_at).toLocaleDateString("pt-BR")} ou ao atingir 20 atendimentos`
+                    : "Degustação de 7 dias ou até 20 atendimentos"
                   : summary?.expires_at
                   ? `Vence em ${new Date(summary.expires_at).toLocaleDateString("pt-BR")}`
                   : summary?.next_due_date
@@ -776,322 +826,64 @@ export function ClinicBillingSettings({
       </Card>
 
       {/* Modal 1: Alterar Plano (Upgrade / Downgrade com Seleção de Ciclo) */}
-      <Dialog open={isPlanModalOpen} onOpenChange={setIsPlanModalOpen}>
-        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-xl rounded-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-foreground">Alterar Plano de Assinatura</DialogTitle>
-            <DialogDescription className="text-muted-foreground text-sm">
-              Escolha o plano e o ciclo ideal para as necessidades da sua clínica.
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Seletor de Ciclo */}
-          <div className="flex justify-center my-2">
-            <div className="p-1 bg-muted rounded-xl inline-flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setTargetCycle("monthly")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  targetCycle === "monthly" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Mensal
-              </button>
-              <button
-                type="button"
-                onClick={() => setTargetCycle("quarterly")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  targetCycle === "quarterly" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Trimestral (-10%)
-              </button>
-              <button
-                type="button"
-                onClick={() => setTargetCycle("annual")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  targetCycle === "annual" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Anual (-25%)
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-4 py-2 sm:grid-cols-2">
-            {/* Plano Solo */}
-            <div
-              onClick={() => setTargetPlan("solo")}
-              className={`cursor-pointer rounded-2xl p-4 border transition-all flex flex-col justify-between ${
-                targetPlan === "solo"
-                  ? "border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10"
-                  : "border-border bg-card hover:border-neutral-400 dark:hover:border-neutral-700"
-              }`}
-            >
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <UserRound className="w-5 h-5 text-emerald-500" />
-                  <h4 className="font-bold text-foreground">Profissional Solo</h4>
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">Para atendimento individual sem equipe.</p>
-                <div className="text-2xl font-bold text-foreground mb-1">
-                  R$ {modalPricingSolo.monthlyEquivalent.toFixed(2)}
-                  <span className="text-xs text-muted-foreground">/mês</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mb-3">
-                  Total: R$ {modalPricingSolo.periodTotal.toFixed(2)}/{modalPricingSolo.periodLabel}
-                </p>
-                <ul className="text-xs text-muted-foreground space-y-1.5">
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> 1 Profissional de saúde</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> 1 Acesso simultâneo</li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Plano Clínica */}
-            <div
-              onClick={() => setTargetPlan("clinic")}
-              className={`cursor-pointer rounded-2xl p-4 border transition-all flex flex-col justify-between ${
-                targetPlan === "clinic"
-                  ? "border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10"
-                  : "border-border bg-card hover:border-neutral-400 dark:hover:border-neutral-700"
-              }`}
-            >
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Building2 className="w-5 h-5 text-blue-500" />
-                  <h4 className="font-bold text-foreground">Clínica com Equipe</h4>
-                </div>
-                <p className="text-xs text-muted-foreground mb-3">Para clínicas e consultórios compartilhados.</p>
-                <div className="text-2xl font-bold text-foreground mb-1">
-                  R$ {modalPricingClinic.monthlyEquivalent.toFixed(2)}
-                  <span className="text-xs text-muted-foreground">/mês</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mb-3">
-                  Total: R$ {modalPricingClinic.periodTotal.toFixed(2)}/{modalPricingClinic.periodLabel}
-                </p>
-                <ul className="text-xs text-muted-foreground space-y-1.5">
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" /> Colaboradores ilimitados</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" /> <strong>{2 + extraConcurrentCount} Acessos</strong> simultâneos</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          {/* Bloqueio de Downgrade se houver colaboradores */}
-          {targetPlan === "solo" && activeCollaboratorsCount > 0 && (
-            <Alert variant="destructive" className="rounded-xl">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle className="font-semibold text-sm">Bloqueio de Downgrade</AlertTitle>
-              <AlertDescription className="text-xs mt-1">
-                Sua clínica possui <strong>{activeCollaboratorsCount} colaborador(es) ativo(s)</strong>. Para alterar para o plano Solo, você precisa primeiro remover ou desativar os colaboradores.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <DialogFooter className="gap-2 flex-col sm:flex-row sm:justify-between">
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => {
-                setIsPlanModalOpen(false);
-                navigate(`/pagamento/${clinicId}?plan=${targetPlan}&cycle=${targetCycle}${targetPlan === "clinic" && extraConcurrentCount > 0 ? `&concurrent=${2 + extraConcurrentCount}` : ""}`);
-              }}
-              className="border-primary/30 text-primary hover:bg-primary/10 rounded-xl min-h-[44px]"
-            >
-              <CreditCard className="w-4 h-4 mr-2" />
-              Ir para Checkout / Pagamento
-            </Button>
-            <div className="flex gap-2 justify-end">
-              <Button
-                variant="ghost"
-                onClick={() => setIsPlanModalOpen(false)}
-                disabled={submitting}
-                className="text-muted-foreground min-h-[44px]"
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleManagePlan}
-                disabled={submitting || (targetPlan === "solo" && activeCollaboratorsCount > 0)}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl min-h-[44px]"
-              >
-                {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Confirmar Alteração de Plano
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ChangePlanModal
+        isOpen={isPlanModalOpen}
+        onOpenChange={setIsPlanModalOpen}
+        targetCycle={targetCycle}
+        onCycleChange={setTargetCycle}
+        targetPlan={targetPlan}
+        onPlanChange={setTargetPlan}
+        currentPlan={activePlan}
+        currentCycle={activeCycle}
+        hasActiveRecurringCard={hasActiveRecurringCard}
+        extraConcurrentCount={extraConcurrentCount}
+        activeCollaboratorsCount={activeCollaboratorsCount}
+        submitting={submitting}
+        onConfirmChangePlan={handleManagePlan}
+        onNavigateToCheckout={() => {
+          setIsPlanModalOpen(false);
+          const baseConcurrentParam = targetPlan === "enterprise" ? 10 : targetPlan === "clinic" ? 4 : 1;
+          navigate(`/pagamento/${clinicId}?plan=${targetPlan}&cycle=${targetCycle}${targetPlan !== "solo" && extraConcurrentCount > 0 ? `&concurrent=${baseConcurrentParam + extraConcurrentCount}` : ""}`);
+        }}
+        modalPricingSolo={modalPricingSolo}
+        modalPricingClinic={modalPricingClinic}
+        modalPricingEnterprise={modalPricingEnterprise}
+      />
 
       {/* Modal 2: Ajustar Acessos Simultâneos Extras */}
-      <Dialog open={isConcurrentModalOpen} onOpenChange={setIsConcurrentModalOpen}>
-        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-md rounded-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-foreground">Ajustar Acessos Simultâneos Extras</DialogTitle>
-            <DialogDescription className="text-muted-foreground text-xs">
-              Altere o limite de conexões simultâneas permitidas na clínica (+R$ {pricing.extraSeatRate.toFixed(2)}/mês cada).
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold text-foreground">Acessos Extras Adicionais</Label>
-              <Input
-                type="number"
-                min={0}
-                max={50}
-                value={extraConcurrentCount}
-                onChange={(e) => setExtraConcurrentCount(Math.max(0, parseInt(e.target.value || "0", 10)))}
-                className="h-11 text-base rounded-xl min-h-[44px]"
-              />
-            </div>
-
-            <div className="rounded-xl bg-muted/60 border p-4 space-y-2 text-xs">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Acessos Inclusos no Plano Base:</span>
-                <span className="text-foreground font-medium">2 acessos</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Total de Acessos Permitidos:</span>
-                <span className="text-blue-600 dark:text-blue-400 font-bold">{2 + extraConcurrentCount} acessos simultâneos</span>
-              </div>
-              <div className="flex justify-between items-baseline pt-2 border-t border-border text-sm">
-                <span className="font-semibold text-foreground">Nova Mensalidade Recorrente:</span>
-                <span className="text-xl font-bold text-foreground">
-                  R$ {(pricing.baseMonthlyEq + extraConcurrentCount * pricing.extraSeatRate).toFixed(2)}
-                  <span className="text-xs text-muted-foreground">/mês</span>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 flex-col sm:flex-row sm:justify-between">
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => {
-                setIsConcurrentModalOpen(false);
-                navigate(`/pagamento/${clinicId}?plan=clinic&cycle=${targetCycle || activeCycle}&concurrent=${2 + extraConcurrentCount}`);
-              }}
-              className="border-primary/30 text-primary hover:bg-primary/10 rounded-xl min-h-[44px]"
-            >
-              <CreditCard className="w-4 h-4 mr-2" />
-              Pagar via Checkout
-            </Button>
-            <div className="flex gap-2 justify-end">
-              <Button variant="ghost" onClick={() => setIsConcurrentModalOpen(false)} disabled={submitting} className="min-h-[44px]">
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleUpdateConcurrentAccesses}
-                disabled={submitting}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl min-h-[44px]"
-              >
-                {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Atualizar Assinatura
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AdjustConcurrentAccessModal
+        isOpen={isConcurrentModalOpen}
+        onOpenChange={setIsConcurrentModalOpen}
+        extraConcurrentCount={extraConcurrentCount}
+        onExtraConcurrentCountChange={setExtraConcurrentCount}
+        baseConcurrent={baseConcurrent}
+        extraSeatRate={pricing.extraSeatRate}
+        baseMonthlyEq={pricing.baseMonthlyEq}
+        hasActiveRecurringCard={hasActiveRecurringCard}
+        submitting={submitting}
+        onConfirmUpdate={handleUpdateConcurrentAccesses}
+        onNavigateToCheckout={() => {
+          setIsConcurrentModalOpen(false);
+          navigate(`/pagamento/${clinicId}?plan=${activePlan}&cycle=${targetCycle || activeCycle}&concurrent=${baseConcurrent + extraConcurrentCount}`);
+        }}
+      />
 
       {/* Modal 3: Cancelamento de Assinatura */}
-      <Dialog open={isCancelModalOpen} onOpenChange={setIsCancelModalOpen}>
-        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-md rounded-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-red-500 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5" />
-              Cancelar Assinatura
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground text-xs">
-              Tem certeza que deseja cancelar a assinatura do espaço no Asaas?
-            </DialogDescription>
-          </DialogHeader>
-
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            Ao cancelar, a renovação automática será desligada imediatamente. Você e sua equipe continuarão com acesso total a todos os recursos até o final do período já pago ({summary?.expires_at ? new Date(summary.expires_at).toLocaleDateString("pt-BR") : "vencimento atual"}). Nenhum dado de paciente ou prontuário será excluído.
-          </p>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setIsCancelModalOpen(false)} disabled={submitting} className="min-h-[44px]">
-              Manter Assinatura
-            </Button>
-            <Button
-              onClick={handleCancelSubscription}
-              disabled={submitting}
-              variant="destructive"
-              className="font-semibold rounded-xl min-h-[44px]"
-            >
-              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Confirmar Cancelamento
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CancelSubscriptionModal
+        isOpen={isCancelModalOpen}
+        onOpenChange={setIsCancelModalOpen}
+        expiresAt={summary?.expires_at}
+        submitting={submitting}
+        onConfirmCancel={handleCancelSubscription}
+      />
 
       {/* Modal 4: Pagamento via PIX com QR Code */}
-      <Dialog open={!!selectedPixInvoice} onOpenChange={(open) => !open && setSelectedPixInvoice(null)}>
-        <DialogContent className="bg-popover border text-popover-foreground sm:max-w-md rounded-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-foreground flex items-center gap-2">
-              <QrCode className="w-5 h-5 text-emerald-500" />
-              Pagamento via PIX Oficial
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground text-xs">
-              Escaneie o QR Code ou copie a chave abaixo no app do seu banco.
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedPixInvoice && (
-            <div className="space-y-4 py-2 text-center">
-              {selectedPixInvoice.pix_qr_code ? (
-                <div className="p-4 bg-white rounded-2xl inline-block shadow-inner mx-auto">
-                  <img
-                    src={selectedPixInvoice.pix_qr_code.startsWith("data:") ? selectedPixInvoice.pix_qr_code : `data:image/png;base64,${selectedPixInvoice.pix_qr_code}`}
-                    alt="QR Code PIX"
-                    className="w-48 h-48 mx-auto object-contain"
-                  />
-                </div>
-              ) : (
-                <div className="p-8 rounded-2xl bg-muted/60 border text-center text-xs text-muted-foreground">
-                  <QrCode className="w-12 h-12 mx-auto mb-2 text-emerald-500 opacity-60" />
-                  QR Code gerado para cobrança Asaas
-                </div>
-              )}
-
-              <div className="text-lg font-bold text-foreground">
-                Valor: <span className="text-emerald-500">R$ {Number(selectedPixInvoice.value).toFixed(2)}</span>
-              </div>
-
-              {(selectedPixInvoice.pix_copy_paste || selectedPixInvoice.pix_copia_e_cola) && (
-                <div className="space-y-2 text-left">
-                  <Label className="text-xs font-semibold text-foreground">PIX Copia e Cola</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      readOnly
-                      value={selectedPixInvoice.pix_copy_paste || selectedPixInvoice.pix_copia_e_cola || ""}
-                      className="h-10 text-xs font-mono bg-muted select-all"
-                    />
-                    <Button
-                      onClick={() => copyToClipboard(selectedPixInvoice.pix_copy_paste || selectedPixInvoice.pix_copia_e_cola || "")}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 h-10 px-3 min-h-[40px]"
-                    >
-                      {copiedPix ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedPixInvoice(null)} className="min-h-[44px]">
-              Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PixPaymentModal
+        invoice={selectedPixInvoice}
+        onClose={() => setSelectedPixInvoice(null)}
+        copiedPix={copiedPix}
+        onCopyPix={copyToClipboard}
+      />
     </div>
   );
 }

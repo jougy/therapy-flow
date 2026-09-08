@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { TrialReadOnlyModal } from "@/components/TrialReadOnlyModal";
 import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -80,6 +81,7 @@ export const BibliotecaFormularios = () => {
   const [templates, setTemplates] = useState<CommunityFormTemplate[]>([]);
   const [myTemplates, setMyTemplates] = useState<CommunityFormTemplate[]>([]);
   const [availableClinicTemplates, setAvailableClinicTemplates] = useState<AvailableClinicTemplateOption[]>([]);
+  const [isReadOnlyModalOpen, setIsReadOnlyModalOpen] = useState(false);
 
   // Filters & search
   const [searchQuery, setSearchQuery] = useState("");
@@ -227,10 +229,11 @@ export const BibliotecaFormularios = () => {
   };
 
   const handleStartImport = (template: CommunityFormTemplate) => {
-    if (quota.isFreeTrial && quota.forms.isLimitReached) {
+    if (quota.isTrialExpired || quota.isExpired || (quota.isFreeTrial && quota.forms.isLimitReached)) {
+      setIsReadOnlyModalOpen(true);
       toast({
         title: "Limite de Formulários Atingido",
-        description: `O plano de teste grátis permite até ${quota.forms.max} modelo de formulário personalizado ativo. Faça o upgrade para criar modelos ilimitados.`,
+        description: `O plano permite até ${quota.forms.max} ${quota.forms.max === 1 ? 'modelo' : 'modelos'} de formulário personalizado ativo ou está no modo somente leitura. Faça o upgrade para criar modelos ilimitados.`,
         variant: "destructive",
       });
       return;
@@ -799,6 +802,13 @@ export const BibliotecaFormularios = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      <TrialReadOnlyModal
+        isOpen={isReadOnlyModalOpen}
+        onClose={() => setIsReadOnlyModalOpen(false)}
+        clinicId={clinicId}
+        actionAttempted="importar formulários personalizados"
+      />
     </div>
   );
 };

@@ -12,6 +12,9 @@ export interface QuotaCheckResult {
 
 export interface ClinicPlanUsage {
   isFreeTrial: boolean;
+  isTrialExpired: boolean;
+  isExpired: boolean;
+  subscriptionStatus: string;
   attendances: {
     current: number;
     max: number;
@@ -38,6 +41,9 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
   const [loading, setLoading] = useState(true);
   const [usage, setUsage] = useState<Omit<ClinicPlanUsage, "loading" | "refresh">>({
     isFreeTrial: false,
+    isTrialExpired: false,
+    isExpired: false,
+    subscriptionStatus: "",
     attendances: { current: 0, max: 20, remaining: 20, isLimitReached: false },
     patients: { current: 0, max: 5, remaining: 5, isLimitReached: false },
     forms: { current: 0, max: 1, remaining: 1, isLimitReached: false },
@@ -57,7 +63,15 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
         .eq("clinic_id", clinicId)
         .maybeSingle();
 
-      const isTrial = !sub ? false : (sub.status === "TRIAL" || (sub as any).is_free_trial === true);
+      const rawStatus = (sub?.status || "").toUpperCase();
+      const isTrial = !sub ? false : (rawStatus === "TRIAL" || (sub as any).is_free_trial === true);
+      const isTimeExpired = (sub as any)?.expires_at
+        ? new Date((sub as any).expires_at).getTime() < Date.now()
+        : (sub as any)?.current_period_end
+        ? new Date((sub as any).current_period_end).getTime() < Date.now()
+        : false;
+      const isExplicitReadOnly = Boolean((sub as any)?.is_read_only);
+      const isTrialExplicitEnded = (sub as any)?.trial_ended === true || (sub as any)?.is_expired === true;
 
       // 2. Contar Atendimentos Realizados (não cancelados e não rascunho)
       const { count: attendanceCount } = await supabase
@@ -90,19 +104,36 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
       const currentPat = patientCount || 0;
       const currentFrm = formCount || 0;
 
+      const isAttLimitReached = maxAtt !== -1 && currentAtt >= maxAtt;
+      const isPatLimitReached = maxPat !== -1 && currentPat >= maxPat;
+      const isQuotaExhausted = isTrial && (isAttLimitReached || isPatLimitReached);
+
+      const isTrialExpiredCalculated =
+        rawStatus === "TRIAL_EXPIRED" ||
+        (isTrial && (isTimeExpired || isExplicitReadOnly || isQuotaExhausted || isTrialExplicitEnded));
+
+      const isSubscriptionExpired =
+        rawStatus === "EXPIRED" ||
+        rawStatus === "SUSPENDED" ||
+        isTrialExpiredCalculated ||
+        (isTimeExpired && !isTrial);
+
       setUsage({
         isFreeTrial: isTrial,
+        isTrialExpired: isTrialExpiredCalculated,
+        isExpired: isSubscriptionExpired,
+        subscriptionStatus: rawStatus,
         attendances: {
           current: currentAtt,
           max: maxAtt,
           remaining: maxAtt === -1 ? 999999 : Math.max(0, maxAtt - currentAtt),
-          isLimitReached: maxAtt !== -1 && currentAtt >= maxAtt,
+          isLimitReached: isAttLimitReached,
         },
         patients: {
           current: currentPat,
           max: maxPat,
           remaining: maxPat === -1 ? 999999 : Math.max(0, maxPat - currentPat),
-          isLimitReached: maxPat !== -1 && currentPat >= maxPat,
+          isLimitReached: isPatLimitReached,
         },
         forms: {
           current: currentFrm,

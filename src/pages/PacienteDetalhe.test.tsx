@@ -42,12 +42,32 @@ vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
 }));
 
+const trackDocumentPrintMock = vi.fn();
+const trackExportJsonMock = vi.fn();
+
+vi.mock("@/hooks/useTelemetry", () => ({
+  useTelemetry: () => ({
+    trackEvent: vi.fn(),
+    trackDocumentPrint: trackDocumentPrintMock,
+    trackExportPdf: vi.fn(),
+    trackExportJson: trackExportJsonMock,
+    triggerDomainSync: vi.fn(),
+  }),
+}));
+
+const downloadPatientDataJsonMock = vi.fn();
+vi.mock("@/lib/patient-export", () => ({
+  buildPatientExportData: vi.fn(() => ({ export_metadata: {} })),
+  downloadPatientDataJson: (...args: unknown[]) => downloadPatientDataJsonMock(...args),
+}));
+
 vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children, onClick, className }: { children: ReactNode; onClick?: () => void; className?: string }) => (
-    <button type="button" onClick={onClick} className={className}>{children}</button>
+  DropdownMenuLabel: ({ children, className }: { children: ReactNode; className?: string }) => <div className={className}>{children}</div>,
+  DropdownMenuItem: ({ children, onClick, className, disabled }: { children: ReactNode; onClick?: () => void; className?: string; disabled?: boolean }) => (
+    <button type="button" onClick={disabled ? undefined : onClick} className={className} disabled={disabled}>{children}</button>
   ),
   DropdownMenuSeparator: () => <hr />,
 }));
@@ -700,5 +720,47 @@ describe("PacienteDetalhe", () => {
       },
     });
     expect(toast).toHaveBeenCalledWith({ title: "Paciente excluído" });
+  });
+
+  it("renders consistent patient options, removes recurrence from dropdown, and supports export/print/navigation", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Maria Silva" });
+
+    fireEvent.click(screen.getByRole("button", { name: /mais opções/i }));
+
+    // Menu label & header
+    expect(screen.getByText("Opções do paciente")).toBeInTheDocument();
+
+    // Renamed share option
+    expect(screen.getByText("Compartilhar cadastro para o paciente preencher")).toBeInTheDocument();
+
+    // Recurrence should NOT be in the dropdown
+    expect(screen.queryByRole("menuitem", { name: /configurar recorrência/i })).not.toBeInTheDocument();
+
+    // Separate full registration view option
+    const viewFullRegistrationOption = screen.getByText("Ver cadastro completo");
+    expect(viewFullRegistrationOption).toBeInTheDocument();
+
+    // Print & Export separate options
+    const printOption = screen.getByText("Imprimir cadastro (PDF)");
+    const exportOption = screen.getByText("Exportar dados (JSON)");
+    expect(printOption).toBeInTheDocument();
+    expect(exportOption).toBeInTheDocument();
+
+    // Test Navigation to full registration
+    fireEvent.click(viewFullRegistrationOption);
+    expect(navigateMock).toHaveBeenCalledWith("/pacientes/patient-1/resumo");
+
+    // Test Export JSON
+    fireEvent.click(exportOption);
+    expect(downloadPatientDataJsonMock).toHaveBeenCalledWith(expect.any(Object), "Maria Silva");
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Exportação concluída",
+    }));
+
+    // Test Print PDF modal open
+    fireEvent.click(printOption);
+    expect(await screen.findByText(/termo de responsabilidade|termo lgpd/i)).toBeInTheDocument();
   });
 });

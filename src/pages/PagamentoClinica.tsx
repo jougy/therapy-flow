@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { processAsaasPayment, checkAsaasPaymentStatus, getPixQrCode } from "@/services/asaasService";
-import { calculatePlanPrice } from "@/utils/subscriptionPricing";
+import { calculatePlanPrice, type CouponDiscount } from "@/utils/subscriptionPricing";
 import { CheckoutSummaryCard } from "@/components/checkout/CheckoutSummaryCard";
 import { PixCheckoutTab } from "@/components/checkout/PixCheckoutTab";
 import { CreditCardCheckoutTab, CardFormData } from "@/components/checkout/CreditCardCheckoutTab";
@@ -27,7 +27,7 @@ import { toast } from "sonner";
 interface SubscriptionDetails {
   id: string;
   clinic_id: string;
-  plan_type: "solo" | "clinic";
+  plan_type: "solo" | "clinic" | "enterprise";
   billing_cycle?: "ANNUAL" | "QUARTERLY" | "MONTHLY";
   status: string;
   total_recurring_monthly_price: number;
@@ -64,10 +64,15 @@ export default function PagamentoClinica() {
   const { user, profile, refreshAuthState, selectClinic } = useAuth();
 
   const cycleParam = (searchParams.get("cycle") || "annual").toLowerCase() as "annual" | "quarterly" | "monthly";
-  const planParam = (searchParams.get("plan") || "solo") as "solo" | "clinic";
-  const concurrentParam = parseInt(searchParams.get("concurrent") || "2", 10);
+  const planParam = (searchParams.get("plan") || "solo") as "solo" | "clinic" | "enterprise";
+  const defaultConcurrent = planParam === "enterprise" ? 10 : planParam === "clinic" ? 4 : 1;
+  const concurrentParam = parseInt(searchParams.get("concurrent") || String(defaultConcurrent), 10);
   const couponParam = searchParams.get("coupon") || undefined;
-  const extraSeatsCount = planParam === "clinic" ? Math.max(0, concurrentParam - 2) : 0;
+  const extraSeatsCount = planParam === "enterprise"
+    ? Math.max(0, concurrentParam - 10)
+    : planParam === "clinic"
+    ? Math.max(0, concurrentParam - 4)
+    : 0;
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("pix");
@@ -96,14 +101,43 @@ export default function PagamentoClinica() {
     holderAddressNumber: "",
   });
   const [processingCard, setProcessingCard] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponDiscount | null>(null);
 
   const hasLoadedInitialRef = useRef(false);
+
+  // Validação do cupom recebido via query param
+  useEffect(() => {
+    if (!couponParam) return;
+    let isMounted = true;
+    async function validateUrlCoupon() {
+      try {
+        const { data, error } = await supabase.rpc("validate_subscription_coupon", {
+          _code: couponParam!.trim().toUpperCase(),
+          _plan_type: planParam,
+        });
+        if (!error && data?.valid && isMounted) {
+          setAppliedCoupon({
+            code: data.code || couponParam!.trim().toUpperCase(),
+            discount_type: data.discount_type,
+            discount_value: data.discount_value,
+          });
+        }
+      } catch (err) {
+        console.warn("Falha ao validar cupom da URL:", err);
+      }
+    }
+    validateUrlCoupon();
+    return () => {
+      isMounted = false;
+    };
+  }, [couponParam, planParam]);
 
   // Cálculo determinístico do plano atual
   const pricing = calculatePlanPrice({
     planType: planParam,
     billingCycle: cycleParam,
     additionalSeats: extraSeatsCount,
+    coupon: appliedCoupon,
   });
 
   const fetchPaymentDetails = useCallback(async (isInitial = false) => {
@@ -483,26 +517,31 @@ export default function PagamentoClinica() {
   const rawTotal = pricing.periodTotal;
   const pixDiscountTotal = pricing.pixDiscountTotal;
   const cycleTitle = pricing.cycleTitle;
-  const planTitle = planParam === "clinic" ? "Plano Clínica com Equipe" : "Plano Profissional Solo";
+  const planTitle =
+    planParam === "enterprise"
+      ? "Plano Enterprise"
+      : planParam === "clinic"
+      ? "Plano Clínica com Equipe"
+      : "Plano Profissional Solo";
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center py-6 px-4 sm:py-12 sm:px-6 relative overflow-y-auto overflow-x-hidden text-foreground">
+    <div className="min-h-screen lg:h-[100dvh] bg-background flex flex-col items-center justify-start lg:justify-center py-2 sm:py-4 px-3 sm:px-6 relative overflow-y-auto overflow-x-hidden text-foreground">
       {/* Background Glows */}
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-0 left-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-primary/5 rounded-full blur-[100px] sm:blur-[120px]" />
         <div className="absolute bottom-0 right-1/4 w-72 sm:w-96 h-72 sm:h-96 bg-emerald-500/5 rounded-full blur-[100px] sm:blur-[120px]" />
       </div>
 
-      <div className="z-10 w-full max-w-3xl space-y-6 sm:space-y-8">
+      <div className="z-10 w-full max-w-5xl space-y-3 sm:space-y-4 my-auto">
         {/* Navigation Bar */}
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
             size="sm"
             onClick={() => navigate("/espacopessoal")}
-            className="text-muted-foreground hover:text-foreground hover:bg-muted border border-border rounded-xl px-3 py-2 text-xs sm:text-sm font-medium transition-colors inline-flex items-center gap-2 min-h-[44px]"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted border border-border rounded-xl px-3 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-2 min-h-[36px]"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-3.5 h-3.5" />
             <span>Voltar ao Espaço Pessoal</span>
           </Button>
 
@@ -511,16 +550,16 @@ export default function PagamentoClinica() {
             size="sm"
             disabled={refreshingStatus}
             onClick={() => fetchPaymentDetails(false)}
-            className="text-muted-foreground hover:text-foreground hover:bg-muted text-xs inline-flex items-center gap-1.5 rounded-xl"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted text-xs inline-flex items-center gap-1.5 rounded-xl h-8 min-h-[36px]"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshingStatus ? "animate-spin text-primary" : ""}`} />
             <span className="hidden sm:inline">Verificar</span>
           </Button>
         </div>
 
-        {/* Header da Tela */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-semibold">
+        {/* Header da Tela Compacto */}
+        <div className="text-center space-y-1">
+          <div className="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-semibold">
             <Building2 className="w-3.5 h-3.5" />
             <span>{clinicData?.name || "Minha Clínica"}</span>
             <span>•</span>
@@ -528,10 +567,10 @@ export default function PagamentoClinica() {
             <span>•</span>
             <span>{cycleTitle}</span>
           </div>
-          <h1 className="text-2xl sm:text-4xl font-extrabold text-foreground tracking-tight">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-foreground tracking-tight">
             Checkout Oficial da Assinatura
           </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground max-w-lg mx-auto">
+          <p className="text-xs text-muted-foreground max-w-lg mx-auto">
             Processamento bancário seguro direto pelo gateway oficial Asaas (PCI-DSS Compliance).
           </p>
         </div>
@@ -544,109 +583,112 @@ export default function PagamentoClinica() {
             onEnter={handleFinishAndEnter}
           />
         ) : (
-          <div className="grid gap-6">
-            {/* Card Resumo do Valor */}
-            <CheckoutSummaryCard
-              cycleTitle={cycleTitle}
-              rawTotal={rawTotal}
-              pixDiscountTotal={pixDiscountTotal}
-              monthlyEquivalent={pricing.monthlyEquivalent}
-              periodLabel={pricing.periodLabel}
-              invoiceUrl={invoice?.invoice_url}
-            />
-
-            {/* Alerta de Pagamento Recusado / Não Autorizado */}
-            {paymentRefused && (
-              <PaymentRefusalAlert
-                message={refusalMessage}
-                onRetry={() => {
-                  setPaymentRefused(false);
-                  setActiveTab("pix");
-                }}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
+            {/* Coluna Esquerda: Resumo do Valor (5 colunas) */}
+            <div className="lg:col-span-5 space-y-3">
+              <CheckoutSummaryCard
+                cycleTitle={cycleTitle}
+                rawTotal={rawTotal}
+                pixDiscountTotal={pixDiscountTotal}
+                monthlyEquivalent={pricing.monthlyEquivalent}
+                periodLabel={pricing.periodLabel}
+                invoiceUrl={invoice?.invoice_url}
+                status={subscription?.status}
               />
-            )}
+            </div>
 
-            {/* Gateway de Pagamento Interativo (Tabs) */}
-            <Card className="bg-card border-border backdrop-blur-md rounded-3xl overflow-hidden shadow-xl">
-              <CardHeader className="p-4 sm:p-6 pb-3 border-b border-border">
-                <CardTitle className="text-base sm:text-lg text-foreground font-semibold flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-primary" />
-                  Selecione a Forma de Pagamento
-                </CardTitle>
-                <CardDescription className="text-xs text-muted-foreground">
-                  Todas as transações são criptografadas e processadas diretamente pela instituição Asaas.
-                </CardDescription>
-              </CardHeader>
+            {/* Coluna Direita: Painel de Métodos de Pagamento (7 colunas) */}
+            <div className="lg:col-span-7 space-y-3">
+              {/* Alerta de Falha se Houver */}
+              {paymentRefused && (
+                <PaymentRefusalAlert
+                  refusalMessage={refusalMessage}
+                  onDismiss={() => setPaymentRefused(false)}
+                />
+              )}
 
-              <CardContent className="p-4 sm:p-6">
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <TabsList className="grid grid-cols-3 bg-muted p-1 rounded-2xl border border-border mb-6">
-                    <TabsTrigger
-                      value="pix"
-                      className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-xs sm:text-sm font-semibold rounded-xl transition-all"
-                    >
-                      <QrCode className="w-4 h-4 mr-2" />
-                      PIX (-5% OFF)
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="card"
-                      className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm font-semibold rounded-xl transition-all"
-                    >
-                      <CreditCard className="w-4 h-4 mr-2" />
-                      Cartão
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="boleto"
-                      className="data-[state=active]:bg-purple-600 data-[state=active]:text-white text-xs sm:text-sm font-semibold rounded-xl transition-all"
-                    >
-                      <FileText className="w-4 h-4 mr-2" />
-                      Boleto
-                    </TabsTrigger>
-                  </TabsList>
+              <Card className="border border-border/80 shadow-md">
+                <CardHeader className="p-3.5 sm:p-4 pb-2">
+                  <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                    <CreditCard className="w-4 h-4 text-primary" />
+                    <span>Selecione a Forma de Pagamento</span>
+                  </CardTitle>
+                  <CardDescription className="text-xs text-muted-foreground">
+                    Todas as transações são criptografadas e processadas diretamente pela instituição Asaas.
+                  </CardDescription>
+                </CardHeader>
 
-                  {/* TAB 1: PIX INSTANTÂNEO */}
-                  <TabsContent value="pix">
-                    <PixCheckoutTab
-                      pixQrCode={invoice?.pix_qr_code || null}
-                      pixCopyPaste={invoice?.pix_copy_paste || null}
-                      pixDiscountTotal={pixDiscountTotal}
-                      rawTotal={rawTotal}
-                      periodLabel={pricing.periodLabel}
-                      onGeneratePix={handleGeneratePix}
-                      generatingPix={generatingPix}
-                    />
-                  </TabsContent>
+                <CardContent className="p-3.5 sm:p-4 pt-2">
+                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="grid grid-cols-3 bg-muted p-1 rounded-xl border border-border mb-4">
+                      <TabsTrigger
+                        value="pix"
+                        className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
+                      >
+                        <QrCode className="w-3.5 h-3.5 mr-1 shrink-0" />
+                        <span className="hidden sm:inline">PIX (-5% OFF)</span>
+                        <span className="sm:hidden">PIX (-5%)</span>
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="card"
+                        className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 mr-1 shrink-0" />
+                        Cartão
+                      </TabsTrigger>
+                      <TabsTrigger
+                        value="boleto"
+                        className="data-[state=active]:bg-purple-600 data-[state=active]:text-white text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
+                      >
+                        <FileText className="w-3.5 h-3.5 mr-1 shrink-0" />
+                        Boleto
+                      </TabsTrigger>
+                    </TabsList>
 
-                  {/* TAB 2: CARTÃO DE CRÉDITO */}
-                  <TabsContent value="card">
-                    <CreditCardCheckoutTab
-                      cardForm={cardForm}
-                      setCardForm={setCardForm}
-                      installments={installments}
-                      setInstallments={setInstallments}
-                      rawTotal={rawTotal}
-                      cycle={cycleParam}
-                      processing={processingCard}
-                      onSubmit={handleProcessCreditCard}
-                      invoiceUrl={invoice?.invoice_url}
-                    />
-                  </TabsContent>
+                    {/* TAB 1: PIX INSTANTÂNEO */}
+                    <TabsContent value="pix">
+                      <PixCheckoutTab
+                        pixQrCode={invoice?.pix_qr_code || null}
+                        pixCopyPaste={invoice?.pix_copy_paste || null}
+                        pixDiscountTotal={pixDiscountTotal}
+                        rawTotal={rawTotal}
+                        periodLabel={pricing.periodLabel}
+                        onGeneratePix={handleGeneratePix}
+                        generatingPix={generatingPix}
+                      />
+                    </TabsContent>
 
-                  {/* TAB 3: BOLETO BANCÁRIO */}
-                  <TabsContent value="boleto">
-                    <BoletoCheckoutTab
-                      bankSlipUrl={invoice?.bank_slip_url || null}
-                      invoiceUrl={invoice?.invoice_url || null}
-                      rawTotal={rawTotal}
-                      identificationField={invoice?.identification_field || null}
-                      barCode={invoice?.bar_code || null}
-                      onGenerateBoleto={handleGenerateBoleto}
-                      generatingBoleto={generatingBoleto}
-                    />
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
+                    {/* TAB 2: CARTÃO DE CRÉDITO */}
+                    <TabsContent value="card">
+                      <CreditCardCheckoutTab
+                        cardForm={cardForm}
+                        setCardForm={setCardForm}
+                        installments={installments}
+                        setInstallments={setInstallments}
+                        rawTotal={rawTotal}
+                        cycle={cycleParam}
+                        processing={processingCard}
+                        onSubmit={handleProcessCreditCard}
+                        invoiceUrl={invoice?.invoice_url}
+                      />
+                    </TabsContent>
+
+                    {/* TAB 3: BOLETO BANCÁRIO */}
+                    <TabsContent value="boleto">
+                      <BoletoCheckoutTab
+                        bankSlipUrl={invoice?.bank_slip_url || null}
+                        invoiceUrl={invoice?.invoice_url || null}
+                        rawTotal={rawTotal}
+                        identificationField={invoice?.identification_field || null}
+                        barCode={invoice?.bar_code || null}
+                        onGenerateBoleto={handleGenerateBoleto}
+                        generatingBoleto={generatingBoleto}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         )}
       </div>

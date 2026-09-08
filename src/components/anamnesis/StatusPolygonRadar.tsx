@@ -28,6 +28,7 @@ export interface StatusPolygonRadarProps {
   accentColor?: string;
   className?: string;
   height?: number | string;
+  isPrint?: boolean;
   items?: StatusPolygonItem[];
   maxScale?: number;
   series?: StatusPolygonSeries[];
@@ -39,6 +40,7 @@ export const StatusPolygonRadar: React.FC<StatusPolygonRadarProps> = ({
   accentColor = "#0ea5e9",
   className = "",
   height = 280,
+  isPrint = false,
   items = [],
   maxScale,
   series,
@@ -138,13 +140,25 @@ export const StatusPolygonRadar: React.FC<StatusPolygonRadarProps> = ({
     <div className={`relative flex flex-col items-center justify-center ${className}`}>
       {title && <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>}
 
-      <ChartContainer config={chartConfig} className="w-full" style={{ height: typeof height === "number" ? `${height}px` : height }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <RadarChart cx="50%" cy="50%" outerRadius="72%" data={data}>
+      <ChartContainer
+        config={chartConfig}
+        responsive={!isPrint}
+        className={isPrint ? "w-full flex justify-center" : "w-full"}
+        style={{ height: typeof height === "number" ? `${height}px` : height }}
+      >
+        {isPrint ? (
+          <RadarChart
+            width={320}
+            height={typeof height === "number" ? height : 240}
+            cx="50%"
+            cy="50%"
+            outerRadius="68%"
+            data={data}
+          >
             <PolarGrid gridType="polygon" stroke="currentColor" strokeOpacity={0.15} />
             <PolarAngleAxis
               dataKey="attribute"
-              tick={{ fill: "currentColor", fontSize: 11, fontWeight: 500, opacity: 0.8 }}
+              tick={{ fill: "currentColor", fontSize: 10, fontWeight: 500, opacity: 0.8 }}
             />
             <PolarRadiusAxis
               angle={90}
@@ -152,8 +166,6 @@ export const StatusPolygonRadar: React.FC<StatusPolygonRadarProps> = ({
               tick={false}
               axisLine={false}
             />
-            <ChartTooltip content={<ChartTooltipContent />} />
-
             {isMultiSeries && series ? (
               series.map((s, idx) => (
                 <Radar
@@ -165,7 +177,6 @@ export const StatusPolygonRadar: React.FC<StatusPolygonRadarProps> = ({
                   fillOpacity={0.2 + idx * 0.1}
                   strokeWidth={2}
                   dot={{ fill: s.color, r: 3 }}
-                  activeDot={{ r: 5 }}
                 />
               ))
             ) : (
@@ -177,11 +188,54 @@ export const StatusPolygonRadar: React.FC<StatusPolygonRadarProps> = ({
                 fillOpacity={0.35}
                 strokeWidth={2.5}
                 dot={{ fill: accentColor, r: 3.5 }}
-                activeDot={{ r: 6 }}
               />
             )}
           </RadarChart>
-        </ResponsiveContainer>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <RadarChart cx="50%" cy="50%" outerRadius="72%" data={data}>
+              <PolarGrid gridType="polygon" stroke="currentColor" strokeOpacity={0.15} />
+              <PolarAngleAxis
+                dataKey="attribute"
+                tick={{ fill: "currentColor", fontSize: 11, fontWeight: 500, opacity: 0.8 }}
+              />
+              <PolarRadiusAxis
+                angle={90}
+                domain={[0, computedMax]}
+                tick={false}
+                axisLine={false}
+              />
+              <ChartTooltip content={<ChartTooltipContent />} />
+
+              {isMultiSeries && series ? (
+                series.map((s, idx) => (
+                  <Radar
+                    key={s.id}
+                    name={s.name}
+                    dataKey={s.id}
+                    stroke={s.color}
+                    fill={s.color}
+                    fillOpacity={0.2 + idx * 0.1}
+                    strokeWidth={2}
+                    dot={{ fill: s.color, r: 3 }}
+                    activeDot={{ r: 5 }}
+                  />
+                ))
+              ) : (
+                <Radar
+                  name="Nível"
+                  dataKey="value"
+                  stroke={accentColor}
+                  fill={accentColor}
+                  fillOpacity={0.35}
+                  strokeWidth={2.5}
+                  dot={{ fill: accentColor, r: 3.5 }}
+                  activeDot={{ r: 6 }}
+                />
+              )}
+            </RadarChart>
+          </ResponsiveContainer>
+        )}
       </ChartContainer>
 
       {showLegend && isMultiSeries && series && (

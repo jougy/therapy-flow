@@ -6,6 +6,8 @@ describe("patient-routing utilities", () => {
     expect(isUuid("8e68b809-4750-4082-ba53-1fb39ddc1e0f")).toBe(true);
     expect(isUuid("PAC-001")).toBe(false);
     expect(isUuid("101")).toBe(false);
+    expect(isUuid("patient-123")).toBe(false);
+    expect(isUuid("test-uuid-456")).toBe(false);
     expect(isUuid("")).toBe(false);
     expect(isUuid(null)).toBe(false);
   });
@@ -39,5 +41,42 @@ describe("patient-routing utilities", () => {
     expect(canonicalKey).toBe("PAC-001");
     expect(routeIdInput !== canonicalKey).toBe(true);
     expect(getClinicPatientPath("7ee14ddb62ed1b47915f1194", patient)).toBe("/clinica/7ee14ddb62ed1b47915f1194/pacientes/PAC-001");
+  });
+
+  it("fetchPatientByRef never queries id column when ref is not a UUID", async () => {
+    const { fetchPatientByRef } = await import("@/lib/patient-routing");
+    const { supabase } = await import("@/integrations/supabase/client");
+
+    const eqSpy = vi.fn().mockImplementation((col: string, val: string) => {
+      if (col === "id" && !isUuid(val)) {
+        throw new Error("PostgreSQL 22P02: invalid input syntax for type uuid: " + val);
+      }
+      return {
+        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+        eq: eqSpy,
+      };
+    });
+
+    vi.spyOn(supabase, "from").mockImplementation((table: string) => {
+      if (table === "patients") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: eqSpy,
+            single: vi.fn().mockResolvedValue({ data: null, error: null }),
+          }),
+        } as any;
+      }
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null }),
+      } as any;
+    });
+
+    // Should not throw 22P02 error when querying by patient code
+    const result = await fetchPatientByRef("PAC-099", "clinic-1");
+    expect(result.data).toBeNull();
+    // Verify eq was never called with ("id", "PAC-099")
+    expect(eqSpy).not.toHaveBeenCalledWith("id", "PAC-099");
   });
 });

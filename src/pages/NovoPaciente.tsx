@@ -51,6 +51,7 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
+import { TrialReadOnlyModal } from "@/components/TrialReadOnlyModal";
 import {
   calculateAgeDetails,
   formatNameTitleCase,
@@ -147,6 +148,7 @@ const NovoPaciente = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [isReadOnlyModalOpen, setIsReadOnlyModalOpen] = useState(false);
 
   const [nome, setNome] = useState("");
   const [dataNascimento, setDataNascimento] = useState("");
@@ -327,10 +329,11 @@ const NovoPaciente = () => {
       return;
     }
 
-    if (quota.isFreeTrial && quota.patients.isLimitReached) {
+    if (quota.isTrialExpired || quota.isExpired || (quota.isFreeTrial && quota.patients.isLimitReached)) {
+      setIsReadOnlyModalOpen(true);
       toast({
         title: "Limite de Pacientes Atingido",
-        description: `Seu plano de teste grátis atingiu a cota máxima de ${quota.patients.max} pacientes. Faça o upgrade para cadastrar pacientes ilimitados.`,
+        description: `Seu plano atingiu a cota de ${quota.patients.max} pacientes ou está no modo somente leitura. Faça o upgrade para cadastrar pacientes ilimitados.`,
         variant: "destructive",
       });
       return;
@@ -410,6 +413,14 @@ const NovoPaciente = () => {
       setAskShareModalOpen(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro inesperado";
+      if (
+        msg.toLowerCase().includes("read_only") ||
+        msg.toLowerCase().includes("read-only") ||
+        msg.toLowerCase().includes("somente leitura") ||
+        msg.toLowerCase().includes("bloqueada")
+      ) {
+        setIsReadOnlyModalOpen(true);
+      }
       toast({
         title: "Erro no cadastro",
         description: msg,
@@ -940,6 +951,13 @@ const NovoPaciente = () => {
           setShareModalOpen(false);
           setAskManualFillModalOpen(true);
         }}
+      />
+
+      <TrialReadOnlyModal
+        isOpen={isReadOnlyModalOpen}
+        onClose={() => setIsReadOnlyModalOpen(false)}
+        clinicId={clinicId}
+        actionAttempted="cadastrar novos pacientes"
       />
     </motion.div>
   );

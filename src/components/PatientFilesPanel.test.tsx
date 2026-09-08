@@ -57,11 +57,12 @@ vi.mock("@/integrations/supabase/client", () => {
 
 describe("PatientFilesPanel", () => {
   const validSessionId = "11111111-1111-4111-8111-111111111111";
+  const validPatientId = "22222222-2222-4222-8222-222222222222";
 
   const renderWithProvider = (
     uiProps: React.ComponentProps<typeof PatientFilesPanel>,
     clinicId = "clinic-1",
-    patientId = "patient-1"
+    patientId = validPatientId
   ) => {
     return render(
       <MemoryRouter>
@@ -87,7 +88,7 @@ describe("PatientFilesPanel", () => {
   });
 
   it("renders an empty state when the patient has no files", async () => {
-    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: null, variant: "patient" });
+    renderWithProvider({ clinicId: "clinic-1", patientId: validPatientId, sessionId: null, variant: "patient" });
 
     expect(await screen.findByText("Nenhum arquivo registrado.")).toBeInTheDocument();
   });
@@ -114,7 +115,7 @@ describe("PatientFilesPanel", () => {
         original_content_type: "image/png",
         original_filename: "exame.png",
         page_count: null,
-        patient_id: "patient-1",
+        patient_id: validPatientId,
         provider: "backblaze_b2",
         session_id: null,
         status: "uploaded",
@@ -128,7 +129,7 @@ describe("PatientFilesPanel", () => {
       },
     ];
 
-    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: null, variant: "patient" });
+    renderWithProvider({ clinicId: "clinic-1", patientId: validPatientId, sessionId: null, variant: "patient" });
 
     expect(await screen.findByText("exame.png")).toBeInTheDocument();
     expect(screen.getByText("20% menor")).toBeInTheDocument();
@@ -157,7 +158,7 @@ describe("PatientFilesPanel", () => {
         original_content_type: "application/pdf",
         original_filename: "catalogo.pdf",
         page_count: 1,
-        patient_id: "patient-1",
+        patient_id: validPatientId,
         provider: "backblaze_b2",
         session_id: null,
         status: "uploaded",
@@ -171,14 +172,14 @@ describe("PatientFilesPanel", () => {
       },
     ];
 
-    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: null, variant: "patient" });
+    renderWithProvider({ clinicId: "clinic-1", patientId: validPatientId, sessionId: null, variant: "patient" });
 
     expect(await screen.findByText("catalogo.pdf")).toBeInTheDocument();
     expect(screen.getByText(/Arquivo otimizado para armazenamento/)).toBeInTheDocument();
   });
 
   it("enqueues valid PDF uploads", async () => {
-    const { container } = renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: validSessionId, variant: "session" });
+    const { container } = renderWithProvider({ clinicId: "clinic-1", patientId: validPatientId, sessionId: validSessionId, variant: "session" });
     await screen.findByText("Nenhum arquivo registrado.");
 
     const input = container.querySelector('input[accept="application/pdf"]') as HTMLInputElement;
@@ -190,14 +191,14 @@ describe("PatientFilesPanel", () => {
       expect(queueMocks.enqueue).toHaveBeenCalledWith({
         clinicId: "clinic-1",
         file,
-        patientId: "patient-1",
+        patientId: validPatientId,
         sessionId: validSessionId,
       });
     });
   });
 
   it("does not query session files when the route uses the new-session placeholder", async () => {
-    renderWithProvider({ clinicId: "clinic-1", disabledReason: "Salve antes.", patientId: "patient-1", sessionId: "novo", variant: "session" });
+    renderWithProvider({ clinicId: "clinic-1", disabledReason: "Salve antes.", patientId: validPatientId, sessionId: "novo", variant: "session" });
 
     expect(await screen.findByText("Nenhum arquivo registrado.")).toBeInTheDocument();
     expect(queueMocks.enqueue).not.toHaveBeenCalled();
@@ -217,7 +218,7 @@ describe("PatientFilesPanel", () => {
         error: "O app não conseguiu preparar uma URL segura para enviar o arquivo.",
         fileName: "arquivo.pdf",
         id: "queue-1",
-        patientId: "patient-1",
+        patientId: validPatientId,
         progress: 35,
         sessionId: validSessionId,
         status: "failed",
@@ -225,7 +226,7 @@ describe("PatientFilesPanel", () => {
       },
     ];
 
-    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: validSessionId, variant: "session" });
+    renderWithProvider({ clinicId: "clinic-1", patientId: validPatientId, sessionId: validSessionId, variant: "session" });
 
     fireEvent.click(await screen.findByLabelText("Abrir diagnóstico do erro"));
 
@@ -263,7 +264,7 @@ describe("PatientFilesPanel", () => {
         original_content_type: "image/png",
         original_filename: "exame.png",
         page_count: null,
-        patient_id: "patient-1",
+        patient_id: validPatientId,
         provider: "backblaze_b2",
         session_id: validSessionId,
         status: "uploaded",
@@ -277,7 +278,7 @@ describe("PatientFilesPanel", () => {
       },
     ];
 
-    renderWithProvider({ clinicId: "clinic-1", patientId: "patient-1", sessionId: validSessionId, variant: "session" });
+    renderWithProvider({ clinicId: "clinic-1", patientId: validPatientId, sessionId: validSessionId, variant: "session" });
 
     expect(await screen.findByText("exame.png")).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("button", { name: "Opções do arquivo" }), { key: "Enter", code: "Enter" });
@@ -288,7 +289,7 @@ describe("PatientFilesPanel", () => {
       expect(queueMocks.deleteUpload).toHaveBeenCalledWith({
         clinicId: "clinic-1",
         fileName: "exame.png",
-        patientId: "patient-1",
+        patientId: validPatientId,
         sessionId: validSessionId,
         uploadId: "upload-1",
       });

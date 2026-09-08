@@ -14,7 +14,7 @@ export function FreeTrialUsageBanner({ clinicId }: FreeTrialUsageBannerProps) {
   const navigate = useNavigate();
   const quota = useClinicPlanQuota(clinicId);
 
-  if (quota.loading || !quota.isFreeTrial || !clinicId) {
+  if (quota.loading || !quota.isFreeTrial || !clinicId || quota.isTrialExpired || quota.isExpired) {
     return null;
   }
 
