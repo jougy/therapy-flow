@@ -58,7 +58,7 @@ describe("PlanosAssinatura", () => {
     // Verify main title and plans cards exist
     expect(screen.getByText(/Escolha o Plano Ideal para seu Espaço/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Profissional Solo/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Clínica com Equipe/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Clínica Pro/i).length).toBeGreaterThan(0);
 
     // Enter coupon
     const couponInput = screen.getByPlaceholderText(/EX: PRIMEIROMES100/i);
@@ -82,22 +82,22 @@ describe("PlanosAssinatura", () => {
       </MemoryRouter>
     );
 
-    // Default is annual: Solo is R$ 40.00/mês
-    expect(screen.getAllByText(/40.00/i).length).toBeGreaterThan(0);
+    // Default is annual: Solo is R$ 44.00/mês
+    expect(screen.getAllByText(/44.00/i).length).toBeGreaterThan(0);
 
     // Click Mensal
     const monthlyBtn = screen.getByRole("button", { name: /^Mensal$/i });
     fireEvent.click(monthlyBtn);
 
-    // Solo should become R$ 52.00/mês
-    expect(screen.getAllByText(/52.00/i).length).toBeGreaterThan(0);
+    // Solo should become R$ 59.00/mês
+    expect(screen.getAllByText(/59.00/i).length).toBeGreaterThan(0);
 
     // Click Trimestral
     const quarterlyBtn = screen.getByRole("button", { name: /Trimestral/i });
     fireEvent.click(quarterlyBtn);
 
-    // Solo should become R$ 48.00/mês
-    expect(screen.getAllByText(/48.00/i).length).toBeGreaterThan(0);
+    // Solo should become R$ 53.00/mês
+    expect(screen.getAllByText(/53.00/i).length).toBeGreaterThan(0);
   });
 
   it("switches to Degustação Grátis cycle and displays Grátis prices", async () => {
@@ -111,8 +111,8 @@ describe("PlanosAssinatura", () => {
     fireEvent.click(freeCycleBtn);
 
     expect(screen.getAllByText(/Grátis/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /Ativar Degustação Grátis Solo/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Ativar Degustação Grátis Clínica/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ativar Degustação Solo/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ativar Degustação Clínica/i })).toBeInTheDocument();
   });
 
   it("increments and decrements extra seats for clinic plan", async () => {
@@ -122,20 +122,20 @@ describe("PlanosAssinatura", () => {
       </MemoryRouter>
     );
 
-    // Initial extra seats count: 2 acessos
-    expect(screen.getAllByText(/2 acessos/i).length).toBeGreaterThan(0);
+    // Initial base seats count: 4 acessos
+    expect(screen.getAllByText(/4 acessos/i).length).toBeGreaterThan(0);
 
-    // Click '+' to add extra seat
-    const plusBtn = screen.getByRole("button", { name: /Aumentar acessos simultâneos/i });
+    // Click '+' to add extra seat on clinic plan
+    const plusBtn = screen.getAllByRole("button", { name: /Aumentar acessos simultâneos/i })[0];
     fireEvent.click(plusBtn);
 
-    expect(screen.getAllByText(/3 acessos/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/5 acessos/i).length).toBeGreaterThan(0);
 
     // Click '-' to decrease
-    const minusBtn = screen.getByRole("button", { name: /Diminuir acessos simultâneos/i });
+    const minusBtn = screen.getAllByRole("button", { name: /Diminuir acessos simultâneos/i })[0];
     fireEvent.click(minusBtn);
 
-    expect(screen.getAllByText(/2 acessos/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/4 acessos/i).length).toBeGreaterThan(0);
   });
 
   it("hides trial buttons/cycle if user already has an active paid subscription for existing clinic", async () => {
@@ -177,7 +177,7 @@ describe("PlanosAssinatura", () => {
     const freeCycleBtn = screen.getByRole("button", { name: /Degustação Grátis/i });
     fireEvent.click(freeCycleBtn);
 
-    const activateSoloTrialBtn = screen.getByRole("button", { name: /Ativar Degustação Grátis Solo/i });
+    const activateSoloTrialBtn = screen.getByRole("button", { name: /Ativar Degustação Solo/i });
     fireEvent.click(activateSoloTrialBtn);
 
     await waitFor(() => {
@@ -185,6 +185,41 @@ describe("PlanosAssinatura", () => {
         _clinic_id: "clinic-test-1",
         _plan_type: "solo",
       });
+    });
+  });
+
+  it("opens PlanDetailsModal when clicking 'Ver todos os recursos e detalhes'", async () => {
+    render(
+      <MemoryRouter>
+        <PlanosAssinatura />
+      </MemoryRouter>
+    );
+
+    const detailsButtons = screen.getAllByRole("button", { name: /Ver todos os recursos e detalhes/i });
+    expect(detailsButtons.length).toBeGreaterThanOrEqual(3);
+
+    // Click on the first one (Solo)
+    fireEvent.click(detailsButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Capacidade & Acessos/i)).toBeInTheDocument();
+      expect(screen.getByText(/Prontuário & Formulários/i)).toBeInTheDocument();
+    });
+  });
+
+  it("opens PlanFAQModal when clicking 'Dúvidas Frequentes & Garantias'", async () => {
+    render(
+      <MemoryRouter>
+        <PlanosAssinatura />
+      </MemoryRouter>
+    );
+
+    const faqBtn = screen.getByRole("button", { name: /Dúvidas Frequentes & Garantias/i });
+    fireEvent.click(faqBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Perguntas Frequentes & Garantias/i)).toBeInTheDocument();
+      expect(screen.getByText(/Preciso cadastrar cartão de crédito/i)).toBeInTheDocument();
     });
   });
 });

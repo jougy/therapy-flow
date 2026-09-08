@@ -200,9 +200,11 @@ const MetricStats = ({ metric }: { metric: PatientAnamnesisDashboardMetric }) =>
 
 const MetricChart = ({
   chart,
+  isPrint = false,
   metric,
 }: {
   chart: PatientAnamnesisChartType;
+  isPrint?: boolean;
   metric: PatientAnamnesisDashboardMetric;
 }) => {
   // Handle aggregated radar section (status polygon & multi-series)
@@ -213,7 +215,8 @@ const MetricChart = ({
           series={metric.radarSeries}
           items={metric.radarItems}
           showLegend={true}
-          height={280}
+          height={isPrint ? 220 : 280}
+          isPrint={isPrint}
         />
       );
     }
@@ -228,22 +231,42 @@ const MetricChart = ({
 
     if (chart === "bar") {
       return (
-        <div className="space-y-4">
-          <ChartContainer config={multiConfig} className="h-64 w-full sm:h-72">
-            <BarChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="label" tickLine={false} axisLine={false} />
-              <YAxis tickLine={false} axisLine={false} />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              {(metric.seriesKeys ?? []).map((key) => (
-                <Bar key={key.id} dataKey={key.id} name={key.label} fill={key.color} radius={[4, 4, 0, 0]} />
-              ))}
-            </BarChart>
+        <div className={isPrint ? "space-y-2" : "space-y-4"}>
+          <ChartContainer
+            config={multiConfig}
+            responsive={!isPrint}
+            className={isPrint ? "h-36 w-full flex justify-center" : "h-64 w-full sm:h-72"}
+          >
+            {isPrint ? (
+              <BarChart
+                width={330}
+                height={140}
+                data={metric.multiSeriesData}
+                margin={{ bottom: 4, left: -16, right: 8, top: 8 }}
+              >
+                <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                {(metric.seriesKeys ?? []).map((key) => (
+                  <Bar key={key.id} dataKey={key.id} name={key.label} fill={key.color} radius={[3, 3, 0, 0]} />
+                ))}
+              </BarChart>
+            ) : (
+              <BarChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                {(metric.seriesKeys ?? []).map((key) => (
+                  <Bar key={key.id} dataKey={key.id} name={key.label} fill={key.color} radius={[4, 4, 0, 0]} />
+                ))}
+              </BarChart>
+            )}
           </ChartContainer>
-          <div className="flex flex-wrap items-center justify-center gap-3 text-xs pt-1">
+          <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] sm:gap-3 sm:text-xs pt-1">
             {(metric.seriesKeys ?? []).map((key) => (
               <div key={key.id} className="flex items-center gap-1.5 font-medium">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
+                <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
                 <span className="text-muted-foreground">{key.label}</span>
               </div>
             ))}
@@ -254,30 +277,58 @@ const MetricChart = ({
 
     if (chart === "area") {
       return (
-        <div className="space-y-4">
-          <ChartContainer config={multiConfig} className="h-64 w-full sm:h-72">
-            <AreaChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="label" tickLine={false} axisLine={false} />
-              <YAxis tickLine={false} axisLine={false} />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              {(metric.seriesKeys ?? []).map((key) => (
-                <Area
-                  key={key.id}
-                  type="monotone"
-                  dataKey={key.id}
-                  name={key.label}
-                  stroke={key.color}
-                  fill={key.color}
-                  fillOpacity={0.2}
-                />
-              ))}
-            </AreaChart>
+        <div className={isPrint ? "space-y-2" : "space-y-4"}>
+          <ChartContainer
+            config={multiConfig}
+            responsive={!isPrint}
+            className={isPrint ? "h-36 w-full flex justify-center" : "h-64 w-full sm:h-72"}
+          >
+            {isPrint ? (
+              <AreaChart
+                width={330}
+                height={140}
+                data={metric.multiSeriesData}
+                margin={{ bottom: 4, left: -16, right: 8, top: 8 }}
+              >
+                <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                {(metric.seriesKeys ?? []).map((key) => (
+                  <Area
+                    key={key.id}
+                    type="monotone"
+                    dataKey={key.id}
+                    name={key.label}
+                    stroke={key.color}
+                    fill={key.color}
+                    fillOpacity={0.2}
+                  />
+                ))}
+              </AreaChart>
+            ) : (
+              <AreaChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                {(metric.seriesKeys ?? []).map((key) => (
+                  <Area
+                    key={key.id}
+                    type="monotone"
+                    dataKey={key.id}
+                    name={key.label}
+                    stroke={key.color}
+                    fill={key.color}
+                    fillOpacity={0.2}
+                  />
+                ))}
+              </AreaChart>
+            )}
           </ChartContainer>
-          <div className="flex flex-wrap items-center justify-center gap-3 text-xs pt-1">
+          <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] sm:gap-3 sm:text-xs pt-1">
             {(metric.seriesKeys ?? []).map((key) => (
               <div key={key.id} className="flex items-center gap-1.5 font-medium">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
+                <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
                 <span className="text-muted-foreground">{key.label}</span>
               </div>
             ))}
@@ -292,22 +343,36 @@ const MetricChart = ({
 
       if (chart === "pie") {
         return (
-          <ChartContainer config={multiConfig} className="h-64 w-full sm:h-72">
-            <RechartsPieChart>
-              <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
-              <Pie data={categoryData} dataKey="value" nameKey="label" innerRadius={48} outerRadius={88} paddingAngle={2}>
-                {categoryData.map((item) => (
-                  <Cell key={item.id} fill={item.color} />
-                ))}
-              </Pie>
-            </RechartsPieChart>
+          <ChartContainer
+            config={multiConfig}
+            responsive={!isPrint}
+            className={isPrint ? "h-36 w-full flex justify-center items-center" : "h-64 w-full sm:h-72"}
+          >
+            {isPrint ? (
+              <RechartsPieChart width={140} height={140}>
+                <Pie data={categoryData} dataKey="value" nameKey="label" innerRadius={36} outerRadius={62} paddingAngle={2}>
+                  {categoryData.map((item) => (
+                    <Cell key={item.id} fill={item.color} />
+                  ))}
+                </Pie>
+              </RechartsPieChart>
+            ) : (
+              <RechartsPieChart>
+                <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+                <Pie data={categoryData} dataKey="value" nameKey="label" innerRadius={48} outerRadius={88} paddingAngle={2}>
+                  {categoryData.map((item) => (
+                    <Cell key={item.id} fill={item.color} />
+                  ))}
+                </Pie>
+              </RechartsPieChart>
+            )}
           </ChartContainer>
         );
       }
 
       return (
-        <div className="space-y-4">
-          <div className="flex h-8 overflow-hidden rounded-full bg-muted">
+        <div className={isPrint ? "space-y-2" : "space-y-4"}>
+          <div className={`flex overflow-hidden rounded-full bg-muted ${isPrint ? "h-5 print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]" : "h-8"}`}>
             {categoryData.map((item) => {
               const percent = total > 0 ? (item.value / total) * 100 : 0;
               return (
@@ -323,12 +388,12 @@ const MetricChart = ({
               );
             })}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <div className={`flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground ${isPrint ? "text-[10px]" : "text-xs"}`}>
             {categoryData.map((item) => {
               const percent = total > 0 ? Math.round((item.value / total) * 100) : 0;
               return (
                 <span key={item.id} className="inline-flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
                   <span>
                     {item.label}: {item.value} ({percent}%)
                   </span>
@@ -342,31 +407,59 @@ const MetricChart = ({
 
     // Default to multi-line chart
     return (
-      <div className="space-y-4">
-        <ChartContainer config={multiConfig} className="h-64 w-full sm:h-72">
-          <LineChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} />
-            <YAxis tickLine={false} axisLine={false} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            {(metric.seriesKeys ?? []).map((key) => (
-              <Line
-                key={key.id}
-                type="monotone"
-                dataKey={key.id}
-                name={key.label}
-                stroke={key.color}
-                strokeWidth={2.5}
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-            ))}
-          </LineChart>
+      <div className={isPrint ? "space-y-2" : "space-y-4"}>
+        <ChartContainer
+          config={multiConfig}
+          responsive={!isPrint}
+          className={isPrint ? "h-36 w-full flex justify-center" : "h-64 w-full sm:h-72"}
+        >
+          {isPrint ? (
+            <LineChart
+              width={330}
+              height={140}
+              data={metric.multiSeriesData}
+              margin={{ bottom: 4, left: -16, right: 8, top: 8 }}
+            >
+              <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+              {(metric.seriesKeys ?? []).map((key) => (
+                <Line
+                  key={key.id}
+                  type="monotone"
+                  dataKey={key.id}
+                  name={key.label}
+                  stroke={key.color}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                />
+              ))}
+            </LineChart>
+          ) : (
+            <LineChart data={metric.multiSeriesData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} />
+              <YAxis tickLine={false} axisLine={false} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              {(metric.seriesKeys ?? []).map((key) => (
+                <Line
+                  key={key.id}
+                  type="monotone"
+                  dataKey={key.id}
+                  name={key.label}
+                  stroke={key.color}
+                  strokeWidth={2.5}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              ))}
+            </LineChart>
+          )}
         </ChartContainer>
-        <div className="flex flex-wrap items-center justify-center gap-3 text-xs pt-1">
+        <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] sm:gap-3 sm:text-xs pt-1">
           {(metric.seriesKeys ?? []).map((key) => (
             <div key={key.id} className="flex items-center gap-1.5 font-medium">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
+              <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full" style={{ backgroundColor: key.color }} />
               <span className="text-muted-foreground">{key.label}</span>
             </div>
           ))}
@@ -382,22 +475,36 @@ const MetricChart = ({
 
       if (chart === "pie") {
         return (
-          <ChartContainer config={chartConfig} className="h-56 w-full sm:h-64">
-            <RechartsPieChart>
-              <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
-              <Pie data={distributionData} dataKey="value" nameKey="label" innerRadius={48} outerRadius={88} paddingAngle={2}>
-                {distributionData.map((item) => (
-                  <Cell key={item.id} fill={item.color} />
-                ))}
-              </Pie>
-            </RechartsPieChart>
+          <ChartContainer
+            config={chartConfig}
+            responsive={!isPrint}
+            className={isPrint ? "h-36 w-full flex justify-center items-center" : "h-56 w-full sm:h-64"}
+          >
+            {isPrint ? (
+              <RechartsPieChart width={140} height={140}>
+                <Pie data={distributionData} dataKey="value" nameKey="label" innerRadius={36} outerRadius={62} paddingAngle={2}>
+                  {distributionData.map((item) => (
+                    <Cell key={item.id} fill={item.color} />
+                  ))}
+                </Pie>
+              </RechartsPieChart>
+            ) : (
+              <RechartsPieChart>
+                <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+                <Pie data={distributionData} dataKey="value" nameKey="label" innerRadius={48} outerRadius={88} paddingAngle={2}>
+                  {distributionData.map((item) => (
+                    <Cell key={item.id} fill={item.color} />
+                  ))}
+                </Pie>
+              </RechartsPieChart>
+            )}
           </ChartContainer>
         );
       }
 
       return (
-        <div className="space-y-4">
-          <div className="flex h-8 overflow-hidden rounded-full bg-muted">
+        <div className={isPrint ? "space-y-2" : "space-y-4"}>
+          <div className={`flex overflow-hidden rounded-full bg-muted ${isPrint ? "h-5 print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]" : "h-8"}`}>
             {distributionData.map((item) => {
               const percent = total > 0 ? (item.value / total) * 100 : 0;
 
@@ -414,13 +521,13 @@ const MetricChart = ({
               );
             })}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <div className={`flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground ${isPrint ? "text-[10px]" : "text-xs"}`}>
             {distributionData.map((item) => {
               const percent = total > 0 ? Math.round((item.value / total) * 100) : 0;
 
               return (
                 <span key={item.id} className="inline-flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
                   <span>{item.label}: {item.value} ({percent}%)</span>
                 </span>
               );
@@ -432,41 +539,95 @@ const MetricChart = ({
 
     if (chart === "bar") {
       return (
-        <ChartContainer config={chartConfig} className="h-56 w-full sm:h-64">
-          <BarChart data={metric.numberData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} />
-            <YAxis tickLine={false} axisLine={false} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="value" fill="var(--color-value)" radius={[6, 6, 0, 0]} />
-          </BarChart>
+        <ChartContainer
+          config={chartConfig}
+          responsive={!isPrint}
+          className={isPrint ? "h-36 w-full flex justify-center" : "h-56 w-full sm:h-64"}
+        >
+          {isPrint ? (
+            <BarChart
+              width={330}
+              height={140}
+              data={metric.numberData}
+              margin={{ bottom: 4, left: -16, right: 8, top: 8 }}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+              <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          ) : (
+            <BarChart data={metric.numberData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} />
+              <YAxis tickLine={false} axisLine={false} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="value" fill="var(--color-value)" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          )}
         </ChartContainer>
       );
     }
 
     if (chart === "area") {
       return (
-        <ChartContainer config={chartConfig} className="h-56 w-full sm:h-64">
-          <AreaChart data={metric.numberData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} />
-            <YAxis tickLine={false} axisLine={false} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Area type="monotone" dataKey="value" stroke="var(--color-value)" fill="var(--color-value)" fillOpacity={0.28} />
-          </AreaChart>
+        <ChartContainer
+          config={chartConfig}
+          responsive={!isPrint}
+          className={isPrint ? "h-36 w-full flex justify-center" : "h-56 w-full sm:h-64"}
+        >
+          {isPrint ? (
+            <AreaChart
+              width={330}
+              height={140}
+              data={metric.numberData}
+              margin={{ bottom: 4, left: -16, right: 8, top: 8 }}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+              <Area type="monotone" dataKey="value" stroke="var(--color-value)" fill="var(--color-value)" fillOpacity={0.28} />
+            </AreaChart>
+          ) : (
+            <AreaChart data={metric.numberData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} />
+              <YAxis tickLine={false} axisLine={false} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Area type="monotone" dataKey="value" stroke="var(--color-value)" fill="var(--color-value)" fillOpacity={0.28} />
+            </AreaChart>
+          )}
         </ChartContainer>
       );
     }
 
     return (
-      <ChartContainer config={chartConfig} className="h-56 w-full sm:h-64">
-        <LineChart data={metric.numberData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey="label" tickLine={false} axisLine={false} />
-          <YAxis tickLine={false} axisLine={false} />
-          <ChartTooltip content={<ChartTooltipContent />} />
-          <Line type="monotone" dataKey="value" stroke="var(--color-value)" strokeWidth={2.5} dot />
-        </LineChart>
+      <ChartContainer
+        config={chartConfig}
+        responsive={!isPrint}
+        className={isPrint ? "h-36 w-full flex justify-center" : "h-56 w-full sm:h-64"}
+      >
+        {isPrint ? (
+          <LineChart
+            width={330}
+            height={140}
+            data={metric.numberData}
+            margin={{ bottom: 4, left: -16, right: 8, top: 8 }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+            <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+            <Line type="monotone" dataKey="value" stroke="var(--color-value)" strokeWidth={2} dot={{ r: 2 }} />
+          </LineChart>
+        ) : (
+          <LineChart data={metric.numberData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} />
+            <YAxis tickLine={false} axisLine={false} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Line type="monotone" dataKey="value" stroke="var(--color-value)" strokeWidth={2.5} dot />
+          </LineChart>
+        )}
       </ChartContainer>
     );
   }
@@ -476,8 +637,8 @@ const MetricChart = ({
       const total = metric.categoryData.reduce((sum, item) => sum + item.value, 0);
 
       return (
-        <div className="space-y-4">
-          <div className="flex h-8 overflow-hidden rounded-full bg-muted">
+        <div className={isPrint ? "space-y-2" : "space-y-4"}>
+          <div className={`flex overflow-hidden rounded-full bg-muted ${isPrint ? "h-5 print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]" : "h-8"}`}>
             {metric.categoryData.map((item) => {
               const percent = total > 0 ? (item.value / total) * 100 : 0;
 
@@ -494,13 +655,13 @@ const MetricChart = ({
               );
             })}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <div className={`flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground ${isPrint ? "text-[10px]" : "text-xs"}`}>
             {metric.categoryData.map((item) => {
               const percent = total > 0 ? Math.round((item.value / total) * 100) : 0;
 
               return (
                 <span key={item.id} className="inline-flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
                   <span>{item.label}: {item.value} ({percent}%)</span>
                 </span>
               );
@@ -512,32 +673,68 @@ const MetricChart = ({
 
     if (chart === "pie") {
       return (
-        <ChartContainer config={chartConfig} className="h-56 w-full sm:h-64">
-          <RechartsPieChart>
-            <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
-            <Pie data={metric.categoryData} dataKey="value" nameKey="label" innerRadius={48} outerRadius={88} paddingAngle={2}>
-              {metric.categoryData.map((item) => (
-                <Cell key={item.id} fill={item.color} />
-              ))}
-            </Pie>
-          </RechartsPieChart>
+        <ChartContainer
+          config={chartConfig}
+          responsive={!isPrint}
+          className={isPrint ? "h-36 w-full flex justify-center items-center" : "h-56 w-full sm:h-64"}
+        >
+          {isPrint ? (
+            <RechartsPieChart width={140} height={140}>
+              <Pie data={metric.categoryData} dataKey="value" nameKey="label" innerRadius={36} outerRadius={62} paddingAngle={2}>
+                {metric.categoryData.map((item) => (
+                  <Cell key={item.id} fill={item.color} />
+                ))}
+              </Pie>
+            </RechartsPieChart>
+          ) : (
+            <RechartsPieChart>
+              <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+              <Pie data={metric.categoryData} dataKey="value" nameKey="label" innerRadius={48} outerRadius={88} paddingAngle={2}>
+                {metric.categoryData.map((item) => (
+                  <Cell key={item.id} fill={item.color} />
+                ))}
+              </Pie>
+            </RechartsPieChart>
+          )}
         </ChartContainer>
       );
     }
 
     return (
-      <ChartContainer config={chartConfig} className="h-56 w-full sm:h-64">
-        <BarChart data={metric.categoryData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey="label" tickLine={false} axisLine={false} />
-          <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-          <ChartTooltip content={<ChartTooltipContent />} />
-          <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-            {metric.categoryData.map((item) => (
-              <Cell key={item.id} fill={item.color} />
-            ))}
-          </Bar>
-        </BarChart>
+      <ChartContainer
+        config={chartConfig}
+        responsive={!isPrint}
+        className={isPrint ? "h-36 w-full flex justify-center" : "h-56 w-full sm:h-64"}
+      >
+        {isPrint ? (
+          <BarChart
+            width={330}
+            height={140}
+            data={metric.categoryData}
+            margin={{ bottom: 4, left: -16, right: 8, top: 8 }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+            <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+              {metric.categoryData.map((item) => (
+                <Cell key={item.id} fill={item.color} />
+              ))}
+            </Bar>
+          </BarChart>
+        ) : (
+          <BarChart data={metric.categoryData} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} />
+            <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+              {metric.categoryData.map((item) => (
+                <Cell key={item.id} fill={item.color} />
+              ))}
+            </Bar>
+          </BarChart>
+        )}
       </ChartContainer>
     );
   }
@@ -771,7 +968,7 @@ export const PatientStatsPrintView = ({
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">{section.title}</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {section.metrics.map((metric) => (
-                    <div key={metric.key} className="rounded-lg border bg-white p-3 space-y-2">
+                    <div key={metric.key} className="break-inside-avoid rounded-lg border bg-white p-3 space-y-2">
                       <div className="border-b pb-1">
                         <h4 className="font-semibold text-xs text-slate-900">{metric.fieldLabel}</h4>
                         <p className="text-[10px] text-slate-500">
@@ -780,7 +977,7 @@ export const PatientStatsPrintView = ({
                       </div>
                       <MetricStats metric={metric} />
                       <div className="pt-1">
-                        <MetricChart chart={getMetricChart(metric, chartPreferences)} metric={metric} />
+                        <MetricChart chart={getMetricChart(metric, chartPreferences)} isPrint={true} metric={metric} />
                       </div>
                     </div>
                   ))}

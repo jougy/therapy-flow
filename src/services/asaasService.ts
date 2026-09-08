@@ -2,9 +2,9 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export interface ProcessPaymentOptions {
-  action: "CREATE" | "UPDATE_SEATS" | "CHANGE_PLAN" | "CANCEL";
+  action: "CREATE" | "UPDATE_SEATS" | "CHANGE_PLAN" | "CANCEL" | "TOKENIZE_TRIAL_CARD";
   clinic_id: string;
-  plan_type: "solo" | "clinic";
+  plan_type: "solo" | "clinic" | "enterprise";
   billing_cycle?: "annual" | "quarterly" | "monthly";
   billing_type: "PIX" | "CREDIT_CARD" | "BOLETO";
   installment_count?: number;

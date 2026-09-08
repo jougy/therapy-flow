@@ -39,6 +39,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
+import { TrialReadOnlyModal } from "@/components/TrialReadOnlyModal";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { notifySessionCompletedFeedback } from "@/hooks/useFeedbackTrigger";
@@ -157,6 +158,7 @@ const SessaoDetalhe = () => {
   const [shareCollaborators, setShareCollaborators] = useState<SessionShareCollaborator[]>([]);
   const [shareRecipients, setShareRecipients] = useState<SessionShareRecipient[]>([]);
   const [sessionShareDialogOpen, setSessionShareDialogOpen] = useState(false);
+  const [isReadOnlyModalOpen, setIsReadOnlyModalOpen] = useState(false);
   const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
   const [anamnesisTemplates, setAnamnesisTemplates] = useState<DatabaseAnamnesisTemplate[]>([]);
   const [baseTemplateSchema, setBaseTemplateSchema] = useState<AnamnesisTemplateSchema>([]);
@@ -1185,10 +1187,11 @@ const SessaoDetalhe = () => {
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
     const targetClinicId = clinicRes.data ?? clinicId;
 
-    if (isNew && targetStatus !== "rascunho" && quota.isFreeTrial && quota.attendances.isLimitReached) {
+    if ((isNew && targetStatus !== "rascunho" && (quota.isTrialExpired || quota.isExpired || (quota.isFreeTrial && quota.attendances.isLimitReached))) || (quota.isTrialExpired || quota.isExpired)) {
+      setIsReadOnlyModalOpen(true);
       toast({
         title: "Limite de Atendimentos Atingido",
-        description: `Seu plano de teste grátis atingiu o limite de ${quota.attendances.max} atendimentos. Faça o upgrade para continuar evoluindo e registrando novos atendimentos.`,
+        description: `Seu plano atingiu o limite de atendimentos ou está no modo somente leitura. Faça o upgrade para continuar evoluindo e registrando novos atendimentos.`,
         variant: "destructive",
       });
       setSaving(false);
@@ -1326,10 +1329,11 @@ const SessaoDetalhe = () => {
 
   const handleStartFromThis = async (options?: { mode?: "copy" | "blank"; templateId?: string | null }) => {
     if (!patientId || !user || isNew) return;
-    if (quota.isFreeTrial && quota.attendances.isLimitReached) {
+    if (quota.isTrialExpired || quota.isExpired || (quota.isFreeTrial && quota.attendances.isLimitReached)) {
+      setIsReadOnlyModalOpen(true);
       toast({
         title: "Limite de Atendimentos Atingido",
-        description: `Seu plano de teste grátis atingiu o limite de ${quota.attendances.max} atendimentos. Faça o upgrade para continuar evoluindo novos atendimentos.`,
+        description: `Seu plano atingiu o limite de atendimentos ou está no modo somente leitura. Faça o upgrade para continuar evoluindo novos atendimentos.`,
         variant: "destructive",
       });
       return;
@@ -2411,6 +2415,13 @@ const SessaoDetalhe = () => {
         templates={anamnesisTemplates}
         defaultTemplateId={anamnesisTemplateId}
         isEvolving={startingFromThis}
+      />
+
+      <TrialReadOnlyModal
+        isOpen={isReadOnlyModalOpen}
+        onClose={() => setIsReadOnlyModalOpen(false)}
+        clinicId={clinicId}
+        actionAttempted="evoluir ou registrar atendimentos"
       />
     </motion.div>
   );

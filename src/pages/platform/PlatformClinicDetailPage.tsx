@@ -26,6 +26,7 @@ import { PlatformFeatureFlags } from "@/components/PlatformFeatureFlags";
 import { PlatformInfoGrid } from "@/components/platform/PlatformInfoGrid";
 import { PlatformAuditList } from "@/components/platform/PlatformAuditList";
 import { PlatformAccountOperations } from "@/components/platform/PlatformAccountOperations";
+import { PlatformRolesManagementModal } from "@/components/platform/PlatformRolesManagementModal";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -70,6 +71,7 @@ export const PlatformClinicDetailPage = ({
   const [supportReason, setSupportReason] = useState("");
   const [supportRole, setSupportRole] = useState<SupportRole>("owner");
   const [startingSupport, setStartingSupport] = useState(false);
+  const [manageRolesOpen, setManageRolesOpen] = useState(false);
 
   const clinic = detail?.clinic ?? null;
   const clinicName = String(clinic?.name ?? "Clínica");
@@ -450,10 +452,22 @@ export const PlatformClinicDetailPage = ({
             <Card>
               <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle>Gerenciamento de contas</CardTitle>
-                <Badge variant="secondary">
-                  <UserCog className="mr-2 h-4 w-4" />
-                  {detail?.memberships?.length ?? 0} conta(s)
-                </Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-xs font-medium border-primary/30 text-primary hover:bg-primary/5"
+                    onClick={() => setManageRolesOpen(true)}
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Papéis Operacionais & Modularizações
+                  </Button>
+                  <Badge variant="secondary">
+                    <UserCog className="mr-2 h-4 w-4" />
+                    {detail?.memberships?.length ?? 0} conta(s)
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 <PlatformAccountOperations
@@ -786,6 +800,16 @@ export const PlatformClinicDetailPage = ({
             </Card>
           </TabsContent>
         </Tabs>
+      )}
+
+      {manageRolesOpen && resolvedClinicId && (
+        <PlatformRolesManagementModal
+          clinicId={resolvedClinicId}
+          clinicName={clinicName}
+          open={manageRolesOpen}
+          onOpenChange={setManageRolesOpen}
+          onRolesUpdated={() => void loadDetail()}
+        />
       )}
     </div>
   );

@@ -105,6 +105,9 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Componente de tags customizadas no editor de formularios]]
 - [[Biblioteca comunitaria de modelos de formularios]]
 - [[Correcao load infinito no cadastro completo de paciente]]
+- [[Auditoria e diagnostico - Pagina de resumo clinico do paciente]]
+- [[Plano de correcao e modernizacao - Pagina de resumo clinico do paciente]]
+- [[Menu de opcoes do paciente - padronizacao e acoes reais]]
 - [[Planos Futuros e Ideias de Produto]]
 
 ### Engenharia
@@ -126,6 +129,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Persistencia Local em IndexedDB e UX Client-First no Prontuario e Formularios]]
 - [[Agregacoes de Analytics e Performance do Dashboard]]
 - [[Modularizacao do Construtor de Formularios]]
+- [[Plano de Assinatura Enterprise e Modo Read-Only]]
 
 ### Seguranca
 

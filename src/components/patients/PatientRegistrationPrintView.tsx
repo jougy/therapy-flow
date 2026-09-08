@@ -27,7 +27,7 @@ interface PatientRegistrationPrintViewProps {
   clinicalProfile: PatientClinicalProfile;
   emergencyContact: PatientEmergencyContact;
   snapshots?: PatientClinicalSnapshot[];
-  profileNameById?: Map<string, string>;
+  profileNameById?: Map<string, string> | Record<string, string>;
 }
 
 const formatDate = (date?: string | null) => {
@@ -333,7 +333,11 @@ export const PatientRegistrationPrintView: React.FC<PatientRegistrationPrintView
                 <div>
                   <span className="font-semibold text-slate-800">{formatDateTime(snap.created_at)}</span>
                   <span className="text-slate-500 ml-2">
-                    por {snap.created_by ? profileNameById.get(snap.created_by) ?? "Colaborador" : "Colaborador"}
+                    por {snap.created_by
+                      ? (profileNameById instanceof Map
+                          ? profileNameById.get(snap.created_by)
+                          : profileNameById?.[snap.created_by]) ?? "Colaborador"
+                      : "Colaborador"}
                   </span>
                   {snap.change_note ? (
                     <p className="text-slate-600 italic mt-0.5">Nota: {snap.change_note}</p>

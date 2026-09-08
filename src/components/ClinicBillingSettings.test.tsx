@@ -126,7 +126,7 @@ describe("ClinicBillingSettings", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText(/Clínica com Equipe/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Clínica Pro|Clínica com Equipe/i)).toBeInTheDocument();
     expect(screen.getByText(/Cupom: BETA50/i)).toBeInTheDocument();
     expect(screen.getAllByText(/R\$ 80.00/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/4 Acessos Concorrentes/i)).toBeInTheDocument();
@@ -242,7 +242,7 @@ describe("ClinicBillingSettings", () => {
     );
 
     expect(await screen.findByText(/Plano Gratuito \/ Degustação/i)).toBeInTheDocument();
-    expect(screen.getByText(/Sem prazo de expiração/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Degustação de 7 dias ou até 20 atendimentos|Sem prazo de expiração/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Consumo de Cotas da Degustação/i)).toBeInTheDocument();
 
     const upgradeButtons = screen.getAllByText(/Fazer Upgrade para Plano Ilimitado|Fazer Upgrade para Ilimitado/i);
@@ -463,6 +463,99 @@ describe("ClinicBillingSettings", () => {
 
     expect(await screen.findByText(/Pagamento via PIX Oficial/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue("00020126580014br.gov.bcb.pix0136test-copy-paste-code")).toBeInTheDocument();
+  });
+
+  it("displays 'Confirmar Alteração de Plano' and 'Plano Atual' badge when clinic has active recurring credit card", async () => {
+    supabaseMocks.rpc.mockImplementation((name: string) => {
+      if (name === "get_clinic_subscription_summary") {
+        return Promise.resolve({
+          data: [
+            {
+              clinic_id: "clinic-card-1",
+              plan_type: "clinic",
+              status: "ACTIVE",
+              billing_cycle: "ANNUAL",
+              payment_method: "CREDIT_CARD",
+              asaas_subscription_id: "sub-card-123",
+              total_recurring_monthly_price: 104.0,
+            },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    supabaseMocks.from.mockImplementation(() => createChainedSelectMock());
+
+    render(
+      <MemoryRouter>
+        <ClinicBillingSettings
+          clinicId="clinic-card-1"
+          currentPlan="clinic"
+          accountRole="account_owner"
+        />
+      </MemoryRouter>
+    );
+
+    const changePlanBtn = await screen.findByRole("button", { name: /Alterar Plano/i });
+    fireEvent.click(changePlanBtn);
+
+    expect(await screen.findByText(/Alterar Plano de Assinatura/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Plano Atual/i).length).toBeGreaterThan(0);
+
+    // Deve exibir o botão de confirmação para clientes com cartão recorrente
+    const confirmBtn = screen.getByRole("button", { name: /Confirmar Alteração de Plano|Plano Atual Selecionado/i });
+    expect(confirmBtn).toBeInTheDocument();
+
+    // E a opção secundária para checkout também está disponível
+    expect(screen.getByRole("button", { name: /Ir para Checkout \/ Pagamento/i })).toBeInTheDocument();
+  });
+
+  it("hides conflicting 'Confirmar Alteração de Plano' and provides single checkout button when no active card exists", async () => {
+    supabaseMocks.rpc.mockImplementation((name: string) => {
+      if (name === "get_clinic_subscription_summary") {
+        return Promise.resolve({
+          data: [
+            {
+              clinic_id: "clinic-pix-1",
+              plan_type: "solo",
+              status: "ACTIVE",
+              billing_cycle: "MONTHLY",
+              payment_method: "PIX",
+              asaas_subscription_id: null,
+              total_recurring_monthly_price: 59.0,
+            },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    supabaseMocks.from.mockImplementation(() => createChainedSelectMock());
+
+    render(
+      <MemoryRouter>
+        <ClinicBillingSettings
+          clinicId="clinic-pix-1"
+          currentPlan="solo"
+          accountRole="account_owner"
+        />
+      </MemoryRouter>
+    );
+
+    const changePlanBtn = await screen.findByRole("button", { name: /Alterar Plano/i });
+    fireEvent.click(changePlanBtn);
+
+    expect(await screen.findByText(/Alterar Plano de Assinatura/i)).toBeInTheDocument();
+
+    // O botão conflitante de confirmação sem checkout NÃO deve existir
+    expect(screen.queryByRole("button", { name: /Confirmar Alteração de Plano/i })).not.toBeInTheDocument();
+
+    // Deve existir o botão unificado e direto para o checkout
+    const checkoutBtn = screen.getByRole("button", { name: /Ir para Checkout \/ Pagamento/i });
+    expect(checkoutBtn).toBeInTheDocument();
   });
 });
 

@@ -1,4 +1,27 @@
-// supabase/functions/asaas-subscription/index.ts
+/**
+ * Edge Function: asaas-subscription
+ *
+ * Responsabilidade:
+ * - Orquestrador backend seguro de transações financeiras e ciclo de vida de assinaturas com o Asaas.
+ *
+ * Ações Suportadas:
+ * - `CREATE_SUBSCRIPTION`: Criação de cliente no Asaas, cálculo de precificação com assentos e cupom,
+ *   criação de assinatura recorrente (Cartão de Crédito ou PIX) e persistência em `clinic_subscriptions`.
+ * - `UPDATE_PLAN`: Upgrade ou Downgrade de plano e ciclo, atualizando a assinatura no Asaas e na base local.
+ * - `UPDATE_SEATS`: Expansão ou redução elástica de assentos simultâneos sem alteração de tier.
+ * - `CANCEL`: Desativação de renovação automática no Asaas e marcação de status sem exclusão de dados.
+ * - `SYNC_STATUS`: Reconciliação manual ou periódica entre status no Asaas e banco de dados.
+ * - `GET_PIX_QR_CODE`: Obtenção do QR Code e código PIX Copia e Cola para pagamento de fatura.
+ *
+ * Garantias de Segurança & Integridade:
+ * 1. Autenticação Estrita:
+ *    - Validação de JWT Bearer token via `supabase.auth.getUser`.
+ * 2. Autorização RBAC:
+ *    - Somente o `account_owner` da clínica ou administrador da plataforma (`platform_admin`/`platform_owner`)
+ *      possuem permissão para contratar ou alterar parâmetros financeiros.
+ * 3. Conformidade CFM / LGPD:
+ *    - Cancelamento nunca destrói dados nem bloqueia visualização de prontuários (Modo Leitura).
+ */
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
@@ -7,14 +30,19 @@ import { AsaasClient } from '../_shared/asaas-client.ts';
 
 const PLAN_PRICING_CONFIG = {
   solo: {
-    annual: { baseMonthlyEq: 40.0, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 25%)' },
-    quarterly: { baseMonthlyEq: 48.0, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-10% OFF)' },
-    monthly: { baseMonthlyEq: 52.0, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    annual: { baseMonthlyEq: 44.0, extraSeatRate: 35.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
+    quarterly: { baseMonthlyEq: 53.0, extraSeatRate: 35.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
+    monthly: { baseMonthlyEq: 59.0, extraSeatRate: 35.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
   },
   clinic: {
-    annual: { baseMonthlyEq: 60.0, extraSeatRate: 10.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 25%)' },
-    quarterly: { baseMonthlyEq: 72.0, extraSeatRate: 12.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-10% OFF)' },
-    monthly: { baseMonthlyEq: 78.0, extraSeatRate: 13.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    annual: { baseMonthlyEq: 104.0, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
+    quarterly: { baseMonthlyEq: 125.0, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
+    monthly: { baseMonthlyEq: 139.0, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+  },
+  enterprise: {
+    annual: { baseMonthlyEq: 224.0, extraSeatRate: 15.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
+    quarterly: { baseMonthlyEq: 269.0, extraSeatRate: 15.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
+    monthly: { baseMonthlyEq: 299.0, extraSeatRate: 15.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
   },
 } as const;
 
@@ -83,6 +111,7 @@ serve(async (req) => {
       additional_seats_count,
       billing_type,
       credit_card_data,
+      credit_card_token,
       installment_count,
       coupon_code,
       cpf_cnpj,
@@ -92,6 +121,18 @@ serve(async (req) => {
       subscription_id,
       customer_id,
     } = body;
+
+    const getPlanLimits = (p: string) => {
+      if (p === 'enterprise') return { baseSeats: 10, baseSubaccounts: 10 };
+      if (p === 'clinic') return { baseSeats: 4, baseSubaccounts: 4 };
+      return { baseSeats: 1, baseSubaccounts: 1 };
+    };
+
+    const getPlanTitle = (p: string) => {
+      if (p === 'enterprise') return 'Plano Enterprise';
+      if (p === 'clinic') return 'Plano Clínica com Equipe';
+      return 'Plano Profissional Solo';
+    };
 
     // Determinar ambiente ativo (Sandbox vs Produção) via Feature Flags hierárquicas
     let activeEnv: 'production' | 'sandbox' = (Deno.env.get('ASAAS_ENV') || 'sandbox').toLowerCase() as 'production' | 'sandbox';
@@ -275,12 +316,12 @@ serve(async (req) => {
     // AÇÃO 1: CREATE (Criação ou Atualização de Assinatura com Ciclos e Cupons)
     // =========================================================================
     if (action === 'CREATE') {
-      const selectedPlan = plan_type === 'clinic' ? 'clinic' : 'solo';
+      const selectedPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
       const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
       const cycle = cycleKey in PLAN_PRICING_CONFIG[selectedPlan] ? cycleKey : 'annual';
-      const config = PLAN_PRICING_CONFIG[selectedPlan][cycle];
+      const config = (PLAN_PRICING_CONFIG[selectedPlan] as any)[cycle];
 
-      const extraConcurrentSeats = selectedPlan === 'clinic' ? Math.max(0, Math.floor(additional_seats_count || 0)) : 0;
+      const extraConcurrentSeats = selectedPlan === 'solo' ? 0 : Math.max(0, Math.floor(additional_seats_count || 0));
       const baseMonthlyPrice = config.baseMonthlyEq;
       const extraSeatPrice = config.extraSeatRate;
       const periodMultiplier = config.periodMultiplier;
@@ -423,11 +464,16 @@ serve(async (req) => {
           totalValue: finalPeriodTotal,
           installmentCount: parsedInstallments,
           dueDate: nextDueStr,
-          description: `Pluri-Health - Plano ${selectedPlan === 'clinic' ? 'Clínica com Equipe' : 'Profissional Solo'} (${config.cycleTitle}) em ${parsedInstallments}x${appliedCouponCode ? ` (Cupom: ${appliedCouponCode})` : ''}`,
+          description: `Pluri-Health - ${getPlanTitle(selectedPlan)} (${config.cycleTitle}) em ${parsedInstallments}x${appliedCouponCode ? ` (Cupom: ${appliedCouponCode})` : ''}`,
           externalReference: clinic_id,
-          creditCard: cardPayload,
-          creditCardHolderInfo: cardHolderPayload,
         };
+
+        if (credit_card_token) {
+          installmentPaymentData.creditCardToken = credit_card_token;
+        } else if (cardPayload && cardHolderPayload) {
+          installmentPaymentData.creditCard = cardPayload;
+          installmentPaymentData.creditCardHolderInfo = cardHolderPayload;
+        }
 
         if (subscription?.asaas_subscription_id) {
           try {
@@ -447,11 +493,13 @@ serve(async (req) => {
           value: finalPeriodTotal,
           nextDueDate: nextDueStr,
           cycle: asaasCycle,
-          description: `Pluri-Health - Plano ${selectedPlan === 'clinic' ? 'Clínica com Equipe' : 'Profissional Solo'} (${config.cycleTitle})${appliedCouponCode ? ` (Cupom: ${appliedCouponCode})` : ''}`,
+          description: `Pluri-Health - ${getPlanTitle(selectedPlan)} (${config.cycleTitle})${appliedCouponCode ? ` (Cupom: ${appliedCouponCode})` : ''}`,
           externalReference: clinic_id,
         };
 
-        if (cardPayload && cardHolderPayload) {
+        if (credit_card_token) {
+          asaasSubData.creditCardToken = credit_card_token;
+        } else if (cardPayload && cardHolderPayload) {
           asaasSubData.creditCard = cardPayload;
           asaasSubData.creditCardHolderInfo = cardHolderPayload;
         }
@@ -482,6 +530,7 @@ serve(async (req) => {
 
       // Salvar em clinic_subscriptions (com duração de 365 dias para ciclo anual)
       const durationDays = cycle === 'annual' ? 365 : cycle === 'quarterly' ? 90 : 30;
+      const planLimits = getPlanLimits(selectedPlan);
       const subPayload = {
         clinic_id: clinic_id,
         account_owner_user_id: user.id,
@@ -491,11 +540,11 @@ serve(async (req) => {
         billing_cycle: cycle.toUpperCase(),
         payment_method: billing_type || 'PIX',
         base_monthly_price: baseMonthlyPrice,
-        base_concurrent_access_count: selectedPlan === 'clinic' ? 2 : 1,
+        base_concurrent_access_count: planLimits.baseSeats,
         additional_concurrent_access_count: extraConcurrentSeats,
         additional_concurrent_access_price: extraSeatPrice,
         total_recurring_monthly_price: Math.round(finalMonthlyTotal * 100) / 100,
-        base_subaccount_limit: selectedPlan === 'clinic' ? 30 : 1,
+        base_subaccount_limit: planLimits.baseSubaccounts,
         status: trialDays > 0 ? 'BETA' : 'PENDING',
         is_free_trial: trialDays > 0,
         period_duration_days: durationDays,
@@ -620,8 +669,9 @@ serve(async (req) => {
         });
       }
 
+      const currentPlan = subscription.plan_type === 'enterprise' ? 'enterprise' : 'clinic';
       const cycle = (subscription.billing_cycle || 'ANNUAL').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
-      const config = PLAN_PRICING_CONFIG.clinic[cycle] || PLAN_PRICING_CONFIG.clinic.annual;
+      const config = (PLAN_PRICING_CONFIG[currentPlan] as any)[cycle] || (PLAN_PRICING_CONFIG[currentPlan] as any).annual;
       const newSeatsCount = Math.max(0, Math.floor(additional_seats_count || 0));
 
       const rawMonthlyTotal = config.baseMonthlyEq + (newSeatsCount * config.extraSeatRate);
@@ -650,7 +700,7 @@ serve(async (req) => {
         })
         .eq('clinic_id', clinic_id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (updateErr) {
         throw new Error(`Erro ao atualizar acessos no banco: ${updateErr.message}`);
@@ -663,10 +713,10 @@ serve(async (req) => {
     }
 
     // =========================================================================
-    // AÇÃO 3: CHANGE_PLAN (Troca de Plano Solo <-> Clínica)
+    // AÇÃO 3: CHANGE_PLAN (Troca de Plano Solo <-> Clínica <-> Enterprise)
     // =========================================================================
     if (action === 'CHANGE_PLAN') {
-      const targetPlan = plan_type === 'clinic' ? 'clinic' : 'solo';
+      const targetPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
       const cycle = (billing_cycle || subscription?.billing_cycle || 'ANNUAL').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
 
       if (targetPlan === 'solo') {
@@ -689,7 +739,7 @@ serve(async (req) => {
         }
       }
 
-      const config = PLAN_PRICING_CONFIG[targetPlan][cycle] || PLAN_PRICING_CONFIG[targetPlan].annual;
+      const config = (PLAN_PRICING_CONFIG[targetPlan] as any)[cycle] || (PLAN_PRICING_CONFIG[targetPlan] as any).annual;
       const extraSeats = targetPlan === 'solo' ? 0 : (subscription?.additional_concurrent_access_count || 0);
       const rawMonthlyTotal = config.baseMonthlyEq + (extraSeats * config.extraSeatRate);
       let finalPeriodTotal = rawMonthlyTotal * config.periodMultiplier;
@@ -706,26 +756,32 @@ serve(async (req) => {
       if (subscription?.asaas_subscription_id) {
         await asaas.updateSubscription(subscription.asaas_subscription_id, {
           value: Math.round(finalPeriodTotal * 100) / 100,
-          description: `Pluri-Health - Plano ${targetPlan === 'clinic' ? 'Clínica com Equipe' : 'Profissional Solo'} (${config.cycleTitle})`,
+          description: `Pluri-Health - ${getPlanTitle(targetPlan)} (${config.cycleTitle})`,
         });
       }
 
+      const planLimits = getPlanLimits(targetPlan);
+      const subPayload: Record<string, unknown> = {
+        clinic_id: clinic_id,
+        account_owner_user_id: subscription?.account_owner_user_id || clinic.account_owner_user_id || user.id,
+        plan_type: targetPlan,
+        billing_cycle: cycle.toUpperCase(),
+        base_monthly_price: config.baseMonthlyEq,
+        base_subaccount_limit: planLimits.baseSubaccounts,
+        base_concurrent_access_count: planLimits.baseSeats,
+        additional_concurrent_access_count: extraSeats,
+        additional_concurrent_access_price: config.extraSeatRate,
+        total_recurring_monthly_price: Math.round((finalPeriodTotal / config.periodMultiplier) * 100) / 100,
+        status: subscription?.status || 'ACTIVE',
+        payment_method: subscription?.payment_method || 'CREDIT_CARD',
+        updated_at: new Date().toISOString(),
+      };
+
       const { data: updatedSub, error: updateErr } = await supabase
         .from('clinic_subscriptions')
-        .update({
-          plan_type: targetPlan,
-          billing_cycle: cycle.toUpperCase(),
-          base_monthly_price: config.baseMonthlyEq,
-          base_subaccount_limit: targetPlan === 'clinic' ? 30 : 1,
-          base_concurrent_access_count: targetPlan === 'clinic' ? 2 : 1,
-          additional_concurrent_access_count: extraSeats,
-          additional_concurrent_access_price: config.extraSeatRate,
-          total_recurring_monthly_price: Math.round((finalPeriodTotal / config.periodMultiplier) * 100) / 100,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('clinic_id', clinic_id)
+        .upsert(subPayload, { onConflict: 'clinic_id' })
         .select()
-        .single();
+        .maybeSingle();
 
       if (updateErr) {
         throw new Error(`Erro ao atualizar plano no banco: ${updateErr.message}`);
@@ -753,9 +809,131 @@ serve(async (req) => {
         })
         .eq('clinic_id', clinic_id)
         .select()
-        .single();
+        .maybeSingle();
 
       return new Response(JSON.stringify({ success: true, subscription: updatedSub }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // =========================================================================
+    // AÇÃO 5: TOKENIZE_TRIAL_CARD (Tokenizar Cartão no Período de Testes Sem Cobrança Imediata)
+    // =========================================================================
+    if (action === 'TOKENIZE_TRIAL_CARD') {
+      if (!credit_card_data?.card) {
+        return new Response(JSON.stringify({ error: 'Dados do cartão de crédito são obrigatórios.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // 1. Localizar ou Criar Customer no Asaas
+      let customerId = customer_id || subscription?.asaas_customer_id;
+      const cleanCpfCnpj = String(cpf_cnpj || clinic.cnpj || profile.cpf || '').replace(/\D/g, '');
+
+      if (!customerId) {
+        if (!cleanCpfCnpj) {
+          return new Response(JSON.stringify({ error: 'CPF ou CNPJ válido é obrigatório para registrar o cartão.' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const existingCustomer = await asaas.findCustomerByCpfCnpj(cleanCpfCnpj);
+        if (existingCustomer) {
+          customerId = existingCustomer.id;
+        } else {
+          const newCustomer = await asaas.createCustomer({
+            name: billing_name || clinic.legal_name || clinic.name || profile.full_name || 'Cliente Pluri-Health',
+            email: billing_email || clinic.email || profile.email || user.email,
+            cpfCnpj: cleanCpfCnpj,
+            phone: clinic.phone || profile.phone,
+            externalReference: clinic_id,
+          });
+          customerId = newCustomer.id;
+        }
+      }
+
+      // 2. Montar dados para tokenização
+      const cardPayload = {
+        holderName: String(credit_card_data.card.holderName || '').trim(),
+        number: String(credit_card_data.card.number || '').replace(/\D/g, ''),
+        expiryMonth: String(credit_card_data.card.expiryMonth || '').padStart(2, '0'),
+        expiryYear: String(credit_card_data.card.expiryYear || '').length === 2 ? `20${credit_card_data.card.expiryYear}` : String(credit_card_data.card.expiryYear || ''),
+        ccv: String(credit_card_data.card.ccv || '').trim(),
+      };
+
+      const holder = credit_card_data.holder || {};
+      const holderPostalCode = String(holder.postalCode || (clinic?.address as any)?.cep || '01001000').replace(/\D/g, '') || '01001000';
+      const holderPhone = String(holder.phone || clinic.phone || profile.phone || '11999999999').replace(/\D/g, '') || '11999999999';
+      const holderAddressNumber = String(holder.addressNumber || (clinic?.address as any)?.number || 'SN').trim() || 'SN';
+
+      const cardHolderPayload = {
+        name: String(holder.name || credit_card_data.card.holderName || clinic.name || 'Titular').trim(),
+        email: String(holder.email || clinic.email || user.email || 'contato@plurihealth.com').trim(),
+        cpfCnpj: String(holder.cpfCnpj || cleanCpfCnpj).replace(/\D/g, ''),
+        postalCode: holderPostalCode,
+        addressNumber: holderAddressNumber,
+        phone: holderPhone,
+        mobilePhone: holderPhone,
+      };
+
+      console.log('[asaas-subscription] Tokenizando cartão para customer:', customerId);
+      const tokenResult = await asaas.tokenizeCreditCard({
+        customer: customerId,
+        creditCard: cardPayload,
+        creditCardHolderInfo: cardHolderPayload,
+      });
+
+      const selectedPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
+      const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
+      const cycle = cycleKey in PLAN_PRICING_CONFIG[selectedPlan] ? cycleKey : 'annual';
+      const config = (PLAN_PRICING_CONFIG[selectedPlan] as any)[cycle];
+      const planLimits = getPlanLimits(selectedPlan);
+
+      // Associar token e customer à assinatura da clínica
+      const subPayload: Record<string, unknown> = {
+        clinic_id: clinic_id,
+        account_owner_user_id: user.id,
+        asaas_customer_id: customerId,
+        payment_method: 'CREDIT_CARD',
+        plan_type: selectedPlan,
+        billing_cycle: cycle.toUpperCase(),
+        base_monthly_price: config.baseMonthlyEq,
+        base_concurrent_access_count: planLimits.baseSeats,
+        base_subaccount_limit: planLimits.baseSubaccounts,
+        total_recurring_monthly_price: config.baseMonthlyEq,
+        cpf_cnpj: cleanCpfCnpj,
+        billing_email: billing_email || clinic.email || profile.email || user.email,
+        billing_name: billing_name || clinic.name || profile.full_name,
+        trial_card_token: tokenResult.creditCardToken,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (!subscription) {
+        subPayload.status = 'TRIAL';
+        subPayload.is_free_trial = true;
+      }
+
+      const { data: updatedSub, error: updateSubErr } = await supabase
+        .from('clinic_subscriptions')
+        .upsert(subPayload, { onConflict: 'clinic_id' })
+        .select()
+        .maybeSingle();
+
+      if (updateSubErr) {
+        console.warn('[asaas-subscription] Erro ao registrar assinatura com cartão tokenizado:', updateSubErr);
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        creditCardToken: tokenResult.creditCardToken,
+        creditCardNumber: tokenResult.creditCardNumber,
+        creditCardBrand: tokenResult.creditCardBrand,
+        customerId,
+        subscription: updatedSub || subscription,
+      }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
