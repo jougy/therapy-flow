@@ -216,15 +216,17 @@ const CadastroContaAlfa = () => {
       });
       if (rpcError) throw rpcError;
 
-      const sessionExists = Boolean(signupData.session);
-      setHasSession(sessionExists);
-      setCreated(true);
+      if (signupData.session) {
+        await supabase.auth.signOut();
+      }
 
       toast({
         title: "Conta criada com sucesso",
-        description: sessionExists
-          ? "Sua conta foi criada. Você já pode acessar seu espaço pessoal."
-          : "Enviamos um link de confirmação para o seu e-mail.",
+        description: "Enviamos um link de confirmação para o seu e-mail.",
+      });
+
+      navigate(`/auth/confirmado?email=${encodeURIComponent(nextEmail)}&aguardando=true`, {
+        state: { email: nextEmail },
       });
     } catch (error) {
       const message = getErrorMessage(error);

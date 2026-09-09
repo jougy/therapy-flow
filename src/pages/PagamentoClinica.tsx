@@ -10,12 +10,15 @@ import {
   RefreshCw 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { processAsaasPayment, checkAsaasPaymentStatus, getPixQrCode } from "@/services/asaasService";
 import { calculatePlanPrice, type CouponDiscount } from "@/utils/subscriptionPricing";
+import { formatOwnerDocument, validateCPF, validateCNPJ } from "@/lib/owner-document";
 import { CheckoutSummaryCard } from "@/components/checkout/CheckoutSummaryCard";
 import { PixCheckoutTab } from "@/components/checkout/PixCheckoutTab";
 import { CreditCardCheckoutTab, CardFormData } from "@/components/checkout/CreditCardCheckoutTab";
@@ -63,6 +66,7 @@ export default function PagamentoClinica() {
   const navigate = useNavigate();
   const { user, profile, refreshAuthState, selectClinic } = useAuth();
 
+  const isTrial = searchParams.get("trial") === "true";
   const cycleParam = (searchParams.get("cycle") || "annual").toLowerCase() as "annual" | "quarterly" | "monthly";
   const planParam = (searchParams.get("plan") || "solo") as "solo" | "clinic" | "enterprise";
   const defaultConcurrent = planParam === "enterprise" ? 10 : planParam === "clinic" ? 4 : 1;
@@ -75,7 +79,7 @@ export default function PagamentoClinica() {
     : 0;
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("pix");
+  const [activeTab, setActiveTab] = useState(isTrial ? "card" : "pix");
   const [clinicData, setClinicData] = useState<any>(null);
   const [subscription, setSubscription] = useState<SubscriptionDetails | null>(null);
   const [invoice, setInvoice] = useState<InvoiceDetails | null>(null);
@@ -87,7 +91,10 @@ export default function PagamentoClinica() {
   const [generatingBoleto, setGeneratingBoleto] = useState(false);
 
   // Parcelas do cartão
-  const [installments, setInstallments] = useState(cycleParam === "annual" ? "12" : cycleParam === "quarterly" ? "3" : "1");
+  const [installments, setInstallments] = useState(isTrial ? "1" : cycleParam === "annual" ? "12" : cycleParam === "quarterly" ? "3" : "1");
+
+  // Documento Fiscal de Cobrança (CPF ou CNPJ)
+  const [billingCpfCnpj, setBillingCpfCnpj] = useState("");
 
   // Form do Cartão de Crédito
   const [cardForm, setCardForm] = useState<CardFormData>({
@@ -114,6 +121,8 @@ export default function PagamentoClinica() {
         const { data, error } = await supabase.rpc("validate_subscription_coupon", {
           _code: couponParam!.trim().toUpperCase(),
           _plan_type: planParam,
+          _clinic_id: clinicId || null,
+          _billing_cycle: cycleParam,
         });
         if (!error && data?.valid && isMounted) {
           setAppliedCoupon({
@@ -161,6 +170,9 @@ export default function PagamentoClinica() {
         return;
       }
       setClinicData(clinic);
+
+      const initialDoc = clinic.cnpj || profile?.cpf || "";
+      setBillingCpfCnpj(formatOwnerDocument(initialDoc));
 
       // Pré-preencher dados do cartão se vazios
       setCardForm((prev) => ({
@@ -313,9 +325,33 @@ export default function PagamentoClinica() {
     };
   }, [clinicId]);
 
+  // Helper de validação do CPF ou CNPJ de cobrança
+  const validateBillingDocument = () => {
+    const clean = billingCpfCnpj.replace(/\D/g, "");
+    if (!clean) {
+      toast.error("Por favor, preencha o CPF ou CNPJ para emissão da cobrança.");
+      return false;
+    }
+    if (clean.length === 11 && !validateCPF(clean)) {
+      toast.error("O CPF informado é inválido. Por favor, revise os dígitos.");
+      return false;
+    }
+    if (clean.length === 14 && !validateCNPJ(clean)) {
+      toast.error("O CNPJ informado é inválido. Por favor, revise os dígitos.");
+      return false;
+    }
+    if (clean.length !== 11 && clean.length !== 14) {
+      toast.error("O documento deve ter 11 dígitos (CPF) ou 14 dígitos (CNPJ).");
+      return false;
+    }
+    return true;
+  };
+
   // Geração sob demanda do QR Code PIX
   const handleGeneratePix = async () => {
     if (!clinicId) return;
+    if (!validateBillingDocument()) return;
+
     setGeneratingPix(true);
     setPaymentRefused(false);
     setRefusalMessage("");
@@ -327,7 +363,7 @@ export default function PagamentoClinica() {
         plan_type: planParam,
         billing_cycle: cycleParam,
         billing_type: "PIX",
-        cpf_cnpj: clinicData?.cnpj || profile?.cpf,
+        cpf_cnpj: billingCpfCnpj || clinicData?.cnpj || profile?.cpf,
         billing_name: clinicData?.name,
         billing_email: clinicData?.email || (user?.email || ""),
         coupon_code: couponParam,
@@ -370,6 +406,8 @@ export default function PagamentoClinica() {
   // Geração sob demanda do Boleto Bancário
   const handleGenerateBoleto = async () => {
     if (!clinicId) return;
+    if (!validateBillingDocument()) return;
+
     setGeneratingBoleto(true);
     setPaymentRefused(false);
     setRefusalMessage("");
@@ -381,7 +419,7 @@ export default function PagamentoClinica() {
         plan_type: planParam,
         billing_cycle: cycleParam,
         billing_type: "BOLETO",
-        cpf_cnpj: clinicData?.cnpj || profile?.cpf,
+        cpf_cnpj: billingCpfCnpj || clinicData?.cnpj || profile?.cpf,
         billing_name: clinicData?.name,
         billing_email: clinicData?.email || (user?.email || ""),
         coupon_code: couponParam,
@@ -425,6 +463,7 @@ export default function PagamentoClinica() {
   const handleProcessCreditCard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clinicId) return;
+    if (!validateBillingDocument()) return;
 
     const cleanCard = cardForm.number.replace(/\D/g, "");
     const cleanCvv = cardForm.ccv.replace(/\D/g, "");
@@ -436,6 +475,63 @@ export default function PagamentoClinica() {
     setRefusalMessage("");
 
     try {
+      const isTrialCoupon = appliedCoupon?.discount_type === "TRIAL_DAYS";
+      const isFreePeriod = isTrial || isTrialCoupon;
+
+      if (isFreePeriod) {
+        const result = await processAsaasPayment({
+          action: "TOKENIZE_TRIAL_CARD",
+          clinic_id: clinicId,
+          plan_type: planParam,
+          cpf_cnpj: billingCpfCnpj || cardForm.holderCpf || clinicData?.cnpj || profile?.cpf,
+          billing_name: clinicData?.name,
+          billing_email: clinicData?.email || (user?.email || ""),
+          coupon_code: couponParam || appliedCoupon?.code,
+          clinic_data: clinicData,
+          credit_card_data: {
+            card: {
+              holderName: cardForm.holderName.trim().toUpperCase(),
+              number: cleanCard,
+              expiryMonth: expMonth,
+              expiryYear: `20${expYearShort}`,
+              ccv: cleanCvv,
+            },
+            holder: {
+              name: cardForm.holderName.trim().toUpperCase() || clinicData?.name,
+              email: clinicData?.email || (user?.email || ""),
+              cpfCnpj: String(billingCpfCnpj || cardForm.holderCpf || clinicData?.cnpj || profile?.cpf || "").replace(/\D/g, ""),
+              postalCode: String(cardForm.holderPostalCode || "01001000").replace(/\D/g, ""),
+              addressNumber: cardForm.holderAddressNumber || "100",
+              phone: String(cardForm.holderPhone || "11999999999").replace(/\D/g, ""),
+            },
+          },
+        });
+
+        if (!result.success) {
+          setPaymentConfirmed(false);
+          setPaymentRefused(true);
+          const errMsg = result.error || "Não foi possível autorizar a verificação no cartão com o emissor.";
+          setRefusalMessage(errMsg);
+          toast.error(errMsg);
+          return;
+        }
+
+        const successMsg = isTrialCoupon
+          ? `Cartão validado com cobrança de R$ 0,01! Acesso Beta de ${appliedCoupon?.discount_value || 180} dias ativado.`
+          : "Cartão validado com cobrança de R$ 0,01! Sua degustação gratuita de 7 dias está ativa.";
+        toast.success(successMsg);
+        setPaymentConfirmed(true);
+        setPaymentRefused(false);
+
+        if (typeof refreshAuthState === "function") {
+          await refreshAuthState();
+        }
+        if (typeof selectClinic === "function") {
+          await selectClinic(clinicId);
+        }
+        return;
+      }
+
       const result = await processAsaasPayment({
         action: "CREATE",
         clinic_id: clinicId,
@@ -443,9 +539,11 @@ export default function PagamentoClinica() {
         billing_cycle: cycleParam,
         billing_type: "CREDIT_CARD",
         installment_count: parseInt(installments, 10) || 1,
-        cpf_cnpj: cardForm.holderCpf || clinicData?.cnpj || profile?.cpf,
+        cpf_cnpj: billingCpfCnpj || cardForm.holderCpf || clinicData?.cnpj || profile?.cpf,
         billing_name: clinicData?.name,
         billing_email: clinicData?.email || (user?.email || ""),
+        coupon_code: couponParam || appliedCoupon?.code,
+        additional_seats_count: extraSeatsCount,
         credit_card_data: {
           card: {
             holderName: cardForm.holderName.trim(),
@@ -514,9 +612,15 @@ export default function PagamentoClinica() {
     );
   }
 
-  const rawTotal = pricing.periodTotal;
-  const pixDiscountTotal = pricing.pixDiscountTotal;
-  const cycleTitle = pricing.cycleTitle;
+  const isTrialCoupon = appliedCoupon?.discount_type === "TRIAL_DAYS";
+  const isFreePeriod = isTrial || isTrialCoupon;
+  const rawTotal = isFreePeriod ? 0.01 : pricing.periodTotal;
+  const pixDiscountTotal = isFreePeriod ? 0.01 : pricing.pixDiscountTotal;
+  const cycleTitle = isTrialCoupon
+    ? `Acesso Beta Gratuito (${appliedCoupon?.discount_value || 180} dias)`
+    : isTrial
+    ? "Degustação Grátis (7 dias)"
+    : pricing.cycleTitle;
   const planTitle =
     planParam === "enterprise"
       ? "Plano Enterprise"
@@ -590,8 +694,14 @@ export default function PagamentoClinica() {
                 cycleTitle={cycleTitle}
                 rawTotal={rawTotal}
                 pixDiscountTotal={pixDiscountTotal}
-                monthlyEquivalent={pricing.monthlyEquivalent}
-                periodLabel={pricing.periodLabel}
+                monthlyEquivalent={isFreePeriod ? 0 : pricing.monthlyEquivalent}
+                periodLabel={
+                  isTrialCoupon
+                    ? `Acesso Beta Gratuito de ${appliedCoupon?.discount_value || 180} dias (cobrança simbólica de R$ 0,01)`
+                    : isTrial
+                    ? "Degustação Grátis de 7 dias (cobrança simbólica de R$ 0,01)"
+                    : pricing.periodLabel
+                }
                 invoiceUrl={invoice?.invoice_url}
                 status={subscription?.status}
               />
@@ -611,52 +721,97 @@ export default function PagamentoClinica() {
                 <CardHeader className="p-3.5 sm:p-4 pb-2">
                   <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
                     <CreditCard className="w-4 h-4 text-primary" />
-                    <span>Selecione a Forma de Pagamento</span>
+                    <span>{isFreePeriod ? "Validação Obrigatória do Cartão de Crédito" : "Selecione a Forma de Pagamento"}</span>
                   </CardTitle>
                   <CardDescription className="text-xs text-muted-foreground">
-                    Todas as transações são criptografadas e processadas diretamente pela instituição Asaas.
+                    {isFreePeriod
+                      ? "Validação antifraude de R$ 0,01 processada e criptografada diretamente pelo gateway Asaas."
+                      : "Todas as transações são criptografadas e processadas diretamente pela instituição Asaas."}
                   </CardDescription>
                 </CardHeader>
 
                 <CardContent className="p-3.5 sm:p-4 pt-2">
+                  {/* Bloco de Conferência do Documento Fiscal (CPF/CNPJ) */}
+                  <div className="mb-3.5 p-3 rounded-xl bg-muted/50 border border-border space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="billingDocInput" className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <span>CPF ou CNPJ do Titular da Cobrança</span>
+                        <span className="text-destructive">*</span>
+                      </Label>
+                      {billingCpfCnpj && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {billingCpfCnpj.replace(/\D/g, "").length === 11 ? "Pessoa Física (CPF)" : billingCpfCnpj.replace(/\D/g, "").length === 14 ? "Pessoa Jurídica (CNPJ)" : "Preenchendo..."}
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      id="billingDocInput"
+                      placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                      value={billingCpfCnpj}
+                      maxLength={18}
+                      onChange={(e) => {
+                        const formatted = formatOwnerDocument(e.target.value);
+                        setBillingCpfCnpj(formatted);
+                        setCardForm((prev) => ({ ...prev, holderCpf: formatted }));
+                      }}
+                      className="h-9 text-xs sm:text-sm font-mono bg-background border-input"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Documento oficial para emissão de notas fiscais e registro da cobrança no gateway bancário.
+                    </p>
+                  </div>
+
                   <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="grid grid-cols-3 bg-muted p-1 rounded-xl border border-border mb-4">
-                      <TabsTrigger
-                        value="pix"
-                        className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
-                      >
-                        <QrCode className="w-3.5 h-3.5 mr-1 shrink-0" />
-                        <span className="hidden sm:inline">PIX (-5% OFF)</span>
-                        <span className="sm:hidden">PIX (-5%)</span>
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="card"
-                        className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
-                      >
-                        <CreditCard className="w-3.5 h-3.5 mr-1 shrink-0" />
-                        Cartão
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="boleto"
-                        className="data-[state=active]:bg-purple-600 data-[state=active]:text-white text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
-                      >
-                        <FileText className="w-3.5 h-3.5 mr-1 shrink-0" />
-                        Boleto
-                      </TabsTrigger>
-                    </TabsList>
+                    {isFreePeriod ? (
+                      <div className="p-3 mb-4 rounded-xl bg-primary/10 border border-primary/20 text-xs text-foreground flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-primary shrink-0" />
+                        <span>
+                          {isTrialCoupon
+                            ? `O cupom ${appliedCoupon?.code} concede ${appliedCoupon?.discount_value || 180} dias gratuitos e exige validação de um cartão de crédito (R$ 0,01) para garantia antifraude e tokenização.`
+                            : "A degustação gratuita exige validação de um cartão de crédito (R$ 0,01) para garantia antifraude."}
+                        </span>
+                      </div>
+                    ) : (
+                      <TabsList className="grid grid-cols-3 bg-muted p-1 rounded-xl border border-border mb-4">
+                        <TabsTrigger
+                          value="pix"
+                          className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
+                        >
+                          <QrCode className="w-3.5 h-3.5 mr-1 shrink-0" />
+                          <span className="hidden sm:inline">PIX (-5% OFF)</span>
+                          <span className="sm:hidden">PIX (-5%)</span>
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="card"
+                          className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
+                        >
+                          <CreditCard className="w-3.5 h-3.5 mr-1 shrink-0" />
+                          Cartão
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="boleto"
+                          className="data-[state=active]:bg-purple-600 data-[state=active]:text-white text-[11px] sm:text-xs font-semibold rounded-lg transition-all px-1 sm:px-2 min-h-[34px]"
+                        >
+                          <FileText className="w-3.5 h-3.5 mr-1 shrink-0" />
+                          Boleto
+                        </TabsTrigger>
+                      </TabsList>
+                    )}
 
                     {/* TAB 1: PIX INSTANTÂNEO */}
-                    <TabsContent value="pix">
-                      <PixCheckoutTab
-                        pixQrCode={invoice?.pix_qr_code || null}
-                        pixCopyPaste={invoice?.pix_copy_paste || null}
-                        pixDiscountTotal={pixDiscountTotal}
-                        rawTotal={rawTotal}
-                        periodLabel={pricing.periodLabel}
-                        onGeneratePix={handleGeneratePix}
-                        generatingPix={generatingPix}
-                      />
-                    </TabsContent>
+                    {!isFreePeriod && (
+                      <TabsContent value="pix">
+                        <PixCheckoutTab
+                          pixQrCode={invoice?.pix_qr_code || null}
+                          pixCopyPaste={invoice?.pix_copy_paste || null}
+                          pixDiscountTotal={pixDiscountTotal}
+                          rawTotal={rawTotal}
+                          periodLabel={pricing.periodLabel}
+                          onGeneratePix={handleGeneratePix}
+                          generatingPix={generatingPix}
+                        />
+                      </TabsContent>
+                    )}
 
                     {/* TAB 2: CARTÃO DE CRÉDITO */}
                     <TabsContent value="card">
@@ -666,7 +821,7 @@ export default function PagamentoClinica() {
                         installments={installments}
                         setInstallments={setInstallments}
                         rawTotal={rawTotal}
-                        cycle={cycleParam}
+                        cycle={isFreePeriod ? "annual" : cycleParam}
                         processing={processingCard}
                         onSubmit={handleProcessCreditCard}
                         invoiceUrl={invoice?.invoice_url}
@@ -674,17 +829,19 @@ export default function PagamentoClinica() {
                     </TabsContent>
 
                     {/* TAB 3: BOLETO BANCÁRIO */}
-                    <TabsContent value="boleto">
-                      <BoletoCheckoutTab
-                        bankSlipUrl={invoice?.bank_slip_url || null}
-                        invoiceUrl={invoice?.invoice_url || null}
-                        rawTotal={rawTotal}
-                        identificationField={invoice?.identification_field || null}
-                        barCode={invoice?.bar_code || null}
-                        onGenerateBoleto={handleGenerateBoleto}
-                        generatingBoleto={generatingBoleto}
-                      />
-                    </TabsContent>
+                    {!isFreePeriod && (
+                      <TabsContent value="boleto">
+                        <BoletoCheckoutTab
+                          bankSlipUrl={invoice?.bank_slip_url || null}
+                          invoiceUrl={invoice?.invoice_url || null}
+                          rawTotal={rawTotal}
+                          identificationField={invoice?.identification_field || null}
+                          barCode={invoice?.bar_code || null}
+                          onGenerateBoleto={handleGenerateBoleto}
+                          generatingBoleto={generatingBoleto}
+                        />
+                      </TabsContent>
+                    )}
                   </Tabs>
                 </CardContent>
               </Card>

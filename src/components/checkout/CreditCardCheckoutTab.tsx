@@ -160,32 +160,41 @@ export function CreditCardCheckoutTab({
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Seletor de Parcelamento */}
-        <div className="space-y-1.5">
-          <Label className="text-xs font-semibold text-foreground">Opções de Parcelamento Sem Juros</Label>
-          <Select value={installments} onValueChange={setInstallments}>
-            <SelectTrigger className="bg-background border-input text-foreground h-11 rounded-xl text-xs sm:text-sm">
-              <SelectValue placeholder="Selecione o parcelamento" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover border-border text-popover-foreground">
-              <SelectItem value="1">1x de R$ {rawTotal.toFixed(2)} (À vista)</SelectItem>
-              {cycle === "annual" && (
-                <>
-                  <SelectItem value="2">2x de R$ {(rawTotal / 2).toFixed(2)}</SelectItem>
-                  <SelectItem value="3">3x de R$ {(rawTotal / 3).toFixed(2)}</SelectItem>
-                  <SelectItem value="6">6x de R$ {(rawTotal / 6).toFixed(2)}</SelectItem>
-                  <SelectItem value="12">12x de R$ {(rawTotal / 12).toFixed(2)} (Sem juros)</SelectItem>
-                </>
-              )}
-              {cycle === "quarterly" && (
-                <>
-                  <SelectItem value="2">2x de R$ {(rawTotal / 2).toFixed(2)}</SelectItem>
-                  <SelectItem value="3">3x de R$ {(rawTotal / 3).toFixed(2)} (Sem juros)</SelectItem>
-                </>
-              )}
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Seletor de Parcelamento ou Banner de Validação Simbólica */}
+        {rawTotal <= 0.01 ? (
+          <div className="p-3.5 bg-primary/10 border border-primary/20 rounded-xl text-xs text-foreground flex items-center gap-2.5">
+            <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
+            <span>
+              Validação simbólica antifraude de <strong>R$ 0,01</strong>. Nenhuma mensalidade será debitada durante os 7 dias de degustação gratuita. Cancele quando quiser antes do fim do período sem custos.
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-foreground">Opções de Parcelamento Sem Juros</Label>
+            <Select value={installments} onValueChange={setInstallments}>
+              <SelectTrigger className="bg-background border-input text-foreground h-11 rounded-xl text-xs sm:text-sm">
+                <SelectValue placeholder="Selecione o parcelamento" />
+              </SelectTrigger>
+              <SelectContent className="bg-popover border-border text-popover-foreground">
+                <SelectItem value="1">1x de R$ {rawTotal.toFixed(2)} (À vista)</SelectItem>
+                {cycle === "annual" && (
+                  <>
+                    <SelectItem value="2">2x de R$ {(rawTotal / 2).toFixed(2)}</SelectItem>
+                    <SelectItem value="3">3x de R$ {(rawTotal / 3).toFixed(2)}</SelectItem>
+                    <SelectItem value="6">6x de R$ {(rawTotal / 6).toFixed(2)}</SelectItem>
+                    <SelectItem value="12">12x de R$ {(rawTotal / 12).toFixed(2)} (Sem juros)</SelectItem>
+                  </>
+                )}
+                {cycle === "quarterly" && (
+                  <>
+                    <SelectItem value="2">2x de R$ {(rawTotal / 2).toFixed(2)}</SelectItem>
+                    <SelectItem value="3">3x de R$ {(rawTotal / 3).toFixed(2)} (Sem juros)</SelectItem>
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Nome do Titular */}
         <div className="space-y-1.5">
@@ -284,12 +293,14 @@ export function CreditCardCheckoutTab({
           {processing ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin mr-2" />
-              Processando e validando transação com o Asaas...
+              {rawTotal <= 0.01 ? "Validando cartão de crédito com o Asaas..." : "Processando e validando transação com o Asaas..."}
             </>
           ) : (
             <>
               <Lock className="w-4 h-4 mr-2" />
-              Pagar em {installments}x de R$ {installmentValue} e Ativar Espaço
+              {rawTotal <= 0.01
+                ? "Validar Cartão e Ativar Degustação Grátis (R$ 0,01)"
+                : `Pagar em ${installments}x de R$ ${installmentValue} e Ativar Espaço`}
             </>
           )}
         </Button>

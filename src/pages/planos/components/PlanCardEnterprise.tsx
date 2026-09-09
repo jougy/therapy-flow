@@ -102,7 +102,7 @@ export const PlanCardEnterprise: React.FC<PlanCardEnterpriseProps> = React.memo(
                   <span className="text-muted-foreground text-[11px] font-medium">/ 7 dias</span>
                 </div>
                 <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/60 dark:border-neutral-800 mt-1">
-                  Avaliação completa para grandes equipes sem cartão.
+                  Avaliação completa de 7 dias para grandes equipes.
                 </div>
               </div>
             ) : (

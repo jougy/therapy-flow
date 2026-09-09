@@ -273,4 +273,12 @@ export class AsaasClient {
       body: JSON.stringify(data),
     });
   }
+
+  // Refund / Estorno de Pagamento
+  async refundPayment(paymentId: string, value?: number, description?: string): Promise<{ id: string; status: string }> {
+    return this.request(`/payments/${paymentId}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({ value, description }),
+    });
+  }
 }

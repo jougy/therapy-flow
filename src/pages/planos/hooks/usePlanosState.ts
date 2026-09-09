@@ -123,6 +123,8 @@ export function usePlanosState(): UsePlanosStateReturn {
       const { data, error } = await supabase.rpc("validate_subscription_coupon", {
         _code: couponInput.trim().toUpperCase(),
         _plan_type: selectedPlanId || "clinic",
+        _clinic_id: existingClinicId || null,
+        _billing_cycle: selectedCycle !== "free" ? selectedCycle : null,
       });
       if (error) throw error;
       const result = data as CouponValidationResult;
@@ -184,6 +186,19 @@ export function usePlanosState(): UsePlanosStateReturn {
       }
       setActivatingTrial(true);
       try {
+        // Verificar se a clínica já possui cartão de crédito tokenizado em clinic_subscriptions
+        const { data: subData } = await supabase
+          .from("clinic_subscriptions")
+          .select("trial_card_token")
+          .eq("clinic_id", existingClinicId)
+          .maybeSingle();
+
+        if (!subData?.trial_card_token) {
+          // Exige registro prévio de cartão com validação simbólica de R$ 0,01
+          navigate(`/pagamento/${existingClinicId}?plan=${trialPlan}&cycle=annual&trial=true`);
+          return;
+        }
+
         const { error: rpcError } = await supabase.rpc("activate_clinic_free_trial", {
           _clinic_id: existingClinicId,
           _plan_type: trialPlan,
@@ -193,10 +208,14 @@ export function usePlanosState(): UsePlanosStateReturn {
         if (typeof selectClinic === "function") {
           try { await selectClinic(existingClinicId); } catch (e) { console.warn("Auto-seleção:", e); }
         }
-        toast.success("Plano Degustação Grátis ativado com sucesso (20 atendimentos e 5 pacientes inclusos)!");
+        toast.success("Plano Degustação Grátis ativado com sucesso!");
         navigate("/espacopessoal", { replace: true });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Erro ao ativar degustação grátis.";
+        if (msg.includes("CARD_REQUIRED_FOR_TRIAL")) {
+          navigate(`/pagamento/${existingClinicId}?plan=${trialPlan}&cycle=annual&trial=true`);
+          return;
+        }
         toast.error(msg);
       } finally {
         setActivatingTrial(false);

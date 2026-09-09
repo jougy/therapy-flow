@@ -162,7 +162,18 @@ describe("PlanosAssinatura", () => {
     });
   });
 
-  it("activates free trial plan via activate_clinic_free_trial RPC when trial button is clicked", async () => {
+  it("activates free trial plan via activate_clinic_free_trial RPC when trial button is clicked and clinic has card token", async () => {
+    supabaseMocks.from.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { trial_card_token: "tok_verified_card_123" },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
     supabaseMocks.rpc.mockResolvedValue({
       data: { success: true },
       error: null,

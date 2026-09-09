@@ -14,7 +14,11 @@ import {
   XCircle,
   FileCode,
   SlidersHorizontal,
-  ChevronRight
+  ChevronRight,
+  Plus,
+  Trash2,
+  Pencil,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,8 +29,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { PlatformCouponsManager, type SubscriptionCouponItem } from "@/components/platform/PlatformCouponsManager";
+
+export type { SubscriptionCouponItem };
 
 interface ClinicSubscriptionItem {
   id: string;
@@ -198,6 +206,8 @@ export function PlatformBillingMaster() {
     return true;
   });
 
+
+
   return (
     <div className="space-y-6">
       {/* Structural Master Header */}
@@ -230,6 +240,9 @@ export function PlatformBillingMaster() {
         <TabsList className="bg-muted p-1 rounded-xl">
           <TabsTrigger value="subscriptions" className="rounded-lg text-xs font-semibold">
             <Building2 className="w-4 h-4 mr-2" /> Assinaturas das Clínicas ({subscriptions.length})
+          </TabsTrigger>
+          <TabsTrigger value="coupons" className="rounded-lg text-xs font-semibold">
+            <Tag className="w-4 h-4 mr-2" /> Cupons Promocionais
           </TabsTrigger>
           <TabsTrigger value="webhooks" className="rounded-lg text-xs font-semibold">
             <Receipt className="w-4 h-4 mr-2" /> Logs de Webhooks Asaas ({webhookLogs.length})
@@ -432,6 +445,11 @@ export function PlatformBillingMaster() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Tab 3: Gestão de Cupons Promocionais */}
+        <TabsContent value="coupons" className="space-y-4">
+          <PlatformCouponsManager />
+        </TabsContent>
       </Tabs>
 
       {/* Modal 1: Override Manual Auditado */}
@@ -570,6 +588,7 @@ export function PlatformBillingMaster() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

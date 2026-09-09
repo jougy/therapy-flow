@@ -17,6 +17,7 @@ const supabaseMocks = vi.hoisted(() => ({
     payload: Record<string, unknown>;
     table: string;
   }>,
+  insertError: null as Error | null,
   rpc: vi.fn(),
   updateCalls: [] as Array<{
     payload: Record<string, unknown>;
@@ -267,6 +268,12 @@ vi.mock("@/integrations/supabase/client", () => {
 
       if (mode === "insert") {
         supabaseMocks.insertCalls.push({ payload, table });
+        if (supabaseMocks.insertError) {
+          return {
+            data: null,
+            error: supabaseMocks.insertError,
+          };
+        }
         if (table === "sessions") {
           return {
             data: {
@@ -397,6 +404,7 @@ describe("PacienteDetalhe", () => {
     supabaseMocks.agendaEvents = [];
     supabaseMocks.deleteCalls = [];
     supabaseMocks.insertCalls = [];
+    supabaseMocks.insertError = null;
     supabaseMocks.updateCalls = [];
     vi.clearAllMocks();
 
@@ -487,6 +495,23 @@ describe("PacienteDetalhe", () => {
             agendaEventId: expect.any(String),
           }),
         })
+      );
+    });
+  });
+
+  it("navigates to new session gracefully even when agenda event creation fails (e.g. collaborator RLS)", async () => {
+    supabaseMocks.insertError = new Error("new row violates row-level security policy for table agenda_events");
+
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Maria Silva" });
+
+    const startButtons = screen.getAllByRole("button", { name: /iniciar atendimento agora/i });
+    fireEvent.click(startButtons[0]);
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith(
+        expect.stringContaining("/pacientes/patient-1/sessao/novo")
       );
     });
   });

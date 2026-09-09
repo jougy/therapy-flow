@@ -60,4 +60,28 @@ describe("Auth", () => {
     expect(screen.queryByText(/cadastre-se/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/logins de teste locais/i)).not.toBeInTheDocument();
   });
+
+  it("redirects to /auth/confirmado when login fails with Email not confirmed error", async () => {
+    supabaseMocks.signInWithPassword.mockResolvedValue({
+      data: { user: null, session: null },
+      error: new Error("Email not confirmed"),
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/auth"]}>
+        <Auth />
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: "pendente@example.com" } });
+    fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: "senha123" } });
+    fireEvent.click(screen.getByRole("button", { name: /entrar/i }));
+
+    await waitFor(() => {
+      expect(supabaseMocks.signInWithPassword).toHaveBeenCalledWith({
+        email: "pendente@example.com",
+        password: "senha123",
+      });
+    });
+  });
 });

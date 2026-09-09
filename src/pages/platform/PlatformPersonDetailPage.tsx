@@ -231,6 +231,18 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
   const invitationId = String(detail?.invitation?.id ?? itemId);
   const accountEmail = String(entity?.email ?? "");
 
+  const isEmailConfirmed = Boolean(
+    entity?.email_confirmed === true ||
+    entity?.email_confirmed_at ||
+    (detail?.invitation as Record<string, unknown> | undefined)?.account_state === "registered_confirmed_pending_acceptance"
+  );
+  const hasUnconfirmedEmail = itemType === "account" && Boolean(accountEmail) && (
+    !isEmailConfirmed ||
+    String(entity?.status ?? "").toLowerCase().includes("não verificado") ||
+    String(entity?.status ?? "").toLowerCase().includes("unconfirmed") ||
+    (detail?.invitation as Record<string, unknown> | undefined)?.account_state === "registered_unconfirmed"
+  );
+
   const handleResendPending = async () => {
     if (resendCooldown > 0 || actionLoading) return;
     setActionLoading(true);
@@ -555,12 +567,27 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <Card>
-            <CardHeader><CardTitle>Dados principais</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle>Dados principais</CardTitle>
+              {hasUnconfirmedEmail && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 border-emerald-500 text-emerald-700 dark:text-emerald-300 bg-background hover:bg-emerald-50 dark:hover:bg-emerald-950 text-xs shadow-sm"
+                  disabled={actionLoading}
+                  onClick={() => void handleManualEmailConfirm()}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  Confirmar e-mail manualmente
+                </Button>
+              )}
+            </CardHeader>
             <CardContent>
               <PlatformInfoGrid
                 items={[
                   ["Nome", title],
                   ["E-mail", String(entity?.email ?? "-")],
+                  ["Status do E-mail", isEmailConfirmed ? "Confirmado" : "Não confirmado / Pendente"],
                   ["Telefone", String(entity?.phone ?? "-")],
                   ["CPF", String(entity?.cpf ?? "-")],
                   ["RG", String(entity?.rg ?? "-")],

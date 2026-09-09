@@ -201,3 +201,95 @@ export async function checkAsaasPaymentStatus(
   }
 }
 
+export interface CreateClinicWithCardOptions {
+  plan_type: "solo" | "clinic" | "enterprise";
+  billing_cycle?: "annual" | "quarterly" | "monthly";
+  cpf_cnpj: string;
+  coupon_code?: string;
+  allow_duplicate_cnpj?: boolean;
+  clinic_data: {
+    name: string;
+    logo_url?: string;
+    email?: string;
+    phone?: string;
+    legal_name?: string;
+    cnpj?: string;
+    cpf?: string;
+    address?: any;
+    business_hours?: string;
+    subaccount_limit?: number;
+    concurrent_access_limit?: number;
+  };
+  credit_card_data: {
+    card: {
+      holderName: string;
+      number: string;
+      expiryMonth: string;
+      expiryYear: string;
+      ccv: string;
+    };
+    holder?: {
+      name?: string;
+      email?: string;
+      cpfCnpj?: string;
+      postalCode?: string;
+      addressNumber?: string;
+      phone?: string;
+    };
+  };
+}
+
+export interface CreateClinicServiceResult {
+  success: boolean;
+  clinic_id?: string;
+  clinic_name?: string;
+  subscription?: any;
+  creditCardToken?: string | null;
+  error?: string;
+  source: "EDGE_FUNCTION";
+}
+
+export async function createClinicWithVerifiedCard(opts: CreateClinicWithCardOptions): Promise<CreateClinicServiceResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke("asaas-subscription", {
+      body: {
+        action: "CREATE_CLINIC_WITH_VERIFIED_CARD",
+        ...opts,
+      },
+    });
+
+    if (error) {
+      return {
+        success: false,
+        error: error.message || "Erro ao comunicar com o servidor de pagamentos.",
+        source: "EDGE_FUNCTION",
+      };
+    }
+
+    if (data?.success === false || data?.error) {
+      return {
+        success: false,
+        error: data.error || "Falha na validação do cartão de crédito.",
+        source: "EDGE_FUNCTION",
+      };
+    }
+
+    return {
+      success: true,
+      clinic_id: data.clinic_id,
+      clinic_name: data.clinic_name,
+      subscription: data.subscription,
+      creditCardToken: data.creditCardToken,
+      source: "EDGE_FUNCTION",
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      error: msg || "Erro inesperado ao criar clínica com cartão.",
+      source: "EDGE_FUNCTION",
+    };
+  }
+}
+
+

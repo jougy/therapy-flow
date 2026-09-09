@@ -65,8 +65,8 @@ export type PlanPriceCalculation = PlanPricingResult;
 export interface CouponDiscount {
   /** Código alfanumérico do cupom (ex: "BETA50", "PRIMEIROMES100"). */
   code?: string;
-  /** Tipo de desconto: "PERCENTAGE" (percentual 0-100) ou "FIXED_AMOUNT" (reais). */
-  discount_type?: "PERCENTAGE" | "FIXED_AMOUNT";
+  /** Tipo de desconto: "PERCENTAGE" (percentual 0-100), "FIXED_AMOUNT" (reais) ou "TRIAL_DAYS" (dias de degustação grátis). */
+  discount_type?: "PERCENTAGE" | "FIXED_AMOUNT" | "TRIAL_DAYS";
   /** Valor nominal do desconto aplicado. */
   discount_value?: number;
 }

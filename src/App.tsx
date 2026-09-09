@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 import { TutorialProvider } from "@/contexts/TutorialContext";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
+import { EmailConfirmationRequiredModal } from "@/components/EmailConfirmationRequiredModal";
 
 
 const Auth = lazy(() => import("./pages/Auth"));
@@ -171,6 +172,7 @@ const App = () => (
                 <FeatureFlagsProvider>
                   <TutorialProvider>
                     <TutorialOverlay />
+                    <EmailConfirmationRequiredModal />
                     <Suspense fallback={<LoadingScreen />}>
                     <Routes>
                       <Route path="/designlab/*" element={<DesignLabApp />} />
