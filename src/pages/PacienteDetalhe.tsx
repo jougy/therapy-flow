@@ -2652,12 +2652,14 @@ const PacienteDetalhe = () => {
       return;
     }
 
+    const effectiveClinicId = clinicId || patient.clinic_id;
+
     try {
       const now = new Date();
       const { data, error } = await supabase
         .from("agenda_events")
         .insert({
-          clinic_id: clinicId,
+          clinic_id: effectiveClinicId,
           event_type: "atendimento",
           patient_id: patient.id,
           scheduled_for: now.toISOString(),
@@ -2681,12 +2683,10 @@ const PacienteDetalhe = () => {
         },
       });
     } catch (err) {
-      logRuntimeError("patient_detail.start_attendance_now", err);
-      toast({
-        title: "Erro ao iniciar atendimento",
-        description: "Não foi possível registrar o agendamento no momento.",
-        variant: "destructive",
-      });
+      logRuntimeError("patient_detail.start_attendance_now_agenda_fallback", err);
+      // Resiliência clínica: se o registro na agenda falhar (permissão de colaborador, RLS ou offline),
+      // não bloqueia o início do atendimento médico/fisioterapêutico
+      navigate(`/pacientes/${id}/sessao/novo`);
     }
   };
 

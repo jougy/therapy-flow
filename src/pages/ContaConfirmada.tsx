@@ -10,6 +10,8 @@ import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { ConfirmationAnimationFlow } from "@/components/ui/clay-confirmation-art";
 
+import { useAuth } from "@/hooks/useAuth";
+
 type ConfirmationState = "waiting_resend" | "checking" | "animating_success" | "expired" | "error";
 
 const readAuthParam = (name: string, locationSearch = "", locationHash = "") => {
@@ -23,11 +25,18 @@ const readAuthParam = (name: string, locationSearch = "", locationHash = "") => 
 const ContaConfirmada = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
 
-  const queryEmail = readAuthParam("email", location.search, location.hash) || (location.state as { email?: string })?.email || "";
+  const queryEmail = readAuthParam("email", location.search, location.hash) || (location.state as { email?: string })?.email || user?.email || "";
   const [emailInput, setEmailInput] = useState(queryEmail);
   const [cooldown, setCooldown] = useState(0);
   const [isResending, setIsResending] = useState(false);
+
+  useEffect(() => {
+    if (!emailInput && (queryEmail || user?.email)) {
+      setEmailInput(queryEmail || user?.email || "");
+    }
+  }, [emailInput, queryEmail, user?.email]);
 
   const [state, setState] = useState<ConfirmationState>("checking");
   const [animationPhase, setAnimationPhase] = useState<"confirmed" | "transforming" | "ready">("confirmed");

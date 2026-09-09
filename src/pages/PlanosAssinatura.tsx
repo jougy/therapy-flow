@@ -129,7 +129,7 @@ export default function PlanosAssinatura() {
         <p className="text-xs text-muted-foreground max-w-xl mx-auto line-clamp-1">
           {existingClinicName
             ? `Configurando o espaço: ${existingClinicName}`
-            : "Economize até 25% no plano anual ou comece com a degustação gratuita sem cartão."}
+            : "Economize até 25% no plano anual ou comece com a degustação gratuita de 7 dias."}
         </p>
 
         <PlanBillingCycleSelector

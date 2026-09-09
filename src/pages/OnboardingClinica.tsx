@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,22 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowLeft, Building2, HelpCircle, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Building2, HelpCircle, Loader2, ShieldCheck, CreditCard, Lock, Tag, CheckCircle2, AlertCircle } from "lucide-react";
 import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { isOwnerDocumentValid } from "@/lib/owner-document";
+import { createClinicWithVerifiedCard } from "@/services/asaasService";
+import {
+  detectCardBrand,
+  validateLuhn,
+  validateExpiry,
+  validateCvv,
+  validateCardHolder,
+  type CardBrand,
+} from "@/utils/creditCardValidator";
 import { toast } from "sonner";
 
 const formatCPF = (v: string) => {
@@ -119,6 +128,68 @@ export default function OnboardingClinica() {
     subaccount_limit: (!isCreateMode && clinic?.subaccount_limit) ? clinic.subaccount_limit.toString() : initialSpaces.toString(),
     concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : initialConcurrent.toString(),
   });
+
+  // Estado dos campos do Cartão de Crédito (Obrigatório em modo de criação)
+  const [cardForm, setCardForm] = useState({
+    holderName: "",
+    number: "",
+    expiry: "",
+    ccv: "",
+  });
+
+  const cardBrand = detectCardBrand(cardForm.number);
+
+  // Estado de Cupom Promocional (Opcional, ex: SOUPLURIBETA)
+  const [couponInput, setCouponInput] = useState(searchParams.get("coupon") || searchParams.get("cupom") || "");
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    valid: boolean;
+    code?: string;
+    description?: string;
+    discount_type?: string;
+    discount_value?: number;
+  } | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  const handleValidateCoupon = useCallback(async (codeToValidate?: string) => {
+    const targetCode = (codeToValidate || couponInput).trim().toUpperCase();
+    if (!targetCode) {
+      setCouponError("Informe o código do cupom.");
+      setAppliedCoupon(null);
+      return;
+    }
+    setValidatingCoupon(true);
+    setCouponError(null);
+    try {
+      const { data, error } = await supabase.rpc("validate_subscription_coupon", {
+        _code: targetCode,
+        _plan_type: plan === "clinic" ? "clinic" : "solo",
+      });
+      if (error) throw error;
+      const res = data as any;
+      if (res && res.valid) {
+        setAppliedCoupon(res);
+        setCouponInput(res.code || targetCode);
+        setCouponError(null);
+        toast.success(`Cupom ${res.code || targetCode} aplicado com sucesso!`);
+      } else {
+        setAppliedCoupon(null);
+        setCouponError(res?.message || "Cupom inválido ou expirado.");
+      }
+    } catch {
+      setAppliedCoupon(null);
+      setCouponError("Erro ao validar cupom.");
+    } finally {
+      setValidatingCoupon(false);
+    }
+  }, [couponInput, plan]);
+
+  useEffect(() => {
+    const urlCoupon = searchParams.get("coupon") || searchParams.get("cupom");
+    if (urlCoupon && isCreateMode) {
+      void handleValidateCoupon(urlCoupon);
+    }
+  }, [searchParams, isCreateMode, handleValidateCoupon]);
 
   // Carregar dados detalhados da clínica existente quando em modo de edição
   useEffect(() => {
@@ -246,27 +317,104 @@ export default function OnboardingClinica() {
       return;
     }
 
+    const documentToUse = cleanCnpj || cleanCpf;
+
+    if (isCreateMode) {
+      const cleanCard = cleanDigits(cardForm.number);
+      const cleanCvv = cleanDigits(cardForm.ccv);
+      const cleanExpiry = cardForm.expiry.trim();
+
+      if (!cardForm.holderName.trim() || !validateCardHolder(cardForm.holderName)) {
+        toast.error("Informe o nome completo do titular como impresso no cartão.");
+        return;
+      }
+
+      if (!cleanCard || !validateLuhn(cleanCard)) {
+        toast.error("Número de cartão de crédito inválido.");
+        return;
+      }
+
+      const expRes = validateExpiry(cleanExpiry);
+      if (!expRes.valid) {
+        toast.error(expRes.error || "Data de validade do cartão inválida.");
+        return;
+      }
+
+      if (!validateCvv(cleanCvv, cardBrand)) {
+        toast.error("Código de segurança (CVV) inválido.");
+        return;
+      }
+    }
+
     setLoading(true);
     let isSuccess = false;
 
     try {
       let targetClinicId = clinic?.id;
-      const documentToUse = cleanCnpj || cleanCpf;
+
+      const addressJson = {
+        country: formData.country,
+        cep: formData.cep,
+        street: formData.street,
+        number: formData.number,
+        complement: formData.complement,
+        neighborhood: formData.neighborhood,
+        city: formData.city,
+        state: formData.state,
+      };
+
+      const businessHoursJson = {
+        description: formData.business_hours,
+      };
+
+      const parsedSubaccounts = plan === "clinic" ? Math.max(1, parseInt(formData.subaccount_limit || "30", 10)) : 1;
 
       if (isCreateMode) {
-        // Criar clínica através do RPC handle_signup
-        const { data: rpcData, error: rpcError } = await supabase.rpc("handle_signup", {
-          _user_id: session.user.id,
-          _email: formData.email || session.user.email || "",
-          _cnpj: documentToUse,
-          _subscription_plan: plan || "solo",
-          _full_name: profile?.full_name || session.user.user_metadata?.full_name || null,
-          _clinic_name: formData.name || "Minha Clínica",
-          _allow_duplicate_cnpj: allowDuplicateCnpj,
+        const cleanCard = cleanDigits(cardForm.number);
+        const cleanCvv = cleanDigits(cardForm.ccv);
+        const cleanExpiry = cardForm.expiry.trim();
+        const [expMonth, expYearShort] = cleanExpiry.split("/");
+
+        const result = await createClinicWithVerifiedCard({
+          plan_type: plan === "clinic" ? "clinic" : "solo",
+          billing_cycle: "annual",
+          cpf_cnpj: documentToUse,
+          coupon_code: appliedCoupon?.code || (couponInput.trim() ? couponInput.trim().toUpperCase() : undefined),
+          allow_duplicate_cnpj: allowDuplicateCnpj,
+          clinic_data: {
+            name: formData.name || "Minha Clínica",
+            logo_url: formData.logo_url || undefined,
+            email: formData.email || session.user.email || undefined,
+            phone: formData.phone || undefined,
+            legal_name: formData.legal_name || undefined,
+            cnpj: cleanCnpj || undefined,
+            cpf: cleanCpf || undefined,
+            address: addressJson,
+            business_hours: businessHoursJson.description || undefined,
+            subaccount_limit: parsedSubaccounts,
+            concurrent_access_limit: parsedConcurrent,
+          },
+          credit_card_data: {
+            card: {
+              holderName: cardForm.holderName.trim().toUpperCase(),
+              number: cleanCard,
+              expiryMonth: expMonth,
+              expiryYear: `20${expYearShort}`,
+              ccv: cleanCvv,
+            },
+            holder: {
+              name: cardForm.holderName.trim().toUpperCase(),
+              email: formData.email || session.user.email || undefined,
+              cpfCnpj: documentToUse,
+              postalCode: cleanDigits(formData.cep) || undefined,
+              addressNumber: formData.number || "SN",
+              phone: cleanDigits(formData.phone) || undefined,
+            },
+          },
         });
 
-        if (rpcError) {
-          const msg = rpcError.message || "";
+        if (!result.success) {
+          const msg = result.error || "";
           const docLabel = cleanCnpj ? "CNPJ" : "CPF";
           if (msg.includes("CNPJ_REGISTERED_TO_OTHER_USER")) {
             toast.error(`Este ${docLabel} já está sendo utilizado pela conta de outro proprietário na plataforma. Caso este seja o seu documento oficial, entre em contato com nosso suporte.`);
@@ -286,56 +434,41 @@ export default function OnboardingClinica() {
             setLoading(false);
             return;
           }
-          throw rpcError;
+          throw new Error(msg || "Não foi possível validar o cartão e criar a clínica.");
         }
-        const result = (rpcData ?? {}) as { clinic_id?: string };
-        if (!result.clinic_id) throw new Error("Não foi possível criar a nova clínica.");
+
+        if (!result.clinic_id) {
+          throw new Error("Não foi possível identificar a clínica criada.");
+        }
+
         targetClinicId = result.clinic_id;
+      } else {
+        if (!targetClinicId) {
+          toast.error("Clínica não encontrada.");
+          return;
+        }
+
+        const clinicPayload: Database["public"]["Tables"]["clinics"]["Update"] = {
+          name: formData.name,
+          logo_url: formData.logo_url || null,
+          email: formData.email || null,
+          phone: formData.phone || null,
+          legal_name: formData.legal_name || null,
+          cnpj: documentToUse,
+          address: addressJson,
+          business_hours: businessHoursJson,
+          subscription_plan: plan || "solo",
+          subaccount_limit: parsedSubaccounts,
+          concurrent_access_limit: parsedConcurrent,
+        };
+
+        const { error: clinicError } = await supabase
+          .from("clinics")
+          .update(clinicPayload)
+          .eq("id", targetClinicId);
+
+        if (clinicError) throw clinicError;
       }
-
-      if (!targetClinicId) {
-        toast.error("Clínica não encontrada.");
-        return;
-      }
-
-      // Atualizar dados da clínica
-      const addressJson = {
-        country: formData.country,
-        cep: formData.cep,
-        street: formData.street,
-        number: formData.number,
-        complement: formData.complement,
-        neighborhood: formData.neighborhood,
-        city: formData.city,
-        state: formData.state,
-      };
-
-      const businessHoursJson = {
-        description: formData.business_hours,
-      };
-
-      const parsedSubaccounts = plan === "clinic" ? Math.max(1, parseInt(formData.subaccount_limit || "30", 10)) : 1;
-
-      const clinicPayload: Database["public"]["Tables"]["clinics"]["Update"] = {
-        name: formData.name,
-        logo_url: formData.logo_url || null,
-        email: formData.email || null,
-        phone: formData.phone || null,
-        legal_name: formData.legal_name || null,
-        cnpj: documentToUse,
-        address: addressJson,
-        business_hours: businessHoursJson,
-        subscription_plan: plan || "solo",
-        subaccount_limit: parsedSubaccounts,
-        concurrent_access_limit: parsedConcurrent,
-      };
-
-      const { error: clinicError } = await supabase
-        .from("clinics")
-        .update(clinicPayload)
-        .eq("id", targetClinicId);
-
-      if (clinicError) throw clinicError;
 
       // Atualizar termos e CPF no perfil do usuário
       const profileUpdates: Database["public"]["Tables"]["profiles"]["Update"] = {
@@ -345,16 +478,6 @@ export default function OnboardingClinica() {
         profileUpdates.cpf = cleanCpf;
       }
       await supabase.from("profiles").update(profileUpdates).eq("id", session.user.id);
-
-      if (isTrial) {
-        // Criar/ativar registro de assinatura Trial no banco via RPC centralizada
-        const { error: trialError } = await supabase.rpc("activate_clinic_free_trial", {
-          _clinic_id: targetClinicId,
-          _plan_type: (plan === "clinic" ? "clinic" : "solo"),
-        });
-
-        if (trialError) throw trialError;
-      }
 
       if (isCreateMode && targetClinicId) {
         if (typeof refreshAuthState === "function") {
@@ -367,12 +490,15 @@ export default function OnboardingClinica() {
             console.warn("Auto-seleção de clínica:", selectErr);
           }
         }
+        isSuccess = true;
+        toast.success("Clínica cadastrada e cartão verificado com sucesso! Degustação de 7 dias ativada.");
+        navigate("/espacopessoal", { replace: true });
+        return;
       }
 
       isSuccess = true;
-
-      toast.success("Clínica cadastrada com sucesso! Escolha o plano ideal para o seu espaço.");
-      navigate(`/planos?clinicId=${targetClinicId}`, { replace: true });
+      toast.success("Dados da clínica atualizados com sucesso!");
+      navigate("/espacopessoal", { replace: true });
     } catch (error: unknown) {
       const errorMessage = getErrorMessage(error);
       toast.error(errorMessage);
@@ -624,6 +750,199 @@ export default function OnboardingClinica() {
             </Card>
           )}
 
+          {/* Seção Opcional de Cupom Promocional (ex: SOUPLURIBETA para Beta Testers) */}
+          {isCreateMode && (
+            <Card className="bg-card border-border backdrop-blur-md rounded-2xl overflow-hidden shadow-sm">
+              <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-3 border-b border-border">
+                <CardTitle className="text-base sm:text-lg text-foreground font-semibold flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-primary" />
+                  <span>Possui um Cupom Promocional ou Acesso Beta?</span>
+                </CardTitle>
+                <CardDescription className="text-xs text-muted-foreground">
+                  Se você é um participante Beta ou recebeu um código exclusivo, insira-o aqui para resgatar sua condição.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6 space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    id="onboarding_coupon_code"
+                    name="onboarding_coupon_code"
+                    placeholder="EX: SOUPLURIBETA, BETA50"
+                    value={couponInput}
+                    onChange={(e) => {
+                      setCouponInput(e.target.value.toUpperCase());
+                      if (couponError) setCouponError(null);
+                    }}
+                    className="bg-background border-border text-foreground h-11 sm:h-10 text-sm font-mono tracking-wider uppercase rounded-xl"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleValidateCoupon()}
+                    disabled={validatingCoupon || !couponInput.trim()}
+                    className="rounded-xl h-11 sm:h-10 px-4 text-xs font-semibold shrink-0"
+                  >
+                    {validatingCoupon ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                        Validando...
+                      </>
+                    ) : (
+                      "Aplicar Cupom"
+                    )}
+                  </Button>
+                </div>
+
+                {appliedCoupon && appliedCoupon.valid && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>
+                        Cupom <strong>{appliedCoupon.code}</strong> aplicado: {appliedCoupon.description}
+                      </span>
+                    </div>
+                    <Badge variant="outline" className="border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 text-[10px]">
+                      {appliedCoupon.discount_type === "TRIAL_DAYS" && `${appliedCoupon.discount_value} Dias Grátis`}
+                      {appliedCoupon.discount_type === "PERCENTAGE" && `${appliedCoupon.discount_value}% OFF`}
+                      {appliedCoupon.discount_type === "FIXED_AMOUNT" && `R$ ${appliedCoupon.discount_value} OFF`}
+                    </Badge>
+                  </div>
+                )}
+
+                {couponError && (
+                  <p className="text-xs text-destructive flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    {couponError}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Seção Obrigatória de Cartão de Crédito para Ativação da Degustação (Apenas em Modo de Criação) */}
+          {isCreateMode && (
+            <Card className="bg-card border-border backdrop-blur-md rounded-2xl overflow-hidden shadow-sm">
+              <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-border">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <CardTitle className="text-lg sm:text-xl text-foreground font-semibold flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-primary" />
+                    <span>Cartão de Crédito para Ativação (Obrigatório)</span>
+                  </CardTitle>
+                  <Badge variant="outline" className="border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 text-xs w-fit">
+                    Validação Antifraude (R$ 0,01)
+                  </Badge>
+                </div>
+                <CardDescription className="text-xs sm:text-sm text-muted-foreground">
+                  Para autenticação de segurança e combate a fraudes, realizamos uma cobrança simbólica de <strong>R$ 0,01</strong> no cartão. Nenhuma mensalidade será debitada durante os 7 dias de degustação gratuita.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 sm:grid-cols-2">
+                <div className="space-y-1 sm:col-span-2">
+                  <FieldLabel
+                    htmlFor="card_holder_name"
+                    label="Nome Impresso no Cartão"
+                    tooltip="Nome completo do titular como impresso no cartão de crédito."
+                    required
+                  />
+                  <Input
+                    id="card_holder_name"
+                    name="card_holder_name"
+                    placeholder="NOME COMO ESTÁ NO CARTÃO"
+                    required
+                    value={cardForm.holderName}
+                    onChange={(e) => setCardForm((prev) => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
+                    className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl uppercase font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1 sm:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <FieldLabel
+                      htmlFor="card_number"
+                      label="Número do Cartão"
+                      tooltip="16 dígitos do cartão de crédito (Visa, Mastercard, Elo, Amex, Hipercard)."
+                      required
+                    />
+                    {cardBrand !== "unknown" && (
+                      <Badge variant="secondary" className="text-[10px] font-semibold capitalize">
+                        {cardBrand}
+                      </Badge>
+                    )}
+                  </div>
+                  <Input
+                    id="card_number"
+                    name="card_number"
+                    placeholder="0000 0000 0000 0000"
+                    required
+                    maxLength={19}
+                    value={cardForm.number}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/\D/g, "").slice(0, 16);
+                      const formatted = clean.replace(/(\d{4})(?=\d)/g, "$1 ");
+                      setCardForm((prev) => ({ ...prev, number: formatted }));
+                    }}
+                    className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <FieldLabel
+                    htmlFor="card_expiry"
+                    label="Validade (MM/AA)"
+                    tooltip="Mês e ano de vencimento gravados no cartão."
+                    required
+                  />
+                  <Input
+                    id="card_expiry"
+                    name="card_expiry"
+                    placeholder="MM/AA"
+                    required
+                    maxLength={5}
+                    value={cardForm.expiry}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/\D/g, "").slice(0, 4);
+                      const formatted = clean.length > 2 ? `${clean.slice(0, 2)}/${clean.slice(2)}` : clean;
+                      setCardForm((prev) => ({ ...prev, expiry: formatted }));
+                    }}
+                    className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <FieldLabel
+                    htmlFor="card_ccv"
+                    label="Código de Segurança (CVV)"
+                    tooltip="Código de 3 ou 4 dígitos no verso do cartão."
+                    required
+                  />
+                  <Input
+                    id="card_ccv"
+                    name="card_ccv"
+                    placeholder="CVV"
+                    type="password"
+                    required
+                    maxLength={4}
+                    value={cardForm.ccv}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/\D/g, "").slice(0, 4);
+                      setCardForm((prev) => ({ ...prev, ccv: clean }));
+                    }}
+                    className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl font-mono"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 p-3 bg-muted/40 border border-border rounded-xl flex items-start gap-2.5 text-xs text-muted-foreground">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span>
+                      Cobrança simbólica de <strong>R$ 0,01</strong> para validação imediata pelo banco emissor. Cancele quando quiser antes do fim dos {appliedCoupon?.discount_type === "TRIAL_DAYS" ? (appliedCoupon.discount_value || 180) : 7} dias sem qualquer cobrança de plano. Criptografia ponta a ponta (PCI-DSS) gerenciada via gateway Asaas.
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Termo de Consentimento e Responsabilidade do Titular */}
           <div className="rounded-2xl border border-border/80 bg-card/80 p-4 sm:p-5 space-y-2 backdrop-blur-md shadow-md">
             <div className="flex items-start gap-3">
@@ -693,7 +1012,13 @@ export default function OnboardingClinica() {
               className="w-full sm:w-auto min-w-[220px] h-12 px-6 text-base font-semibold bg-primary hover:bg-primary/90 active:scale-[0.98] text-primary-foreground rounded-xl shadow-lg transition-all min-h-[48px]"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
-              {loading ? (isCreateMode ? "Criando espaço..." : "Salvando...") : "Salvar e Escolher Plano"}
+              {loading
+                ? (isCreateMode ? "Validando cartão e criando espaço..." : "Salvando...")
+                : (isCreateMode
+                    ? (appliedCoupon?.discount_type === "TRIAL_DAYS"
+                        ? `Verificar Cartão e Ativar Beta (${appliedCoupon.discount_value || 180} Dias)`
+                        : "Verificar Cartão e Criar Clínica (R$ 0,01)")
+                    : "Salvar Alterações")}
             </Button>
           </div>
         </form>

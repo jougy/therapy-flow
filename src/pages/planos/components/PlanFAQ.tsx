@@ -10,7 +10,7 @@ interface FAQItem {
 const FAQ_ITEMS: FAQItem[] = [
   {
     question: "Preciso cadastrar cartão de crédito para iniciar a degustação?",
-    answer: "Não! Você pode começar imediatamente a degustação gratuita com acesso às funcionalidades sem fornecer dados bancários ou cartão de crédito.",
+    answer: "Sim. Para garantir a autenticidade das contas e a segurança antifraude, é necessário cadastrar um cartão de crédito válido, realizando uma cobrança simbólica de confirmação de R$ 0,01 junto ao emissor. Durante os 7 dias de degustação gratuita, nenhuma mensalidade será cobrada e você pode cancelar quando quiser sem custos.",
   },
   {
     question: "O que acontece ao final da degustação ou se eu cancelar minha assinatura?",

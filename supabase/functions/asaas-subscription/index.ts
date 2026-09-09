@@ -46,6 +46,135 @@ const PLAN_PRICING_CONFIG = {
   },
 } as const;
 
+function isValidCpf(cpf: string): boolean {
+  const clean = cpf.replace(/\D/g, '');
+  if (clean.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(clean)) return false;
+
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += parseInt(clean.charAt(i), 10) * (10 - i);
+  }
+  let rev = 11 - (sum % 11);
+  if (rev === 10 || rev === 11) rev = 0;
+  if (rev !== parseInt(clean.charAt(9), 10)) return false;
+
+  sum = 0;
+  for (let i = 0; i < 10; i++) {
+    sum += parseInt(clean.charAt(i), 10) * (11 - i);
+  }
+  rev = 11 - (sum % 11);
+  if (rev === 10 || rev === 11) rev = 0;
+  if (rev !== parseInt(clean.charAt(10), 10)) return false;
+
+  return true;
+}
+
+function isValidCnpj(cnpj: string): boolean {
+  const clean = cnpj.replace(/\D/g, '');
+  if (clean.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(clean)) return false;
+
+  let size = clean.length - 2;
+  let numbers = clean.substring(0, size);
+  const digits = clean.substring(size);
+  let sum = 0;
+  let pos = size - 7;
+  for (let i = size; i >= 1; i--) {
+    sum += parseInt(numbers.charAt(size - i), 10) * pos--;
+    if (pos < 2) pos = 9;
+  }
+  let result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (result !== parseInt(digits.charAt(0), 10)) return false;
+
+  size = size + 1;
+  numbers = clean.substring(0, size);
+  sum = 0;
+  pos = size - 7;
+  for (let i = size; i >= 1; i--) {
+    sum += parseInt(numbers.charAt(size - i), 10) * pos--;
+    if (pos < 2) pos = 9;
+  }
+  result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (result !== parseInt(digits.charAt(1), 10)) return false;
+
+  return true;
+}
+
+function isValidDocument(doc: string): boolean {
+  const clean = doc.replace(/\D/g, '');
+  if (clean.length === 11) return isValidCpf(clean);
+  if (clean.length === 14) return isValidCnpj(clean);
+  return false;
+}
+
+function buildCustomerPayload(params: {
+  clinic: any;
+  profile: any;
+  user: any;
+  cleanCpfCnpj: string;
+  billing_name?: string;
+  billing_email?: string;
+  clinic_id?: string;
+}): any {
+  const { clinic, profile, user, cleanCpfCnpj, billing_name, billing_email, clinic_id } = params;
+
+  // Extrair endereço da clínica (pode estar gravado como JSONB ou string)
+  let addr: any = {};
+  if (clinic.address) {
+    if (typeof clinic.address === 'object') {
+      addr = clinic.address;
+    } else if (typeof clinic.address === 'string') {
+      try {
+        addr = JSON.parse(clinic.address);
+      } catch {
+        addr = {};
+      }
+    }
+  }
+
+  const rawPhone = clinic.phone || profile.phone || '';
+  const cleanPhone = String(rawPhone).replace(/\D/g, '');
+
+  const payload: any = {
+    name: billing_name || clinic.legal_name || clinic.name || profile.full_name || 'Cliente Pluri-Health',
+    email: billing_email || clinic.email || profile.email || user.email || 'contato@plurihealth.com',
+    cpfCnpj: cleanCpfCnpj,
+    externalReference: clinic_id || clinic.id,
+  };
+
+  if (cleanPhone) {
+    // Se for celular (11 dígitos), enviar mobilePhone e phone; se 10 dígitos, phone
+    payload.phone = cleanPhone;
+    if (cleanPhone.length >= 11) {
+      payload.mobilePhone = cleanPhone;
+    }
+  }
+
+  const cleanCep = String(addr.cep || '').replace(/\D/g, '');
+  if (cleanCep && cleanCep.length === 8) {
+    payload.postalCode = cleanCep;
+  }
+
+  if (addr.street) {
+    payload.address = String(addr.street).trim();
+  }
+
+  if (addr.number) {
+    payload.addressNumber = String(addr.number).trim();
+  }
+
+  if (addr.complement) {
+    payload.complement = String(addr.complement).trim();
+  }
+
+  if (addr.neighborhood) {
+    payload.province = String(addr.neighborhood).trim();
+  }
+
+  return payload;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -120,6 +249,8 @@ serve(async (req) => {
       payment_id,
       subscription_id,
       customer_id,
+      clinic_data,
+      allow_duplicate_cnpj,
     } = body;
 
     const getPlanLimits = (p: string) => {
@@ -265,6 +396,329 @@ serve(async (req) => {
       });
     }
 
+    // =========================================================================
+    // AÇÃO EXTRA 3: CREATE_CLINIC_WITH_VERIFIED_CARD
+    // Criação de Clínica com Validação Obrigatória de Cartão e Cobrança de R$ 0,01
+    // =========================================================================
+    if (action === 'CREATE_CLINIC_WITH_VERIFIED_CARD') {
+      if (!credit_card_data?.card) {
+        return new Response(JSON.stringify({ error: 'Os dados do cartão de crédito são obrigatórios para criar o espaço.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const card = credit_card_data.card;
+      if (!card.holderName || !card.number || !card.expiryMonth || !card.expiryYear || !card.ccv) {
+        return new Response(JSON.stringify({ error: 'Por favor, preencha todos os campos do cartão de crédito (Nome, Número, Validade e CVV).' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!clinic_data?.name) {
+        return new Response(JSON.stringify({ error: 'O nome da clínica é obrigatório.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const targetDoc = String(clinic_data?.cnpj || clinic_data?.cpf || cpf_cnpj || '').replace(/\D/g, '');
+      if (!targetDoc || !isValidDocument(targetDoc)) {
+        return new Response(JSON.stringify({ error: 'O CPF ou CNPJ informado é inválido. Por favor, revise os dígitos.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // 1. Preparar payloads do cartão e do titular
+      const cleanCard = String(card.number || '').replace(/\D/g, '');
+      const cardPayload = {
+        holderName: String(card.holderName || '').trim(),
+        number: cleanCard,
+        expiryMonth: String(card.expiryMonth || '').padStart(2, '0'),
+        expiryYear: String(card.expiryYear || '').length === 2 ? `20${card.expiryYear}` : String(card.expiryYear || ''),
+        ccv: String(card.ccv || '').trim(),
+      };
+
+      const holder = credit_card_data.holder || {};
+      const addr = (clinic_data?.address && typeof clinic_data.address === 'object') ? clinic_data.address : {};
+      const holderPostalCode = String(holder.postalCode || addr.cep || '01001000').replace(/\D/g, '') || '01001000';
+      const holderPhone = String(holder.phone || clinic_data?.phone || '11999999999').replace(/\D/g, '') || '11999999999';
+      const holderAddressNumber = String(holder.addressNumber || addr.number || 'SN').trim() || 'SN';
+
+      const cardHolderPayload = {
+        name: String(holder.name || cardPayload.holderName || clinic_data?.name || 'Titular').trim(),
+        email: String(holder.email || clinic_data?.email || user.email || 'contato@plurihealth.com').trim(),
+        cpfCnpj: String(holder.cpfCnpj || targetDoc).replace(/\D/g, ''),
+        postalCode: holderPostalCode,
+        addressNumber: holderAddressNumber,
+        phone: holderPhone,
+        mobilePhone: holderPhone,
+      };
+
+      // 2. Criar ou localizar cliente no Asaas com dados completos
+      const customerPayload: any = {
+        name: clinic_data?.legal_name || clinic_data?.name || cardHolderPayload.name || 'Cliente Pluri-Health',
+        email: clinic_data?.email || user.email || 'contato@plurihealth.com',
+        cpfCnpj: targetDoc,
+        externalReference: user.id,
+      };
+      if (holderPhone) {
+        customerPayload.phone = holderPhone;
+        if (holderPhone.length >= 11) customerPayload.mobilePhone = holderPhone;
+      }
+      if (holderPostalCode.length === 8) customerPayload.postalCode = holderPostalCode;
+      if (addr.street) customerPayload.address = String(addr.street).trim();
+      if (addr.number) customerPayload.addressNumber = String(addr.number).trim();
+      if (addr.complement) customerPayload.complement = String(addr.complement).trim();
+      if (addr.neighborhood) customerPayload.province = String(addr.neighborhood).trim();
+
+      let customerId: string | null = null;
+      const existingCust = await asaas.findCustomerByCpfCnpj(targetDoc);
+      if (existingCust) {
+        customerId = existingCust.id;
+        try {
+          await asaas.updateCustomer(customerId, customerPayload);
+        } catch (err) {
+          console.warn('[asaas-subscription] Não foi possível atualizar cliente:', err);
+        }
+      } else {
+        const newCust = await asaas.createCustomer(customerPayload);
+        customerId = newCust.id;
+      }
+
+      // 3. Executar Cobrança de Confirmação de R$ 0,01 no Asaas
+      const todayStr = new Date().toISOString().split('T')[0];
+      let verificationPayment: any = null;
+      let tokenResult: any = null;
+
+      try {
+        console.log('[asaas-subscription] Processando cobrança de verificação (R$ 0,01) para customer:', customerId);
+        verificationPayment = await asaas.createPayment({
+          customer: customerId,
+          billingType: 'CREDIT_CARD',
+          value: 0.01,
+          dueDate: todayStr,
+          description: 'Pluri-Health - Validação de Cartão de Crédito (R$ 0,01)',
+          creditCard: cardPayload,
+          creditCardHolderInfo: cardHolderPayload,
+        });
+      } catch (chargeErr: any) {
+        const errStr = String(chargeErr?.message || chargeErr || '');
+        console.warn('[asaas-subscription] Cobrança de 0.01 retornou:', errStr);
+
+        // Se o erro for de valor mínimo (ex: R$ 5,00)
+        if (errStr.toLowerCase().includes('mínimo') || errStr.toLowerCase().includes('minimo') || errStr.includes('5.00') || errStr.includes('5,00')) {
+          console.log('[asaas-subscription] Processando validação com piso de R$ 5,00 e estorno imediato...');
+          verificationPayment = await asaas.createPayment({
+            customer: customerId,
+            billingType: 'CREDIT_CARD',
+            value: 5.00,
+            dueDate: todayStr,
+            description: 'Pluri-Health - Validação de Segurança (Estorno Automático)',
+            creditCard: cardPayload,
+            creditCardHolderInfo: cardHolderPayload,
+          });
+
+          // Estorno imediato para não onerar o usuário
+          if (verificationPayment?.id) {
+            try {
+              await asaas.refundPayment(verificationPayment.id, 5.00, 'Estorno automático de validação Pluri-Health');
+              console.log('[asaas-subscription] Estorno imediato realizado com sucesso para payment:', verificationPayment.id);
+            } catch (refErr) {
+              console.warn('[asaas-subscription] Aviso ao estornar cobrança de teste:', refErr);
+            }
+          }
+        } else {
+          // O cartão foi realmente recusado pelo banco emissor (saldo, dados inválidos, etc.)
+          return new Response(JSON.stringify({
+            success: false,
+            error: chargeErr.message || 'Cartão de crédito não autorizado pelo banco emissor. Por favor, revise os dados ou tente outro cartão.',
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      // 4. Tokenizar o cartão aprovado
+      try {
+        tokenResult = await asaas.tokenizeCreditCard({
+          customer: customerId,
+          creditCard: cardPayload,
+          creditCardHolderInfo: cardHolderPayload,
+        });
+      } catch (tokErr) {
+        console.warn('[asaas-subscription] Aviso ao tokenizar cartão:', tokErr);
+      }
+
+      // 5. Cartão aprovado! Criar clínica atomicamente no Supabase com service_role
+      const selectedPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
+      const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
+      const config = (PLAN_PRICING_CONFIG[selectedPlan] as any)[cycleKey] || (PLAN_PRICING_CONFIG[selectedPlan] as any).annual;
+
+      const { data: signupRes, error: signupErr } = await supabase.rpc('handle_signup', {
+        _user_id: user.id,
+        _email: clinic_data?.email || user.email || '',
+        _cnpj: targetDoc,
+        _subscription_plan: selectedPlan,
+        _full_name: user.user_metadata?.full_name || null,
+        _clinic_name: clinic_data?.name || 'Minha Clínica',
+        _allow_duplicate_cnpj: Boolean(allow_duplicate_cnpj),
+      });
+
+      if (signupErr) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: signupErr.message || 'Erro ao cadastrar a clínica no banco de dados.',
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const createdClinicId = signupRes?.clinic_id;
+      if (!createdClinicId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Não foi possível gerar a identificação do novo espaço.',
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Atualizar referência externa no Asaas com o clinic_id real
+      try {
+        await asaas.updateCustomer(customerId, { externalReference: createdClinicId });
+      } catch (e) {
+        console.warn('[asaas-subscription] Falha ao atualizar externalReference no Asaas:', e);
+      }
+
+      // Atualizar dados cadastrais da clínica
+      await supabase
+        .from('clinics')
+        .update({
+          name: clinic_data?.name,
+          logo_url: clinic_data?.logo_url || null,
+          email: clinic_data?.email || null,
+          phone: clinic_data?.phone || null,
+          legal_name: clinic_data?.legal_name || null,
+          address: clinic_data?.address || null,
+          business_hours: clinic_data?.business_hours ? { description: clinic_data.business_hours } : null,
+          subaccount_limit: selectedPlan === 'clinic' ? Math.max(1, parseInt(String(clinic_data?.subaccount_limit || '30'), 10)) : 1,
+          concurrent_access_limit: selectedPlan === 'clinic' ? Math.max(2, parseInt(String(clinic_data?.concurrent_access_limit || '4'), 10)) : 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', createdClinicId);
+
+      // Atualizar termos no perfil do owner
+      await supabase
+        .from('profiles')
+        .update({
+          owner_terms_accepted_at: new Date().toISOString(),
+          cpf: targetDoc.length === 11 ? targetDoc : null,
+        })
+        .eq('id', user.id);
+
+      // 8. Tratar Validação de Cupom Promocional (ex: SOUPLURIBETA para 180 dias de Beta Tester)
+      let trialDays = 7;
+      let appliedCouponId: string | null = null;
+      let appliedCouponCode: string | null = null;
+      let subscriptionStatus = 'TRIAL';
+
+      if (coupon_code && String(coupon_code).trim() !== '') {
+        const { data: couponRes, error: couponErr } = await supabase.rpc('validate_subscription_coupon', {
+          _code: coupon_code,
+          _plan_type: selectedPlan,
+        });
+
+        if (!couponErr && couponRes && couponRes.valid) {
+          appliedCouponId = couponRes.coupon_id;
+          appliedCouponCode = couponRes.code;
+          if (couponRes.discount_type === 'TRIAL_DAYS') {
+            trialDays = Math.max(7, Math.round(Number(couponRes.discount_value || 180)));
+            subscriptionStatus = 'BETA';
+          }
+
+          // Incrementar uso do cupom
+          await supabase
+            .from('subscription_coupons')
+            .update({ times_redeemed: (couponRes.times_redeemed || 0) + 1, updated_at: new Date().toISOString() })
+            .eq('id', appliedCouponId);
+        }
+      }
+
+      // Inserir em clinic_subscriptions com status apropriado, duração e trial_card_token
+      const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+      const nowIso = new Date().toISOString();
+
+      const subPayload = {
+        clinic_id: createdClinicId,
+        account_owner_user_id: user.id,
+        asaas_customer_id: customerId,
+        payment_method: 'CREDIT_CARD',
+        plan_type: selectedPlan,
+        billing_cycle: 'ANNUAL',
+        base_monthly_price: config.baseMonthlyEq,
+        base_concurrent_access_count: 4,
+        base_subaccount_limit: selectedPlan === 'clinic' ? 30 : 1,
+        total_recurring_monthly_price: 0,
+        status: subscriptionStatus,
+        is_free_trial: true,
+        is_read_only: false,
+        trial_card_token: tokenResult?.creditCardToken || 'verified_card',
+        period_duration_days: trialDays,
+        current_period_start: nowIso,
+        current_period_end: expiresAt,
+        expires_at: expiresAt,
+        trial_ends_at: expiresAt,
+        applied_coupon_id: appliedCouponId,
+        coupon_code: appliedCouponCode,
+        trial_max_attendances: 20,
+        trial_max_patients: 5,
+        trial_max_custom_forms: 2,
+        updated_at: nowIso,
+      };
+
+      const { data: createdSub, error: subErr } = await supabase
+        .from('clinic_subscriptions')
+        .upsert(subPayload, { onConflict: 'clinic_id' })
+        .select()
+        .maybeSingle();
+
+      if (subErr) {
+        console.warn('[asaas-subscription] Erro ao gravar clinic_subscriptions:', subErr);
+      }
+
+      // Registrar fatura de verificação em subscription_invoices
+      if (verificationPayment?.id) {
+        await supabase.from('subscription_invoices').insert({
+          clinic_id: createdClinicId,
+          asaas_payment_id: verificationPayment.id,
+          status: 'CONFIRMED',
+          value: verificationPayment.value || 0.01,
+          due_date: todayStr,
+          billing_type: 'CREDIT_CARD',
+          invoice_url: verificationPayment.invoiceUrl || null,
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        clinic_id: createdClinicId,
+        clinic_name: clinic_data?.name,
+        subscription: createdSub,
+        creditCardToken: tokenResult?.creditCardToken || null,
+        paymentId: verificationPayment?.id || null,
+        message: 'Clínica criada e teste de 7 dias ativado com cartão validado com sucesso!',
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (!clinic_id) {
       return new Response(JSON.stringify({ error: 'clinic_id é obrigatório.' }), {
         status: 400,
@@ -342,6 +796,8 @@ serve(async (req) => {
         const { data: couponRes, error: couponErr } = await supabase.rpc('validate_subscription_coupon', {
           _code: coupon_code,
           _plan_type: selectedPlan,
+          _clinic_id: clinic_id,
+          _billing_cycle: cycle,
         });
 
         if (couponErr || !couponRes || !couponRes.valid) {
@@ -389,24 +845,64 @@ serve(async (req) => {
 
       if (!customerId) {
         if (!cleanCpfCnpj) {
-          return new Response(JSON.stringify({ error: 'CPF ou CNPJ válido é obrigatório para registrar cobranças.' }), {
+          return new Response(JSON.stringify({ error: 'Por favor, informe um CPF ou CNPJ válido para gerar a cobrança.' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
 
+        if (!isValidDocument(cleanCpfCnpj)) {
+          return new Response(JSON.stringify({ error: 'O CPF ou CNPJ informado é inválido. Por favor, revise os dígitos.' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Se a clínica não tinha documento cadastrado ou estava inválido, atualizar no banco
+        if (cleanCpfCnpj && (!clinic.cnpj || !isValidDocument(clinic.cnpj))) {
+          await supabase.from('clinics').update({ cnpj: cleanCpfCnpj }).eq('id', clinic_id);
+        }
+
+        const customerPayload = buildCustomerPayload({
+          clinic,
+          profile,
+          user,
+          cleanCpfCnpj,
+          billing_name,
+          billing_email,
+          clinic_id,
+        });
+
         const existingCustomer = await asaas.findCustomerByCpfCnpj(cleanCpfCnpj);
         if (existingCustomer) {
           customerId = existingCustomer.id;
+          // Manter o cadastro do cliente atualizado com os dados completos de endereço e contato
+          try {
+            await asaas.updateCustomer(customerId, customerPayload);
+          } catch (updateCustErr) {
+            console.warn('[asaas-subscription] Não foi possível atualizar cliente existente no Asaas:', updateCustErr);
+          }
         } else {
-          const newCustomer = await asaas.createCustomer({
-            name: billing_name || clinic.legal_name || clinic.name || profile.full_name || 'Cliente Pluri-Health',
-            email: billing_email || clinic.email || profile.email || user.email,
-            cpfCnpj: cleanCpfCnpj,
-            phone: clinic.phone || profile.phone,
-            externalReference: clinic_id,
-          });
+          const newCustomer = await asaas.createCustomer(customerPayload);
           customerId = newCustomer.id;
+        }
+      } else {
+        // Se a assinatura já tinha customerId, sincronizar endereço/contato mais recentes da clínica
+        if (cleanCpfCnpj && isValidDocument(cleanCpfCnpj)) {
+          const customerPayload = buildCustomerPayload({
+            clinic,
+            profile,
+            user,
+            cleanCpfCnpj,
+            billing_name,
+            billing_email,
+            clinic_id,
+          });
+          try {
+            await asaas.updateCustomer(customerId, customerPayload);
+          } catch (updateCustErr) {
+            console.warn('[asaas-subscription] Não foi possível atualizar cliente pré-existente no Asaas:', updateCustErr);
+          }
         }
       }
 
@@ -418,7 +914,7 @@ serve(async (req) => {
       } else if (billing_type !== 'CREDIT_CARD') {
         dueDateObj.setDate(dueDateObj.getDate() + 1);
       }
-      const nextDueStr = billing_type === 'CREDIT_CARD' ? todayStr : dueDateObj.toISOString().split('T')[0];
+      const nextDueStr = (billing_type === 'CREDIT_CARD' && trialDays === 0) ? todayStr : dueDateObj.toISOString().split('T')[0];
 
       const asaasCycle = cycle === 'annual' ? 'ANNUALLY' : cycle === 'quarterly' ? 'QUARTERLY' : 'MONTHLY';
       const parsedInstallments = Math.max(1, parseInt(String(installment_count || '1'), 10) || 1);
@@ -834,24 +1330,57 @@ serve(async (req) => {
 
       if (!customerId) {
         if (!cleanCpfCnpj) {
-          return new Response(JSON.stringify({ error: 'CPF ou CNPJ válido é obrigatório para registrar o cartão.' }), {
+          return new Response(JSON.stringify({ error: 'Por favor, informe um CPF ou CNPJ válido para registrar o cartão.' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
 
+        if (!isValidDocument(cleanCpfCnpj)) {
+          return new Response(JSON.stringify({ error: 'O CPF ou CNPJ informado é inválido. Por favor, revise os dígitos.' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const customerPayload = buildCustomerPayload({
+          clinic,
+          profile,
+          user,
+          cleanCpfCnpj,
+          billing_name,
+          billing_email,
+          clinic_id,
+        });
+
         const existingCustomer = await asaas.findCustomerByCpfCnpj(cleanCpfCnpj);
         if (existingCustomer) {
           customerId = existingCustomer.id;
+          try {
+            await asaas.updateCustomer(customerId, customerPayload);
+          } catch (updateCustErr) {
+            console.warn('[asaas-subscription] Não foi possível atualizar cliente existente no Asaas:', updateCustErr);
+          }
         } else {
-          const newCustomer = await asaas.createCustomer({
-            name: billing_name || clinic.legal_name || clinic.name || profile.full_name || 'Cliente Pluri-Health',
-            email: billing_email || clinic.email || profile.email || user.email,
-            cpfCnpj: cleanCpfCnpj,
-            phone: clinic.phone || profile.phone,
-            externalReference: clinic_id,
-          });
+          const newCustomer = await asaas.createCustomer(customerPayload);
           customerId = newCustomer.id;
+        }
+      } else {
+        if (cleanCpfCnpj && isValidDocument(cleanCpfCnpj)) {
+          const customerPayload = buildCustomerPayload({
+            clinic,
+            profile,
+            user,
+            cleanCpfCnpj,
+            billing_name,
+            billing_email,
+            clinic_id,
+          });
+          try {
+            await asaas.updateCustomer(customerId, customerPayload);
+          } catch (updateCustErr) {
+            console.warn('[asaas-subscription] Não foi possível atualizar cliente pré-existente no Asaas:', updateCustErr);
+          }
         }
       }
 
@@ -879,6 +1408,51 @@ serve(async (req) => {
         mobilePhone: holderPhone,
       };
 
+      // Executar cobrança de verificação de R$ 0,01
+      const todayStr = new Date().toISOString().split('T')[0];
+      let verificationPayment: any = null;
+
+      try {
+        console.log('[asaas-subscription] Processando cobrança de verificação (R$ 0,01) para customer:', customerId);
+        verificationPayment = await asaas.createPayment({
+          customer: customerId,
+          billingType: 'CREDIT_CARD',
+          value: 0.01,
+          dueDate: todayStr,
+          description: 'Pluri-Health - Validação de Cartão de Crédito (R$ 0,01)',
+          creditCard: cardPayload,
+          creditCardHolderInfo: cardHolderPayload,
+        });
+      } catch (chargeErr: any) {
+        const errStr = String(chargeErr?.message || chargeErr || '');
+        if (errStr.toLowerCase().includes('mínimo') || errStr.toLowerCase().includes('minimo') || errStr.includes('5.00') || errStr.includes('5,00')) {
+          verificationPayment = await asaas.createPayment({
+            customer: customerId,
+            billingType: 'CREDIT_CARD',
+            value: 5.00,
+            dueDate: todayStr,
+            description: 'Pluri-Health - Validação de Segurança (Estorno Automático)',
+            creditCard: cardPayload,
+            creditCardHolderInfo: cardHolderPayload,
+          });
+          if (verificationPayment?.id) {
+            try {
+              await asaas.refundPayment(verificationPayment.id, 5.00, 'Estorno automático de validação Pluri-Health');
+            } catch (refErr) {
+              console.warn('[asaas-subscription] Aviso ao estornar cobrança de teste:', refErr);
+            }
+          }
+        } else {
+          return new Response(JSON.stringify({
+            success: false,
+            error: chargeErr.message || 'Cartão de crédito não autorizado pelo banco emissor.',
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
       console.log('[asaas-subscription] Tokenizando cartão para customer:', customerId);
       const tokenResult = await asaas.tokenizeCreditCard({
         customer: customerId,
@@ -886,13 +1460,56 @@ serve(async (req) => {
         creditCardHolderInfo: cardHolderPayload,
       });
 
+      // Se a cobrança de verificação foi gerada, salvar fatura
+      if (verificationPayment?.id && clinic_id) {
+        await supabase.from('subscription_invoices').insert({
+          clinic_id: clinic_id,
+          asaas_payment_id: verificationPayment.id,
+          status: 'CONFIRMED',
+          value: verificationPayment.value || 0.01,
+          due_date: todayStr,
+          billing_type: 'CREDIT_CARD',
+          invoice_url: verificationPayment.invoiceUrl || null,
+        });
+      }
+
       const selectedPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
       const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
       const cycle = cycleKey in PLAN_PRICING_CONFIG[selectedPlan] ? cycleKey : 'annual';
       const config = (PLAN_PRICING_CONFIG[selectedPlan] as any)[cycle];
       const planLimits = getPlanLimits(selectedPlan);
 
-      // Associar token e customer à assinatura da clínica
+      // Associar token, cupom e customer à assinatura da clínica
+      let trialDays = 7;
+      let appliedCouponId: string | null = null;
+      let appliedCouponCode: string | null = null;
+      let statusToSet = 'TRIAL';
+
+      if (coupon_code && String(coupon_code).trim() !== '') {
+        const { data: couponRes, error: couponErr } = await supabase.rpc('validate_subscription_coupon', {
+          _code: coupon_code,
+          _plan_type: selectedPlan,
+          _clinic_id: clinic_id,
+          _billing_cycle: cycle,
+        });
+
+        if (!couponErr && couponRes && couponRes.valid) {
+          appliedCouponId = couponRes.coupon_id;
+          appliedCouponCode = couponRes.code;
+          if (couponRes.discount_type === 'TRIAL_DAYS') {
+            trialDays = Math.max(7, Math.round(Number(couponRes.discount_value || 180)));
+            statusToSet = 'BETA';
+          }
+
+          await supabase
+            .from('subscription_coupons')
+            .update({ times_redeemed: (couponRes.times_redeemed || 0) + 1, updated_at: new Date().toISOString() })
+            .eq('id', appliedCouponId);
+        }
+      }
+
+      const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+
       const subPayload: Record<string, unknown> = {
         clinic_id: clinic_id,
         account_owner_user_id: user.id,
@@ -908,13 +1525,13 @@ serve(async (req) => {
         billing_email: billing_email || clinic.email || profile.email || user.email,
         billing_name: billing_name || clinic.name || profile.full_name,
         trial_card_token: tokenResult.creditCardToken,
+        trial_ends_at: trialEndsAt,
+        applied_coupon_id: appliedCouponId,
+        coupon_code: appliedCouponCode,
+        status: statusToSet,
+        is_free_trial: true,
         updated_at: new Date().toISOString(),
       };
-
-      if (!subscription) {
-        subPayload.status = 'TRIAL';
-        subPayload.is_free_trial = true;
-      }
 
       const { data: updatedSub, error: updateSubErr } = await supabase
         .from('clinic_subscriptions')

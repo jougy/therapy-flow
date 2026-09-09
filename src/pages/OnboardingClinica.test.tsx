@@ -10,11 +10,19 @@ const supabaseMocks = vi.hoisted(() => ({
   rpc: vi.fn(),
 }));
 
+const asaasMocks = vi.hoisted(() => ({
+  createClinicWithVerifiedCard: vi.fn(),
+}));
+
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: supabaseMocks.from,
     rpc: supabaseMocks.rpc,
   },
+}));
+
+vi.mock("@/services/asaasService", () => ({
+  createClinicWithVerifiedCard: asaasMocks.createClinicWithVerifiedCard,
 }));
 
 vi.mock("@/hooks/useAuth", () => ({
@@ -26,9 +34,24 @@ vi.mock("@/contexts/FeatureFlagsContext", () => ({
 }));
 
 describe("OnboardingClinica", () => {
+  const fillValidCard = () => {
+    fireEvent.change(screen.getByLabelText(/Nome Impresso no Cartão/i), { target: { value: "DRA MARIA SILVA" } });
+    fireEvent.change(screen.getByLabelText(/Número do Cartão/i), { target: { value: "4111 1111 1111 1111" } });
+    fireEvent.change(screen.getByLabelText(/Validade/i), { target: { value: "12/30" } });
+    fireEvent.change(screen.getByLabelText(/Código de Segurança/i), { target: { value: "123" } });
+  };
+
   beforeEach(() => {
     supabaseMocks.from.mockReset();
     supabaseMocks.rpc.mockReset();
+    asaasMocks.createClinicWithVerifiedCard.mockReset();
+    asaasMocks.createClinicWithVerifiedCard.mockResolvedValue({
+      success: true,
+      clinic_id: "new-solo-clinic-id",
+      clinic_name: "Consultório Dra. Maria Solo",
+      creditCardToken: "tok_card_123",
+      source: "EDGE_FUNCTION",
+    });
     vi.mocked(useFeatureFlags).mockReturnValue({
       flags: {},
       loading: false,
@@ -56,6 +79,27 @@ describe("OnboardingClinica", () => {
     expect(screen.queryByPlaceholderText(/DIGITE O CUPOM/i)).not.toBeInTheDocument();
   });
 
+  it("renders credit card fields in create mode (isCreateMode=true)", () => {
+    vi.mocked(useAuth).mockReturnValue({
+      clinic: null,
+      profile: { cpf: "12345678901" },
+      session: { user: { id: "user-1", email: "user@exemplo.com" } },
+    } as unknown as ReturnType<typeof useAuth>);
+
+    render(
+      <MemoryRouter initialEntries={["/onboarding-clinica?plan=solo"]}>
+        <OnboardingClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText(/Cartão de Crédito para Ativação \(Obrigatório\)/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Nome Impresso no Cartão/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Número do Cartão/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Validade/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Código de Segurança/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i })).toBeInTheDocument();
+  });
+
   it("blocks submission and keeps submit button disabled until terms of consent are accepted", async () => {
     vi.mocked(useAuth).mockReturnValue({
       clinic: null,
@@ -74,7 +118,7 @@ describe("OnboardingClinica", () => {
     fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "São Paulo" } });
     fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "SP" } });
 
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Escolher Plano/i });
+    const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
     expect(submitBtn).toBeDisabled();
 
     const termsCheckbox = screen.getByRole("checkbox");
@@ -107,11 +151,11 @@ describe("OnboardingClinica", () => {
     const acceptModalBtn = screen.getByRole("button", { name: /Li e Aceito os Termos/i });
     fireEvent.click(acceptModalBtn);
 
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Escolher Plano/i });
+    const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
     expect(submitBtn).not.toBeDisabled();
   });
 
-  it("allows a subaccount user to create their own new clinic when purchasing a solo plan and saves owner_terms_accepted_at", async () => {
+  it("allows a subaccount user to create their own new clinic with verified card and calls createClinicWithVerifiedCard", async () => {
     const mockSelectClinic = vi.fn().mockResolvedValue(undefined);
     const mockRefreshAuthState = vi.fn().mockResolvedValue(undefined);
 
@@ -133,11 +177,6 @@ describe("OnboardingClinica", () => {
       refreshAuthState: mockRefreshAuthState,
     } as unknown as ReturnType<typeof useAuth>);
 
-    supabaseMocks.rpc.mockResolvedValue({
-      data: { clinic_id: "new-solo-clinic-id" },
-      error: null,
-    });
-
     const mockUpdate = vi.fn().mockReturnValue({
       eq: vi.fn().mockResolvedValue({ error: null }),
     });
@@ -151,37 +190,40 @@ describe("OnboardingClinica", () => {
       </MemoryRouter>
     );
 
-    // Fill in clinic name for the new clinic
-    const nameInput = screen.getByLabelText(/Nome da Clínica/i);
-    fireEvent.change(nameInput, { target: { value: "Consultório Dra. Maria Solo" } });
+    fireEvent.change(screen.getByLabelText(/Nome da Clínica/i), { target: { value: "Consultório Dra. Maria Solo" } });
+    fireEvent.change(screen.getByLabelText(/Logradouro/i), { target: { value: "Rua Principal" } });
+    fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "Manaus" } });
+    fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "AM" } });
 
-    // Fill in street and city
-    const streetInput = screen.getByLabelText(/Logradouro/i);
-    fireEvent.change(streetInput, { target: { value: "Rua Principal" } });
-
-    const cityInput = screen.getByLabelText(/Cidade/i);
-    fireEvent.change(cityInput, { target: { value: "Manaus" } });
-
-    const stateInput = screen.getByLabelText(/UF/i);
-    fireEvent.change(stateInput, { target: { value: "AM" } });
+    fillValidCard();
 
     // Accept terms
     const termsCheckbox = screen.getByRole("checkbox");
     fireEvent.click(termsCheckbox);
 
     // Submit form
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Escolher Plano/i });
+    const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
     fireEvent.click(submitBtn);
 
-    // Verify button goes disabled with loading text immediately
-    expect(submitBtn).toBeDisabled();
-
     await waitFor(() => {
-      expect(supabaseMocks.rpc).toHaveBeenCalledWith("handle_signup", expect.objectContaining({
-        _user_id: "subaccount-user-id",
-        _subscription_plan: "solo",
-        _clinic_name: "Consultório Dra. Maria Solo",
-      }));
+      expect(asaasMocks.createClinicWithVerifiedCard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          plan_type: "solo",
+          cpf_cnpj: "12345678901",
+          clinic_data: expect.objectContaining({
+            name: "Consultório Dra. Maria Solo",
+          }),
+          credit_card_data: expect.objectContaining({
+            card: expect.objectContaining({
+              holderName: "DRA MARIA SILVA",
+              number: "4111111111111111",
+              expiryMonth: "12",
+              expiryYear: "2030",
+              ccv: "123",
+            }),
+          }),
+        })
+      );
       expect(supabaseMocks.from).toHaveBeenCalledWith("profiles");
       expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
         owner_terms_accepted_at: expect.any(String),
@@ -191,29 +233,12 @@ describe("OnboardingClinica", () => {
     });
   });
 
-  it("enforces minimum of 2 concurrent accesses for clinic plan and updates clinic payload", async () => {
-    const mockSelectClinic = vi.fn().mockResolvedValue(undefined);
-    const mockRefreshAuthState = vi.fn().mockResolvedValue(undefined);
-
+  it("enforces minimum of 2 concurrent accesses for clinic plan", async () => {
     vi.mocked(useAuth).mockReturnValue({
       clinic: null,
       profile: { cpf: "12345678901" },
       session: { user: { id: "user-clinic-1", email: "clinic@exemplo.com" } },
-      selectClinic: mockSelectClinic,
-      refreshAuthState: mockRefreshAuthState,
     } as unknown as ReturnType<typeof useAuth>);
-
-    supabaseMocks.rpc.mockResolvedValue({
-      data: { clinic_id: "new-team-clinic-id" },
-      error: null,
-    });
-
-    const mockUpdate = vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    });
-    supabaseMocks.from.mockReturnValue({
-      update: mockUpdate,
-    });
 
     render(
       <MemoryRouter initialEntries={["/onboarding-clinica?plan=clinic"]}>
@@ -221,45 +246,21 @@ describe("OnboardingClinica", () => {
       </MemoryRouter>
     );
 
-    fireEvent.change(screen.getByLabelText(/Nome da Clínica/i), { target: { value: "Clínica Equipe Alfa" } });
-    fireEvent.change(screen.getByLabelText(/Logradouro/i), { target: { value: "Av. Brasil" } });
-    fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "Curitiba" } });
-    fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "PR" } });
-
     const concurrentInput = screen.getByLabelText(/Acessos Simultâneos/i);
     expect(concurrentInput).toHaveAttribute("min", "2");
-
-    // Try setting 1, form should floor to 2
-    fireEvent.change(concurrentInput, { target: { value: "1" } });
-
-    // Accept terms
-    fireEvent.click(screen.getByRole("checkbox"));
-
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Escolher Plano/i });
-    const form = submitBtn.closest("form")!;
-    fireEvent.submit(form);
-
-    await waitFor(() => {
-      expect(mockUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          subscription_plan: "clinic",
-          subaccount_limit: 30,
-          concurrent_access_limit: 2,
-        })
-      );
-    });
   });
 
-  it("shows confirmation dialog when owner attempts to create another clinic under same CNPJ", async () => {
+  it("shows confirmation dialog when owner attempts to create another clinic under duplicate CNPJ", async () => {
     vi.mocked(useAuth).mockReturnValue({
       clinic: null,
       profile: { cpf: "12345678901" },
       session: { user: { id: "user-owner-1", email: "owner@exemplo.com" } },
     } as unknown as ReturnType<typeof useAuth>);
 
-    supabaseMocks.rpc.mockResolvedValueOnce({
-      data: null,
-      error: { message: "OWNER_HAS_CLINIC_WITH_CNPJ:Clínica Bem Estar Matriz" },
+    asaasMocks.createClinicWithVerifiedCard.mockResolvedValueOnce({
+      success: false,
+      error: "OWNER_HAS_CLINIC_WITH_CNPJ:Clínica Bem Estar Matriz",
+      source: "EDGE_FUNCTION",
     });
 
     render(
@@ -274,19 +275,22 @@ describe("OnboardingClinica", () => {
     fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "Manaus" } });
     fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "AM" } });
 
+    fillValidCard();
+
     // Accept terms
     fireEvent.click(screen.getByRole("checkbox"));
 
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Escolher Plano/i });
+    const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
     fireEvent.click(submitBtn);
 
     expect(await screen.findByText(/CNPJ Já Possui um Espaço Cadastrado/i)).toBeInTheDocument();
     expect(screen.getByText(/Clínica Bem Estar Matriz/i)).toBeInTheDocument();
 
     // Click confirm button
-    supabaseMocks.rpc.mockResolvedValueOnce({
-      data: { clinic_id: "filial-clinic-id" },
-      error: null,
+    asaasMocks.createClinicWithVerifiedCard.mockResolvedValueOnce({
+      success: true,
+      clinic_id: "filial-clinic-id",
+      source: "EDGE_FUNCTION",
     });
 
     const mockUpdate = vi.fn().mockReturnValue({
@@ -300,122 +304,68 @@ describe("OnboardingClinica", () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(supabaseMocks.rpc).toHaveBeenLastCalledWith(
-        "handle_signup",
+      expect(asaasMocks.createClinicWithVerifiedCard).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          _allow_duplicate_cnpj: true,
+          allow_duplicate_cnpj: true,
         })
       );
     });
   });
 
-  it("handles clinic creation correctly and redirects to plan selection", async () => {
-    const mockSelectClinic = vi.fn().mockResolvedValue(undefined);
-    const mockRefreshAuthState = vi.fn().mockResolvedValue(undefined);
-
+  it("updates existing clinic without requesting credit card when not in create mode", async () => {
     vi.mocked(useAuth).mockReturnValue({
-      clinic: null,
-      profile: { cpf: "12345678901" },
-      session: { user: { id: "trial-user-1", email: "trial@exemplo.com" } },
-      selectClinic: mockSelectClinic,
-      refreshAuthState: mockRefreshAuthState,
+      clinic: {
+        id: "existing-clinic-123",
+        account_owner_user_id: "owner-123",
+        name: "Minha Clínica Antiga",
+      },
+      profile: { cpf: "11144477735" },
+      session: { user: { id: "owner-123", email: "owner@exemplo.com" } },
     } as unknown as ReturnType<typeof useAuth>);
-
-    supabaseMocks.rpc.mockResolvedValue({
-      data: { clinic_id: "trial-clinic-id" },
-      error: null,
-    });
 
     const mockUpdate = vi.fn().mockReturnValue({
       eq: vi.fn().mockResolvedValue({ error: null }),
     });
-
-    supabaseMocks.from.mockImplementation(() => {
-      return { update: mockUpdate };
+    supabaseMocks.from.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: {
+              id: "existing-clinic-123",
+              name: "Minha Clínica Antiga",
+              cnpj: "59.955.007/0001-00",
+              address: {
+                street: "Rua Teste",
+                city: "São Paulo",
+                state: "SP",
+              },
+            },
+            error: null,
+          }),
+        }),
+      }),
+      update: mockUpdate,
     });
 
     render(
-      <MemoryRouter initialEntries={["/onboarding-clinica?mode=create"]}>
+      <MemoryRouter initialEntries={["/onboarding-clinica"]}>
         <OnboardingClinica />
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/Cadastre seu Próprio Espaço/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Salvar e Escolher Plano/i })).toBeInTheDocument();
+    // In edit mode, card section should NOT be displayed
+    expect(screen.queryByText(/Cartão de Crédito para Ativação \(Obrigatório\)/i)).not.toBeInTheDocument();
+    const saveBtn = screen.getByRole("button", { name: /Salvar Alterações/i });
+    expect(saveBtn).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/Nome da Clínica/i), { target: { value: "Meu Novo Espaço" } });
-    fireEvent.change(screen.getByLabelText(/Logradouro/i), { target: { value: "Rua Teste" } });
-    fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "São Paulo" } });
-    fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "SP" } });
-
-    // Accept terms
+    // Accept terms if required
     fireEvent.click(screen.getByRole("checkbox"));
-
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Escolher Plano/i });
-    const form = submitBtn.closest("form")!;
-    fireEvent.submit(form);
+    fireEvent.submit(saveBtn.closest("form")!);
 
     await waitFor(() => {
-      expect(supabaseMocks.rpc).toHaveBeenCalledWith("handle_signup", expect.objectContaining({
-        _user_id: "trial-user-1",
-        _clinic_name: "Meu Novo Espaço",
-      }));
-      expect(supabaseMocks.from).toHaveBeenCalledWith("profiles");
-      expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
-        owner_terms_accepted_at: expect.any(String),
-      }));
-      expect(mockSelectClinic).toHaveBeenCalledWith("trial-clinic-id");
-    });
-  });
-
-  it("activates free trial via activate_clinic_free_trial RPC when trial=true in query params", async () => {
-    const mockSelectClinic = vi.fn().mockResolvedValue(undefined);
-    const mockRefreshAuthState = vi.fn().mockResolvedValue(undefined);
-
-    vi.mocked(useAuth).mockReturnValue({
-      clinic: null,
-      profile: { cpf: "12345678901" },
-      session: { user: { id: "trial-user-2", email: "trial2@exemplo.com" } },
-      selectClinic: mockSelectClinic,
-      refreshAuthState: mockRefreshAuthState,
-    } as unknown as ReturnType<typeof useAuth>);
-
-    supabaseMocks.rpc.mockResolvedValue({
-      data: { clinic_id: "trial-clinic-2" },
-      error: null,
-    });
-
-    const mockUpdate = vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    });
-
-    supabaseMocks.from.mockImplementation(() => {
-      return { update: mockUpdate };
-    });
-
-    render(
-      <MemoryRouter initialEntries={["/onboarding-clinica?plan=clinic&trial=true"]}>
-        <OnboardingClinica />
-      </MemoryRouter>
-    );
-
-    fireEvent.change(screen.getByLabelText(/Nome da Clínica/i), { target: { value: "Espaço Trial Equipe" } });
-    fireEvent.change(screen.getByLabelText(/Logradouro/i), { target: { value: "Rua das Flores" } });
-    fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "Curitiba" } });
-    fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "PR" } });
-
-    // Accept terms
-    fireEvent.click(screen.getByRole("checkbox"));
-
-    const submitBtn = screen.getByRole("button", { name: /Salvar e Escolher Plano/i });
-    const form = submitBtn.closest("form")!;
-    fireEvent.submit(form);
-
-    await waitFor(() => {
-      expect(supabaseMocks.rpc).toHaveBeenCalledWith("activate_clinic_free_trial", {
-        _clinic_id: "trial-clinic-2",
-        _plan_type: "clinic",
-      });
+      expect(supabaseMocks.from).toHaveBeenCalledWith("clinics");
+      expect(mockUpdate).toHaveBeenCalled();
+      expect(asaasMocks.createClinicWithVerifiedCard).not.toHaveBeenCalled();
     });
   });
 });

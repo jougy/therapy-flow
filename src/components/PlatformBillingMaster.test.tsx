@@ -44,6 +44,9 @@ describe("PlatformBillingMaster", () => {
 
     supabaseMocks.from.mockImplementation((table: string) => {
       if (table === "clinic_subscriptions") return { select: mockSelectSubs };
+      if (table === "subscription_coupons") {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
       return { select: vi.fn() };
     });
 
@@ -89,5 +92,77 @@ describe("PlatformBillingMaster", () => {
     fireEvent.change(reasonArea, { target: { value: "Concessão aprovada no ticket #9901" } });
 
     expect(confirmBtn).not.toBeDisabled();
+  });
+
+  it("renders coupons tab, lists SOUPLURIBETA, and opens new coupon modal", async () => {
+    const mockSelectSubs = vi.fn().mockReturnValue({
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    });
+
+    const mockCoupons = [
+      {
+        id: "cupom-1",
+        code: "SOUPLURIBETA",
+        description: "Acesso Beta Tester Gratuito por 6 Meses",
+        discount_type: "TRIAL_DAYS",
+        discount_value: 180.0,
+        max_redemptions: null,
+        times_redeemed: 3,
+        valid_from: "2026-08-01T00:00:00Z",
+        valid_until: null,
+        is_active: true,
+        applicable_plans: null,
+        created_at: "2026-08-01T00:00:00Z",
+        updated_at: "2026-08-01T00:00:00Z",
+      },
+    ];
+
+    const mockInsertCoupon = vi.fn().mockResolvedValue({ data: null, error: null });
+    const mockSelectCoupons = vi.fn().mockReturnValue({
+      order: vi.fn().mockResolvedValue({
+        data: mockCoupons,
+        error: null,
+      }),
+    });
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_subscriptions") return { select: mockSelectSubs };
+      if (table === "subscription_coupons") {
+        return {
+          select: mockSelectCoupons,
+          insert: mockInsertCoupon,
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+          delete: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    supabaseMocks.rpc.mockResolvedValue({ data: [], error: null });
+
+    render(<PlatformBillingMaster />);
+
+    // Click on Cupons Promocionais Tab
+    const couponsTab = await screen.findByRole("tab", { name: /Cupons Promocionais/i });
+    fireEvent.focus(couponsTab);
+    fireEvent.keyDown(couponsTab, { key: "Enter" });
+    fireEvent.click(couponsTab);
+
+    // Verify SOUPLURIBETA is rendered
+    expect(await screen.findByText(/SOUPLURIBETA/i)).toBeInTheDocument();
+    expect(screen.getByText(/Acesso Beta Tester Gratuito por 6 Meses/i)).toBeInTheDocument();
+    expect(screen.getByText(/180 dias/i)).toBeInTheDocument();
+
+    // Click Novo Cupom
+    const newCouponBtn = screen.getByRole("button", { name: /Novo Cupom/i });
+    fireEvent.click(newCouponBtn);
+
+    expect(await screen.findByText(/Criar Novo Cupom Promocional/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Código do Cupom/i)).toBeInTheDocument();
+
+    // Fill form
+    const codeInput = screen.getByLabelText(/Código do Cupom/i);
+    fireEvent.change(codeInput, { target: { value: "PROMO2026" } });
+    expect((codeInput as HTMLInputElement).value).toBe("PROMO2026");
   });
 });

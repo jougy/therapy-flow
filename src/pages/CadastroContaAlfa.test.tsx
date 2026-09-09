@@ -5,16 +5,28 @@ import CadastroContaAlfa from "@/pages/CadastroContaAlfa";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 
+const mockNavigate = vi.fn();
+
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual("react-router-dom");
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
 const supabaseMocks = vi.hoisted(() => ({
   from: vi.fn(),
   rpc: vi.fn(),
   signUp: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: {
       signUp: supabaseMocks.signUp,
+      signOut: supabaseMocks.signOut,
     },
     from: supabaseMocks.from,
     rpc: supabaseMocks.rpc,
@@ -27,9 +39,11 @@ vi.mock("@/hooks/use-toast", () => ({
 
 describe("CadastroContaAlfa", () => {
   beforeEach(() => {
+    mockNavigate.mockReset();
     supabaseMocks.from.mockReset();
     supabaseMocks.rpc.mockReset();
     supabaseMocks.signUp.mockReset();
+    supabaseMocks.signOut.mockReset();
     vi.stubGlobal(
       "ResizeObserver",
       class ResizeObserver {
@@ -89,13 +103,14 @@ describe("CadastroContaAlfa", () => {
         _phone: "11999998888",
         _user_id: "user-alpha-1",
       });
-      expect(screen.getByText(/confirme seu e-mail para continuar/i)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /ir para o login/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /acompanhar confirmação/i })).toBeInTheDocument();
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/auth/confirmado?email=alpha%40example.com&aguardando=true",
+        { state: { email: "alpha@example.com" } }
+      );
     });
   });
 
-  it("handles instant auto-login session when email confirmation is disabled", async () => {
+  it("signs out and redirects immediately to /auth/confirmado when session is created automatically", async () => {
     supabaseMocks.signUp.mockResolvedValue({
       data: {
         user: { id: "user-alpha-2" },
@@ -125,8 +140,11 @@ describe("CadastroContaAlfa", () => {
     fireEvent.click(screen.getByRole("button", { name: /^criar conta$/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/cadastro concluído com sucesso/i)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /avançar para o espaço pessoal/i })).toBeInTheDocument();
+      expect(supabaseMocks.signOut).toHaveBeenCalled();
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/auth/confirmado?email=direto%40example.com&aguardando=true",
+        { state: { email: "direto@example.com" } }
+      );
     });
   });
 

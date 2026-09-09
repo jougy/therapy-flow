@@ -34,6 +34,23 @@ const Auth = () => {
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
+      const errorMsg = error.message || "";
+      const isUnconfirmed =
+        /email not confirmed|não confirmado|confirm/i.test(errorMsg);
+
+      if (isUnconfirmed) {
+        toast({
+          title: "E-mail não confirmado",
+          description: "Por segurança, confirme seu e-mail antes de entrar. Redirecionando para a página de confirmação...",
+          variant: "destructive",
+        });
+        navigate(`/auth/confirmado?email=${encodeURIComponent(email)}&aguardando=true`, {
+          state: { email },
+        });
+        setLoading(false);
+        return;
+      }
+
       toast({ title: "Erro ao entrar", description: error.message, variant: "destructive" });
       setLoading(false);
       return;

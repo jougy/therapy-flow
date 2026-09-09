@@ -68,7 +68,7 @@ describe("PagamentoClinica", () => {
           data: {
             id: "clinic-123",
             name: "Clínica Teste",
-            cnpj: "12345678000199",
+            cnpj: "11222333000181",
             email: "owner@clinica.com",
             address: { cep: "01001000", number: "100" },
           },
@@ -308,4 +308,33 @@ describe("PagamentoClinica", () => {
       expect(screen.getByText(/Linha Digitável \/ Código de Barras/i)).toBeInTheDocument();
     });
   });
+
+  it("renders billing CPF/CNPJ input and blocks generation if invalid document is provided", async () => {
+    setupDefaultMocks([]);
+
+    render(
+      <MemoryRouter initialEntries={["/pagamento/clinic-123?plan=solo&cycle=annual"]}>
+        <Routes>
+          <Route path="/pagamento/:clinicId" element={<PagamentoClinica />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/CPF ou CNPJ do Titular da Cobrança/i)).toBeInTheDocument();
+    });
+
+    const docInput = screen.getByLabelText(/CPF ou CNPJ do Titular da Cobrança/i);
+    expect(docInput).toHaveValue("11.222.333/0001-81");
+
+    // Alterar para um documento inválido
+    fireEvent.change(docInput, { target: { value: "111.111.111-11" } });
+
+    const generatePixBtn = screen.getByRole("button", { name: /Gerar QR Code PIX/i });
+    fireEvent.click(generatePixBtn);
+
+    // Não deve chamar o serviço pois o documento é inválido
+    expect(asaasService.processAsaasPayment).not.toHaveBeenCalled();
+  });
 });
+
