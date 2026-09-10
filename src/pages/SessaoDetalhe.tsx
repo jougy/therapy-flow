@@ -1074,6 +1074,12 @@ const SessaoDetalhe = () => {
         const chosenColor = randomSlot?.color_hex || "#3B82F6";
         const chosenSlotId = randomSlot && !randomSlot.id.startsWith("seed-") ? randomSlot.id : null;
 
+        let effectiveClinicId = clinicId;
+        if (!effectiveClinicId && user) {
+          const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
+          effectiveClinicId = clinicRes.data ?? null;
+        }
+
         const { data, error } = await supabase
           .from("patient_groups")
           .insert({
@@ -1084,7 +1090,7 @@ const SessaoDetalhe = () => {
             group_kind: "custom",
             status: "em_andamento",
             is_default: false,
-            clinic_id: clinicId,
+            clinic_id: effectiveClinicId,
             user_id: user.id,
           })
           .select("*")
@@ -1133,6 +1139,12 @@ const SessaoDetalhe = () => {
       return;
     }
 
+    let effectiveClinicId = clinicId;
+    if (!effectiveClinicId && user) {
+      const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
+      effectiveClinicId = clinicRes.data ?? null;
+    }
+
     const targetPatientId = resolvedPatientId || patientId;
     const { data, error } = await supabase
       .from("patient_groups")
@@ -1144,7 +1156,7 @@ const SessaoDetalhe = () => {
         group_kind: "custom",
         status,
         is_default: false,
-        clinic_id: clinicId,
+        clinic_id: effectiveClinicId,
         user_id: user.id,
       })
       .select("*")
