@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { AddressBlockValue } from "@/lib/anamnesis-forms";
+import { lookupCep } from "@/lib/cep-service";
 
 export interface ClinicOption {
   id: string;
@@ -156,20 +157,14 @@ export const AddressBlockInput = ({
     setGeoError(null);
     setSearchResults(null);
     try {
-      const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
-      const data = await response.json();
-
-      if (data.erro) {
-        setGeoError("CEP não encontrado.");
-      } else {
-        updateFields({
-          cep: data.cep || cleanCep,
-          state: normalizeStateUf(data.uf),
-          city: data.localidade || "",
-          neighborhood: data.bairro || "",
-          street: data.logradouro || "",
-        });
-      }
+      const data = await lookupCep(cleanCep);
+      updateFields({
+        cep: data.cep || cleanCep,
+        state: normalizeStateUf(data.state),
+        city: data.city || "",
+        neighborhood: data.neighborhood || "",
+        street: data.street || "",
+      });
     } catch {
       setGeoError("Erro ao buscar CEP. Preencha os dados manualmente.");
     } finally {

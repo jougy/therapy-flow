@@ -26,6 +26,7 @@ import {
   type CardBrand,
 } from "@/utils/creditCardValidator";
 import { toast } from "sonner";
+import { lookupCep } from "@/lib/cep-service";
 
 const formatCPF = (v: string) => {
   v = v.replace(/\D/g, "");
@@ -262,17 +263,14 @@ export default function OnboardingClinica() {
     if (cleanCep.length === 8) {
       setFetchingCep(true);
       try {
-        const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
-        const data = await res.json();
-        if (!data.erro) {
-          setFormData((prev) => ({
-            ...prev,
-            street: data.logradouro || prev.street,
-            neighborhood: data.bairro || prev.neighborhood,
-            city: data.localidade || prev.city,
-            state: data.uf || prev.state,
-          }));
-        }
+        const data = await lookupCep(cleanCep);
+        setFormData((prev) => ({
+          ...prev,
+          street: data.street || prev.street,
+          neighborhood: data.neighborhood || prev.neighborhood,
+          city: data.city || prev.city,
+          state: data.state || prev.state,
+        }));
       } catch (error) {
         console.error("Error fetching CEP:", error);
       } finally {

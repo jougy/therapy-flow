@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, FileText, HeartPulse, Loader2, MapPin, Phone, User } from "lucide-react";
+import { ArrowLeft, Check, FileText, HeartPulse, Loader2, MapPin, Phone, Search, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,7 @@ import {
   type PatientEmergencyContact,
 } from "@/lib/patient-clinical-profile";
 import { formatCep } from "@/lib/profile-settings";
+import { cleanCepDigits, formatCepString, lookupCep, CepLookupError } from "@/lib/cep-service";
 import {
   buildPatientRegistrationPutPayload,
   extractCpfDigits,
@@ -182,27 +183,64 @@ const CadastroCompleto = () => {
     setEmergencyContact((current) => ({ ...current, [key]: value }));
   };
 
-  const handleCepLookup = async (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 8);
-    const formatted = digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+  const lastFetchedCepRef = useRef<string>("");
+
+  const executeCepLookup = async (targetCep: string, isManual = false) => {
+    const digits = cleanCepDigits(targetCep);
+
+    if (digits.length !== 8) {
+      if (isManual) {
+        toast({
+          title: "CEP incompleto",
+          description: "Informe um CEP válido com 8 dígitos para buscar o endereço.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
+    if (!isManual && lastFetchedCepRef.current === digits) {
+      return;
+    }
+
+    setFetchingCep(true);
+    try {
+      const data = await lookupCep(digits);
+      lastFetchedCepRef.current = digits;
+      setStreet(data.street || "");
+      setNeighborhood(data.neighborhood || "");
+      setCity(data.city || "");
+      setState(data.state || "");
+      setCountry("Brasil");
+
+      toast({
+        title: "Endereço preenchido!",
+        description: `${data.city} - ${data.state}`,
+      });
+    } catch (error) {
+      if (isManual) {
+        const description =
+          error instanceof CepLookupError
+            ? error.message
+            : "Não foi possível buscar o endereço automaticamente. Por favor, preencha manualmente.";
+        toast({
+          title: "Busca de CEP",
+          description,
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setFetchingCep(false);
+    }
+  };
+
+  const handleCepChange = (value: string) => {
+    const formatted = formatCepString(value);
     setCep(formatted);
 
-    if (digits.length === 8) {
-      setFetchingCep(true);
-      try {
-        const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-        const data: AddressData = await res.json();
-        if (!data.erro) {
-          setStreet(data.logradouro || "");
-          setNeighborhood(data.bairro || "");
-          setCity(data.localidade || "");
-          setState(data.uf || "");
-          setCountry("Brasil");
-        }
-      } catch {
-        // silent fail
-      }
-      setFetchingCep(false);
+    const digits = cleanCepDigits(value);
+    if (digits.length === 8 && digits !== lastFetchedCepRef.current) {
+      void executeCepLookup(digits, false);
     }
   };
 
@@ -677,15 +715,47 @@ const CadastroCompleto = () => {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Endereço</CardTitle>
-              <CardDescription>Digite o CEP para preencher automaticamente</CardDescription>
+              <CardDescription>Digite o CEP para preencher automaticamente ou clique em buscar</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex gap-3 items-end">
-                <div className="space-y-2 flex-1 max-w-[200px]">
-                  <Label htmlFor="cep">CEP</Label>
-                  <Input id="cep" value={cep} onChange={(e) => handleCepLookup(e.target.value)} placeholder="00000-000" maxLength={9} />
+              <div className="space-y-2">
+                <Label htmlFor="cep">CEP</Label>
+                <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center">
+                  <div className="relative w-full sm:w-[220px]">
+                    <Input
+                      id="cep"
+                      value={cep}
+                      onChange={(e) => handleCepChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void executeCepLookup(cep, true);
+                        }
+                      }}
+                      placeholder="00000-000"
+                      maxLength={9}
+                      inputMode="numeric"
+                      className="pr-8"
+                    />
+                    {fetchingCep && (
+                      <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={fetchingCep}
+                    onClick={() => void executeCepLookup(cep, true)}
+                    className="gap-2 h-10 px-3.5 w-full sm:w-auto shrink-0 touch-manipulation"
+                  >
+                    {fetchingCep ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    ) : (
+                      <Search className="h-4 w-4 text-primary" />
+                    )}
+                    <span>{fetchingCep ? "Buscando..." : "Buscar endereço"}</span>
+                  </Button>
                 </div>
-                {fetchingCep && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mb-2.5" />}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
