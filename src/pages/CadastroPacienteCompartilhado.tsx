@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, FileText, HeartPulse, Loader2, LockKeyhole, MapPin, Phone, Send, UserRoundCog } from "lucide-react";
+import { CheckCircle2, FileText, HeartPulse, Loader2, LockKeyhole, MapPin, Phone, Search, Send, UserRoundCog } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,7 @@ import {
   isValidPatientEmail,
   normalizePatientPhoneDigits,
 } from "@/lib/patient-registration";
+import { cleanCepDigits, formatCepString, lookupCep, CepLookupError } from "@/lib/cep-service";
 import {
   getSharedPatientDraft,
   useSharedPatientAutoSave,
@@ -402,29 +403,65 @@ const CadastroPacienteCompartilhado = () => {
     setUnlocking(false);
   };
 
-  const handleCepLookup = async (value: string) => {
-    const formatted = formatCep(value);
-    const digits = formatted.replace(/\D/g, "");
-    setCep(formatted);
+  const lastFetchedCepRef = useRef<string>("");
 
-    if (digits.length !== 8) return;
+  const executeCepLookup = async (targetCep: string, isManual = false) => {
+    const digits = cleanCepDigits(targetCep);
+
+    if (digits.length !== 8) {
+      if (isManual) {
+        toast({
+          title: "CEP incompleto",
+          description: "Informe um CEP válido com 8 dígitos para buscar o endereço.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
+    if (!isManual && lastFetchedCepRef.current === digits) {
+      return;
+    }
 
     setFetchingCep(true);
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-      if (!res.ok) return;
-      const data: AddressData = await res.json();
-      if (!data.erro) {
-        setStreet(sanitizeLine(data.logradouro || "", INPUT_LIMITS.street));
-        setNeighborhood(sanitizeLine(data.bairro || ""));
-        setCity(sanitizeLine(data.localidade || "", INPUT_LIMITS.city));
-        setState(sanitizeLine(data.uf || "", INPUT_LIMITS.state));
-        setCountry("Brasil");
+      const data = await lookupCep(digits);
+      lastFetchedCepRef.current = digits;
+      setStreet(sanitizeLine(data.street || "", INPUT_LIMITS.street));
+      setNeighborhood(sanitizeLine(data.neighborhood || ""));
+      setCity(sanitizeLine(data.city || "", INPUT_LIMITS.city));
+      setState(sanitizeLine(data.state || "", INPUT_LIMITS.state));
+      setCountry("Brasil");
+
+      toast({
+        title: "Endereço preenchido!",
+        description: `${data.city} - ${data.state}`,
+      });
+    } catch (error) {
+      if (isManual) {
+        const description =
+          error instanceof CepLookupError
+            ? error.message
+            : "Não foi possível buscar o endereço automaticamente. Por favor, preencha manualmente.";
+        toast({
+          title: "Busca de CEP",
+          description,
+          variant: "destructive",
+        });
       }
-    } catch {
-      // silent fail
+    } finally {
+      setFetchingCep(false);
     }
-    setFetchingCep(false);
+  };
+
+  const handleCepChange = (value: string) => {
+    const formatted = formatCepString(value);
+    setCep(formatted);
+
+    const digits = cleanCepDigits(value);
+    if (digits.length === 8 && digits !== lastFetchedCepRef.current) {
+      void executeCepLookup(digits, false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -838,15 +875,47 @@ const CadastroPacienteCompartilhado = () => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">Endereço</CardTitle>
-                    <CardDescription>Use o CEP para agilizar o preenchimento.</CardDescription>
+                    <CardDescription>Digite o CEP para agilizar o preenchimento ou clique em buscar.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex gap-3 items-end">
-                      <div className="space-y-2 flex-1 max-w-[220px]">
-                        <Label htmlFor="cep">CEP</Label>
-                        <Input id="cep" value={cep} onChange={(event) => handleCepLookup(event.target.value)} placeholder="00000-000" maxLength={9} />
+                    <div className="space-y-2">
+                      <Label htmlFor="cep">CEP</Label>
+                      <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center">
+                        <div className="relative w-full sm:w-[220px]">
+                          <Input
+                            id="cep"
+                            value={cep}
+                            onChange={(event) => handleCepChange(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void executeCepLookup(cep, true);
+                              }
+                            }}
+                            placeholder="00000-000"
+                            maxLength={9}
+                            inputMode="numeric"
+                            className="pr-8"
+                          />
+                          {fetchingCep && (
+                            <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={fetchingCep}
+                          onClick={() => void executeCepLookup(cep, true)}
+                          className="gap-2 h-10 px-3.5 w-full sm:w-auto shrink-0 touch-manipulation"
+                        >
+                          {fetchingCep ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          ) : (
+                            <Search className="h-4 w-4 text-primary" />
+                          )}
+                          <span>{fetchingCep ? "Buscando..." : "Buscar endereço"}</span>
+                        </Button>
                       </div>
-                      {fetchingCep && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mb-2.5" />}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="space-y-2">
