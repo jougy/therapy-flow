@@ -54,7 +54,9 @@ function cepDevPlugin() {
 
               res.statusCode = 200;
               return res.end(JSON.stringify(normalized));
-            } catch {}
+            } catch {
+              // Silently continue to next endpoint on error
+            }
           }
 
           res.statusCode = 404;

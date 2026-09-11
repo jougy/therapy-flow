@@ -1,4 +1,4 @@
-interface Env {}
+type Env = Record<string, unknown>;
 
 export const onRequestGet = async (context: { params: { cep: string }; env: Env }) => {
   const rawCep = context.params.cep || "";
@@ -53,7 +53,9 @@ export const onRequestGet = async (context: { params: { cep: string }; env: Env 
           "Cache-Control": "public, max-age=86400",
         },
       });
-    } catch {}
+    } catch {
+      // Silently continue to next endpoint on error
+    }
   }
 
   return new Response(JSON.stringify({ error: "CEP not found" }), {
