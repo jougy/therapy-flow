@@ -26,7 +26,7 @@ export const PlanTrialExplanationModal: React.FC<PlanTrialExplanationModalProps>
             <span>Transparência e Respeito Ético</span>
           </div>
           <DialogTitle className="text-xl font-bold text-foreground">
-            Como funciona a Degustação Gratuita?
+            Como funciona o Teste Gratuito (7 dias)?
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             Entenda como experimentar a plataforma com sua equipe e o que acontece após o período de teste.
@@ -40,7 +40,7 @@ export const PlanTrialExplanationModal: React.FC<PlanTrialExplanationModalProps>
               <span>Cotas Inclusas no Período de Teste (7 Dias ou 20 Atendimentos)</span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Durante a degustação, você tem acesso imediato para validar os recursos na prática:
+              Durante o teste gratuito, você tem acesso imediato para validar os recursos na prática:
             </p>
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
               <li className="flex items-center gap-2">
@@ -105,7 +105,7 @@ export const PlanTrialExplanationModal: React.FC<PlanTrialExplanationModalProps>
               }}
               className="rounded-xl text-xs h-9 bg-primary text-primary-foreground font-semibold"
             >
-              Começar Degustação
+              Começar Teste Gratuito
             </Button>
           )}
         </div>

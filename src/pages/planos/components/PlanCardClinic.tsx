@@ -42,7 +42,7 @@ export const PlanCardClinic: React.FC<PlanCardClinicProps> = React.memo(({
   const highlights = isFreeCycle
     ? [
         "Equipe completa (até 4 acessos simultâneos)",
-        "Até 20 atendimentos na degustação",
+        "Até 20 atendimentos no teste gratuito",
         "Até 5 pacientes cadastrados",
         "Controle de perfis e agendas integradas",
       ]
@@ -83,13 +83,13 @@ export const PlanCardClinic: React.FC<PlanCardClinicProps> = React.memo(({
               </div>
             </div>
             <Badge className="bg-primary text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 uppercase tracking-wider shrink-0">
-              Recomendado
+              {isFreeCycle ? "Teste Gratuito" : "Recomendado"}
             </Badge>
           </div>
 
           <p className="text-muted-foreground text-[11px] mb-2 line-clamp-2 leading-snug">
             {isFreeCycle
-              ? "Teste em equipe com 4 acessos simultâneos e colaboração total."
+              ? "Experimente 7 dias com equipe completa: 4 acessos simultâneos e colaboração total."
               : "Ideal para clínicas em expansão: 4 acessos simultâneos inclusos com gestão de equipe."}
           </p>
 
@@ -202,7 +202,7 @@ export const PlanCardClinic: React.FC<PlanCardClinicProps> = React.memo(({
             }}
           >
             {activatingTrial && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {isFreeCycle ? "Ativar Degustação Clínica" : "Contratar Clínica Pro"}
+            {isFreeCycle ? "Iniciar Teste Gratuito (7 dias)" : "Contratar Clínica Pro"}
             {!activatingTrial && <ChevronRight className="w-4 h-4 ml-1" />}
           </Button>
         </div>

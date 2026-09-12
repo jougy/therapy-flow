@@ -82,37 +82,39 @@ describe("PlanosAssinatura", () => {
       </MemoryRouter>
     );
 
-    // Default is annual: Solo is R$ 44.00/mês
-    expect(screen.getAllByText(/44.00/i).length).toBeGreaterThan(0);
+    // Default is annual: Solo is R$ 40.00/mês
+    expect(screen.getAllByText(/40.00/i).length).toBeGreaterThan(0);
 
     // Click Mensal
     const monthlyBtn = screen.getByRole("button", { name: /^Mensal$/i });
     fireEvent.click(monthlyBtn);
 
-    // Solo should become R$ 59.00/mês
-    expect(screen.getAllByText(/59.00/i).length).toBeGreaterThan(0);
+    // Solo should become R$ 59.99/mês
+    expect(screen.getAllByText(/59.99/i).length).toBeGreaterThan(0);
 
     // Click Trimestral
     const quarterlyBtn = screen.getByRole("button", { name: /Trimestral/i });
     fireEvent.click(quarterlyBtn);
 
-    // Solo should become R$ 53.00/mês
-    expect(screen.getAllByText(/53.00/i).length).toBeGreaterThan(0);
+    // Solo should become R$ 53.99/mês
+    expect(screen.getAllByText(/53.99/i).length).toBeGreaterThan(0);
   });
 
-  it("switches to Degustação Grátis cycle and displays Grátis prices", async () => {
+  it("switches to Teste gratuito (7 dias) cycle and displays single Clínica Pro option", async () => {
     render(
       <MemoryRouter>
         <PlanosAssinatura />
       </MemoryRouter>
     );
 
-    const freeCycleBtn = screen.getByRole("button", { name: /Degustação Grátis/i });
+    const freeCycleBtn = screen.getByRole("button", { name: /Teste gratuito \(7 dias\)/i });
     fireEvent.click(freeCycleBtn);
 
     expect(screen.getAllByText(/Grátis/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /Ativar Degustação Solo/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Ativar Degustação Clínica/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Iniciar Teste Gratuito \(7 dias\)/i })).toBeInTheDocument();
+    // Solo and Enterprise trial buttons should not be present
+    expect(screen.queryByRole("button", { name: /Ativar Degustação Solo/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ativar Degustação Enterprise/i })).not.toBeInTheDocument();
   });
 
   it("increments and decrements extra seats for clinic plan", async () => {
@@ -158,7 +160,7 @@ describe("PlanosAssinatura", () => {
 
     // Initial render might show, wait for subscription check to complete and hide trial tab/cycle
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /Degustação Grátis/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Teste gratuito \(7 dias\)/i })).not.toBeInTheDocument();
     });
   });
 
@@ -185,16 +187,16 @@ describe("PlanosAssinatura", () => {
       </MemoryRouter>
     );
 
-    const freeCycleBtn = screen.getByRole("button", { name: /Degustação Grátis/i });
+    const freeCycleBtn = screen.getByRole("button", { name: /Teste gratuito \(7 dias\)/i });
     fireEvent.click(freeCycleBtn);
 
-    const activateSoloTrialBtn = screen.getByRole("button", { name: /Ativar Degustação Solo/i });
-    fireEvent.click(activateSoloTrialBtn);
+    const activateTrialBtn = screen.getByRole("button", { name: /Iniciar Teste Gratuito \(7 dias\)/i });
+    fireEvent.click(activateTrialBtn);
 
     await waitFor(() => {
       expect(supabaseMocks.rpc).toHaveBeenCalledWith("activate_clinic_free_trial", {
         _clinic_id: "clinic-test-1",
-        _plan_type: "solo",
+        _plan_type: "clinic",
       });
     });
   });
