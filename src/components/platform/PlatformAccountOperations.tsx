@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CalendarPlus, Gift, Loader2, ShieldAlert, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, CalendarPlus, CheckCircle2, Gift, Info, Loader2, ShieldAlert, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,19 @@ import {
   destructiveOperations,
   getErrorMessage,
 } from "./platform-api";
+
+const clinicStatusLabels: Record<string, string> = {
+  active: "Ativa",
+  payment_pending: "Pagamento pendente",
+  temporarily_paused: "Pausada temporariamente",
+  banned: "Bloqueada",
+  delete: "Excluir definitivamente",
+};
+
+const planLabels: Record<string, string> = {
+  solo: "Plano Solo (1 profissional)",
+  clinic: "Plano com Equipe (Clínica)",
+};
 
 const AccountStatusSelect = ({ onValueChange, value }: { onValueChange: (value: string) => void; value: string }) => (
   <Select value={value} onValueChange={onValueChange}>
@@ -126,6 +139,113 @@ export const PlatformAccountOperations = ({
     status: clinicAccessStatus,
     subaccountLimit,
   });
+
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      clinicId: clinicId ?? prev.clinicId,
+      concurrentAccessLimit: concurrentAccessLimit || prev.concurrentAccessLimit,
+      status: clinicAccessStatus || prev.status,
+      subaccountLimit: subaccountLimit || prev.subaccountLimit,
+    }));
+  }, [clinicId, clinicAccessStatus, concurrentAccessLimit, subaccountLimit]);
+
+  const pendingChanges = useMemo(() => {
+    const changes: string[] = [];
+    if (operation === "update_clinic_access") {
+      const currentPlan = initialSubscriptionPlan ?? "clinic";
+      if (subscriptionPlan !== currentPlan) {
+        changes.push(
+          `Tipo de plano: ${planLabels[currentPlan] || currentPlan} ➔ ${planLabels[subscriptionPlan] || subscriptionPlan}`
+        );
+      }
+      const initialCourtesy = subscriptionData?.is_courtesy === true || subscriptionData?.status === "COURTESY";
+      if (isCourtesy !== initialCourtesy) {
+        changes.push(
+          `Cortesia Parceira: ${initialCourtesy ? "Ativada" : "Desativada"} ➔ ${isCourtesy ? "Ativada" : "Desativada"}`
+        );
+      }
+      if (daysAdjustment && daysAdjustment !== "0") {
+        const days = Number(daysAdjustment);
+        if (Number.isFinite(days) && days !== 0) {
+          changes.push(`Dias de assinatura: ${days > 0 ? `+${days}` : days} dia(s)`);
+        }
+      }
+      if (form.status !== clinicAccessStatus) {
+        changes.push(
+          `Status da clínica: ${clinicStatusLabels[clinicAccessStatus] || clinicAccessStatus} ➔ ${clinicStatusLabels[form.status] || form.status}`
+        );
+      }
+      if (form.concurrentAccessLimit !== concurrentAccessLimit) {
+        changes.push(`Acessos simultâneos: ${concurrentAccessLimit} ➔ ${form.concurrentAccessLimit}`);
+      }
+      if (form.subaccountLimit !== subaccountLimit) {
+        changes.push(`Limite de subcontas: ${subaccountLimit} ➔ ${form.subaccountLimit}`);
+      }
+    }
+    return changes;
+  }, [
+    operation,
+    subscriptionPlan,
+    initialSubscriptionPlan,
+    subscriptionData,
+    isCourtesy,
+    daysAdjustment,
+    form.status,
+    form.concurrentAccessLimit,
+    form.subaccountLimit,
+    clinicAccessStatus,
+    concurrentAccessLimit,
+    subaccountLimit,
+  ]);
+
+  const quickReasons = useMemo(() => {
+    if (operation === "update_clinic_access") {
+      const suggestions: string[] = [];
+      const currentPlan = initialSubscriptionPlan ?? "clinic";
+      if (subscriptionPlan !== currentPlan) {
+        suggestions.push(subscriptionPlan === "clinic" ? "Upgrade para Plano com Equipe" : "Downgrade para Plano Solo");
+      }
+      const initialCourtesy = subscriptionData?.is_courtesy === true || subscriptionData?.status === "COURTESY";
+      if (isCourtesy !== initialCourtesy) {
+        suggestions.push(isCourtesy ? "Concessão de Cortesia Parceira vitalícia" : "Revogação de Cortesia Parceira");
+      }
+      if (daysAdjustment && daysAdjustment !== "0") {
+        const d = Number(daysAdjustment);
+        suggestions.push(`Ajuste e extensão de ${d > 0 ? `+${d}` : d} dias na assinatura`);
+      }
+      if (form.status !== clinicAccessStatus) {
+        suggestions.push(`Alteração de status da clínica para ${clinicStatusLabels[form.status] || form.status}`);
+      }
+      const fallbacks = [
+        "Upgrade para Plano com Equipe",
+        "Downgrade para Plano Solo",
+        "Concessão de Cortesia Parceira",
+        "Extensão de dias de assinatura",
+        "Ajuste operacional de acesso e limites",
+      ];
+      for (const fb of fallbacks) {
+        if (!suggestions.includes(fb) && suggestions.length < 5) {
+          suggestions.push(fb);
+        }
+      }
+      return suggestions.slice(0, 5);
+    }
+    return [
+      "Ajuste operacional de acesso",
+      "Solicitação formal do suporte",
+      "Atualização cadastral autorizada",
+    ];
+  }, [
+    operation,
+    subscriptionPlan,
+    initialSubscriptionPlan,
+    subscriptionData,
+    isCourtesy,
+    daysAdjustment,
+    form.status,
+    clinicAccessStatus,
+  ]);
 
   const updateField = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -262,9 +382,17 @@ export const PlatformAccountOperations = ({
       }
 
       await callPlatformAccountAdmin(actionToExecute, payloadToExecute, reason);
-      toast({ title: "Operação concluída", description: `${accountOperationLabels[operation] || actionToExecute} foi registrada na auditoria master.` });
+      const successDescription = pendingChanges.length > 0
+        ? `Alterações aplicadas: ${pendingChanges.join("; ")}.`
+        : `${accountOperationLabels[operation] || actionToExecute} foi registrada na auditoria master.`;
+      toast({
+        title: "Operação concluída com sucesso",
+        description: successDescription,
+      });
       setConfirmation("");
       setMfaCode("");
+      setReason("");
+      setDaysAdjustment("");
       onDone();
     } catch (error) {
       toast({
@@ -283,6 +411,25 @@ export const PlatformAccountOperations = ({
         <p className="font-medium text-foreground">{title}</p>
         <p className="text-sm text-muted-foreground">Espelha o Gerenciamento de Contas do script operacional, com MFA, backend seguro e motivo obrigatório.</p>
       </div>
+
+      {pendingChanges.length > 0 && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>Alterações pendentes (não salvas no banco):</span>
+          </div>
+          <ul className="mt-1.5 list-disc list-inside space-y-1 text-xs pl-1">
+            {pendingChanges.map((change, idx) => (
+              <li key={idx} className="font-medium">
+                {change}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-amber-800/90 dark:text-amber-300/90">
+            ⚠️ <strong>Atenção:</strong> Essas opções <strong>ainda não foram aplicadas</strong>. Para salvar definitivamente, informe o motivo auditável abaixo (mínimo de 8 caracteres) e clique em <strong>Salvar e aplicar alterações pendentes</strong>.
+          </p>
+        </div>
+      )}
       <div className={`grid gap-3 ${compact ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
         <div className="space-y-1">
           <Label>Ação</Label>
@@ -508,13 +655,55 @@ export const PlatformAccountOperations = ({
         </div>
       )}
       <div className={`grid gap-3 ${isDestructive ? "lg:grid-cols-[minmax(0,1fr)_180px_180px]" : "lg:grid-cols-[minmax(0,1fr)_220px]"}`}>
-        <div className="space-y-1">
-          <Label>Motivo auditável</Label>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="flex items-center gap-1">
+              <span>Motivo auditável</span>
+              <span className="text-xs text-destructive">*</span>
+            </Label>
+            <span
+              className={`text-xs font-medium ${
+                reason.trim().length >= 8
+                  ? "text-emerald-600 dark:text-emerald-400 flex items-center gap-1"
+                  : "text-amber-600 dark:text-amber-400"
+              }`}
+            >
+              {reason.trim().length >= 8 ? (
+                <>
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Pronto para salvar ({reason.trim().length}/1000)
+                </>
+              ) : (
+                `Faltam ${Math.max(0, 8 - reason.trim().length)} caractere(s) (${reason.trim().length}/8)`
+              )}
+            </span>
+          </div>
+
+          {quickReasons.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-primary" />
+                Motivos rápidos:
+              </span>
+              {quickReasons.map((qr) => (
+                <button
+                  key={qr}
+                  type="button"
+                  onClick={() => setReason(qr)}
+                  className="rounded-md border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary"
+                >
+                  {qr}
+                </button>
+              ))}
+            </div>
+          )}
+
           <Textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             maxLength={1000}
-            placeholder="Informe a justificativa da ação administrativa..."
+            placeholder="Informe a justificativa da ação administrativa (mínimo de 8 caracteres)..."
+            className="min-h-[75px]"
           />
         </div>
         {isDestructive && (
@@ -546,18 +735,37 @@ export const PlatformAccountOperations = ({
           </>
         )}
       </div>
-      <Button
-        disabled={
-          saving ||
-          reason.trim().length < 8 ||
-          (isDestructive && (confirmation !== "EXCLUIR" || mfaCode.trim().length !== 6))
-        }
-        onClick={() => void handleSubmit()}
-        variant={isDestructive ? "destructive" : "default"}
-      >
-        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        {isDestructive ? "Confirmar e excluir com 2FA" : "Executar ação administrativa"}
-      </Button>
+
+      <div className="space-y-2 pt-1">
+        {reason.trim().length < 8 && (
+          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <span>Preencha a justificativa com pelo menos 8 caracteres para liberar a execução da ação.</span>
+          </p>
+        )}
+
+        <Button
+          disabled={
+            saving ||
+            reason.trim().length < 8 ||
+            (isDestructive && (confirmation !== "EXCLUIR" || mfaCode.trim().length !== 6))
+          }
+          onClick={() => void handleSubmit()}
+          variant={isDestructive ? "destructive" : "default"}
+          className={
+            !isDestructive && pendingChanges.length > 0 && reason.trim().length >= 8
+              ? "ring-2 ring-primary ring-offset-2 font-semibold shadow-md"
+              : ""
+          }
+        >
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isDestructive
+            ? "Confirmar e excluir com 2FA"
+            : pendingChanges.length > 0
+            ? "Salvar e aplicar alterações pendentes"
+            : "Executar ação administrativa"}
+        </Button>
+      </div>
     </div>
   );
 };

@@ -4,10 +4,10 @@ export interface CepLookupResult {
   neighborhood: string;
   city: string;
   state: string;
-  source?: "viacep" | "brasilapi" | "awesomeapi";
+  source?: string;
 }
 
-export type CepLookupErrorReason = "INVALID_LENGTH" | "NOT_FOUND" | "NETWORK_ERROR";
+export type CepLookupErrorReason = "INVALID_LENGTH" | "NOT_FOUND";
 
 export class CepLookupError extends Error {
   reason: CepLookupErrorReason;
@@ -28,110 +28,122 @@ export const formatCepString = (value: string): string => {
   return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
 };
 
-const fetchWithTimeout = async (url: string, timeoutMs = 3500): Promise<Response> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-      },
-    });
-    return response;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-};
-
-const lookupViaCep = async (cleanCep: string): Promise<CepLookupResult | null> => {
-  try {
-    const res = await fetchWithTimeout(`https://viacep.com.br/ws/${cleanCep}/json/`, 3500);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.erro === true || data.erro === "true") {
-      return null;
-    }
-    return {
-      cep: data.cep || formatCepString(cleanCep),
-      street: data.logradouro || "",
-      neighborhood: data.bairro || "",
-      city: data.localidade || "",
-      state: (data.uf || "").toUpperCase(),
-      source: "viacep",
-    };
-  } catch {
-    return null;
-  }
-};
-
-const lookupBrasilApi = async (cleanCep: string): Promise<CepLookupResult | null> => {
-  try {
-    const res = await fetchWithTimeout(`https://brasilapi.com.br/api/cep/v1/${cleanCep}`, 3500);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.city || !data.state) {
-      return null;
-    }
-    return {
-      cep: formatCepString(data.cep || cleanCep),
-      street: data.street || "",
-      neighborhood: data.neighborhood || "",
-      city: data.city || "",
-      state: (data.state || "").toUpperCase(),
-      source: "brasilapi",
-    };
-  } catch {
-    return null;
-  }
-};
-
-const lookupAwesomeApi = async (cleanCep: string): Promise<CepLookupResult | null> => {
-  try {
-    const res = await fetchWithTimeout(`https://cep.awesomeapi.com.br/json/${cleanCep}`, 3500);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.city || !data.state) {
-      return null;
-    }
-    return {
-      cep: formatCepString(data.cep || cleanCep),
-      street: data.address || data.address_name || "",
-      neighborhood: data.district || "",
-      city: data.city || "",
-      state: (data.state || "").toUpperCase(),
-      source: "awesomeapi",
-    };
-  } catch {
-    return null;
-  }
-};
-
 /**
- * Searches address by CEP with multiple fallbacks:
- * 1. ViaCEP
- * 2. BrasilAPI
- * 3. AwesomeAPI
+ * Robust, direct multi-provider CEP lookup:
+ * 1. ViaCEP (Primary official provider)
+ * 2. BrasilAPI (Fallback)
+ * 3. AwesomeAPI (Fallback)
+ * 4. OpenCEP (Fallback)
+ * 5. Local /api/cep proxy (Fallback for firewalled environments)
  */
 export const lookupCep = async (rawCep: string): Promise<CepLookupResult> => {
-  const clean = cleanCepDigits(rawCep);
+  const digits = cleanCepDigits(rawCep);
 
-  if (clean.length !== 8) {
-    throw new CepLookupError("INVALID_LENGTH", "O CEP deve conter exatamente 8 dígitos.");
+  if (digits.length !== 8) {
+    throw new CepLookupError("INVALID_LENGTH", "Informe um CEP com 8 dígitos.");
   }
 
-  // 1. Try ViaCEP
-  const viaCepResult = await lookupViaCep(clean);
-  if (viaCepResult) return viaCepResult;
+  // 1. ViaCEP
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.erro) {
+        return {
+          cep: data.cep || formatCepString(digits),
+          street: data.logradouro || "",
+          neighborhood: data.bairro || "",
+          city: data.localidade || "",
+          state: (data.uf || "").toUpperCase(),
+          source: "viacep",
+        };
+      }
+    }
+  } catch {
+    // continue to next provider
+  }
 
-  // 2. Fallback to BrasilAPI
-  const brasilApiResult = await lookupBrasilApi(clean);
-  if (brasilApiResult) return brasilApiResult;
+  // 2. BrasilAPI
+  try {
+    const res = await fetch(`https://brasilapi.com.br/api/cep/v1/${digits}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.city && data.state) {
+        return {
+          cep: formatCepString(data.cep || digits),
+          street: data.street || "",
+          neighborhood: data.neighborhood || "",
+          city: data.city || "",
+          state: (data.state || "").toUpperCase(),
+          source: "brasilapi",
+        };
+      }
+    }
+  } catch {
+    // continue to next provider
+  }
 
-  // 3. Fallback to AwesomeAPI
-  const awesomeApiResult = await lookupAwesomeApi(clean);
-  if (awesomeApiResult) return awesomeApiResult;
+  // 3. AwesomeAPI
+  try {
+    const res = await fetch(`https://cep.awesomeapi.com.br/json/${digits}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.city && data.state) {
+        return {
+          cep: formatCepString(data.cep || digits),
+          street: data.address || data.address_name || "",
+          neighborhood: data.district || "",
+          city: data.city || "",
+          state: (data.state || "").toUpperCase(),
+          source: "awesomeapi",
+        };
+      }
+    }
+  } catch {
+    // continue to next provider
+  }
+
+  // 4. OpenCEP
+  try {
+    const res = await fetch(`https://opencep.com/v1/${digits}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.localidade && data.uf) {
+        return {
+          cep: data.cep || formatCepString(digits),
+          street: data.logradouro || "",
+          neighborhood: data.bairro || "",
+          city: data.localidade || "",
+          state: (data.uf || "").toUpperCase(),
+          source: "opencep",
+        };
+      }
+    }
+  } catch {
+    // continue to next provider
+  }
+
+  // 5. Same-origin proxy fallback
+  try {
+    if (typeof window !== "undefined" && window.location) {
+      const res = await fetch(`/api/cep/${digits}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.city && data.state) {
+          return {
+            cep: formatCepString(data.cep || digits),
+            street: data.street || "",
+            neighborhood: data.neighborhood || "",
+            city: data.city || "",
+            state: (data.state || "").toUpperCase(),
+            source: "proxy",
+          };
+        }
+      }
+    }
+  } catch {
+    // all failed
+  }
 
   throw new CepLookupError(
     "NOT_FOUND",

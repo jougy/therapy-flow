@@ -141,12 +141,16 @@ describe("PlatformAccountOperations - Gestão de Clínica, Planos, Dias e Cortes
     const inputDays = screen.getByPlaceholderText("+/- dias (ex: 30)") as HTMLInputElement;
     fireEvent.change(inputDays, { target: { value: "45" } });
 
+    // O banner de alterações pendentes deve aparecer
+    expect(screen.getByText("Alterações pendentes (não salvas no banco):")).toBeInTheDocument();
+    expect(screen.getByText("Dias de assinatura: +45 dia(s)")).toBeInTheDocument();
+
     // Preenche motivo auditável obrigatório
-    const textarea = screen.getByPlaceholderText("Informe a justificativa da ação administrativa...");
+    const textarea = screen.getByPlaceholderText(/Informe a justificativa da ação administrativa/i);
     fireEvent.change(textarea, { target: { value: "Ajuste de cortesia e dias para clínica parceira" } });
 
-    // Executa ação
-    const submitBtn = screen.getByRole("button", { name: "Executar ação administrativa" });
+    // Botão indica salvamento de alterações pendentes
+    const submitBtn = screen.getByRole("button", { name: "Salvar e aplicar alterações pendentes" });
     expect(submitBtn).toBeEnabled();
     fireEvent.click(submitBtn);
 
@@ -164,5 +168,36 @@ describe("PlatformAccountOperations - Gestão de Clínica, Planos, Dias e Cortes
       );
       expect(onDone).toHaveBeenCalled();
     });
+  });
+
+  it("permite preencher o motivo auditável clicando em um chip de motivo rápido", async () => {
+    render(
+      <PlatformAccountOperations
+        allowedOperations={["update_clinic_access"]}
+        clinicId="clinic-123"
+        clinicAccessStatus="active"
+        subscriptionPlan="solo"
+        subscriptionData={{
+          status: "ACTIVE",
+          expires_at: "2026-10-15T00:00:00.000Z",
+          is_courtesy: false,
+        }}
+        onDone={vi.fn()}
+        title="Acesso e plano da clínica"
+      />
+    );
+
+    // Inicialmente mostra que faltam 8 caracteres
+    expect(screen.getByText(/Faltam 8 caractere\(s\)/i)).toBeInTheDocument();
+
+    // Clica em um dos chips de motivos rápidos
+    const chipBtn = screen.getByRole("button", { name: "Upgrade para Plano com Equipe" });
+    fireEvent.click(chipBtn);
+
+    const textarea = screen.getByPlaceholderText(/Informe a justificativa da ação administrativa/i) as HTMLTextAreaElement;
+    expect(textarea.value).toBe("Upgrade para Plano com Equipe");
+
+    // Contador deve indicar válido / pronto para salvar
+    expect(screen.getByText(/Pronto para salvar/i)).toBeInTheDocument();
   });
 });

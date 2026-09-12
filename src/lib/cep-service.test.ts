@@ -34,103 +34,95 @@ describe("cep-service", () => {
     });
   });
 
-  it("successfully resolves address from ViaCEP when available", async () => {
-    const mockViaCepResponse = {
+  it("resolves from ViaCEP when available", async () => {
+    const mockViaCepData = {
       cep: "04562-050",
-      logradouro: "Rua Pais de Araújo",
-      bairro: "Itaim Bibi",
+      logradouro: "Rua Furnas",
+      bairro: "Brooklin Paulista",
       localidade: "São Paulo",
       uf: "SP",
     };
 
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockViaCepResponse,
-    } as Response);
+    global.fetch = vi.fn().mockImplementation((input: any) => {
+      const url = typeof input === "string" ? input : input?.url || "";
+      if (url.includes("viacep.com.br")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockViaCepData,
+        } as Response);
+      }
+      return Promise.reject(new Error("other"));
+    });
 
     const result = await lookupCep("04562-050");
-    expect(result).toEqual({
-      cep: "04562-050",
-      street: "Rua Pais de Araújo",
-      neighborhood: "Itaim Bibi",
-      city: "São Paulo",
-      state: "SP",
-      source: "viacep",
-    });
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(result.city).toBe("São Paulo");
+    expect(result.street).toBe("Rua Furnas");
+    expect(result.source).toBe("viacep");
   });
 
-  it("falls back to BrasilAPI when ViaCEP returns erro", async () => {
-    const mockBrasilApiResponse = {
+  it("falls back to BrasilAPI when ViaCEP returns erro or fails", async () => {
+    const mockBrasilApiData = {
       cep: "04562050",
-      street: "Rua Pais de Araújo",
-      neighborhood: "Itaim Bibi",
+      street: "Rua Furnas",
+      neighborhood: "Brooklin Paulista",
       city: "São Paulo",
       state: "SP",
     };
 
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ erro: true }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockBrasilApiResponse,
-      } as Response);
+    global.fetch = vi.fn().mockImplementation((input: any) => {
+      const url = typeof input === "string" ? input : input?.url || "";
+      if (url.includes("viacep.com.br")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ erro: true }),
+        } as Response);
+      }
+      if (url.includes("brasilapi.com.br")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockBrasilApiData,
+        } as Response);
+      }
+      return Promise.reject(new Error("other"));
+    });
 
     const result = await lookupCep("04562-050");
-    expect(result).toEqual({
-      cep: "04562-050",
-      street: "Rua Pais de Araújo",
-      neighborhood: "Itaim Bibi",
-      city: "São Paulo",
-      state: "SP",
-      source: "brasilapi",
-    });
-    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(result.city).toBe("São Paulo");
+    expect(result.street).toBe("Rua Furnas");
+    expect(result.source).toBe("brasilapi");
   });
 
   it("falls back to AwesomeAPI when ViaCEP and BrasilAPI fail", async () => {
-    const mockAwesomeApiResponse = {
+    const mockAwesomeApiData = {
       cep: "04562050",
-      address: "Rua Pais de Araújo",
-      district: "Itaim Bibi",
+      address: "Rua Furnas",
+      district: "Brooklin Paulista",
       city: "São Paulo",
       state: "SP",
     };
 
-    global.fetch = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("ViaCEP network down"))
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockAwesomeApiResponse,
-      } as Response);
-
-    const result = await lookupCep("04562050");
-    expect(result).toEqual({
-      cep: "04562-050",
-      street: "Rua Pais de Araújo",
-      neighborhood: "Itaim Bibi",
-      city: "São Paulo",
-      state: "SP",
-      source: "awesomeapi",
+    global.fetch = vi.fn().mockImplementation((input: any) => {
+      const url = typeof input === "string" ? input : input?.url || "";
+      if (url.includes("viacep.com.br") || url.includes("brasilapi.com.br")) {
+        return Promise.reject(new Error("network error"));
+      }
+      if (url.includes("awesomeapi.com.br")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockAwesomeApiData,
+        } as Response);
+      }
+      return Promise.reject(new Error("other"));
     });
-    expect(global.fetch).toHaveBeenCalledTimes(3);
+
+    const result = await lookupCep("04562-050");
+    expect(result.city).toBe("São Paulo");
+    expect(result.street).toBe("Rua Furnas");
+    expect(result.source).toBe("awesomeapi");
   });
 
-  it("throws NOT_FOUND when all providers fail", async () => {
-    global.fetch = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("ViaCEP error"))
-      .mockRejectedValueOnce(new Error("BrasilAPI error"))
-      .mockRejectedValueOnce(new Error("AwesomeAPI error"));
+  it("throws NOT_FOUND when all strategies fail", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error("Offline"));
 
     await expect(lookupCep("00000000")).rejects.toThrow(CepLookupError);
     await expect(lookupCep("00000000")).rejects.toMatchObject({

@@ -31,9 +31,9 @@ export const PlanTrialInfoBanner: React.FC<PlanTrialInfoBannerProps> = React.mem
           <Sparkles className="w-5 h-5" />
         </div>
         <div className="space-y-1">
-          <h4 className="font-bold text-foreground text-sm sm:text-base">Como funciona a Degustação Gratuita?</h4>
+          <h4 className="font-bold text-foreground text-sm sm:text-base">Como funciona o Teste Gratuito (7 dias)?</h4>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Você pode cadastrar até <strong>5 pacientes</strong>, realizar até <strong>20 atendimentos clínicos</strong> com <strong>1 formulário personalizado extra</strong> e até <strong>4 acessos simultâneos</strong> durante a <strong>degustação de 7 dias ou até 20 atendimentos</strong>, sem necessidade de cartão de crédito.
+            Você pode cadastrar até <strong>5 pacientes</strong>, realizar até <strong>20 atendimentos clínicos</strong> com <strong>1 formulário personalizado extra</strong> e até <strong>4 acessos simultâneos</strong> durante o <strong>teste gratuito de 7 dias ou até 20 atendimentos</strong> (equivalente ao plano Clínica Pro).
           </p>
         </div>
       </div>

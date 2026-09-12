@@ -30,9 +30,9 @@ import { AsaasClient } from '../_shared/asaas-client.ts';
 
 const PLAN_PRICING_CONFIG = {
   solo: {
-    annual: { baseMonthlyEq: 44.0, extraSeatRate: 35.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
-    quarterly: { baseMonthlyEq: 53.0, extraSeatRate: 35.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
-    monthly: { baseMonthlyEq: 59.0, extraSeatRate: 35.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    annual: { baseMonthlyEq: 40.0, extraSeatRate: 35.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
+    quarterly: { baseMonthlyEq: 53.99, extraSeatRate: 35.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
+    monthly: { baseMonthlyEq: 59.99, extraSeatRate: 35.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
   },
   clinic: {
     annual: { baseMonthlyEq: 104.0, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },

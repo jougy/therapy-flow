@@ -50,7 +50,7 @@ export const PlanBillingCycleSelector: React.FC<PlanBillingCycleSelectorProps> =
             }`}
           >
             <Sparkles className="w-3 h-3 text-amber-300" />
-            <span>Degustação Grátis (Free)</span>
+            <span>Teste gratuito (7 dias)</span>
           </button>
         )}
 

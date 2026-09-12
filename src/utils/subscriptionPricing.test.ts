@@ -5,22 +5,22 @@ describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
   describe("PLAN_PRICING_CONFIG matrix", () => {
     it("should match official pricing matrix for solo plan", () => {
       expect(PLAN_PRICING_CONFIG.solo.monthly).toEqual({
-        monthlyEq: 59.0,
+        monthlyEq: 59.99,
         periodMultiplier: 1,
         periodLabel: "mês",
         cycleTitle: "Plano Mensal",
       });
       expect(PLAN_PRICING_CONFIG.solo.quarterly).toEqual({
-        monthlyEq: 53.0,
+        monthlyEq: 53.99,
         periodMultiplier: 3,
         periodLabel: "trimestre",
         cycleTitle: "Plano Trimestral (-10% OFF)",
       });
       expect(PLAN_PRICING_CONFIG.solo.annual).toEqual({
-        monthlyEq: 44.0,
+        monthlyEq: 40.0,
         periodMultiplier: 12,
         periodLabel: "ano",
-        cycleTitle: "Plano Anual (Economia de 25%)",
+        cycleTitle: "Plano Anual (Economia de 33%)",
       });
     });
 
@@ -77,15 +77,15 @@ describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
     it("calculates Solo Monthly correctly", () => {
       const result = calculatePlanPrice({ planType: "solo", billingCycle: "monthly" });
       expect(result).toEqual({
-        baseMonthlyEq: 59.0,
-        monthlyEquivalent: 59.0,
+        baseMonthlyEq: 59.99,
+        monthlyEquivalent: 59.99,
         periodMultiplier: 1,
-        periodTotal: 59.0,
-        pixDiscountTotal: 56.05,
+        periodTotal: 59.99,
+        pixDiscountTotal: 56.99,
         extraSeatRate: 0,
         extraSeatsCount: 0,
         installmentsCount: 1,
-        installmentValue: 59.0,
+        installmentValue: 59.99,
         periodLabel: "mês",
         cycleTitle: "Plano Mensal",
       });
@@ -94,15 +94,15 @@ describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
     it("calculates Solo Quarterly correctly", () => {
       const result = calculatePlanPrice({ planType: "solo", billingCycle: "quarterly" });
       expect(result).toEqual({
-        baseMonthlyEq: 53.0,
-        monthlyEquivalent: 53.0,
+        baseMonthlyEq: 53.99,
+        monthlyEquivalent: 53.99,
         periodMultiplier: 3,
-        periodTotal: 159.0,
-        pixDiscountTotal: 151.05,
+        periodTotal: 161.97,
+        pixDiscountTotal: 153.87,
         extraSeatRate: 0,
         extraSeatsCount: 0,
         installmentsCount: 3,
-        installmentValue: 53.0,
+        installmentValue: 53.99,
         periodLabel: "trimestre",
         cycleTitle: "Plano Trimestral (-10% OFF)",
       });
@@ -111,17 +111,17 @@ describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
     it("calculates Solo Annual correctly", () => {
       const result = calculatePlanPrice({ planType: "solo", billingCycle: "annual" });
       expect(result).toEqual({
-        baseMonthlyEq: 44.0,
-        monthlyEquivalent: 44.0,
+        baseMonthlyEq: 40.0,
+        monthlyEquivalent: 40.0,
         periodMultiplier: 12,
-        periodTotal: 528.0,
-        pixDiscountTotal: 501.6,
+        periodTotal: 480.0,
+        pixDiscountTotal: 456.0,
         extraSeatRate: 0,
         extraSeatsCount: 0,
         installmentsCount: 12,
-        installmentValue: 44.0,
+        installmentValue: 40.0,
         periodLabel: "ano",
-        cycleTitle: "Plano Anual (Economia de 25%)",
+        cycleTitle: "Plano Anual (Economia de 33%)",
       });
     });
 
@@ -129,7 +129,7 @@ describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
       const result = calculatePlanPrice({ planType: "solo", billingCycle: "monthly", additionalSeats: 5 });
       expect(result.extraSeatsCount).toBe(0);
       expect(result.extraSeatRate).toBe(0);
-      expect(result.periodTotal).toBe(59.0);
+      expect(result.periodTotal).toBe(59.99);
     });
   });
 
@@ -254,11 +254,11 @@ describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
         billingCycle: "annual",
         coupon: { code: "PROMO20", discount_type: "PERCENTAGE", discount_value: 20 },
       });
-      // 528 * 0.8 = 422.4
-      expect(result.periodTotal).toBe(422.4);
-      expect(result.monthlyEquivalent).toBe(35.2); // 44 * 0.8
-      expect(result.pixDiscountTotal).toBe(401.28); // 422.4 * 0.95
-      expect(result.installmentValue).toBe(35.2); // 422.4 / 12
+      // 480 * 0.8 = 384
+      expect(result.periodTotal).toBe(384.0);
+      expect(result.monthlyEquivalent).toBe(32.0); // 40 * 0.8
+      expect(result.pixDiscountTotal).toBe(364.8); // 384 * 0.95
+      expect(result.installmentValue).toBe(32.0); // 384 / 12
     });
 
     it("applies FIXED_AMOUNT coupon correctly on Clinic Quarterly", () => {

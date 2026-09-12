@@ -179,7 +179,7 @@ export function usePlanosState(): UsePlanosStateReturn {
     if (activatingTrial) return;
 
     if (isFreeCycle) {
-      const trialPlan = planId === "enterprise" ? "clinic" : planId;
+      const trialPlan = "clinic";
       if (!existingClinicId) {
         navigate(`/onboarding-clinica?plan=${trialPlan}&cycle=annual&trial=true`);
         return;
@@ -208,10 +208,10 @@ export function usePlanosState(): UsePlanosStateReturn {
         if (typeof selectClinic === "function") {
           try { await selectClinic(existingClinicId); } catch (e) { console.warn("Auto-seleção:", e); }
         }
-        toast.success("Plano Degustação Grátis ativado com sucesso!");
+        toast.success("Teste Gratuito (7 dias) ativado com sucesso!");
         navigate("/espacopessoal", { replace: true });
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Erro ao ativar degustação grátis.";
+        const msg = err instanceof Error ? err.message : "Erro ao ativar teste gratuito.";
         if (msg.includes("CARD_REQUIRED_FOR_TRIAL")) {
           navigate(`/pagamento/${existingClinicId}?plan=${trialPlan}&cycle=annual&trial=true`);
           return;

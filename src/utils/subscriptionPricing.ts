@@ -76,9 +76,9 @@ export interface CouponDiscount {
  */
 export const PLAN_PRICING_CONFIG = {
   solo: {
-    annual: { monthlyEq: 44.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" },
-    quarterly: { monthlyEq: 53.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" },
-    monthly: { monthlyEq: 59.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { monthlyEq: 40.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" },
+    quarterly: { monthlyEq: 53.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" },
+    monthly: { monthlyEq: 59.99, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
   clinic: {
     annual: { baseMonthlyEq: 104.0, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" },

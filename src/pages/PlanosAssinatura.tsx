@@ -95,7 +95,7 @@ export default function PlanosAssinatura() {
               className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/20 text-xs font-semibold transition-colors"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Como funciona a degustação?</span>
+              <span>Como funciona o teste gratuito?</span>
             </button>
           )}
 
@@ -129,7 +129,7 @@ export default function PlanosAssinatura() {
         <p className="text-xs text-muted-foreground max-w-xl mx-auto line-clamp-1">
           {existingClinicName
             ? `Configurando o espaço: ${existingClinicName}`
-            : "Economize até 25% no plano anual ou comece com a degustação gratuita de 7 dias."}
+            : "Economize até 33% no plano anual ou comece com o teste gratuito de 7 dias."}
         </p>
 
         <PlanBillingCycleSelector
@@ -155,37 +155,57 @@ export default function PlanosAssinatura() {
         </div>
       )}
 
-      {/* Grid de Planos Principais: 3 Tiers (Solo, Clínica Pro, Enterprise) */}
-      <div className="z-10 grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4 xl:gap-5 w-full max-w-7xl flex-1 items-stretch min-h-0 my-1">
-        <PlanCardSolo
-          isFreeCycle={isFreeCycle}
-          pricing={soloPricing}
-          isSelected={selectedPlanId === "solo"}
-          onSelectPlan={handleSelectPlan}
-          onOpenDetails={(plan) => setDetailsPlanId(plan)}
-          activatingTrial={activatingTrial}
-        />
-        <PlanCardClinic
-          isFreeCycle={isFreeCycle}
-          pricing={clinicPricing}
-          isSelected={selectedPlanId === "clinic"}
-          onSelectPlan={handleSelectPlan}
-          onOpenDetails={(plan) => setDetailsPlanId(plan)}
-          activatingTrial={activatingTrial}
-          extraConcurrent={extraConcurrent}
-          onExtraConcurrentChange={setExtraConcurrent}
-        />
-        <PlanCardEnterprise
-          isFreeCycle={isFreeCycle}
-          pricing={enterprisePricing}
-          isSelected={selectedPlanId === "enterprise"}
-          onSelectPlan={handleSelectPlan}
-          onOpenDetails={(plan) => setDetailsPlanId(plan)}
-          activatingTrial={activatingTrial}
-          extraConcurrentEnterprise={extraConcurrentEnterprise}
-          onExtraConcurrentEnterpriseChange={setExtraConcurrentEnterprise}
-        />
-      </div>
+      {/* Grid de Planos Principais: Opção Única no Teste Gratuito (Clínica Pro) ou 3 Tiers nos Ciclos Pagos */}
+      {isFreeCycle ? (
+        <div className="z-10 w-full max-w-xl flex-1 flex flex-col justify-center items-center my-1 mx-auto">
+          <div className="w-full">
+            <PlanCardClinic
+              isFreeCycle={true}
+              pricing={clinicPricing}
+              isSelected={true}
+              onSelectPlan={handleSelectPlan}
+              onOpenDetails={(plan) => setDetailsPlanId(plan)}
+              activatingTrial={activatingTrial}
+              extraConcurrent={0}
+              onExtraConcurrentChange={setExtraConcurrent}
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground text-center mt-2">
+            O teste gratuito concede acesso completo aos recursos do plano <strong>Clínica Pro</strong> com 4 acessos simultâneos durante 7 dias.
+          </p>
+        </div>
+      ) : (
+        <div className="z-10 grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4 xl:gap-5 w-full max-w-7xl flex-1 items-stretch min-h-0 my-1">
+          <PlanCardSolo
+            isFreeCycle={false}
+            pricing={soloPricing}
+            isSelected={selectedPlanId === "solo"}
+            onSelectPlan={handleSelectPlan}
+            onOpenDetails={(plan) => setDetailsPlanId(plan)}
+            activatingTrial={activatingTrial}
+          />
+          <PlanCardClinic
+            isFreeCycle={false}
+            pricing={clinicPricing}
+            isSelected={selectedPlanId === "clinic"}
+            onSelectPlan={handleSelectPlan}
+            onOpenDetails={(plan) => setDetailsPlanId(plan)}
+            activatingTrial={activatingTrial}
+            extraConcurrent={extraConcurrent}
+            onExtraConcurrentChange={setExtraConcurrent}
+          />
+          <PlanCardEnterprise
+            isFreeCycle={false}
+            pricing={enterprisePricing}
+            isSelected={selectedPlanId === "enterprise"}
+            onSelectPlan={handleSelectPlan}
+            onOpenDetails={(plan) => setDetailsPlanId(plan)}
+            activatingTrial={activatingTrial}
+            extraConcurrentEnterprise={extraConcurrentEnterprise}
+            onExtraConcurrentEnterpriseChange={setExtraConcurrentEnterprise}
+          />
+        </div>
+      )}
 
       {/* Rodapé Compacto com Gatilhos de Modal e Garantia Ética */}
       <div className="w-full max-w-7xl shrink-0 z-10 pt-2 pb-1 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-muted-foreground">
@@ -201,7 +221,7 @@ export default function PlanosAssinatura() {
               onClick={() => setIsTrialModalOpen(true)}
               className="hover:text-foreground underline sm:hidden font-medium"
             >
-              Regras da degustação
+              Regras do teste gratuito
             </button>
           )}
           <button

@@ -239,7 +239,7 @@ export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({
             }}
             className="rounded-xl text-xs h-9 font-bold bg-primary text-primary-foreground flex items-center gap-1 px-4"
           >
-            <span>{isFreeCycle ? "Ativar Este Plano na Degustação" : "Contratar Este Plano"}</span>
+            <span>{isFreeCycle ? "Iniciar Teste Gratuito (7 dias)" : "Contratar Este Plano"}</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </Button>
         </div>
