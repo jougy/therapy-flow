@@ -92,6 +92,23 @@ export type PersonDetail = {
   type?: "account" | "patient";
 };
 
+export interface PlatformSubscriptionData {
+  id?: string;
+  clinic_id?: string;
+  account_owner_user_id?: string;
+  plan_type?: string;
+  billing_cycle?: string | null;
+  status?: string | null;
+  is_courtesy?: boolean | null;
+  courtesy_reason?: string | null;
+  expires_at?: string | null;
+  current_period_end?: string | null;
+  auto_renew?: boolean | null;
+  base_concurrent_access_count?: number | null;
+  base_subaccount_limit?: number | null;
+  [key: string]: unknown;
+}
+
 export type AccountOperation =
   | "create_subaccount"
   | "create_simple_user"
@@ -108,3 +125,4 @@ export type AccountOperation =
   | "resend_invitation"
   | "confirm_user_email_manually"
   | "delete_user_attempt";
+

@@ -352,7 +352,7 @@ export const TutorialOverlay = () => {
   return createPortal(
     <>
       <TutorialChapterModal />
-      <div className="fixed inset-0 z-[99990] pointer-events-none">
+      <div data-tutorial-overlay="true" className="fixed inset-0 z-[99990] pointer-events-none">
         {/* SVG Mask Spotlight Overlay */}
         <svg
           className="absolute inset-0 w-full h-full pointer-events-auto transition-all duration-300"
@@ -415,7 +415,7 @@ export const TutorialOverlay = () => {
         )}
 
         {/* Floating Guided Card */}
-        <div className="pointer-events-auto">
+        <div data-tutorial-card="true" className="pointer-events-auto">
           <TutorialCard
             ref={cardRef}
             style={effectiveCardStyle}

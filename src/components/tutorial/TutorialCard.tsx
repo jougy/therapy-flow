@@ -53,6 +53,7 @@ export const TutorialCard = forwardRef<HTMLDivElement, TutorialCardProps>(
       <div
         ref={ref}
         style={style}
+        data-tutorial-card="true"
         className="z-[99999] w-[min(420px,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-primary/30 bg-background/95 p-4 sm:p-5 shadow-2xl backdrop-blur-md transition-shadow duration-200 select-none animate-in fade-in zoom-in-95"
       >
         {/* Drag Handle Bar */}

@@ -609,4 +609,21 @@ describe("anamnesis forms helpers", () => {
       "Dor Aguda",
     ]);
   });
+
+  it("sanitizes simple_list string arrays, filters empty items, and strips control characters", () => {
+    const response = {
+      sintomas_list: [
+        "  Dor Lombar \u0000\u200B  ",
+        "",
+        "   ",
+        "Espasmo Muscular 😀",
+      ],
+    };
+
+    const sanitized = sanitizeAnamnesisFormResponse(response);
+    expect(sanitized.sintomas_list).toEqual([
+      "Dor Lombar",
+      "Espasmo Muscular",
+    ]);
+  });
 });

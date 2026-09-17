@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
+  Baby,
   Calendar,
   Check,
   ChevronRight,
@@ -68,6 +69,12 @@ import {
   SharePatientRegistrationModal,
   type SharePatientData,
 } from "@/components/patients/SharePatientRegistrationModal";
+import {
+  PostRegistrationMinorModal,
+  type MinorCollectionChannel,
+} from "@/components/patients/PostRegistrationMinorModal";
+import { PrintGuardianConsentModal } from "@/components/patients/PrintGuardianConsentModal";
+import { InPersonSignatureModal } from "@/components/patients/InPersonSignatureModal";
 
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 
@@ -159,6 +166,8 @@ const NovoPaciente = () => {
   const [pronome, setPronome] = useState("");
   const [telefone, setTelefone] = useState("");
   const [email, setEmail] = useState("");
+  const [nomeResponsavel, setNomeResponsavel] = useState("");
+  const [parentescoResponsavel, setParentescoResponsavel] = useState("");
 
   const [checkingExistingPatient, setCheckingExistingPatient] = useState(false);
   const [existingPatient, setExistingPatient] = useState<ExistingPatientMatch | null>(null);
@@ -167,10 +176,14 @@ const NovoPaciente = () => {
   const [askShareModalOpen, setAskShareModalOpen] = useState(false);
   const [askManualFillModalOpen, setAskManualFillModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [postRegistrationMinorModalOpen, setPostRegistrationMinorModalOpen] = useState(false);
+  const [printConsentModalOpen, setPrintConsentModalOpen] = useState(false);
+  const [inPersonSignatureModalOpen, setInPersonSignatureModalOpen] = useState(false);
   const [createdPatient, setCreatedPatient] = useState<SharePatientData | null>(null);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
   const birthDateInputRef = useRef<HTMLInputElement>(null);
+  const guardianNameInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const emailInputRef = useRef<HTMLInputElement>(null);
@@ -191,9 +204,13 @@ const NovoPaciente = () => {
     phone: telefone,
     pronoun: pronome,
     usesResponsibleCpf,
+    responsibleName: nomeResponsavel,
+    responsibleRelationship: parentescoResponsavel,
+    requireGuardianIfMinor: true,
   });
 
   const ageDetails = useMemo(() => calculateAgeDetails(dataNascimento), [dataNascimento]);
+  const isMinor = Boolean(ageDetails?.isMinor);
   const emailTypo = useMemo(() => suggestEmailTypo(email), [email]);
 
   const markTouched = (field: string) => {
@@ -308,6 +325,8 @@ const NovoPaciente = () => {
       email: true,
       nome: true,
       telefone: true,
+      nomeResponsavel: true,
+      parentescoResponsavel: true,
     });
 
     if (!validation.isValid) {
@@ -322,6 +341,7 @@ const NovoPaciente = () => {
 
       if (firstErrorKey === "name") nameInputRef.current?.focus();
       else if (firstErrorKey === "dateOfBirth") birthDateInputRef.current?.focus();
+      else if (firstErrorKey === "responsibleName") guardianNameInputRef.current?.focus();
       else if (firstErrorKey === "cpf" || firstErrorKey === "documentNumber") documentInputRef.current?.focus();
       else if (firstErrorKey === "phone") phoneInputRef.current?.focus();
       else if (firstErrorKey === "email") emailInputRef.current?.focus();
@@ -353,6 +373,8 @@ const NovoPaciente = () => {
       const isCpfBased = documentType === "cpf" || documentType === "responsible_cpf";
       const finalCpf = isCpfBased ? validation.values.cpf : null;
       const finalRg = !isCpfBased && documentType !== "none" ? validation.values.documentNumber || null : null;
+      const finalResponsibleName = isMinor ? nomeResponsavel.trim() : null;
+      const finalResponsibleRel = isMinor ? parentescoResponsavel.trim() : null;
 
       const { data, error } = await supabase.rpc("ensure_clinic_patient", {
         _clinic_id: clinicId,
@@ -366,6 +388,8 @@ const NovoPaciente = () => {
         _pronoun: pronome || null,
         _rg: finalRg,
         _uses_responsible_cpf: usesResponsibleCpf,
+        _responsible_name: finalResponsibleName,
+        _responsible_relationship: finalResponsibleRel,
       });
 
       if (error || !isEnsurePatientResponse(data)) {
@@ -395,7 +419,10 @@ const NovoPaciente = () => {
         name: validation.values.name,
         cpf: finalCpf,
         responsible_cpf: usesResponsibleCpf ? finalCpf : null,
+        responsible_name: finalResponsibleName,
+        responsible_relationship: finalResponsibleRel,
         date_of_birth: validation.values.dateOfBirth,
+        age: ageDetails?.years ?? null,
         phone: validation.values.phone,
         email: validation.values.email,
         gender: genero,
@@ -409,8 +436,12 @@ const NovoPaciente = () => {
         description: `${validation.values.name} foi adicionado(a) com sucesso.`,
       });
 
-      // Abre o fluxo de perguntas pós-cadastro
-      setAskShareModalOpen(true);
+      // Abre o fluxo de menor se for menor de idade, senão abre o fluxo padrão de perguntas pós-cadastro
+      if (isMinor) {
+        setPostRegistrationMinorModalOpen(true);
+      } else {
+        setAskShareModalOpen(true);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro inesperado";
       if (
@@ -436,6 +467,24 @@ const NovoPaciente = () => {
   const docError = (touched.cpf || touched.documentNumber || submitAttempted) && (validation.errors.cpf || validation.errors.documentNumber);
   const phoneError = (touched.telefone || submitAttempted) && validation.errors.phone;
   const emailError = (touched.email || submitAttempted) && validation.errors.email;
+  const guardianNameError = (touched.nomeResponsavel || submitAttempted) && validation.errors.responsibleName;
+  const guardianRelError = (touched.parentescoResponsavel || submitAttempted) && validation.errors.responsibleRelationship;
+
+  const handleSelectMinorChannel = (channel: MinorCollectionChannel) => {
+    if (channel === "whatsapp") {
+      setShareModalOpen(true);
+    } else if (channel === "in_person") {
+      setInPersonSignatureModalOpen(true);
+    } else if (channel === "paper") {
+      setPrintConsentModalOpen(true);
+    }
+  };
+
+  const handleSkipMinorModal = () => {
+    if (createdPatient) {
+      navigate(patientPagePath(createdPatient.patient_code || createdPatient.id));
+    }
+  };
 
   const currentDocConfig = DOCUMENT_TYPE_OPTIONS.find((opt) => opt.value === documentType) || DOCUMENT_TYPE_OPTIONS[0];
 
@@ -593,21 +642,91 @@ const NovoPaciente = () => {
               {birthError && (
                 <p className="text-xs text-destructive font-medium">{birthError}</p>
               )}
-              {ageDetails?.isMinor && documentType === "cpf" && (
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl border border-blue-200 bg-blue-50/70 dark:border-blue-900/60 dark:bg-blue-950/30 text-xs text-blue-900 dark:text-blue-200 mt-1">
-                  <span>👶 Paciente menor de idade ({ageDetails.label}). Deseja usar o CPF do responsável?</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setDocumentType("responsible_cpf");
-                      markTouched("cpf");
-                    }}
-                    className="h-7 text-xs px-2.5 bg-background hover:bg-blue-100 dark:hover:bg-blue-900 font-medium shrink-0"
-                  >
-                    Usar CPF do responsável
-                  </Button>
+              {isMinor && (
+                <div className="space-y-4 pt-1">
+                  <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/80 dark:border-amber-900/60 dark:bg-amber-950/30 text-xs text-amber-950 dark:text-amber-200 flex items-start gap-2.5">
+                    <Baby className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="font-semibold">
+                        👶 Paciente menor de idade ({ageDetails?.label}). Exige autorização formal de um responsável legal (LGPD Art. 14).
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Informe o nome e vínculo de quem detém o poder familiar ou guarda legal do(a) paciente.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3.5 sm:p-4 rounded-xl border bg-muted/20">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="nomeResponsavel" className="text-sm font-medium">
+                        Nome do responsável legal <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        ref={guardianNameInputRef}
+                        id="nomeResponsavel"
+                        value={nomeResponsavel}
+                        onChange={(e) => setNomeResponsavel(sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.name))}
+                        onBlur={() => {
+                          markTouched("nomeResponsavel");
+                          if (nomeResponsavel) setNomeResponsavel(formatNameTitleCase(nomeResponsavel));
+                        }}
+                        placeholder="Ex: Maria da Silva"
+                        aria-invalid={Boolean(guardianNameError)}
+                        className={guardianNameError ? "border-destructive focus-visible:ring-destructive" : ""}
+                      />
+                      {guardianNameError && (
+                        <p className="text-xs text-destructive font-medium">{guardianNameError}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="parentescoResponsavel" className="text-sm font-medium">
+                        Grau de parentesco / Vínculo <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        value={parentescoResponsavel}
+                        onValueChange={(val) => {
+                          setParentescoResponsavel(val);
+                          markTouched("parentescoResponsavel");
+                        }}
+                      >
+                        <SelectTrigger
+                          id="parentescoResponsavel"
+                          className={guardianRelError ? "border-destructive focus-visible:ring-destructive" : ""}
+                        >
+                          <SelectValue placeholder="Selecione o vínculo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Mãe">Mãe</SelectItem>
+                          <SelectItem value="Pai">Pai</SelectItem>
+                          <SelectItem value="Tutor Legal">Tutor(a) Legal</SelectItem>
+                          <SelectItem value="Curador">Curador(a)</SelectItem>
+                          <SelectItem value="Outro">Outro vínculo legal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {guardianRelError && (
+                        <p className="text-xs text-destructive font-medium">{guardianRelError}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {documentType === "cpf" && (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl border border-blue-200 bg-blue-50/70 dark:border-blue-900/60 dark:bg-blue-950/30 text-xs text-blue-900 dark:text-blue-200">
+                      <span>Deseja preencher o CPF do responsável no cadastro?</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setDocumentType("responsible_cpf");
+                          markTouched("cpf");
+                        }}
+                        className="h-7 text-xs px-2.5 bg-background hover:bg-blue-100 dark:hover:bg-blue-900 font-medium shrink-0"
+                      >
+                        Usar CPF do responsável
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -949,6 +1068,49 @@ const NovoPaciente = () => {
         continueButtonLabel="Próximo passo"
         onContinueToPatient={() => {
           setShareModalOpen(false);
+          setAskManualFillModalOpen(true);
+        }}
+      />
+
+      {/* Minor Unified Post-Registration Modal */}
+      <PostRegistrationMinorModal
+        open={postRegistrationMinorModalOpen}
+        onOpenChange={setPostRegistrationMinorModalOpen}
+        patient={createdPatient}
+        clinicName={clinic?.name}
+        onSelectChannel={handleSelectMinorChannel}
+        onSkip={handleSkipMinorModal}
+      />
+
+      {/* Minor Print A4 Modal */}
+      <PrintGuardianConsentModal
+        open={printConsentModalOpen}
+        onOpenChange={(open) => {
+          setPrintConsentModalOpen(open);
+          if (!open && createdPatient) {
+            setAskManualFillModalOpen(true);
+          }
+        }}
+        patient={createdPatient}
+        clinicName={clinic?.name}
+        onPrinted={() => {
+          setPrintConsentModalOpen(false);
+          setAskManualFillModalOpen(true);
+        }}
+      />
+
+      {/* Minor In-Person Touch/Mouse Signature Modal */}
+      <InPersonSignatureModal
+        open={inPersonSignatureModalOpen}
+        onOpenChange={(open) => {
+          setInPersonSignatureModalOpen(open);
+          if (!open && createdPatient) {
+            setAskManualFillModalOpen(true);
+          }
+        }}
+        patient={createdPatient}
+        onSigned={() => {
+          setInPersonSignatureModalOpen(false);
           setAskManualFillModalOpen(true);
         }}
       />

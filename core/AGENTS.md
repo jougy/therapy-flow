@@ -115,4 +115,5 @@ When finishing a task, always report:
 - which commands were run;
 - which commands passed;
 - which commands failed;
-- whether any failure was pre-existing or introduced by the change.
+- whether any failure was pre-existing or introduced by the change;
+- Kanban update: confirm that `core/Pluri-Health/00 - Navegacao/Kanban de Tarefas.md` has been updated with current status and timestamps.

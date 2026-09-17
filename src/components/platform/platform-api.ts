@@ -33,11 +33,32 @@ export const callRpc = async (
   return result;
 };
 
+const sanitizePayloadForLogging = (payload: Record<string, unknown>): Record<string, unknown> => {
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (/password|token|code|secret|hash/i.test(key)) {
+      sanitized[key] = "[REDACTED]";
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+};
+
 export const callPlatformAccountAdmin = async (action: string, payload: Record<string, unknown>, reason: string) => {
   const startedAt = performance.now();
+  const safePayloadForLogs = sanitizePayloadForLogging(payload);
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 
   const { data, error } = await supabase.functions.invoke("platform-account-admin", {
     body: { action, payload, reason },
+    headers,
   });
 
   const durationMs = Math.round(performance.now() - startedAt);
@@ -56,14 +77,14 @@ export const callPlatformAccountAdmin = async (action: string, payload: Record<s
     }
     logRuntimeRpc(
       `functions/platform-account-admin:${action}`,
-      payload,
+      safePayloadForLogs,
       "error",
       durationMs,
       null,
       errorMsg
     );
     logRuntimeError("platform.admin", `Falha na ação ${action}: ${errorMsg}`, {
-      payload,
+      payload: safePayloadForLogs,
       reason,
       error,
     });
@@ -72,7 +93,7 @@ export const callPlatformAccountAdmin = async (action: string, payload: Record<s
 
   logRuntimeRpc(
     `functions/platform-account-admin:${action}`,
-    payload,
+    safePayloadForLogs,
     "success",
     durationMs,
     data
@@ -98,6 +119,20 @@ export const clinicAccessStatusLabels: Record<string, string> = {
   payment_pending: "Pagamento pendente",
   temporarily_paused: "Pausada temporariamente",
 };
+
+export const clinicStatusLabels: Record<string, string> = {
+  active: "Ativa",
+  payment_pending: "Pagamento pendente",
+  temporarily_paused: "Pausada temporariamente",
+  banned: "Bloqueada",
+  delete: "Excluir definitivamente",
+};
+
+export const planLabels: Record<string, string> = {
+  solo: "Plano Solo (1 profissional)",
+  clinic: "Plano com Equipe (Clínica)",
+};
+
 
 export const formatClinicAccessStatus = (value: string) => clinicAccessStatusLabels[value] ?? value;
 

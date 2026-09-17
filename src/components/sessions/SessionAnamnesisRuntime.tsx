@@ -14,6 +14,7 @@ import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
+import { SimpleListFieldInput } from "@/components/anamnesis/SimpleListFieldInput";
 import type { ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import type { GroupSuggestion } from "./types";
 import { Badge } from "@/components/ui/badge";
@@ -707,6 +708,19 @@ export const SessionAnamnesisRuntime = ({
             clinicColorSlots={clinicColorSlots}
             groupSuggestions={groupSuggestions}
             onSaveNewClinicTag={onSaveNewClinicTag}
+          />
+        </div>
+      );
+    }
+
+    if (field.type === "simple_list") {
+      return (
+        <div key={field.id} className="min-w-0">
+          <SimpleListFieldInput
+            field={field}
+            value={value}
+            onChange={(next) => updateFormResponse(field.id, next)}
+            disabled={locked}
           />
         </div>
       );

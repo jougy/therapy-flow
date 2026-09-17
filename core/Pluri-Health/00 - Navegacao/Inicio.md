@@ -28,3 +28,4 @@ Esta vault concentra a documentacao de produto, operacao e implementacao do proj
 - Ambiente tecnico e deploy: [[Ambiente e operacao]]
 - Regras de equipe e acessos: [[Clinica e colaborador no MVP]]
 - Protecao contra regressao: [[TDD e checks]]
+- Acompanhamento de demandas e tarefas: [[Kanban de Tarefas]]

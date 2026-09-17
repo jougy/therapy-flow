@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { 
   ShieldCheck, 
   Sparkles, 
@@ -15,12 +16,14 @@ import {
   Tag, 
   UserRound, 
   Building2,
-  Globe 
+  Globe,
+  Briefcase
 } from "lucide-react";
 import { featureFlagsCatalog } from "@/lib/feature-flags-catalog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { HelpersConfigModal } from "@/components/tutorial/HelpersConfigModal";
+import { FormEditorConfigModal } from "@/components/forms/FormEditorConfigModal";
 
 export interface FeatureConfigModalProps {
   featureKey: string | null;
@@ -47,6 +50,20 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
   if (featureKey === "system_helpers") {
     return (
       <HelpersConfigModal
+        isOpen={isOpen}
+        onClose={onClose}
+        initialData={initialData}
+        onSave={onSave}
+        scope={scope}
+        tagId={tagId}
+        clinicId={clinicId}
+      />
+    );
+  }
+
+  if (featureKey === "forms_editor") {
+    return (
+      <FormEditorConfigModal
         isOpen={isOpen}
         onClose={onClose}
         initialData={initialData}
@@ -527,6 +544,89 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
     );
   };
 
+  const renderClinicalPortfolioConfig = () => {
+    return (
+      <div className="grid gap-6">
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 mb-1 text-primary font-semibold text-sm">
+            <Briefcase className="w-4 h-4" />
+            Portfólio Clínico Profissional (Acervo Pessoal)
+          </div>
+          <p>
+            Configurações do acervo técnico e histórico de atendimentos realizados sob a responsabilidade técnica do profissional, acessível no Espaço Pessoal (/espacopessoal).
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+            <div className="space-y-0.5 pr-4">
+              <Label htmlFor="show-lgpd-banner" className="font-semibold text-sm cursor-pointer">
+                Banner de Conformidade LGPD
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Exibe banner institucional de conformidade jurídica com a LGPD e sigilo profissional no topo do portfólio.
+              </p>
+            </div>
+            <Switch
+              id="show-lgpd-banner"
+              checked={formData.show_lgpd_banner ?? true}
+              onCheckedChange={(val) => setFormData({ ...formData, show_lgpd_banner: val })}
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+            <div className="space-y-0.5 pr-4">
+              <Label htmlFor="allow-clinic-filter" className="font-semibold text-sm cursor-pointer">
+                Busca e Filtragem por Clínica
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Permite ao profissional filtrar seus atendimentos e pacientes por clínica no portfólio pessoal.
+              </p>
+            </div>
+            <Switch
+              id="allow-clinic-filter"
+              checked={formData.allow_clinic_filter ?? true}
+              onCheckedChange={(val) => setFormData({ ...formData, allow_clinic_filter: val })}
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+            <div className="space-y-0.5 pr-4">
+              <Label htmlFor="allow-clinic-redirect" className="font-semibold text-sm cursor-pointer">
+                Atalho de Redirecionamento para Prontuário
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Permite abrir diretamente o prontuário completo da clínica quando o profissional ainda for membro ativo.
+              </p>
+            </div>
+            <Switch
+              id="allow-clinic-redirect"
+              checked={formData.allow_clinic_redirect ?? true}
+              onCheckedChange={(val) => setFormData({ ...formData, allow_clinic_redirect: val })}
+            />
+          </div>
+
+          <div className="space-y-2 pt-2 border-t">
+            <Label htmlFor="maintenance-message" className="text-sm font-semibold">
+              Mensagem de Manutenção (Opcional)
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Se preenchida, será exibida aos profissionais como aviso especial ou comunicado de manutenção temporária no Espaço Pessoal.
+            </p>
+            <Textarea
+              id="maintenance-message"
+              placeholder="Ex: O acervo de atendimentos está passando por sincronização programada..."
+              value={(formData.maintenance_message as string) || ""}
+              onChange={(e) => setFormData({ ...formData, maintenance_message: e.target.value })}
+              className="resize-none"
+              rows={3}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderSubscriptionsConfig = () => {
     if (feature.key === "subscription_free_trial_enabled") {
       return (
@@ -942,6 +1042,7 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
       if (feature.key === "clinic_sessions_list") return renderClinicSessionsListConfig();
       return renderMedicalRecordConfig();
     }
+    if (feature.key === "clinical_portfolio_enabled") return renderClinicalPortfolioConfig();
     if (feature.category === "UI/Experiência") return renderUIConfig();
     
     return (

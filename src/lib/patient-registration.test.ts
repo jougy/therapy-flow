@@ -1,4 +1,5 @@
 import {
+  buildGuardianAuthorizationUrl,
   buildPatientRegistrationPutPayload,
   buildPatientShareMessages,
   calculateAgeDetails,
@@ -8,6 +9,7 @@ import {
   formatPatientCpf,
   formatPatientPhone,
   getPatientRegistrationPassword,
+  GUARDIAN_RELATIONSHIP_OPTIONS,
   isValidCpfDigits,
   isValidPatientBirthDate,
   isValidPatientEmail,
@@ -492,4 +494,57 @@ describe("patient registration helpers", () => {
     expect(formatNameTitleCase("MARIA DE SOUZA E SILVA")).toBe("Maria de Souza e Silva");
     expect(formatNameTitleCase("ana clara dos santos")).toBe("Ana Clara dos Santos");
   });
+
+  it("handles minor guardian validation when requireGuardianIfMinor is enabled", () => {
+    expect(GUARDIAN_RELATIONSHIP_OPTIONS.some((opt) => opt.value === "mae")).toBe(true);
+    expect(GUARDIAN_RELATIONSHIP_OPTIONS.some((opt) => opt.value === "pai")).toBe(true);
+
+    // Minor (born 2016-04-21 -> 10 years old) without guardian name and relationship
+    const invalidMinor = validatePatientPreRegistration({
+      cpf: "12345678909",
+      dateOfBirth: "2016-04-21",
+      name: "Enzo Gabriel",
+      phone: "11987654321",
+      email: "enzo@exemplo.com",
+      requireGuardianIfMinor: true,
+    });
+    expect(invalidMinor.isValid).toBe(false);
+    expect(invalidMinor.errors.responsibleName).toBeDefined();
+    expect(invalidMinor.errors.responsibleRelationship).toBeDefined();
+
+    // Minor with guardian name and relationship
+    const validMinor = validatePatientPreRegistration({
+      cpf: "12345678909",
+      dateOfBirth: "2016-04-21",
+      name: "Enzo Gabriel",
+      phone: "11987654321",
+      email: "enzo@exemplo.com",
+      responsibleName: "Mariana Gabriel",
+      responsibleRelationship: "Mãe",
+      requireGuardianIfMinor: true,
+    });
+    expect(validMinor.isValid).toBe(true);
+    expect(validMinor.errors.responsibleName).toBeUndefined();
+  });
+
+  it("builds guardian authorization url and contextual share messages", () => {
+    const authUrl = buildGuardianAuthorizationUrl("http://localhost:5173", "tok-guardian-123");
+    expect(authUrl).toBe("http://localhost:5173/autorizacao-menor/tok-guardian-123");
+
+    const minorShare = buildPatientShareMessages({
+      patientName: "Lucas Silva",
+      clinicName: "Clínica Pluri",
+      shareUrl: "http://localhost:5173/autorizacao-menor/tok-guardian-123",
+      passwordPrefix: "123456",
+      isMinor: true,
+      responsibleName: "Carlos Silva",
+    });
+
+    expect(minorShare.whatsappMessage).toContain("Carlos");
+    expect(minorShare.whatsappMessage).toContain("Lucas");
+    expect(minorShare.whatsappMessage).toContain("termo de consentimento");
+    expect(minorShare.emailSubject).toContain("Autorização de menor (LGPD)");
+    expect(minorShare.emailSubject).toContain("Lucas");
+  });
 });
+

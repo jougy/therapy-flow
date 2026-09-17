@@ -43,6 +43,7 @@ import type {
   PlatformAuditEvent,
   PlatformClinicDetail,
   PlatformClinicFormsSummary,
+  PlatformSubscriptionData,
   SupportRole,
 } from "@/components/platform/types";
 import {
@@ -65,7 +66,7 @@ export const PlatformClinicDetailPage = ({
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEvent[]>([]);
   const [, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [clinicTags, setClinicTags] = useState<{ id: string; name: string; color: string }[]>([]);
-  const [clinicSubscription, setClinicSubscription] = useState<any | null>(null);
+  const [clinicSubscription, setClinicSubscription] = useState<PlatformSubscriptionData | null>(null);
   const [formsSummary, setFormsSummary] = useState<PlatformClinicFormsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [supportReason, setSupportReason] = useState("");

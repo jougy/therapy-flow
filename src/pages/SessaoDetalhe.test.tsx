@@ -303,4 +303,56 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       expect(screen.getByText("Alergia severa a dipirona")).toBeInTheDocument();
     });
   });
+
+  it("navigates back to /espacopessoal when location.state has from: '/espacopessoal'", async () => {
+    let currentPath = "";
+    const LocationWatcher = () => {
+      const loc = (window as any).__testLocation;
+      return null;
+    };
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/pacientes/patient-123/sessao/session-123", state: { from: "/espacopessoal" } }]}>
+        <Routes>
+          <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
+          <Route path="/espacopessoal" element={<div>Página Espaço Pessoal</div>} />
+          <Route path="/pacientes/:id" element={<div>Página Paciente Detalhe</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Voltar para paciente/i })).toBeInTheDocument();
+    });
+
+    const backBtn = screen.getByRole("button", { name: /Voltar para paciente/i });
+    fireEvent.click(backBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Página Espaço Pessoal")).toBeInTheDocument();
+    });
+  });
+
+  it("navigates back to /pacientes/:patientId when location.state does not have from: '/espacopessoal'", async () => {
+    render(
+      <MemoryRouter initialEntries={["/pacientes/patient-123/sessao/session-123"]}>
+        <Routes>
+          <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
+          <Route path="/espacopessoal" element={<div>Página Espaço Pessoal</div>} />
+          <Route path="/pacientes/:id" element={<div>Página Paciente Detalhe</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Voltar para paciente/i })).toBeInTheDocument();
+    });
+
+    const backBtn = screen.getByRole("button", { name: /Voltar para paciente/i });
+    fireEvent.click(backBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Página Paciente Detalhe")).toBeInTheDocument();
+    });
+  });
 });

@@ -156,4 +156,60 @@ describe("FeatureConfigModal - Assinaturas", () => {
     expect(screen.getByText(/Habilitar Campo de Cupom no Checkout/i)).toBeInTheDocument();
     expect(screen.getByText(/Acumular Cupom com Desconto PIX \(5%\)/i)).toBeInTheDocument();
   });
+
+  it("renders FormEditorConfigModal when featureKey is forms_editor", () => {
+    render(
+      <FeatureConfigModal
+        featureKey="forms_editor"
+        isOpen={true}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("heading", { name: /Editor de Formulários/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Componentes/i })).toBeInTheDocument();
+  });
+
+  it("renders clinical_portfolio_enabled configuration correctly", async () => {
+    supabaseMocks.rpc.mockResolvedValue({ data: null, error: null });
+
+    const onSave = vi.fn();
+    render(
+      <FeatureConfigModal
+        featureKey="clinical_portfolio_enabled"
+        isOpen={true}
+        onClose={vi.fn()}
+        onSave={onSave}
+        initialData={{
+          show_lgpd_banner: true,
+          allow_clinic_filter: true,
+          allow_clinic_redirect: false,
+          maintenance_message: "Sistema em manutenção programada",
+        }}
+      />
+    );
+
+    expect(screen.getAllByText(/Portfólio Clínico Profissional \(Acervo Pessoal\)/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Banner de Conformidade LGPD/i)).toBeInTheDocument();
+    expect(screen.getByText(/Busca e Filtragem por Clínica/i)).toBeInTheDocument();
+    expect(screen.getByText(/Atalho de Redirecionamento para Prontuário/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Sistema em manutenção programada")).toBeInTheDocument();
+
+    const saveBtn = screen.getByRole("button", { name: /Salvar configurações/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("upsert_feature_flag", expect.objectContaining({
+        _key: "clinical_portfolio_enabled",
+        _value: expect.objectContaining({
+          show_lgpd_banner: true,
+          allow_clinic_filter: true,
+          allow_clinic_redirect: false,
+          maintenance_message: "Sistema em manutenção programada",
+        }),
+      }));
+      expect(onSave).toHaveBeenCalled();
+    });
+  });
 });
+

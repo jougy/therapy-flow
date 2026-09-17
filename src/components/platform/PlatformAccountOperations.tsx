@@ -1,71 +1,47 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarPlus, CheckCircle2, Gift, Info, Loader2, ShieldAlert, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Info, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { AccountOperation } from "./types";
+import { PlatformOperationPendingChanges } from "./PlatformOperationPendingChanges";
+import {
+  AccountStatusSelect,
+  ClinicAccessStatusSelect,
+  OperationalRoleSelect,
+} from "./PlatformOperationFieldSelects";
+import { PlatformReauthModal } from "./PlatformReauthModal";
+import {
+  PlatformSubscriptionAdjustmentPanel,
+  type SubscriptionPreview,
+} from "./PlatformSubscriptionAdjustmentPanel";
+import type { AccountOperation, PlatformSubscriptionData } from "./types";
 import {
   accountOperationLabels,
   callPlatformAccountAdmin,
+  clinicStatusLabels,
   destructiveOperations,
   getErrorMessage,
+  planLabels,
 } from "./platform-api";
 
-const clinicStatusLabels: Record<string, string> = {
-  active: "Ativa",
-  payment_pending: "Pagamento pendente",
-  temporarily_paused: "Pausada temporariamente",
-  banned: "Bloqueada",
-  delete: "Excluir definitivamente",
-};
-
-const planLabels: Record<string, string> = {
-  solo: "Plano Solo (1 profissional)",
-  clinic: "Plano com Equipe (Clínica)",
-};
-
-const AccountStatusSelect = ({ onValueChange, value }: { onValueChange: (value: string) => void; value: string }) => (
-  <Select value={value} onValueChange={onValueChange}>
-    <SelectTrigger><SelectValue /></SelectTrigger>
-    <SelectContent>
-      <SelectItem value="active">Ativa</SelectItem>
-      <SelectItem value="payment_pending">Pagamento pendente</SelectItem>
-      <SelectItem value="temporarily_paused">Pausada temporariamente</SelectItem>
-      <SelectItem value="banned">Bloqueada</SelectItem>
-    </SelectContent>
-  </Select>
-);
-
-const ClinicAccessStatusSelect = ({ onValueChange, value }: { onValueChange: (value: string) => void; value: string }) => (
-  <Select value={value} onValueChange={onValueChange}>
-    <SelectTrigger><SelectValue /></SelectTrigger>
-    <SelectContent>
-      <SelectItem value="active">Ativa</SelectItem>
-      <SelectItem value="payment_pending">Pagamento pendente</SelectItem>
-      <SelectItem value="temporarily_paused">Pausada temporariamente</SelectItem>
-      <SelectItem value="banned">Bloqueada</SelectItem>
-      <SelectItem value="delete">Excluir definitivamente</SelectItem>
-    </SelectContent>
-  </Select>
-);
-
-const OperationalRoleSelect = ({ onValueChange, value }: { onValueChange: (value: string) => void; value: string }) => (
-  <Select value={value} onValueChange={onValueChange}>
-    <SelectTrigger><SelectValue /></SelectTrigger>
-    <SelectContent>
-      <SelectItem value="admin">Administrador</SelectItem>
-      <SelectItem value="professional">Profissional</SelectItem>
-      <SelectItem value="assistant">Assistente</SelectItem>
-      <SelectItem value="estagiario">Estagiário</SelectItem>
-    </SelectContent>
-  </Select>
-);
+export interface PlatformAccountOperationsProps {
+  allowedOperations?: AccountOperation[];
+  clinicId?: string;
+  clinicAccessStatus?: string;
+  concurrentAccessLimit?: string;
+  compact?: boolean;
+  defaultIdentifier?: string;
+  defaultPatientId?: string;
+  onDone: () => void;
+  subaccountLimit?: string;
+  subscriptionPlan?: "solo" | "clinic";
+  subscriptionData?: PlatformSubscriptionData | null;
+  title: string;
+}
 
 export const PlatformAccountOperations = ({
   allowedOperations,
@@ -80,26 +56,13 @@ export const PlatformAccountOperations = ({
   subscriptionPlan: initialSubscriptionPlan = "clinic",
   subscriptionData,
   title,
-}: {
-  allowedOperations?: AccountOperation[];
-  clinicId?: string;
-  clinicAccessStatus?: string;
-  concurrentAccessLimit?: string;
-  compact?: boolean;
-  defaultIdentifier?: string;
-  defaultPatientId?: string;
-  onDone: () => void;
-  subaccountLimit?: string;
-  subscriptionPlan?: "solo" | "clinic";
-  subscriptionData?: any;
-  title: string;
-}) => {
+}: PlatformAccountOperationsProps) => {
   const operations = allowedOperations?.length ? allowedOperations : (Object.keys(accountOperationLabels) as AccountOperation[]);
   const [operation, setOperation] = useState<AccountOperation>(operations[0] ?? "create_subaccount");
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [mfaCode, setMfaCode] = useState("");
+  const [isReauthOpen, setIsReauthOpen] = useState(false);
   const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "clinic">(initialSubscriptionPlan ?? "clinic");
   const [isCourtesy, setIsCourtesy] = useState<boolean>(
     subscriptionData?.is_courtesy === true || subscriptionData?.status === "COURTESY"
@@ -247,25 +210,33 @@ export const PlatformAccountOperations = ({
     clinicAccessStatus,
   ]);
 
-  const updateField = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const updateField = useCallback((key: string, value: string) => {
+    setForm((current) => ({ ...current, [key]: value }));
+  }, []);
 
-  const handlePlanChange = (newPlan: "solo" | "clinic") => {
+  const handlePlanChange = useCallback((newPlan: "solo" | "clinic") => {
     setSubscriptionPlan(newPlan);
     if (newPlan === "solo") {
-      updateField("concurrentAccessLimit", "1");
-      updateField("subaccountLimit", "1");
+      setForm((current) => ({
+        ...current,
+        concurrentAccessLimit: "1",
+        subaccountLimit: "1",
+      }));
     } else {
-      updateField("concurrentAccessLimit", "2");
-      updateField("subaccountLimit", "30");
+      setForm((current) => ({
+        ...current,
+        concurrentAccessLimit: "2",
+        subaccountLimit: "30",
+      }));
     }
-  };
+  }, []);
 
   const currentExpiresAt = subscriptionData?.expires_at || subscriptionData?.current_period_end;
   const currentRemainingDays = currentExpiresAt
     ? Math.max(0, Math.ceil((new Date(currentExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : null;
 
-  const previewInfo = () => {
+  const preview: SubscriptionPreview | null = useMemo(() => {
     const days = Number(daysAdjustment);
     if (!Number.isFinite(days) || days === 0) return null;
     const now = Date.now();
@@ -280,14 +251,11 @@ export const PlatformAccountOperations = ({
       diffText: days > 0 ? `+${days} dias` : `${days} dias`,
       isPositive: days > 0,
     };
-  };
-
-  const preview = previewInfo();
+  }, [daysAdjustment, currentExpiresAt]);
 
   const updateOperation = (value: AccountOperation) => {
     setOperation(value);
     setConfirmation("");
-    setMfaCode("");
     setForm((current) => ({
       ...current,
       status: value === "update_clinic_access" ? clinicAccessStatus : current.status === "delete" ? "active" : current.status,
@@ -350,35 +318,36 @@ export const PlatformAccountOperations = ({
     return { patientId: form.patientId };
   };
 
-  const handleSubmit = async () => {
+  const handleOpenReauth = () => {
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 8) {
+      toast({
+        title: "Motivo auditável insuficiente",
+        description: `O motivo precisa ter no mínimo 8 caracteres (atualmente ${trimmedReason.length}). Preencha para prosseguir com a reautenticação 2FA.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (isDestructive && confirmation !== "EXCLUIR") {
+      toast({
+        title: "Confirmação exigida",
+        description: "Digite exatamente 'EXCLUIR' no campo de confirmação antes de prosseguir.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsReauthOpen(true);
+  };
+
+  const handleConfirmedExecution = async () => {
     setSaving(true);
     const actionToExecute = isDeletingClinic ? "delete_clinic_package" : operation;
     const payloadToExecute = isDeletingClinic ? { clinicId: effectiveClinicId } : buildPayload();
     try {
-      if (isDestructive) {
-        const cleanMfaCode = mfaCode.trim().replace(/\D/g, "");
-        if (cleanMfaCode.length !== 6) {
-          throw new Error("Informe o código 2FA/MFA de 6 dígitos do seu autenticador (Ente Auth).");
-        }
-
-        const { data: factorData, error: factorError } = await supabase.auth.mfa.listFactors();
-        if (factorError) throw factorError;
-
-        const totpFactors = Array.isArray(factorData?.totp) ? factorData.totp : [];
-        const verifiedFactor = totpFactors.find((factor) => factor.status === "verified") ?? totpFactors[0];
-
-        if (!verifiedFactor) {
-          throw new Error("Nenhum segundo fator (2FA/MFA) verificado encontrado na sua conta master.");
-        }
-
-        const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
-          factorId: verifiedFactor.id,
-          code: cleanMfaCode,
-        });
-
-        if (verifyError) {
-          throw new Error(`Código MFA inválido ou expirado: ${verifyError.message}`);
-        }
+      // Garante sessão renovada/atualizada do Supabase Auth após o 2FA antes de chamar a Edge Function
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData?.session) {
+        throw new Error("Sessão expirada ou não autenticada após reautenticação. Faça login novamente.");
       }
 
       await callPlatformAccountAdmin(actionToExecute, payloadToExecute, reason);
@@ -390,7 +359,6 @@ export const PlatformAccountOperations = ({
         description: successDescription,
       });
       setConfirmation("");
-      setMfaCode("");
       setReason("");
       setDaysAdjustment("");
       onDone();
@@ -400,6 +368,7 @@ export const PlatformAccountOperations = ({
         description: `${getErrorMessage(error)} (Pressione Cmd+Ctrl+D para ver o log de debug)`,
         variant: "destructive",
       });
+      throw error;
     } finally {
       setSaving(false);
     }
@@ -412,24 +381,8 @@ export const PlatformAccountOperations = ({
         <p className="text-sm text-muted-foreground">Espelha o Gerenciamento de Contas do script operacional, com MFA, backend seguro e motivo obrigatório.</p>
       </div>
 
-      {pendingChanges.length > 0 && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
-          <div className="flex items-center gap-2 font-semibold">
-            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span>Alterações pendentes (não salvas no banco):</span>
-          </div>
-          <ul className="mt-1.5 list-disc list-inside space-y-1 text-xs pl-1">
-            {pendingChanges.map((change, idx) => (
-              <li key={idx} className="font-medium">
-                {change}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-xs text-amber-800/90 dark:text-amber-300/90">
-            ⚠️ <strong>Atenção:</strong> Essas opções <strong>ainda não foram aplicadas</strong>. Para salvar definitivamente, informe o motivo auditável abaixo (mínimo de 8 caracteres) e clique em <strong>Salvar e aplicar alterações pendentes</strong>.
-          </p>
-        </div>
-      )}
+      <PlatformOperationPendingChanges changes={pendingChanges} />
+
       <div className={`grid gap-3 ${compact ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
         <div className="space-y-1">
           <Label>Ação</Label>
@@ -550,111 +503,21 @@ export const PlatformAccountOperations = ({
       </div>
 
       {operation === "update_clinic_access" && (
-        <div className="space-y-3 rounded-lg border bg-background/80 p-3 shadow-sm">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <Gift className="h-4 w-4 text-primary" />
-                <Label htmlFor="courtesy-switch" className="text-sm font-semibold cursor-pointer">
-                  Plano de Cortesia Parceira
-                </Label>
-                {isCourtesy && (
-                  <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-medium border-emerald-500/30">
-                    Vitalício & Gratuito
-                  </Badge>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Concede isenção permanente para clínicas parceiras/apoiadoras: nunca expira e não gera cobrança até revogação deliberada.
-              </p>
-            </div>
-            <Switch
-              id="courtesy-switch"
-              checked={isCourtesy}
-              onCheckedChange={(checked) => {
-                setIsCourtesy(checked);
-                if (checked) setDaysAdjustment("");
-              }}
-            />
-          </div>
-
-          {!isCourtesy && (
-            <div className="space-y-2 border-t pt-2.5">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-1.5">
-                  <CalendarPlus className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium text-foreground">Dar / Tirar dias de assinatura</span>
-                </div>
-                {currentExpiresAt ? (
-                  <span className="text-xs text-muted-foreground">
-                    Vencimento atual: <strong>{new Date(currentExpiresAt).toLocaleDateString("pt-BR")}</strong> ({currentRemainingDays} dias restantes)
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">Sem vencimento ativo registrado</span>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="w-36">
-                  <Input
-                    type="number"
-                    placeholder="+/- dias (ex: 30)"
-                    value={daysAdjustment}
-                    onChange={(event) => setDaysAdjustment(event.target.value)}
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-1">
-                  {[7, 15, 30, 60, 90, 365].map((d) => (
-                    <Button
-                      key={d}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 px-2 text-xs"
-                      onClick={() => setDaysAdjustment(String((Number(daysAdjustment) || 0) + d))}
-                    >
-                      +{d}d
-                    </Button>
-                  ))}
-                  {[-15, -30].map((d) => (
-                    <Button
-                      key={d}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10"
-                      onClick={() => setDaysAdjustment(String((Number(daysAdjustment) || 0) + d))}
-                    >
-                      {d}d
-                    </Button>
-                  ))}
-                  {daysAdjustment && daysAdjustment !== "0" && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2 text-xs text-muted-foreground"
-                      onClick={() => setDaysAdjustment("")}
-                    >
-                      Limpar
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {preview && (
-                <div className="flex items-center gap-2 rounded-md bg-primary/10 px-3 py-1.5 text-xs text-foreground font-medium">
-                  <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
-                  <span>
-                    Novo vencimento previsto: <strong>{preview.dateStr}</strong> ({preview.daysText}) [{preview.diffText}]
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <PlatformSubscriptionAdjustmentPanel
+          isCourtesy={isCourtesy}
+          onCourtesyChange={(checked) => {
+            setIsCourtesy(checked);
+            if (checked) setDaysAdjustment("");
+          }}
+          daysAdjustment={daysAdjustment}
+          onDaysAdjustmentChange={setDaysAdjustment}
+          currentExpiresAt={currentExpiresAt}
+          currentRemainingDays={currentRemainingDays}
+          preview={preview}
+        />
       )}
-      <div className={`grid gap-3 ${isDestructive ? "lg:grid-cols-[minmax(0,1fr)_180px_180px]" : "lg:grid-cols-[minmax(0,1fr)_220px]"}`}>
+
+      <div className={`grid gap-3 ${isDestructive ? "lg:grid-cols-[minmax(0,1fr)_200px]" : "lg:grid-cols-1"}`}>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="flex items-center gap-1">
@@ -699,40 +562,31 @@ export const PlatformAccountOperations = ({
           )}
 
           <Textarea
+            id="platform-audit-reason"
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             maxLength={1000}
             placeholder="Informe a justificativa da ação administrativa (mínimo de 8 caracteres)..."
-            className="min-h-[75px]"
+            className={`min-h-[75px] transition-colors ${
+              reason.trim().length > 0 && reason.trim().length < 8
+                ? "border-amber-500/80 focus-visible:ring-amber-500"
+                : reason.trim().length >= 8
+                ? "border-emerald-500/60 focus-visible:ring-emerald-500"
+                : ""
+            }`}
+            aria-invalid={reason.trim().length > 0 && reason.trim().length < 8}
           />
         </div>
         {isDestructive && (
-          <>
-            <div className="space-y-1">
-              <Label>Confirmação</Label>
-              <Input
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                placeholder="Digite EXCLUIR"
-              />
-              <p className="text-xs text-destructive">Digite EXCLUIR</p>
-            </div>
-            <div className="space-y-1">
-              <Label className="flex items-center gap-1">
-                <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
-                Código 2FA / MFA
-              </Label>
-              <Input
-                value={mfaCode}
-                onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="000000"
-                maxLength={6}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-              />
-              <p className="text-xs text-muted-foreground">App autenticador (Ente Auth)</p>
-            </div>
-          </>
+          <div className="space-y-1">
+            <Label>Confirmação</Label>
+            <Input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              placeholder="Digite EXCLUIR"
+            />
+            <p className="text-xs text-destructive">Digite EXCLUIR</p>
+          </div>
         )}
       </div>
 
@@ -748,9 +602,9 @@ export const PlatformAccountOperations = ({
           disabled={
             saving ||
             reason.trim().length < 8 ||
-            (isDestructive && (confirmation !== "EXCLUIR" || mfaCode.trim().length !== 6))
+            (isDestructive && confirmation !== "EXCLUIR")
           }
-          onClick={() => void handleSubmit()}
+          onClick={handleOpenReauth}
           variant={isDestructive ? "destructive" : "default"}
           className={
             !isDestructive && pendingChanges.length > 0 && reason.trim().length >= 8
@@ -766,6 +620,16 @@ export const PlatformAccountOperations = ({
             : "Executar ação administrativa"}
         </Button>
       </div>
+
+      <PlatformReauthModal
+        open={isReauthOpen}
+        onOpenChange={setIsReauthOpen}
+        pendingChanges={pendingChanges}
+        reason={reason}
+        actionLabel={accountOperationLabels[operation] || (isDeletingClinic ? "Excluir clínica definitivamente" : operation)}
+        isDestructive={isDestructive}
+        onConfirm={handleConfirmedExecution}
+      />
     </div>
   );
 };

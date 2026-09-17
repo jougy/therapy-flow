@@ -1,3 +1,4 @@
+import React, { useEffect, useMemo, type ReactNode } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -53,6 +54,7 @@ import {
   type DesignLabTemplateLayoutItem,
 } from "./types";
 import type { useFormEditorState } from "./useFormEditorState";
+import { useFormEditorPermissions } from "./useFormEditorPermissions";
 
 export interface FormEditorInspectorPanelProps {
   state: ReturnType<typeof useFormEditorState>;
@@ -92,6 +94,35 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
     setDragOverFieldId,
     setDragOverPosition,
   } = state;
+
+  const { isMenuAllowed, isPropertyAllowed, isMenuOptionAllowed } = useFormEditorPermissions();
+
+  const allowFlow = isMenuAllowed("flow");
+  const allowProperties = isMenuAllowed("properties");
+
+  const availableSubTabs = useMemo(() => {
+    return [
+      { icon: Settings2, label: "Ajustes", value: "settings" as const, allowed: isMenuAllowed("settings") },
+      { icon: Palette, label: "Design", value: "design" as const, allowed: isMenuAllowed("design") },
+      { icon: Workflow, label: "Lógica", value: "logic" as const, allowed: isMenuAllowed("logic") },
+    ].filter((t) => t.allowed);
+  }, [isMenuAllowed]);
+
+  // Sincronizar aba principal se a atual estiver desabilitada
+  useEffect(() => {
+    if (!allowFlow && allowProperties && rightSidebarTab === "flow") {
+      setRightSidebarTab("properties");
+    } else if (!allowProperties && allowFlow && rightSidebarTab === "properties") {
+      setRightSidebarTab("flow");
+    }
+  }, [allowFlow, allowProperties, rightSidebarTab, setRightSidebarTab]);
+
+  // Sincronizar sub-aba do inspetor se a atual estiver desabilitada
+  useEffect(() => {
+    if (availableSubTabs.length > 0 && !availableSubTabs.some((t) => t.value === inspectorTab)) {
+      setInspectorTab(availableSubTabs[0].value);
+    }
+  }, [availableSubTabs, inspectorTab, setInspectorTab]);
 
   const isMultiSelecting = selectedFieldIds.length > 1;
 
@@ -246,67 +277,75 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
           </button>
 
           <div className="ml-1 flex items-center gap-0.5 shrink-0 opacity-80 group-hover:opacity-100">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground hover:text-foreground"
-              aria-label={`Mover ${field.label} para cima`}
-              title="Mover para cima"
-              disabled={visualIdx <= 0}
-              onClick={(event) => {
-                event.stopPropagation();
-                moveFieldInTree(field.id, -1);
-              }}
-            >
-              <ArrowUp className="h-3 w-3" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground hover:text-foreground"
-              aria-label={`Mover ${field.label} para baixo`}
-              title="Mover para baixo"
-              disabled={visualIdx < 0 || visualIdx >= visualOrderedFields.length - 1}
-              onClick={(event) => {
-                event.stopPropagation();
-                moveFieldInTree(field.id, 1);
-              }}
-            >
-              <ArrowDown className="h-3 w-3" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground hover:text-foreground"
-              aria-label={`Duplicar ${field.label}`}
-              title="Duplicar"
-              disabled={fieldLimitReached}
-              onClick={(event) => {
-                event.stopPropagation();
-                duplicateField(field);
-              }}
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              aria-label={`Excluir ${field.label}`}
-              title="Excluir"
-              onClick={(event) => {
-                event.stopPropagation();
-                removeField(field.id);
-              }}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+            {isMenuOptionAllowed("flow", "reorder") && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                  aria-label={`Mover ${field.label} para cima`}
+                  title="Mover para cima"
+                  disabled={visualIdx <= 0}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    moveFieldInTree(field.id, -1);
+                  }}
+                >
+                  <ArrowUp className="h-3 w-3" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                  aria-label={`Mover ${field.label} para baixo`}
+                  title="Mover para baixo"
+                  disabled={visualIdx < 0 || visualIdx >= visualOrderedFields.length - 1}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    moveFieldInTree(field.id, 1);
+                  }}
+                >
+                  <ArrowDown className="h-3 w-3" />
+                </Button>
+              </>
+            )}
+            {isMenuOptionAllowed("flow", "duplicate") && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                aria-label={`Duplicar ${field.label}`}
+                title="Duplicar"
+                disabled={fieldLimitReached}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  duplicateField(field);
+                }}
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            )}
+            {isMenuOptionAllowed("flow", "delete") && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                aria-label={`Excluir ${field.label}`}
+                title="Excluir"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removeField(field.id);
+                }}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
 
-            {(assignableContainers.length > 0 || field.groupKey) && (
+            {isMenuOptionAllowed("flow", "move_root") && (assignableContainers.length > 0 || field.groupKey) && (
               <Select
                 value={field.groupKey ?? "none"}
                 onValueChange={(val) => assignFieldToSection(field.id, val === "none" ? null : val)}
@@ -406,72 +445,85 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
         </div>
       </div>
 
-      <div className="grid grid-cols-3 rounded-md bg-muted p-1 text-xs font-medium">
-        {[
-          { icon: Settings2, label: "Ajustes", value: "settings" as const },
-          { icon: Palette, label: "Design", value: "design" as const },
-          { icon: Workflow, label: "Lógica", value: "logic" as const },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              className={`flex items-center justify-center gap-1 rounded-xs px-2 py-1.5 transition ${
-                inspectorTab === tab.value ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setInspectorTab(tab.value);
-              }}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {availableSubTabs.length > 0 && (
+        <div
+          className={cn(
+            "grid rounded-md bg-muted p-1 text-xs font-medium",
+            availableSubTabs.length === 3
+              ? "grid-cols-3"
+              : availableSubTabs.length === 2
+              ? "grid-cols-2"
+              : "grid-cols-1"
+          )}
+        >
+          {availableSubTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                className={`flex items-center justify-center gap-1 rounded-xs px-2 py-1.5 transition ${
+                  inspectorTab === tab.value ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInspectorTab(tab.value);
+                }}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="space-y-4">
-        {inspectorTab === "settings" && (
+        {inspectorTab === "settings" && isMenuAllowed("settings") && (
           <>
-            <div className="space-y-2">
-              <Label>Tipo de campo</Label>
-              <Select
-                value={selectedField.type}
-                onValueChange={(value) => updateField(selectedField.id, { type: value as AnamnesisField["type"] })}
-              >
-                <SelectTrigger onClick={(e) => e.stopPropagation()}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent onCloseAutoFocus={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()}>
-                  {ANAMNESIS_FIELD_LIBRARY.map((entry) => (
-                    <SelectItem key={entry.type} value={entry.type}>
-                      {entry.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Rótulo / Pergunta</Label>
-              <Input
-                value={selectedField.label}
-                onChange={(event) => updateField(selectedField.id, { label: event.target.value })}
-                maxLength={INPUT_LIMITS.formFieldLabel}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Texto de ajuda (opcional)</Label>
-              <Textarea
-                rows={2}
-                value={selectedField.helpText ?? ""}
-                onChange={(event) => updateField(selectedField.id, { helpText: event.target.value })}
-                maxLength={INPUT_LIMITS.formHelpText}
-                placeholder="Explicação adicional para quem for preencher"
-              />
-            </div>
-            {!isContainerField(selectedField) && selectedField.type !== "address_block" && (
+            {isMenuOptionAllowed("settings", "field_type") && (
+              <div className="space-y-2">
+                <Label>Tipo de campo</Label>
+                <Select
+                  value={selectedField.type}
+                  onValueChange={(value) => updateField(selectedField.id, { type: value as AnamnesisField["type"] })}
+                >
+                  <SelectTrigger onClick={(e) => e.stopPropagation()}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent onCloseAutoFocus={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()}>
+                    {ANAMNESIS_FIELD_LIBRARY.map((entry) => (
+                      <SelectItem key={entry.type} value={entry.type}>
+                        {entry.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isMenuOptionAllowed("settings", "label") && (
+              <div className="space-y-2">
+                <Label>Rótulo / Pergunta</Label>
+                <Input
+                  value={selectedField.label}
+                  onChange={(event) => updateField(selectedField.id, { label: event.target.value })}
+                  maxLength={INPUT_LIMITS.formFieldLabel}
+                />
+              </div>
+            )}
+            {isMenuOptionAllowed("settings", "help_text") && (
+              <div className="space-y-2">
+                <Label>Texto de ajuda (opcional)</Label>
+                <Textarea
+                  rows={2}
+                  value={selectedField.helpText ?? ""}
+                  onChange={(event) => updateField(selectedField.id, { helpText: event.target.value })}
+                  maxLength={INPUT_LIMITS.formHelpText}
+                  placeholder="Explicação adicional para quem for preencher"
+                />
+              </div>
+            )}
+            {!isContainerField(selectedField) && selectedField.type !== "address_block" && isMenuOptionAllowed("settings", "placeholder") && (
               <div className="space-y-2">
                 <Label>Placeholder</Label>
                 <Input
@@ -482,7 +534,18 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                 />
               </div>
             )}
-            {!isContainerField(selectedField) && (
+            {selectedField.type === "simple_list" && isMenuOptionAllowed("settings", "advanced_options") && (
+              <div className="space-y-2">
+                <Label>Texto do botão de adicionar</Label>
+                <Input
+                  value={selectedField.addButtonLabel ?? ""}
+                  onChange={(event) => updateField(selectedField.id, { addButtonLabel: event.target.value })}
+                  maxLength={INPUT_LIMITS.formFieldLabel}
+                  placeholder={`+ Adicionar ${selectedField.label.trim() ? selectedField.label.trim().toLowerCase() : "item"}`}
+                />
+              </div>
+            )}
+            {!isContainerField(selectedField) && isPropertyAllowed("required") && (
               <div className="flex items-center justify-between gap-3 rounded-md border p-3">
                 <div>
                   <p className="text-sm font-medium">Obrigatório</p>
@@ -494,7 +557,7 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                 />
               </div>
             )}
-            {isBase && !isContainerField(selectedField) && (
+            {isBase && !isContainerField(selectedField) && isPropertyAllowed("showInPatientList") && (
               <div className="flex items-center justify-between gap-3 rounded-md border p-3">
                 <div>
                   <p className="text-sm font-medium">Resumo do paciente</p>
@@ -506,13 +569,57 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                 />
               </div>
             )}
-            {isSelectionChoiceFieldType(selectedField.type) && (
-              <div className="space-y-2">
-                <Label>Modo de seleção</Label>
-                <Select
-                  value={selectedField.type}
-                  onValueChange={(value) => updateField(selectedField.id, { type: value as AnamnesisField["type"] })}
-                >
+            {!isContainerField(selectedField) && (
+              <div className="space-y-2.5 pt-1">
+                {isPropertyAllowed("includeInGlobalDashboard") && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Dashboard global</p>
+                      <p className="text-xs text-muted-foreground">Contabiliza nas estatísticas globais do dashboard da clínica.</p>
+                    </div>
+                    <Switch
+                      checked={selectedField.includeInGlobalDashboard ?? false}
+                      onCheckedChange={(checked) => updateField(selectedField.id, { includeInGlobalDashboard: checked === true })}
+                    />
+                  </div>
+                )}
+
+                {isPropertyAllowed("enableFilter") && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Filtrar</p>
+                      <p className="text-xs text-muted-foreground">Torna este campo uma opção nos filtros de pacientes e histórico.</p>
+                    </div>
+                    <Switch
+                      checked={selectedField.enableFilter ?? false}
+                      onCheckedChange={(checked) => updateField(selectedField.id, { enableFilter: checked === true })}
+                    />
+                  </div>
+                )}
+
+                {isPropertyAllowed("enableGrouping") && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Agrupar</p>
+                      <p className="text-xs text-muted-foreground">Torna este campo uma opção de agrupamento no histórico de atendimentos.</p>
+                    </div>
+                    <Switch
+                      checked={selectedField.enableGrouping ?? false}
+                      onCheckedChange={(checked) => updateField(selectedField.id, { enableGrouping: checked === true })}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {isMenuOptionAllowed("settings", "advanced_options") && (
+              <>
+                {isSelectionChoiceFieldType(selectedField.type) && (
+                  <div className="space-y-2">
+                    <Label>Modo de seleção</Label>
+                    <Select
+                      value={selectedField.type}
+                      onValueChange={(value) => updateField(selectedField.id, { type: value as AnamnesisField["type"] })}
+                    >
                   <SelectTrigger onClick={(e) => e.stopPropagation()}>
                     <SelectValue />
                   </SelectTrigger>
@@ -717,47 +824,53 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                 </div>
               );
             })()}
+              </>
+            )}
           </>
         )}
 
-        {inspectorTab === "design" && (
+        {inspectorTab === "design" && isMenuAllowed("design") && (
           <>
-            <div className="space-y-3">
-              <p className="text-sm font-medium">
-                {isContainerField(selectedField) ? "Cor de destaque da seção" : "Cor de destaque do campo"}
-              </p>
-              <SectionColorPaletteField
-                alpha={getFieldAccentAlpha(selectedField)}
-                colorHex={getFieldAccentColor(selectedField)}
-                onChange={({ alpha, colorHex }) => updateSectionColor(selectedField.id, colorHex, alpha)}
-                slots={DESIGNLAB_SECTION_COLOR_SLOTS}
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {DESIGNLAB_SECTION_COLOR_SLOTS.slice(0, 6).map((slot) => (
-                <button
-                  key={slot.id}
-                  type="button"
-                  className="h-9 rounded-md border transition hover:scale-[1.02]"
-                  style={{ backgroundColor: toRgbaString(slot.color_hex, slot.alpha) }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    updateSectionColor(selectedField.id, slot.color_hex, slot.alpha);
-                  }}
-                  aria-label={`Aplicar cor ${slot.slot_index + 1}`}
+            {(isMenuOptionAllowed("design", "accent_color") || isMenuOptionAllowed("design", "section_color")) && (
+              <div className="space-y-3">
+                <p className="text-sm font-medium">
+                  {isContainerField(selectedField) ? "Cor de destaque da seção" : "Cor de destaque do campo"}
+                </p>
+                <SectionColorPaletteField
+                  alpha={getFieldAccentAlpha(selectedField)}
+                  colorHex={getFieldAccentColor(selectedField)}
+                  onChange={({ alpha, colorHex }) => updateSectionColor(selectedField.id, colorHex, alpha)}
+                  slots={DESIGNLAB_SECTION_COLOR_SLOTS}
                 />
-              ))}
-            </div>
+              </div>
+            )}
+            {isMenuOptionAllowed("design", "color_palette") && (
+              <div className="grid grid-cols-3 gap-2">
+                {DESIGNLAB_SECTION_COLOR_SLOTS.slice(0, 6).map((slot) => (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    className="h-9 rounded-md border transition hover:scale-[1.02]"
+                    style={{ backgroundColor: toRgbaString(slot.color_hex, slot.alpha) }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateSectionColor(selectedField.id, slot.color_hex, slot.alpha);
+                    }}
+                    aria-label={`Aplicar cor ${slot.slot_index + 1}`}
+                  />
+                ))}
+              </div>
+            )}
           </>
         )}
 
-        {inspectorTab === "logic" && (
+        {inspectorTab === "logic" && isMenuAllowed("logic") && (
           <>
             {selectedField.type === "section_selector" ? (
               <p className="text-xs text-muted-foreground bg-muted/40 p-2.5 rounded-md border">
                 O Seletor de Seções atua na raiz do formulário e gerencia suas próprias seções modulares.
               </p>
-            ) : (
+            ) : isMenuOptionAllowed("logic", "parent_section") ? (
               <div className="space-y-2">
                 <Label>
                   {isContainerField(selectedField) ? "Seção pai (aninhamento)" : "Contêiner / Seção pai"}
@@ -783,8 +896,8 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                   </SelectContent>
                 </Select>
               </div>
-            )}
-            {!isContainerField(selectedField) && selectedField.type !== "section_selector" && (
+            ) : null}
+            {!isContainerField(selectedField) && selectedField.type !== "section_selector" && isMenuOptionAllowed("logic", "conditional_visibility") && (
               <div className="space-y-2">
                 <Label>Visibilidade condicional</Label>
                 <p className="text-xs text-muted-foreground">
@@ -813,31 +926,35 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
           </>
         )}
 
-        <Separator />
+        {isMenuOptionAllowed("design", "action_buttons") && (
+          <>
+            <Separator />
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => duplicateField(selectedField)}
-            disabled={fieldLimitReached}
-          >
-            <Copy className="mr-2 h-3.5 w-3.5" />
-            Duplicar
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => removeField(selectedField.id)}
-            disabled={isBase && !!selectedField.systemKey}
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            Excluir
-          </Button>
-        </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => duplicateField(selectedField)}
+                disabled={fieldLimitReached}
+              >
+                <Copy className="mr-2 h-3.5 w-3.5" />
+                Duplicar
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => removeField(selectedField.id)}
+                disabled={isBase && !!selectedField.systemKey}
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                Excluir
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   ) : (
@@ -853,40 +970,55 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
   return (
     <Card data-tutorial="form-editor-inspector" className="flex flex-col h-full max-h-full overflow-hidden border-border/70 bg-background/95 shadow-sm">
       <CardHeader className="shrink-0 space-y-2 border-b bg-muted/20 p-3">
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-xs font-semibold">
-          <button
-            type="button"
-            data-tutorial="form-editor-inspector-flow"
+        {(allowFlow || allowProperties) && (
+          <div
             className={cn(
-              "flex items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors",
-              rightSidebarTab === "flow"
-                ? "bg-background text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
+              "grid gap-1 rounded-lg bg-muted p-1 text-xs font-semibold",
+              allowFlow && allowProperties ? "grid-cols-2" : "grid-cols-1"
             )}
-            onClick={() => setRightSidebarTab("flow")}
           >
-            <Workflow className="h-3.5 w-3.5 text-primary" />
-            <span>Fluxo</span>
-          </button>
-          <button
-            type="button"
-            data-tutorial="form-editor-inspector-props"
-            className={cn(
-              "flex items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors relative",
-              rightSidebarTab === "properties"
-                ? "bg-background text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
+            {allowFlow && (
+              <button
+                type="button"
+                data-tutorial="form-editor-inspector-flow"
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors",
+                  rightSidebarTab === "flow"
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setRightSidebarTab("flow")}
+              >
+                <Workflow className="h-3.5 w-3.5 text-primary" />
+                <span>Fluxo</span>
+              </button>
             )}
-            onClick={() => setRightSidebarTab("properties")}
-          >
-            <Settings2 className="h-3.5 w-3.5 text-primary" />
-            <span>Propriedades</span>
-            {selectedField && <span className="h-2 w-2 rounded-full bg-primary" />}
-          </button>
-        </div>
+            {allowProperties && (
+              <button
+                type="button"
+                data-tutorial="form-editor-inspector-props"
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors relative",
+                  rightSidebarTab === "properties"
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setRightSidebarTab("properties")}
+              >
+                <Settings2 className="h-3.5 w-3.5 text-primary" />
+                <span>Propriedades</span>
+                {selectedField && <span className="h-2 w-2 rounded-full bg-primary" />}
+              </button>
+            )}
+          </div>
+        )}
       </CardHeader>
       <CardContent className="flex-1 min-h-0 p-3 overflow-y-auto">
-        {rightSidebarTab === "flow" ? flowTreeContent : inspectorContent}
+        {rightSidebarTab === "flow" && allowFlow
+          ? flowTreeContent
+          : allowProperties
+          ? inspectorContent
+          : null}
       </CardContent>
     </Card>
   );

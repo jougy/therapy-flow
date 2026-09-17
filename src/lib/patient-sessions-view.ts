@@ -1,3 +1,5 @@
+import type { AnamnesisTemplateSchema } from "./anamnesis-forms";
+
 export type SearchablePatientGroup = {
   color?: string | null;
   created_at: string;
@@ -8,6 +10,7 @@ export type SearchablePatientGroup = {
 
 export type SearchableSession = {
   anamnesis?: unknown;
+  anamnesis_form_response?: unknown;
   group_id: string | null;
   id: string;
   session_date: string;
@@ -80,6 +83,122 @@ export const getSessionCareLineIds = (session: SearchableSession): string[] => {
 export const doesSessionHaveCareLine = (session: SearchableSession, careLineId: string): boolean => {
   const ids = getSessionCareLineIds(session);
   return ids.includes(careLineId);
+};
+
+/**
+ * Safely extracts unique, normalized string values from a session's anamnesis form response
+ * or legacy anamnesis structure (e.g. sintomas, queixa).
+ */
+export const extractSessionFieldValues = (
+  session: SearchableSession,
+  fieldId: string,
+  fieldLabel?: string
+): string[] => {
+  const result: string[] = [];
+
+  const sessionRecord = session as unknown as Record<string, unknown>;
+  const formResponse =
+    sessionRecord.anamnesis_form_response &&
+    typeof sessionRecord.anamnesis_form_response === "object" &&
+    !Array.isArray(sessionRecord.anamnesis_form_response)
+      ? (sessionRecord.anamnesis_form_response as Record<string, unknown>)
+      : null;
+
+  if (formResponse && fieldId in formResponse) {
+    const raw = formResponse[fieldId];
+    if (Array.isArray(raw)) {
+      raw.forEach((item) => {
+        if (typeof item === "string" && item.trim()) {
+          result.push(item.trim());
+        } else if (item && typeof item === "object") {
+          const obj = item as Record<string, unknown>;
+          const strCandidate =
+            (typeof obj.label === "string" ? obj.label : null) ??
+            (typeof obj.name === "string" ? obj.name : null) ??
+            (typeof obj.id === "string" ? obj.id : null);
+          if (strCandidate && strCandidate.trim()) {
+            result.push(strCandidate.trim());
+          }
+        }
+      });
+    } else if (typeof raw === "string" && raw.trim()) {
+      raw
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((s) => result.push(s));
+    }
+  }
+
+  // Fallback for fields referencing symptoms or complaints in legacy anamnesis
+  const lowerFieldId = fieldId.toLowerCase();
+  const lowerLabel = (fieldLabel ?? "").toLowerCase();
+  const isSymptomField = lowerFieldId === "sintomas" || lowerLabel.includes("sintoma");
+  const isComplaintField = lowerFieldId === "queixa" || lowerLabel.includes("queixa");
+
+  if (result.length === 0 && (isSymptomField || isComplaintField)) {
+    const anamnesis =
+      session.anamnesis && typeof session.anamnesis === "object" && !Array.isArray(session.anamnesis)
+        ? (session.anamnesis as Record<string, unknown>)
+        : null;
+
+    if (anamnesis) {
+      if (isSymptomField && anamnesis.sintomas) {
+        const rawSintomas = anamnesis.sintomas;
+        if (typeof rawSintomas === "string" && rawSintomas.trim()) {
+          rawSintomas
+            .split(/[\n,]+/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .forEach((s) => result.push(s));
+        } else if (Array.isArray(rawSintomas)) {
+          rawSintomas.forEach((item) => {
+            if (typeof item === "string" && item.trim()) {
+              result.push(item.trim());
+            }
+          });
+        }
+      }
+
+      if (isComplaintField && typeof anamnesis.queixa === "string" && anamnesis.queixa.trim()) {
+        result.push(anamnesis.queixa.trim());
+      }
+    }
+  }
+
+  return Array.from(new Set(result));
+};
+
+export const doesSessionMatchModularFilter = <TGroup extends SearchablePatientGroup>(
+  session: SearchableSession,
+  fieldId: string,
+  filterValue: string,
+  groups?: TGroup[]
+): boolean => {
+  const normTarget = normalizeTerm(filterValue);
+  if (!normTarget) return true;
+
+  const values = extractSessionFieldValues(session, fieldId);
+  if (values.some((val) => normalizeTerm(val) === normTarget || normalizeTerm(val).includes(normTarget))) {
+    return true;
+  }
+
+  const lowerFieldId = fieldId.toLowerCase();
+  const isSymptomOrCareLineField =
+    lowerFieldId === "sintomas" || lowerFieldId.includes("sintoma") || lowerFieldId === "care_line";
+
+  // Check care lines / groups associated with this session (only for symptom or care line fields)
+  if (isSymptomOrCareLineField && groups && groups.length > 0) {
+    const careLineIds = getSessionCareLineIds(session);
+    if (careLineIds.length > 0) {
+      const careLineIdSet = new Set(careLineIds);
+      if (groups.some((g) => careLineIdSet.has(g.id) && normalizeTerm(g.name) === normTarget)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 };
 
 const normalizeTerm = (value: string | null | undefined) =>
@@ -166,6 +285,13 @@ export const buildPatientSessionsView = <
       if (filters.selectedTagId && filters.selectedTagId !== "all") {
         if (filters.selectedTagId === "none") {
           if (careLineIds.length > 0) return false;
+        } else if (filters.selectedTagId.startsWith("modular:")) {
+          const parts = filters.selectedTagId.split(":");
+          const fieldId = parts[1];
+          const filterValue = parts.slice(2).join(":");
+          if (!doesSessionMatchModularFilter(session, fieldId, filterValue, groups)) {
+            return false;
+          }
         } else {
           if (!careLineIds.includes(filters.selectedTagId)) return false;
         }
@@ -423,3 +549,115 @@ export const shouldAutoCompleteInternDraft = ({
 
   return now.getTime() - createdAtMs >= 1000 * 60 * 60 * 24 * 2;
 };
+
+export interface ModularFieldDefinition {
+  id: string;
+  label: string;
+}
+
+export interface ModularGroupedSession<TSession extends SearchableSession = SearchableSession> {
+  name: string;
+  sessions: TSession[];
+  count: number;
+}
+
+export interface ModularGroupedSessionsResult<TSession extends SearchableSession = SearchableSession> {
+  groups: ModularGroupedSession<TSession>[];
+  ungrouped: TSession[];
+  fieldLabel: string;
+}
+
+export interface ModularFilterItem {
+  filterKey: string;
+  fieldLabel: string;
+  value: string;
+}
+
+/**
+ * Extracts unique fields matching a boolean flag across provided schemas
+ */
+export const extractModularFieldsByFlag = (
+  schemas: Array<AnamnesisTemplateSchema | undefined | null>,
+  flag: "enableFilter" | "enableGrouping" | "includeInGlobalDashboard"
+): ModularFieldDefinition[] => {
+  const fieldsMap = new Map<string, ModularFieldDefinition>();
+
+  schemas.forEach((schema) => {
+    if (!Array.isArray(schema)) return;
+    schema.forEach((field) => {
+      if (field && field[flag] && field.id && field.label) {
+        fieldsMap.set(field.id, { id: field.id, label: field.label });
+      }
+    });
+  });
+
+  return Array.from(fieldsMap.values());
+};
+
+/**
+ * Groups sessions by unique values extracted from a specified modular field.
+ */
+export const groupSessionsByModularField = <TSession extends SearchableSession>(
+  sessions: TSession[],
+  targetField: ModularFieldDefinition
+): ModularGroupedSessionsResult<TSession> => {
+  const groupsMap = new Map<string, TSession[]>();
+  const ungroupedList: TSession[] = [];
+
+  sessions.forEach((session) => {
+    const values = extractSessionFieldValues(session, targetField.id, targetField.label);
+
+    if (values.length === 0) {
+      ungroupedList.push(session);
+    } else {
+      values.forEach((val) => {
+        const list = groupsMap.get(val) ?? [];
+        list.push(session);
+        groupsMap.set(val, list);
+      });
+    }
+  });
+
+  return {
+    groups: Array.from(groupsMap.entries()).map(([name, sessionList]) => ({
+      name,
+      sessions: sessionList,
+      count: sessionList.length,
+    })),
+    ungrouped: ungroupedList,
+    fieldLabel: targetField.label,
+  };
+};
+
+/**
+ * Extracts unique filterable options from modular fields present across sessions.
+ */
+export const extractFilterableModularItems = <TSession extends SearchableSession>(
+  sessions: TSession[],
+  filterableFields: ModularFieldDefinition[]
+): ModularFilterItem[] => {
+  if (filterableFields.length === 0 || sessions.length === 0) return [];
+
+  const items: ModularFilterItem[] = [];
+  const seen = new Set<string>();
+
+  for (const session of sessions) {
+    for (const field of filterableFields) {
+      const vals = extractSessionFieldValues(session, field.id, field.label);
+      for (const v of vals) {
+        const uniqueKey = `${field.id}:${v.toLowerCase()}`;
+        if (!seen.has(uniqueKey)) {
+          seen.add(uniqueKey);
+          items.push({
+            filterKey: `modular:${field.id}:${v}`,
+            fieldLabel: field.label,
+            value: v,
+          });
+        }
+      }
+    }
+  }
+
+  return items;
+};
+

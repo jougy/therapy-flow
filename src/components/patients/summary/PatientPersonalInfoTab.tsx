@@ -43,13 +43,33 @@ export const PatientPersonalInfoTab: React.FC<PatientPersonalInfoTabProps> = ({
         },
         {
           label: "Responsável legal (Nome)",
-          value: hasResponsible ? responsibleName : null,
-          fallback: hasResponsible ? "Não informado" : "Não se aplica (titular)",
+          value: hasResponsible || patient.responsible_name ? (patient.responsible_name || responsibleName) : null,
+          fallback: hasResponsible || patient.responsible_name ? "Não informado" : "Não se aplica (titular)",
+        },
+        {
+          label: "Responsável legal (Vínculo)",
+          value: hasResponsible || patient.responsible_name ? (patient.responsible_relationship || "Não informado") : null,
+          fallback: hasResponsible || patient.responsible_name ? "Não informado" : "Não se aplica (titular)",
         },
         {
           label: "Responsável legal (CPF)",
           value: hasResponsible ? responsibleCpf : null,
           fallback: hasResponsible ? "Não informado" : "Não se aplica (titular)",
+        },
+        {
+          label: "Consentimento de Menor (LGPD)",
+          value: (patient.age !== null && patient.age !== undefined && patient.age < 18) || patient.guardian_consent
+            ? (() => {
+                const c = patient.guardian_consent as { status?: string; method?: string; signed_at?: string } | null;
+                if (c?.status === "signed") {
+                  const m = c.method === "in_person" ? "Presencial na Tela" : c.method === "paper" ? "Físico em Papel" : "Digital via Celular";
+                  return `Autorizado e Assinado (${m})`;
+                }
+                if (c?.status === "printed") return "Termo Impresso (Pendente Assinatura Física)";
+                return "Pendente de Autorização do Responsável";
+              })()
+            : null,
+          fallback: "Não se aplica (titular)",
         },
         { label: "Status operacional", value: patient.status },
         {

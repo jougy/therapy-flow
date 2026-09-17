@@ -103,6 +103,14 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasConfiguration: false,
   },
   {
+    key: 'forms_editor',
+    label: 'Editor de Formulários',
+    description: 'Controla a disponibilidade de componentes da paleta, propriedades dos campos, menus do editor e opções interativas no construtor de formulários.',
+    category: 'Formulários',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
     key: 'forms_download_upload',
     label: 'Permissões de Download/Upload em Formulários',
     description: 'Permite que formulários preenchidos possam ser baixados em PDF ou anexem arquivos.',
@@ -175,7 +183,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
   {
     key: 'terms_of_service_management',
     label: 'Termos de Uso e Consentimento',
-    description: 'Gerenciamento dos Termos de Uso (Owner/Usuários, BR e Internacional, Responsabilidade de Impressão) e disparo de obrigatoriedade.',
+    description: 'Gerenciamento dos Termos de Uso (Owner/Usuários, BR e Internacional, Responsabilidade de Impressão, Menor de Idade LGPD) e disparo de obrigatoriedade.',
     category: 'Governança',
     hasConfiguration: true,
     hasToggle: false,
@@ -202,6 +210,14 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'UI/Experiência',
     hasConfiguration: true,
   },
+  {
+    key: 'clinical_portfolio_enabled',
+    label: 'Portfólio Clínico Profissional (Acervo Pessoal)',
+    description: 'Habilita o acervo técnico seguro e o histórico de atendimentos realizados sob a responsabilidade do profissional no Espaço Pessoal (/espacopessoal).',
+    category: 'UI/Experiência',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
 
   // Tutoriais & Ajuda
   {
@@ -221,4 +237,120 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasToggle: true,
   },
 ];
+
+export interface FormEditorFlagConfig {
+  enabled?: boolean;
+  components: {
+    // Básicos
+    short_text: boolean;
+    long_text: boolean;
+    simple_list: boolean;
+    number: boolean;
+    date: boolean;
+    // Opções & Seleção
+    select: boolean;
+    multiple_choice: boolean;
+    checklist: boolean;
+    tags: boolean;
+    slider: boolean;
+    // Estrutura & Agrupamento
+    section: boolean;
+    horizontal_section: boolean;
+    section_selector: boolean;
+    radar_section: boolean;
+    // Especiais
+    table: boolean;
+    address_block: boolean;
+  };
+  properties: {
+    required: boolean;
+    showInPatientList: boolean;
+    includeInGlobalDashboard: boolean;
+    enableFilter: boolean;
+    enableGrouping: boolean;
+  };
+  menus: {
+    palette_sidebar: boolean;
+    flow: boolean;
+    properties: boolean;
+    settings: boolean;
+    design: boolean;
+    logic: boolean;
+  };
+  options: {
+    // Opções do Fluxo
+    flow_reorder: boolean;
+    flow_duplicate: boolean;
+    flow_delete: boolean;
+    flow_move_root: boolean;
+    // Opções de Ajustes
+    settings_field_type: boolean;
+    settings_label: boolean;
+    settings_help_text: boolean;
+    settings_placeholder: boolean;
+    settings_advanced_options: boolean;
+    // Opções de Design
+    design_accent_color: boolean;
+    design_section_color: boolean;
+    design_color_palette: boolean;
+    design_action_buttons: boolean;
+    // Opções de Lógica
+    logic_parent_section: boolean;
+    logic_conditional_visibility: boolean;
+  };
+}
+
+export const DEFAULT_FORM_EDITOR_FLAG_CONFIG: FormEditorFlagConfig = {
+  enabled: true,
+  components: {
+    short_text: true,
+    long_text: true,
+    simple_list: true,
+    number: true,
+    date: true,
+    select: true,
+    multiple_choice: true,
+    checklist: true,
+    tags: true,
+    slider: true,
+    section: true,
+    horizontal_section: true,
+    section_selector: true,
+    radar_section: true,
+    table: true,
+    address_block: true,
+  },
+  properties: {
+    required: true,
+    showInPatientList: true,
+    includeInGlobalDashboard: true,
+    enableFilter: true,
+    enableGrouping: true,
+  },
+  menus: {
+    palette_sidebar: true,
+    flow: true,
+    properties: true,
+    settings: true,
+    design: true,
+    logic: true,
+  },
+  options: {
+    flow_reorder: true,
+    flow_duplicate: true,
+    flow_delete: true,
+    flow_move_root: true,
+    settings_field_type: true,
+    settings_label: true,
+    settings_help_text: true,
+    settings_placeholder: true,
+    settings_advanced_options: true,
+    design_accent_color: true,
+    design_section_color: true,
+    design_color_palette: true,
+    design_action_buttons: true,
+    logic_parent_section: true,
+    logic_conditional_visibility: true,
+  },
+};
 

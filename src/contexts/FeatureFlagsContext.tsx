@@ -30,13 +30,35 @@ export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
+
     if (!clinicId) {
-      setFlags({});
-      setLoading(false);
+      // Quando clinicId não está definido (ex: Espaço Pessoal / rotas do profissional),
+      // buscar as feature flags de escopo global para aplicar as diretrizes da plataforma
+      supabase
+        .from("feature_flags")
+        .select("key, value")
+        .eq("scope", "global")
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("Erro ao carregar feature flags globais:", error);
+            setFlags({});
+          } else {
+            const globalFlags: Record<string, unknown> = {};
+            data?.forEach((item) => {
+              if (item.key) {
+                globalFlags[item.key] = item.value;
+              }
+            });
+            setFlags(globalFlags);
+          }
+        })
+        .finally(() => {
+          setLoading(false);
+        });
       return;
     }
 
-    setLoading(true);
     supabase.rpc("get_clinic_feature_flags", { _clinic_id: clinicId })
       .then(({ data, error }) => {
         if (error) {

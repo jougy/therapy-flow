@@ -11,6 +11,7 @@ import {
   FolderOpen,
   Hash,
   Hexagon,
+  ListPlus,
   MapPin,
   Sliders,
   Table,
@@ -71,6 +72,7 @@ export const COMPONENT_CATEGORIES = [
     items: [
       { type: "short_text" as const, label: "Texto curto", icon: Type, description: "Linha única de resposta" },
       { type: "long_text" as const, label: "Texto longo", icon: AlignLeft, description: "Área de texto livre" },
+      { type: "simple_list" as const, label: "Lista de itens", icon: ListPlus, description: "Lista dinâmica de textos rápidos com botão de adicionar" },
       { type: "number" as const, label: "Apenas números", icon: Hash, description: "Contagens e valores numéricos" },
       { type: "date" as const, label: "Data", icon: Calendar, description: "Calendário interativo" },
     ],
@@ -193,6 +195,7 @@ export const getFieldTypeIcon = (type: AnamnesisField["type"], isContainer: bool
   if (type === "radar_section") return Hexagon;
   if (type === "short_text") return Type;
   if (type === "long_text") return AlignLeft;
+  if (type === "simple_list") return ListPlus;
   if (type === "date") return Calendar;
   if (type === "number") return Hash;
   if (type === "select") return ChevronDownSquare;
@@ -219,6 +222,10 @@ export const sanitizeFieldChanges = (changes: Partial<AnamnesisField>): Partial<
 
   if (typeof next.placeholder === "string") {
     next.placeholder = sanitizeSingleLineInput(next.placeholder, INPUT_LIMITS.formPlaceholder);
+  }
+
+  if (typeof next.addButtonLabel === "string") {
+    next.addButtonLabel = sanitizeSingleLineInput(next.addButtonLabel, INPUT_LIMITS.formFieldLabel);
   }
 
   return next;

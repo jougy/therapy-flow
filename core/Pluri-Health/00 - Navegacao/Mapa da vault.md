@@ -56,6 +56,9 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Ambiente Mobile e Scrcpy]]
 - [[Deploy - Cloudflare Pages]]
 - [[Backup do Supabase antes de deploy]]
+- [[Dicionario de Dados e Catalogo do Supabase]]
+- [[Plano Diretor de Modernizacao e Governanca do Banco de Dados]]
+- [[Roadmap Tecnico e Otimizacoes Avancadas do Banco de Dados]]
 - [[TDD e checks]]
 
 ### Seguranca e vulnerabilidades
@@ -77,11 +80,13 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 - [[Core do projeto]]: indice central do projeto e dos documentos de produto.
 - [[Visao geral do produto]]: apresentacao curta do projeto.
+- [[Catalogo Mestre de Funcionalidades e Diferenciais]]: levantamento exaustivo de todas as 37 rotas, funcionalidades e diferenciais da plataforma.
 - [[00 - Hub de Tutoriais da Plataforma]]: roteiros, mapeamento e guias passo a passo de todas as páginas da plataforma.
 - [[Ambiente e operacao]]: ambiente local, fluxo tecnico e deploy.
 - [[TDD e checks]]: estrategia de protecao contra regressao.
 - [[Plano de seguranca - hub]]: plano de auditoria, vulnerabilidades e subplanos por camada.
 - [[Mapa de skills do Codex]]: indice das skills disponiveis, gatilhos de uso e notas individuais por habilidade.
+- [[Kanban de Tarefas]]: quadro kanban vivo de demandas, tarefas, ideias, melhorias e releases.
 
 ## Notas por tema
 

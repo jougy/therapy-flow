@@ -188,6 +188,35 @@ export type PatientDocumentType =
   | "rg"
   | "none";
 
+export type GuardianConsentStatus = "pending" | "printed" | "signed";
+export type GuardianConsentMethod = "whatsapp" | "in_person" | "paper";
+
+export interface GuardianConsentData {
+  status: GuardianConsentStatus;
+  method?: GuardianConsentMethod | null;
+  signed_at?: string | null;
+  responsible_name?: string | null;
+  responsible_relationship?: string | null;
+  responsible_cpf?: string | null;
+  responsible_email?: string | null;
+  signature_image_url?: string | null;
+  ip_address?: string | null;
+  user_agent?: string | null;
+  legal_declaration?: boolean;
+  paper_printed_at?: string | null;
+  paper_printed_by?: string | null;
+  paper_collected_at?: string | null;
+  paper_collected_by?: string | null;
+}
+
+export const GUARDIAN_RELATIONSHIP_OPTIONS = [
+  { value: "mae", label: "Mãe" },
+  { value: "pai", label: "Pai" },
+  { value: "tutor_legal", label: "Tutor(a) Legal" },
+  { value: "curador", label: "Curador(a)" },
+  { value: "outro", label: "Outro vínculo legal" },
+];
+
 export interface PatientPreRegistrationValues {
   cpf: string;
   dateOfBirth: string;
@@ -199,6 +228,9 @@ export interface PatientPreRegistrationValues {
   usesResponsibleCpf?: boolean;
   gender?: string;
   pronoun?: string;
+  responsibleName?: string;
+  responsibleRelationship?: string;
+  requireGuardianIfMinor?: boolean;
 }
 
 export const validatePatientPreRegistration = (values: PatientPreRegistrationValues) => {
@@ -214,6 +246,8 @@ export const validatePatientPreRegistration = (values: PatientPreRegistrationVal
     usesResponsibleCpf: docType === "responsible_cpf" || Boolean(values.usesResponsibleCpf),
     gender: sanitizeSingleLineInput(values.gender ?? "", INPUT_LIMITS.shortText).trim(),
     pronoun: sanitizeSingleLineInput(values.pronoun ?? "", INPUT_LIMITS.shortText).trim(),
+    responsibleName: sanitizeSingleLineInput(values.responsibleName ?? "", INPUT_LIMITS.name).trim(),
+    responsibleRelationship: sanitizeSingleLineInput(values.responsibleRelationship ?? "", 80).trim(),
   };
   const errors: Partial<Record<keyof PatientPreRegistrationValues, string>> = {};
 
@@ -223,6 +257,18 @@ export const validatePatientPreRegistration = (values: PatientPreRegistrationVal
 
   if (!isValidPatientBirthDate(normalized.dateOfBirth)) {
     errors.dateOfBirth = "Informe uma data de nascimento válida.";
+  }
+
+  const ageDetails = calculateAgeDetails(normalized.dateOfBirth);
+  const isMinor = Boolean(ageDetails?.isMinor);
+
+  if (isMinor && (values.requireGuardianIfMinor || values.responsibleName !== undefined || values.responsibleRelationship !== undefined)) {
+    if (normalized.responsibleName.length < 3) {
+      errors.responsibleName = "Informe o nome completo do responsável legal.";
+    }
+    if (!normalized.responsibleRelationship) {
+      errors.responsibleRelationship = "Selecione o grau de parentesco do responsável.";
+    }
   }
 
   if (docType === "cpf") {
@@ -303,6 +349,10 @@ export interface PatientShareMessageOptions {
   pronoun?: string | null;
   phone?: string | null;
   email?: string | null;
+  isMinor?: boolean;
+  responsibleName?: string | null;
+  responsibleRelationship?: string | null;
+  includeFullRegistration?: boolean;
 }
 
 export const buildPatientShareMessages = ({
@@ -314,14 +364,38 @@ export const buildPatientShareMessages = ({
   pronoun,
   phone,
   email,
+  isMinor,
+  responsibleName,
+  responsibleRelationship,
+  includeFullRegistration = true,
 }: PatientShareMessageOptions) => {
   const firstName = patientName.trim().split(" ")[0] || "Paciente";
+  const guardianFirstName = responsibleName?.trim().split(" ")[0] || "Responsável";
 
   const isFeminine = pronoun === "ela/dela" || gender === "feminino";
   const isMasculine = pronoun === "ele/dele" || gender === "masculino";
   const welcomeWord = isFeminine ? "bem-vinda" : isMasculine ? "bem-vindo" : "bem-vindo(a)";
 
-  const whatsappMessage = `Olá, ${firstName}! Seja muito ${welcomeWord} à ${clinicName}. 👋
+  let whatsappMessage = "";
+  let emailSubject = "";
+  let emailBody = "";
+
+  if (isMinor) {
+    const relLabel = responsibleRelationship ? ` (${responsibleRelationship})` : "";
+    whatsappMessage = `Olá, ${guardianFirstName}! Como o(a) ${firstName} é menor de idade, precisamos da sua autorização como responsável legal${relLabel} para os atendimentos na clínica ${clinicName}, conforme a LGPD (Art. 14). 👋
+
+Acesse o link seguro abaixo para ler o termo de consentimento e assinar digitalmente pelo celular:
+
+🔗 ${shareUrl}
+
+🔐 *Senha de acesso:* \`${passwordPrefix}\` (primeiros 6 dígitos do CPF/documento cadastrado)
+${includeFullRegistration ? "\nNo mesmo link seguro, você também pode preencher as informações complementares e histórico de saúde do(a) menor para agilizar a primeira consulta.\n" : ""}
+O procedimento leva menos de 2 minutos. Qualquer dúvida, nossa equipe está à disposição!`;
+
+    emailSubject = `[${clinicName}] - Autorização de menor (LGPD) e cadastro de ${firstName}`;
+    emailBody = `Olá, ${guardianFirstName}!\n\nComo o(a) ${firstName} é menor de idade, os atendimentos na clínica ${clinicName} exigem formalização do consentimento do responsável legal, conforme preconiza o Art. 14 da LGPD.\n\nPor favor, acesse o link seguro para revisar e assinar digitalmente o termo:\n\n${shareUrl}\n\nSenha de acesso: ${passwordPrefix} (primeiros 6 dígitos do CPF/documento)\n\nAtenciosamente,\nEquipe ${clinicName}`;
+  } else {
+    whatsappMessage = `Olá, ${firstName}! Seja muito ${welcomeWord} à ${clinicName}. 👋
 
 Para agilizar o seu atendimento e garantir que tenhamos todas as informações necessárias para a sua consulta, por favor realize o preenchimento da sua ficha cadastral no link seguro abaixo:
 
@@ -331,18 +405,20 @@ Para agilizar o seu atendimento e garantir que tenhamos todas as informações n
 
 O preenchimento leva menos de 3 minutos e pode ser feito pelo celular. Qualquer dúvida, estamos à disposição!`;
 
+    emailSubject = `[${clinicName}] - Conclusão do cadastro de ${firstName}`;
+    emailBody = `Olá, ${firstName}!\n\nSeja muito ${welcomeWord} à ${clinicName}.\n\nPara agilizar o seu atendimento e iniciar o seu prontuário eletrônico com total segurança, por favor preencha a sua ficha cadastral através do link abaixo:\n\n${shareUrl}\n\nSenha de acesso: ${passwordPrefix} (primeiros 6 dígitos do CPF/documento)\n\nO preenchimento é rápido e seguro.\n\nAtenciosamente,\nEquipe ${clinicName}`;
+  }
+
   const phoneDigits = normalizePatientPhoneDigits(phone);
   const whatsappUrl = phoneDigits
     ? `https://wa.me/55${phoneDigits}?text=${encodeURIComponent(whatsappMessage)}`
     : `https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappMessage)}`;
 
-  const emailSubject = `[${clinicName}] - Conclusão do cadastro de ${firstName}`;
-  const emailBody = `Olá, ${firstName}!\n\nSeja muito ${welcomeWord} à ${clinicName}.\n\nPara agilizar o seu atendimento e iniciar o seu prontuário eletrônico com total segurança, por favor preencha a sua ficha cadastral através do link abaixo:\n\n${shareUrl}\n\nSenha de acesso: ${passwordPrefix} (primeiros 6 dígitos do CPF/documento)\n\nO preenchimento é rápido e seguro.\n\nAtenciosamente,\nEquipe ${clinicName}`;
-
   const mailtoUrl = `mailto:${email ? encodeURIComponent(email) : ""}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
 
   return {
-    firstName,
+    firstName: isMinor ? guardianFirstName : firstName,
+    patientFirstName: firstName,
     whatsappMessage,
     whatsappUrl,
     emailSubject,
@@ -353,6 +429,9 @@ O preenchimento leva menos de 3 minutos e pode ser feito pelo celular. Qualquer 
 
 export const buildPatientRegistrationUrl = (origin: string, token: string) =>
   `${origin}/cadastro/paciente/${token}`;
+
+export const buildGuardianAuthorizationUrl = (origin: string, token: string) =>
+  `${origin}/autorizacao-menor/${token}`;
 
 type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
 

@@ -11,6 +11,7 @@ export type AnamnesisFieldType =
   | "table"
   | "slider"
   | "tags"
+  | "simple_list"
   | "section"
   | "horizontal_section"
   | "section_selector"
@@ -57,6 +58,10 @@ export interface AnamnesisField {
   groupKey?: string | null;
   helpText?: string;
   placeholder?: string;
+  addButtonLabel?: string;
+  includeInGlobalDashboard?: boolean;
+  enableFilter?: boolean;
+  enableGrouping?: boolean;
   required?: boolean;
   showInPatientList?: boolean;
   options?: AnamnesisFieldOption[];
@@ -174,6 +179,91 @@ const sanitizeOption = (option: unknown, index: number, usedIds: Set<string>): A
   };
 };
 
+export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: string }> = [
+  { type: "short_text", label: "Texto curto" },
+  { type: "long_text", label: "Texto longo" },
+  { type: "simple_list", label: "Lista de itens" },
+  { type: "date", label: "Data" },
+  { type: "number", label: "Apenas números" },
+  { type: "checklist", label: "Checklist" },
+  { type: "multiple_choice", label: "Múltipla escolha" },
+  { type: "select", label: "Droplist" },
+  { type: "tags", label: "Campo de tags" },
+  { type: "table", label: "Tabela" },
+  { type: "slider", label: "Slidebar" },
+  { type: "address_block", label: "Bloco de Endereço" },
+  { type: "section", label: "Seção" },
+  { type: "horizontal_section", label: "Seção horizontal" },
+  { type: "section_selector", label: "Seletor de seções" },
+  { type: "radar_section", label: "Polígono de Status" },
+];
+
+export const ANAMNESIS_FIELD_TYPES = new Set<AnamnesisFieldType>(ANAMNESIS_FIELD_LIBRARY.map((field) => field.type));
+
+export const isContainerFieldType = (type: AnamnesisFieldType) =>
+  type === "section" || type === "horizontal_section" || type === "section_selector" || type === "radar_section";
+export const isContainerField = (field: AnamnesisField) => isContainerFieldType(field.type);
+
+const getFieldById = (fields: AnamnesisTemplateSchema, fieldId: string | null | undefined) =>
+  fields.find((field) => field.id === fieldId) ?? null;
+
+const canContainerAcceptChild = (container: AnamnesisField, child: AnamnesisField) => {
+  if (!isContainerField(container)) {
+    return false;
+  }
+
+  if (child.id === container.id) {
+    return false;
+  }
+
+  // A section_selector can NEVER be inside anything (must always be top-level)
+  if (child.type === "section_selector") {
+    return false;
+  }
+
+  // A horizontal_section or radar_section cannot contain other containers
+  if ((container.type === "horizontal_section" || container.type === "radar_section") && isContainerField(child)) {
+    return false;
+  }
+
+  // A section_selector accepts sections, horizontal_sections, radar_sections, and standard fields
+  if (container.type === "section_selector") {
+    return true;
+  }
+
+  return true;
+};
+
+const isDescendantOf = (
+  fields: AnamnesisTemplateSchema,
+  fieldId: string,
+  potentialAncestorId: string,
+  fieldMap?: Map<string, AnamnesisField>,
+): boolean => {
+  const getField = (id: string | null | undefined): AnamnesisField | null => {
+    if (!id) return null;
+    if (fieldMap) return fieldMap.get(id) ?? null;
+    return getFieldById(fields, id);
+  };
+
+  let current = getField(fieldId);
+  const visited = new Set<string>();
+
+  while (current?.groupKey) {
+    if (visited.has(current.id)) {
+      break;
+    }
+    visited.add(current.id);
+    if (current.groupKey === potentialAncestorId) {
+      return true;
+    }
+
+    current = getField(current.groupKey);
+  }
+
+  return false;
+};
+
 const fieldNeedsOptions = (type: AnamnesisFieldType) =>
   type === "checklist" ||
   type === "multiple_choice" ||
@@ -253,6 +343,11 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
       const allowCustomTags =
         type === "tags" ? source.allowCustomTags !== false : typeof source.allowCustomTags === "boolean" ? source.allowCustomTags : undefined;
 
+      const rawAddButtonLabel = typeof source.addButtonLabel === "string" ? source.addButtonLabel : undefined;
+      const addButtonLabel = rawAddButtonLabel !== undefined
+        ? sanitizeSingleLineInput(rawAddButtonLabel, INPUT_LIMITS.formFieldLabel).trim()
+        : undefined;
+
       return {
         id: fieldId,
         label,
@@ -260,6 +355,10 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         groupKey: getOptionalStringValue(source.groupKey) ? sanitizeId(getStringValue(source.groupKey), "") || null : null,
         ...(helpText !== undefined ? { helpText } : {}),
         ...(placeholder !== undefined ? { placeholder } : {}),
+        ...(addButtonLabel !== undefined ? { addButtonLabel } : {}),
+        ...(source.includeInGlobalDashboard === true ? { includeInGlobalDashboard: true } : {}),
+        ...(source.enableFilter === true ? { enableFilter: true } : {}),
+        ...(source.enableGrouping === true ? { enableGrouping: true } : {}),
         required: source.required === true,
         showInPatientList: source.showInPatientList === true,
         ...(options ? { options } : {}),
@@ -277,7 +376,7 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
       };
     });
 
-  const fieldIds = new Set(fields.map((field) => field.id));
+  const fieldMap = new Map<string, AnamnesisField>(fields.map((field) => [field.id, field]));
   const selectorOptionIds = new Set(
     fields
       .filter((field) => field.type === "section_selector")
@@ -286,10 +385,10 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
   );
 
   return fields.map((field) => {
-    const groupTarget = field.groupKey && fieldIds.has(field.groupKey) ? field.groupKey : null;
-    const groupField = groupTarget ? fields.find((candidate) => candidate.id === groupTarget) : null;
+    const groupTarget = field.groupKey && fieldMap.has(field.groupKey) ? field.groupKey : null;
+    const groupField = groupTarget ? fieldMap.get(groupTarget) ?? null : null;
     const safeGroupKey =
-      groupField && canContainerAcceptChild(groupField, field) && !isDescendantOf(fields, groupField.id, field.id)
+      groupField && canContainerAcceptChild(groupField, field) && !isDescendantOf(fields, groupField.id, field.id, fieldMap)
         ? groupTarget
         : null;
     const safeSectionKey = field.sectionKey && selectorOptionIds.has(field.sectionKey) ? field.sectionKey : null;
@@ -328,6 +427,10 @@ export const compactAnamnesisTemplateSchema = (schema: AnamnesisTemplateSchema):
     if (field.columnSpan && field.columnSpan !== "auto") compact.columnSpan = field.columnSpan;
     if (field.tagMode && field.tagMode !== "multiple") compact.tagMode = field.tagMode;
     if (field.allowCustomTags !== undefined && field.allowCustomTags !== true) compact.allowCustomTags = field.allowCustomTags;
+    if (field.addButtonLabel) compact.addButtonLabel = field.addButtonLabel;
+    if (field.includeInGlobalDashboard) compact.includeInGlobalDashboard = true;
+    if (field.enableFilter) compact.enableFilter = true;
+    if (field.enableGrouping) compact.enableGrouping = true;
 
     return compact;
   });
@@ -357,7 +460,8 @@ export const sanitizeAnamnesisFormResponse = (response: AnamnesisFormResponse): 
             .slice(0, ANAMNESIS_TABLE_ROW_LIMIT)
             .map((item) => {
               if (typeof item === "string") {
-                return sanitizeSingleLineInput(item, INPUT_LIMITS.formOptionLabel).trim();
+                const sanitized = sanitizeSingleLineInput(item, INPUT_LIMITS.formOptionLabel).trim();
+                return sanitized.length > 0 ? sanitized : null;
               }
 
               if (item && typeof item === "object" && !Array.isArray(item)) {
@@ -478,29 +582,6 @@ export const DEFAULT_ANAMNESIS_TEMPLATE_SCHEMA: AnamnesisTemplateSchema = [
   },
 ];
 
-export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: string }> = [
-  { type: "short_text", label: "Texto curto" },
-  { type: "long_text", label: "Texto longo" },
-  { type: "date", label: "Data" },
-  { type: "number", label: "Apenas números" },
-  { type: "checklist", label: "Checklist" },
-  { type: "multiple_choice", label: "Múltipla escolha" },
-  { type: "select", label: "Droplist" },
-  { type: "tags", label: "Campo de tags" },
-  { type: "table", label: "Tabela" },
-  { type: "slider", label: "Slidebar" },
-  { type: "address_block", label: "Bloco de Endereço" },
-  { type: "section", label: "Seção" },
-  { type: "horizontal_section", label: "Seção horizontal" },
-  { type: "section_selector", label: "Seletor de seções" },
-  { type: "radar_section", label: "Polígono de Status" },
-];
-
-const ANAMNESIS_FIELD_TYPES = new Set<AnamnesisFieldType>(ANAMNESIS_FIELD_LIBRARY.map((field) => field.type));
-
-export const isContainerFieldType = (type: AnamnesisFieldType) =>
-  type === "section" || type === "horizontal_section" || type === "section_selector" || type === "radar_section";
-export const isContainerField = (field: AnamnesisField) => isContainerFieldType(field.type);
 export const hasScrollableOptionEditor = (type: AnamnesisFieldType) =>
   type === "checklist" || type === "multiple_choice";
 export const hasVerticalOptionEditor = (type: AnamnesisFieldType) => type === "select";
@@ -629,6 +710,15 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
     return {
       ...baseField,
       options: [createFieldOption("Opção 1", 0), createFieldOption("Opção 2", 1)],
+    };
+  }
+
+  if (type === "simple_list") {
+    return {
+      ...baseField,
+      label: "Lista de itens",
+      placeholder: "Escreva um item aqui...",
+      addButtonLabel: "+ Adicionar item",
     };
   }
 
@@ -942,61 +1032,9 @@ export interface TemplateLayoutField {
 
 export type TemplateLayoutItem = TemplateLayoutField | TemplateLayoutSection;
 
-const getFieldById = (fields: AnamnesisTemplateSchema, fieldId: string | null | undefined) =>
-  fields.find((field) => field.id === fieldId) ?? null;
-
-const canContainerAcceptChild = (container: AnamnesisField, child: AnamnesisField) => {
-  if (!isContainerField(container)) {
-    return false;
-  }
-
-  if (child.id === container.id) {
-    return false;
-  }
-
-  // A section_selector can NEVER be inside anything (must always be top-level)
-  if (child.type === "section_selector") {
-    return false;
-  }
-
-  // A horizontal_section or radar_section cannot contain other containers
-  if ((container.type === "horizontal_section" || container.type === "radar_section") && isContainerField(child)) {
-    return false;
-  }
-
-  // A section_selector accepts sections, horizontal_sections, radar_sections, and standard fields
-  if (container.type === "section_selector") {
-    return true;
-  }
-
-  return true;
-};
-
-const isDescendantOf = (
-  fields: AnamnesisTemplateSchema,
-  fieldId: string,
-  potentialAncestorId: string,
-): boolean => {
-  let current = getFieldById(fields, fieldId);
-  const visited = new Set<string>();
-
-  while (current?.groupKey) {
-    if (visited.has(current.id)) {
-      break;
-    }
-    visited.add(current.id);
-    if (current.groupKey === potentialAncestorId) {
-      return true;
-    }
-
-    current = getFieldById(fields, current.groupKey);
-  }
-
-  return false;
-};
-
 export const getAssignableContainerFields = (fields: AnamnesisTemplateSchema, childFieldId: string) => {
-  const child = getFieldById(fields, childFieldId);
+  const fieldMap = new Map(fields.map((f) => [f.id, f]));
+  const child = fieldMap.get(childFieldId);
 
   if (!child) {
     return [];
@@ -1012,7 +1050,7 @@ export const getAssignableContainerFields = (fields: AnamnesisTemplateSchema, ch
       return false;
     }
 
-    if (isDescendantOf(fields, field.id, child.id)) {
+    if (isDescendantOf(fields, field.id, child.id, fieldMap)) {
       return false;
     }
 

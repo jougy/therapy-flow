@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { Activity, Building2, CalendarDays, CheckCircle2, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, PlusCircle, RefreshCw, Settings, ShieldCheck, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
+import { Activity, Award, Building2, CalendarDays, CheckCircle2, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, PlusCircle, RefreshCw, Settings, ShieldCheck, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
 import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
 import {
   AlertDialog,
@@ -24,15 +24,17 @@ import PersonalNotificationsButton from "@/components/PersonalNotificationsButto
 import ProfileAccountButton from "@/components/ProfileAccountButton";
 import { PlatformReleaseNotesManager } from "@/components/PlatformReleaseNotesManager";
 import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
+import { PersonalClinicalPortfolioTab } from "@/components/personal/PersonalClinicalPortfolioTab";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { cn } from "@/lib/utils";
 
-type PersonalSection = "clinics" | "dashboard" | "news" | "settings";
+type PersonalSection = "clinics" | "dashboard" | "portfolio" | "news" | "settings";
 type ReleaseNoteCategory = "fixed" | "added" | "changed" | "removed";
 type AttendanceRange = "week" | "month" | "year";
 
@@ -114,6 +116,7 @@ const sectionItems: Array<{
 }> = [
   { icon: Building2, label: "Clínicas", value: "clinics" },
   { icon: LayoutDashboard, label: "Minhas Estatísticas", value: "dashboard" },
+  { icon: Award, label: "Meu Portfólio", value: "portfolio" },
   { icon: Megaphone, label: "Novidades", value: "news" },
   { icon: Settings, label: "Configurações", value: "settings" },
 ];
@@ -211,10 +214,11 @@ const isCompletedAttendance = (session: DashboardSession) => session.status !== 
 
 const SelecionarClinica = () => {
   const { accessibleClinics, isPlatformOwner, profile, refreshAuthState, selectClinic, signOut, user } = useAuth();
+  const { isFeatureEnabled } = useFeatureFlags();
+  const isPortfolioEnabled = isFeatureEnabled("clinical_portfolio_enabled");
   const location = useLocation();
   const navigate = useNavigate();
   const isDesignLabRoute = location.pathname.startsWith("/designlab") || location.pathname.startsWith("/designlabs");
-  const isDesignLabExperience = true;
   const [selectingClinicId, setSelectingClinicId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<PersonalSection>("clinics");
   const [releaseNotes, setReleaseNotes] = useState<ReleaseNote[]>([]);
@@ -238,6 +242,19 @@ const SelecionarClinica = () => {
 
   const displayName = profile?.full_name || profile?.email || user?.email || "Usuário";
   const initials = getInitials(displayName || "U");
+
+  // Fallback if portfolio feature flag is disabled
+  useEffect(() => {
+    if (!isPortfolioEnabled && activeSection === "portfolio") {
+      setActiveSection("clinics");
+    }
+  }, [isPortfolioEnabled, activeSection]);
+
+  const visibleSectionItems = useMemo(() => {
+    return isPortfolioEnabled
+      ? sectionItems
+      : sectionItems.filter((item) => item.value !== "portfolio");
+  }, [isPortfolioEnabled]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -648,7 +665,7 @@ const SelecionarClinica = () => {
     const element = document.elementFromPoint(clientX, clientY);
     const button = element?.closest<HTMLButtonElement>("[data-personal-mobile-section]");
     const sectionId = button?.dataset.personalMobileSection as PersonalSection | undefined;
-    const section = sectionItems.find((item) => item.value === sectionId);
+    const section = visibleSectionItems.find((item) => item.value === sectionId);
 
     if (!button || !section) {
       return;
@@ -685,7 +702,7 @@ const SelecionarClinica = () => {
 
   const personalDesktopNav = (
     <nav className="grid w-full min-w-0 max-w-full gap-2">
-      {sectionItems.map((item) => {
+      {visibleSectionItems.map((item) => {
         const Icon = item.icon;
         const isActive = activeSection === item.value;
 
@@ -750,7 +767,7 @@ const SelecionarClinica = () => {
             }
           }}
         >
-          {sectionItems.map((item) => {
+          {visibleSectionItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.value;
             const isPressed = mobileDockPressedSection === item.value;
@@ -1228,6 +1245,38 @@ const SelecionarClinica = () => {
             </AlertDialogContent>
           </AlertDialog>
 
+          {isPortfolioEnabled && (
+            <Card className="border-primary/30 bg-gradient-to-r from-card via-card to-primary/5 shadow-xs overflow-hidden">
+              <CardContent className="p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-xs">
+                    <Award className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-foreground">Meu Portfólio Clínico</h3>
+                      <Badge variant="secondary" className="bg-primary/10 text-primary text-xs font-medium">
+                        Acervo Técnico
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Histórico de Atendimentos & Acervo Profissional sob sua responsabilidade técnica com proteção LGPD.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  data-testid="open-portfolio-hero-btn"
+                  onClick={() => setActiveSection("portfolio")}
+                  className="shrink-0 gap-1.5 shadow-xs"
+                >
+                  <Award className="h-4 w-4" />
+                  Acessar Portfólio
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="overflow-hidden">
             <CardHeader className="px-4 sm:px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1374,8 +1423,15 @@ const SelecionarClinica = () => {
     </>
   );
 
+  const renderPortfolio = () => (
+    <div className="w-full">
+      <PersonalClinicalPortfolioTab userId={user?.id} />
+    </div>
+  );
+
   const renderActiveSection = () => {
     if (activeSection === "dashboard") return renderDashboard();
+    if (activeSection === "portfolio") return renderPortfolio();
     if (activeSection === "news") return renderNews();
     return renderClinics();
   };
@@ -1397,6 +1453,30 @@ const SelecionarClinica = () => {
             <ComponentHelpButton helpId="personal-welcome-block" size="sm" />
           </div>
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            {isPortfolioEnabled && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="header-portfolio-btn"
+                  className="hidden sm:inline-flex items-center gap-1.5 border-primary/30 text-xs font-medium hover:border-primary hover:bg-primary/5"
+                  onClick={() => setActiveSection("portfolio")}
+                >
+                  <Award className="h-4 w-4 text-primary" />
+                  <span>Meu Portfólio</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  data-testid="header-portfolio-mobile-btn"
+                  className="sm:hidden h-8 w-8 border-primary/30 text-primary hover:border-primary hover:bg-primary/5 shrink-0"
+                  onClick={() => setActiveSection("portfolio")}
+                  aria-label="Abrir Meu Portfólio Clínico"
+                >
+                  <Award className="h-4 w-4" />
+                </Button>
+              </>
+            )}
             <TutorialTriggerButton />
             <PersonalNotificationsButton />
             <div data-tutorial="personal-account-btn">

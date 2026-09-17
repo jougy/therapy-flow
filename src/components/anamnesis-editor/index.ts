@@ -9,3 +9,4 @@ export * from "./FormEditorBatchActionBar";
 export * from "./FormEditorDraftRestoreDialog";
 export * from "./FormEditorHeader";
 export * from "./FormEditorMobileDock";
+export * from "./useFormEditorPermissions";

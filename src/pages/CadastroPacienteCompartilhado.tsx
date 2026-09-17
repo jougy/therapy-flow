@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, FileText, HeartPulse, Loader2, LockKeyhole, MapPin, Phone, Search, Send, UserRoundCog } from "lucide-react";
+import { Baby, CheckCircle2, FileText, HeartPulse, Loader2, LockKeyhole, MapPin, Phone, Search, Send, UserRoundCog } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,6 +95,11 @@ interface SharedPatientFormData {
   clinical_notes: string | null;
   clinical_profile: Json | null;
   emergency_contact: Json | null;
+  age?: number | null;
+  responsible_name?: string | null;
+  responsible_relationship?: string | null;
+  responsible_cpf?: string | null;
+  guardian_consent?: Json | null;
 }
 
 interface SharedPatientResponse {
@@ -183,6 +188,10 @@ const CadastroPacienteCompartilhado = () => {
   const [clinicalNotes, setClinicalNotes] = useState("");
   const [clinicalProfile, setClinicalProfile] = useState<PatientClinicalProfile>(EMPTY_CLINICAL_PROFILE);
   const [emergencyContact, setEmergencyContact] = useState<PatientEmergencyContact>(EMPTY_EMERGENCY_CONTACT);
+  const [guardianConsent, setGuardianConsent] = useState<Record<string, unknown> | null>(null);
+  const [responsibleName, setResponsibleName] = useState<string | null>(null);
+  const [responsibleRel, setResponsibleRel] = useState<string | null>(null);
+  const [patientAge, setPatientAge] = useState<number | null>(null);
 
   const formValidation = useMemo(() => {
     const normalizedName = sanitizeLine(name, INPUT_LIMITS.name);
@@ -364,6 +373,10 @@ const CadastroPacienteCompartilhado = () => {
       setClinicalProfile(parseClinicalProfile(data.clinical_profile));
       setEmergencyContact(parseEmergencyContact(data.emergency_contact));
     }
+    setGuardianConsent(data.guardian_consent ? (data.guardian_consent as Record<string, unknown>) : null);
+    setResponsibleName(data.responsible_name || null);
+    setResponsibleRel(data.responsible_relationship || null);
+    setPatientAge(data.age ?? null);
   };
 
   const updateClinicalProfile = <K extends keyof PatientClinicalProfile>(key: K, value: PatientClinicalProfile[K]) => {
@@ -590,6 +603,37 @@ const CadastroPacienteCompartilhado = () => {
 
         {!!patientId && !locked && (
           <>
+            {((patientAge !== null && patientAge < 18) || guardianConsent || responsibleName) && (
+              <div className="p-4 rounded-xl border border-amber-300/80 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/30 text-xs text-amber-950 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm mb-4">
+                <div className="flex items-start gap-2.5">
+                  <Baby className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-sm">
+                      {guardianConsent?.status === "signed" ? "✓ Autorização LGPD do Menor Confirmada" : "Autorização do Responsável Legal (LGPD)"}
+                    </p>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      {guardianConsent?.status === "signed"
+                        ? `Consentimento formal registrado em nome de ${responsibleName || "responsável"} (${responsibleRel || "Representante legal"}).`
+                        : `Como o paciente é menor de idade, é exigido o consentimento formal de um responsável legal conforme o Art. 14 da LGPD.`}
+                    </p>
+                  </div>
+                </div>
+
+                {guardianConsent?.status !== "signed" && token && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(`/autorizacao-menor/${token}`, "_blank")}
+                    className="shrink-0 font-medium text-xs bg-background hover:bg-amber-100 dark:hover:bg-amber-900 gap-1.5"
+                  >
+                    <span>Assinar Termo de Menor</span>
+                    <span>➜</span>
+                  </Button>
+                )}
+              </div>
+            )}
+
             <Tabs defaultValue="basicos" className="w-full">
               <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="basicos" className="gap-2 text-xs sm:text-sm">
