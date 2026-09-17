@@ -2,6 +2,7 @@ import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
 import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
+import { SimpleListFieldInput } from "@/components/anamnesis/SimpleListFieldInput";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -279,6 +280,23 @@ export const FormEditorLivePreview: React.FC<FormEditorLivePreviewProps> = ({
             </div>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (field.type === "simple_list") {
+    return (
+      <div className="min-w-0">
+        <SimpleListFieldInput
+          field={field}
+          value={testAnswers[field.id]}
+          onChange={(val) => {
+            triggerFocus();
+            setFieldTestAnswer(field.id, val);
+          }}
+          onFocus={triggerFocus}
+          disabled={false}
+        />
       </div>
     );
   }

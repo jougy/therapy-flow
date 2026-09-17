@@ -43,6 +43,7 @@ import {
   type AgendaEventType,
   type AgendaPatientOption,
 } from "@/lib/agenda-events";
+import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 
 export interface AgendaEventItem {
@@ -102,7 +103,7 @@ export default function ClinicAgendaPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clinicKey } = useParams<{ clinicKey?: string }>();
-  const { clinic, clinicId, loading: authLoading, user } = useAuth();
+  const { can, clinic, clinicId, loading: authLoading, user } = useAuth();
 
   const isDesignLab = location.pathname.startsWith("/designlab");
   const effectiveClinicKey = clinicKey || clinic?.route_key;
@@ -218,21 +219,30 @@ export default function ClinicAgendaPage() {
     };
   }, [fetchAgendaData]);
 
+  const patientNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of patients) {
+      map.set(p.id, p.name.toLowerCase());
+    }
+    return map;
+  }, [patients]);
+
   // Filtragem dos eventos
   const filteredEvents = useMemo(() => {
+    const q = sanitizeSingleLineInput(searchQuery, INPUT_LIMITS.name).trim().toLowerCase();
+
     return events.filter((ev) => {
       if (filterType !== "all" && ev.eventType !== filterType) return false;
       if (filterStatus !== "all" && ev.status !== filterStatus) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (q) {
         const matchesTitle = ev.title.toLowerCase().includes(q);
-        const patient = patients.find((p) => p.id === ev.patientId);
-        const matchesPatient = patient?.name.toLowerCase().includes(q);
+        const patientName = ev.patientId ? patientNameById.get(ev.patientId) : undefined;
+        const matchesPatient = patientName ? patientName.includes(q) : false;
         if (!matchesTitle && !matchesPatient) return false;
       }
       return true;
     });
-  }, [events, filterType, filterStatus, searchQuery, patients]);
+  }, [events, filterType, filterStatus, searchQuery, patientNameById]);
 
   // Eventos do dia selecionado
   const dayEvents = useMemo(() => {
@@ -412,8 +422,18 @@ export default function ClinicAgendaPage() {
 
   // Excluir Agendamento
   const handleDeleteEvent = async (id: string) => {
+    if (!can("agenda.delete_events")) {
+      toast({
+        title: "Permissão negada",
+        description: "Você não tem permissão para excluir agendamentos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      const { error } = await supabase.from("agenda_events").delete().eq("id", id);
+      const deleteQuery = supabase.from("agenda_events").delete().eq("id", id);
+      const { error } = clinicId ? await deleteQuery.eq("clinic_id", clinicId) : await deleteQuery;
       if (error) throw error;
 
       setEvents((prev) => prev.filter((e) => e.id !== id));
@@ -600,7 +620,8 @@ export default function ClinicAgendaPage() {
           <Input
             placeholder="Buscar por paciente ou título..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.name))}
+            maxLength={INPUT_LIMITS.name}
             className="h-9 pl-9 rounded-xl text-xs"
           />
         </div>
@@ -978,7 +999,8 @@ export default function ClinicAgendaPage() {
                 <Input
                   placeholder="Ex: Reunião de equipe"
                   value={addTitle}
-                  onChange={(e) => setAddTitle(e.target.value)}
+                  onChange={(e) => setAddTitle(sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.agendaTitle))}
+                  maxLength={INPUT_LIMITS.agendaTitle}
                   className="h-9 rounded-xl text-xs"
                 />
               </div>
@@ -1092,15 +1114,17 @@ export default function ClinicAgendaPage() {
             </div>
 
             <DialogFooter className="gap-2 sm:justify-between">
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => handleDeleteEvent(selectedEvent.id)}
-                disabled={savingEdit}
-              >
-                Excluir
-              </Button>
+              {can("agenda.delete_events") ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleDeleteEvent(selectedEvent.id)}
+                  disabled={savingEdit}
+                >
+                  Excluir
+                </Button>
+              ) : <div />}
               <div className="flex items-center gap-2">
                 <Button
                   type="button"

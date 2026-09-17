@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PlatformAccountOperations } from "./PlatformAccountOperations";
 import { callPlatformAccountAdmin } from "./platform-api";
+import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 window.HTMLElement.prototype.hasPointerCapture = vi.fn();
@@ -24,8 +26,28 @@ vi.mock("@/hooks/use-toast", () => ({
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: {
+      getSession: vi.fn().mockResolvedValue({
+        data: {
+          session: {
+            access_token: "fake-jwt-token-aal2",
+            user: { id: "user-123" },
+          },
+        },
+        error: null,
+      }),
       mfa: {
-        listFactors: vi.fn().mockResolvedValue({ data: { totp: [] }, error: null }),
+        listFactors: vi.fn().mockResolvedValue({
+          data: {
+            totp: [
+              {
+                id: "factor-123",
+                friendly_name: "Ente Auth",
+                status: "verified",
+              },
+            ],
+          },
+          error: null,
+        }),
         challengeAndVerify: vi.fn().mockResolvedValue({ error: null }),
       },
     },
@@ -119,7 +141,7 @@ describe("PlatformAccountOperations - Gestão de Clínica, Planos, Dias e Cortes
     expect(screen.queryByPlaceholderText("+/- dias (ex: 30)")).not.toBeInTheDocument();
   });
 
-  it("envia payload completo para callPlatformAccountAdmin ao executar a ação administrativa", async () => {
+  it("abre modal de reautenticação 2FA e envia payload para callPlatformAccountAdmin após digitar código", async () => {
     const onDone = vi.fn();
     render(
       <PlatformAccountOperations
@@ -149,10 +171,24 @@ describe("PlatformAccountOperations - Gestão de Clínica, Planos, Dias e Cortes
     const textarea = screen.getByPlaceholderText(/Informe a justificativa da ação administrativa/i);
     fireEvent.change(textarea, { target: { value: "Ajuste de cortesia e dias para clínica parceira" } });
 
-    // Botão indica salvamento de alterações pendentes
+    // Clicar no botão abre o modal de reautenticação 2FA
     const submitBtn = screen.getByRole("button", { name: "Salvar e aplicar alterações pendentes" });
     expect(submitBtn).toBeEnabled();
     fireEvent.click(submitBtn);
+
+    // Modal deve estar visível
+    expect(screen.getByText("Reautenticação 2FA Requerida")).toBeInTheDocument();
+    expect(screen.getByText("Alterações que serão aplicadas:")).toBeInTheDocument();
+    expect(screen.getAllByText(/Dias de assinatura: \+45 dia\(s\)/i)).toHaveLength(2);
+
+    // Digita o código de 6 dígitos do autenticador
+    const mfaInput = screen.getByTestId("platform-reauth-input");
+    fireEvent.change(mfaInput, { target: { value: "123456" } });
+
+    // Confirma no modal
+    const confirmBtn = screen.getByRole("button", { name: "Confirmar e aplicar alterações" });
+    expect(confirmBtn).toBeEnabled();
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(callPlatformAccountAdmin).toHaveBeenCalledWith(
@@ -199,5 +235,104 @@ describe("PlatformAccountOperations - Gestão de Clínica, Planos, Dias e Cortes
 
     // Contador deve indicar válido / pronto para salvar
     expect(screen.getByText(/Pronto para salvar/i)).toBeInTheDocument();
+  });
+
+  it("exige confirmação com palavra EXCLUIR para ações destrutivas antes de abrir o modal 2FA", async () => {
+    render(
+      <PlatformAccountOperations
+        allowedOperations={["delete_subaccount"]}
+        clinicId="clinic-123"
+        onDone={vi.fn()}
+        title="Operações destrutivas"
+      />
+    );
+
+    const deleteBtn = screen.getByRole("button", { name: "Confirmar e excluir com 2FA" });
+    // Inicialmente desabilitado (sem motivo e sem confirmação)
+    expect(deleteBtn).toBeDisabled();
+
+    // Preenche motivo com 8+ caracteres
+    const textarea = screen.getByPlaceholderText(/Informe a justificativa da ação administrativa/i);
+    fireEvent.change(textarea, { target: { value: "Exclusão solicitada pelo cliente" } });
+
+    // Ainda desabilitado pois não digitou EXCLUIR
+    expect(deleteBtn).toBeDisabled();
+
+    // Digita EXCLUIR
+    const confirmInput = screen.getByPlaceholderText("Digite EXCLUIR");
+    fireEvent.change(confirmInput, { target: { value: "EXCLUIR" } });
+
+    // Agora o botão está liberado para abrir o modal de 2FA
+    expect(deleteBtn).toBeEnabled();
+    fireEvent.click(deleteBtn);
+
+    // Modal de reautenticação aberto em modo destrutivo
+    expect(screen.getByText("Reautenticação 2FA Requerida")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirmar e excluir com 2FA" })).toBeDisabled();
+
+    // Preenche os 6 dígitos no modal
+    const mfaInput = screen.getByTestId("platform-reauth-input");
+    fireEvent.change(mfaInput, { target: { value: "999888" } });
+    expect(screen.getByRole("button", { name: "Confirmar e excluir com 2FA" })).toBeEnabled();
+  });
+
+  it("não abre modal se o motivo possuir menos de 8 caracteres", () => {
+    render(
+      <PlatformAccountOperations
+        allowedOperations={["create_subaccount"]}
+        clinicId="clinic-123"
+        onDone={vi.fn()}
+        title="Criar subconta"
+      />
+    );
+
+    const submitBtn = screen.getByRole("button", { name: "Executar ação administrativa" });
+    expect(submitBtn).toBeDisabled();
+
+    const textarea = screen.getByPlaceholderText(/Informe a justificativa da ação administrativa/i);
+    fireEvent.change(textarea, { target: { value: "curto" } });
+
+    expect(screen.getByText(/Faltam 3 caractere\(s\)/i)).toBeInTheDocument();
+    expect(submitBtn).toBeDisabled();
+    expect(screen.queryByText("Reautenticação 2FA Requerida")).not.toBeInTheDocument();
+  });
+
+  it("trata erro se a sessão estiver inválida após o 2FA", async () => {
+    vi.mocked(supabase.auth.getSession).mockResolvedValueOnce({
+      data: { session: null },
+      error: null,
+    });
+
+    render(
+      <PlatformAccountOperations
+        allowedOperations={["create_subaccount"]}
+        clinicId="clinic-123"
+        onDone={vi.fn()}
+        title="Criar subconta"
+      />
+    );
+
+    const textarea = screen.getByPlaceholderText(/Informe a justificativa da ação administrativa/i);
+    fireEvent.change(textarea, { target: { value: "Criação de subconta de teste" } });
+
+    const submitBtn = screen.getByRole("button", { name: "Executar ação administrativa" });
+    expect(submitBtn).toBeEnabled();
+    fireEvent.click(submitBtn);
+
+    const mfaInput = screen.getByTestId("platform-reauth-input");
+    fireEvent.change(mfaInput, { target: { value: "123456" } });
+
+    const confirmBtn = screen.getByRole("button", { name: "Confirmar e aplicar alterações" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Operação administrativa falhou",
+          variant: "destructive",
+        })
+      );
+      expect(callPlatformAccountAdmin).not.toHaveBeenCalled();
+    });
   });
 });

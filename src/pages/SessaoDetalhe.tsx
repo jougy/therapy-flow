@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DEFAULT_GROUP_COLOR_SLOT_SEEDS, normalizeGroupName, sanitizeColorSlotId } from "@/lib/group-colors";
+import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -922,7 +923,7 @@ const SessaoDetalhe = () => {
   }, [isDirty]);
 
   const handleBackNavigation = () => {
-    const targetPath = `/pacientes/${patientId}`;
+    const targetPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : `/pacientes/${patientId}`;
     if (isDirty) {
       setPendingNavigationPath(targetPath);
       setLeaveConfirmModalOpen(true);
@@ -1116,15 +1117,19 @@ const SessaoDetalhe = () => {
     }
   };
 
-  const handleSaveNewCareLineModal = async (
-    name: string,
-    color: string,
-    colorSlotId: string | null,
-    status: PatientGroupStatus
-  ) => {
-    if (!name.trim() || !patientId || !user) return;
-    const normalizedName = normalizeGroupName(name);
-    const duplicateGroup = groups.find((group) => normalizeGroupName(group.name) === normalizedName);
+  const handleSaveNewCareLineModal = async ({
+    name,
+    color,
+    colorSlotId,
+    status,
+  }: {
+    name: string;
+    color: string;
+    colorSlotId?: string | null;
+    status: PatientGroupStatus;
+  }) => {
+    const normalizedTargetName = normalizeGroupName(name);
+    const duplicateGroup = groups.find((g) => normalizeGroupName(g.name) === normalizedTargetName);
 
     if (duplicateGroup) {
       setCareLineIds((prev) => {
@@ -1198,6 +1203,79 @@ const SessaoDetalhe = () => {
 
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
     const targetClinicId = clinicRes.data ?? clinicId;
+
+    // Sincronização de campos de lista com includeInGlobalDashboard ou systemKey "sintomas" para Linhas de Cuidado / Grupos
+    const combinedSchema = [...baseTemplateSchema, ...activeTemplateSchema];
+    const dashboardListFields = combinedSchema.filter(
+      (f) => f.type === "simple_list" && (f.includeInGlobalDashboard || f.systemKey === "sintomas")
+    );
+
+    const updatedCareLineIdsSet = new Set(careLineIds);
+    const currentGroups = [...groups];
+    for (const field of dashboardListFields) {
+      const fieldValue = anamnesisFormResponse[field.id];
+      if (Array.isArray(fieldValue)) {
+        for (const item of fieldValue) {
+          if (typeof item === "string" && item.trim()) {
+            const sanitizedName = sanitizeSingleLineInput(item, INPUT_LIMITS.name).trim();
+            if (!sanitizedName) continue;
+
+            const normalizedItem = normalizeGroupName(sanitizedName);
+            let matchingGroup = currentGroups.find((g) => normalizeGroupName(g.name) === normalizedItem);
+
+            if (!matchingGroup && targetClinicId && targetPatientId) {
+              // Cria automaticamente a linha de cuidado correspondente
+              const availableSlots = resolvedClinicColorSlots.length > 0
+                ? resolvedClinicColorSlots
+                : DEFAULT_GROUP_COLOR_SLOT_SEEDS.map((s) => ({ id: `seed-${s.slotIndex}`, color_hex: s.colorHex, slot_index: s.slotIndex, alpha: s.alpha }));
+              const randomSlot = availableSlots[Math.floor(Math.random() * availableSlots.length)];
+              const chosenColor = randomSlot?.color_hex || "#3B82F6";
+              const chosenSlotId = randomSlot && !randomSlot.id.startsWith("seed-") ? randomSlot.id : null;
+
+              const { data: newGroup, error: insertGroupError } = await supabase
+                .from("patient_groups")
+                .insert({
+                  patient_id: targetPatientId,
+                  name: sanitizedName,
+                  color: chosenColor,
+                  clinic_color_slot_id: chosenSlotId,
+                  group_kind: "custom",
+                  status: "em_andamento",
+                  is_default: false,
+                  clinic_id: targetClinicId,
+                  user_id: user.id,
+                })
+                .select("*")
+                .maybeSingle();
+
+              if (insertGroupError) {
+                console.error("Erro ao sincronizar linha de cuidado a partir de campo de lista:", insertGroupError);
+              }
+
+              if (newGroup) {
+                matchingGroup = newGroup;
+                currentGroups.push(newGroup);
+                setGroups((prev) => [...prev, newGroup]);
+              }
+            }
+
+            if (matchingGroup) {
+              updatedCareLineIdsSet.add(matchingGroup.id);
+            }
+          }
+        }
+      }
+    }
+
+    const updatedCareLineIds = Array.from(updatedCareLineIdsSet);
+    if (updatedCareLineIds.length !== careLineIds.length || updatedCareLineIds.some((id, idx) => id !== careLineIds[idx])) {
+      setCareLineIds(updatedCareLineIds);
+      if (!groupId && updatedCareLineIds[0]) {
+        setGroupId(updatedCareLineIds[0]);
+      }
+      formValues.careLineIds = updatedCareLineIds;
+      formValues.groupId = updatedCareLineIds[0] ?? formValues.groupId;
+    }
 
     if ((isNew && targetStatus !== "rascunho" && (quota.isTrialExpired || quota.isExpired || (quota.isFreeTrial && quota.attendances.isLimitReached))) || (quota.isTrialExpired || quota.isExpired)) {
       setIsReadOnlyModalOpen(true);
@@ -2005,7 +2083,7 @@ const SessaoDetalhe = () => {
                 />
               </Card>
 
-              {/* 2. Anamnese Universal / Base */}
+              {/* Anamnese Universal / Base */}
               {renderBaseSliderSection("edit")}
 
               <Card>
@@ -2386,7 +2464,8 @@ const SessaoDetalhe = () => {
               onClick={async () => {
                 await handleSave("rascunho");
                 setLeaveConfirmModalOpen(false);
-                navigate(pendingNavigationPath || `/pacientes/${patientId}`);
+                const fallbackPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : `/pacientes/${patientId}`;
+                navigate(pendingNavigationPath || fallbackPath);
               }}
               disabled={saving}
             >
@@ -2400,7 +2479,8 @@ const SessaoDetalhe = () => {
               onClick={() => {
                 clearSessionDraft(clinicId, resolvedPatientId || patientId, sessionId);
                 setLeaveConfirmModalOpen(false);
-                navigate(pendingNavigationPath || `/pacientes/${patientId}`);
+                const fallbackPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : `/pacientes/${patientId}`;
+                navigate(pendingNavigationPath || fallbackPath);
               }}
               disabled={saving}
             >

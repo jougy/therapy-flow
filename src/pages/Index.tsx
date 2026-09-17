@@ -10,6 +10,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { useTutorial } from "@/contexts/TutorialContext";
+import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import AgendaWidget from "@/components/AgendaWidget";
 import PatientCard from "@/components/PatientCard";
 import {
@@ -98,6 +100,7 @@ const Index = () => {
   const { can, clinic, clinicId, user } = useAuth();
   const { clinicKey } = useParams<{ clinicKey?: string }>();
   const { isFeatureEnabled, flags } = useFeatureFlags();
+  const { activeTutorialId, isOpen: isTutorialOpen } = useTutorial();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -762,11 +765,22 @@ const Index = () => {
         </Dialog>
 
         {/* Agenda Dialog */}
-        <Dialog open={agendaDialogOpen} onOpenChange={setAgendaDialogOpen}>
-          <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-lg sm:p-6">
+        <Dialog
+          open={agendaDialogOpen}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen && isTutorialOpen && activeTutorialId === "agenda-widget") {
+              return;
+            }
+            setAgendaDialogOpen(nextOpen);
+          }}
+        >
+          <DialogContent className="max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 sm:max-w-xl sm:p-6">
             <DialogHeader className="text-left flex flex-row items-start justify-between gap-2 pr-6">
               <div>
-                <DialogTitle>Agenda</DialogTitle>
+                <div className="flex items-center gap-1.5">
+                  <DialogTitle>Agenda</DialogTitle>
+                  <ComponentHelpButton helpId="agenda-widget" size="xs" />
+                </div>
                 <DialogDescription>Veja e gerencie os agendamentos da clínica.</DialogDescription>
               </div>
               {isDesignLab && (
@@ -786,7 +800,7 @@ const Index = () => {
                 </Button>
               )}
             </DialogHeader>
-            <AgendaWidget />
+            <AgendaWidget variant="modal" />
           </DialogContent>
         </Dialog>
 

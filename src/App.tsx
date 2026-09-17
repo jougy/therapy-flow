@@ -21,6 +21,7 @@ const DownloadApp = lazy(() => import("./pages/DownloadApp"));
 const CadastroCompleto = lazy(() => import("./pages/CadastroCompleto"));
 const CadastroContaAlfa = lazy(() => import("./pages/CadastroContaAlfa"));
 const CadastroPacienteCompartilhado = lazy(() => import("./pages/CadastroPacienteCompartilhado"));
+const AutorizacaoMenorPublica = lazy(() => import("./pages/AutorizacaoMenorPublica"));
 const ClinicDashboard = lazy(() => import("./pages/ClinicDashboard"));
 import {
   SettingsLayout,
@@ -192,6 +193,7 @@ const App = () => (
                       <Route path="/cadastro" element={<Navigate to="/auth/cadastro" replace />} />
                       <Route path="/cadastro/conta-alfa" element={<Navigate to="/auth/cadastro" replace />} />
                       <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
+                      <Route path="/autorizacao-menor/:token" element={<AutorizacaoMenorPublica />} />
                       <Route path="/espacopessoal" element={<ProtectedRoute><SelecionarClinica /></ProtectedRoute>} />
                       <Route path="/planos" element={<ProtectedRoute><PlanosAssinatura /></ProtectedRoute>} />
                       <Route path="/onboarding-clinica" element={<ProtectedRoute><OnboardingClinica /></ProtectedRoute>} />

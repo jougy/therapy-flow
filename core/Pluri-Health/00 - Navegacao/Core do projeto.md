@@ -30,6 +30,7 @@ Este arquivo centraliza a documentacao principal do projeto e aponta para os doc
 
 ## Notas centrais do produto
 
+- Catálogo completo de telas, funcionalidades e diferenciais: [[Catalogo Mestre de Funcionalidades e Diferenciais]]
 - Estrutura inicial de clinica e colaborador no MVP: [[Clinica e colaborador no MVP]]
 - Estrategia viva de TDD, checks e protecoes contra regressao: [[TDD e checks]]
 - Seguranca de produto: [[Configuracoes - Seguranca]]

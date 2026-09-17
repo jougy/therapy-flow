@@ -32,6 +32,7 @@ import {
   type AgendaEventType,
   type AgendaPatientOption,
 } from "@/lib/agenda-events";
+import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import type { Database } from "@/integrations/supabase/types";
 
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
@@ -126,9 +127,17 @@ interface AgendaWidgetProps {
   onStartAttendance?: () => void;
   startAttendanceLabel?: string;
   showExpandButton?: boolean;
+  variant?: "card" | "modal";
 }
 
-const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startAttendanceLabel, showExpandButton }: AgendaWidgetProps) => {
+const AgendaWidget = ({
+  fixedPatient,
+  headerAccessory,
+  onStartAttendance,
+  startAttendanceLabel,
+  showExpandButton,
+  variant = "card",
+}: AgendaWidgetProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { clinicKey } = useParams<{ clinicKey?: string }>();
@@ -166,16 +175,22 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
       setLoading(true);
     }
 
-    const eventsRequest = supabase
+    const eventsBase = supabase
       .from("agenda_events")
-      .select("id, event_type, patient_id, status, title, scheduled_for")
-      .order("scheduled_for", { ascending: true });
+      .select("id, event_type, patient_id, status, title, scheduled_for");
+    const eventsRequest = clinicId
+      ? eventsBase.eq("clinic_id", clinicId).order("scheduled_for", { ascending: true })
+      : eventsBase.order("scheduled_for", { ascending: true });
+
+    const patientsBase = supabase
+      .from("patients")
+      .select("id, name");
     const patientsRequest = fixedPatientId
       ? Promise.resolve({ data: [] as AgendaPatientOption[], error: null })
-      : supabase
-          .from("patients")
-          .select("id, name")
-          .order("name", { ascending: true });
+      : clinicId
+        ? patientsBase.eq("clinic_id", clinicId).order("name", { ascending: true })
+        : patientsBase.order("name", { ascending: true });
+
     const [eventsRes, patientsRes] = await Promise.all([eventsRequest, patientsRequest]);
 
     if (eventsRes.error) {
@@ -200,7 +215,7 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
     );
     setPatients(Array.isArray(patientsRes.data) ? patientsRes.data : []);
     setLoading(false);
-  }, [fixedPatientId, user]);
+  }, [clinicId, fixedPatientId, user]);
 
   useEffect(() => {
     void fetchAgendaData();
@@ -218,29 +233,67 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
     };
   }, [fetchAgendaData]);
 
-  const scopedEvents = fixedPatientId ? events.filter((event) => event.patientId === fixedPatientId) : events;
+  const scopedEvents = useMemo(
+    () => (fixedPatientId ? events.filter((event) => event.patientId === fixedPatientId) : events),
+    [events, fixedPatientId]
+  );
 
-  const dayEvents = scopedEvents
-    .filter((event) => isSameDay(event.date, selectedDate))
-    .sort((first, second) => first.time.localeCompare(second.time));
+  const dayEvents = useMemo(
+    () =>
+      scopedEvents
+        .filter((event) => isSameDay(event.date, selectedDate))
+        .sort((first, second) => first.time.localeCompare(second.time)),
+    [scopedEvents, selectedDate]
+  );
 
-  const todayDay = getLocalDay();
-  const selectedDayTimestamp = getLocalDayTimestamp(selectedDate);
-  const eventsFromToday = scopedEvents.filter((event) => getLocalDayTimestamp(event.date) >= todayDay.getTime());
-  const datesWithEvents = eventsFromToday.map((event) => event.date);
-  const eventsBeforeSelectedDate = eventsFromToday.filter((event) => getLocalDayTimestamp(event.date) < selectedDayTimestamp);
-  const eventsAfterSelectedDate = eventsFromToday.filter((event) => getLocalDayTimestamp(event.date) > selectedDayTimestamp);
-  const previousEventDate = eventsBeforeSelectedDate
-    .map((event) => getLocalDay(event.date))
-    .sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
-  const nextEventDate = eventsAfterSelectedDate
-    .map((event) => getLocalDay(event.date))
-    .sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
-  const newEventDateTime = newTime ? getAgendaEventDateTime(selectedDate, newTime) : null;
-  const isNewEventDateTimePast = newEventDateTime ? isAgendaEventDateTimeInPast(newEventDateTime) : false;
-  const selectedEventDateTime =
-    selectedEventDate && selectedEventTime ? new Date(`${selectedEventDate}T${selectedEventTime || "00:00"}:00`) : null;
-  const isSelectedEventDateTimePast = selectedEventDateTime ? isAgendaEventDateTimeInPast(selectedEventDateTime) : false;
+  const todayDay = useMemo(() => getLocalDay(), []);
+  const selectedDayTimestamp = useMemo(() => getLocalDayTimestamp(selectedDate), [selectedDate]);
+
+  const {
+    datesWithEvents,
+    eventsAfterSelectedDate,
+    eventsBeforeSelectedDate,
+    eventsFromToday,
+    nextEventDate,
+    previousEventDate,
+  } = useMemo(() => {
+    const fromToday = scopedEvents.filter((event) => getLocalDayTimestamp(event.date) >= todayDay.getTime());
+    const dates = fromToday.map((event) => event.date);
+    const beforeSelected = fromToday.filter((event) => getLocalDayTimestamp(event.date) < selectedDayTimestamp);
+    const afterSelected = fromToday.filter((event) => getLocalDayTimestamp(event.date) > selectedDayTimestamp);
+    const prevDate = beforeSelected
+      .map((event) => getLocalDay(event.date))
+      .sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+    const nextDate = afterSelected
+      .map((event) => getLocalDay(event.date))
+      .sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
+
+    return {
+      datesWithEvents: dates,
+      eventsAfterSelectedDate: afterSelected,
+      eventsBeforeSelectedDate: beforeSelected,
+      eventsFromToday: fromToday,
+      nextEventDate: nextDate,
+      previousEventDate: prevDate,
+    };
+  }, [scopedEvents, selectedDayTimestamp, todayDay]);
+
+  const newEventDateTime = useMemo(
+    () => (newTime ? getAgendaEventDateTime(selectedDate, newTime) : null),
+    [newTime, selectedDate]
+  );
+  const isNewEventDateTimePast = useMemo(
+    () => (newEventDateTime ? isAgendaEventDateTimeInPast(newEventDateTime) : false),
+    [newEventDateTime]
+  );
+  const selectedEventDateTime = useMemo(
+    () => (selectedEventDate && selectedEventTime ? new Date(`${selectedEventDate}T${selectedEventTime || "00:00"}:00`) : null),
+    [selectedEventDate, selectedEventTime]
+  );
+  const isSelectedEventDateTimePast = useMemo(
+    () => (selectedEventDateTime ? isAgendaEventDateTimeInPast(selectedEventDateTime) : false),
+    [selectedEventDateTime]
+  );
   const filteredPatients = useMemo(() => {
     const query = patientQuery.trim().toLowerCase();
 
@@ -285,12 +338,18 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
   };
 
   const handlePatientQueryChange = (value: string) => {
-    setPatientQuery(value);
-    setSelectedPatient(resolvePatientSelection(value, patients));
+    const sanitizedQuery = sanitizeSingleLineInput(value, INPUT_LIMITS.name);
+    setPatientQuery(sanitizedQuery);
+    setSelectedPatient(resolvePatientSelection(sanitizedQuery, patients));
+  };
+
+  const handleTitleChange = (value: string) => {
+    setNewTitle(sanitizeSingleLineInput(value, INPUT_LIMITS.agendaTitle));
   };
 
   const handleSelectPatient = (patient: AgendaPatientOption) => {
-    setPatientQuery(patient.name);
+    const sanitizedName = sanitizeSingleLineInput(patient.name, INPUT_LIMITS.name);
+    setPatientQuery(sanitizedName);
     setSelectedPatient(patient);
     setPatientComboboxOpen(false);
   };
@@ -362,7 +421,17 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
       setSavingSelectedEvent(true);
 
       if (selectedStatusAction === "delete") {
-        const { error } = await supabase.from("agenda_events").delete().eq("id", selectedEvent.id);
+        if (!can("agenda.delete_events")) {
+          toast({
+            title: "Permissão negada",
+            description: "Você não tem permissão para excluir agendamentos.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const deleteQuery = supabase.from("agenda_events").delete().eq("id", selectedEvent.id);
+        const { error } = clinicId ? await deleteQuery.eq("clinic_id", clinicId) : await deleteQuery;
 
         if (error) {
           throw error;
@@ -510,7 +579,17 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
   };
 
   const handleRemove = async (id: string) => {
-    const { error } = await supabase.from("agenda_events").delete().eq("id", id);
+    if (!can("agenda.delete_events")) {
+      toast({
+        title: "Permissão negada",
+        description: "Você não tem permissão para excluir agendamentos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const deleteQuery = supabase.from("agenda_events").delete().eq("id", id);
+    const { error } = clinicId ? await deleteQuery.eq("clinic_id", clinicId) : await deleteQuery;
 
     if (error) {
       toast({ title: "Erro ao remover evento", description: error.message, variant: "destructive" });
@@ -521,7 +600,227 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
     notifyAgendaEventsUpdated();
   };
 
-  return (
+  const isModal = variant === "modal";
+
+  const content = (
+    <div className={cn("space-y-3", isModal && "w-full min-w-0")}>
+      <div data-tutorial="agenda-nav-arrows" className="grid grid-cols-[auto,minmax(0,1fr),auto] items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="relative h-9 w-9 shrink-0"
+          disabled={!previousEventDate}
+          onClick={() => previousEventDate && setSelectedDate(previousEventDate)}
+          aria-label={`Ir para o dia anterior com agendamentos. ${eventsBeforeSelectedDate.length} agendamento${eventsBeforeSelectedDate.length !== 1 ? "s" : ""} antes desta data.`}
+        >
+          <ChevronLeft className="h-4 w-4" />
+          {eventsBeforeSelectedDate.length > 0 ? (
+            <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
+              {eventsBeforeSelectedDate.length}
+            </span>
+          ) : null}
+        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button data-tutorial="agenda-date-picker-btn" variant="outline" size="sm" className="w-full min-w-0 justify-start text-left font-normal">
+              <CalendarDays className="mr-2 h-4 w-4 shrink-0" />
+              <span className="truncate">{format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}</span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={(date) => date && getLocalDayTimestamp(date) >= todayDay.getTime() && setSelectedDate(date)}
+              disabled={(date) => getLocalDayTimestamp(date) < todayDay.getTime()}
+              className={cn("p-3 pointer-events-auto")}
+              modifiers={{ hasEvent: datesWithEvents }}
+              modifiersClassNames={{ hasEvent: "bg-primary/20 font-bold" }}
+            />
+          </PopoverContent>
+        </Popover>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="relative h-9 w-9 shrink-0"
+          disabled={!nextEventDate}
+          onClick={() => nextEventDate && setSelectedDate(nextEventDate)}
+          aria-label={`Ir para o próximo dia com agendamentos. ${eventsAfterSelectedDate.length} agendamento${eventsAfterSelectedDate.length !== 1 ? "s" : ""} depois desta data.`}
+        >
+          <ChevronRight className="h-4 w-4" />
+          {eventsAfterSelectedDate.length > 0 ? (
+            <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
+              {eventsAfterSelectedDate.length}
+            </span>
+          ) : null}
+        </Button>
+      </div>
+
+      <div
+        data-tutorial="agenda-events-list"
+        className={cn(
+          "space-y-1.5 overflow-y-auto overflow-x-hidden pr-1",
+          isModal ? "max-h-64 sm:max-h-80" : "max-h-36"
+        )}
+      >
+        {loading && (
+          <div className="flex items-center justify-center py-3">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          </div>
+        )}
+        {!loading && dayEvents.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-2">Sem eventos</p>
+        )}
+        {dayEvents.map((event) => (
+          <div
+            key={event.id}
+            data-tutorial="agenda-event-item"
+            className="group flex min-w-0 cursor-pointer flex-col gap-1.5 overflow-hidden rounded bg-muted/50 p-2 text-xs transition-colors hover:bg-muted sm:flex-row sm:items-center"
+            role="button"
+            tabIndex={0}
+            onClick={() => handleOpenEventDetails(event)}
+            onPointerUp={(pointerEvent) => {
+              if (pointerEvent.pointerType === "touch") {
+                handleOpenEventDetails(event);
+              }
+            }}
+            onKeyDown={(keyboardEvent) => {
+              if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+                keyboardEvent.preventDefault();
+                handleOpenEventDetails(event);
+              }
+            }}
+          >
+            {/* Linha 1 no Mobile (< sm) / Alinhado inline no Desktop (sm:) */}
+            <div className="flex min-w-0 flex-1 items-center justify-between gap-2 sm:contents">
+              <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
+                <Clock className="h-3 w-3 shrink-0" />
+                {event.time}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-medium sm:order-4">{event.title}</span>
+
+              {/* Botões de Ação no Mobile (com alvos confortáveis) */}
+              <div className="flex shrink-0 items-center gap-1 sm:hidden">
+                {event.eventType === "atendimento" && event.patientId && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 min-h-[36px] px-2 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 gap-1 shrink-0"
+                    onClick={(eventClick) => {
+                      eventClick.stopPropagation();
+                      navigate(`/pacientes/${event.patientId}/sessao/novo`, {
+                        state: {
+                          agendaEventId: event.id,
+                          scheduledFor: event.scheduledFor,
+                        },
+                      });
+                    }}
+                    title="Iniciar atendimento a partir deste agendamento"
+                  >
+                    <Play className="h-3.5 w-3.5 fill-primary text-primary" />
+                    <span>Iniciar</span>
+                  </Button>
+                )}
+                {can("agenda.delete_events") && (
+                  <button
+                    type="button"
+                    onPointerUp={(eventPointer) => eventPointer.stopPropagation()}
+                    onClick={(eventClick) => {
+                      eventClick.stopPropagation();
+                      void handleRemove(event.id);
+                    }}
+                    className="flex h-8 w-8 min-h-[36px] min-w-[36px] items-center justify-center text-muted-foreground hover:text-destructive shrink-0"
+                    aria-label="Excluir agendamento"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Linha 2 no Mobile (< sm) / Inline Badges no Desktop (sm:) */}
+            <div className="flex min-w-0 flex-wrap items-center gap-1 sm:contents">
+              <Badge variant="outline" className="shrink-0 text-[10px] uppercase">
+                {eventTypeLabels[event.eventType]}
+              </Badge>
+              <Badge variant="outline" className={`shrink-0 text-[10px] ${agendaStatusStyles[event.status]}`}>
+                {agendaStatusLabels[event.status]}
+              </Badge>
+            </div>
+
+            {/* Ações Desktop (sm:) */}
+            {event.eventType === "atendimento" && event.patientId && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="hidden sm:inline-flex h-7 px-2 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 gap-1 shrink-0"
+                onClick={(eventClick) => {
+                  eventClick.stopPropagation();
+                  navigate(`/pacientes/${event.patientId}/sessao/novo`, {
+                    state: {
+                      agendaEventId: event.id,
+                      scheduledFor: event.scheduledFor,
+                    },
+                  });
+                }}
+                title="Iniciar atendimento a partir deste agendamento"
+              >
+                <Play className="h-3 w-3 fill-primary text-primary shrink-0" />
+                <span className="hidden min-[520px]:inline">Iniciar</span>
+              </Button>
+            )}
+            {can("agenda.delete_events") && (
+              <button
+                type="button"
+                onPointerUp={(eventPointer) => eventPointer.stopPropagation()}
+                onClick={(eventClick) => {
+                  eventClick.stopPropagation();
+                  void handleRemove(event.id);
+                }}
+                className="ml-1 hidden sm:inline-flex shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                aria-label="Excluir agendamento"
+              >
+                <X className="h-3 w-3 shrink-0" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {fixedPatientId ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button data-tutorial="agenda-add-btn" variant="default" size="sm" className={getDesignLabButtonClass("hover:w-[120px]")} onClick={handleOpenAddDialog}>
+            <Plus className={`${designLabIconClass} h-3.5 w-3.5`} />
+            <span className={designLabLabelClass}>Agendar</span>
+          </Button>
+          <Button
+            data-tutorial="agenda-quick-start"
+            type="button"
+            size="sm"
+            className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5 shadow-sm px-3.5 transition-all"
+            onClick={onStartAttendance ?? handleStartAttendanceNow}
+          >
+            <Play className="h-3.5 w-3.5 fill-current text-white" />
+            <span>{startAttendanceLabel ?? "Iniciar Atendimento Agora"}</span>
+          </Button>
+        </div>
+      ) : (
+        <Button data-tutorial="agenda-add-btn" variant="ghost" size="sm" className="w-full text-xs" onClick={handleOpenAddDialog}>
+          <Plus className="h-3 w-3 mr-1" /> Adicionar evento
+        </Button>
+      )}
+    </div>
+  );
+
+  const containerContent = isModal ? (
+    <div data-tutorial="agenda-widget" className="w-full min-w-0 space-y-3">
+      {content}
+    </div>
+  ) : (
     <Card data-tutorial="agenda-widget" className="hover:shadow-md transition-shadow duration-150">
       <CardHeader className="space-y-3 pb-2">
         <div className="flex items-start justify-between gap-3">
@@ -551,163 +850,14 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div data-tutorial="agenda-nav-arrows" className="grid grid-cols-[auto,minmax(0,1fr),auto] items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="relative h-9 w-9"
-            disabled={!previousEventDate}
-            onClick={() => previousEventDate && setSelectedDate(previousEventDate)}
-            aria-label={`Ir para o dia anterior com agendamentos. ${eventsBeforeSelectedDate.length} agendamento${eventsBeforeSelectedDate.length !== 1 ? "s" : ""} antes desta data.`}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            {eventsBeforeSelectedDate.length > 0 ? (
-              <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
-                {eventsBeforeSelectedDate.length}
-              </span>
-            ) : null}
-          </Button>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button data-tutorial="agenda-date-picker-btn" variant="outline" size="sm" className="w-full min-w-0 justify-start text-left font-normal">
-                <CalendarDays className="mr-2 h-4 w-4 shrink-0" />
-                <span className="truncate">{format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={(date) => date && getLocalDayTimestamp(date) >= todayDay.getTime() && setSelectedDate(date)}
-                disabled={(date) => getLocalDayTimestamp(date) < todayDay.getTime()}
-                className={cn("p-3 pointer-events-auto")}
-                modifiers={{ hasEvent: datesWithEvents }}
-                modifiersClassNames={{ hasEvent: "bg-primary/20 font-bold" }}
-              />
-            </PopoverContent>
-          </Popover>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="relative h-9 w-9"
-            disabled={!nextEventDate}
-            onClick={() => nextEventDate && setSelectedDate(nextEventDate)}
-            aria-label={`Ir para o próximo dia com agendamentos. ${eventsAfterSelectedDate.length} agendamento${eventsAfterSelectedDate.length !== 1 ? "s" : ""} depois desta data.`}
-          >
-            <ChevronRight className="h-4 w-4" />
-            {eventsAfterSelectedDate.length > 0 ? (
-              <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
-                {eventsAfterSelectedDate.length}
-              </span>
-            ) : null}
-          </Button>
-        </div>
+        {content}
+      </CardContent>
+    </Card>
+  );
 
-        <div data-tutorial="agenda-events-list" className="space-y-1.5 max-h-36 overflow-y-auto overflow-x-hidden pr-1">
-          {loading && (
-            <div className="flex items-center justify-center py-3">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            </div>
-          )}
-          {!loading && dayEvents.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-2">Sem eventos</p>
-          )}
-          {dayEvents.map((event) => (
-            <div
-              key={event.id}
-              data-tutorial="agenda-event-item"
-              className="group flex min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded bg-muted/50 px-2 py-2 transition-colors hover:bg-muted"
-              role="button"
-              tabIndex={0}
-              onClick={() => handleOpenEventDetails(event)}
-              onPointerUp={(pointerEvent) => {
-                if (pointerEvent.pointerType === "touch") {
-                  handleOpenEventDetails(event);
-                }
-              }}
-              onKeyDown={(keyboardEvent) => {
-                if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-                  keyboardEvent.preventDefault();
-                  handleOpenEventDetails(event);
-                }
-              }}
-            >
-              <div className="grid min-w-0 flex-1 grid-cols-[auto,1fr] items-center gap-x-2 gap-y-1 text-left text-xs sm:flex sm:items-center sm:gap-1.5">
-                <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
-                  <Clock className="h-3 w-3 shrink-0" />
-                  {event.time}
-                </span>
-                <span className="min-w-0 truncate font-medium sm:order-4">{event.title}</span>
-                <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-1 sm:contents">
-                  <Badge variant="outline" className="hidden text-[10px] uppercase min-[420px]:inline-flex">
-                    {eventTypeLabels[event.eventType]}
-                  </Badge>
-                  <Badge variant="outline" className={`max-w-full truncate text-[10px] ${agendaStatusStyles[event.status]}`}>
-                    {agendaStatusLabels[event.status]}
-                  </Badge>
-                </div>
-              </div>
-              {event.eventType === "atendimento" && event.patientId && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 gap-1 shrink-0"
-                  onClick={(eventClick) => {
-                    eventClick.stopPropagation();
-                    navigate(`/pacientes/${event.patientId}/sessao/novo`, {
-                      state: {
-                        agendaEventId: event.id,
-                        scheduledFor: event.scheduledFor,
-                      },
-                    });
-                  }}
-                  title="Iniciar atendimento a partir deste agendamento"
-                >
-                  <Play className="h-3 w-3 fill-primary text-primary" />
-                  <span className="hidden min-[520px]:inline">Iniciar</span>
-                </Button>
-              )}
-              {can("agenda.delete_events") && (
-                <button
-                  onPointerUp={(eventPointer) => eventPointer.stopPropagation()}
-                  onClick={(eventClick) => {
-                    eventClick.stopPropagation();
-                    void handleRemove(event.id);
-                  }}
-                  className="ml-1 shrink-0 text-muted-foreground opacity-100 transition-opacity hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {fixedPatientId ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button data-tutorial="agenda-add-btn" variant="default" size="sm" className={getDesignLabButtonClass("hover:w-[120px]")} onClick={handleOpenAddDialog}>
-              <Plus className={`${designLabIconClass} h-3.5 w-3.5`} />
-              <span className={designLabLabelClass}>Agendar</span>
-            </Button>
-            <Button
-              data-tutorial="agenda-quick-start"
-              type="button"
-              size="sm"
-              className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5 shadow-sm px-3.5 transition-all"
-              onClick={onStartAttendance ?? handleStartAttendanceNow}
-            >
-              <Play className="h-3.5 w-3.5 fill-current text-white" />
-              <span>{startAttendanceLabel ?? "Iniciar Atendimento Agora"}</span>
-            </Button>
-          </div>
-        ) : (
-          <Button data-tutorial="agenda-add-btn" variant="ghost" size="sm" className="w-full text-xs" onClick={handleOpenAddDialog}>
-            <Plus className="h-3 w-3 mr-1" /> Adicionar evento
-          </Button>
-        )}
+  return (
+    <>
+      {containerContent}
 
         <Dialog open={showAdd} onOpenChange={setShowAdd}>
           <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-sm sm:p-6">
@@ -799,8 +949,9 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
                   <Label>Título</Label>
                   <Input
                     value={newTitle}
-                    onChange={(event) => setNewTitle(event.target.value)}
+                    onChange={(event) => handleTitleChange(event.target.value)}
                     placeholder="Digite o título do evento"
+                    maxLength={INPUT_LIMITS.agendaTitle}
                   />
                 </div>
               )}
@@ -861,9 +1012,11 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
                       {agendaStatusOptions.map((status) => (
                         <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
                       ))}
-                      <SelectItem value={agendaDeleteOption.value} className="text-destructive focus:text-destructive">
-                        {agendaDeleteOption.label}
-                      </SelectItem>
+                      {can("agenda.delete_events") && (
+                        <SelectItem value={agendaDeleteOption.value} className="text-destructive focus:text-destructive">
+                          {agendaDeleteOption.label}
+                        </SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                   {selectedStatusAction === "cancelado" ? (
@@ -940,9 +1093,8 @@ const AgendaWidget = ({ fixedPatient, headerAccessory, onStartAttendance, startA
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </CardContent>
-    </Card>
-  );
+      </>
+    );
 };
 
 export default AgendaWidget;

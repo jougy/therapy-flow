@@ -223,20 +223,33 @@ export const PlatformGovernanceSettings: React.FC = () => {
             <Scale className="w-4 h-4 text-emerald-600" /> Termos de Uso, Consentimento & Compliance
           </CardTitle>
           <CardDescription>
-            Gerencie as versões oficiais dos Termos de Uso, responsabilidade de impressão e disparo de aceite obrigatório.
+            Gerencie as versões oficiais dos Termos de Uso, responsabilidade de impressão, consentimento para menor de idade (LGPD) e disparo de aceite obrigatório.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl border border-neutral-200 bg-white dark:bg-neutral-800">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <FileText className="w-4 h-4 text-primary" />
               <h4 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100">Termos de Uso e Consentimento Ativos</h4>
               <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                 {termsRaw.publishedVersion ? `Versão ${String(termsRaw.publishedVersion).slice(0, 10)}` : "Ativo"}
               </Badge>
+              <Badge variant="secondary" className="text-[10px]">
+                {[
+                  termsRaw.owner_br,
+                  termsRaw.user_br,
+                  termsRaw.owner_intl,
+                  termsRaw.user_intl,
+                  termsRaw.print_terms,
+                  termsRaw.minor_terms || termsRaw.minor_consent,
+                ].filter(Boolean).length}/6 docs customizados
+              </Badge>
+              <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300">
+                {termsRaw.minor_terms || termsRaw.minor_consent ? "Menor LGPD: Customizado" : "Menor LGPD: Padrão Ativo"}
+              </Badge>
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              Controla os modais de aceite do cliente, consentimento de impressão de prontuários e termos internacionais.
+              Controla os modais de aceite do cliente, consentimento de impressão de prontuários, consentimento de menor (LGPD) e termos internacionais.
             </p>
           </div>
 

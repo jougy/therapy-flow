@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { COMPONENT_CATEGORIES } from "./types";
+import { useFormEditorPermissions } from "./useFormEditorPermissions";
 import type { AnamnesisField } from "@/lib/anamnesis-forms";
 
 const getCategorySlug = (name: string) => {
@@ -29,6 +30,11 @@ export const FormEditorPaletteSidebar: React.FC<FormEditorPaletteSidebarProps> =
   setDraggedNewFieldType,
   isBase = false,
 }) => {
+  const { isComponentAllowed, isMenuAllowed } = useFormEditorPermissions();
+
+  if (!isMenuAllowed("palette_sidebar")) {
+    return null;
+  }
   return (
     <Card
       data-tutorial="form-editor-palette"
@@ -76,6 +82,8 @@ export const FormEditorPaletteSidebar: React.FC<FormEditorPaletteSidebarProps> =
           </CardHeader>
           <CardContent className="flex-1 min-h-0 space-y-4 p-3 overflow-y-auto">
             {COMPONENT_CATEGORIES.map((category) => {
+              const allowedItems = category.items.filter((item) => isComponentAllowed(item.type));
+              if (allowedItems.length === 0) return null;
               const catSlug = getCategorySlug(category.name);
               return (
                 <div key={category.name} data-tutorial={`form-palette-cat-${catSlug}`} className="space-y-1.5">
@@ -86,7 +94,7 @@ export const FormEditorPaletteSidebar: React.FC<FormEditorPaletteSidebarProps> =
                     <ComponentHelpButton helpId={`form-palette-cat-${catSlug}`} size="xs" />
                   </div>
                   <div className="grid grid-cols-1 gap-1.5">
-                    {category.items.map((item) => {
+                    {allowedItems.map((item) => {
                       const Icon = item.icon;
                       return (
                         <div

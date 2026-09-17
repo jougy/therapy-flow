@@ -106,11 +106,16 @@ import {
 import {
   buildPatientSessionsView,
   canDeleteSelectedSessionsForRole,
+  extractFilterableModularItems,
+  extractModularFieldsByFlag,
   filterSessionsForOperationalRole,
   getSessionCareLineIds,
+  groupSessionsByModularField,
   shouldAutoCompleteInternDraft,
   shouldShowSessionCreatorInternBadge,
   type EvolutionGroupMetadata,
+  type ModularFilterItem,
+  type ModularGroupedSessionsResult,
 } from "@/lib/patient-sessions-view";
 import { buildSessionPayload, getCurrentDateTimeInputValue } from "@/lib/session-payload";
 import type { PatientPaymentPlanRow } from "@/lib/payment-plans";
@@ -1049,6 +1054,7 @@ const PacienteDetalhe = () => {
   const { data: clinicColorSlots = EMPTY_ARRAY } = useClinicGroupColorSlotsQuery(clinicId, Boolean(clinicId));
   const { data: collaboratorProfiles = EMPTY_ARRAY } = useClinicCollaboratorsQuery(clinicId, Boolean(clinicId));
   const profiles: ProfileSummary[] = collaboratorProfiles;
+  const patientGroupsMap = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
 
   const {
     optimisticUpdatePatientStatus,
@@ -1255,6 +1261,14 @@ const PacienteDetalhe = () => {
     } catch {
       // ignore
     }
+  };
+
+  const [groupByMode, setGroupByMode] = useState<string>("evolution");
+  const [collapsedModularGroupKeys, setCollapsedModularGroupKeys] = useState<string[]>([]);
+  const toggleModularGroupCollapse = (key: string) => {
+    setCollapsedModularGroupKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
   };
 
   const [recordsView, setRecordsView] = useState<PatientRecordsView>("list");
@@ -1910,6 +1924,32 @@ const PacienteDetalhe = () => {
       }),
     [evolutionGroupsMetadata, getSessionSearchText, groups, searchTerm, sessionStatusFilter, selectedTagFilter, sessions]
   );
+
+  // Identifica campos configurados nos templates ou baseSchema que possuem enableGrouping === true
+  const groupableModularFields = useMemo(() => {
+    return extractModularFieldsByFlag(
+      [baseSchema, ...anamnesisTemplates.map((t) => t.schema)],
+      "enableGrouping"
+    );
+  }, [baseSchema, anamnesisTemplates]);
+
+  // Agrupa atendimentos cronológicos quando groupByMode for um campo modular
+  const modularGroupedSessions = useMemo<ModularGroupedSessionsResult<Session> | null>(() => {
+    if (groupByMode === "evolution" || !groupByMode) return null;
+    const targetField = groupableModularFields.find((f) => f.id === groupByMode);
+    if (!targetField) return null;
+
+    return groupSessionsByModularField(sessionView.chronologicalSessions, targetField);
+  }, [groupByMode, groupableModularFields, sessionView.chronologicalSessions]);
+
+  // Identifica valores únicos de campos com enableFilter === true nas sessões do paciente
+  const filterableModularItems = useMemo<ModularFilterItem[]>(() => {
+    const filterableFields = extractModularFieldsByFlag(
+      [baseSchema, ...anamnesisTemplates.map((t) => t.schema)],
+      "enableFilter"
+    );
+    return extractFilterableModularItems(sessions, filterableFields);
+  }, [baseSchema, anamnesisTemplates, sessions]);
 
   const dashboardStorageKey = clinicId && id ? `therapy-flow:patient-anamnesis-dashboard:v1:${clinicId}:${id}` : null;
 
@@ -3072,20 +3112,49 @@ const PacienteDetalhe = () => {
                     <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
                   ))}
                   <SelectItem value="none">Sintomas não definidos</SelectItem>
+                  {filterableModularItems.length > 0 && (
+                    <>
+                      {filterableModularItems.map((item) => (
+                        <SelectItem key={item.filterKey} value={item.filterKey}>
+                          {item.fieldLabel}: {item.value}
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground block">Agrupamento</Label>
-              <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-background/50">
-                <Switch
-                  id="group-by-evolution-toggle"
-                  checked={groupByEvolution}
-                  onCheckedChange={handleToggleGroupByEvolution}
-                />
-                <Label htmlFor="group-by-evolution-toggle" className="text-xs font-medium cursor-pointer select-none whitespace-nowrap">
-                  Visualizar grupos
-                </Label>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-background/50">
+                  <Switch
+                    id="group-by-evolution-toggle"
+                    checked={groupByEvolution}
+                    onCheckedChange={handleToggleGroupByEvolution}
+                  />
+                  <Label htmlFor="group-by-evolution-toggle" className="text-xs font-medium cursor-pointer select-none whitespace-nowrap">
+                    Visualizar grupos
+                  </Label>
+                </div>
+                {groupByEvolution && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">Agrupar por:</span>
+                    <Select value={groupByMode} onValueChange={setGroupByMode}>
+                      <SelectTrigger className="h-10 min-w-[170px] bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="evolution">Evolução</SelectItem>
+                        {groupableModularFields.map((field) => (
+                          <SelectItem key={field.id} value={field.id}>
+                            {field.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -3279,8 +3348,132 @@ const PacienteDetalhe = () => {
         {/* Linha do Tempo Cronológica com Ciclos de Evolução ou Lista Contínua */}
         {sessionView.chronologicalSessions.length > 0 ? (
           <div className="space-y-4">
-            {/* Grupos de Evolução Retráteis (quando ativado na visualização) */}
-            {groupByEvolution && sessionView.evolutionGroups.length > 0 ? (
+            {/* Grupos de Evolução Retráteis ou Grupos Modulares */}
+            {groupByEvolution && groupByMode !== "evolution" && modularGroupedSessions ? (
+              <div className="space-y-3">
+                {modularGroupedSessions.groups.map((group) => {
+                  const groupKey = `modular_${group.name}`;
+                  const isCollapsed = collapsedModularGroupKeys.includes(groupKey);
+
+                  return (
+                    <div key={groupKey} className="rounded-2xl border bg-card shadow-xs overflow-hidden transition-all">
+                      <div
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-muted/25 hover:bg-muted/40 cursor-pointer transition-colors border-b select-none"
+                        onClick={() => toggleModularGroupCollapse(groupKey)}
+                      >
+                        <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleModularGroupCollapse(groupKey);
+                            }}
+                          >
+                            {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                          </Button>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="h-3 w-3 rounded-full shrink-0 bg-primary" />
+                            <h3 className="font-bold text-sm tracking-tight text-foreground truncate max-w-[280px] sm:max-w-md">
+                              {group.name}
+                            </h3>
+                          </div>
+                          <Badge variant="secondary" className="text-[11px] font-semibold px-2 py-0.5">
+                            {group.count} {group.count === 1 ? "atendimento" : "atendimentos"}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {!isCollapsed && (
+                        <div className="p-3 space-y-2.5 bg-background/50">
+                          {group.sessions.map((session) => {
+                            const careLineIds = getSessionCareLineIds(session);
+                            const sessionGroups = careLineIds
+                              .map((groupId) => patientGroupsMap.get(groupId))
+                              .filter(Boolean) as PatientGroup[];
+
+                            return (
+                              <SessionCard
+                                key={session.id}
+                                baseSchema={baseSchema}
+                                canViewFinancialData={canViewFinancialData}
+                                creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
+                                creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
+                                session={session}
+                                sessionGroups={sessionGroups}
+                                shareSummary={sessionShareSummaries[session.id]}
+                                isSelected={selectedSessionIds.includes(session.id)}
+                                selectionMode={!isIntern && selectionMode}
+                                borderColor="var(--primary)"
+                                isCompact={sessionViewMode === "compact"}
+                                isExpanded={expandedSessionIds.includes(session.id)}
+                                onToggleExpand={() => toggleSessionExpansion(session.id)}
+                                onEvolve={() => setSessionToEvolve(session)}
+                                onLinkGroup={() => setSessionToLinkGroup(session)}
+                                isEvolving={evolvingSessionId === session.id}
+                                onPressStart={() => handleSessionPressStart(session.id)}
+                                onPressCancel={handleSessionPressCancel}
+                                onToggleSelect={() => toggleSessionSelection(session.id)}
+                                onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
+                                navigateTo={() => handleSessionNavigate(session.id)}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Atendimentos Sem este Valor Modular */}
+                {modularGroupedSessions.ungrouped.length > 0 && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center gap-2 pt-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Sem {modularGroupedSessions.fieldLabel} definido ({modularGroupedSessions.ungrouped.length})
+                      </h4>
+                      <div className="h-px flex-1 bg-border/60" />
+                    </div>
+                    <div className="space-y-2.5">
+                      {modularGroupedSessions.ungrouped.map((session) => {
+                        const careLineIds = getSessionCareLineIds(session);
+                        const sessionGroups = careLineIds
+                          .map((groupId) => patientGroupsMap.get(groupId))
+                          .filter(Boolean) as PatientGroup[];
+
+                        return (
+                          <SessionCard
+                            key={session.id}
+                            baseSchema={baseSchema}
+                            canViewFinancialData={canViewFinancialData}
+                            creatorName={getSessionPersonLabel(profileMap.get(session.user_id))}
+                            creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(session.user_id)?.job_title)}
+                            session={session}
+                            sessionGroups={sessionGroups}
+                            shareSummary={sessionShareSummaries[session.id]}
+                            isSelected={selectedSessionIds.includes(session.id)}
+                            selectionMode={!isIntern && selectionMode}
+                            isCompact={sessionViewMode === "compact"}
+                            isExpanded={expandedSessionIds.includes(session.id)}
+                            onToggleExpand={() => toggleSessionExpansion(session.id)}
+                            onEvolve={() => setSessionToEvolve(session)}
+                            onLinkGroup={() => setSessionToLinkGroup(session)}
+                            isEvolving={evolvingSessionId === session.id}
+                            onPressStart={() => handleSessionPressStart(session.id)}
+                            onPressCancel={handleSessionPressCancel}
+                            onToggleSelect={() => toggleSessionSelection(session.id)}
+                            onViewShareRecipients={() => setShareRecipientsSessionId(session.id)}
+                            navigateTo={() => handleSessionNavigate(session.id)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : groupByEvolution && sessionView.evolutionGroups.length > 0 ? (
               <div className="space-y-3">
                 {sessionView.evolutionGroups.map((evoGroup) => {
                   const isCollapsed = collapsedEvolutionGroupIds.includes(evoGroup.id);
@@ -3386,7 +3579,7 @@ const PacienteDetalhe = () => {
                           {evoGroup.sessions.map((session) => {
                             const careLineIds = getSessionCareLineIds(session);
                             const sessionGroups = careLineIds
-                              .map((groupId) => groups.find((g) => g.id === groupId))
+                              .map((groupId) => patientGroupsMap.get(groupId))
                               .filter(Boolean) as PatientGroup[];
                             const cardColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : primaryColor;
 
@@ -3436,7 +3629,7 @@ const PacienteDetalhe = () => {
                       {sessionView.standaloneSessions.map((session) => {
                         const careLineIds = getSessionCareLineIds(session);
                         const sessionGroups = careLineIds
-                          .map((groupId) => groups.find((g) => g.id === groupId))
+                          .map((groupId) => patientGroupsMap.get(groupId))
                           .filter(Boolean) as PatientGroup[];
                         const cardColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : undefined;
 
@@ -3477,7 +3670,7 @@ const PacienteDetalhe = () => {
                 {sessionView.chronologicalSessions.map((session) => {
                   const careLineIds = getSessionCareLineIds(session);
                   const sessionGroups = careLineIds
-                    .map((groupId) => groups.find((g) => g.id === groupId))
+                    .map((groupId) => patientGroupsMap.get(groupId))
                     .filter(Boolean) as PatientGroup[];
                   const primaryColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : undefined;
 

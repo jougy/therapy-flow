@@ -28,7 +28,9 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   buildPatientRegistrationUrl,
   buildPatientShareMessages,
+  calculateAgeDetails,
   formatPatientPhone,
+  type GuardianConsentData,
 } from "@/lib/patient-registration";
 
 export interface SharePatientData {
@@ -36,7 +38,11 @@ export interface SharePatientData {
   name: string;
   cpf?: string | null;
   responsible_cpf?: string | null;
+  responsible_name?: string | null;
+  responsible_relationship?: string | null;
+  guardian_consent?: GuardianConsentData | null;
   date_of_birth?: string | null;
+  age?: number | null;
   phone?: string | null;
   email?: string | null;
   gender?: string | null;
@@ -126,6 +132,9 @@ export const SharePatientRegistrationModal = ({
   const shareMessages = useMemo(() => {
     if (!patient || !shareUrl || !passwordPrefix) return null;
 
+    const ageInfo = calculateAgeDetails(patient.date_of_birth);
+    const isMinor = Boolean(ageInfo?.isMinor || (patient.age !== undefined && patient.age !== null && patient.age < 18));
+
     return buildPatientShareMessages({
       clinicName,
       email: patient.email,
@@ -135,6 +144,10 @@ export const SharePatientRegistrationModal = ({
       phone: patient.phone,
       pronoun: patient.pronoun,
       shareUrl,
+      isMinor,
+      responsibleName: patient.responsible_name,
+      responsibleRelationship: patient.responsible_relationship,
+      includeFullRegistration: true,
     });
   }, [patient, shareUrl, passwordPrefix, clinicName]);
 

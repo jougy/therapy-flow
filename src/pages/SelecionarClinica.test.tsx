@@ -3,19 +3,40 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SelecionarClinica from "@/pages/SelecionarClinica";
 import { useAuth } from "@/hooks/useAuth";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { supabase } from "@/integrations/supabase/client";
 
 const navigateMock = vi.fn();
-const buildSupabaseQueryMock = () => {
-  const query: Record<string, any> = {};
+type SupabaseMockResponse<T = unknown> = { data: T; error: Error | null };
+
+interface SupabaseQueryMock {
+  delete: ReturnType<typeof vi.fn>;
+  eq: ReturnType<typeof vi.fn>;
+  in: ReturnType<typeof vi.fn>;
+  limit: ReturnType<typeof vi.fn>;
+  neq: ReturnType<typeof vi.fn>;
+  or: ReturnType<typeof vi.fn>;
+  order: ReturnType<typeof vi.fn>;
+  select: ReturnType<typeof vi.fn>;
+  update: ReturnType<typeof vi.fn>;
+  single: ReturnType<typeof vi.fn>;
+  then: (resolve: (value: SupabaseMockResponse) => void) => Promise<void>;
+  [key: string]: unknown;
+}
+
+const buildSupabaseQueryMock = (): SupabaseQueryMock => {
+  const query = {} as SupabaseQueryMock;
   query.delete = vi.fn(() => query);
   query.eq = vi.fn(() => query);
   query.in = vi.fn(() => query);
   query.limit = vi.fn(() => query);
+  query.neq = vi.fn(() => query);
+  query.or = vi.fn(() => query);
   query.order = vi.fn(() => query);
   query.select = vi.fn(() => query);
   query.update = vi.fn(() => query);
-  query.then = (resolve: (value: { data: any; error: any }) => void) =>
+  query.single = vi.fn(() => Promise.resolve({ data: null, error: null }));
+  query.then = (resolve: (value: SupabaseMockResponse) => void) =>
     Promise.resolve(resolve({ data: [], error: null }));
   return query;
 };
@@ -34,6 +55,17 @@ vi.mock("@/hooks/useAuth", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
+}));
+
+vi.mock("@/contexts/FeatureFlagsContext", () => ({
+  useFeatureFlags: vi.fn(() => ({
+    isFeatureEnabled: vi.fn((key: string) => true),
+    flags: {},
+    loading: false,
+    flagOverrides: {},
+    setFlagOverride: vi.fn(),
+    resetFlagOverrides: vi.fn(),
+  })),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -59,7 +91,7 @@ describe("SelecionarClinica", () => {
     vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null });
   });
 
-  const buildAuthMock = (overrides = {}) => ({
+  const buildAuthMock = (overrides: Record<string, unknown> = {}) => ({
     accessibleClinics: [
       {
         activeAccessCount: 3,
@@ -414,6 +446,85 @@ describe("SelecionarClinica", () => {
     expect(screen.getByText("Correção de acesso")).toBeInTheDocument();
   });
 
+  it("renders beta-26.09.17-01 release notes with counters (5 added, 4 changed, 4 fixed, 1 removed)", async () => {
+    const releasesQuery = {
+      eq: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: "release-beta",
+            published_at: "2026-09-17T12:00:00.000Z",
+            summary: "Therapy-Flow Beta",
+            title: "Therapy-Flow Beta: Linha Completa de Atendimento",
+            version: "beta-26.09.17-01",
+            version_order: 2026091701,
+          },
+        ],
+        error: null,
+      }),
+      order: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+    };
+
+    const betaItems = [
+      { id: "add-1", release_id: "release-beta", category: "added", title: "Preenchimento Automático de Endereço via CEP", body: null, sort_order: 10 },
+      { id: "add-2", release_id: "release-beta", category: "added", title: "Cupons de Desconto Promocionais", body: null, sort_order: 20 },
+      { id: "add-3", release_id: "release-beta", category: "added", title: "Controle Granular de Permissões de Equipe (RBAC)", body: null, sort_order: 30 },
+      { id: "add-4", release_id: "release-beta", category: "added", title: "Termos de Responsabilidade e Consentimento de Menores", body: null, sort_order: 40 },
+      { id: "add-5", release_id: "release-beta", category: "added", title: "Editor Dinâmico de Fichas de Avaliação", body: null, sort_order: 50 },
+      { id: "chg-1", release_id: "release-beta", category: "changed", title: "Transição Oficial para a Fase Beta", body: null, sort_order: 10 },
+      { id: "chg-2", release_id: "release-beta", category: "changed", title: "Diretório de Pacientes Otimizado", body: null, sort_order: 20 },
+      { id: "chg-3", release_id: "release-beta", category: "changed", title: "Laudos e Estatísticas Formatados para Impressão", body: null, sort_order: 30 },
+      { id: "chg-4", release_id: "release-beta", category: "changed", title: "Precificação Solo Otimizada", body: null, sort_order: 40 },
+      { id: "fix-1", release_id: "release-beta", category: "fixed", title: "Isolamento de Status de Usuário em Múltiplas Clínicas", body: null, sort_order: 10 },
+      { id: "fix-2", release_id: "release-beta", category: "fixed", title: "Reenvio de Convites e Resolução de Códigos Públicos", body: null, sort_order: 20 },
+      { id: "fix-3", release_id: "release-beta", category: "fixed", title: "Blindagem de Segurança e Otimização de Consultas", body: null, sort_order: 30 },
+      { id: "fix-4", release_id: "release-beta", category: "fixed", title: "Scroll Vertical e Responsividade em Modais no Mobile", body: null, sort_order: 40 },
+      { id: "rem-1", release_id: "release-beta", category: "removed", title: "Descontinuação de Telas Legadas da Antiga Tesouraria", body: null, sort_order: 10 },
+    ];
+
+    const itemsQuery = {
+      order: vi.fn().mockResolvedValue({
+        data: betaItems,
+        error: null,
+      }),
+      select: vi.fn().mockReturnThis(),
+    };
+
+    vi.mocked(supabase.from).mockImplementation((table: string) => {
+      if (table === "platform_releases") return releasesQuery as never;
+      if (table === "platform_release_note_items") return itemsQuery as never;
+      return buildSupabaseQueryMock() as never;
+    });
+    vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(getNavButton(/^novidades$/i));
+
+    await waitFor(() => expect(screen.getByText("Preenchimento Automático de Endereço via CEP")).toBeInTheDocument());
+    expect(screen.getAllByText("beta-26.09.17-01").length).toBeGreaterThan(0);
+
+    const addedBtn = screen.getByRole("button", { name: /adicionado.*5/i });
+    expect(addedBtn).toBeInTheDocument();
+
+    const changedBtn = screen.getByRole("button", { name: /alterado.*4/i });
+    expect(changedBtn).toBeInTheDocument();
+
+    const fixedBtn = screen.getByRole("button", { name: /reparado.*4/i });
+    expect(fixedBtn).toBeInTheDocument();
+
+    const removedBtn = screen.getByRole("button", { name: /removido.*1/i });
+    expect(removedBtn).toBeInTheDocument();
+
+    fireEvent.click(removedBtn);
+    expect(screen.getByText("Descontinuação de Telas Legadas da Antiga Tesouraria")).toBeInTheDocument();
+  });
+
   it("renders personal notifications with action history", async () => {
     vi.mocked(supabase.rpc).mockImplementation((fn: string) => {
       if (fn === "list_current_user_notifications") {
@@ -508,5 +619,50 @@ describe("SelecionarClinica", () => {
     fireEvent.click(screen.getByRole("button", { name: /sair da conta/i }));
 
     expect(signOut).toHaveBeenCalled();
+  });
+
+  it("navigates to Meu Portfólio section from the personal space and shows portfolio tab", async () => {
+    vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    const portfolioBtn = screen.getByTestId("open-portfolio-hero-btn");
+    expect(portfolioBtn).toBeInTheDocument();
+    fireEvent.click(portfolioBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("personal-clinical-portfolio")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Acervo Técnico Profissional")).toBeInTheDocument();
+  });
+
+  it("hides Meu Portfólio section, hero button and header buttons when clinical_portfolio_enabled flag is false", () => {
+    vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
+    vi.mocked(useFeatureFlags).mockReturnValue({
+      isFeatureEnabled: vi.fn((key: string) => key !== "clinical_portfolio_enabled"),
+      flags: {},
+      loading: false,
+      flagOverrides: {},
+      setFlagOverride: vi.fn(),
+      resetFlagOverrides: vi.fn(),
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    // Hero button should not exist
+    expect(screen.queryByTestId("open-portfolio-hero-btn")).not.toBeInTheDocument();
+    // Header buttons should not exist
+    expect(screen.queryByTestId("header-portfolio-btn")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("header-portfolio-mobile-btn")).not.toBeInTheDocument();
+    // Lateral menu should not have Meu Portfólio button
+    expect(screen.queryByRole("button", { name: /^Meu Portfólio$/i })).not.toBeInTheDocument();
   });
 });

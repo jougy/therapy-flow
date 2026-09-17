@@ -2,6 +2,7 @@ import React from "react";
 import {
   AlertTriangle,
   ArrowLeft,
+  Baby,
   BarChart3,
   Calendar,
   CheckCircle2,
@@ -96,6 +97,60 @@ export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = ({
               Cadastro preliminar
             </Badge>
           )}
+
+          {/* Minor Guardian Consent Badge */}
+          {Boolean(
+            (patient.age !== null && patient.age !== undefined && patient.age < 18) ||
+            patient.guardian_consent ||
+            patient.responsible_name
+          ) && (() => {
+            const consent = (patient.guardian_consent || null) as {
+              status?: "pending" | "printed" | "signed";
+              method?: string;
+              signed_at?: string;
+              responsible_name?: string;
+              responsible_relationship?: string;
+            } | null;
+
+            if (consent?.status === "signed") {
+              const methodLabel = consent.method === "in_person" ? "Presencial" : consent.method === "paper" ? "Físico" : "Digital";
+              const dateLabel = consent.signed_at ? new Date(consent.signed_at).toLocaleDateString("pt-BR") : "";
+              return (
+                <Badge
+                  className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 gap-1 text-xs"
+                  title={`Consentimento assinado por ${consent.responsible_name || patient.responsible_name || "responsável"} (${consent.responsible_relationship || ""}) em ${dateLabel} via ${methodLabel}`}
+                >
+                  <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                  <span>Autorização LGPD Confirmada</span>
+                </Badge>
+              );
+            }
+
+            if (consent?.status === "printed") {
+              return (
+                <Badge
+                  variant="outline"
+                  className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/40 gap-1 text-xs"
+                  title="Termo de consentimento impresso em papel aguardando assinatura física do responsável"
+                >
+                  <Printer className="h-3 w-3 text-amber-600" />
+                  <span>Termo Impresso (Aguardando Assinatura)</span>
+                </Badge>
+              );
+            }
+
+            return (
+              <Badge
+                variant="outline"
+                className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/40 gap-1 text-xs"
+                title="Autorização legal do responsável (LGPD Art. 14) pendente"
+              >
+                <Baby className="h-3 w-3 text-amber-600" />
+                <span>Autorização LGPD Pendente</span>
+              </Badge>
+            );
+          })()}
+
           <Badge variant="secondary" className="capitalize text-xs">
             {patient.status || "Ativo"}
           </Badge>

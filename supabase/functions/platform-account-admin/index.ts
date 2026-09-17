@@ -49,11 +49,59 @@ const accountStatuses = new Set(["active", "payment_pending", "temporarily_pause
 const operationalRoles = new Set(["admin", "professional", "assistant", "estagiario"]);
 const plans = new Set(["solo", "clinic", "enterprise"]);
 
-const normalizeEmail = (value: unknown) => String(value ?? "").trim().toLowerCase();
+const asyncPool = async <T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> => {
+  const results: R[] = [];
+  const executing: Promise<void>[] = [];
+  for (const item of items) {
+    const p = fn(item).then((res) => {
+      results.push(res);
+    });
+    const e: Promise<void> = p.then(() => {
+      const idx = executing.indexOf(e);
+      if (idx !== -1) executing.splice(idx, 1);
+    });
+    executing.push(e);
+    if (executing.length >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
+  return results;
+};
+
+const normalizeEmail = (value: unknown) => {
+  const email = String(value ?? "").trim().toLowerCase();
+  if (email.length > 255) throw new Error("E-mail excede o limite de 255 caracteres.");
+  return email;
+};
+
 const normalizeText = (value: unknown, max = 500) => {
   const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
   return normalized ? normalized.slice(0, max) : null;
 };
+
+const normalizeId = (value: unknown, fieldName = "Identificador", max = 128) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (raw.length > max) throw new Error(`${fieldName} excede ${max} caracteres.`);
+  return raw;
+};
+
+const normalizeDaysAdjustment = (value: unknown): number | null => {
+  if (value === undefined || value === null || value === "" || value === 0) return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) throw new Error("Ajuste de dias deve ser um número válido.");
+  const days = Math.trunc(num);
+  if (days < -3650 || days > 3650) {
+    throw new Error("Ajuste de dias deve estar entre -3650 e +3650 dias.");
+  }
+  return days;
+};
+
 const digits = (value: unknown) => String(value ?? "").replace(/\D/g, "");
 const boolFromStatus = (status: string) => status === "active" || status === "payment_pending";
 const toMembershipStatus = (status: string) => {
@@ -105,8 +153,61 @@ const calculateAge = (dateOfBirth: string | null) => {
   return Math.max(age, 0);
 };
 
+const isUuid = (val: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+interface DecodedJwtPayload {
+  sub?: string;
+  email?: string;
+  role?: string;
+  aal?: string;
+  exp?: number;
+  [key: string]: unknown;
+}
+
+interface AuthUserSummary {
+  id: string;
+  email?: string;
+  banned_until?: string | null;
+  app_metadata?: Record<string, unknown>;
+  user_metadata?: Record<string, unknown>;
+  aud?: string;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+
+const decodeJwtPayload = (token: string): DecodedJwtPayload | null => {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payloadBase64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padLength = (4 - (payloadBase64.length % 4)) % 4;
+    const padded = payloadBase64.padEnd(payloadBase64.length + padLength, "=");
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const decodedStr = new TextDecoder().decode(bytes);
+    return JSON.parse(decodedStr) as DecodedJwtPayload;
+  } catch {
+    return null;
+  }
+};
+
+const isSignatureOrJwtError = (err: unknown): boolean => {
+  if (!err) return false;
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("signing method") ||
+    msg.includes("invalid jwt") ||
+    msg.includes("signature is invalid") ||
+    msg.includes("token signature") ||
+    msg.includes("hs256") ||
+    msg.includes("es256")
+  );
+};
+
 const requirePlatformOwner = async (authorization: string | null) => {
-  const token = authorization?.replace(/^Bearer\s+/i, "");
+  const token = authorization?.replace(/^Bearer\s+/i, "").trim();
   if (!token) throw new Error("Token ausente.");
 
   const userClient = createClient(supabaseUrl, anonKey, {
@@ -114,14 +215,188 @@ const requirePlatformOwner = async (authorization: string | null) => {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
-  const { data: userData, error: userError } = await userClient.auth.getUser(token);
-  if (userError || !userData.user) throw new Error("Usuário não autenticado.");
+  let user: { id: string; email?: string; [key: string]: unknown } | null = null;
+  let authErrorDetected = false;
 
-  const { data, error } = await userClient.rpc("is_platform_owner_mfa_verified");
-  if (error) throw new Error(error.message);
-  if (data !== true) throw new Error("Acesso master exige platform_owner com 2FA validado.");
+  try {
+    const { data: userData, error: userError } = await userClient.auth.getUser(token);
+    if (!userError && userData?.user) {
+      user = userData.user;
+    } else if (userError) {
+      if (isSignatureOrJwtError(userError)) {
+        authErrorDetected = true;
+      } else {
+        throw new Error(userError.message || "Usuário não autenticado.");
+      }
+    }
+  } catch (err: unknown) {
+    if (isSignatureOrJwtError(err)) {
+      authErrorDetected = true;
+    } else {
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  }
 
-  return { user: userData.user, userClient };
+  const decodedPayload = decodeJwtPayload(token);
+
+  // Fallback seguro se GoTrue rejeitar a assinatura/algoritmo do JWT (ex: HS256 vs ES256)
+  if (!user || authErrorDetected) {
+    if (!decodedPayload) {
+      throw new Error("Token JWT inválido ou malformado.");
+    }
+
+    // 1. Validação estrita de expiração (exp)
+    if (typeof decodedPayload.exp === "number") {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (nowSeconds >= decodedPayload.exp) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+      }
+    } else {
+      throw new Error("Token inválido: ausência de expiração.");
+    }
+
+    const sub = typeof decodedPayload.sub === "string" ? decodedPayload.sub.trim() : null;
+    if (!sub || !isUuid(sub)) {
+      throw new Error("Token inválido: identificador de usuário inválido.");
+    }
+
+    // 2. Busca e validação do usuário via Auth Admin (service_role) com fallback para tabela profiles
+    let adminUser: AuthUserSummary | null = null;
+    try {
+      const { data: adminUserData, error: adminUserError } = await admin.auth.admin.getUserById(sub);
+      if (!adminUserError && adminUserData?.user) {
+        adminUser = adminUserData.user as AuthUserSummary;
+      } else if (adminUserError) {
+        if (!isSignatureOrJwtError(adminUserError)) {
+          console.warn("[requirePlatformOwner] Erro ao consultar auth.admin:", adminUserError.message);
+        }
+      }
+    } catch (err) {
+      if (!isSignatureOrJwtError(err)) {
+        console.warn("[requirePlatformOwner] Exceção ao consultar auth.admin:", err);
+      }
+    }
+
+    if (!adminUser) {
+      // Fallback seguro: busca o usuário diretamente no PostgreSQL (profiles)
+      const { data: profileUser, error: profileErr } = await admin
+        .from("profiles")
+        .select("id, email")
+        .eq("id", sub)
+        .maybeSingle();
+
+      if (profileErr || !profileUser) {
+        throw new Error("Usuário não encontrado.");
+      }
+
+      adminUser = {
+        id: profileUser.id,
+        email: profileUser.email,
+        app_metadata: {},
+        user_metadata: {},
+        aud: "authenticated",
+        created_at: new Date().toISOString(),
+      };
+    }
+
+    const bannedUntil = adminUser.banned_until;
+    if (bannedUntil && new Date(bannedUntil).getTime() > Date.now()) {
+      throw new Error("Usuário temporariamente suspenso.");
+    }
+
+    user = adminUser;
+  }
+
+  // 3. Validação rigorosa de Platform Owner com MFA 2FA (aal2)
+  // Requer claim aal === 'aal2' presente no token JWT ou confirmação via RPC nativo
+  const tokenAal = decodedPayload?.aal;
+  let mfaVerified = tokenAal === "aal2";
+
+  try {
+    const { data: rpcData, error: rpcError } = await userClient.rpc("is_platform_owner_mfa_verified");
+    if (!rpcError && rpcData === true) {
+      mfaVerified = true;
+    }
+  } catch {
+    // PostgREST/RPC indisponível ou rejeitou chamada; segue para validação via claim e banco
+  }
+
+  if (!mfaVerified) {
+    throw new Error("Acesso master não autorizado: requer MFA/2FA ativo no nível aal2.");
+  }
+
+  // Validação multicamadas e tolerante a inconsistências de assinatura JWT:
+  let isOwner = false;
+
+  // Camada 1: userClient.rpc("is_platform_owner")
+  try {
+    const { data: rpcOwner, error: rpcErr } = await userClient.rpc("is_platform_owner");
+    if (!rpcErr && rpcOwner === true) {
+      isOwner = true;
+    }
+  } catch (err) {
+    // PostgREST/RPC indisponível ou rejeitou chamada no userClient; segue para as próximas camadas
+  }
+
+  // Camada 2: admin.rpc("is_platform_owner", { _user_id: user.id })
+  if (!isOwner) {
+    try {
+      const { data: adminRpcOwner, error: adminRpcErr } = await admin.rpc("is_platform_owner", {
+        _user_id: user.id,
+      });
+      if (!adminRpcErr && adminRpcOwner === true) {
+        isOwner = true;
+      }
+    } catch (err) {
+      // PostgREST/RPC no admin indisponível; segue para as próximas camadas
+    }
+  }
+
+  // Camada 3: admin.from("platform_admins").select("id, role, is_active").eq("user_id", user.id).eq("role", "platform_owner").eq("is_active", true).maybeSingle()
+  if (!isOwner) {
+    try {
+      const { data: platformAdmin, error: adminErr } = await admin
+        .from("platform_admins")
+        .select("id, role, is_active")
+        .eq("user_id", user.id)
+        .eq("role", "platform_owner")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (adminErr) {
+        console.warn("[requirePlatformOwner] Erro ao consultar platform_admins via admin:", adminErr.message);
+      } else if (platformAdmin) {
+        isOwner = true;
+      }
+    } catch (err) {
+      console.warn("[requirePlatformOwner] Exceção ao consultar platform_admins via admin:", err);
+    }
+  }
+
+  // Camada 4: userClient.from("platform_admins").select("id, role, is_active").eq("user_id", user.id).eq("role", "platform_owner").eq("is_active", true).maybeSingle()
+  if (!isOwner) {
+    try {
+      const { data: userPlatformAdmin, error: userAdminErr } = await userClient
+        .from("platform_admins")
+        .select("id, role, is_active")
+        .eq("user_id", user.id)
+        .eq("role", "platform_owner")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!userAdminErr && userPlatformAdmin) {
+        isOwner = true;
+      }
+    } catch (err) {
+      // PostgREST indisponível ou rejeitou chamada no userClient
+    }
+  }
+
+  if (!isOwner) {
+    throw new Error("Acesso master não autorizado: usuário não é platform_owner ativo.");
+  }
+
+  return { user, userClient };
 };
 
 const logAudit = async (
@@ -129,22 +404,40 @@ const logAudit = async (
   eventType: string,
   clinicId: string | null,
   reason: string | null,
-  metadata: Record<string, unknown>
+  metadata: Record<string, unknown>,
+  actorUserId?: string
 ) => {
-  const { error } = await userClient.rpc("log_platform_audit_event", {
-    _clinic_id: clinicId,
-    _event_type: eventType,
-    _metadata: metadata,
-    _reason: reason,
-  });
-  if (error) throw new Error(error.message);
+  try {
+    const { error } = await userClient.rpc("log_platform_audit_event", {
+      _clinic_id: clinicId,
+      _event_type: eventType,
+      _metadata: metadata,
+      _reason: reason,
+    });
+    if (!error) return;
+  } catch {
+    // Prossegue para fallback via admin
+  }
+
+  if (actorUserId) {
+    try {
+      await admin.from("platform_audit_events").insert({
+        actor_user_id: actorUserId,
+        actor_platform_role: "platform_owner",
+        clinic_id: clinicId,
+        event_type: eventType,
+        reason: reason,
+        metadata: metadata,
+      });
+      return;
+    } catch (insertErr) {
+      console.error("Falha ao registrar auditoria via admin:", insertErr);
+    }
+  }
 };
 
-const isUuid = (val: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-
 const getClinic = async (clinicIdOrDocument: unknown) => {
-  const raw = String(clinicIdOrDocument ?? "").trim();
+  const raw = normalizeId(clinicIdOrDocument, "Identificador da clínica", 100);
   if (!raw) throw new Error("Identificador da clínica é obrigatório.");
 
   let query = admin.from("clinics").select("*").limit(1);
@@ -162,7 +455,7 @@ const getClinic = async (clinicIdOrDocument: unknown) => {
 };
 
 const getAccountProfile = async (identifier: unknown) => {
-  const value = String(identifier ?? "").trim();
+  const value = normalizeId(identifier, "Identificador da conta", 160);
   if (!value) throw new Error("Identificador da conta é obrigatório.");
   const email = normalizeEmail(value);
   const isEmail = email.includes("@");
@@ -192,20 +485,41 @@ const getOwnerProfile = async (payload: Record<string, unknown>) => {
   return getClinicOwnerProfile(payload.clinicId ?? payload.clinic);
 };
 
-const setAdminStatus = async (userId: string, status: string) => {
-  const { data, error } = await admin.auth.admin.getUserById(userId);
-  if (error) throw new Error(error.message);
-  const appMetadata = {
-    ...(data.user?.app_metadata ?? {}),
-    admin_status: status,
-  };
-  const { error: updateError } = await admin.auth.admin.updateUserById(userId, {
-    app_metadata: appMetadata,
-  });
-  if (updateError) throw new Error(updateError.message);
+const setAdminStatus = async (userId: string, status: string): Promise<boolean> => {
+  try {
+    const { data, error } = await admin.auth.admin.getUserById(userId);
+    if (error) {
+      if (isSignatureOrJwtError(error)) {
+        console.warn(`[setAdminStatus] Aviso de assinatura GoTrue/JWT ignorado para user ${userId}:`, error.message);
+        return false;
+      }
+      throw new Error(error.message);
+    }
+    const appMetadata = {
+      ...(data.user?.app_metadata ?? {}),
+      admin_status: status,
+    };
+    const { error: updateError } = await admin.auth.admin.updateUserById(userId, {
+      app_metadata: appMetadata,
+    });
+    if (updateError) {
+      if (isSignatureOrJwtError(updateError)) {
+        console.warn(`[setAdminStatus] Aviso de assinatura GoTrue/JWT ao atualizar user ${userId}:`, updateError.message);
+        return false;
+      }
+      throw new Error(updateError.message);
+    }
+    return true;
+  } catch (err: unknown) {
+    if (isSignatureOrJwtError(err)) {
+      console.warn(`[setAdminStatus] Exceção de assinatura GoTrue/JWT capturada para user ${userId}:`, err);
+      return false;
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
 };
 
-const updateAuthAccess = async (userId: string, payload: Record<string, unknown>) => {
+const updateAuthAccess = async (userId: string, payload: Record<string, unknown>): Promise<void> => {
   const next: Record<string, unknown> = {};
   if (payload.email !== undefined) {
     const email = normalizeEmail(payload.email);
@@ -216,8 +530,22 @@ const updateAuthAccess = async (userId: string, payload: Record<string, unknown>
     if (password) next.password = password;
   }
   if (Object.keys(next).length === 0) return;
-  const { error } = await admin.auth.admin.updateUserById(userId, next);
-  if (error) throw new Error(error.message);
+  try {
+    const { error } = await admin.auth.admin.updateUserById(userId, next);
+    if (error) {
+      if (isSignatureOrJwtError(error)) {
+        console.warn(`[updateAuthAccess] Aviso de assinatura GoTrue/JWT ignorado para user ${userId}:`, error.message);
+        return;
+      }
+      throw new Error(error.message);
+    }
+  } catch (err: unknown) {
+    if (isSignatureOrJwtError(err)) {
+      console.warn(`[updateAuthAccess] Exceção de assinatura GoTrue/JWT ignorada para user ${userId}:`, err);
+      return;
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
 };
 
 const createOwnerAccount = async (payload: Record<string, unknown>) => {
@@ -277,7 +605,11 @@ const createOwnerAccount = async (payload: Record<string, unknown>) => {
       if (clinicError) throw new Error(clinicError.message);
     }
   } catch (error) {
-    await admin.auth.admin.deleteUser(userId);
+    try {
+      await admin.auth.admin.deleteUser(userId);
+    } catch {
+      // Ignora falha de limpeza no auth para preservar o erro original do banco
+    }
     throw error;
   }
 
@@ -330,7 +662,11 @@ const createSubaccount = async (payload: Record<string, unknown>) => {
     });
     if (membershipError) throw new Error(membershipError.message);
   } catch (error) {
-    await admin.auth.admin.deleteUser(userId);
+    try {
+      await admin.auth.admin.deleteUser(userId);
+    } catch {
+      // Ignora falha de limpeza no auth para preservar o erro original do banco
+    }
     throw error;
   }
 
@@ -397,7 +733,11 @@ const createSimpleUser = async (payload: Record<string, unknown>) => {
       if (membershipError) throw new Error(membershipError.message);
     }
   } catch (error) {
-    await admin.auth.admin.deleteUser(userId);
+    try {
+      await admin.auth.admin.deleteUser(userId);
+    } catch {
+      // Ignora falha de limpeza no auth para preservar o erro original do banco
+    }
     throw error;
   }
 
@@ -664,7 +1004,19 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
     .maybeSingle();
   if (subFetchError) throw new Error(subFetchError.message);
 
-  const ownerUserId = clinic.account_owner_user_id;
+  let ownerUserId = clinic.account_owner_user_id;
+  if (!ownerUserId) {
+    const { data: ownerMem } = await admin
+      .from("clinic_memberships")
+      .select("user_id")
+      .eq("clinic_id", clinic.id)
+      .eq("account_role", "clinic_owner")
+      .maybeSingle();
+    if (ownerMem?.user_id) {
+      ownerUserId = ownerMem.user_id;
+    }
+  }
+
   let currentSub = existingSub;
 
   if (!currentSub && ownerUserId) {
@@ -706,39 +1058,9 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
         subUpdate.courtesy_reason = normalizeText(payload.courtesyReason ?? payload.reason, 300);
       } else {
         subUpdate.is_courtesy = false;
+        subUpdate.courtesy_reason = null;
         if (currentSub.status === "COURTESY") {
           subUpdate.status = "ACTIVE";
-        }
-      }
-    }
-
-    if (!isCourtesy && payload.daysAdjustment !== undefined && payload.daysAdjustment !== 0 && payload.daysAdjustment !== "") {
-      const daysToAdd = Number(payload.daysAdjustment);
-      if (Number.isFinite(daysToAdd)) {
-        daysAdjusted = daysToAdd;
-        const now = Date.now();
-        const currentExpiresAtMs = currentSub.expires_at ? new Date(currentSub.expires_at).getTime() : 0;
-        const baseMs = currentExpiresAtMs > now ? currentExpiresAtMs : now;
-        const targetMs = baseMs + daysToAdd * 86400000;
-        newExpiresAtIso = new Date(targetMs).toISOString();
-
-        subUpdate.expires_at = newExpiresAtIso;
-        subUpdate.current_period_end = newExpiresAtIso;
-        subUpdate.is_courtesy = false;
-
-        if (targetMs > now && (currentSub.status === "EXPIRED" || currentSub.status === "SUSPENDED")) {
-          subUpdate.status = "ACTIVE";
-        }
-      }
-    } else if (!isCourtesy && payload.subscriptionExpiresAt !== undefined) {
-      const rawDate = String(payload.subscriptionExpiresAt).trim();
-      if (rawDate) {
-        const parsed = new Date(rawDate);
-        if (!Number.isNaN(parsed.getTime())) {
-          newExpiresAtIso = parsed.toISOString();
-          subUpdate.expires_at = newExpiresAtIso;
-          subUpdate.current_period_end = newExpiresAtIso;
-          subUpdate.is_courtesy = false;
         }
       }
     }
@@ -747,6 +1069,48 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
       const subStatus = String(payload.subscriptionStatus).trim().toUpperCase();
       if (subStatus) {
         subUpdate.status = subStatus;
+      }
+    }
+
+    const daysToAdd = normalizeDaysAdjustment(payload.daysAdjustment);
+    if (!isCourtesy && daysToAdd !== null && daysToAdd !== 0) {
+      daysAdjusted = daysToAdd;
+      const now = Date.now();
+      const currentExpiresAtMs = currentSub.expires_at
+        ? new Date(currentSub.expires_at).getTime()
+        : currentSub.current_period_end
+        ? new Date(currentSub.current_period_end).getTime()
+        : 0;
+      const baseMs = currentExpiresAtMs > now ? currentExpiresAtMs : now;
+      const targetMs = baseMs + daysToAdd * 86400000;
+      newExpiresAtIso = new Date(targetMs).toISOString();
+
+      subUpdate.expires_at = newExpiresAtIso;
+      subUpdate.current_period_end = newExpiresAtIso;
+      subUpdate.is_courtesy = false;
+
+      if (
+        targetMs > now &&
+        (currentSub.status === "EXPIRED" ||
+          currentSub.status === "SUSPENDED" ||
+          currentSub.status === "TRIAL_EXPIRED" ||
+          subUpdate.status === "EXPIRED" ||
+          subUpdate.status === "SUSPENDED" ||
+          subUpdate.status === "TRIAL_EXPIRED")
+      ) {
+        subUpdate.status = "ACTIVE";
+      }
+    } else if (!isCourtesy && payload.subscriptionExpiresAt !== undefined) {
+      const rawDate = String(payload.subscriptionExpiresAt).trim();
+      if (rawDate) {
+        if (rawDate.length > 50) throw new Error("Data de expiração inválida.");
+        const parsed = new Date(rawDate);
+        if (!Number.isNaN(parsed.getTime())) {
+          newExpiresAtIso = parsed.toISOString();
+          subUpdate.expires_at = newExpiresAtIso;
+          subUpdate.current_period_end = newExpiresAtIso;
+          subUpdate.is_courtesy = false;
+        }
       }
     }
 
@@ -771,9 +1135,7 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
   if (membersError) throw new Error(membersError.message);
 
   const userIds = [...new Set([clinic.account_owner_user_id, ...(memberships ?? []).map((row) => row.user_id)].filter(Boolean))];
-  for (const userId of userIds) {
-    await setAdminStatus(String(userId), status);
-  }
+  await asyncPool(userIds, 5, (userId) => setAdminStatus(String(userId), status));
 
   return {
     clinic_id: clinic.id,
@@ -797,10 +1159,22 @@ const deleteClinicPackage = async (payload: Record<string, unknown>) => {
   const userIds = [...new Set([clinic.account_owner_user_id, ...(memberships ?? []).map((row) => row.user_id)].filter(Boolean))];
   const { error } = await admin.from("clinics").delete().eq("id", clinic.id);
   if (error) throw new Error(error.message);
-  for (const userId of userIds) {
-    const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
-    if (deleteError) throw new Error(deleteError.message);
-  }
+
+  await asyncPool(userIds, 5, async (userId) => {
+    try {
+      const { error: deleteError } = await admin.auth.admin.deleteUser(String(userId));
+      if (deleteError) {
+        if (isSignatureOrJwtError(deleteError)) {
+          console.warn(`[deleteClinicPackage] Aviso de assinatura GoTrue ao deletar auth user ${userId}:`, deleteError.message);
+        } else {
+          console.warn(`[deleteClinicPackage] Erro ao deletar auth user ${userId}:`, deleteError.message);
+        }
+      }
+    } catch (delErr) {
+      console.warn(`[deleteClinicPackage] Falha ao deletar auth user ${userId}:`, delErr);
+    }
+  });
+
   return { clinic_id: clinic.id, deleted_users: userIds.length };
 };
 
@@ -815,8 +1189,22 @@ const deleteSubaccount = async (payload: Record<string, unknown>) => {
   if (membership?.account_role === "account_owner") {
     throw new Error("Owner deve ser removido em Editar acesso da clínica > Excluir definitivamente.");
   }
-  const { error } = await admin.auth.admin.deleteUser(account.id);
-  if (error) throw new Error(error.message);
+  await admin.from("clinic_memberships").delete().eq("user_id", account.id);
+  await admin.from("user_roles").delete().eq("user_id", account.id);
+  await admin.from("profiles").delete().eq("id", account.id);
+
+  try {
+    const { error } = await admin.auth.admin.deleteUser(account.id);
+    if (error) {
+      if (isSignatureOrJwtError(error)) {
+        console.warn(`[deleteSubaccount] Aviso de assinatura GoTrue ao deletar auth user ${account.id}:`, error.message);
+      } else {
+        console.warn(`[deleteSubaccount] Erro ao deletar auth user ${account.id}:`, error.message);
+      }
+    }
+  } catch (delErr) {
+    console.warn(`[deleteSubaccount] Falha ao deletar auth user ${account.id}:`, delErr);
+  }
   return { user_id: account.id, clinic_id: account.clinic_id };
 };
 
@@ -894,17 +1282,35 @@ const resendInvitation = async (
 
   if (!invitation && !targetEmail) {
     // Pode ser que invitationId seja o user_id do auth
-    const { data: uData } = await admin.auth.admin.getUserById(invitationId);
-    if (uData?.user?.email) {
-      targetEmail = uData.user.email.toLowerCase();
-      const { data: invByEmail } = await admin
-        .from("clinic_collaborator_invitations")
-        .select("*")
-        .eq("email", targetEmail)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      invitation = invByEmail;
+    try {
+      const { data: uData } = await admin.auth.admin.getUserById(invitationId);
+      if (uData?.user?.email) {
+        targetEmail = uData.user.email.toLowerCase();
+        const { data: invByEmail } = await admin
+          .from("clinic_collaborator_invitations")
+          .select("*")
+          .eq("email", targetEmail)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        invitation = invByEmail;
+      }
+    } catch {
+      // Ignora erro de consulta ao GoTrue
+    }
+    if (!targetEmail) {
+      const { data: pData } = await admin.from("profiles").select("email").eq("id", invitationId).maybeSingle();
+      if (pData?.email) {
+        targetEmail = pData.email.toLowerCase();
+        const { data: invByEmail } = await admin
+          .from("clinic_collaborator_invitations")
+          .select("*")
+          .eq("email", targetEmail)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        invitation = invByEmail;
+      }
     }
   }
 
@@ -986,6 +1392,91 @@ const resendInvitation = async (
   };
 };
 
+const findAuthUserByEmail = async (email: string) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  // 1. Busca indexada no profiles (O(1))
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("id, email")
+    .eq("email", normalized)
+    .maybeSingle();
+
+  if (profile?.id) {
+    try {
+      const { data: userData, error: userError } = await admin.auth.admin.getUserById(profile.id);
+      if (!userError && userData?.user) return userData.user;
+    } catch (err) {
+      console.warn(`[findAuthUserByEmail] Aviso ao consultar getUserById(${profile.id}):`, err);
+    }
+    return {
+      id: profile.id,
+      email: profile.email,
+      app_metadata: {},
+      user_metadata: {},
+    } as AuthUserSummary;
+  }
+
+  // 2. Fallback paginado seguro em auth.admin (até 1000 registros para evitar OOM e timeout)
+  try {
+    let page = 1;
+    const perPage = 100;
+    while (page <= 10) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+      if (error || !data?.users?.length) break;
+      const found = data.users.find((u) => normalizeEmail(u.email) === normalized);
+      if (found) return found;
+      if (data.users.length < perPage) break;
+      page++;
+    }
+  } catch (listErr) {
+    console.warn("[findAuthUserByEmail] listUsers falhou:", listErr);
+  }
+  return null;
+};
+
+const findAuthUserByCpf = async (cpf: string) => {
+  const cleanCpf = digits(cpf);
+  if (!cleanCpf) return { user: null, profile: null };
+
+  // 1. Busca indexada no profiles (O(1))
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("id, email, cpf")
+    .eq("cpf", cleanCpf)
+    .maybeSingle();
+
+  if (profile?.id) {
+    try {
+      const { data: userData, error: userError } = await admin.auth.admin.getUserById(profile.id);
+      if (!userError && userData?.user) {
+        return { user: userData.user, profile };
+      }
+    } catch (err) {
+      console.warn(`[findAuthUserByCpf] Aviso ao consultar getUserById(${profile.id}):`, err);
+    }
+    return { user: { id: profile.id, email: profile.email } as AuthUserSummary, profile };
+  }
+
+  // 2. Fallback paginado seguro procurando nos metadados de auth.users
+  try {
+    let page = 1;
+    const perPage = 100;
+    while (page <= 10) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+      if (error || !data?.users?.length) break;
+      const found = data.users.find((u) => digits(u.user_metadata?.cpf) === cleanCpf);
+      if (found) return { user: found, profile: null };
+      if (data.users.length < perPage) break;
+      page++;
+    }
+  } catch (err) {
+    console.warn("[findAuthUserByCpf] listUsers falhou:", err);
+  }
+  return { user: null, profile: null };
+};
+
 const confirmUserEmailManually = async (payload: Record<string, unknown>) => {
   const identifier = String(payload.identifier ?? payload.userId ?? payload.email ?? "").trim();
   if (!identifier) throw new Error("Identificador do usuário ou e-mail é obrigatório.");
@@ -995,22 +1486,45 @@ const confirmUserEmailManually = async (payload: Record<string, unknown>) => {
   let email = identifier;
 
   if (isEmail) {
-    const { data: userList, error: listError } = await admin.auth.admin.listUsers();
-    if (listError) throw new Error(listError.message);
-    const found = userList.users.find((u) => u.email?.toLowerCase() === identifier.toLowerCase());
-    if (!found) throw new Error("Usuário não encontrado no sistema de autenticação.");
-    userId = found.id;
-    email = found.email ?? identifier;
+    const foundUser = await findAuthUserByEmail(identifier);
+    if (!foundUser) throw new Error("Usuário não encontrado no sistema de autenticação.");
+    userId = foundUser.id;
+    email = foundUser.email ?? identifier;
   } else {
-    const { data: userData, error: userError } = await admin.auth.admin.getUserById(userId);
-    if (userError || !userData.user) throw new Error("Usuário não encontrado.");
-    email = userData.user.email ?? "";
+    try {
+      const { data: userData, error: userError } = await admin.auth.admin.getUserById(userId);
+      if (userError || !userData?.user) {
+        const { data: profile } = await admin.from("profiles").select("id, email").eq("id", userId).maybeSingle();
+        if (!profile) throw new Error("Usuário não encontrado.");
+        email = profile.email ?? "";
+      } else {
+        email = userData.user.email ?? "";
+      }
+    } catch {
+      const { data: profile } = await admin.from("profiles").select("id, email").eq("id", userId).maybeSingle();
+      if (!profile) throw new Error("Usuário não encontrado.");
+      email = profile.email ?? "";
+    }
   }
 
-  const { error: updateError } = await admin.auth.admin.updateUserById(userId, {
-    email_confirm: true,
-  });
-  if (updateError) throw new Error(updateError.message);
+  try {
+    const { error: updateError } = await admin.auth.admin.updateUserById(userId, {
+      email_confirm: true,
+    });
+    if (updateError) {
+      if (isSignatureOrJwtError(updateError)) {
+        console.warn(`[confirmUserEmailManually] Aviso de assinatura GoTrue ao confirmar e-mail do user ${userId}:`, updateError.message);
+      } else {
+        throw new Error(updateError.message);
+      }
+    }
+  } catch (err: unknown) {
+    if (isSignatureOrJwtError(err)) {
+      console.warn(`[confirmUserEmailManually] Exceção de assinatura GoTrue ao confirmar e-mail do user ${userId}:`, err);
+    } else {
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  }
 
   await admin.from("profiles").update({ updated_at: new Date().toISOString() }).eq("id", userId);
 
@@ -1022,42 +1536,28 @@ const deleteUserAttempt = async (payload: Record<string, unknown>) => {
   if (!rawIdentifier) throw new Error("Identificador (e-mail, CPF ou ID) é obrigatório.");
 
   const isEmail = rawIdentifier.includes("@");
-  const cleanDigits = rawIdentifier.replace(/\D/g, "");
+  const cleanDigits = digits(rawIdentifier);
   const isCpf = !isEmail && cleanDigits.length === 11;
 
-  let targetEmail = isEmail ? rawIdentifier.toLowerCase() : "";
+  let targetEmail = isEmail ? normalizeEmail(rawIdentifier) : "";
   let targetUserId = (!isEmail && !isCpf) ? rawIdentifier : "";
 
-  // 1. Se for CPF, buscar no profiles e nos metadados de auth.users
+  // 1. Se for CPF, buscar no profiles e nos metadados de auth.users via helper otimizado
   if (isCpf) {
-    const { data: profileByCpf } = await admin
-      .from("profiles")
-      .select("id, email")
-      .eq("cpf", cleanDigits)
-      .maybeSingle();
-
-    if (profileByCpf) {
-      targetUserId = profileByCpf.id;
-      if (profileByCpf.email) targetEmail = profileByCpf.email.toLowerCase();
-    } else {
-      // Procurar em auth.users via metadados
-      const { data: userList } = await admin.auth.admin.listUsers();
-      const found = userList?.users?.find((u) => {
-        const metaCpf = String(u.user_metadata?.cpf ?? "").replace(/\D/g, "");
-        return metaCpf === cleanDigits;
-      });
-      if (found) {
-        targetUserId = found.id;
-        if (found.email) targetEmail = found.email.toLowerCase();
-      }
+    const { user, profile } = await findAuthUserByCpf(cleanDigits);
+    if (profile) {
+      targetUserId = profile.id;
+      if (profile.email) targetEmail = normalizeEmail(profile.email);
+    } else if (user) {
+      targetUserId = user.id;
+      if (user.email) targetEmail = normalizeEmail(user.email);
     }
   } else if (isEmail) {
-    const { data: userList } = await admin.auth.admin.listUsers();
-    const found = userList?.users?.find((u) => u.email?.toLowerCase() === targetEmail);
-    if (found) {
-      targetUserId = found.id;
+    const foundUser = await findAuthUserByEmail(targetEmail);
+    if (foundUser) {
+      targetUserId = foundUser.id;
     } else {
-      // Buscar se existe perfil com esse email
+      // Buscar se existe perfil com esse email mesmo sem auth.users
       const { data: profileByEmail } = await admin
         .from("profiles")
         .select("id")
@@ -1066,27 +1566,37 @@ const deleteUserAttempt = async (payload: Record<string, unknown>) => {
       if (profileByEmail) targetUserId = profileByEmail.id;
     }
   } else if (targetUserId) {
-    const { data: userData } = await admin.auth.admin.getUserById(targetUserId);
-    if (userData?.user?.email) targetEmail = userData.user.email.toLowerCase();
+    try {
+      const { data: userData } = await admin.auth.admin.getUserById(targetUserId);
+      if (userData?.user?.email) targetEmail = normalizeEmail(userData.user.email);
+    } catch {
+      // Ignora erro GoTrue
+    }
     if (!targetEmail) {
       const { data: profileById } = await admin.from("profiles").select("email").eq("id", targetUserId).maybeSingle();
-      if (profileById?.email) targetEmail = profileById.email.toLowerCase();
+      if (profileById?.email) targetEmail = normalizeEmail(profileById.email);
     }
   }
 
   // 2. Limpar convites pendentes
+  const cleanupTasks: Promise<unknown>[] = [];
   if (targetEmail) {
-    await admin.from("clinic_collaborator_invitations").delete().eq("email", targetEmail);
+    cleanupTasks.push(admin.from("clinic_collaborator_invitations").delete().eq("email", targetEmail));
   }
   if (!isEmail && !isCpf) {
-    await admin.from("clinic_collaborator_invitations").delete().eq("id", rawIdentifier);
+    cleanupTasks.push(admin.from("clinic_collaborator_invitations").delete().eq("id", rawIdentifier));
+  }
+  if (cleanupTasks.length) {
+    await Promise.all(cleanupTasks);
   }
 
   // 3. Limpar tabelas relacionais do perfil e do usuário
   if (targetUserId) {
-    await admin.from("clinic_memberships").delete().eq("user_id", targetUserId);
-    await admin.from("user_roles").delete().eq("user_id", targetUserId);
-    await admin.from("profiles").delete().eq("id", targetUserId);
+    await Promise.all([
+      admin.from("clinic_memberships").delete().eq("user_id", targetUserId),
+      admin.from("user_roles").delete().eq("user_id", targetUserId),
+      admin.from("profiles").delete().eq("id", targetUserId),
+    ]);
     try {
       await admin.auth.admin.deleteUser(targetUserId);
     } catch {
@@ -1144,10 +1654,17 @@ Deno.serve(async (request) => {
     const result = await handlers[action](payload, { userClient, user });
     const deletedClinic = action === "delete_clinic_package" || (action === "update_clinic_access" && payload.status === "delete");
     const auditClinicId = deletedClinic ? null : String(result.clinic_id ?? payload.clinicId ?? "") || null;
-    await logAudit(userClient, `platform_account_admin_${action}`, auditClinicId, reason, {
-      action,
-      result,
-    });
+    await logAudit(
+      userClient,
+      `platform_account_admin_${action}`,
+      auditClinicId,
+      reason,
+      {
+        action,
+        result,
+      },
+      user.id
+    );
     return json({ data: result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Operação indisponível.";

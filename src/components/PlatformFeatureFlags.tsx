@@ -647,6 +647,27 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                         <div className="flex-1 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 text-base">{feature.label}</h3>
+                            {feature.key === "terms_of_service_management" && (
+                              <>
+                                <Badge variant="secondary" className="text-[10px] font-mono">
+                                  {[
+                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.owner_br,
+                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.user_br,
+                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.owner_intl,
+                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.user_intl,
+                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.print_terms,
+                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.minor_terms ||
+                                      (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.minor_consent,
+                                  ].filter(Boolean).length}/6 docs customizados
+                                </Badge>
+                                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300 border-sky-300">
+                                  {(pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.minor_terms ||
+                                  (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.minor_consent
+                                    ? "Menor LGPD: Customizado"
+                                    : "Menor LGPD: Padrão Ativo"}
+                                </Badge>
+                              </>
+                            )}
                             {isModified && (
                               <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-mono">
                                 Alterado (Pendente)
@@ -705,7 +726,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                                 className="h-9 px-3"
                                 onClick={() => setTermsModalOpen(true)}
                               >
-                                <Settings className="w-3.5 h-3.5 mr-2" /> Configurar
+                                <Settings className="w-3.5 h-3.5 mr-2" /> Configurar Termos
                               </Button>
 
                               <Button

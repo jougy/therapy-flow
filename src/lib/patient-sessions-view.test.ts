@@ -3,6 +3,9 @@ import {
   buildPatientSessionsView,
   canDeleteSelectedSessions,
   canDeleteSelectedSessionsForRole,
+  doesSessionMatchModularFilter,
+  extractFilterableModularItems,
+  groupSessionsByModularField,
   filterSessionsForOperationalRole,
   shouldAutoCompleteInternDraft,
   shouldShowSessionCreatorInternBadge,
@@ -393,3 +396,85 @@ describe("buildPatientSessionsView - Evolution Lineage Healing", () => {
     expect(result.standaloneSessions).toHaveLength(0);
   });
 });
+
+describe("Modular Filter & Grouping Helpers", () => {
+  it("matches session by modular form response field value", () => {
+    const sessionWithModular = {
+      ...sessions[0],
+      anamnesis_form_response: {
+        sintomas_list: ["Dor Cervical", "Rigidez"],
+      },
+    };
+
+    expect(doesSessionMatchModularFilter(sessionWithModular, "sintomas_list", "Dor Cervical")).toBe(true);
+    expect(doesSessionMatchModularFilter(sessionWithModular, "sintomas_list", "Lombalgia")).toBe(false);
+  });
+
+  it("prevents false-positive cross-field matching for non-symptom fields", () => {
+    const sessionWithCareLine = {
+      ...sessions[0],
+      group_id: "group-lombar", // Care line name: "Lombalgia cronica"
+      anamnesis: {
+        queixa: "Lombalgia intensa",
+        sintomas: "Dor e queimação",
+      },
+      anamnesis_form_response: {
+        profissao: "Arquiteto",
+      },
+    };
+
+    // If filtering by "profissao", it should NOT match "Lombalgia" even if care line or queixa mentions it
+    expect(doesSessionMatchModularFilter(sessionWithCareLine, "profissao", "Lombalgia", groups)).toBe(false);
+    expect(doesSessionMatchModularFilter(sessionWithCareLine, "profissao", "Arquiteto", groups)).toBe(true);
+
+    // If filtering by a symptom field, it CAN match symptoms or care lines
+    expect(doesSessionMatchModularFilter(sessionWithCareLine, "sintomas", "Lombalgia cronica", groups)).toBe(true);
+  });
+
+  it("extracts filterable modular items across sessions in a single pass without duplicates", () => {
+    const s1 = {
+      ...sessions[0],
+      id: "s1",
+      anamnesis_form_response: { sintomas_list: ["Cervicalgia", "Espasmo"] },
+    };
+    const s2 = {
+      ...sessions[1],
+      id: "s2",
+      anamnesis_form_response: { sintomas_list: ["cervicalgia", "Edema"] },
+    };
+
+    const filterableFields = [{ id: "sintomas_list", label: "Sintomas Atuais" }];
+    const items = extractFilterableModularItems([s1, s2], filterableFields);
+
+    expect(items).toHaveLength(3);
+    expect(items.map((i) => i.value)).toEqual(["Cervicalgia", "Espasmo", "Edema"]);
+  });
+
+  it("groups sessions by modular field correctly separating ungrouped sessions", () => {
+    const s1 = {
+      ...sessions[0],
+      id: "s1",
+      anamnesis_form_response: { sintomas_list: ["Dor no Ombro"] },
+    };
+    const s2 = {
+      ...sessions[1],
+      id: "s2",
+      anamnesis_form_response: { sintomas_list: ["Dor no Ombro", "Cefaleia"] },
+    };
+    const s3 = {
+      ...sessions[2],
+      id: "s3",
+      anamnesis_form_response: {},
+    };
+
+    const targetField = { id: "sintomas_list", label: "Sintomas" };
+    const result = groupSessionsByModularField([s1, s2, s3], targetField);
+
+    expect(result.groups).toHaveLength(2);
+    const ombroGroup = result.groups.find((g) => g.name === "Dor no Ombro");
+    expect(ombroGroup?.sessions).toHaveLength(2);
+    expect(result.ungrouped).toHaveLength(1);
+    expect(result.ungrouped[0].id).toBe("s3");
+  });
+});
+

@@ -347,4 +347,56 @@ describe("AgendaWidget", () => {
     expect(await screen.findByText("10:30")).toBeInTheDocument();
     expect(screen.getByText("Confirmado")).toBeInTheDocument();
   });
+
+  it("renders with variant modal without Card header and with extended events list height", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AgendaWidget variant="modal" />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("09:00")).toBeInTheDocument();
+    expect(screen.getByText("Maria Silva")).toBeInTheDocument();
+
+    const widgetRoot = container.querySelector("[data-tutorial='agenda-widget']");
+    expect(widgetRoot).toBeInTheDocument();
+    expect(widgetRoot?.tagName.toLowerCase()).toBe("div");
+
+    const eventsList = container.querySelector("[data-tutorial='agenda-events-list']");
+    expect(eventsList).toHaveClass("max-h-64");
+  });
+
+  it("does not allow event deletion if user lacks agenda.delete_events permission", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      accountRole: null,
+      can: (permission: string) => permission !== "agenda.delete_events",
+      capabilities: {} as never,
+      clinic: null,
+      clinicId: "clinic-1",
+      isSuperAdmin: false,
+      loading: false,
+      membership: null,
+      membershipStatus: "active",
+      operationalRole: "professional",
+      profile: null,
+      refreshAuthState: vi.fn(async () => {}),
+      selectClinicByRouteKey: vi.fn(async () => {}),
+      session: null,
+      signOut: vi.fn(async () => {}),
+      subscriptionPlan: "clinic",
+      user: {
+        id: "prof-1",
+      } as never,
+    });
+
+    render(
+      <MemoryRouter>
+        <AgendaWidget />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Maria Silva")).toBeInTheDocument();
+    // Botão de deletar inline não deve ser renderizado quando can('agenda.delete_events') é false
+    expect(screen.queryByLabelText("Excluir agendamento")).not.toBeInTheDocument();
+  });
 });

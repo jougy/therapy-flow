@@ -11,39 +11,44 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, Loader2, RotateCcw, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Loader2, RotateCcw, ShieldAlert } from "lucide-react";
 import { callPlatformAccountAdmin, getErrorMessage } from "@/components/platform/platform-api";
 import { toast } from "@/hooks/use-toast";
 
-interface ResetRegistrationDialogProps {
+export interface ResetRegistrationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
 }
+
+type SearchMode = "email" | "cpf";
+type DialogStep = "input" | "confirm";
+
+const formatCpfMask = (val: string): string => {
+  const digits = val.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+};
+
+const DEFAULT_RESET_REASON = "Reset de cadastro solicitado pelo suporte/administração";
 
 export const ResetRegistrationDialog: React.FC<ResetRegistrationDialogProps> = ({
   open,
   onOpenChange,
   onSuccess,
 }) => {
-  const [searchMode, setSearchMode] = useState<"email" | "cpf">("email");
+  const [searchMode, setSearchMode] = useState<SearchMode>("email");
   const [identifier, setIdentifier] = useState("");
-  const [reason, setReason] = useState("Reset de cadastro solicitado pelo suporte/administração");
+  const [reason, setReason] = useState(DEFAULT_RESET_REASON);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<"input" | "confirm">("input");
-
-  const formatCpf = (val: string) => {
-    const digits = val.replace(/\D/g, "").slice(0, 11);
-    if (digits.length <= 3) return digits;
-    if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
-    if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
-    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
-  };
+  const [step, setStep] = useState<DialogStep>("input");
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     if (searchMode === "cpf") {
-      setIdentifier(formatCpf(val));
+      setIdentifier(formatCpfMask(val));
     } else {
       setIdentifier(val.trim());
     }
@@ -52,12 +57,17 @@ export const ResetRegistrationDialog: React.FC<ResetRegistrationDialogProps> = (
   const handleClose = () => {
     setIdentifier("");
     setStep("input");
-    setReason("Reset de cadastro solicitado pelo suporte/administração");
+    setReason(DEFAULT_RESET_REASON);
     onOpenChange(false);
   };
 
+  const cleanDigits = identifier.replace(/\D/g, "");
+  const isCpfValid = cleanDigits.length === 11;
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier.trim());
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!identifier.trim()) {
       toast({
         title: "Campo obrigatório",
@@ -67,10 +77,19 @@ export const ResetRegistrationDialog: React.FC<ResetRegistrationDialogProps> = (
       return;
     }
 
-    if (searchMode === "cpf" && identifier.replace(/\D/g, "").length !== 11) {
+    if (searchMode === "cpf" && !isCpfValid) {
       toast({
         title: "CPF incompleto",
-        description: "O CPF deve conter exatamente 11 dígitos.",
+        description: "O CPF deve conter exatamente 11 dígitos numéricos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (searchMode === "email" && !isEmailValid) {
+      toast({
+        title: "E-mail inválido",
+        description: "Informe um endereço de e-mail válido para localização da conta.",
         variant: "destructive",
       });
       return;
@@ -83,23 +102,28 @@ export const ResetRegistrationDialog: React.FC<ResetRegistrationDialogProps> = (
 
     setLoading(true);
     try {
+      const sanitizedIdentifier =
+        searchMode === "cpf" ? cleanDigits : identifier.toLowerCase().trim();
+
       const payload: Record<string, unknown> = {
-        identifier: searchMode === "cpf" ? identifier.replace(/\D/g, "") : identifier.toLowerCase(),
+        identifier: sanitizedIdentifier,
       };
 
       await callPlatformAccountAdmin(
         "delete_user_attempt",
         payload,
-        reason || "Reset administrativo de cadastro autorizado pelo platform_owner"
+        reason.trim() || "Reset administrativo de cadastro autorizado pelo platform_owner"
       );
 
       toast({
         title: "Cadastro resetado com sucesso!",
-        description: `Os dados associados a ${identifier} foram limpos. A pessoa pode se registrar novamente do zero.`,
+        description: `Os registros associados a ${identifier} foram limpos com segurança. O usuário já pode se cadastrar novamente.`,
       });
 
       handleClose();
-      if (onSuccess) onSuccess();
+      if (onSuccess) {
+        onSuccess();
+      }
     } catch (err) {
       toast({
         title: "Erro ao resetar cadastro",
@@ -114,7 +138,7 @@ export const ResetRegistrationDialog: React.FC<ResetRegistrationDialogProps> = (
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[480px]">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
