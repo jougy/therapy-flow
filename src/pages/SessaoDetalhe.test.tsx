@@ -305,12 +305,6 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
   });
 
   it("navigates back to /espacopessoal when location.state has from: '/espacopessoal'", async () => {
-    let currentPath = "";
-    const LocationWatcher = () => {
-      const loc = (window as any).__testLocation;
-      return null;
-    };
-
     render(
       <MemoryRouter initialEntries={[{ pathname: "/pacientes/patient-123/sessao/session-123", state: { from: "/espacopessoal" } }]}>
         <Routes>
