@@ -307,6 +307,7 @@ vi.mock("@/integrations/supabase/client", () => {
     };
 
     const builder = {
+      abortSignal: () => builder,
       delete: () => {
         mode = "delete";
         return builder;
@@ -714,7 +715,7 @@ describe("PacienteDetalhe", () => {
     });
   });
 
-  it("confirms deletion, deletes the patient, and redirects to the homepage", async () => {
+  it("confirms deletion, moves the patient to trash, and redirects to the homepage", async () => {
     renderPage();
 
     await screen.findByRole("heading", { name: "Maria Silva" });
@@ -724,17 +725,15 @@ describe("PacienteDetalhe", () => {
     const deleteOption = await screen.findByText(/excluir paciente/i);
     fireEvent.click(deleteOption);
 
-    expect(await screen.findByRole("heading", { name: /excluir paciente\?/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /mover paciente para a lixeira\?/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^excluir$/i }));
 
     await waitFor(() => {
-      expect(supabaseMocks.deleteCalls).toEqual([
-        {
-          filters: [{ column: "id", value: "patient-1" }],
-          table: "patients",
-        },
-      ]);
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("move_entity_to_trash", {
+        _entity_type: "patients",
+        _entity_ids: ["patient-1"],
+      });
     });
 
     expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1", {
@@ -744,7 +743,12 @@ describe("PacienteDetalhe", () => {
         refreshPatientsAt: expect.any(Number),
       },
     });
-    expect(toast).toHaveBeenCalledWith({ title: "Paciente excluído" });
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Paciente movido para a lixeira",
+        description: "O paciente e seus dados foram enviados para a lixeira da clínica e podem ser restaurados até domingo.",
+      })
+    );
   });
 
   it("renders consistent patient options, removes recurrence from dropdown, and supports export/print/navigation", async () => {

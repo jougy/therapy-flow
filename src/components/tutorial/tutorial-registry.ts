@@ -574,9 +574,9 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
       },
       {
         id: "session-carelines-select",
-        targetSelector: "[data-tutorial='session-carelines']",
-        title: "Sintomas & Linhas de Cuidado da Sessão 🏷️",
-        description: "Selecione quais motivos ou queixas foram tratados nesta sessão específica para categorizar a evolução.",
+        targetSelector: "[data-tutorial='session-anamnesis-form']",
+        title: "Avaliação & Anamnese Clínica 📋",
+        description: "Acompanhe e registre a evolução personalizada através dos campos modulares da clínica configurados para o atendimento.",
         placement: "bottom",
         animation: "pulse",
       },
@@ -1186,9 +1186,9 @@ export const COMPONENT_HELP_REGISTRY: Record<string, ComponentHelpEntry> = {
   "session-carelines": [
     {
       id: "help-session-carelines-overview",
-      targetSelector: "[data-tutorial='session-carelines']",
-      title: "🏷️ Linhas de Cuidado & Queixas Clínicas — Objetivo Clínico",
-      description: "Organiza o histórico de atendimentos por sintomas ou queixas clínicas (ex: Lombalgia, Pós-operatório), permitindo acompanhar a evolução isolada de cada diagnóstico.",
+      targetSelector: "[data-tutorial='session-anamnesis-form']",
+      title: "📋 Avaliação & Anamnese Clínica",
+      description: "Acompanhe e registre a evolução personalizada através dos campos modulares da clínica configurados para o atendimento.",
       placement: "bottom",
       animation: "glow",
     },
@@ -2116,9 +2116,9 @@ export const HELPERS_PAGE_GROUPS: HelperPageGroup[] = [
       },
       {
         id: "session-carelines",
-        name: "Linhas de Cuidado",
-        description: "Seletor das especialidades e focos terapêuticos da sessão.",
-        targetSelector: "[data-tutorial='session-carelines']",
+        name: "Avaliação & Anamnese Clínica",
+        description: "Evolução personalizada através dos campos modulares da clínica.",
+        targetSelector: "[data-tutorial='session-anamnesis-form']",
       },
       {
         id: "session-conduct-notes",

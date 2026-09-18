@@ -145,7 +145,7 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
     });
   });
 
-  it("displays care lines (Linhas de Cuidado) chips and helper card in Anamnese tab", async () => {
+  it("renders clean modular Anamnese form container without the fixed carelines picker", async () => {
     render(
       <MemoryRouter initialEntries={["/pacientes/patient-123/sessao/novo"]}>
         <Routes>
@@ -155,9 +155,15 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Sintomas & Linhas de Cuidado|Linha de Cuidado/i).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByRole("button", { name: /Geral \/ Sintomas não definidos|Sintomas não definidos/i }).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByRole("button", { name: /Coluna Lombar/i }).length).toBeGreaterThanOrEqual(1);
+      // Verifies that the fixed care lines selector was removed
+      expect(screen.queryByText(/1\. Primeiro Bloco da Anamnese/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Sintomas & Linhas de Cuidado/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Geral \/ Sintomas não definidos|Sintomas não definidos/i })).not.toBeInTheDocument();
+
+      // Verifies that the modular form container is rendered with tutorial attribute and dynamic fields
+      expect(document.querySelector("[data-tutorial='session-anamnesis-form']")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Descreva a queixa principal/i)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Observações gerais sobre o atendimento/i)).toBeInTheDocument();
     });
   });
 
@@ -198,7 +204,7 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
     });
   });
 
-  it("opens 'Nova Linha de Cuidado' modal when clicking 'Criar Linha de Cuidado Personalizada'", async () => {
+  it("renders modular anamnesis runtime without static care line creation buttons and supports dynamic field inputs", async () => {
     render(
       <MemoryRouter initialEntries={["/pacientes/patient-123/sessao/novo"]}>
         <Routes>
@@ -208,17 +214,14 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Criar Linha de Cuidado Personalizada/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Criar Linha de Cuidado Personalizada/i })).not.toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Descreva a queixa principal/i)).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Criar Linha de Cuidado Personalizada/i }));
+    const queixaInput = screen.getByPlaceholderText(/Descreva a queixa principal/i);
+    fireEvent.change(queixaInput, { target: { value: "Avaliação inicial de mobilidade" } });
 
-    await waitFor(() => {
-      expect(screen.getByText("Nova Linha de Cuidado")).toBeInTheDocument();
-      expect(screen.getByText("Nome da Linha de Cuidado / Motivo")).toBeInTheDocument();
-      expect(screen.getByText("Status da linha de cuidado")).toBeInTheDocument();
-      expect(screen.getByText("Cor")).toBeInTheDocument();
-    });
+    expect((queixaInput as HTMLTextAreaElement).value).toBe("Avaliação inicial de mobilidade");
   });
 
   it("prompts confirmation modal with 3 choices when attempting to leave with unsaved changes", async () => {

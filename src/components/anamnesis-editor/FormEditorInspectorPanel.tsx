@@ -9,6 +9,7 @@ import {
   Hexagon,
   Palette,
   Settings2,
+  SlidersHorizontal,
   Tags,
   ToggleLeft,
   Trash2,
@@ -26,6 +27,7 @@ import { OptionListEditor } from "@/components/anamnesis/OptionListEditor";
 import { OptionMatrixEditor } from "@/components/anamnesis/OptionMatrixEditor";
 import { TagOptionListEditor } from "@/components/anamnesis/TagOptionListEditor";
 import { SectionColorPaletteField } from "@/components/anamnesis/SectionColorPaletteField";
+import { CalculatedFieldInspector } from "./CalculatedFieldInspector";
 import {
   ANAMNESIS_FIELD_LIBRARY,
   ANAMNESIS_OPTION_LIMIT,
@@ -104,7 +106,7 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
     return [
       { icon: Settings2, label: "Ajustes", value: "settings" as const, allowed: isMenuAllowed("settings") },
       { icon: Palette, label: "Design", value: "design" as const, allowed: isMenuAllowed("design") },
-      { icon: Workflow, label: "Lógica", value: "logic" as const, allowed: isMenuAllowed("logic") },
+      { icon: SlidersHorizontal, label: "Regras", value: "logic" as const, allowed: isMenuAllowed("logic") },
     ].filter((t) => t.allowed);
   }, [isMenuAllowed]);
 
@@ -545,72 +547,7 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                 />
               </div>
             )}
-            {!isContainerField(selectedField) && isPropertyAllowed("required") && (
-              <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-                <div>
-                  <p className="text-sm font-medium">Obrigatório</p>
-                  <p className="text-xs text-muted-foreground">Exige resposta antes de concluir o formulário.</p>
-                </div>
-                <Switch
-                  checked={selectedField.required ?? false}
-                  onCheckedChange={(checked) => updateField(selectedField.id, { required: checked === true })}
-                />
-              </div>
-            )}
-            {isBase && !isContainerField(selectedField) && isPropertyAllowed("showInPatientList") && (
-              <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-                <div>
-                  <p className="text-sm font-medium">Resumo do paciente</p>
-                  <p className="text-xs text-muted-foreground">Mostra este campo na lista de atendimentos.</p>
-                </div>
-                <Switch
-                  checked={selectedField.showInPatientList ?? false}
-                  onCheckedChange={(checked) => updateField(selectedField.id, { showInPatientList: checked === true })}
-                />
-              </div>
-            )}
-            {!isContainerField(selectedField) && (
-              <div className="space-y-2.5 pt-1">
-                {isPropertyAllowed("includeInGlobalDashboard") && (
-                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-                    <div>
-                      <p className="text-sm font-medium">Dashboard global</p>
-                      <p className="text-xs text-muted-foreground">Contabiliza nas estatísticas globais do dashboard da clínica.</p>
-                    </div>
-                    <Switch
-                      checked={selectedField.includeInGlobalDashboard ?? false}
-                      onCheckedChange={(checked) => updateField(selectedField.id, { includeInGlobalDashboard: checked === true })}
-                    />
-                  </div>
-                )}
 
-                {isPropertyAllowed("enableFilter") && (
-                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-                    <div>
-                      <p className="text-sm font-medium">Filtrar</p>
-                      <p className="text-xs text-muted-foreground">Torna este campo uma opção nos filtros de pacientes e histórico.</p>
-                    </div>
-                    <Switch
-                      checked={selectedField.enableFilter ?? false}
-                      onCheckedChange={(checked) => updateField(selectedField.id, { enableFilter: checked === true })}
-                    />
-                  </div>
-                )}
-
-                {isPropertyAllowed("enableGrouping") && (
-                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-                    <div>
-                      <p className="text-sm font-medium">Agrupar</p>
-                      <p className="text-xs text-muted-foreground">Torna este campo uma opção de agrupamento no histórico de atendimentos.</p>
-                    </div>
-                    <Switch
-                      checked={selectedField.enableGrouping ?? false}
-                      onCheckedChange={(checked) => updateField(selectedField.id, { enableGrouping: checked === true })}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
             {isMenuOptionAllowed("settings", "advanced_options") && (
               <>
                 {isSelectionChoiceFieldType(selectedField.type) && (
@@ -824,6 +761,13 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                 </div>
               );
             })()}
+            {selectedField.type === "calculated" && (
+              <CalculatedFieldInspector
+                field={selectedField}
+                allFields={templateFields}
+                onUpdateConfig={(calculatedConfig) => updateField(selectedField.id, { calculatedConfig })}
+              />
+            )}
               </>
             )}
           </>
@@ -921,6 +865,85 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {!isContainerField(selectedField) && (
+              <div className="space-y-3 pt-2">
+                <Separator />
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-foreground uppercase tracking-wider">
+                    Comportamento no Prontuário & Métricas
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Defina como este campo opera no preenchimento clínico, estatísticas e listagens.
+                  </p>
+                </div>
+
+                {isPropertyAllowed("required") && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Obrigatório</p>
+                      <p className="text-xs text-muted-foreground">Exige resposta antes de concluir o formulário.</p>
+                    </div>
+                    <Switch
+                      checked={selectedField.required ?? false}
+                      onCheckedChange={(checked) => updateField(selectedField.id, { required: checked === true })}
+                    />
+                  </div>
+                )}
+
+                {isBase && isPropertyAllowed("showInPatientList") && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Resumo do paciente</p>
+                      <p className="text-xs text-muted-foreground">Mostra este campo na lista de atendimentos.</p>
+                    </div>
+                    <Switch
+                      checked={selectedField.showInPatientList ?? false}
+                      onCheckedChange={(checked) => updateField(selectedField.id, { showInPatientList: checked === true })}
+                    />
+                  </div>
+                )}
+
+                {isPropertyAllowed("includeInGlobalDashboard") && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Dashboard global</p>
+                      <p className="text-xs text-muted-foreground">Contabiliza nas estatísticas globais do dashboard da clínica.</p>
+                    </div>
+                    <Switch
+                      checked={selectedField.includeInGlobalDashboard ?? false}
+                      onCheckedChange={(checked) => updateField(selectedField.id, { includeInGlobalDashboard: checked === true })}
+                    />
+                  </div>
+                )}
+
+                {isPropertyAllowed("enableFilter") && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Filtrar</p>
+                      <p className="text-xs text-muted-foreground">Torna este campo uma opção nos filtros de pacientes e histórico.</p>
+                    </div>
+                    <Switch
+                      checked={selectedField.enableFilter ?? false}
+                      onCheckedChange={(checked) => updateField(selectedField.id, { enableFilter: checked === true })}
+                    />
+                  </div>
+                )}
+
+                {isPropertyAllowed("enableGrouping") && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Agrupar</p>
+                      <p className="text-xs text-muted-foreground">Torna este campo uma opção de agrupamento no histórico de atendimentos.</p>
+                    </div>
+                    <Switch
+                      checked={selectedField.enableGrouping ?? false}
+                      onCheckedChange={(checked) => updateField(selectedField.id, { enableGrouping: checked === true })}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </>

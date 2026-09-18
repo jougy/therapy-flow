@@ -21,6 +21,7 @@ interface PrintGuardianConsentModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   patient: SharePatientData | null;
+  clinicId?: string | null;
   clinicName?: string;
   onPrinted?: () => void;
 }
@@ -29,6 +30,7 @@ export const PrintGuardianConsentModal: React.FC<PrintGuardianConsentModalProps>
   open,
   onOpenChange,
   patient,
+  clinicId,
   clinicName = "Pluri-Health",
   onPrinted,
 }) => {
@@ -44,6 +46,28 @@ export const PrintGuardianConsentModal: React.FC<PrintGuardianConsentModalProps>
 
     const loadTerms = async () => {
       try {
+        // Camada 1: Termo customizado da Clínica (se houver clinicId ou patient.clinic_id)
+        const targetClinicId = clinicId || (patient as { clinic_id?: string })?.clinic_id;
+        if (targetClinicId) {
+          const { data: clinicData } = await supabase
+            .from("clinics")
+            .select("custom_fields")
+            .eq("id", targetClinicId)
+            .maybeSingle();
+
+          const custom = (clinicData?.custom_fields || {}) as Record<string, unknown>;
+          const clinicTerms = (custom.clinic_terms || {}) as {
+            minor_terms?: { content?: string };
+          };
+
+          if (clinicTerms.minor_terms?.content && isMounted) {
+            setTermsContent(clinicTerms.minor_terms.content);
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Camada 2: Termo customizado no Backoffice (feature_flags global)
         const { data } = await supabase
           .from("feature_flags")
           .select("value")
@@ -51,13 +75,15 @@ export const PrintGuardianConsentModal: React.FC<PrintGuardianConsentModalProps>
           .single();
 
         const payload = (data?.value || {}) as TermsConfigPayload;
-        const customContent = payload.minor_terms?.content || payload.minor_consent?.content;
+        const backofficeContent = payload.minor_terms?.content || payload.minor_consent?.content;
 
         if (isMounted) {
-          setTermsContent(customContent || defaultMinorTermsMarkdown);
+          // Camada 3: Asset padrão embarcado
+          setTermsContent(backofficeContent || defaultMinorTermsMarkdown);
         }
       } catch {
         if (isMounted) {
+          // Camada 3: Fallback seguro
           setTermsContent(defaultMinorTermsMarkdown);
         }
       } finally {
@@ -72,7 +98,7 @@ export const PrintGuardianConsentModal: React.FC<PrintGuardianConsentModalProps>
     return () => {
       isMounted = false;
     };
-  }, [open]);
+  }, [open, clinicId, patient]);
 
   const handlePrint = async () => {
     if (!patient?.id) return;

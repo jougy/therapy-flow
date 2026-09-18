@@ -33,7 +33,7 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-const allowedCategories = new Set(["anamnesis", "exam", "image", "document", "other"]);
+const allowedCategories = new Set(["anamnesis", "exam", "image", "document", "terms", "other"]);
 const allowedStorageEncodings = new Set(["gzip", "deflate"]);
 const allowedContentTypes = new Set([
   "application/pdf",
@@ -44,6 +44,10 @@ const allowedContentTypes = new Set([
   "image/heif",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/markdown",
+  "text/plain",
+  "application/gzip",
+  "application/x-gzip",
 ]);
 
 const getBearer = (authorization: string | null) => authorization?.replace(/^Bearer\s+/i, "") ?? "";
@@ -97,18 +101,23 @@ Deno.serve(async (req) => {
     const storedByteSize = Number(body.storedByteSize ?? byteSize);
     const checksumSha256 = normalizeSha256(body.checksumSha256);
     const category = allowedCategories.has(String(body.category)) ? String(body.category) : "other";
+    const isTerms = category === "terms";
     const storageEncoding = allowedStorageEncodings.has(String(body.storageEncoding)) ? String(body.storageEncoding) : null;
     const compressionProfile = normalizeText(body.compressionProfile, 80) || "original";
     const imageWidth = normalizePositiveInteger(body.imageWidth, 20_000);
     const imageHeight = normalizePositiveInteger(body.imageHeight, 20_000);
     const pageCount = normalizePositiveInteger(body.pageCount, 20_000);
 
-    if (!clinicId || !patientId || !originalFilename) {
+    if (!clinicId || !originalFilename) {
+      return json({ error: "Informe clínica e nome do arquivo." }, 400);
+    }
+
+    if (!isTerms && !patientId) {
       return json({ error: "Informe clínica, paciente e nome do arquivo." }, 400);
     }
 
     if (!allowedContentTypes.has(contentType) || !allowedContentTypes.has(originalContentType) || !allowedContentTypes.has(storedContentType)) {
-      return json({ error: "Envie apenas PDF ou imagens nos formatos JPEG, PNG, WebP, HEIC ou HEIF." }, 400);
+      return json({ error: "Envie apenas PDF, Markdown, arquivos de texto ou imagens suportadas." }, 400);
     }
 
     if (!Number.isFinite(byteSize) || byteSize <= 0 || byteSize > maxUploadBytes) {
@@ -126,6 +135,47 @@ Deno.serve(async (req) => {
 
     const { data: userData, error: userError } = await userClient.auth.getUser(token);
     if (userError || !userData.user) return json({ error: "Usuário não autenticado." }, 401);
+
+    if (isTerms) {
+      const { data: canManageTerms, error: permissionError } = await userClient.rpc("current_user_can", {
+        _capability: "clinic_terms.manage",
+        _clinic_id: clinicId,
+      });
+      if (permissionError) throw new Error(permissionError.message);
+      if (canManageTerms !== true) return json({ error: "Você não tem permissão para gerenciar termos desta clínica." }, 403);
+
+      const termType = body.termType === "minor_consent" ? "minor_consent" : "adult_consent";
+      const uploadId = crypto.randomUUID();
+      const filename = sanitizeFilename(originalFilename);
+      const objectKey = `clinics/${clinicId}/terms/${termType}_${Date.now()}-${filename}`;
+      const expiresIn = 900;
+      const uploadExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+
+      const uploadUrl = await createPresignedS3Url({
+        accessKeyId: b2KeyId,
+        bucket: bucketName,
+        endpoint: b2Endpoint,
+        expiresIn,
+        key: objectKey,
+        method: "PUT",
+        region: b2Region,
+        secretAccessKey: b2ApplicationKey,
+      });
+
+      return json({
+        bucket: bucketName,
+        contentType: storedContentType,
+        expiresIn,
+        headers: {
+          "content-type": storedContentType,
+          ...(storageEncoding ? { "content-encoding": storageEncoding } : {}),
+        },
+        objectKey,
+        uploadId,
+        uploadUrl,
+        uploadExpiresAt,
+      });
+    }
 
     const { data: canWrite, error: permissionError } = await userClient.rpc("current_user_can", {
       _capability: "patients.write",

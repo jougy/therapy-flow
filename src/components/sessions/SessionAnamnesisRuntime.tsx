@@ -15,6 +15,7 @@ import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
 import { SimpleListFieldInput } from "@/components/anamnesis/SimpleListFieldInput";
+import { CalculatedFieldRuntimeInput } from "@/components/anamnesis/CalculatedFieldRuntimeInput";
 import type { ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import type { GroupSuggestion } from "./types";
 import { Badge } from "@/components/ui/badge";
@@ -720,6 +721,20 @@ export const SessionAnamnesisRuntime = ({
             field={field}
             value={value}
             onChange={(next) => updateFormResponse(field.id, next)}
+            disabled={locked}
+          />
+        </div>
+      );
+    }
+
+    if (field.type === "calculated") {
+      return (
+        <div key={field.id} className="min-w-0">
+          <CalculatedFieldRuntimeInput
+            field={field}
+            value={value}
+            onChange={(next) => updateFormResponse(field.id, next as AnamnesisFormValue)}
+            allFormValues={anamnesisFormResponse}
             disabled={locked}
           />
         </div>

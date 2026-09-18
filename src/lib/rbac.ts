@@ -6,6 +6,8 @@ export type MembershipStatus = "invited" | "active" | "inactive" | "suspended";
 export type AccessCapability =
   | "clinic_profile.read"
   | "clinic_profile.manage"
+  | "clinic_terms.manage"
+  | "clinic_trash.manage"
   | "forms.read"
   | "forms.manage"
   | "subaccounts.read"
@@ -42,6 +44,8 @@ export type AccessCapability =
 export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "clinic_profile.read",
   "clinic_profile.manage",
+  "clinic_terms.manage",
+  "clinic_trash.manage",
   "forms.read",
   "forms.manage",
   "subaccounts.read",
@@ -88,6 +92,14 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
   "clinic_profile.manage": {
     description: "Pode editar dados institucionais, marca e preferências da clínica.",
     label: "Gerenciar perfil da clínica",
+  },
+  "clinic_terms.manage": {
+    description: "Pode personalizar e fazer upload dos termos de consentimento para adultos e menores.",
+    label: "Gerenciar termos da clínica",
+  },
+  "clinic_trash.manage": {
+    description: "Pode visualizar a lixeira da clínica, restaurar itens excluídos ou aguardar o expurgo automático de domingo.",
+    label: "Gerenciar lixeira e restauração",
   },
   "forms.read": {
     description: "Pode visualizar e consultar os modelos de formulários da clínica.",
@@ -245,6 +257,8 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
   switch (capability) {
     case "clinic_profile.read":
     case "clinic_profile.manage":
+    case "clinic_terms.manage":
+    case "clinic_trash.manage":
     case "forms.manage":
     case "treasury.read":
     case "treasury.manage":

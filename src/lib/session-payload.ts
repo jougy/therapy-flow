@@ -1,7 +1,7 @@
 import type { Database } from "@/integrations/supabase/types";
-import type { AnamnesisFormResponse } from "@/lib/anamnesis-forms";
+import type { AnamnesisFormResponse, AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import { sanitizeAnamnesisFormResponse } from "@/lib/anamnesis-forms";
-import { INPUT_LIMITS, sanitizeMultilineInput } from "@/lib/input-security";
+import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 import {
   normalizePaymentInstallments,
   normalizeSessionPaymentStatus,
@@ -125,6 +125,59 @@ export const parseOptionalDateInputValue = (value: string | null | undefined) =>
   return parsed.toISOString().slice(0, 10) === trimmed ? trimmed : null;
 };
 
+/**
+ * Extracts and sanitizes care line candidates from modular form fields
+ * that have `includeInGlobalDashboard: true` or `systemKey: "sintomas"`.
+ */
+export const extractDashboardCareLineItems = (
+  schema: AnamnesisTemplateSchema,
+  formResponse: AnamnesisFormResponse
+): string[] => {
+  const dashboardFields = schema.filter(
+    (f) => f.includeInGlobalDashboard || f.systemKey === "sintomas"
+  );
+  const items: string[] = [];
+
+  for (const field of dashboardFields) {
+    const fieldValue = formResponse[field.id];
+
+    if (Array.isArray(fieldValue)) {
+      for (const item of fieldValue) {
+        if (typeof item === "string") {
+          items.push(item);
+        } else if (item && typeof item === "object") {
+          const strCandidate =
+            (typeof (item as any).label === "string" ? (item as any).label : null) ??
+            (typeof (item as any).name === "string" ? (item as any).name : null) ??
+            (typeof (item as any).value === "string" ? (item as any).value : null);
+          if (strCandidate) items.push(strCandidate);
+        }
+      }
+    } else if (typeof fieldValue === "string" && fieldValue.trim()) {
+      if (field.type === "simple_list" || field.type === "tags") {
+        items.push(...fieldValue.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean));
+      } else {
+        items.push(fieldValue.trim());
+      }
+    }
+  }
+
+  const sanitizedList: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of items) {
+    const sanitized = sanitizeSingleLineInput(raw, INPUT_LIMITS.name).trim();
+    if (sanitized) {
+      const lower = sanitized.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        sanitizedList.push(sanitized);
+      }
+    }
+  }
+
+  return sanitizedList;
+};
+
 export const buildSessionPayload = ({
   clinicId,
   creatorUserId,
@@ -144,6 +197,16 @@ export const buildSessionPayload = ({
     amountPaidCents,
     requestedStatus: values.paymentStatus,
   });
+
+  const hasCareLineIdsArray = Array.isArray(values.careLineIds);
+  const resolvedCareLineIds = hasCareLineIdsArray
+    ? values.careLineIds!
+    : values.groupId
+    ? [values.groupId]
+    : [];
+  const resolvedGroupId = resolvedCareLineIds.length > 0
+    ? resolvedCareLineIds[0]
+    : (hasCareLineIdsArray ? null : (values.groupId || null));
 
   return {
     anamnesis_form_response: sanitizeAnamnesisFormResponse(values.anamnesisFormResponse),
@@ -166,7 +229,7 @@ export const buildSessionPayload = ({
     payment_status_date: parseOptionalDateInputValue(values.paymentStatusDate),
     status: statusOverride ?? values.status,
     notes: sanitizeMultilineInput(values.notes, INPUT_LIMITS.clinicalLongText).trim() || null,
-    group_id: (values.careLineIds && values.careLineIds.length > 0 ? values.careLineIds[0] : values.groupId) || null,
+    group_id: resolvedGroupId,
     provider_id: creatorUserId,
     parent_session_id: parentSessionId || null,
     evolution_group_id: evolutionGroupId || null,
@@ -174,7 +237,7 @@ export const buildSessionPayload = ({
       observacoes: sanitizeMultilineInput(values.observacoes, INPUT_LIMITS.clinicalLongText),
       queixa: sanitizeMultilineInput(values.queixa, INPUT_LIMITS.clinicalLongText),
       sintomas: sanitizeMultilineInput(values.sintomas, INPUT_LIMITS.clinicalLongText),
-      care_line_ids: values.careLineIds && values.careLineIds.length > 0 ? values.careLineIds : (values.groupId ? [values.groupId] : []),
+      care_line_ids: resolvedCareLineIds,
     },
     treatment: buildTreatmentPayload({
       blocks: values.treatmentBlocks,

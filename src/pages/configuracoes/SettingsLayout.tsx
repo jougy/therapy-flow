@@ -5,11 +5,13 @@ import {
   ChevronRight,
   ClipboardList,
   CreditCard,
+  FileText,
   MessageCircle,
   Pin,
   Settings,
   Shield,
   ShieldCheck,
+  Trash2,
   UserRound,
   UsersRound,
 } from "lucide-react";
@@ -106,6 +108,22 @@ export const SettingsLayout = () => {
         description: "Fichas de anamnese e templates clínicos.",
         icon: ClipboardList,
         path: `${basePath}/formularios`,
+        space: "clinic",
+      },
+      {
+        id: "termos",
+        title: "Termos da clínica",
+        description: "Consentimento de adultos, menores e normas clínicas.",
+        icon: FileText,
+        path: `${basePath}/termos`,
+        space: "clinic",
+      },
+      {
+        id: "lixeira",
+        title: "Lixeira",
+        description: "Itens excluídos e histórico recuperável até domingo.",
+        icon: Trash2,
+        path: `${basePath}/lixeira`,
         space: "clinic",
       }
     );

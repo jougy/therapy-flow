@@ -34,13 +34,30 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenuItem: ({
     children,
     onClick,
+    onSelect,
     disabled,
   }: {
     children: React.ReactNode;
     onClick?: () => void;
+    onSelect?: (e: any) => void;
     disabled?: boolean;
   }) => (
-    <button role="menuitem" onClick={disabled ? undefined : onClick} disabled={disabled}>
+    <button
+      role="menuitem"
+      onClick={
+        disabled
+          ? undefined
+          : (e) => {
+              if (onSelect) {
+                onSelect(e);
+              }
+              if (onClick) {
+                onClick();
+              }
+            }
+      }
+      disabled={disabled}
+    >
       {children}
     </button>
   ),
@@ -87,18 +104,24 @@ vi.mock("@/integrations/supabase/client", () => ({
         };
       }
       if (table === "feature_flags") {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            data: {
-              value: {
-                print_terms: {
-                  content: "Termos de teste de impressão e responsabilidade LGPD.",
-                },
+        const mockFlagResult = {
+          data: {
+            value: {
+              print_terms: {
+                content: "Termos de teste de impressão e responsabilidade LGPD.",
               },
             },
-          }),
+          },
+          error: null,
+        };
+        const queryMock: any = {
+          abortSignal: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue(mockFlagResult),
+          single: vi.fn().mockResolvedValue(mockFlagResult),
+        };
+        queryMock.eq = vi.fn().mockReturnValue(queryMock);
+        return {
+          select: vi.fn().mockReturnValue(queryMock),
         };
       }
       return {

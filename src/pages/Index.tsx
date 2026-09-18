@@ -9,6 +9,8 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import { createTrashToastAction } from "@/lib/trashUtils";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { useTutorial } from "@/contexts/TutorialContext";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
@@ -533,14 +535,21 @@ const Index = () => {
     optimisticDeleteSessions(ids);
     clearSelection();
 
-    const { error } = await supabase.from("sessions").delete().in("id", ids);
+    const { error } = await supabase.rpc("move_entity_to_trash", {
+      _entity_type: "sessions",
+      _entity_ids: ids,
+    });
 
     setBulkUpdating(false);
     if (error) {
-      toast({ title: "Erro ao excluir atendimentos", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao mover atendimentos para a lixeira", description: error.message, variant: "destructive" });
       if (clinicId) void invalidateClinicData(clinicId, ["sessions"]);
     } else {
-      toast({ title: "Atendimentos excluídos" });
+      toast({
+        title: "Atendimentos movidos para a lixeira",
+        description: "Os atendimentos foram enviados para a lixeira da clínica e podem ser restaurados até domingo.",
+        action: createTrashToastAction(effectiveClinicKey, navigate),
+      });
     }
   };
 

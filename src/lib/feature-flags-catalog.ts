@@ -261,6 +261,7 @@ export interface FormEditorFlagConfig {
     // Especiais
     table: boolean;
     address_block: boolean;
+    calculated: boolean;
   };
   properties: {
     required: boolean;
@@ -294,7 +295,7 @@ export interface FormEditorFlagConfig {
     design_section_color: boolean;
     design_color_palette: boolean;
     design_action_buttons: boolean;
-    // Opções de Lógica
+    // Opções de Regras (Lógica / Comportamento)
     logic_parent_section: boolean;
     logic_conditional_visibility: boolean;
   };
@@ -319,6 +320,7 @@ export const DEFAULT_FORM_EDITOR_FLAG_CONFIG: FormEditorFlagConfig = {
     radar_section: true,
     table: true,
     address_block: true,
+    calculated: true,
   },
   properties: {
     required: true,

@@ -2073,6 +2073,8 @@ BEGIN
       RETURN _operational_role IN ('owner', 'admin');
     WHEN 'clinic_profile.manage' THEN
       RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'clinic_terms.manage' THEN
+      RETURN _operational_role IN ('owner', 'admin');
     WHEN 'forms.read' THEN
       RETURN _operational_role IN ('owner', 'admin', 'professional');
     WHEN 'forms.manage' THEN
@@ -3802,6 +3804,64 @@ $$;
 
 
 ALTER FUNCTION "public"."get_clinic_share_collaborators"("_clinic_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_clinic_active_terms"("p_clinic_id" "uuid") RETURNS TABLE("term_type" "text", "is_custom" boolean, "id" "uuid", "clinic_id" "uuid", "original_filename" "text", "content_markdown" "text", "b2_object_key" "text", "byte_size" integer, "compressed_byte_size" integer, "storage_encoding" "text", "version" integer, "uploaded_by" "uuid", "created_at" timestamp with time zone, "updated_at" timestamp with time zone)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_has_access boolean := false;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Acesso não autenticado' USING ERRCODE = '42501';
+  END IF;
+
+  -- Checa se o usuário tem permissão para ler dados desta clínica
+  IF public.get_user_clinic_id(v_user_id) = p_clinic_id
+     OR public.is_platform_owner(v_user_id)
+     OR EXISTS (
+       SELECT 1 FROM public.clinic_memberships cm
+       WHERE cm.clinic_id = p_clinic_id
+         AND cm.user_id = v_user_id
+         AND cm.is_active = true
+         AND cm.membership_status = 'active'
+     ) THEN
+    v_has_access := true;
+  END IF;
+
+  IF NOT v_has_access THEN
+    RAISE EXCEPTION 'Acesso não autorizado para esta clínica' USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+  WITH requested_types AS (
+    SELECT unnest(ARRAY['adult_consent', 'minor_consent']) AS expected_type
+  )
+  SELECT
+    rt.expected_type AS term_type,
+    (ct.id IS NOT NULL) AS is_custom,
+    ct.id,
+    p_clinic_id AS clinic_id,
+    COALESCE(ct.original_filename, rt.expected_type || '_padrao.md') AS original_filename,
+    COALESCE(ct.content_markdown, '') AS content_markdown,
+    COALESCE(ct.b2_object_key, '') AS b2_object_key,
+    COALESCE(ct.byte_size, 0) AS byte_size,
+    COALESCE(ct.compressed_byte_size, 0) AS compressed_byte_size,
+    COALESCE(ct.storage_encoding, 'gzip') AS storage_encoding,
+    COALESCE(ct.version, 1) AS version,
+    ct.uploaded_by,
+    ct.created_at,
+    ct.updated_at
+  FROM requested_types rt
+  LEFT JOIN public.clinic_terms ct
+    ON ct.clinic_id = p_clinic_id
+   AND ct.term_type = rt.expected_type;
+END;
+$$;
+
+ALTER FUNCTION "public"."get_clinic_active_terms"("p_clinic_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."get_clinic_subscription_summary"("_clinic_id" "uuid") RETURNS TABLE("subscription_id" "uuid", "clinic_id" "uuid", "account_owner_user_id" "uuid", "plan_type" "public"."subscription_plan", "status" "text", "billing_cycle" "text", "payment_method" "text", "base_monthly_price" numeric, "total_recurring_monthly_price" numeric, "base_subaccount_limit" integer, "purchased_subaccount_extra_count" integer, "total_subaccount_limit" integer, "base_concurrent_access_count" integer, "additional_concurrent_access_count" integer, "total_concurrent_access_limit" integer, "next_due_date" "date", "current_period_start" timestamp with time zone, "current_period_end" timestamp with time zone, "expires_at" timestamp with time zone, "period_duration_days" integer, "auto_renew" boolean, "days_remaining" integer, "is_expired" boolean, "asaas_customer_id" "text", "asaas_subscription_id" "text", "applied_coupon_id" "uuid", "coupon_code" "text", "discount_percentage" numeric, "discount_fixed_amount" numeric, "trial_ends_at" timestamp with time zone, "override_reason" "text", "override_by_user_id" "uuid", "override_at" timestamp with time zone, "cpf_cnpj" "text", "billing_email" "text", "billing_name" "text")
@@ -10067,6 +10127,27 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_tags" (
 ALTER TABLE "public"."clinic_tags" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."clinic_terms" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "term_type" "text" NOT NULL,
+    "original_filename" "text" NOT NULL,
+    "content_markdown" "text" NOT NULL,
+    "b2_object_key" "text" NOT NULL,
+    "byte_size" integer DEFAULT 0 NOT NULL,
+    "compressed_byte_size" integer DEFAULT 0 NOT NULL,
+    "storage_encoding" "text" DEFAULT 'gzip'::"text" NOT NULL,
+    "version" integer DEFAULT 1 NOT NULL,
+    "uploaded_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "clinic_terms_term_type_check" CHECK (("term_type" = ANY (ARRAY['adult_consent'::"text", 'minor_consent'::"text"])))
+);
+
+
+ALTER TABLE "public"."clinic_terms" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."clinics" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "cnpj" "text" NOT NULL,
@@ -10968,6 +11049,16 @@ ALTER TABLE ONLY "public"."clinic_tags"
 
 
 
+ALTER TABLE ONLY "public"."clinic_terms"
+    ADD CONSTRAINT "clinic_terms_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."clinic_terms"
+    ADD CONSTRAINT "clinic_terms_clinic_type_unique" UNIQUE ("clinic_id", "term_type");
+
+
+
 ALTER TABLE ONLY "public"."clinics"
     ADD CONSTRAINT "clinics_pkey" PRIMARY KEY ("id");
 
@@ -11316,6 +11407,10 @@ CREATE INDEX "idx_clinic_subscriptions_clinic_id" ON "public"."clinic_subscripti
 
 
 CREATE INDEX "idx_clinic_subscriptions_coupon_code" ON "public"."clinic_subscriptions" USING "btree" ("coupon_code");
+
+
+
+CREATE INDEX "idx_clinic_terms_clinic_id" ON "public"."clinic_terms" USING "btree" ("clinic_id");
 
 
 
@@ -11755,6 +11850,10 @@ CREATE OR REPLACE TRIGGER "update_clinics_updated_at" BEFORE UPDATE ON "public".
 
 
 
+CREATE OR REPLACE TRIGGER "update_clinic_terms_updated_at" BEFORE UPDATE ON "public"."clinic_terms" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
 CREATE OR REPLACE TRIGGER "update_community_form_template_comments_updated_at" BEFORE UPDATE ON "public"."community_form_template_comments" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
@@ -11923,6 +12022,16 @@ ALTER TABLE ONLY "public"."clinic_tag_relations"
 
 ALTER TABLE ONLY "public"."clinic_tag_relations"
     ADD CONSTRAINT "clinic_tag_relations_tag_id_fkey" FOREIGN KEY ("tag_id") REFERENCES "public"."clinic_tags"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."clinic_terms"
+    ADD CONSTRAINT "clinic_terms_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."clinic_terms"
+    ADD CONSTRAINT "clinic_terms_uploaded_by_fkey" FOREIGN KEY ("uploaded_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
@@ -12355,7 +12464,7 @@ CREATE POLICY "Anyone authenticated can view governance rules" ON "public"."gove
 
 
 
-CREATE POLICY "Anyone authenticated can view published community templates" ON "public"."community_form_templates" FOR SELECT TO "authenticated" USING ((("is_published" = true) OR ("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")));
+CREATE POLICY "Anyone authenticated can view published community templates" ON "public"."community_form_templates" FOR SELECT TO "authenticated" USING ((("is_published" = true) OR ("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
 
 
@@ -12413,11 +12522,11 @@ CREATE POLICY "Authenticated users read release note items" ON "public"."platfor
 
 
 
-CREATE POLICY "Authors and super admins can delete own community templates" ON "public"."community_form_templates" FOR DELETE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")));
+CREATE POLICY "Authors, super admins and platform owners can delete community templates" ON "public"."community_form_templates" FOR DELETE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
 
 
-CREATE POLICY "Authors and super admins can update own community templates" ON "public"."community_form_templates" FOR UPDATE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"))) WITH CHECK ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")));
+CREATE POLICY "Authors, super admins and platform owners can update community templates" ON "public"."community_form_templates" FOR UPDATE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"()))) WITH CHECK ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
 
 
@@ -12613,6 +12722,10 @@ CREATE POLICY "Users delete clinic patients" ON "public"."patients" FOR DELETE T
 
 
 
+CREATE POLICY "Users delete clinic terms" ON "public"."clinic_terms" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
+
+
+
 CREATE POLICY "Users delete own app notifications" ON "public"."app_notifications" FOR DELETE USING (("user_id" = "auth"."uid"()));
 
 
@@ -12630,6 +12743,10 @@ CREATE POLICY "Users insert clinic session edit history" ON "public"."session_ed
 
 
 CREATE POLICY "Users insert clinic sessions" ON "public"."sessions" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('sessions.write'::"text", "clinic_id")));
+
+
+
+CREATE POLICY "Users insert clinic terms" ON "public"."clinic_terms" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
 
 
 
@@ -12688,6 +12805,10 @@ CREATE POLICY "Users read clinic sessions" ON "public"."sessions" FOR SELECT TO 
 
 
 
+CREATE POLICY "Users read clinic terms" ON "public"."clinic_terms" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('patients.read'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.read'::"text", "clinic_id"))));
+
+
+
 CREATE POLICY "Users read clinic_group_color_slots" ON "public"."clinic_group_color_slots" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.read'::"text", "clinic_id")));
 
 
@@ -12741,6 +12862,10 @@ CREATE POLICY "Users update clinic patients" ON "public"."patients" FOR UPDATE T
 
 
 CREATE POLICY "Users update clinic sessions" ON "public"."sessions" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('sessions.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('sessions.write'::"text", "clinic_id")));
+
+
+
+CREATE POLICY "Users update clinic terms" ON "public"."clinic_terms" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
 
 
 
@@ -12830,6 +12955,9 @@ ALTER TABLE "public"."clinic_tag_relations" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."clinic_tags" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."clinic_terms" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."clinics" ENABLE ROW LEVEL SECURITY;
@@ -13446,6 +13574,11 @@ GRANT ALL ON FUNCTION "public"."get_clinic_share_collaborators"("_clinic_id" "uu
 
 
 
+GRANT ALL ON FUNCTION "public"."get_clinic_active_terms"("p_clinic_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."get_clinic_active_terms"("p_clinic_id" "uuid") TO "authenticated";
+
+
+
 GRANT ALL ON FUNCTION "public"."get_clinic_subscription_summary"("_clinic_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."get_clinic_subscription_summary"("_clinic_id" "uuid") TO "authenticated";
 
@@ -14028,6 +14161,11 @@ GRANT ALL ON TABLE "public"."clinic_tag_relations" TO "service_role";
 GRANT ALL ON TABLE "public"."clinic_tags" TO "anon";
 GRANT ALL ON TABLE "public"."clinic_tags" TO "authenticated";
 GRANT ALL ON TABLE "public"."clinic_tags" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."clinic_terms" TO "authenticated";
+GRANT ALL ON TABLE "public"."clinic_terms" TO "service_role";
 
 
 
