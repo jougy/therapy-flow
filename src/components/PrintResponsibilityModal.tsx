@@ -35,12 +35,26 @@ export function sanitizeDocumentTitle(title?: string): string {
   if (!title || typeof title !== "string") {
     return "dados da plataforma";
   }
+
+  const sanitized = Array.from(title)
+    .map((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+
+      // Replace C0 controls, DEL, and C1 controls with spaces.
+      return (
+        codePoint <= 0x1f ||
+        (codePoint >= 0x7f && codePoint <= 0x9f)
+      )
+        ? " "
+        : character;
+    })
+    .join("");
+
   return (
-    title
-      .replace(/<[^>]*>/g, "") // Remove tags HTML para mitigar injeção/XSS
-      .replace(/[\\`*_{}[\]()#+\-.!<>]/g, "") // Remove marcadores de controle Markdown
-      .replace(/[\r\n\t\x00-\x1F\x7F-\x9F]/g, " ") // Remove caracteres de controle
-      .replace(/\s+/g, " ") // Normaliza espaços
+    sanitized
+      .replace(/<[^>]*>/g, "")
+      .replace(/[\\`*_{}[\]()#+\-.!<>]/g, "")
+      .replace(/\s+/g, " ")
       .trim()
       .slice(0, 100) || "dados da plataforma"
   );
