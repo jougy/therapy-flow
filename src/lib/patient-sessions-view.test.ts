@@ -5,6 +5,8 @@ import {
   canDeleteSelectedSessionsForRole,
   doesSessionMatchModularFilter,
   extractFilterableModularItems,
+  extractModularFieldsByFlag,
+  getSessionCareLineIds,
   groupSessionsByModularField,
   filterSessionsForOperationalRole,
   shouldAutoCompleteInternDraft,
@@ -475,6 +477,76 @@ describe("Modular Filter & Grouping Helpers", () => {
     expect(ombroGroup?.sessions).toHaveLength(2);
     expect(result.ungrouped).toHaveLength(1);
     expect(result.ungrouped[0].id).toBe("s3");
+  });
+
+  it("extracts modular fields by boolean flag like includeInGlobalDashboard, enableFilter, enableGrouping", () => {
+    const schemaA = [
+      { id: "f1", label: "Dor Principal", type: "text" as const, includeInGlobalDashboard: true },
+      { id: "f2", label: "Histórico Familiar", type: "text" as const, enableFilter: true },
+    ];
+    const schemaB = [
+      { id: "f1", label: "Dor Principal", type: "text" as const, includeInGlobalDashboard: true },
+      { id: "f3", label: "Queixas Secundárias", type: "simple_list" as const, includeInGlobalDashboard: true, enableGrouping: true },
+    ];
+
+    const dashboardFields = extractModularFieldsByFlag([schemaA, schemaB, null], "includeInGlobalDashboard");
+    expect(dashboardFields).toEqual([
+      { id: "f1", label: "Dor Principal" },
+      { id: "f3", label: "Queixas Secundárias" },
+    ]);
+
+    const groupingFields = extractModularFieldsByFlag([schemaA, schemaB], "enableGrouping");
+    expect(groupingFields).toEqual([
+      { id: "f3", label: "Queixas Secundárias" },
+    ]);
+  });
+});
+
+describe("getSessionCareLineIds backwards and forwards compatibility", () => {
+  it("returns empty array when anamnesis.care_line_ids is explicitly empty even if group_id is present", () => {
+    const session: SearchableSession = {
+      ...sessions[0],
+      group_id: "residual-group",
+      anamnesis: {
+        care_line_ids: [],
+      },
+    };
+
+    expect(getSessionCareLineIds(session)).toEqual([]);
+  });
+
+  it("returns all care line ids when anamnesis.care_line_ids has multiple ids", () => {
+    const session: SearchableSession = {
+      ...sessions[0],
+      group_id: "group-1",
+      anamnesis: {
+        care_line_ids: ["group-1", "group-2", "group-3"],
+      },
+    };
+
+    expect(getSessionCareLineIds(session)).toEqual(["group-1", "group-2", "group-3"]);
+  });
+
+  it("falls back to session.group_id for legacy sessions where care_line_ids is undefined", () => {
+    const session: SearchableSession = {
+      ...sessions[0],
+      group_id: "legacy-group-1",
+      anamnesis: {
+        queixa: "Dor no pescoço",
+      },
+    };
+
+    expect(getSessionCareLineIds(session)).toEqual(["legacy-group-1"]);
+  });
+
+  it("returns empty array for legacy sessions where care_line_ids is undefined and group_id is null", () => {
+    const session: SearchableSession = {
+      ...sessions[0],
+      group_id: null,
+      anamnesis: null,
+    };
+
+    expect(getSessionCareLineIds(session)).toEqual([]);
   });
 });
 

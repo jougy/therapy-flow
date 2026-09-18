@@ -16,7 +16,38 @@ export type AnamnesisFieldType =
   | "horizontal_section"
   | "section_selector"
   | "radar_section"
-  | "address_block";
+  | "address_block"
+  | "calculated";
+
+export interface CalculatedFieldVariable {
+  id: string;
+  name: string; // Ex: "A", "B"
+  label: string; // Ex: "Peso", "Altura"
+  unit?: string; // Ex: "kg", "cm"
+  sourceFieldId?: string; // Se preenchido, puxa o valor calculado de outro campo 'calculated'
+}
+
+export interface CalculatedFieldRange {
+  id: string;
+  min?: number;
+  max?: number;
+  label: string; // Ex: "Normal", "Sobrepeso"
+  color: string; // Hex ou nome: "blue", "green", "orange", "red", "purple"
+}
+
+export interface CalculatedFieldOutput {
+  id: string;
+  name: string; // Ex: "IMC", "Taxa Metabólica"
+  formula: string; // Ex: "A / ((B / 100) ^ 2)"
+  unit?: string; // Ex: "kg/m²"
+  precision?: number; // 0 a 4 casas decimais
+}
+
+export interface CalculatedFieldConfig {
+  variables: CalculatedFieldVariable[];
+  outputs: CalculatedFieldOutput[];
+  ranges?: CalculatedFieldRange[];
+}
 
 export interface AnamnesisFieldOption {
   id: string;
@@ -77,6 +108,12 @@ export interface AnamnesisField {
   accentAlpha?: number;
   tagMode?: "multiple" | "single";
   allowCustomTags?: boolean;
+  calculatedConfig?: CalculatedFieldConfig;
+}
+
+export interface CalculatedFieldResponseValue {
+  inputs?: Record<string, number | null>;
+  outputs?: Record<string, number | null>;
 }
 
 export type AnamnesisTemplateSchema = AnamnesisField[];
@@ -89,6 +126,7 @@ export type AnamnesisFormValue =
   | AnamnesisTableRow[]
   | AddressBlockValue
   | AnamnesisTagItem[]
+  | CalculatedFieldResponseValue
   | null;
 export type AnamnesisFormResponse = Record<string, AnamnesisFormValue>;
 export type AnamnesisTemplateExchangeKind = "base" | "template";
@@ -179,6 +217,73 @@ const sanitizeOption = (option: unknown, index: number, usedIds: Set<string>): A
   };
 };
 
+export const sanitizeCalculatedFieldConfig = (raw: unknown): CalculatedFieldConfig | undefined => {
+  if (!isPlainRecord(raw)) return undefined;
+
+  const rawVars = Array.isArray(raw.variables) ? raw.variables : [];
+  const variables: CalculatedFieldVariable[] = rawVars
+    .slice(0, 20)
+    .map((v, i) => {
+      const src = isPlainRecord(v) ? v : {};
+      const rawName = typeof src.name === "string" ? src.name : String.fromCharCode(65 + i);
+      // Mantém apenas letras alfanuméricas e underscore para o nome da variável
+      const name = sanitizeSingleLineInput(rawName, 10).replace(/[^a-zA-Z0-9_]/g, "").trim().toUpperCase() || String.fromCharCode(65 + i);
+      const label = sanitizeSingleLineInput(typeof src.label === "string" ? src.label : `Entrada ${name}`, INPUT_LIMITS.formFieldLabel).trim() || `Entrada ${name}`;
+      const unit = typeof src.unit === "string" && src.unit.trim() ? sanitizeSingleLineInput(src.unit, 20).trim() : undefined;
+      const sourceFieldId = typeof src.sourceFieldId === "string" && src.sourceFieldId.trim() ? sanitizeId(src.sourceFieldId, "") : undefined;
+      return {
+        id: typeof src.id === "string" && src.id.trim() ? sanitizeId(src.id, `var_${i}`) : `var_${i + 1}`,
+        name,
+        label,
+        ...(unit ? { unit } : {}),
+        ...(sourceFieldId ? { sourceFieldId } : {}),
+      };
+    });
+
+  const rawOutputs = Array.isArray(raw.outputs) ? raw.outputs : [];
+  const outputs: CalculatedFieldOutput[] = rawOutputs
+    .slice(0, 10)
+    .map((o, i) => {
+      const src = isPlainRecord(o) ? o : {};
+      const name = sanitizeSingleLineInput(typeof src.name === "string" ? src.name : `Resultado ${i + 1}`, INPUT_LIMITS.formFieldLabel).trim() || `Resultado ${i + 1}`;
+      // Sanitiza fórmula removendo caracteres de injeção e tags
+      const formula = sanitizeSingleLineInput(typeof src.formula === "string" ? src.formula : "0", 300).trim() || "0";
+      const unit = typeof src.unit === "string" && src.unit.trim() ? sanitizeSingleLineInput(src.unit, 20).trim() : undefined;
+      const precision = typeof src.precision === "number" && Number.isFinite(src.precision) ? clamp(Math.round(src.precision), 0, 4) : 2;
+      return {
+        id: typeof src.id === "string" && src.id.trim() ? sanitizeId(src.id, `out_${i}`) : `out_${i + 1}`,
+        name,
+        formula,
+        ...(unit ? { unit } : {}),
+        precision,
+      };
+    });
+
+  let ranges: CalculatedFieldRange[] | undefined;
+  if (Array.isArray(raw.ranges)) {
+    ranges = raw.ranges.slice(0, 20).map((r, i) => {
+      const src = isPlainRecord(r) ? r : {};
+      const min = typeof src.min === "number" && Number.isFinite(src.min) ? src.min : undefined;
+      const max = typeof src.max === "number" && Number.isFinite(src.max) ? src.max : undefined;
+      const label = sanitizeSingleLineInput(typeof src.label === "string" ? src.label : `Faixa ${i + 1}`, INPUT_LIMITS.formFieldLabel).trim() || `Faixa ${i + 1}`;
+      const color = typeof src.color === "string" && src.color.trim() ? sanitizeSingleLineInput(src.color, 30).trim() : "blue";
+      return {
+        id: typeof src.id === "string" && src.id.trim() ? sanitizeId(src.id, `range_${i}`) : `range_${i + 1}`,
+        ...(min !== undefined ? { min } : {}),
+        ...(max !== undefined ? { max } : {}),
+        label,
+        color,
+      };
+    });
+  }
+
+  return {
+    variables,
+    outputs,
+    ...(ranges && ranges.length > 0 ? { ranges } : {}),
+  };
+};
+
 export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: string }> = [
   { type: "short_text", label: "Texto curto" },
   { type: "long_text", label: "Texto longo" },
@@ -196,6 +301,7 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
   { type: "horizontal_section", label: "Seção horizontal" },
   { type: "section_selector", label: "Seletor de seções" },
   { type: "radar_section", label: "Polígono de Status" },
+  { type: "calculated", label: "Campos calculados" },
 ];
 
 export const ANAMNESIS_FIELD_TYPES = new Set<AnamnesisFieldType>(ANAMNESIS_FIELD_LIBRARY.map((field) => field.type));
@@ -373,6 +479,7 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         ...(rawAccentAlpha !== undefined ? { accentAlpha: rawAccentAlpha } : {}),
         ...(tagMode !== undefined ? { tagMode } : {}),
         ...(allowCustomTags !== undefined ? { allowCustomTags } : {}),
+        ...(type === "calculated" && source.calculatedConfig ? { calculatedConfig: sanitizeCalculatedFieldConfig(source.calculatedConfig) } : {}),
       };
     });
 
@@ -431,6 +538,7 @@ export const compactAnamnesisTemplateSchema = (schema: AnamnesisTemplateSchema):
     if (field.includeInGlobalDashboard) compact.includeInGlobalDashboard = true;
     if (field.enableFilter) compact.enableFilter = true;
     if (field.enableGrouping) compact.enableGrouping = true;
+    if (field.calculatedConfig) compact.calculatedConfig = field.calculatedConfig;
 
     return compact;
   });
@@ -504,22 +612,44 @@ export const sanitizeAnamnesisFormResponse = (response: AnamnesisFormResponse): 
         }
 
         if (value && typeof value === "object" && !Array.isArray(value)) {
-          const rec = value as AddressBlockValue;
+          const rec = value as Record<string, unknown>;
+
+          // Calculated field response ({ inputs, outputs })
+          if ("inputs" in rec || "outputs" in rec) {
+            const rawInputs = isPlainRecord(rec.inputs) ? rec.inputs : {};
+            const rawOutputs = isPlainRecord(rec.outputs) ? rec.outputs : {};
+
+            const sanitizedInputs: Record<string, number | null> = {};
+            for (const [k, v] of Object.entries(rawInputs)) {
+              sanitizedInputs[sanitizeSingleLineInput(k, 10).toUpperCase()] =
+                typeof v === "number" && Number.isFinite(v) ? v : null;
+            }
+
+            const sanitizedOutputs: Record<string, number | null> = {};
+            for (const [k, v] of Object.entries(rawOutputs)) {
+              sanitizedOutputs[sanitizeSingleLineInput(k, 50)] =
+                typeof v === "number" && Number.isFinite(v) ? v : null;
+            }
+
+            return [safeFieldId, { inputs: sanitizedInputs, outputs: sanitizedOutputs }];
+          }
+
+          const addrRec = value as AddressBlockValue;
           const sanitizedAddress: AddressBlockValue = {
-            cep: rec.cep ? sanitizeSingleLineInput(String(rec.cep), 20).trim() : "",
-            state: rec.state ? sanitizeSingleLineInput(String(rec.state), 10).trim().toUpperCase() : "",
-            city: rec.city ? sanitizeSingleLineInput(String(rec.city), 100).trim() : "",
-            neighborhood: rec.neighborhood ? sanitizeSingleLineInput(String(rec.neighborhood), 100).trim() : "",
-            street: rec.street ? sanitizeSingleLineInput(String(rec.street), 200).trim() : "",
-            number: rec.number ? sanitizeSingleLineInput(String(rec.number), 50).trim() : "",
-            complement: rec.complement ? sanitizeSingleLineInput(String(rec.complement), 100).trim() : "",
-            locationType: rec.locationType === "clinic" || rec.locationType === "home_visit" ? rec.locationType : "custom",
-            clinicId: rec.clinicId ? sanitizeId(String(rec.clinicId), "clinic") : null,
-            clinicName: rec.clinicName ? sanitizeSingleLineInput(String(rec.clinicName), 100).trim() : undefined,
-            latitude: typeof rec.latitude === "number" && Number.isFinite(rec.latitude) ? rec.latitude : null,
-            longitude: typeof rec.longitude === "number" && Number.isFinite(rec.longitude) ? rec.longitude : null,
-            accuracy: typeof rec.accuracy === "number" && Number.isFinite(rec.accuracy) ? rec.accuracy : null,
-            capturedAt: rec.capturedAt ? sanitizeSingleLineInput(String(rec.capturedAt), 50).trim() : null,
+            cep: addrRec.cep ? sanitizeSingleLineInput(String(addrRec.cep), 20).trim() : "",
+            state: addrRec.state ? sanitizeSingleLineInput(String(addrRec.state), 10).trim().toUpperCase() : "",
+            city: addrRec.city ? sanitizeSingleLineInput(String(addrRec.city), 100).trim() : "",
+            neighborhood: addrRec.neighborhood ? sanitizeSingleLineInput(String(addrRec.neighborhood), 100).trim() : "",
+            street: addrRec.street ? sanitizeSingleLineInput(String(addrRec.street), 200).trim() : "",
+            number: addrRec.number ? sanitizeSingleLineInput(String(addrRec.number), 50).trim() : "",
+            complement: addrRec.complement ? sanitizeSingleLineInput(String(addrRec.complement), 100).trim() : "",
+            locationType: addrRec.locationType === "clinic" || addrRec.locationType === "home_visit" ? addrRec.locationType : "custom",
+            clinicId: addrRec.clinicId ? sanitizeId(String(addrRec.clinicId), "clinic") : null,
+            clinicName: addrRec.clinicName ? sanitizeSingleLineInput(String(addrRec.clinicName), 100).trim() : undefined,
+            latitude: typeof addrRec.latitude === "number" && Number.isFinite(addrRec.latitude) ? addrRec.latitude : null,
+            longitude: typeof addrRec.longitude === "number" && Number.isFinite(addrRec.longitude) ? addrRec.longitude : null,
+            accuracy: typeof addrRec.accuracy === "number" && Number.isFinite(addrRec.accuracy) ? addrRec.accuracy : null,
+            capturedAt: addrRec.capturedAt ? sanitizeSingleLineInput(String(addrRec.capturedAt), 50).trim() : null,
           };
           return [safeFieldId, sanitizedAddress];
         }
@@ -776,6 +906,29 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
           : type === "radar_section"
             ? "Gráfico de radar com sliders e métricas multidimensionais."
             : "Texto introdutório da seção.",
+    };
+  }
+
+  if (type === "calculated") {
+    return {
+      ...baseField,
+      label: "Campos calculados",
+      calculatedConfig: {
+        variables: [
+          { id: `var_${Date.now()}_1`, name: "A", label: "Entrada A", unit: "" },
+          { id: `var_${Date.now()}_2`, name: "B", label: "Entrada B", unit: "" },
+        ],
+        outputs: [
+          {
+            id: `out_${Date.now()}_1`,
+            name: "Resultado",
+            formula: "A + B",
+            unit: "",
+            precision: 2,
+          },
+        ],
+        ranges: [],
+      },
     };
   }
 

@@ -270,6 +270,26 @@ export const ROLE_PERMISSION_ITEMS: RolePermissionItem[] = [
   },
   {
     category: "admin",
+    key: "clinic-terms",
+    title: "Termos da clínica",
+    description: "Personalização e upload dos termos de consentimento para adultos e menores.",
+    details: "Controla a parametrização dos termos de consentimento livre e esclarecido (TCLE) da clínica.",
+    actions: [
+      { kind: "manage", capability: "clinic_terms.manage", label: "Gerenciar" },
+    ],
+  },
+  {
+    category: "admin",
+    key: "clinic-trash",
+    title: "Lixeira e restauração",
+    description: "Visualização e restauração de atendimentos, pacientes e formulários excluídos.",
+    details: "Controla a recuperação de itens na lixeira da clínica antes do expurgo automático semanal.",
+    actions: [
+      { kind: "manage", capability: "clinic_trash.manage", label: "Gerenciar" },
+    ],
+  },
+  {
+    category: "admin",
     key: "system-print",
     title: "Impressão & Documentos físicos",
     description: "Exportação e impressão física de fichas, declarações e prontuários.",

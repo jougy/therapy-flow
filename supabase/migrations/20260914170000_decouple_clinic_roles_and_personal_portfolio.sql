@@ -250,6 +250,7 @@ GRANT EXECUTE ON FUNCTION public.pseudonymize_patient_name(text) TO authenticate
 --    Retorna exclusivamente os atendimentos e evoluções do próprio profissional,
 --    com PII sanitizado, dados de faturamento/cobrança omitidos e LGPD preservada.
 -- ==============================================================================
+DROP FUNCTION IF EXISTS public.get_personal_professional_sessions_portfolio(text, uuid, integer, integer);
 CREATE OR REPLACE FUNCTION public.get_personal_professional_sessions_portfolio(
   _query text DEFAULT NULL,
   _clinic_id uuid DEFAULT NULL,

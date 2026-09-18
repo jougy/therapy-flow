@@ -25,6 +25,8 @@ import { usePatientSummary } from "@/hooks/usePatientSummary";
 import { usePatientClinicalVersions } from "@/hooks/usePatientClinicalVersions";
 import { PacienteResumoSkeleton } from "@/components/patients/PacienteResumoSkeleton";
 import { SharePatientRegistrationModal } from "@/components/patients/SharePatientRegistrationModal";
+import { PrintAdultConsentModal } from "@/components/patients/PrintAdultConsentModal";
+import { PrintGuardianConsentModal } from "@/components/patients/PrintGuardianConsentModal";
 import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
 import { PatientRegistrationPrintView } from "@/components/patients/PatientRegistrationPrintView";
 import {
@@ -53,6 +55,8 @@ const PacienteResumo = () => {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [selectedClinicalHistoryIndex, setSelectedClinicalHistoryIndex] = useState(0);
   const [showPrintResponsibilityModal, setShowPrintResponsibilityModal] = useState(false);
+  const [showPrintAdultConsentModal, setShowPrintAdultConsentModal] = useState(false);
+  const [showPrintGuardianConsentModal, setShowPrintGuardianConsentModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
 
   // React Query otimizado
@@ -211,6 +215,8 @@ const PacienteResumo = () => {
         onEdit={() => navigate(getClinicPatientPath(targetClinicKey, patient, "cadastro"))}
         onShare={() => setShareDialogOpen(true)}
         onPrint={() => setShowPrintResponsibilityModal(true)}
+        onPrintAdultTerms={() => setShowPrintAdultConsentModal(true)}
+        onPrintGuardianTerms={() => setShowPrintGuardianConsentModal(true)}
         onExportJson={handleExportJson}
       />
 
@@ -308,6 +314,27 @@ const PacienteResumo = () => {
         onConfirm={handleExecutePrint}
         onCancel={() => setShowPrintResponsibilityModal(false)}
         documentTitle={`cadastro completo do paciente ${patient.name}`}
+      />
+
+      {/* Modal de Impressão do Termo de Consentimento Adulto (TCLE) */}
+      <PrintAdultConsentModal
+        open={showPrintAdultConsentModal}
+        onOpenChange={setShowPrintAdultConsentModal}
+        patient={patient}
+        clinicId={clinicId}
+        clinicName={clinic?.name}
+      />
+
+      {/* Modal de Impressão da Permissão dos Pais (Menor de Idade) */}
+      <PrintGuardianConsentModal
+        open={showPrintGuardianConsentModal}
+        onOpenChange={setShowPrintGuardianConsentModal}
+        patient={patient}
+        clinicId={clinicId}
+        clinicName={clinic?.name}
+        onPrinted={() => {
+          void refetch();
+        }}
       />
     </motion.div>
   );

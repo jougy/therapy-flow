@@ -6,6 +6,8 @@ import { ClinicTeamSection } from "./sections/ClinicTeamSection";
 import { ClinicSecuritySection } from "./sections/ClinicSecuritySection";
 import { ClinicBillingSection } from "./sections/ClinicBillingSection";
 import { ClinicFormsSection } from "./sections/ClinicFormsSection";
+import { ClinicTermsSection } from "./sections/ClinicTermsSection";
+import { ClinicTrashSection } from "./sections/ClinicTrashSection";
 import { PersonalProfileSection } from "./sections/PersonalProfileSection";
 import { PersonalSecuritySection } from "./sections/PersonalSecuritySection";
 import { PersonalNotificationsSection } from "./sections/PersonalNotificationsSection";
@@ -18,6 +20,8 @@ export {
   ClinicSecuritySection,
   ClinicBillingSection,
   ClinicFormsSection,
+  ClinicTermsSection,
+  ClinicTrashSection,
   PersonalProfileSection,
   PersonalSecuritySection,
   PersonalNotificationsSection,
@@ -69,6 +73,12 @@ export const ConfiguracoesLegacyRedirect = () => {
   }
   if (secao === "forms") {
     return <Navigate to={`${basePath}/formularios`} replace />;
+  }
+  if (secao === "terms" || secao === "termos" || secao === "clinic-terms") {
+    return <Navigate to={`${basePath}/termos`} replace />;
+  }
+  if (secao === "trash" || secao === "lixeira") {
+    return <Navigate to={`${basePath}/lixeira`} replace />;
   }
   if (secao === "personal-security") {
     return <Navigate to={`${basePath}/pessoal/seguranca`} replace />;

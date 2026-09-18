@@ -62,8 +62,10 @@ describe("hasCapability", () => {
   it("grants admin operational management but not billing ownership", () => {
     expect(hasCapability(adminContext, "clinic_profile.read")).toBe(true);
     expect(hasCapability(adminContext, "clinic_profile.manage")).toBe(true);
+    expect(hasCapability(adminContext, "clinic_terms.manage")).toBe(true);
     expect(hasCapability(adminContext, "forms.read")).toBe(true);
     expect(hasCapability(adminContext, "forms.manage")).toBe(true);
+    expect(hasCapability(adminContext, "clinic_trash.manage")).toBe(true);
     expect(hasCapability(adminContext, "treasury.read")).toBe(true);
     expect(hasCapability(adminContext, "treasury.manage")).toBe(true);
     expect(hasCapability(adminContext, "subscription_billing.read")).toBe(false);
@@ -79,6 +81,7 @@ describe("hasCapability", () => {
     expect(hasCapability(professionalContext, "patients_groups.read")).toBe(true);
     expect(hasCapability(professionalContext, "forms.read")).toBe(true);
     expect(hasCapability(professionalContext, "forms.manage")).toBe(false);
+    expect(hasCapability(professionalContext, "clinic_terms.manage")).toBe(false);
     expect(hasCapability(professionalContext, "treasury.read")).toBe(false);
     expect(hasCapability(professionalContext, "treasury.manage")).toBe(false);
     expect(hasCapability(professionalContext, "schedule.read_all")).toBe(false);

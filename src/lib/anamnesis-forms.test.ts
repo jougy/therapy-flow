@@ -626,4 +626,69 @@ describe("anamnesis forms helpers", () => {
       "Espasmo Muscular",
     ]);
   });
+
+  it("sanitizes calculated field schema with variables, formulas, ranges and strips invalid identifiers", () => {
+    const rawSchema = [
+      {
+        id: "field_calc",
+        label: "Cálculo de IMC e Composição",
+        type: "calculated",
+        calculatedConfig: {
+          variables: [
+            { id: "var_1", name: "A-peso!$", label: "Peso Corporal", unit: "kg" },
+            { id: "var_2", name: "B", label: "Altura", unit: "cm" },
+          ],
+          outputs: [
+            {
+              id: "out_1",
+              name: "IMC",
+              formula: "A / ((B / 100) ^ 2)",
+              precision: 2,
+            },
+          ],
+          ranges: [
+            { id: "range_1", min: 0, max: 24.9, label: "Normal", color: "emerald" },
+          ],
+        },
+      },
+    ];
+
+    const sanitized = sanitizeAnamnesisTemplateSchema(rawSchema);
+    expect(sanitized[0].type).toBe("calculated");
+    expect(sanitized[0].calculatedConfig?.variables[0].name).toBe("APESO"); // Caracteres especiais removidos e maiúsculas
+    expect(sanitized[0].calculatedConfig?.outputs[0].precision).toBe(2);
+
+    const compacted = compactAnamnesisTemplateSchema(sanitized);
+    expect((compacted[0] as Record<string, unknown>).calculatedConfig).toBeDefined();
+
+    const reExpanded = sanitizeAnamnesisTemplateSchema(compacted);
+    expect(reExpanded).toEqual(sanitized);
+  });
+
+  it("sanitizes anamnesis form response for calculated fields cleanly", () => {
+    const response = {
+      calc_result: {
+        inputs: {
+          a: 80,
+          b: 180,
+          invalid: "string_value",
+        },
+        outputs: {
+          imc: 24.69,
+        },
+      },
+    };
+
+    const sanitized = sanitizeAnamnesisFormResponse(response);
+    expect(sanitized.calc_result).toEqual({
+      inputs: {
+        A: 80,
+        B: 180,
+        INVALID: null,
+      },
+      outputs: {
+        imc: 24.69,
+      },
+    });
+  });
 });

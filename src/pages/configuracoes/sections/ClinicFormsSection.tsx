@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import { createTrashToastAction } from "@/lib/trashUtils";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -466,13 +468,24 @@ export const ClinicFormsSection = () => {
     if (!deletingId) return;
     setIsDeleting(true);
     try {
-      const { error } = await supabase
-        .from("anamnesis_form_templates")
-        .update({ is_active: false })
-        .eq("id", deletingId);
-      if (error) throw error;
+      const { error } = await supabase.rpc("move_entity_to_trash", {
+        _entity_type: "forms",
+        _entity_ids: [deletingId],
+      });
+      if (error) {
+        // Fallback para update se RPC não estiver disponível
+        const { error: fallbackError } = await supabase
+          .from("anamnesis_form_templates")
+          .update({ is_active: false, deleted_at: new Date().toISOString() })
+          .eq("id", deletingId);
+        if (fallbackError) throw fallbackError;
+      }
       if (selectedTemplateId === deletingId) setSelectedTemplateId(null);
-      toast({ title: "Ficha removida", description: "A ficha complementar foi desativada com sucesso." });
+      toast({
+        title: "Modelo movido para a lixeira",
+        description: "A ficha complementar foi enviada para a lixeira e pode ser restaurada até domingo.",
+        action: createTrashToastAction(clinicKey, navigate),
+      });
       await loadData();
     } catch (err) {
       toast({
@@ -485,7 +498,7 @@ export const ClinicFormsSection = () => {
       setDeleteDialogOpen(false);
       setDeletingId(null);
     }
-  }, [deletingId, selectedTemplateId, loadData]);
+  }, [deletingId, selectedTemplateId, clinicKey, navigate, loadData]);
 
   // ---- Render loading ------------------------------------------------------
 

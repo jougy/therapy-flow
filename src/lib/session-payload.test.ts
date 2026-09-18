@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSessionPayload,
+  extractDashboardCareLineItems,
   formatDateTimeForInput,
   isSessionDateTimeInputValid,
   parseDateTimeInputValue,
@@ -260,5 +261,175 @@ describe("buildSessionPayload", () => {
     expect(payload.payment_status).toBe("cortesia");
     expect(payload.payment_installments).toBe(1);
     expect(payload.payment_method).toBe("cortesia");
+  });
+
+  describe("careLineIds & groupId persistence integrity", () => {
+    const baseFormValues = {
+      amountCharged: "100",
+      amountOriginal: "100",
+      amountPaid: "0",
+      anamnesisFormResponse: {},
+      anamnesisTemplateId: null,
+      complexityScore: 1,
+      notes: "",
+      observacoes: "",
+      painScore: 2,
+      patientArrivedAt: "",
+      paymentAdjustmentReason: "",
+      paymentInstallments: 1,
+      paymentMethod: "pix" as const,
+      paymentStatusDate: "",
+      paymentStatus: "pendente" as const,
+      queixa: "",
+      scheduledStartAt: "",
+      sintomas: "",
+      status: "rascunho",
+      treatmentBlocks: [],
+      treatmentGeneralGuidance: "",
+    };
+
+    it("persists null group_id and empty array when careLineIds is empty even if groupId has residual value", () => {
+      const payload = buildSessionPayload({
+        clinicId: "clinic-1",
+        patientId: "patient-1",
+        creatorUserId: "creator-123",
+        values: {
+          ...baseFormValues,
+          careLineIds: [],
+          groupId: "residual-group-id",
+        },
+      });
+
+      expect(payload.group_id).toBeNull();
+      const anamnesis = payload.anamnesis as { care_line_ids: string[] };
+      expect(anamnesis.care_line_ids).toEqual([]);
+    });
+
+    it("persists first careLineId as group_id and full array in anamnesis when multiple care lines are selected", () => {
+      const payload = buildSessionPayload({
+        clinicId: "clinic-1",
+        patientId: "patient-1",
+        creatorUserId: "creator-123",
+        values: {
+          ...baseFormValues,
+          careLineIds: ["group-alpha", "group-beta"],
+          groupId: null,
+        },
+      });
+
+      expect(payload.group_id).toBe("group-alpha");
+      const anamnesis = payload.anamnesis as { care_line_ids: string[] };
+      expect(anamnesis.care_line_ids).toEqual(["group-alpha", "group-beta"]);
+    });
+
+    it("maintains backward compatibility for legacy callers with careLineIds undefined and groupId present", () => {
+      const payload = buildSessionPayload({
+        clinicId: "clinic-1",
+        patientId: "patient-1",
+        creatorUserId: "creator-123",
+        values: {
+          ...baseFormValues,
+          groupId: "legacy-group-1",
+        },
+      });
+
+      expect(payload.group_id).toBe("legacy-group-1");
+      const anamnesis = payload.anamnesis as { care_line_ids: string[] };
+      expect(anamnesis.care_line_ids).toEqual(["legacy-group-1"]);
+    });
+
+    it("persists null group_id and empty array when both careLineIds and groupId are omitted or null", () => {
+      const payload = buildSessionPayload({
+        clinicId: "clinic-1",
+        patientId: "patient-1",
+        creatorUserId: "creator-123",
+        values: {
+          ...baseFormValues,
+          groupId: null,
+        },
+      });
+
+      expect(payload.group_id).toBeNull();
+      const anamnesis = payload.anamnesis as { care_line_ids: string[] };
+      expect(anamnesis.care_line_ids).toEqual([]);
+    });
+  });
+
+  describe("extractDashboardCareLineItems", () => {
+    it("extracts items from fields with includeInGlobalDashboard or systemKey sintomas", () => {
+      const schema = [
+        {
+          id: "field-1",
+          label: "Sintomas Gerais",
+          type: "tags" as const,
+          includeInGlobalDashboard: false,
+          systemKey: "sintomas" as const,
+        },
+        {
+          id: "field-2",
+          label: "Diagnósticos Secundários",
+          type: "simple_list" as const,
+          includeInGlobalDashboard: true,
+        },
+        {
+          id: "field-3",
+          label: "Observações Internas",
+          type: "long_text" as const,
+          includeInGlobalDashboard: false,
+        },
+      ];
+
+      const formResponse = {
+        "field-1": ["Lombalgia Crônica", "Cervicalgia"],
+        "field-2": "Tendinite\nFascite Plantar",
+        "field-3": "Nota privada que não deve entrar como linha de cuidado",
+      };
+
+      const extracted = extractDashboardCareLineItems(schema, formResponse);
+
+      expect(extracted).toEqual([
+        "Lombalgia Crônica",
+        "Cervicalgia",
+        "Tendinite",
+        "Fascite Plantar",
+      ]);
+    });
+
+    it("handles object structures inside array items and trims empty strings", () => {
+      const schema = [
+        {
+          id: "field-complex",
+          label: "Linhas Selecionadas",
+          type: "checklist" as const,
+          includeInGlobalDashboard: true,
+        },
+      ];
+
+      const formResponse = {
+        "field-complex": [
+          { label: "Ombro Congelado" },
+          { name: "Epicondilite" },
+          { value: "Bursite" },
+          "  ",
+        ],
+      };
+
+      const extracted = extractDashboardCareLineItems(schema, formResponse);
+
+      expect(extracted).toEqual(["Ombro Congelado", "Epicondilite", "Bursite"]);
+    });
+
+    it("returns empty array when no fields match dashboard criteria or response is empty", () => {
+      const schema = [
+        {
+          id: "field-plain",
+          label: "Nota",
+          type: "short_text" as const,
+          includeInGlobalDashboard: false,
+        },
+      ];
+
+      expect(extractDashboardCareLineItems(schema, {})).toEqual([]);
+    });
   });
 });

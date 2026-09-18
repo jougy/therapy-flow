@@ -39,6 +39,7 @@ import {
   Grid,
   FolderTree,
   Eye,
+  Calculator,
 } from "lucide-react";
 import type { FormEditorFlagConfig } from "@/lib/feature-flags-catalog";
 
@@ -63,7 +64,7 @@ export interface MenuOptionsGroupConfig {
   items: ConfigItem<keyof FormEditorFlagConfig["options"]>[];
 }
 
-export const TOTAL_FORM_COMPONENTS = 16;
+export const TOTAL_FORM_COMPONENTS = 17;
 export const TOTAL_FIELD_PROPERTIES = 5;
 export const TOTAL_EDITOR_MENUS = 6;
 export const TOTAL_MENU_OPTIONS = 15;
@@ -103,6 +104,7 @@ export const COMPONENT_CATEGORIES_CONFIG: readonly ComponentCategoryConfig[] = [
     items: [
       { key: "table", label: "Tabela", desc: "Grade de colunas personalizadas", icon: Table },
       { key: "address_block", label: "Bloco de Endereço", desc: "CEP, logradouro e GPS", icon: MapPin },
+      { key: "calculated", label: "Campos calculados", desc: "Fórmulas matemáticas e classificações clínicas", icon: Calculator },
     ],
   },
 ] as const;
@@ -173,9 +175,9 @@ export const EDITOR_MENUS_CONFIG: readonly ConfigItem<keyof FormEditorFlagConfig
   },
   {
     key: "logic",
-    label: "Sub-aba Lógica",
-    desc: "Regras de aninhamento em contêineres e visibilidade condicional.",
-    icon: GitBranch,
+    label: "Sub-aba Regras",
+    desc: "Comportamento clínico (obrigatoriedade, resumo, dashboard, filtros, agrupamento), aninhamento e visibilidade condicional.",
+    icon: SlidersHorizontal,
   },
 ] as const;
 
@@ -212,8 +214,8 @@ export const MENU_OPTIONS_GROUPS_CONFIG: readonly MenuOptionsGroupConfig[] = [
     ],
   },
   {
-    groupName: "Opções de Lógica",
-    icon: GitBranch,
+    groupName: "Opções de Regras",
+    icon: SlidersHorizontal,
     items: [
       { key: "logic_parent_section", label: "Seção pai", desc: "Seleção do contêiner ou seção pai que engloba o campo.", icon: FolderTree },
       { key: "logic_conditional_visibility", label: "Visibilidade condicional", desc: "Configuração de exibição condicionada ao Seletor de Seções.", icon: Eye },

@@ -47,6 +47,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { useTelemetry } from "@/hooks/useTelemetry";
 import { toast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import { createTrashToastAction } from "@/lib/trashUtils";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { fetchPatientByRef, getPatientRouteKey, getClinicPatientPath, getPatientPath } from "@/lib/patient-routing";
 import {
@@ -1605,18 +1607,23 @@ const PacienteDetalhe = () => {
     }
 
     setDeletingPatient(true);
-    const { error } = await supabase
-      .from("patients")
-      .delete()
-      .eq("id", patient.id);
+    const { error } = await supabase.rpc("move_entity_to_trash", {
+      _entity_type: "patients",
+      _entity_ids: [patient.id],
+    });
 
     if (error) {
-      toast({ title: "Erro ao excluir paciente", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao mover paciente para a lixeira", description: error.message, variant: "destructive" });
       setDeletingPatient(false);
       return;
     }
 
-    toast({ title: "Paciente excluído" });
+    const effectiveClinicKey = clinic?.route_key || clinicKey;
+    toast({
+      title: "Paciente movido para a lixeira",
+      description: "O paciente e seus dados foram enviados para a lixeira da clínica e podem ser restaurados até domingo.",
+      action: createTrashToastAction(effectiveClinicKey, navigate),
+    });
     setDeletePatientDialogOpen(false);
     setDeletingPatient(false);
     navigate(clinicHomePath, {
@@ -2247,16 +2254,25 @@ const PacienteDetalhe = () => {
     }
 
     optimisticDeleteSessions(selectedSessionIds);
+    const sessionIdsToDelete = [...selectedSessionIds];
     handleExitSelectionMode();
 
     setBulkUpdating(true);
-    const { error } = await supabase.from("sessions").delete().in("id", selectedSessionIds);
+    const { error } = await supabase.rpc("move_entity_to_trash", {
+      _entity_type: "sessions",
+      _entity_ids: sessionIdsToDelete,
+    });
 
     if (error) {
-      toast({ title: "Erro ao excluir atendimentos", description: error.message, variant: "destructive" });
+      toast({ title: "Erro ao mover atendimentos para a lixeira", description: error.message, variant: "destructive" });
       if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
     } else {
-      toast({ title: "Atendimentos excluídos" });
+      const effectiveClinicKey = clinic?.route_key || clinicKey;
+      toast({
+        title: "Atendimentos movidos para a lixeira",
+        description: "Os atendimentos foram enviados para a lixeira da clínica e podem ser restaurados até domingo.",
+        action: createTrashToastAction(effectiveClinicKey, navigate),
+      });
     }
     setBulkUpdating(false);
   };
@@ -2884,6 +2900,10 @@ const PacienteDetalhe = () => {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setShowPrintRegistrationModal(true);
+                  }}
                   onClick={() => setShowPrintRegistrationModal(true)}
                   disabled={!canPrint}
                   className="cursor-pointer"
@@ -3920,10 +3940,10 @@ const PacienteDetalhe = () => {
       <Dialog open={deletePatientDialogOpen} onOpenChange={setDeletePatientDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir paciente?</DialogTitle>
+            <DialogTitle>Mover paciente para a lixeira?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Essa ação apaga o paciente definitivamente, junto com grupos e atendimentos vinculados. Não dá para desfazer.
+            O paciente e seus atendimentos serão movidos para a lixeira da clínica e podem ser restaurados até o próximo domingo às 23:59. Após essa data, o expurgo definitivo é executado automaticamente.
           </p>
           <DialogFooter>
             <DialogClose asChild>

@@ -18,6 +18,7 @@ import {
   FileCheck,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import defaultAdultTermsMarkdown from "@/assets/adult-terms-of-consent.md?raw";
 import defaultMinorTermsMarkdown from "@/assets/minor-terms-of-responsibility.md?raw";
 import defaultPrintTermsMarkdown from "@/assets/print-terms-of-responsibility.md?raw";
 
@@ -33,13 +34,14 @@ export interface TermsConfigPayload {
   owner_intl?: TermsDocItem;
   user_intl?: TermsDocItem;
   print_terms?: TermsDocItem;
+  adult_terms?: TermsDocItem;
   minor_terms?: TermsDocItem;
   minor_consent?: TermsDocItem;
   publishedVersion?: string;
   publishedAt?: string;
 }
 
-export type DocTypeKey = "owner_br" | "user_br" | "owner_intl" | "user_intl" | "print_terms" | "minor_terms";
+export type DocTypeKey = "owner_br" | "user_br" | "owner_intl" | "user_intl" | "print_terms" | "adult_terms" | "minor_terms";
 
 interface TermsConfigModalProps {
   isOpen: boolean;
@@ -96,6 +98,17 @@ export const DOC_TYPES: Array<{
     },
   },
   {
+    key: "adult_terms",
+    label: "Termo de Consentimento Livre e Esclarecido (Adultos)",
+    badge: "PT-BR | Adultos",
+    description: "Termo de consentimento (TCLE), conformidade com a LGPD (Arts. 7º e 11) e normas de saúde (CFM 1.821/2007) para pacientes adultos.",
+    icon: FileText,
+    defaultFallback: {
+      filename: "adult-terms-of-consent.md (Padrão)",
+      content: defaultAdultTermsMarkdown,
+    },
+  },
+  {
     key: "minor_terms",
     label: "Termo de Consentimento para Menor de Idade (LGPD)",
     badge: "PT-BR | Menor de Idade LGPD",
@@ -120,6 +133,7 @@ export function TermsConfigModal({ isOpen, onClose, initialData, onSave }: Terms
         owner_intl: (initialData.owner_intl as TermsDocItem) || undefined,
         user_intl: (initialData.user_intl as TermsDocItem) || undefined,
         print_terms: (initialData.print_terms as TermsDocItem) || undefined,
+        adult_terms: (initialData.adult_terms as TermsDocItem) || undefined,
         minor_terms:
           (initialData.minor_terms as TermsDocItem) ||
           (initialData.minor_consent as TermsDocItem) ||

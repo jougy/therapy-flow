@@ -3,6 +3,7 @@ import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
 import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
 import { SimpleListFieldInput } from "@/components/anamnesis/SimpleListFieldInput";
+import { CalculatedFieldRuntimeInput } from "@/components/anamnesis/CalculatedFieldRuntimeInput";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,8 @@ export interface FormEditorLivePreviewProps {
   testAnswers: Record<string, unknown>;
   setFieldTestAnswer: (fieldId: string, value: unknown) => void;
   onFieldFocus?: (fieldId: string) => void;
+  isEditorMode?: boolean;
+  onUpdateField?: (fieldId: string, changes: Partial<AnamnesisField>) => void;
 }
 
 export const FormEditorLivePreview: React.FC<FormEditorLivePreviewProps> = ({
@@ -24,6 +27,8 @@ export const FormEditorLivePreview: React.FC<FormEditorLivePreviewProps> = ({
   testAnswers,
   setFieldTestAnswer,
   onFieldFocus,
+  isEditorMode = false,
+  onUpdateField,
 }) => {
   const triggerFocus = () => {
     onFieldFocus?.(field.id);
@@ -355,6 +360,48 @@ export const FormEditorLivePreview: React.FC<FormEditorLivePreviewProps> = ({
             ))}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (field.type === "calculated") {
+    const handleReorderVariables = (fromIdx: number, toIdx: number) => {
+      if (!onUpdateField) return;
+      const currentVars = field.calculatedConfig?.variables || [];
+      if (
+        fromIdx < 0 ||
+        fromIdx >= currentVars.length ||
+        toIdx < 0 ||
+        toIdx >= currentVars.length
+      ) {
+        return;
+      }
+      const reordered = [...currentVars];
+      const [moved] = reordered.splice(fromIdx, 1);
+      reordered.splice(toIdx, 0, moved);
+      onUpdateField(field.id, {
+        calculatedConfig: {
+          ...(field.calculatedConfig || { outputs: [], ranges: [] }),
+          variables: reordered,
+        },
+      });
+    };
+
+    return (
+      <div className="min-w-0">
+        <CalculatedFieldRuntimeInput
+          field={field}
+          value={testAnswers[field.id]}
+          onChange={(val) => {
+            triggerFocus();
+            setFieldTestAnswer(field.id, val);
+          }}
+          allFormValues={testAnswers}
+          onFocus={triggerFocus}
+          disabled={false}
+          isEditorMode={isEditorMode}
+          onReorderVariables={handleReorderVariables}
+        />
       </div>
     );
   }

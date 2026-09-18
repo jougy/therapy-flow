@@ -20,6 +20,7 @@ describe("useFormEditorPermissions", () => {
 
     expect(result.current.isComponentAllowed("short_text")).toBe(true);
     expect(result.current.isComponentAllowed("table")).toBe(true);
+    expect(result.current.isComponentAllowed("calculated")).toBe(true);
     expect(result.current.isPropertyAllowed("required")).toBe(true);
     expect(result.current.isMenuAllowed("palette_sidebar")).toBe(true);
     expect(result.current.isMenuOptionAllowed("flow", "reorder")).toBe(true);
@@ -33,6 +34,7 @@ describe("useFormEditorPermissions", () => {
           enabled: true,
           components: {
             table: false,
+            calculated: false,
           },
           properties: {
             enableFilter: false,
@@ -52,6 +54,7 @@ describe("useFormEditorPermissions", () => {
     const { result } = renderHook(() => useFormEditorPermissions());
 
     expect(result.current.isComponentAllowed("table")).toBe(false);
+    expect(result.current.isComponentAllowed("calculated")).toBe(false);
     expect(result.current.isComponentAllowed("short_text")).toBe(true);
     expect(result.current.isPropertyAllowed("enableFilter")).toBe(false);
     expect(result.current.isPropertyAllowed("required")).toBe(true);

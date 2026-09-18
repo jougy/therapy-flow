@@ -241,15 +241,19 @@ export const PlatformGovernanceSettings: React.FC = () => {
                   termsRaw.owner_intl,
                   termsRaw.user_intl,
                   termsRaw.print_terms,
+                  termsRaw.adult_terms,
                   termsRaw.minor_terms || termsRaw.minor_consent,
-                ].filter(Boolean).length}/6 docs customizados
+                ].filter(Boolean).length}/7 docs customizados
+              </Badge>
+              <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                {termsRaw.adult_terms ? "Adulto TCLE: Customizado" : "Adulto TCLE: Padrão Ativo"}
               </Badge>
               <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300">
                 {termsRaw.minor_terms || termsRaw.minor_consent ? "Menor LGPD: Customizado" : "Menor LGPD: Padrão Ativo"}
               </Badge>
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              Controla os modais de aceite do cliente, consentimento de impressão de prontuários, consentimento de menor (LGPD) e termos internacionais.
+              Controla os modais de aceite do cliente, consentimento de impressão de prontuários, consentimento de adultos e menor (LGPD) e termos internacionais.
             </p>
           </div>
 

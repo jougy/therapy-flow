@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { DEFAULT_GROUP_COLOR_SLOT_SEEDS, normalizeGroupName, sanitizeColorSlotId } from "@/lib/group-colors";
+import { DEFAULT_GROUP_COLOR_SLOT_SEEDS, normalizeGroupName } from "@/lib/group-colors";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -46,10 +46,12 @@ import { toast } from "@/hooks/use-toast";
 import { notifySessionCompletedFeedback } from "@/hooks/useFeedbackTrigger";
 import { fetchPatientByRef, isUuid, type PatientRow } from "@/lib/patient-routing";
 import { ToastAction } from "@/components/ui/toast";
+import { createTrashToastAction } from "@/lib/trashUtils";
 import { readBusinessHours } from "@/lib/clinic-settings";
 import { readProfileAddress } from "@/lib/profile-settings";
 import {
   buildSessionPayload,
+  extractDashboardCareLineItems,
   formatDateTimeForInput,
   getCurrentDateTimeInputValue,
   isSessionDateTimeInputValid,
@@ -112,7 +114,6 @@ import {
   EvolveSessionModal,
   ScaleIndicator,
   SessionAnamnesisRuntime,
-  SessionCareLinesPicker,
   SessionHeaderBar,
   SessionPaymentSection,
   SessionPrintDocumentsModal,
@@ -125,7 +126,6 @@ import {
   type ErrorDetails,
   type GroupSuggestion,
   type PatientGroup,
-  type PatientGroupStatus,
   type PatientPaymentSession,
   type SessionEditHistoryRow,
 } from "@/components/sessions";
@@ -413,7 +413,9 @@ const SessaoDetalhe = () => {
           : sessionData.group_id
           ? [sessionData.group_id]
           : [];
-        const initialGroupId = sessionData.group_id || (initialCareLineIds[0] ?? null);
+        const initialGroupId = Array.isArray(rawCareLineIds)
+          ? (initialCareLineIds[0] ?? null)
+          : (sessionData.group_id ?? null);
         const initialSessionDate = formatDateTimeForInput(sessionData.session_date);
         const initialScheduledStartAt = formatDateTimeForInput(sessionData.scheduled_start_at);
         const initialPatientArrivedAt = formatDateTimeForInput(sessionData.patient_arrived_at);
@@ -879,7 +881,7 @@ const SessaoDetalhe = () => {
     anamnesisTemplateId,
     careLineIds,
     complexityScore: complexityScore[0],
-    groupId: careLineIds[0] ?? groupId ?? null,
+    groupId: careLineIds.length > 0 ? careLineIds[0] : null,
     notes,
     observacoes,
     painScore: painScore[0],
@@ -1003,7 +1005,11 @@ const SessaoDetalhe = () => {
       creatorUserId: createdByUserId ?? user!.id,
       patientId: targetPatientId,
       sessionDate,
-      values: formValues,
+      values: {
+        ...formValues,
+        careLineIds,
+        groupId: careLineIds.length > 0 ? careLineIds[0] : null,
+      },
       statusOverride,
       parentSessionId,
       evolutionGroupId,
@@ -1026,32 +1032,6 @@ const SessaoDetalhe = () => {
         </ToastAction>
       ),
     });
-  };
-
-  const handleSaveClinicColorSlot = async (slotIndex: number, colorHex: string, alpha: number) => {
-    if (!clinicId) return;
-    const existingSlot = clinicColorSlots.find((slot) => slot.slot_index === slotIndex) ?? null;
-    const result = await supabase
-      .from("clinic_group_color_slots")
-      .upsert(
-        {
-          alpha,
-          clinic_id: clinicId,
-          color_hex: colorHex,
-          id: existingSlot?.id ?? undefined,
-          slot_index: slotIndex,
-        },
-        { onConflict: "clinic_id,slot_index" }
-      )
-      .select("*")
-      .single();
-
-    if (result.data) {
-      setClinicColorSlots((current) => {
-        const withoutCurrent = current.filter((slot) => slot.slot_index !== slotIndex);
-        return [...withoutCurrent, result.data as ClinicColorSlotRow].sort((a, b) => a.slot_index - b.slot_index);
-      });
-    }
   };
 
   const handleSelectCareLinePreset = async (presetName: string) => {
@@ -1117,72 +1097,6 @@ const SessaoDetalhe = () => {
     }
   };
 
-  const handleSaveNewCareLineModal = async ({
-    name,
-    color,
-    colorSlotId,
-    status,
-  }: {
-    name: string;
-    color: string;
-    colorSlotId?: string | null;
-    status: PatientGroupStatus;
-  }) => {
-    const normalizedTargetName = normalizeGroupName(name);
-    const duplicateGroup = groups.find((g) => normalizeGroupName(g.name) === normalizedTargetName);
-
-    if (duplicateGroup) {
-      setCareLineIds((prev) => {
-        const next = prev.includes(duplicateGroup.id) ? prev : [...prev, duplicateGroup.id];
-        setGroupId(next[0] ?? null);
-        return next;
-      });
-      toast({
-        title: "Linha de Cuidado existente",
-        description: `"${duplicateGroup.name}" já existia e foi selecionada para este atendimento.`,
-      });
-      return;
-    }
-
-    let effectiveClinicId = clinicId;
-    if (!effectiveClinicId && user) {
-      const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
-      effectiveClinicId = clinicRes.data ?? null;
-    }
-
-    const targetPatientId = resolvedPatientId || patientId;
-    const { data, error } = await supabase
-      .from("patient_groups")
-      .insert({
-        patient_id: targetPatientId,
-        name: name.trim(),
-        color,
-        clinic_color_slot_id: sanitizeColorSlotId(colorSlotId),
-        group_kind: "custom",
-        status,
-        is_default: false,
-        clinic_id: effectiveClinicId,
-        user_id: user.id,
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      toast({ title: "Erro ao criar linha de cuidado", description: error.message, variant: "destructive" });
-    } else if (data) {
-      setGroups((prev) => [...prev, data]);
-      setCareLineIds((prev) => {
-        const next = [...prev, data.id];
-        setGroupId(next[0] ?? null);
-        return next;
-      });
-      toast({
-        title: "Linha de Cuidado criada",
-        description: `"${data.name}" foi criada com sucesso e vinculada a este atendimento.`,
-      });
-    }
-  };
-
   const handleSave = async (explicitStatus?: "concluído" | "rascunho") => {
     if (!patientId || !user || locked || (!isNew && !isEditing)) return;
     setSaving(true);
@@ -1204,77 +1118,91 @@ const SessaoDetalhe = () => {
     const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
     const targetClinicId = clinicRes.data ?? clinicId;
 
-    // Sincronização de campos de lista com includeInGlobalDashboard ou systemKey "sintomas" para Linhas de Cuidado / Grupos
+    // Sincronização de campos modulares com includeInGlobalDashboard ou systemKey "sintomas" para Linhas de Cuidado / Grupos
     const combinedSchema = [...baseTemplateSchema, ...activeTemplateSchema];
-    const dashboardListFields = combinedSchema.filter(
-      (f) => f.type === "simple_list" && (f.includeInGlobalDashboard || f.systemKey === "sintomas")
-    );
+    const dashboardItems = extractDashboardCareLineItems(combinedSchema, anamnesisFormResponse);
 
     const updatedCareLineIdsSet = new Set(careLineIds);
-    const currentGroups = [...groups];
-    for (const field of dashboardListFields) {
-      const fieldValue = anamnesisFormResponse[field.id];
-      if (Array.isArray(fieldValue)) {
-        for (const item of fieldValue) {
-          if (typeof item === "string" && item.trim()) {
-            const sanitizedName = sanitizeSingleLineInput(item, INPUT_LIMITS.name).trim();
-            if (!sanitizedName) continue;
+    const groupsByNormalizedName = new Map<string, (typeof groups)[number]>();
+    const groupsById = new Map<string, (typeof groups)[number]>();
+    for (const g of groups) {
+      if (g.id) groupsById.set(g.id, g);
+      const norm = normalizeGroupName(g.name);
+      if (norm && !groupsByNormalizedName.has(norm)) {
+        groupsByNormalizedName.set(norm, g);
+      }
+    }
 
-            const normalizedItem = normalizeGroupName(sanitizedName);
-            let matchingGroup = currentGroups.find((g) => normalizeGroupName(g.name) === normalizedItem);
+    const newlyCreatedGroups: typeof groups = [];
+    const isTenantValid = Boolean(
+      targetClinicId &&
+      isUuid(targetClinicId) &&
+      user?.id &&
+      isUuid(user.id) &&
+      targetPatientId &&
+      isUuid(targetPatientId)
+    );
 
-            if (!matchingGroup && targetClinicId && targetPatientId) {
-              // Cria automaticamente a linha de cuidado correspondente
-              const availableSlots = resolvedClinicColorSlots.length > 0
-                ? resolvedClinicColorSlots
-                : DEFAULT_GROUP_COLOR_SLOT_SEEDS.map((s) => ({ id: `seed-${s.slotIndex}`, color_hex: s.colorHex, slot_index: s.slotIndex, alpha: s.alpha }));
-              const randomSlot = availableSlots[Math.floor(Math.random() * availableSlots.length)];
-              const chosenColor = randomSlot?.color_hex || "#3B82F6";
-              const chosenSlotId = randomSlot && !randomSlot.id.startsWith("seed-") ? randomSlot.id : null;
+    for (const sanitizedName of dashboardItems) {
+      const normalizedItem = normalizeGroupName(sanitizedName);
+      if (!normalizedItem) continue;
 
-              const { data: newGroup, error: insertGroupError } = await supabase
-                .from("patient_groups")
-                .insert({
-                  patient_id: targetPatientId,
-                  name: sanitizedName,
-                  color: chosenColor,
-                  clinic_color_slot_id: chosenSlotId,
-                  group_kind: "custom",
-                  status: "em_andamento",
-                  is_default: false,
-                  clinic_id: targetClinicId,
-                  user_id: user.id,
-                })
-                .select("*")
-                .maybeSingle();
+      let matchingGroup = groupsByNormalizedName.get(normalizedItem);
 
-              if (insertGroupError) {
-                console.error("Erro ao sincronizar linha de cuidado a partir de campo de lista:", insertGroupError);
-              }
+      if (!matchingGroup && isTenantValid) {
+        // Cria automaticamente a linha de cuidado correspondente
+        const availableSlots = resolvedClinicColorSlots.length > 0
+          ? resolvedClinicColorSlots
+          : DEFAULT_GROUP_COLOR_SLOT_SEEDS.map((s) => ({ id: `seed-${s.slotIndex}`, color_hex: s.colorHex, slot_index: s.slotIndex, alpha: s.alpha }));
+        const randomSlot = availableSlots[Math.floor(Math.random() * availableSlots.length)];
+        const rawColor = randomSlot?.color_hex || "#3B82F6";
+        const chosenColor = /^#[0-9A-Fa-f]{6}$/.test(rawColor) ? rawColor : "#3B82F6";
+        const chosenSlotId = randomSlot && !randomSlot.id.startsWith("seed-") && isUuid(randomSlot.id) ? randomSlot.id : null;
 
-              if (newGroup) {
-                matchingGroup = newGroup;
-                currentGroups.push(newGroup);
-                setGroups((prev) => [...prev, newGroup]);
-              }
-            }
+        const { data: newGroup, error: insertGroupError } = await supabase
+          .from("patient_groups")
+          .insert({
+            patient_id: targetPatientId,
+            name: sanitizedName,
+            color: chosenColor,
+            clinic_color_slot_id: chosenSlotId,
+            group_kind: "custom",
+            status: "em_andamento",
+            is_default: false,
+            clinic_id: targetClinicId,
+            user_id: user.id,
+          })
+          .select("*")
+          .maybeSingle();
 
-            if (matchingGroup) {
-              updatedCareLineIdsSet.add(matchingGroup.id);
-            }
-          }
+        if (insertGroupError) {
+          console.error("Erro ao sincronizar linha de cuidado a partir de campo modular:", insertGroupError);
+        }
+
+        if (newGroup) {
+          matchingGroup = newGroup;
+          const normNew = normalizeGroupName(newGroup.name);
+          if (normNew) groupsByNormalizedName.set(normNew, newGroup);
+          if (newGroup.id) groupsById.set(newGroup.id, newGroup);
+          newlyCreatedGroups.push(newGroup);
         }
       }
+
+      if (matchingGroup) {
+        updatedCareLineIdsSet.add(matchingGroup.id);
+      }
+    }
+
+    if (newlyCreatedGroups.length > 0) {
+      setGroups((prev) => [...prev, ...newlyCreatedGroups]);
     }
 
     const updatedCareLineIds = Array.from(updatedCareLineIdsSet);
     if (updatedCareLineIds.length !== careLineIds.length || updatedCareLineIds.some((id, idx) => id !== careLineIds[idx])) {
       setCareLineIds(updatedCareLineIds);
-      if (!groupId && updatedCareLineIds[0]) {
-        setGroupId(updatedCareLineIds[0]);
-      }
+      setGroupId(updatedCareLineIds[0] ?? null);
       formValues.careLineIds = updatedCareLineIds;
-      formValues.groupId = updatedCareLineIds[0] ?? formValues.groupId;
+      formValues.groupId = updatedCareLineIds[0] ?? null;
     }
 
     if ((isNew && targetStatus !== "rascunho" && (quota.isTrialExpired || quota.isExpired || (quota.isFreeTrial && quota.attendances.isLimitReached))) || (quota.isTrialExpired || quota.isExpired)) {
@@ -1486,7 +1414,7 @@ const SessaoDetalhe = () => {
             anamnesisTemplateId: chosenTemplateId,
             careLineIds: formValues.careLineIds,
             complexityScore: 0,
-            groupId: formValues.groupId,
+            groupId: formValues.careLineIds && formValues.careLineIds.length > 0 ? formValues.careLineIds[0] : null,
             notes: "",
             observacoes: "",
             painScore: 0,
@@ -1719,18 +1647,26 @@ const SessaoDetalhe = () => {
       return;
     }
 
-    if (!window.confirm("Excluir este atendimento definitivamente?")) {
+    if (!window.confirm("Mover este atendimento para a lixeira?")) {
       return;
     }
 
-    const { error } = await supabase.from("sessions").delete().eq("id", sessionId);
+    const { error } = await supabase.rpc("move_entity_to_trash", {
+      _entity_type: "sessions",
+      _entity_ids: [sessionId],
+    });
 
     if (error) {
-      showErrorToast("Erro ao excluir atendimento", error, "Exclusão definitiva do atendimento");
+      showErrorToast("Erro ao mover atendimento para a lixeira", error, "Lixeira da clínica");
       return;
     }
 
-    toast({ title: "Atendimento excluído" });
+    const clinicKey = clinic?.route_key;
+    toast({
+      title: "Atendimento movido para a lixeira",
+      description: "O atendimento foi enviado para a lixeira da clínica e pode ser restaurado até domingo.",
+      action: createTrashToastAction(clinicKey, navigate),
+    });
     navigate(`/pacientes/${patientId}`);
   };
 
@@ -2066,27 +2002,10 @@ const SessaoDetalhe = () => {
             </TabsList>
 
             <TabsContent value="anamnese" className="mt-4 space-y-5">
-              {/* 1. Primeiro Bloco da Anamnese: Sintomas & Linhas de Cuidado / Motivos */}
-              <Card data-tutorial="session-carelines" className="border-primary/20 bg-card/80 p-5 space-y-3.5 shadow-sm">
-                <SessionCareLinesPicker
-                  careLineIds={careLineIds}
-                  clinicColorSlots={clinicColorSlots}
-                  groups={groups}
-                  groupSuggestions={groupSuggestions}
-                  locked={locked}
-                  resolvedClinicColorSlots={resolvedClinicColorSlots}
-                  onCareLineIdsChange={setCareLineIds}
-                  onGroupIdChange={setGroupId}
-                  onSaveClinicColorSlot={handleSaveClinicColorSlot}
-                  onSaveNewCareLine={handleSaveNewCareLineModal}
-                  onSelectCareLinePreset={handleSelectCareLinePreset}
-                />
-              </Card>
-
               {/* Anamnese Universal / Base */}
               {renderBaseSliderSection("edit")}
 
-              <Card>
+              <Card data-tutorial="session-anamnesis-form">
                 <CardContent className="p-6 space-y-5">
                   <SessionAnamnesisRuntime
                     anamnesisFormResponse={anamnesisFormResponse}

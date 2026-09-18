@@ -50,6 +50,7 @@ type SearchVisibilityArgs<TSession extends SearchableSession> = {
   searchTerm: string;
   session: TSession;
   textContent: string;
+  normalizedSearchTerm?: string;
 };
 
 export type PatientSessionGroupView<TGroup extends SearchablePatientGroup, TSession extends SearchableSession> = {
@@ -74,8 +75,8 @@ export type PatientEvolutionGroupView<TGroup extends SearchablePatientGroup, TSe
 export const getSessionCareLineIds = (session: SearchableSession): string[] => {
   const anamnesis = session.anamnesis && typeof session.anamnesis === "object" ? (session.anamnesis as Record<string, unknown>) : null;
   if (anamnesis && Array.isArray(anamnesis.care_line_ids)) {
-    const list = anamnesis.care_line_ids as string[];
-    if (list.length > 0) return list;
+    return (anamnesis.care_line_ids as unknown[])
+      .filter((id): id is string => typeof id === "string" && id.trim().length > 0);
   }
   return session.group_id ? [session.group_id] : [];
 };
@@ -166,6 +167,7 @@ export const extractSessionFieldValues = (
     }
   }
 
+  if (result.length <= 1) return result;
   return Array.from(new Set(result));
 };
 
@@ -173,7 +175,8 @@ export const doesSessionMatchModularFilter = <TGroup extends SearchablePatientGr
   session: SearchableSession,
   fieldId: string,
   filterValue: string,
-  groups?: TGroup[]
+  groups?: TGroup[],
+  groupMap?: Map<string, TGroup>
 ): boolean => {
   const normTarget = normalizeTerm(filterValue);
   if (!normTarget) return true;
@@ -188,12 +191,23 @@ export const doesSessionMatchModularFilter = <TGroup extends SearchablePatientGr
     lowerFieldId === "sintomas" || lowerFieldId.includes("sintoma") || lowerFieldId === "care_line";
 
   // Check care lines / groups associated with this session (only for symptom or care line fields)
-  if (isSymptomOrCareLineField && groups && groups.length > 0) {
+  if (isSymptomOrCareLineField && ((groups && groups.length > 0) || (groupMap && groupMap.size > 0))) {
     const careLineIds = getSessionCareLineIds(session);
     if (careLineIds.length > 0) {
-      const careLineIdSet = new Set(careLineIds);
-      if (groups.some((g) => careLineIdSet.has(g.id) && normalizeTerm(g.name) === normTarget)) {
-        return true;
+      if (groupMap) {
+        for (const id of careLineIds) {
+          const g = groupMap.get(id);
+          if (g && normalizeTerm(g.name) === normTarget) {
+            return true;
+          }
+        }
+      } else if (groups) {
+        const careLineIdSet = new Set(careLineIds);
+        for (const g of groups) {
+          if (careLineIdSet.has(g.id) && normalizeTerm(g.name) === normTarget) {
+            return true;
+          }
+        }
       }
     }
   }
@@ -223,8 +237,9 @@ export const shouldSessionBeVisibleInSearch = <TSession extends SearchableSessio
   searchTerm,
   session,
   textContent,
+  normalizedSearchTerm,
 }: SearchVisibilityArgs<TSession>) => {
-  const normalizedSearch = normalizeTerm(searchTerm);
+  const normalizedSearch = normalizedSearchTerm !== undefined ? normalizedSearchTerm : normalizeTerm(searchTerm);
 
   if (!normalizedSearch) {
     return true;
@@ -253,20 +268,36 @@ export const buildPatientSessionsView = <
   evolutionGroupsMetadata,
 }: BuildPatientSessionsViewArgs<TGroup, TSession>) => {
   const groupMap = new Map(groups.map((g) => [g.id, g]));
+  const normalizedSearchTerm = normalizeTerm(filters.searchTerm);
 
+  // Single-pass O(N) indexing of sessions by care lines and caching
+  const sessionCareLineIdsMap = new Map<string, string[]>();
+  const sessionCareLineSetMap = new Map<string, Set<string>>();
+  const sessionsByCareLineId = new Map<string, TSession[]>();
+  const ungroupedRawSessions: TSession[] = [];
   const tagCountsMap = new Map<string, number>();
   let ungroupedCount = 0;
 
-  sessions.forEach((session) => {
+  for (const session of sessions) {
     const careLineIds = getSessionCareLineIds(session);
+    sessionCareLineIdsMap.set(session.id, careLineIds);
+    sessionCareLineSetMap.set(session.id, new Set(careLineIds));
+
     if (careLineIds.length === 0) {
       ungroupedCount += 1;
+      ungroupedRawSessions.push(session);
     } else {
-      careLineIds.forEach((id) => {
+      for (const id of careLineIds) {
         tagCountsMap.set(id, (tagCountsMap.get(id) || 0) + 1);
-      });
+        let list = sessionsByCareLineId.get(id);
+        if (!list) {
+          list = [];
+          sessionsByCareLineId.set(id, list);
+        }
+        list.push(session);
+      }
     }
-  });
+  }
 
   const tagStats = groups.map((group) => ({
     group,
@@ -281,7 +312,7 @@ export const buildPatientSessionsView = <
         return false;
       }
 
-      const careLineIds = getSessionCareLineIds(session);
+      const careLineIds = sessionCareLineIdsMap.get(session.id) ?? [];
       if (filters.selectedTagId && filters.selectedTagId !== "all") {
         if (filters.selectedTagId === "none") {
           if (careLineIds.length > 0) return false;
@@ -289,27 +320,43 @@ export const buildPatientSessionsView = <
           const parts = filters.selectedTagId.split(":");
           const fieldId = parts[1];
           const filterValue = parts.slice(2).join(":");
-          if (!doesSessionMatchModularFilter(session, fieldId, filterValue, groups)) {
+          if (!doesSessionMatchModularFilter(session, fieldId, filterValue, groups, groupMap)) {
             return false;
           }
         } else {
-          if (!careLineIds.includes(filters.selectedTagId)) return false;
+          const careLineSet = sessionCareLineSetMap.get(session.id);
+          if (!careLineSet || !careLineSet.has(filters.selectedTagId)) return false;
         }
       }
 
       if (groupStatusFilter !== "all") {
-        const matchingGroups = careLineIds.map((id) => groupMap.get(id)).filter(Boolean) as TGroup[];
-        if (matchingGroups.length === 0 || !matchingGroups.some((g) => g.status === groupStatusFilter)) {
+        let hasMatchingGroupStatus = false;
+        for (const id of careLineIds) {
+          const g = groupMap.get(id);
+          if (g && g.status === groupStatusFilter) {
+            hasMatchingGroupStatus = true;
+            break;
+          }
+        }
+        if (!hasMatchingGroupStatus) {
           return false;
         }
       }
 
-      const groupNames = careLineIds.map((id) => groupMap.get(id)?.name).filter(Boolean).join(" ");
+      let groupNames = "";
+      for (const id of careLineIds) {
+        const g = groupMap.get(id);
+        if (g?.name) {
+          groupNames = groupNames ? `${groupNames} ${g.name}` : g.name;
+        }
+      }
+
       return shouldSessionBeVisibleInSearch({
         groupName: groupNames || "Sem grupo",
         searchTerm: filters.searchTerm,
         session,
         textContent: getSessionText(session),
+        normalizedSearchTerm,
       });
     })
     .sort((a, b) => new Date(b.session_date).getTime() - new Date(a.session_date).getTime());
@@ -317,11 +364,8 @@ export const buildPatientSessionsView = <
   const grouped = groups
     .filter((group) => groupStatusFilter === "all" || group.status === groupStatusFilter)
     .map<PatientSessionGroupView<TGroup, TSession>>((group) => {
-      const visibleSessions = sessions.filter((session) => {
-        if (!doesSessionHaveCareLine(session, group.id)) {
-          return false;
-        }
-
+      const associatedSessions = sessionsByCareLineId.get(group.id) ?? [];
+      const visibleSessions = associatedSessions.filter((session) => {
         if (filters.sessionStatus !== "all" && session.status !== filters.sessionStatus) {
           return false;
         }
@@ -331,6 +375,7 @@ export const buildPatientSessionsView = <
           searchTerm: filters.searchTerm,
           session,
           textContent: getSessionText(session),
+          normalizedSearchTerm,
         });
       });
 
@@ -354,27 +399,22 @@ export const buildPatientSessionsView = <
       return filters.searchTerm.trim().length === 0 && filters.sessionStatus === "all";
     });
 
-  const ungrouped = sessions.filter((session) => {
-    if (groupStatusFilter !== "all") {
-      return false;
-    }
+  const ungrouped =
+    groupStatusFilter !== "all"
+      ? []
+      : ungroupedRawSessions.filter((session) => {
+          if (filters.sessionStatus !== "all" && session.status !== filters.sessionStatus) {
+            return false;
+          }
 
-    const careLineIds = getSessionCareLineIds(session);
-    if (careLineIds.length > 0) {
-      return false;
-    }
-
-    if (filters.sessionStatus !== "all" && session.status !== filters.sessionStatus) {
-      return false;
-    }
-
-    return shouldSessionBeVisibleInSearch({
-      groupName: "Sem grupo",
-      searchTerm: filters.searchTerm,
-      session,
-      textContent: getSessionText(session),
-    });
-  });
+          return shouldSessionBeVisibleInSearch({
+            groupName: "Sem grupo",
+            searchTerm: filters.searchTerm,
+            session,
+            textContent: getSessionText(session),
+            normalizedSearchTerm,
+          });
+        });
 
   // Evolution Groups Grouping with Lineage Healing
   const evoMetaMap = new Map((evolutionGroupsMetadata ?? []).map((m) => [m.id, m]));
@@ -436,7 +476,8 @@ export const buildPatientSessionsView = <
 
     const uniqueCareLineIdSet = new Set<string>();
     groupSessions.forEach((s) => {
-      getSessionCareLineIds(s).forEach((id) => uniqueCareLineIdSet.add(id));
+      const ids = sessionCareLineIdsMap.get(s.id) ?? getSessionCareLineIds(s);
+      ids.forEach((id) => uniqueCareLineIdSet.add(id));
     });
 
     const tagGroups = Array.from(uniqueCareLineIdSet)

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -36,10 +36,12 @@ export interface PatientSummaryHeaderProps {
   onEdit: () => void;
   onShare: () => void;
   onPrint: () => void;
+  onPrintAdultTerms?: () => void;
+  onPrintGuardianTerms?: () => void;
   onExportJson: () => void;
 }
 
-export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = ({
+export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = React.memo(({
   patient,
   riskFlagsCount,
   canPrint,
@@ -48,8 +50,25 @@ export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = ({
   onEdit,
   onShare,
   onPrint,
+  onPrintAdultTerms,
+  onPrintGuardianTerms,
   onExportJson,
 }) => {
+  const handlePrintSelect = useCallback(() => {
+    onPrint();
+  }, [onPrint]);
+
+  const handlePrintAdultTermsSelect = useCallback(() => {
+    onPrintAdultTerms?.();
+  }, [onPrintAdultTerms]);
+
+  const handlePrintGuardianTermsSelect = useCallback(() => {
+    onPrintGuardianTerms?.();
+  }, [onPrintGuardianTerms]);
+
+  const handleExportJsonSelect = useCallback(() => {
+    onExportJson();
+  }, [onExportJson]);
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div className="space-y-2">
@@ -180,7 +199,7 @@ export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = ({
           Compartilhar cadastro
         </Button>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="gap-2 text-xs sm:text-sm">
               <Printer className="h-4 w-4 text-primary" />
@@ -189,7 +208,7 @@ export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = ({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
             <DropdownMenuItem
-              onClick={onPrint}
+              onSelect={handlePrintSelect}
               disabled={!canPrint}
               className="cursor-pointer"
             >
@@ -201,7 +220,31 @@ export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = ({
             </DropdownMenuItem>
 
             <DropdownMenuItem
-              onClick={onExportJson}
+              onSelect={handlePrintAdultTermsSelect}
+              disabled={!canPrint}
+              className="cursor-pointer"
+            >
+              <FileText className="mr-2 h-4 w-4 text-emerald-600" />
+              <div className="flex flex-col">
+                <span className="font-medium">Imprimir Termo de Consentimento (Adulto)</span>
+                <span className="text-[11px] text-muted-foreground">TCLE presencial com assinatura do paciente</span>
+              </div>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem
+              onSelect={handlePrintGuardianTermsSelect}
+              disabled={!canPrint}
+              className="cursor-pointer"
+            >
+              <Baby className="mr-2 h-4 w-4 text-amber-600" />
+              <div className="flex flex-col">
+                <span className="font-medium">Imprimir Permissão dos Pais (Menor de Idade)</span>
+                <span className="text-[11px] text-muted-foreground">Autorização LGPD presencial do responsável</span>
+              </div>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem
+              onSelect={handleExportJsonSelect}
               className="cursor-pointer"
             >
               <FileDown className="mr-2 h-4 w-4 text-primary" />
@@ -215,4 +258,5 @@ export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = ({
       </div>
     </div>
   );
-};
+});
+PatientSummaryHeader.displayName = "PatientSummaryHeader";

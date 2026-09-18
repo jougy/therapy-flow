@@ -26,6 +26,7 @@ const b2Region = requiredEnv("B2_REGION");
 const b2Endpoint = requiredEnv("B2_S3_ENDPOINT");
 const b2KeyId = requiredEnv("B2_APPLICATION_KEY_ID");
 const b2ApplicationKey = requiredEnv("B2_APPLICATION_KEY");
+const bucketName = Deno.env.get("B2_BUCKET_NAME") || "";
 
 const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -48,7 +49,10 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const uploadId = normalizeUuid(body.uploadId);
-    if (!uploadId) return json({ error: "Arquivo inválido." }, 400);
+    const clinicId = normalizeUuid(body.clinicId);
+    const objectKey = typeof body.objectKey === "string" ? body.objectKey.trim() : "";
+
+    if (!uploadId && (!objectKey || !clinicId)) return json({ error: "Arquivo ou chave inválida." }, 400);
 
     const userClient = createClient(supabaseUrl, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -57,6 +61,38 @@ Deno.serve(async (req) => {
 
     const { data: userData, error: userError } = await userClient.auth.getUser(token);
     if (userError || !userData.user) return json({ error: "Usuário não autenticado." }, 401);
+
+    if (!uploadId && objectKey && clinicId) {
+      if (!objectKey.startsWith(`clinics/${clinicId}/`)) {
+        return json({ error: "Chave do arquivo não pertence à clínica informada." }, 403);
+      }
+
+      const { data: canRead, error: permissionError } = await userClient.rpc("current_user_can", {
+        _capability: "patients.read",
+        _clinic_id: clinicId,
+      });
+      if (permissionError) throw new Error(permissionError.message);
+      if (canRead !== true) return json({ error: "Você não tem permissão para baixar este arquivo." }, 403);
+
+      const expiresIn = 300;
+      const downloadUrl = await createPresignedS3Url({
+        accessKeyId: b2KeyId,
+        bucket: bucketName,
+        endpoint: b2Endpoint,
+        expiresIn,
+        key: objectKey,
+        method: "GET",
+        region: b2Region,
+        secretAccessKey: b2ApplicationKey,
+      });
+
+      return json({
+        downloadUrl,
+        expiresIn,
+        filename: objectKey.split("/").pop() ?? "arquivo",
+        objectKey,
+      });
+    }
 
     const { data: upload, error: uploadError } = await userClient
       .from("patient_file_uploads")

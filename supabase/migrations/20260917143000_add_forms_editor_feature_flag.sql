@@ -31,6 +31,7 @@ values (
       'checklist', true,
       'tags', true,
       'slider', true,
+      'calculated', true,
       'section', true,
       'horizontal_section', true,
       'section_selector', true,

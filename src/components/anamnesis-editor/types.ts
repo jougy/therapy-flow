@@ -18,6 +18,7 @@ import {
   Tags,
   ToggleLeft,
   Type,
+  Calculator,
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import {
@@ -101,6 +102,7 @@ export const COMPONENT_CATEGORIES = [
     items: [
       { type: "table" as const, label: "Tabela", icon: Table, description: "Grade de colunas personalizadas" },
       { type: "address_block" as const, label: "Bloco de Endereço", icon: MapPin, description: "CEP, logradouro e GPS" },
+      { type: "calculated" as const, label: "Campos calculados", icon: Calculator, description: "Fórmulas matemáticas e classificações clínicas" },
     ],
   },
 ];
@@ -206,6 +208,7 @@ export const getFieldTypeIcon = (type: AnamnesisField["type"], isContainer: bool
   if (type === "address_block") return MapPin;
   if (type === "table") return Table;
   if (type === "section_selector") return ToggleLeft;
+  if (type === "calculated") return Calculator;
   return FileText;
 };
 

@@ -44,7 +44,9 @@ const FormularioEditor = () => {
 
       <FormEditorHeader state={state} />
 
-      <FormEditorDraftRestoreDialog state={state} />
+      <div className={`transition-all ${state.flowSidebarCollapsed ? "lg:pl-[80px]" : "lg:pl-[308px]"} lg:pr-[356px]`}>
+        <FormEditorDraftRestoreDialog state={state} />
+      </div>
 
       {/* Main 3-Column Desktop Layout */}
       <div className="space-y-6 max-w-full lg:relative">

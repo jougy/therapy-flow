@@ -62,6 +62,7 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
     handleDropOnTarget,
     duplicateField,
     removeField,
+    updateField,
     handleAddField,
     assignFieldToSection,
     setGuideModalOpen,
@@ -386,6 +387,8 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                     testAnswers={testAnswers}
                     setFieldTestAnswer={setFieldTestAnswer}
                     onFieldFocus={(id) => selectFieldAndOpenMobileInspector(id)}
+                    isEditorMode={canvasMode === "edit"}
+                    onUpdateField={updateField}
                   />
                 </div>
               </div>
@@ -703,6 +706,8 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                                       testAnswers={testAnswers}
                                       setFieldTestAnswer={setFieldTestAnswer}
                                       onFieldFocus={(id) => selectFieldAndOpenMobileInspector(id)}
+                                      isEditorMode={canvasMode === "edit"}
+                                      onUpdateField={updateField}
                                     />
                                   ) : (
                                     renderPreviewLayout([child])

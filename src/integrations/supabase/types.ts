@@ -49,6 +49,7 @@ export type Database = {
           title: string
           updated_at: string
           user_id: string
+          version: number
         }
         Insert: {
           clinic_id?: string | null
@@ -64,6 +65,7 @@ export type Database = {
           title: string
           updated_at?: string
           user_id: string
+          version?: number
         }
         Update: {
           clinic_id?: string | null
@@ -79,6 +81,7 @@ export type Database = {
           title?: string
           updated_at?: string
           user_id?: string
+          version?: number
         }
         Relationships: [
           {
@@ -108,6 +111,8 @@ export type Database = {
         Row: {
           clinic_id: string
           created_at: string
+          deleted_at: string | null
+          deleted_by_user_id: string | null
           description: string | null
           id: string
           is_active: boolean
@@ -120,6 +125,8 @@ export type Database = {
         Insert: {
           clinic_id: string
           created_at?: string
+          deleted_at?: string | null
+          deleted_by_user_id?: string | null
           description?: string | null
           id?: string
           is_active?: boolean
@@ -132,6 +139,8 @@ export type Database = {
         Update: {
           clinic_id?: string
           created_at?: string
+          deleted_at?: string | null
+          deleted_by_user_id?: string | null
           description?: string | null
           id?: string
           is_active?: boolean
@@ -307,6 +316,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "clinic_collaborator_invitations_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clinic_daily_metrics: {
+        Row: {
+          canceled_sessions: number
+          clinic_id: string
+          metric_date: string
+          paid_sessions: number
+          revenue_credit_cents: number
+          revenue_open_cents: number
+          revenue_paid_cents: number
+          total_sessions: number
+          updated_at: string
+        }
+        Insert: {
+          canceled_sessions?: number
+          clinic_id: string
+          metric_date: string
+          paid_sessions?: number
+          revenue_credit_cents?: number
+          revenue_open_cents?: number
+          revenue_paid_cents?: number
+          total_sessions?: number
+          updated_at?: string
+        }
+        Update: {
+          canceled_sessions?: number
+          clinic_id?: string
+          metric_date?: string
+          paid_sessions?: number
+          revenue_credit_cents?: number
+          revenue_open_cents?: number
+          revenue_paid_cents?: number
+          total_sessions?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_daily_metrics_clinic_id_fkey"
             columns: ["clinic_id"]
             isOneToOne: false
             referencedRelation: "clinics"
@@ -731,6 +784,95 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      clinical_session_billings: {
+        Row: {
+          amount_charged_cents: number
+          amount_original_cents: number
+          amount_paid_cents: number
+          clinic_id: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          patient_id: string
+          payment_adjustment_reason: string | null
+          payment_installments: number
+          payment_method: string
+          payment_plan_id: string | null
+          payment_plan_session_index: number | null
+          payment_status: string
+          payment_status_date: string | null
+          session_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_charged_cents?: number
+          amount_original_cents?: number
+          amount_paid_cents?: number
+          clinic_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          patient_id: string
+          payment_adjustment_reason?: string | null
+          payment_installments?: number
+          payment_method?: string
+          payment_plan_id?: string | null
+          payment_plan_session_index?: number | null
+          payment_status?: string
+          payment_status_date?: string | null
+          session_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_charged_cents?: number
+          amount_original_cents?: number
+          amount_paid_cents?: number
+          clinic_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          payment_adjustment_reason?: string | null
+          payment_installments?: number
+          payment_method?: string
+          payment_plan_id?: string | null
+          payment_plan_session_index?: number | null
+          payment_status?: string
+          payment_status_date?: string | null
+          session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinical_session_billings_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_session_billings_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_session_billings_payment_plan_id_fkey"
+            columns: ["payment_plan_id"]
+            isOneToOne: false
+            referencedRelation: "patient_payment_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_session_billings_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       clinics: {
         Row: {
@@ -1551,6 +1693,8 @@ export type Database = {
           cpf: string | null
           created_at: string
           date_of_birth: string | null
+          deleted_at: string | null
+          deleted_by_user_id: string | null
           email: string | null
           emergency_contact: Json | null
           gender: string | null
@@ -1584,6 +1728,7 @@ export type Database = {
           updated_at: string
           user_id: string
           uses_responsible_cpf: boolean
+          version: number
         }
         Insert: {
           address_complement?: string | null
@@ -1602,6 +1747,8 @@ export type Database = {
           cpf?: string | null
           created_at?: string
           date_of_birth?: string | null
+          deleted_at?: string | null
+          deleted_by_user_id?: string | null
           email?: string | null
           emergency_contact?: Json | null
           gender?: string | null
@@ -1635,6 +1782,7 @@ export type Database = {
           updated_at?: string
           user_id: string
           uses_responsible_cpf?: boolean
+          version?: number
         }
         Update: {
           address_complement?: string | null
@@ -1653,6 +1801,8 @@ export type Database = {
           cpf?: string | null
           created_at?: string
           date_of_birth?: string | null
+          deleted_at?: string | null
+          deleted_by_user_id?: string | null
           email?: string | null
           emergency_contact?: Json | null
           gender?: string | null
@@ -1686,6 +1836,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
           uses_responsible_cpf?: boolean
+          version?: number
         }
         Relationships: [
           {
@@ -1975,7 +2126,7 @@ export type Database = {
           working_hours: string | null
         }
         Insert: {
-          address?: Json
+          address: Json
           avatar_url?: string | null
           bio?: string | null
           birth_date?: string | null
@@ -1994,7 +2145,7 @@ export type Database = {
           professional_license?: string | null
           public_code: string
           social_name?: string | null
-          specialties?: Json
+          specialties: Json
           specialty?: string | null
           updated_at?: string
           working_hours?: string | null
@@ -2077,24 +2228,39 @@ export type Database = {
       }
       session_edit_history: {
         Row: {
-          clinic_id: string
+          change_reason: string | null
+          changed_fields: string[]
+          clinic_id: string | null
           edited_at: string
           editor_user_id: string
           id: string
+          ip_address: string | null
+          new_data: Json
+          old_data: Json
           session_id: string
         }
         Insert: {
-          clinic_id: string
+          change_reason?: string | null
+          changed_fields?: string[]
+          clinic_id?: string | null
           edited_at?: string
           editor_user_id: string
           id?: string
+          ip_address?: string | null
+          new_data?: Json
+          old_data?: Json
           session_id: string
         }
         Update: {
-          clinic_id?: string
+          change_reason?: string | null
+          changed_fields?: string[]
+          clinic_id?: string | null
           edited_at?: string
           editor_user_id?: string
           id?: string
+          ip_address?: string | null
+          new_data?: Json
+          old_data?: Json
           session_id?: string
         }
         Relationships: [
@@ -2176,6 +2342,8 @@ export type Database = {
           clinic_id: string | null
           complexity_score: number | null
           created_at: string
+          deleted_at: string | null
+          deleted_by_user_id: string | null
           evolution_group_id: string | null
           group_id: string | null
           id: string
@@ -2198,6 +2366,7 @@ export type Database = {
           treatment: Json | null
           updated_at: string
           user_id: string
+          version: number
         }
         Insert: {
           amount_charged_cents?: number
@@ -2209,6 +2378,8 @@ export type Database = {
           clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by_user_id?: string | null
           evolution_group_id?: string | null
           group_id?: string | null
           id?: string
@@ -2231,6 +2402,7 @@ export type Database = {
           treatment?: Json | null
           updated_at?: string
           user_id: string
+          version?: number
         }
         Update: {
           amount_charged_cents?: number
@@ -2242,6 +2414,8 @@ export type Database = {
           clinic_id?: string | null
           complexity_score?: number | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by_user_id?: string | null
           evolution_group_id?: string | null
           group_id?: string | null
           id?: string
@@ -2264,6 +2438,7 @@ export type Database = {
           treatment?: Json | null
           updated_at?: string
           user_id?: string
+          version?: number
         }
         Relationships: [
           {
@@ -2914,6 +3089,7 @@ export type Database = {
         Args: { _consent_data: Json; _password: string; _token: string }
         Returns: Json
       }
+      batch_sync_push: { Args: { _mutations: Json }; Returns: Json }
       buy_clinic_subaccount_extra_spaces: {
         Args: { _billing_type?: string; _clinic_id: string; _quantity: number }
         Returns: Json
@@ -3023,6 +3199,7 @@ export type Database = {
         Args: { _clinic_id: string }
         Returns: boolean
       }
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       decline_current_user_clinic_invitation: {
         Args: { _invitation_id: string }
         Returns: Json
@@ -3183,6 +3360,10 @@ export type Database = {
           total_subaccount_limit: number
           trial_ends_at: string
         }[]
+      }
+      get_clinic_trash_items: {
+        Args: { _clinic_id: string; _entity_type?: string }
+        Returns: Json
       }
       get_current_platform_role: {
         Args: never
@@ -3562,6 +3743,10 @@ export type Database = {
         }
         Returns: Json
       }
+      move_entity_to_trash: {
+        Args: { _entity_ids: string[]; _entity_type: string }
+        Returns: Json
+      }
       normalize_patient_name_key: { Args: { _value: string }; Returns: string }
       notification_category_enabled: {
         Args: {
@@ -3598,6 +3783,11 @@ export type Database = {
         Returns: Json
       }
       pseudonymize_patient_name: { Args: { _name: string }; Returns: string }
+      purge_clinic_trash_bin: { Args: never; Returns: Json }
+      purge_old_app_notifications: {
+        Args: { _retention_days?: number }
+        Returns: number
+      }
       raise_exception_json: { Args: { _message: string }; Returns: Json }
       record_asaas_webhook_event: {
         Args: {
@@ -3620,6 +3810,10 @@ export type Database = {
       }
       resend_clinic_collaborator_invitation: {
         Args: { _invitation_id: string }
+        Returns: Json
+      }
+      restore_entity_from_trash: {
+        Args: { _entity_ids: string[]; _entity_type: string }
         Returns: Json
       }
       revoke_clinic_member_access: {
