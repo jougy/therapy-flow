@@ -69,6 +69,8 @@ export const ClinicTeamSection: React.FC = () => {
     canManageMember,
     togglingMemberId,
     handleToggleMemberStatus,
+    sendingCompletionMemberId,
+    handleSendCompletionInvite,
     // Edição
     editingMember,
     setEditingMember,
@@ -308,6 +310,8 @@ export const ClinicTeamSection: React.FC = () => {
         onOpenEditMember={handleOpenEditMember}
         onToggleMemberStatus={handleToggleMemberStatus}
         onOpenRevokeAccess={(member) => setRevokingMember(member)}
+        onSendCompletionInvite={handleSendCompletionInvite}
+        sendingCompletionMemberId={sendingCompletionMemberId}
       />
 
       {/* Modal de Edição de Colaborador */}

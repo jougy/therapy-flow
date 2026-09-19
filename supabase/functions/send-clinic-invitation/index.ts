@@ -39,6 +39,15 @@ const ROLE_LABELS: Record<string, string> = {
   estagiario: "Estagiário(a)",
 };
 
+const escapeHtml = (text: string): string => {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Método não permitido." }, 405);
@@ -54,6 +63,16 @@ Deno.serve(async (req) => {
 
     if (!token || !inviteUrl) {
       return json({ error: "Convite inválido ou URL ausente." }, 400);
+    }
+
+    // Validação de protocolo para prevenir injeção de esquemas (ex: javascript:)
+    try {
+      const parsedUrl = new URL(inviteUrl);
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        return json({ error: "Protocolo de URL inválido." }, 400);
+      }
+    } catch {
+      return json({ error: "Formato de URL inválido." }, 400);
     }
 
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -73,6 +92,7 @@ Deno.serve(async (req) => {
     const clinicId = String(invitation?.clinic_id ?? "");
     const email = String(invitation?.email ?? "").trim().toLowerCase();
     const existingUser = Boolean(invitation?.existing_user);
+    const pendingCpfCompletion = Boolean(invitation?.pending_cpf_completion);
     const status = String(invitation?.status ?? "");
     const clinicName = String(invitation?.clinic_name ?? "Clínica");
     const operationalRole = String(invitation?.operational_role ?? "professional");
@@ -110,14 +130,19 @@ Deno.serve(async (req) => {
     const inviterName =
       inviterProfile?.full_name || inviterProfile?.email || "A administração da clínica";
 
-    const resend = new ResendClient();
+    const safeInviterName = escapeHtml(inviterName);
+    const safeClinicName = escapeHtml(clinicName);
+    const safeRoleLabel = escapeHtml(roleLabel);
+    const safeJobTitle = jobTitle ? escapeHtml(jobTitle) : "";
+    const safeSpecialty = specialty ? escapeHtml(specialty) : "";
+    const safeEmail = escapeHtml(email);
 
     let emailSubject = "";
     let emailHtml = "";
     let destinationUrl = inviteUrl;
 
-    if (existingUser) {
-      // Usuário existente -> Link leva para o Espaço Pessoal onde responderá o convite
+    if (existingUser && !pendingCpfCompletion) {
+      // Usuário existente com cadastro completo -> Link leva para o Espaço Pessoal onde responderá o convite
       const origin = new URL(inviteUrl).origin;
       destinationUrl = `${origin}/espacopessoal`;
       emailSubject = `Você foi convidado para participar da clínica ${clinicName} - Pluri-Health`;
@@ -146,15 +171,15 @@ Deno.serve(async (req) => {
             <div class="header">
               <div class="logo">Pluri-Health</div>
               <div class="title">Novo convite de equipe</div>
-              <div class="subtitle"><strong>${inviterName}</strong> convidou você para fazer parte da clínica <strong>${clinicName}</strong>.</div>
+              <div class="subtitle"><strong>${safeInviterName}</strong> convidou você para fazer parte da clínica <strong>${safeClinicName}</strong>.</div>
             </div>
             
             <div class="card">
               <div class="card-title">Detalhes do Acesso</div>
-              <div class="card-item"><strong>Clínica:</strong> ${clinicName}</div>
-              <div class="card-item"><strong>Papel:</strong> ${roleLabel}</div>
-              ${jobTitle ? `<div class="card-item"><strong>Cargo:</strong> ${jobTitle}</div>` : ""}
-              ${specialty ? `<div class="card-item"><strong>Especialidade:</strong> ${specialty}</div>` : ""}
+              <div class="card-item"><strong>Clínica:</strong> ${safeClinicName}</div>
+              <div class="card-item"><strong>Papel:</strong> ${safeRoleLabel}</div>
+              ${safeJobTitle ? `<div class="card-item"><strong>Cargo:</strong> ${safeJobTitle}</div>` : ""}
+              ${safeSpecialty ? `<div class="card-item"><strong>Especialidade:</strong> ${safeSpecialty}</div>` : ""}
             </div>
 
             <p style="font-size: 14px; color: #475569; text-align: center;">
@@ -174,9 +199,11 @@ Deno.serve(async (req) => {
         </html>
       `;
     } else {
-      // Novo usuário -> Link leva para a página de onboarding /convite/clinica/:token
+      // Novo usuário ou usuário com CPF pendente -> Link leva para a página de onboarding / convite com formulário de cadastro
       destinationUrl = inviteUrl;
-      emailSubject = `Convite para ingressar na equipe da clínica ${clinicName} - Pluri-Health`;
+      emailSubject = pendingCpfCompletion
+        ? `Complete seu cadastro para ingressar na equipe da clínica ${clinicName} - Pluri-Health`
+        : `Convite para ingressar na equipe da clínica ${clinicName} - Pluri-Health`;
       emailHtml = `
         <!DOCTYPE html>
         <html>
@@ -202,19 +229,19 @@ Deno.serve(async (req) => {
             <div class="header">
               <div class="logo">Pluri-Health</div>
               <div class="title">Você foi convidado para uma equipe!</div>
-              <div class="subtitle"><strong>${inviterName}</strong> convidou você para fazer parte de <strong>${clinicName}</strong> na plataforma Pluri-Health.</div>
+              <div class="subtitle"><strong>${safeInviterName}</strong> convidou você para fazer parte de <strong>${safeClinicName}</strong> na plataforma Pluri-Health.</div>
             </div>
             
             <div class="card">
               <div class="card-title">Detalhes do Convite</div>
-              <div class="card-item"><strong>Clínica:</strong> ${clinicName}</div>
-              <div class="card-item"><strong>Papel:</strong> ${roleLabel}</div>
-              ${jobTitle ? `<div class="card-item"><strong>Cargo:</strong> ${jobTitle}</div>` : ""}
-              ${specialty ? `<div class="card-item"><strong>Especialidade:</strong> ${specialty}</div>` : ""}
+              <div class="card-item"><strong>Clínica:</strong> ${safeClinicName}</div>
+              <div class="card-item"><strong>Papel:</strong> ${safeRoleLabel}</div>
+              ${safeJobTitle ? `<div class="card-item"><strong>Cargo:</strong> ${safeJobTitle}</div>` : ""}
+              ${safeSpecialty ? `<div class="card-item"><strong>Especialidade:</strong> ${safeSpecialty}</div>` : ""}
             </div>
 
             <p style="font-size: 14px; color: #475569; text-align: center;">
-              Seu e-mail <strong>${email}</strong> já está validado para este acesso. Clique no botão abaixo para concluir seu cadastro e entrar diretamente na clínica.
+              Seu e-mail <strong>${safeEmail}</strong> já está validado para este acesso. Clique no botão abaixo para concluir seu cadastro e entrar diretamente na clínica.
             </p>
 
             <div class="button-wrapper">
