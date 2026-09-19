@@ -146,12 +146,13 @@ export const useClinicTeamData = () => {
           specialty: string | null;
           working_hours: string | null;
           last_seen_at: string | null;
+          cpf: string | null;
         }> = [];
 
         if (userIds.length > 0) {
           const profilesRes = await supabase
             .from("profiles")
-            .select("id, full_name, email, job_title, specialty, working_hours, last_seen_at")
+            .select("id, full_name, email, job_title, specialty, working_hours, last_seen_at, cpf")
             .in("id", userIds);
 
           if (profilesRes.error) {
@@ -170,6 +171,9 @@ export const useClinicTeamData = () => {
               (item.membership_status as "active" | "suspended" | "inactive") ||
               (item.is_active !== false ? "active" : "inactive");
 
+            const rawCpf = profile?.cpf ? String(profile.cpf).replace(/\D/g, "") : "";
+            const hasCpf = rawCpf.length === 11 || Boolean(profile?.cpf);
+
             return {
               id: item.id,
               user_id: item.user_id,
@@ -183,6 +187,8 @@ export const useClinicTeamData = () => {
               specialty: profile?.specialty || null,
               working_hours: profile?.working_hours || null,
               last_seen_at: profile?.last_seen_at || null,
+              cpf: profile?.cpf || null,
+              has_cpf: hasCpf,
             };
           });
         setMembers(mapped);
@@ -723,6 +729,63 @@ export const useClinicTeamData = () => {
     }
   };
 
+  const [sendingCompletionMemberId, setSendingCompletionMemberId] = useState<string | null>(null);
+
+  const handleSendCompletionInvite = async (member: ActiveMember) => {
+    if (!clinicId || !member.email) {
+      toast({ title: "Dados incompletos", description: "Colaborador não possui e-mail cadastrado.", variant: "destructive" });
+      return;
+    }
+
+    setSendingCompletionMemberId(member.id);
+    try {
+      const { data: inviteData, error: inviteErr } = await supabase.rpc("invite_clinic_collaborator", {
+        _clinic_id: clinicId,
+        _email: member.email.trim(),
+        _operational_role: member.operational_role === "owner" ? "admin" : member.operational_role,
+        _job_title: member.job_title || undefined,
+        _specialty: member.specialty || undefined,
+      });
+
+      if (inviteErr) {
+        throw new Error(inviteErr.message);
+      }
+
+      const invRecord = inviteData as Record<string, unknown> | null;
+      const token = invRecord?.token ? String(invRecord.token) : "";
+      const inviteUrl = buildPublicAppUrl(`/convite/clinica/${token}`);
+
+      const { error: fnErr } = await supabase.functions.invoke("send-clinic-invitation", {
+        body: { inviteUrl, token },
+      });
+
+      if (fnErr) {
+        const reason = await extractEdgeFunctionErrorMessage(fnErr, "Não foi possível despachar o e-mail.");
+        toast({
+          title: "Convite de regularização gerado",
+          description: `O link para completar cadastro foi gerado, mas o envio automático falhou: ${reason}`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "E-mail de regularização enviado!",
+          description: `Enviamos as instruções para ${member.full_name} (${member.email}) completar o cadastro.`,
+        });
+      }
+
+      void loadTeamData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Não foi possível enviar o e-mail de completar cadastro.";
+      toast({
+        title: "Erro ao enviar regularização",
+        description: msg,
+        variant: "destructive",
+      });
+    } finally {
+      setSendingCompletionMemberId(null);
+    }
+  };
+
   const handleCancelInvite = async (invitationId: string) => {
     setCancelingId(invitationId);
     const previousInvitations = pendingInvitations;
@@ -958,6 +1021,9 @@ export const useClinicTeamData = () => {
     cancelingId,
     handleResendInvite,
     handleCancelInvite,
+    // Regularização de CPF
+    sendingCompletionMemberId,
+    handleSendCompletionInvite,
     // Membros
     canManageMember,
     togglingMemberId,

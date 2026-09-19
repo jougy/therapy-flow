@@ -3154,6 +3154,15 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_unregistered_cpf_profile: {
+        Args: {
+          _birth_date?: string
+          _cpf: string
+          _full_name: string
+          _phone?: string
+        }
+        Returns: Json
+      }
       create_current_user_notification: {
         Args: {
           _action_label?: string
@@ -3810,6 +3819,10 @@ export type Database = {
       }
       resend_clinic_collaborator_invitation: {
         Args: { _invitation_id: string }
+        Returns: Json
+      }
+      request_account_recovery_status: {
+        Args: { _identifier: string }
         Returns: Json
       }
       restore_entity_from_trash: {

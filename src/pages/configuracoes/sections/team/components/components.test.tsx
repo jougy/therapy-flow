@@ -12,6 +12,17 @@ vi.mock("@/components/tutorial/ComponentHelpButton", () => ({
   ComponentHelpButton: () => null,
 }));
 
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: any) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: any) => <>{children}</>,
+  DropdownMenuContent: ({ children }: any) => <div>{children}</div>,
+  DropdownMenuLabel: ({ children }: any) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick, className }: any) => (
+    <button type="button" onClick={onClick} className={className}>{children}</button>
+  ),
+  DropdownMenuSeparator: () => <hr />,
+}));
+
 describe("Team Subcomponents", () => {
   describe("RolePermissionSwitch", () => {
     it("renders with a11y label combining itemTitle and displayLabel", () => {
@@ -391,6 +402,49 @@ describe("Team Subcomponents", () => {
       // Type "clinico" without accents
       fireEvent.change(searchInput, { target: { value: "clinico" } });
       expect(screen.getByText("João Médico Clínico")).toBeInTheDocument();
+    });
+
+    it("displays 'Sem CPF' badge and triggers completion invite for member without CPF", () => {
+      const onSendCompletionInvite = vi.fn();
+      const memberWithoutCpf: ActiveMember = {
+        id: "mem-no-cpf",
+        user_id: "user-no-cpf",
+        operational_role: "professional",
+        membership_status: "active",
+        is_active: true,
+        created_at: "2026-01-01T00:00:00Z",
+        full_name: "Mariana Costa",
+        email: "mariana@example.com",
+        has_cpf: false,
+      };
+
+      render(
+        <TeamDirectoryTable
+          members={[memberWithoutCpf]}
+          sortedOperationalRoleDefinitions={[]}
+          togglingMemberId={null}
+          canEditCollaborators={true}
+          canDeleteCollaborators={true}
+          canManageMember={() => true}
+          onOpenEditMember={vi.fn()}
+          onToggleMemberStatus={vi.fn()}
+          onOpenRevokeAccess={vi.fn()}
+          onSendCompletionInvite={onSendCompletionInvite}
+        />
+      );
+
+      // Verify badge "Sem CPF"
+      expect(screen.getByText("Sem CPF")).toBeInTheDocument();
+
+      // Open dropdown options (Radix trigger responds to pointerDown)
+      const trigger = screen.getByRole("button", { name: /Opções para Mariana Costa/i });
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+
+      // Verify action item "Enviar e-mail para completar cadastro"
+      const completionBtn = screen.getByText("Enviar e-mail para completar cadastro");
+      expect(completionBtn).toBeInTheDocument();
+      fireEvent.click(completionBtn);
+      expect(onSendCompletionInvite).toHaveBeenCalledWith(memberWithoutCpf);
     });
   });
 

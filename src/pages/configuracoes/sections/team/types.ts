@@ -33,6 +33,8 @@ export type ActiveMember = {
   specialty?: string | null;
   working_hours?: string | null;
   last_seen_at?: string | null;
+  cpf?: string | null;
+  has_cpf?: boolean;
 };
 
 export { parseSpecialties } from "./components/SpecialtyTags";

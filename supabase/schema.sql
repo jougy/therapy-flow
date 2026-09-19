@@ -3116,6 +3116,9 @@ DECLARE
   _invitation public.clinic_collaborator_invitations%ROWTYPE;
   _clinic_name text;
   _is_existing_user boolean := false;
+  _user_id uuid;
+  _has_cpf boolean := false;
+  _raw_cpf text;
 BEGIN
   SELECT *
   INTO _invitation
@@ -3140,11 +3143,31 @@ BEGIN
   FROM public.clinics
   WHERE id = _invitation.clinic_id;
 
-  SELECT EXISTS (
-    SELECT 1
-    FROM auth.users
-    WHERE lower(users.email) = lower(_invitation.email)
-  ) INTO _is_existing_user;
+  SELECT u.id
+  INTO _user_id
+  FROM auth.users u
+  WHERE lower(u.email) = lower(_invitation.email)
+  LIMIT 1;
+
+  IF _user_id IS NOT NULL THEN
+    _is_existing_user := true;
+  ELSE
+    _user_id := _invitation.existing_user_id;
+    IF _user_id IS NOT NULL THEN
+      _is_existing_user := true;
+    END IF;
+  END IF;
+
+  IF _user_id IS NOT NULL THEN
+    SELECT p.cpf
+    INTO _raw_cpf
+    FROM public.profiles p
+    WHERE p.id = _user_id;
+
+    IF _raw_cpf IS NOT NULL AND length(regexp_replace(_raw_cpf, '\D', '', 'g')) = 11 THEN
+      _has_cpf := true;
+    END IF;
+  END IF;
 
   RETURN jsonb_build_object(
     'id', _invitation.id,
@@ -3155,7 +3178,9 @@ BEGIN
     'job_title', _invitation.job_title,
     'specialty', _invitation.specialty,
     'status', _invitation.status,
-    'existing_user', (_invitation.existing_user_id IS NOT NULL OR _is_existing_user),
+    'existing_user', _is_existing_user,
+    'has_cpf', _has_cpf,
+    'pending_cpf_completion', (_is_existing_user AND NOT _has_cpf),
     'expires_at', _invitation.expires_at
   );
 END;
@@ -4872,8 +4897,12 @@ CREATE OR REPLACE FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", 
     AS $$
 DECLARE
   _normalized_cpf text;
+  _clean_name text;
+  _clean_phone text;
 BEGIN
   _normalized_cpf := NULLIF(regexp_replace(COALESCE(_cpf, ''), '\D', '', 'g'), '');
+  _clean_name := NULLIF(trim(COALESCE(_full_name, '')), '');
+  _clean_phone := NULLIF(trim(COALESCE(_phone, '')), '');
 
   INSERT INTO public.profiles (
     id,
@@ -4882,23 +4911,26 @@ BEGIN
     full_name,
     cpf,
     phone,
-    birth_date
+    birth_date,
+    public_code
   )
   VALUES (
     _user_id,
     NULL,
-    _email,
-    _full_name,
+    lower(trim(_email)),
+    _clean_name,
     _normalized_cpf,
-    _phone,
-    _birth_date
+    _clean_phone,
+    _birth_date,
+    public.generate_profile_public_code()
   )
   ON CONFLICT (id) DO UPDATE
-  SET email = EXCLUDED.email,
+  SET email = lower(trim(EXCLUDED.email)),
       full_name = COALESCE(EXCLUDED.full_name, profiles.full_name),
       cpf = COALESCE(EXCLUDED.cpf, profiles.cpf),
       phone = COALESCE(EXCLUDED.phone, profiles.phone),
-      birth_date = COALESCE(EXCLUDED.birth_date, profiles.birth_date);
+      birth_date = COALESCE(EXCLUDED.birth_date, profiles.birth_date),
+      updated_at = now();
 
   INSERT INTO public.user_roles (user_id, role)
   VALUES (_user_id, 'user')
@@ -6375,6 +6407,199 @@ $$;
 
 
 ALTER FUNCTION "public"."log_platform_audit_event"("_event_type" "text", "_clinic_id" "uuid", "_reason" "text", "_metadata" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_account_recovery_status"("_identifier" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth'
+    AS $$
+DECLARE
+  _trimmed text := trim(coalesce(_identifier, ''));
+  _clean_digits text;
+  _user_email text;
+  _masked_email text;
+  _profile_user_id uuid;
+  _profile_cpf text;
+  _at_pos int;
+  _user_part text;
+  _domain_part text;
+  _masked_user text;
+  _first_dot int;
+  _domain_name text;
+  _domain_tld text;
+  _masked_domain text;
+BEGIN
+  IF _trimmed = '' THEN
+    RETURN jsonb_build_object('status', 'invalid_identifier');
+  END IF;
+
+  _clean_digits := regexp_replace(_trimmed, '\D', '', 'g');
+
+  IF (position('@' in _trimmed) = 0 AND _clean_digits <> '') THEN
+    IF length(_clean_digits) <> 11 THEN
+      RETURN jsonb_build_object('status', 'invalid_cpf');
+    END IF;
+
+    SELECT p.id, p.email, p.cpf
+    INTO _profile_user_id, _user_email, _profile_cpf
+    FROM public.profiles p
+    WHERE regexp_replace(coalesce(p.cpf, ''), '\D', '', 'g') = _clean_digits
+    LIMIT 1;
+
+    IF _profile_user_id IS NULL THEN
+      RETURN jsonb_build_object('status', 'cpf_not_found');
+    END IF;
+
+    IF _user_email IS NULL OR _user_email = '' THEN
+      SELECT lower(u.email)
+      INTO _user_email
+      FROM auth.users u
+      WHERE u.id = _profile_user_id;
+    END IF;
+
+    IF _user_email IS NULL OR _user_email = '' THEN
+      RETURN jsonb_build_object('status', 'cpf_not_found');
+    END IF;
+
+    _user_email := lower(trim(_user_email));
+
+    _at_pos := position('@' in _user_email);
+    IF _at_pos > 1 THEN
+      _user_part := substring(_user_email from 1 for _at_pos - 1);
+      _domain_part := substring(_user_email from _at_pos + 1);
+
+      IF length(_user_part) <= 2 THEN
+        _masked_user := substring(_user_part from 1 for 1) || '***';
+      ELSE
+        _masked_user := substring(_user_part from 1 for 1) || '***' || substring(_user_part from length(_user_part) for 1);
+      END IF;
+
+      _first_dot := position('.' in _domain_part);
+      IF _first_dot > 1 THEN
+        _domain_name := substring(_domain_part from 1 for _first_dot - 1);
+        _domain_tld := substring(_domain_part from _first_dot);
+        IF length(_domain_name) <= 2 THEN
+          _masked_domain := substring(_domain_name from 1 for 1) || '***' || _domain_tld;
+        ELSE
+          _masked_domain := substring(_domain_name from 1 for 1) || '***' || substring(_domain_name from length(_domain_name) for 1) || _domain_tld;
+        END IF;
+      ELSE
+        _masked_domain := '***';
+      END IF;
+
+      _masked_email := _masked_user || '@' || _masked_domain;
+    ELSE
+      _masked_email := '***@***.com';
+    END IF;
+
+    RETURN jsonb_build_object(
+      'status', 'cpf_found',
+      'email', _user_email,
+      'masked_email', _masked_email
+    );
+  ELSE
+    _user_email := lower(_trimmed);
+
+    SELECT u.id, u.email
+    INTO _profile_user_id, _user_email
+    FROM auth.users u
+    WHERE lower(u.email) = _user_email
+    LIMIT 1;
+
+    IF _profile_user_id IS NULL THEN
+      SELECT p.id, p.email
+      INTO _profile_user_id, _user_email
+      FROM public.profiles p
+      WHERE lower(p.email) = _user_email
+      LIMIT 1;
+    END IF;
+
+    IF _profile_user_id IS NULL THEN
+      RETURN jsonb_build_object('status', 'email_not_found');
+    END IF;
+
+    SELECT regexp_replace(coalesce(p.cpf, ''), '\D', '', 'g')
+    INTO _profile_cpf
+    FROM public.profiles p
+    WHERE p.id = _profile_user_id;
+
+    IF _profile_cpf IS NOT NULL AND length(_profile_cpf) = 11 THEN
+      RETURN jsonb_build_object(
+        'status', 'email_found_with_cpf',
+        'email', lower(_user_email)
+      );
+    ELSE
+      RETURN jsonb_build_object(
+        'status', 'email_found_without_cpf',
+        'email', lower(_user_email)
+      );
+    END IF;
+  END IF;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."request_account_recovery_status"("_identifier" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."complete_unregistered_cpf_profile"("_full_name" "text", "_cpf" "text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth'
+    AS $$
+DECLARE
+  _user_id uuid := auth.uid();
+  _normalized_cpf text;
+  _clean_name text;
+  _clean_phone text;
+  _existing_cpf_user_id uuid;
+BEGIN
+  IF _user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  _normalized_cpf := NULLIF(regexp_replace(COALESCE(_cpf, ''), '\D', '', 'g'), '');
+  _clean_name := NULLIF(trim(COALESCE(_full_name, '')), '');
+  _clean_phone := NULLIF(trim(COALESCE(_phone, '')), '');
+
+  IF _normalized_cpf IS NULL OR length(_normalized_cpf) <> 11 THEN
+    RAISE EXCEPTION 'CPF inválido. Forneça um CPF com 11 dígitos.';
+  END IF;
+
+  IF _clean_name IS NULL THEN
+    RAISE EXCEPTION 'Nome completo é obrigatório.';
+  END IF;
+
+  SELECT id
+  INTO _existing_cpf_user_id
+  FROM public.profiles
+  WHERE regexp_replace(coalesce(cpf, ''), '\D', '', 'g') = _normalized_cpf
+    AND id <> _user_id
+  LIMIT 1;
+
+  IF _existing_cpf_user_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Este CPF já está cadastrado em outra conta.';
+  END IF;
+
+  UPDATE public.profiles
+  SET
+    full_name = _clean_name,
+    cpf = _normalized_cpf,
+    phone = COALESCE(_clean_phone, phone),
+    birth_date = COALESCE(_birth_date, birth_date),
+    updated_at = now()
+  WHERE id = _user_id;
+
+  RETURN jsonb_build_object(
+    'user_id', _user_id,
+    'full_name', _clean_name,
+    'cpf', _normalized_cpf,
+    'status', 'completed'
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."complete_unregistered_cpf_profile"("_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."log_security_event"("_clinic_id" "uuid", "_actor_user_id" "uuid", "_target_user_id" "uuid", "_event_type" "text", "_visibility_scope" "text" DEFAULT 'self'::"text", "_payload" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "uuid"
@@ -11586,6 +11811,14 @@ CREATE INDEX "idx_profiles_clinic_id" ON "public"."profiles" USING "btree" ("cli
 
 
 
+CREATE INDEX "idx_profiles_clean_cpf" ON "public"."profiles" USING "btree" (regexp_replace(coalesce("cpf", ''), '\D', '', 'g')) WHERE ("cpf" IS NOT NULL AND "cpf" <> '');
+
+
+
+CREATE INDEX "idx_profiles_lower_email" ON "public"."profiles" USING "btree" (lower("email")) WHERE ("email" IS NOT NULL AND "email" <> '');
+
+
+
 CREATE INDEX "idx_security_events_clinic_id" ON "public"."security_events" USING "btree" ("clinic_id", "created_at" DESC);
 
 
@@ -13666,6 +13899,19 @@ REVOKE ALL ON FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_em
 GRANT ALL ON FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date") TO "service_role";
 GRANT ALL ON FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date") TO "anon";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_account_recovery_status"("_identifier" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_account_recovery_status"("_identifier" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."request_account_recovery_status"("_identifier" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."request_account_recovery_status"("_identifier" "text") TO "anon";
+
+
+
+REVOKE ALL ON FUNCTION "public"."complete_unregistered_cpf_profile"("_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."complete_unregistered_cpf_profile"("_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date") TO "service_role";
+GRANT ALL ON FUNCTION "public"."complete_unregistered_cpf_profile"("_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date") TO "authenticated";
 
 
 

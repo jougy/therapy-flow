@@ -6,7 +6,9 @@ import {
   Pencil,
   Play,
   Search,
+  Send,
   ShieldCheck,
+  UserCheck,
   UserMinus,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +49,8 @@ export interface TeamDirectoryTableProps {
   onOpenEditMember: (member: ActiveMember) => void;
   onToggleMemberStatus: (member: ActiveMember, nextStatus: "active" | "suspended") => Promise<void>;
   onOpenRevokeAccess: (member: ActiveMember) => void;
+  onSendCompletionInvite?: (member: ActiveMember) => Promise<void>;
+  sendingCompletionMemberId?: string | null;
 }
 
 export const TeamDirectoryTable: React.FC<TeamDirectoryTableProps> = ({
@@ -65,6 +69,8 @@ export const TeamDirectoryTable: React.FC<TeamDirectoryTableProps> = ({
   onOpenEditMember,
   onToggleMemberStatus,
   onOpenRevokeAccess,
+  onSendCompletionInvite,
+  sendingCompletionMemberId,
 }) => {
   const [internalSearchTerm, setInternalSearchTerm] = useState("");
   const [internalRoleFilter, setInternalRoleFilter] = useState("all");
@@ -215,6 +221,14 @@ export const TeamDirectoryTable: React.FC<TeamDirectoryTableProps> = ({
                             Inativo
                           </Badge>
                         )}
+                        {!member.has_cpf && (
+                          <Badge
+                            variant="outline"
+                            className="bg-amber-50/80 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700 text-[10px] font-normal"
+                          >
+                            Sem CPF
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
                         <span>{member.email}</span>
@@ -257,19 +271,33 @@ export const TeamDirectoryTable: React.FC<TeamDirectoryTableProps> = ({
                             size="icon"
                             className="h-8 w-8"
                             aria-label={`Opções para ${member.full_name}`}
-                            disabled={isToggling}
+                            disabled={isToggling || sendingCompletionMemberId === member.id}
                           >
-                            {isToggling ? (
+                            {isToggling || sendingCompletionMemberId === member.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <MoreHorizontal className="h-4 w-4" />
                             )}
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuContent align="end" className="w-56">
                           <DropdownMenuLabel className="text-xs font-semibold">
                             Gerenciar Colaborador
                           </DropdownMenuLabel>
+                          {canEditCollaborators && !member.has_cpf && onSendCompletionInvite && (
+                            <DropdownMenuItem
+                              onClick={() => void onSendCompletionInvite(member)}
+                              disabled={sendingCompletionMemberId === member.id}
+                              className="cursor-pointer text-primary focus:text-primary font-medium"
+                            >
+                              {sendingCompletionMemberId === member.id ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Send className="h-4 w-4 mr-2" />
+                              )}
+                              Enviar e-mail para completar cadastro
+                            </DropdownMenuItem>
+                          )}
                           {canEditCollaborators && (
                             <DropdownMenuItem
                               onClick={() => onOpenEditMember(member)}

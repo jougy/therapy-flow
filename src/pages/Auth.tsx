@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { formatCpf } from "@/lib/profile-settings";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
@@ -26,6 +27,8 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const [recoveryTab, setRecoveryTab] = useState<"email" | "cpf">("email");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,44 +65,174 @@ const Auth = () => {
   const handleRecoverySubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    const normalizedCpf = normalizeCpf(recoveryCpf);
-    if (normalizedCpf.length !== 11) {
-      toast({ title: "CPF inválido", description: "Informe os 11 dígitos do CPF cadastrado.", variant: "destructive" });
-      return;
+    if (recoveryTab === "cpf") {
+      const normalizedCpf = normalizeCpf(recoveryCpf);
+      if (normalizedCpf.length !== 11) {
+        toast({
+          title: "CPF inválido",
+          description: "Informe os 11 dígitos do CPF cadastrado.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setRecovering(true);
+      try {
+        const { data: statusRes, error: rpcError } = await supabase.rpc("request_account_recovery_status", {
+          _identifier: normalizedCpf,
+        });
+
+        if (rpcError) {
+          toast({
+            title: "Erro na verificação",
+            description: rpcError.message,
+            variant: "destructive",
+          });
+          setRecovering(false);
+          return;
+        }
+
+        const res = statusRes as Record<string, unknown> | null;
+        const status = String(res?.status ?? "");
+
+        if (status === "cpf_not_found" || status === "invalid_cpf" || !res?.email) {
+          toast({
+            title: "CPF não registrado",
+            description: "Não encontramos nenhuma conta com o CPF informado. Verifique os dados ou crie uma conta.",
+            variant: "destructive",
+          });
+          setRecovering(false);
+          return;
+        }
+
+        const targetEmail = String(res.email);
+
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+          redirectTo: buildPublicAppUrl("/auth/redefinir-senha"),
+        });
+
+        if (resetError) {
+          toast({
+            title: "Erro ao enviar e-mail",
+            description: resetError.message,
+            variant: "destructive",
+          });
+          setRecovering(false);
+          return;
+        }
+
+        toast({
+          title: "Recuperação enviada",
+          description: `Um e-mail de recuperação foi enviado para o endereço ${targetEmail}.`,
+        });
+        setRecovering(false);
+        setMode("login");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Ocorreu um erro inesperado.";
+        toast({
+          title: "Erro ao solicitar recuperação",
+          description: msg,
+          variant: "destructive",
+        });
+        setRecovering(false);
+      }
+    } else {
+      // Envio por E-mail
+      const targetEmail = recoveryEmail.trim().toLowerCase();
+      if (!targetEmail) {
+        toast({
+          title: "E-mail obrigatório",
+          description: "Informe seu e-mail cadastrado.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setRecovering(true);
+      try {
+        const { data: statusRes, error: rpcError } = await supabase.rpc("request_account_recovery_status", {
+          _identifier: targetEmail,
+        });
+
+        if (rpcError) {
+          toast({
+            title: "Erro na verificação",
+            description: rpcError.message,
+            variant: "destructive",
+          });
+          setRecovering(false);
+          return;
+        }
+
+        const res = statusRes as Record<string, unknown> | null;
+        const status = String(res?.status ?? "");
+
+        if (status === "email_not_found") {
+          toast({
+            title: "E-mail não registrado",
+            description: "Não encontramos nenhuma conta com o e-mail informado. Verifique a digitação ou crie uma conta.",
+            variant: "destructive",
+          });
+          setRecovering(false);
+          return;
+        }
+
+        if (status === "email_found_without_cpf") {
+          // Dispara fluxo para completar o cadastro (enviando e-mail para definir nova senha e cadastrar os dados)
+          const { error: resetError } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+            redirectTo: buildPublicAppUrl("/auth/redefinir-senha?regularizar=true"),
+          });
+
+          if (resetError) {
+            toast({
+              title: "Erro ao enviar e-mail",
+              description: resetError.message,
+              variant: "destructive",
+            });
+            setRecovering(false);
+            return;
+          }
+
+          toast({
+            title: "Instruções enviadas",
+            description: "Identificamos que seu cadastro precisa ser completado. Enviamos um link para você definir sua senha e registrar seus dados com segurança.",
+          });
+          setRecovering(false);
+          setMode("login");
+          return;
+        }
+
+        // status === "email_found_with_cpf" ou padrão
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+          redirectTo: buildPublicAppUrl("/auth/redefinir-senha"),
+        });
+
+        if (resetError) {
+          toast({
+            title: "Erro ao enviar recuperação",
+            description: resetError.message,
+            variant: "destructive",
+          });
+          setRecovering(false);
+          return;
+        }
+
+        toast({
+          title: "E-mail enviado",
+          description: "Abra o e-mail de recuperação e siga o botão para criar uma nova senha.",
+        });
+        setRecovering(false);
+        setMode("login");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Ocorreu um erro inesperado.";
+        toast({
+          title: "Erro ao solicitar recuperação",
+          description: msg,
+          variant: "destructive",
+        });
+        setRecovering(false);
+      }
     }
-
-    setRecovering(true);
-    const { data: verified, error: verifyError } = await supabase.rpc("verify_password_recovery_identity", {
-      _cpf: normalizedCpf,
-      _email: recoveryEmail,
-    });
-
-    if (verifyError || !verified) {
-      toast({
-        title: "Dados não encontrados",
-        description: verifyError?.message || "Confira o e-mail e CPF cadastrados para solicitar a recuperação.",
-        variant: "destructive",
-      });
-      setRecovering(false);
-      return;
-    }
-
-    const { error } = await supabase.auth.resetPasswordForEmail(recoveryEmail, {
-      redirectTo: buildPublicAppUrl("/auth/redefinir-senha"),
-    });
-
-    if (error) {
-      toast({ title: "Erro ao enviar recuperação", description: error.message, variant: "destructive" });
-      setRecovering(false);
-      return;
-    }
-
-    toast({
-      title: "E-mail enviado",
-      description: "Abra o e-mail de recuperação e siga o botão para criar uma nova senha.",
-    });
-    setRecovering(false);
-    setMode("login");
   };
 
   return (
@@ -137,8 +270,10 @@ const Auth = () => {
                   <ArrowLeft className="h-4 w-4" />
                   Voltar
                 </button>
-                <CardTitle className="text-lg">Recuperar senha</CardTitle>
-                <CardDescription>Confirme seu e-mail e CPF para receber o link de recuperação.</CardDescription>
+                <CardTitle className="text-lg">Recuperar acesso</CardTitle>
+                <CardDescription>
+                  Escolha como deseja localizar sua conta para redefinir sua senha.
+                </CardDescription>
               </>
             ) : (
               <>
@@ -149,51 +284,81 @@ const Auth = () => {
           </CardHeader>
           <CardContent>
             {mode === "recovery" ? (
-              <form onSubmit={handleRecoverySubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="recovery-email">E-mail</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="recovery-email"
-                      type="email"
-                      value={recoveryEmail}
-                      onChange={(e) => setRecoveryEmail(e.target.value)}
-                      placeholder="seu@email.com"
-                      required
-                      className="pl-9"
-                      autoFocus
-                    />
-                  </div>
-                </div>
+              <div className="space-y-4">
+                <form onSubmit={handleRecoverySubmit} className="space-y-4">
+                  <Tabs
+                    value={recoveryTab}
+                    onValueChange={(val) => setRecoveryTab(val as "email" | "cpf")}
+                    className="w-full"
+                  >
+                    <TabsList className="grid w-full grid-cols-2 mb-3">
+                      <TabsTrigger value="email" className="text-xs">
+                        <Mail className="h-3.5 w-3.5 mr-1.5" />
+                        Por E-mail
+                      </TabsTrigger>
+                      <TabsTrigger value="cpf" className="text-xs">
+                        <KeyRound className="h-3.5 w-3.5 mr-1.5" />
+                        Por CPF
+                      </TabsTrigger>
+                    </TabsList>
 
-                <div className="space-y-2">
-                  <Label htmlFor="recovery-cpf">CPF</Label>
-                  <div className="relative">
-                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="recovery-cpf"
-                      inputMode="numeric"
-                      value={recoveryCpf}
-                      onChange={(e) => setRecoveryCpf(formatCpf(normalizeCpf(e.target.value)))}
-                      placeholder="000.000.000-00"
-                      required
-                      className="pl-9"
-                    />
-                  </div>
-                </div>
+                    <TabsContent value="email" className="space-y-3 mt-0">
+                      <div className="space-y-2">
+                        <Label htmlFor="recovery-email">E-mail cadastrado</Label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            id="recovery-email"
+                            type="email"
+                            value={recoveryEmail}
+                            onChange={(e) => setRecoveryEmail(e.target.value)}
+                            placeholder="seu@email.com"
+                            required={recoveryTab === "email"}
+                            className="pl-9"
+                            autoFocus
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Enviaremos um link de redefinição ou instruções caso seu cadastro precise de regularização.
+                        </p>
+                      </div>
+                    </TabsContent>
 
-                <Button type="submit" className="w-full" disabled={recovering}>
-                  {recovering ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Mail className="h-4 w-4 mr-2" />
-                      Enviar e-mail de recuperação
-                    </>
-                  )}
-                </Button>
-              </form>
+                    <TabsContent value="cpf" className="space-y-3 mt-0">
+                      <div className="space-y-2">
+                        <Label htmlFor="recovery-cpf">CPF cadastrado</Label>
+                        <div className="relative">
+                          <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            id="recovery-cpf"
+                            inputMode="numeric"
+                            value={recoveryCpf}
+                            onChange={(e) => setRecoveryCpf(formatCpf(normalizeCpf(e.target.value)))}
+                            placeholder="000.000.000-00"
+                            required={recoveryTab === "cpf"}
+                            className="pl-9"
+                            autoFocus
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Localizaremos sua conta e enviaremos o link de recuperação para o e-mail associado.
+                        </p>
+                      </div>
+                    </TabsContent>
+
+                    <Button type="submit" className="w-full mt-4" disabled={recovering}>
+                      {recovering ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Mail className="h-4 w-4 mr-2" />
+                          {recoveryTab === "email" ? "Enviar e-mail de recuperação" : "Localizar conta e enviar link"}
+                        </>
+                      )}
+                    </Button>
+                  </Tabs>
+                </form>
+              </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
