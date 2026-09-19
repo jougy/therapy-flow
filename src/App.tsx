@@ -53,6 +53,7 @@ const PacienteDetalhe = lazy(() => import("./pages/PacienteDetalhe"));
 const PacienteResumo = lazy(() => import("./pages/PacienteResumo"));
 const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
 const SelecionarClinica = lazy(() => import("./pages/SelecionarClinica"));
+const PersonalPortfolioSessionView = lazy(() => import("./pages/personal/PersonalPortfolioSessionView"));
 const SessaoDetalhe = lazy(() => import("./pages/SessaoDetalhe"));
 const PlatformAdmin = lazy(() => import("./pages/PlatformAdmin"));
 const PlatformMfa = lazy(() => import("./pages/PlatformMfa"));
@@ -65,10 +66,26 @@ const LoadingScreen = ({ message }: { message?: string }) => (
   <LoadingFeedback fullScreen message={message ?? "Carregando sistema..."} />
 );
 
+const isRecoveryUrl = () => {
+  if (typeof window === "undefined") return false;
+  const hash = window.location.hash || "";
+  const search = window.location.search || "";
+  const pathname = window.location.pathname || "";
+  return (
+    hash.includes("type=recovery") ||
+    search.includes("type=recovery") ||
+    (pathname === "/auth/redefinir-senha" &&
+      (search.includes("code=") || search.includes("regularizar=true")))
+  );
+};
+
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
-  const { isPlatformOwner, loading, platformMfaVerified, session } = useAuth();
+  const { isPlatformOwner, isPasswordRecovery, loading, platformMfaVerified, session } = useAuth();
   if (loading) {
     return <LoadingScreen />;
+  }
+  if (isPasswordRecovery || isRecoveryUrl()) {
+    return <Navigate to="/auth/redefinir-senha" replace />;
   }
   if (!session) return <Navigate to="/auth" replace />;
   if (isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
@@ -151,10 +168,14 @@ const LegacyClinicRoute = () => {
   return <Navigate to={`/clinica/${clinic.route_key}${location.pathname}${location.search}`} replace />;
 };
 
+
 const AuthRoute = ({ children }: { children: ReactNode }) => {
-  const { isPlatformOwner, loading, platformMfaVerified, session } = useAuth();
+  const { isPlatformOwner, isPasswordRecovery, loading, platformMfaVerified, session } = useAuth();
   if (loading) {
     return <LoadingScreen />;
+  }
+  if (isPasswordRecovery || isRecoveryUrl()) {
+    return <Navigate to="/auth/redefinir-senha" replace />;
   }
   if (session && isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
   if (session && isPlatformOwner && platformMfaVerified) return <Navigate to="/platform" replace />;
@@ -197,6 +218,14 @@ const App = () => (
                       <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
                       <Route path="/autorizacao-menor/:token" element={<AutorizacaoMenorPublica />} />
                       <Route path="/espacopessoal" element={<ProtectedRoute><SelecionarClinica /></ProtectedRoute>} />
+                      <Route
+                        path="/espacopessoal/portfolio/:sessionId"
+                        element={
+                          <ProtectedRoute>
+                            <PersonalPortfolioSessionView />
+                          </ProtectedRoute>
+                        }
+                      />
                       <Route path="/planos" element={<ProtectedRoute><PlanosAssinatura /></ProtectedRoute>} />
                       <Route path="/onboarding-clinica" element={<ProtectedRoute><OnboardingClinica /></ProtectedRoute>} />
                       <Route path="/pagamento/:clinicId" element={<ProtectedRoute><PagamentoClinica /></ProtectedRoute>} />

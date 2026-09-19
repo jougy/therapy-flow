@@ -43,6 +43,30 @@ export interface ClinicalPortfolioRpcRow {
   anamnesis_base_schema?: Json | null;
 }
 
+export interface ClinicalPortfolioSessionDetail {
+  sessionId: string;
+  sessionDate: string;
+  sessionStatus: string;
+  clinicId: string;
+  clinicName: string;
+  clinicRouteKey?: string | null;
+  clinicLogoUrl?: string | null;
+  patientId: string;
+  patientRef?: string | null;
+  patientName: string;
+  patientPseudonym: string;
+  patientDemographics?: string | null;
+  notesSanitized?: string | null;
+  treatmentSanitized?: string | null;
+  painScore?: number | null;
+  complexityScore?: number | null;
+  createdAt: string;
+  anamnesisFormResponse?: Json | null;
+  careLines: Array<{ id: string; name: string; color: string }>;
+  anamnesisBaseSchema?: Json | null;
+  anamnesisData?: Json | null;
+}
+
 export interface ClinicalPortfolioMetrics {
   totalAttendances: number;
   totalClinics: number;

@@ -42,6 +42,7 @@ import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { buildPublicAppUrl } from "@/lib/public-app-url";
 
 interface SecuritySessionRow {
   id: string;
@@ -156,12 +157,18 @@ export const PersonalSecuritySection = () => {
       }
       if (eventsRes.data) {
         setEventsList(
-          (eventsRes.data as unknown[]).map((e: any) => ({
+          (eventsRes.data as Array<{
+            id: string;
+            event_type: string;
+            created_at: string;
+            visibility_scope: string;
+            payload: unknown;
+          }>).map((e) => ({
             id: e.id,
             event_type: e.event_type,
             created_at: e.created_at,
             visibility_scope: e.visibility_scope,
-            payload: e.payload && typeof e.payload === "object" ? e.payload : null,
+            payload: e.payload && typeof e.payload === "object" ? (e.payload as Record<string, unknown>) : null,
           }))
         );
       }
@@ -283,7 +290,7 @@ export const PersonalSecuritySection = () => {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-        redirectTo: `${window.location.origin}/redefinir-senha`,
+        redirectTo: buildPublicAppUrl("/auth/redefinir-senha"),
       });
 
       if (error) throw error;
@@ -309,7 +316,6 @@ export const PersonalSecuritySection = () => {
 
     try {
       // Encerra sessões marcando ended_at
-      const currentToken = session?.access_token;
       const { error } = await supabase
         .from("user_security_sessions")
         .update({ ended_at: new Date().toISOString() })

@@ -49,10 +49,7 @@ export const PersonalClinicalPortfolioTab: React.FC<PersonalClinicalPortfolioTab
 
   const handleOpenSession = React.useCallback(
     (session: ClinicalPortfolioItem) => {
-      const clinicKey = session.clinic_route_key || session.clinic_id;
-      const patientRef = session.patient_ref || session.patient_id;
-      const targetUrl = `/clinica/${clinicKey}/pacientes/${patientRef}/sessao/${session.id}`;
-      navigate(targetUrl, { state: { from: "/espacopessoal" } });
+      navigate(`/espacopessoal/portfolio/${session.id}`);
     },
     [navigate]
   );
