@@ -1089,6 +1089,22 @@ const PacienteDetalhe = () => {
     }
   }, [clinic?.route_key, clinicKey, id, location.search, navigate, patient]);
 
+  // Barreira de segurança: Bloqueia acesso à ficha do paciente se o usuário não possuir permissão
+  useEffect(() => {
+    if (user && operationalRole) {
+      const hasReadPermission = typeof can === "function" ? can("patients.read") : false;
+      const isOwnerOrAdmin = operationalRole === "owner" || operationalRole === "admin";
+      if (!hasReadPermission && !isOwnerOrAdmin) {
+        toast({
+          title: "Acesso restrito",
+          description: "Você não possui permissão para consultar o prontuário deste paciente.",
+          variant: "destructive",
+        });
+        navigate("/espacopessoal", { replace: true });
+      }
+    }
+  }, [can, navigate, operationalRole, user]);
+
   const allSessionIdsKey = useMemo(() => allSessions.map((session) => session.id).join(","), [allSessions]);
 
   // Carregar resumos de compartilhamento das sessões

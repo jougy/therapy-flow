@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import type { ClinicalPortfolioItem, ClinicalPortfolioRpcRow } from "@/types/clinicalPortfolio";
+import type { ClinicalPortfolioItem, ClinicalPortfolioRpcRow, ClinicalPortfolioSessionDetail } from "@/types/clinicalPortfolio";
 import { formatDemographics, formatPatientPseudonym, sanitizeClinicalText } from "@/lib/clinical-portfolio";
 import { readTreatmentState, formatTreatmentSummary } from "@/lib/session-treatment";
 import { getClinicBrandName } from "@/lib/clinic-settings";
@@ -194,4 +194,139 @@ export async function fetchPersonalClinicalPortfolio(userId: string): Promise<Cl
       status: session.status,
     };
   });
+}
+
+/**
+ * Busca o detalhe clínico completo de um atendimento do portfólio pessoal do profissional.
+ * Totalmente isolado do escopo de tenant da clínica, com garantia de propriedade e omissão de dados comerciais/financeiros.
+ */
+export async function fetchPersonalPortfolioSessionDetail(sessionId: string): Promise<ClinicalPortfolioSessionDetail | null> {
+  if (!sessionId) {
+    return null;
+  }
+
+  // 1. Tentar RPC canônica dedicada do PostgreSQL
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "get_personal_portfolio_session_detail" as any,
+      { _session_id: sessionId }
+    );
+
+    if (!rpcError && Array.isArray(rpcData) && rpcData.length > 0) {
+      const row = rpcData[0] as any;
+      let treatmentText: string | null = row.treatment_sanitized || null;
+      if (treatmentText && (treatmentText.startsWith("{") || treatmentText.startsWith("["))) {
+        try {
+          const parsed = JSON.parse(treatmentText);
+          const formatted = formatTreatmentSummary(readTreatmentState(parsed));
+          if (formatted) {
+            treatmentText = formatted;
+          }
+        } catch {
+          // Mantém texto original sanitizado
+        }
+      }
+
+      const careLines = Array.isArray(row.care_lines)
+        ? row.care_lines
+            .filter((t: any) => t && typeof t === "object" && t.id && t.name)
+            .map((t: any) => ({
+              id: String(t.id),
+              name: String(t.name),
+              color: String(t.color || "#3b82f6"),
+            }))
+        : [];
+
+      return {
+        sessionId: row.session_id,
+        sessionDate: row.session_date,
+        sessionStatus: row.session_status,
+        clinicId: row.clinic_id || "sem-clinica",
+        clinicName: getClinicBrandName(row.clinic_name || "Clínica"),
+        clinicRouteKey: row.clinic_route_key || null,
+        clinicLogoUrl: row.clinic_logo_url || null,
+        patientId: row.patient_id || "",
+        patientRef: row.patient_ref || null,
+        patientName: row.patient_name || "Paciente",
+        patientPseudonym: row.patient_pseudonym || "Paciente",
+        patientDemographics: row.patient_demographics || null,
+        notesSanitized: row.notes_sanitized || null,
+        treatmentSanitized: treatmentText,
+        painScore: typeof row.pain_score === "number" ? row.pain_score : null,
+        complexityScore: typeof row.complexity_score === "number" ? row.complexity_score : null,
+        createdAt: row.created_at,
+        anamnesisFormResponse: row.anamnesis_form_response || null,
+        careLines,
+        anamnesisBaseSchema: row.anamnesis_base_schema || null,
+        anamnesisData: row.anamnesis_data || null,
+      };
+    }
+  } catch (rpcErr) {
+    console.warn("RPC get_personal_portfolio_session_detail falhou, tentando consulta direta segura:", rpcErr);
+  }
+
+  // 2. Fallback de consulta direta de sessão autenticada
+  const { data: sessionData, error: sessionError } = await supabase
+    .from("sessions")
+    .select(`
+      id,
+      session_date,
+      status,
+      clinic_id,
+      patient_id,
+      notes,
+      treatment,
+      pain_score,
+      complexity_score,
+      created_at,
+      anamnesis,
+      anamnesis_form_response,
+      deleted_at,
+      clinics:clinic_id (id, name, route_key, logo_url, anamnesis_base_schema),
+      patients:patient_id (id, name, patient_code, age, gender, date_of_birth)
+    `)
+    .eq("id", sessionId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (sessionError || !sessionData) {
+    return null;
+  }
+
+  const rawSession = sessionData as any;
+  const clinicName = rawSession.clinics?.name ? getClinicBrandName(rawSession.clinics.name) : "Clínica de Atendimento";
+  const patientName = rawSession.patients?.name || "Paciente";
+  const patientPseudonym = formatPatientPseudonym(patientName);
+  const patientDemographics = formatDemographics(
+    rawSession.patients?.age,
+    rawSession.patients?.gender,
+    rawSession.patients?.date_of_birth
+  );
+
+  const treatmentState = readTreatmentState(rawSession.treatment);
+  const treatmentSummary = formatTreatmentSummary(treatmentState);
+
+  return {
+    sessionId: rawSession.id,
+    sessionDate: rawSession.session_date,
+    sessionStatus: rawSession.status,
+    clinicId: rawSession.clinic_id || "sem-clinica",
+    clinicName,
+    clinicRouteKey: rawSession.clinics?.route_key || null,
+    clinicLogoUrl: rawSession.clinics?.logo_url || null,
+    patientId: rawSession.patient_id,
+    patientRef: rawSession.patients?.patient_code || rawSession.patient_id,
+    patientName,
+    patientPseudonym,
+    patientDemographics,
+    notesSanitized: sanitizeClinicalText(rawSession.notes),
+    treatmentSanitized: treatmentSummary || (typeof rawSession.treatment === "string" ? rawSession.treatment : null),
+    painScore: rawSession.pain_score,
+    complexityScore: rawSession.complexity_score,
+    createdAt: rawSession.created_at,
+    anamnesisFormResponse: rawSession.anamnesis_form_response,
+    careLines: [],
+    anamnesisBaseSchema: rawSession.clinics?.anamnesis_base_schema || null,
+    anamnesisData: rawSession.anamnesis || null,
+  };
 }

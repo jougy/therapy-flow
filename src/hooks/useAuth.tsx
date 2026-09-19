@@ -83,6 +83,8 @@ interface AuthContextType {
   endPlatformClinicAccess?: () => Promise<void>;
   isSuperAdmin: boolean;
   isPlatformOwner?: boolean;
+  isPasswordRecovery?: boolean;
+  clearPasswordRecovery?: () => void;
   platformMfaVerified?: boolean;
   loading: boolean;
   membership: Membership | null;
@@ -179,6 +181,8 @@ const AuthContext = createContext<AuthContextType>({
   endPlatformClinicAccess: async () => {},
   isSuperAdmin: false,
   isPlatformOwner: false,
+  isPasswordRecovery: false,
+  clearPasswordRecovery: () => {},
   platformMfaVerified: false,
   loading: true,
   membership: null,
@@ -213,6 +217,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isPlatformOwner, setIsPlatformOwner] = useState(false);
   const [platformMfaVerified, setPlatformMfaVerified] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const hash = window.location.hash || "";
+    const search = window.location.search || "";
+    const pathname = window.location.pathname || "";
+    return (
+      hash.includes("type=recovery") ||
+      search.includes("type=recovery") ||
+      (pathname === "/auth/redefinir-senha" &&
+        (search.includes("code=") || search.includes("regularizar=true")))
+    );
+  });
   const [platformAccess, setPlatformAccess] = useState<PlatformClinicAccess | null>(null);
   const [roleCapabilityOverrides, setRoleCapabilityOverrides] = useState<RoleCapabilityOverride[]>([]);
   const currentSecuritySessionKeyRef = useRef<string | null>(null);
@@ -491,7 +507,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let initialized = false;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsPasswordRecovery(true);
+      }
       setSession(nextSession);
       initialized = true;
 
@@ -653,11 +672,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
   }, [clinic, membership, roleCapabilityOverrides, activeSubscriptionPlan, simulatedRoleCapabilityOverrides]);
 
+  const clearPasswordRecovery = useCallback(() => {
+    setIsPasswordRecovery(false);
+  }, []);
+
   const signOut = async () => {
     await endCurrentSecuritySession({ session });
     setStoredActiveClinicId(null);
     setPlatformAccess(null);
     setPlatformMfaVerified(false);
+    setIsPasswordRecovery(false);
     appQueryClient.clear();
     await supabase.auth.signOut();
   };
@@ -960,6 +984,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         endPlatformClinicAccess,
         isSuperAdmin,
         isPlatformOwner,
+        isPasswordRecovery,
+        clearPasswordRecovery,
         platformMfaVerified,
         loading,
         membership,

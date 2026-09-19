@@ -383,10 +383,7 @@ describe("ClinicalRecordEvolutionModal Component", () => {
     fireEvent.click(card);
 
     expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith(
-      "/clinica/clinica-alfa-sp/pacientes/PAC-001/sessao/session-1",
-      { state: { from: "/espacopessoal" } }
-    );
+    expect(mockNavigate).toHaveBeenCalledWith("/espacopessoal/portfolio/session-1");
   });
 
   it("renders ClinicalRecordEvolutionModal directly with read-only and responsive layout", () => {

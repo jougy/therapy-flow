@@ -1617,7 +1617,9 @@ const SessaoDetalhe = () => {
   const currentShareRecipient = shareRecipients.find((r) => r.id === user?.id);
   const isSharedWithReadOnlyAccess = currentShareRecipient && currentShareRecipient.access_level === "read_only" && createdByUserId !== user?.id && !canEditOthersSessions;
   const canStartNewSessionFromThis = !isSharedWithReadOnlyAccess;
-  const canDeleteOwnProfessionalSession = (operationalRole === "professional" || operationalRole === "estagiario") && createdByUserId === user?.id;
+  const canDeleteOwnProfessionalSession =
+    (operationalRole === "professional" && createdByUserId === user?.id && can("sessions.delete")) ||
+    (operationalRole === "estagiario" && createdByUserId === user?.id && status === "rascunho");
   const canManageSessionSharing = !isNew && (canManageSessionDeletion || canEditSessionContent);
   const canEditSavedDraft = !isNew && status === "rascunho";
   const canEditPresenceSummary = !isNew && !isEditing && canEditSessionContent;
@@ -1667,7 +1669,12 @@ const SessaoDetalhe = () => {
       description: "O atendimento foi enviado para a lixeira da clínica e pode ser restaurado até domingo.",
       action: createTrashToastAction(clinicKey, navigate),
     });
-    navigate(`/pacientes/${patientId}`);
+
+    if ((location.state as any)?.from === "/espacopessoal") {
+      navigate("/espacopessoal");
+    } else {
+      navigate(`/pacientes/${patientId}`);
+    }
   };
 
   const handleOpenShareAccess = () => {
