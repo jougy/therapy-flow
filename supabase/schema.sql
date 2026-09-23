@@ -10826,7 +10826,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "birth_date" "date",
     "job_title" "text",
     "specialty" "text",
-    "specialties" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "specialties" "jsonb",
     "professional_license" "text",
     "bio" "text",
     "avatar_url" "text",
@@ -10835,7 +10835,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "last_seen_at" timestamp with time zone,
     "working_hours" "text",
     "public_code" "text" NOT NULL,
-    "address" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "address" "jsonb",
     "last_password_changed_at" timestamp with time zone,
     "password_temporary" boolean DEFAULT false NOT NULL,
     "owner_terms_accepted_at" timestamp with time zone
