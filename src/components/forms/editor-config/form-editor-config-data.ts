@@ -94,7 +94,7 @@ export const COMPONENT_CATEGORIES_CONFIG: readonly ComponentCategoryConfig[] = [
     name: "Estrutura & Agrupamento",
     items: [
       { key: "section", label: "Seção sanfona", desc: "Agrupador vertical retrátil", icon: Folder },
-      { key: "horizontal_section", label: "Seção horizontal", desc: "Colunas com rolagem lateral", icon: Columns },
+      { key: "horizontal_section", label: "Etapas Horizontais", desc: "Colunas com rolagem lateral ou navegação em etapas", icon: Columns },
       { key: "section_selector", label: "Seletor de seções", desc: "Switches de visibilidade condicional", icon: ToggleLeft },
       { key: "radar_section", label: "Polígono de Status", desc: "Radar de atributos com sliders e métricas", icon: Hexagon },
     ],

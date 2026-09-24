@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   ClipboardList,
+  Clock,
   Download,
   FileText,
   FlaskConical,
   Loader2,
   Pencil,
   Plus,
+  Receipt,
   ShieldCheck,
   Stethoscope,
   Upload,
@@ -38,6 +40,8 @@ import {
   buildAnamnesisTemplateExchangePayload,
   parseAnamnesisTemplateExchangePayload,
 } from "@/lib/anamnesis-forms";
+import type { SubscriptionInvoice } from "@/types/subscriptionInvoice";
+import { InvoiceStatusBadge, InvoiceNfeBadge } from "@/components/clinic-billing/InvoiceBadges";
 import type {
   FeatureFlag,
   PlatformAuditEvent,
@@ -67,6 +71,7 @@ export const PlatformClinicDetailPage = ({
   const [, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [clinicTags, setClinicTags] = useState<{ id: string; name: string; color: string }[]>([]);
   const [clinicSubscription, setClinicSubscription] = useState<PlatformSubscriptionData | null>(null);
+  const [clinicInvoices, setClinicInvoices] = useState<SubscriptionInvoice[]>([]);
   const [formsSummary, setFormsSummary] = useState<PlatformClinicFormsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [supportReason, setSupportReason] = useState("");
@@ -90,12 +95,13 @@ export const PlatformClinicDetailPage = ({
       const loadedClinicId = String(loadedDetail?.clinic?.id ?? "");
       if (!loadedClinicId) throw new Error("Clínica não encontrada para esta rota mascarada.");
 
-      const [auditRes, flagsRes, formsRes, tagsRes, subRes] = await Promise.all([
+      const [auditRes, flagsRes, formsRes, tagsRes, subRes, invoicesRes] = await Promise.all([
         callRpc("list_platform_audit_events", { _clinic_id: loadedClinicId, _limit: 80 }),
         callRpc("list_feature_flags", { _clinic_id: loadedClinicId }),
         callRpc("get_platform_clinic_forms_summary_by_route_key", { _route_key: clinicKey }),
         supabase.from("clinic_tag_relations").select("clinic_tags(id, name, color)").eq("clinic_id", loadedClinicId),
         supabase.from("clinic_subscriptions").select("*").eq("clinic_id", loadedClinicId).maybeSingle(),
+        supabase.from("subscription_invoices").select("*").eq("clinic_id", loadedClinicId).order("created_at", { ascending: false }),
       ]);
 
       if (auditRes.error) throw auditRes.error;
@@ -104,6 +110,7 @@ export const PlatformClinicDetailPage = ({
 
       setDetail(loadedDetail);
       setClinicSubscription(subRes.data ?? null);
+      setClinicInvoices((invoicesRes.data ?? []) as SubscriptionInvoice[]);
       setAuditEvents((auditRes.data ?? []) as PlatformAuditEvent[]);
       setFeatureFlags((flagsRes.data ?? []) as FeatureFlag[]);
       setFormsSummary((formsRes.data ?? null) as PlatformClinicFormsSummary | null);
@@ -447,6 +454,110 @@ export const PlatformClinicDetailPage = ({
                 title="Acesso e plano da clínica"
               />
             </div>
+
+            <Card className="mt-4">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Receipt className="w-4 h-4 text-primary" />
+                    Faturas e Documentos Fiscais (NFS-e)
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Histórico de cobranças, status e notas fiscais de serviço emitidas pela plataforma.
+                  </p>
+                </div>
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {clinicInvoices.length} fatura(s)
+                </Badge>
+              </CardHeader>
+              <CardContent className="p-0">
+                {clinicInvoices.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    <Receipt className="w-7 h-7 mx-auto mb-2 opacity-30" />
+                    Nenhuma fatura encontrada para esta clínica.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-foreground">
+                      <thead className="bg-muted/50 text-muted-foreground uppercase tracking-wider font-semibold border-y">
+                        <tr>
+                          <th className="p-3">Data</th>
+                          <th className="p-3">Tipo</th>
+                          <th className="p-3">Forma</th>
+                          <th className="p-3">Valor</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3">NFS-e</th>
+                          <th className="p-3 text-right">Documento</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {clinicInvoices.map((inv) => (
+                          <tr key={inv.id} className="hover:bg-muted/30 transition-colors">
+                            <td className="p-3 whitespace-nowrap">
+                              {new Date(inv.created_at || inv.due_date).toLocaleDateString("pt-BR")}
+                            </td>
+                            <td className="p-3 whitespace-nowrap font-medium">
+                              {inv.charge_type === "ONE_TIME_SUBACCOUNT_EXPANSION"
+                                ? "Expansão de Vagas"
+                                : "Mensalidade"}
+                            </td>
+                            <td className="p-3 whitespace-nowrap">{inv.billing_type || "PIX"}</td>
+                            <td className="p-3 whitespace-nowrap font-semibold">
+                              R$ {Number(inv.value).toFixed(2)}
+                            </td>
+                            <td className="p-3 whitespace-nowrap">
+                              <InvoiceStatusBadge status={inv.status} />
+                            </td>
+                            <td className="p-3 whitespace-nowrap">
+                              <InvoiceNfeBadge nfeStatus={inv.nfe_status} nfeNumber={inv.nfe_number} />
+                            </td>
+                            <td className="p-3 text-right whitespace-nowrap">
+                              {inv.nfe_pdf_url ? (
+                                <Button
+                                  asChild
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs rounded-md border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 min-h-[32px] sm:min-h-[36px]"
+                                >
+                                  <a
+                                    href={inv.nfe_pdf_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label="Visualizar Nota Fiscal (PDF)"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 mr-1" />
+                                    Nota Fiscal (PDF)
+                                  </a>
+                                </Button>
+                              ) : inv.invoice_url ? (
+                                <Button
+                                  asChild
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs text-muted-foreground hover:text-foreground min-h-[32px] sm:min-h-[36px]"
+                                >
+                                  <a
+                                    href={inv.invoice_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label="Recibo Asaas"
+                                  >
+                                    <Download className="w-3.5 h-3.5 mr-1" />
+                                    Fatura
+                                  </a>
+                                </Button>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="accounts">

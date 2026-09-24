@@ -71,10 +71,10 @@ export const FormEditorBatchActionBar: React.FC<FormEditorBatchActionBarProps> =
             size="sm"
             className="h-8 gap-1.5 text-xs text-foreground hover:bg-primary/10 hover:text-primary rounded-full px-2.5 sm:px-3"
             onClick={() => encapsulateSelectedFields("horizontal_section")}
-            title="Encapsular em Seção Horizontal"
+            title="Encapsular em Etapas Horizontais"
           >
             <Columns className="h-3.5 w-3.5 text-primary" />
-            <span className="hidden md:inline">Seção Horizontal</span>
+            <span className="hidden md:inline">Etapas Horizontais</span>
           </Button>
 
           <Button

@@ -11009,6 +11009,12 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_invoices" (
     "paid_at" timestamp with time zone,
     "installment_number" integer DEFAULT 1,
     "total_installments" integer DEFAULT 1,
+    "asaas_invoice_id" text,
+    "nfe_status" text,
+    "nfe_number" text,
+    "nfe_pdf_url" text,
+    "nfe_xml_url" text,
+    "nfe_error_message" text,
     CONSTRAINT "subscription_invoices_charge_type_check" CHECK (("charge_type" = ANY (ARRAY['RECURRING_SUBSCRIPTION'::"text", 'ONE_TIME_SUBACCOUNT_EXPANSION'::"text"]))),
     CONSTRAINT "subscription_invoices_status_check" CHECK (("status" = ANY (ARRAY['PENDING'::"text", 'RECEIVED'::"text", 'CONFIRMED'::"text", 'OVERDUE'::"text", 'REFUNDED'::"text", 'DELETED'::"text", 'DUNNING_RECEIVED'::"text", 'RECEIVED_IN_CASH'::"text", 'AWAITING_PAYMENT'::"text"])))
 );
@@ -11912,6 +11918,10 @@ CREATE INDEX "idx_subscription_invoices_clinic_id" ON "public"."subscription_inv
 
 
 CREATE INDEX "idx_subscription_invoices_status" ON "public"."subscription_invoices" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_subscription_invoices_asaas_invoice_id" ON "public"."subscription_invoices" USING "btree" ("asaas_invoice_id");
 
 
 

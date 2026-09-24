@@ -23,6 +23,7 @@ import {
   addTableRow,
   getTableRows,
   getOptionMatrixRows,
+  hasMeaningfulFormValue,
   removeTableRow,
   updateTableCellValue,
   type AddressBlockValue,
@@ -34,8 +35,9 @@ import {
 import { cn } from "@/lib/utils";
 import type { SuggestedCareLine } from "@/lib/care-lines-classifier";
 import { CheckCircle2, Layers, Plus, Sparkles, ToggleLeft, Trash2 } from "lucide-react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import { useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { HorizontalScrollNavigator } from "./SessionHorizontalScrollNavigator";
+import { HorizontalStepperNavigator, safeStepIndex } from "@/components/anamnesis-editor/HorizontalStepperNavigator";
 
 const estimateLayoutWeight = (field: Pick<AnamnesisField, "helpText" | "label" | "options" | "type">) => {
   const labelLength = (field.label ?? "").trim().length;
@@ -148,29 +150,6 @@ const estimateHorizontalSectionRowHeight = (items: TemplateLayoutItem[]) => {
   return `${Math.ceil(tallestField)}px`;
 };
 
-const hasMeaningfulFormValue = (value: AnamnesisFormValue | undefined) => {
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
-
-  if (typeof value === "string") {
-    return value.trim().length > 0;
-  }
-
-  if (typeof value === "number") {
-    return true;
-  }
-
-  if (typeof value === "boolean") {
-    return value;
-  }
-
-  if (value && typeof value === "object") {
-    return Object.values(value).some((item) => hasMeaningfulFormValue(item as AnamnesisFormValue));
-  }
-
-  return false;
-};
 
 export const ScaleIndicator = ({ max = 10, min = 0, score }: { max?: number; min?: number; score: number }) => {
   const color = score <= 3 ? "bg-success" : score <= 6 ? "bg-warning" : "bg-destructive";
@@ -252,6 +231,8 @@ export const SessionAnamnesisRuntime = ({
 }: SessionAnamnesisRuntimeProps) => {
   const painColor =
     painScore[0] <= 3 ? "text-success" : painScore[0] <= 6 ? "text-warning" : "text-destructive";
+
+  const [activeSteps, setActiveSteps] = useState<Record<string, number>>({});
 
   const updateFormResponse = (fieldId: string, value: AnamnesisFormValue) => {
     onAnamnesisFormResponseChange((current) => ({
@@ -777,6 +758,115 @@ export const SessionAnamnesisRuntime = ({
             } satisfies CSSProperties;
           });
 
+          const mode = item.field.horizontalDisplayMode ?? "scroll";
+          const isDesktopStepper = mode === "stepper_always";
+          const isMobileStepper = mode === "stepper_always" || mode === "stepper_mobile";
+
+          const totalSteps = item.items.length;
+          const currentStep = safeStepIndex(activeSteps[item.field.id] ?? 0, totalSteps);
+          const completedSteps = item.items.filter((child) =>
+            hasMeaningfulFormValue(anamnesisFormResponse[child.field.id])
+          ).length;
+          const activeChild = item.items[currentStep];
+
+          const renderStepperView = () => (
+            <div className="space-y-3">
+              <HorizontalStepperNavigator
+                currentStep={currentStep}
+                totalSteps={totalSteps}
+                completedSteps={completedSteps}
+                onPrev={() =>
+                  setActiveSteps((prev) => ({
+                    ...prev,
+                    [item.field.id]: safeStepIndex(currentStep - 1, totalSteps),
+                  }))
+                }
+                onNext={() =>
+                  setActiveSteps((prev) => ({
+                    ...prev,
+                    [item.field.id]: safeStepIndex(currentStep + 1, totalSteps),
+                  }))
+                }
+              />
+              {activeChild && (
+                <div
+                  key={activeChild.field.id}
+                  className="w-full min-w-0 rounded-lg border bg-muted/10 p-3.5 space-y-2"
+                >
+                  {activeChild.type === "field"
+                    ? renderDynamicField(activeChild.field)
+                    : renderLayoutItems([activeChild])}
+                </div>
+              )}
+            </div>
+          );
+
+          const renderScrollView = () => (
+            <div>
+              <div
+                ref={(node) => {
+                  horizontalScrollRefs.current[scrollContainerId] = node;
+                }}
+                className="w-full min-w-0 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+                onScroll={scheduleHorizontalScrollSync}
+              >
+                <div className="flex items-stretch gap-4 pb-4">
+                  {item.items.map((child) => {
+                    const preferredWidth = estimateFieldPreferredWidth(child.field);
+                    const maxWidth = getFieldMaxWidth(child.field);
+
+                    return (
+                      <div
+                        key={child.field.id}
+                        className="min-w-0 whitespace-normal rounded-lg border bg-muted/10 p-4"
+                        style={{
+                          flex: `${estimateLayoutWeight(child.field)} 1 ${preferredWidth}px`,
+                          maxWidth: maxWidth ?? undefined,
+                          minHeight: horizontalRowMinHeight,
+                          minWidth: Math.min(preferredWidth, maxWidth ?? preferredWidth),
+                        }}
+                      >
+                        <div className="flex h-full min-h-0 flex-col">
+                          {child.type === "field"
+                            ? renderDynamicField(child.field)
+                            : renderLayoutItems([child])}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <HorizontalScrollNavigator
+                clientWidth={horizontalScrollSnapshot?.clientWidth ?? 0}
+                markerStyles={horizontalMarkerStyles}
+                onScrollLeft={() => {
+                  scrollHorizontalSectionToSibling(scrollContainerId, "left");
+                }}
+                onScrollRight={() => {
+                  scrollHorizontalSectionToSibling(scrollContainerId, "right");
+                }}
+                onTrackPointerDown={(event) => beginHorizontalDrag(scrollContainerId, event)}
+                onTrackPointerMove={updateHorizontalDrag}
+                onTrackPointerUp={endHorizontalDrag}
+                scrollLeft={horizontalScrollSnapshot?.scrollLeft ?? 0}
+                scrollWidth={horizontalScrollSnapshot?.scrollWidth ?? 0}
+              />
+            </div>
+          );
+
+          const renderStackView = () => (
+            <div className="space-y-3">
+              {item.items.map((child) => (
+                <div
+                  key={child.field.id}
+                  className="w-full min-w-0 rounded-lg border bg-muted/10 p-3.5 space-y-2"
+                >
+                  {child.type === "field" ? renderDynamicField(child.field) : renderLayoutItems([child])}
+                </div>
+              ))}
+            </div>
+          );
+
           return (
             <Card key={item.field.id} className="min-w-0">
               <CardContent className="space-y-4 p-4">
@@ -784,69 +874,22 @@ export const SessionAnamnesisRuntime = ({
                   <p className="font-medium">{item.field.label}</p>
                   {item.field.helpText && <p className="mt-1 text-sm text-muted-foreground">{item.field.helpText}</p>}
                 </div>
-                {/* Desktop & Tablet Landscape View: Smooth Horizontal Scroll with Navigator */}
-                <div className="hidden sm:block">
-                  <div
-                    ref={(node) => {
-                      horizontalScrollRefs.current[scrollContainerId] = node;
-                    }}
-                    className="w-full min-w-0 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-                    onScroll={scheduleHorizontalScrollSync}
-                  >
-                    <div className="flex items-stretch gap-4 pb-4">
-                      {item.items.map((child) => {
-                        const preferredWidth = estimateFieldPreferredWidth(child.field);
-                        const maxWidth = getFieldMaxWidth(child.field);
 
-                        return (
-                          <div
-                            key={child.field.id}
-                            className="min-w-0 whitespace-normal rounded-lg border bg-muted/10 p-4"
-                            style={{
-                              flex: `${estimateLayoutWeight(child.field)} 1 ${preferredWidth}px`,
-                              maxWidth: maxWidth ?? undefined,
-                              minHeight: horizontalRowMinHeight,
-                              minWidth: Math.min(preferredWidth, maxWidth ?? preferredWidth),
-                            }}
-                          >
-                            <div className="flex h-full min-h-0 flex-col">
-                              {child.type === "field"
-                                ? renderDynamicField(child.field)
-                                : renderLayoutItems([child])}
-                            </div>
-                          </div>
-                        );
-                      })}
+                {isDesktopStepper && isMobileStepper ? (
+                  renderStepperView()
+                ) : (
+                  <>
+                    {/* Desktop & Tablet Landscape View: Smooth Horizontal Scroll with Navigator */}
+                    <div className="hidden sm:block">
+                      {isDesktopStepper ? renderStepperView() : renderScrollView()}
                     </div>
-                  </div>
-                  <HorizontalScrollNavigator
-                    clientWidth={horizontalScrollSnapshot?.clientWidth ?? 0}
-                    markerStyles={horizontalMarkerStyles}
-                    onScrollLeft={() => {
-                      scrollHorizontalSectionToSibling(scrollContainerId, "left");
-                    }}
-                    onScrollRight={() => {
-                      scrollHorizontalSectionToSibling(scrollContainerId, "right");
-                    }}
-                    onTrackPointerDown={(event) => beginHorizontalDrag(scrollContainerId, event)}
-                    onTrackPointerMove={updateHorizontalDrag}
-                    onTrackPointerUp={endHorizontalDrag}
-                    scrollLeft={horizontalScrollSnapshot?.scrollLeft ?? 0}
-                    scrollWidth={horizontalScrollSnapshot?.scrollWidth ?? 0}
-                  />
-                </div>
 
-                {/* Mobile Portrait View: Fluent Vertical Responsive Stack */}
-                <div className="sm:hidden space-y-3">
-                  {item.items.map((child) => (
-                    <div
-                      key={child.field.id}
-                      className="w-full min-w-0 rounded-lg border bg-muted/10 p-3.5 space-y-2"
-                    >
-                      {child.type === "field" ? renderDynamicField(child.field) : renderLayoutItems([child])}
+                    {/* Mobile Portrait View: Fluent Vertical Responsive Stack or Stepper */}
+                    <div className="sm:hidden">
+                      {isMobileStepper ? renderStepperView() : renderStackView()}
                     </div>
-                  ))}
-                </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           );

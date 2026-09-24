@@ -193,7 +193,7 @@ const StructurePanel: React.FC<StructurePanelProps> = ({ schema }) => {
     checklist: "Checklist",
     slider: "Slidebar",
     section: "Seção sanfona",
-    horizontal_section: "Seção horizontal",
+    horizontal_section: "Etapas Horizontais",
     section_selector: "Seletor de seções",
     table: "Tabela dinâmica",
     address_block: "Bloco de endereço",

@@ -110,7 +110,7 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
           list.push({
             id: field.id,
             label: field.label || "Seção sem título",
-            type: field.type === "horizontal_section" ? "Seção Horizontal" : "Seção",
+            type: field.type === "horizontal_section" ? "Etapas Horizontais" : "Seção",
             source: "Bloco Universal",
             fieldCount: childCount,
           });
@@ -125,7 +125,7 @@ export const PrintBlankKitModal: React.FC<PrintBlankKitModalProps> = ({
           list.push({
             id: field.id,
             label: field.label || "Seção sem título",
-            type: field.type === "horizontal_section" ? "Seção Horizontal" : "Seção",
+            type: field.type === "horizontal_section" ? "Etapas Horizontais" : "Seção",
             source: selectedTemplate.name,
             fieldCount: childCount,
           });

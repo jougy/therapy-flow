@@ -111,6 +111,50 @@ export interface AsaasOneTimePaymentData {
   };
 }
 
+export interface AsaasInvoiceData {
+  payment?: string;
+  customer?: string;
+  serviceDescription: string;
+  effectiveDate?: string; // YYYY-MM-DD
+  observations?: string;
+  value?: number;
+  deductions?: number;
+  taxes?: {
+    retainIss?: boolean;
+    iss?: number;
+    cofins?: number;
+    csll?: number;
+    inss?: number;
+    ir?: number;
+    pis?: number;
+  };
+  municipalServiceId?: string;
+  municipalServiceCode?: string;
+  municipalServiceName?: string;
+  externalReference?: string;
+}
+
+export interface AsaasInvoiceResponse {
+  id: string;
+  status: 'SCHEDULED' | 'AUTHORIZED' | 'PROCESSING_CANCELLATION' | 'CANCELED' | 'CANCELED_ERROR' | 'ERROR';
+  customer?: string;
+  payment?: string;
+  installation?: string;
+  serviceDescription?: string;
+  observations?: string;
+  value?: number;
+  deductions?: number;
+  effectiveDate?: string;
+  number?: string;
+  validationCode?: string;
+  pdfUrl?: string;
+  xmlUrl?: string;
+  rpsSerie?: string;
+  rpsNumber?: string;
+  errorMessage?: string;
+  externalReference?: string;
+}
+
 export class AsaasClient {
   private apiKey: string;
   private baseUrl: string;
@@ -279,6 +323,20 @@ export class AsaasClient {
     return this.request(`/payments/${paymentId}/refund`, {
       method: 'POST',
       body: JSON.stringify({ value, description }),
+    });
+  }
+
+  // Invoices (NFS-e)
+  async createInvoice(data: AsaasInvoiceData): Promise<AsaasInvoiceResponse> {
+    return this.request<AsaasInvoiceResponse>('/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getInvoice(invoiceId: string): Promise<AsaasInvoiceResponse> {
+    return this.request<AsaasInvoiceResponse>(`/invoices/${invoiceId}`, {
+      method: 'GET',
     });
   }
 }

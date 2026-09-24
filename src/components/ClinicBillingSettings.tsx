@@ -36,6 +36,8 @@ import {
   AdjustConcurrentAccessModal,
   CancelSubscriptionModal,
   PixPaymentModal,
+  InvoiceStatusBadge,
+  InvoiceNfeBadge,
 } from "./clinic-billing";
 
 interface ClinicBillingSettingsProps {
@@ -81,23 +83,7 @@ interface SubscriptionSummary {
   override_reason?: string | null;
 }
 
-interface Invoice {
-  id: string;
-  asaas_payment_id: string;
-  charge_type: "RECURRING_SUBSCRIPTION" | "ONE_TIME_SUBACCOUNT_EXPANSION";
-  status: string;
-  value: number;
-  due_date: string;
-  payment_date: string | null;
-  billing_type: string | null;
-  pix_qr_code?: string | null;
-  pix_copy_paste?: string | null;
-  pix_copia_e_cola?: string | null;
-  pix_expiration_date?: string | null;
-  invoice_url?: string | null;
-  metadata?: Record<string, unknown>;
-  created_at: string;
-}
+import type { SubscriptionInvoice as Invoice } from "@/types/subscriptionInvoice";
 
 export function ClinicBillingSettings({
   clinicId,
@@ -776,6 +762,7 @@ export function ClinicBillingSettings({
                   <th className="p-4">Forma</th>
                   <th className="p-4">Valor</th>
                   <th className="p-4">Status</th>
+                  <th className="p-4">NFS-e</th>
                   <th className="p-4 text-right">Ação</th>
                 </tr>
               </thead>
@@ -791,31 +778,43 @@ export function ClinicBillingSettings({
                     <td className="p-4">{inv.billing_type || "PIX"}</td>
                     <td className="p-4 font-bold text-foreground">R$ {Number(inv.value).toFixed(2)}</td>
                     <td className="p-4">
-                      <Badge 
-                        variant="outline" 
-                        className={
-                          inv.status === "CONFIRMED" || inv.status === "RECEIVED"
-                            ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
-                            : inv.status === "PENDING"
-                            ? "border-yellow-500/30 text-yellow-600 dark:text-yellow-400 bg-yellow-500/10"
-                            : "border-neutral-500/30 text-neutral-400"
-                        }
-                      >
-                        {inv.status === "CONFIRMED" || inv.status === "RECEIVED" ? "Pago / Confirmado" : inv.status === "PENDING" ? "Pendente" : inv.status}
-                      </Badge>
+                      <InvoiceStatusBadge status={inv.status} />
+                    </td>
+                    <td className="p-4">
+                      <InvoiceNfeBadge nfeStatus={inv.nfe_status} nfeNumber={inv.nfe_number} />
                     </td>
                     <td className="p-4 text-right">
-                      {inv.status === "PENDING" && (inv.pix_copy_paste || inv.pix_copia_e_cola || inv.pix_qr_code) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setSelectedPixInvoice(inv)}
-                          className="h-8 text-xs rounded-lg border-blue-500/30 text-blue-500 hover:bg-blue-500/10 min-h-[36px]"
-                        >
-                          <QrCode className="w-3.5 h-3.5 mr-1" />
-                          Pagar via PIX
-                        </Button>
-                      )}
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
+                        {inv.nfe_pdf_url && (
+                          <Button
+                            asChild
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs rounded-lg border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 min-h-[36px]"
+                          >
+                            <a
+                              href={inv.nfe_pdf_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label="Download Nota Fiscal (PDF)"
+                            >
+                              <FileText className="w-3.5 h-3.5 mr-1" />
+                              Nota Fiscal (PDF)
+                            </a>
+                          </Button>
+                        )}
+                        {inv.status === "PENDING" && (inv.pix_copy_paste || inv.pix_copia_e_cola || inv.pix_qr_code) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelectedPixInvoice(inv)}
+                            className="h-8 text-xs rounded-lg border-blue-500/30 text-blue-500 hover:bg-blue-500/10 min-h-[36px]"
+                          >
+                            <QrCode className="w-3.5 h-3.5 mr-1" />
+                            Pagar via PIX
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
