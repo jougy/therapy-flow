@@ -2576,6 +2576,12 @@ export type Database = {
           subscription_id: string | null
           total_installments: number | null
           value: number
+          asaas_invoice_id: string | null
+          nfe_status: string | null
+          nfe_number: string | null
+          nfe_pdf_url: string | null
+          nfe_xml_url: string | null
+          nfe_error_message: string | null
         }
         Insert: {
           asaas_customer_id?: string | null
@@ -2603,6 +2609,12 @@ export type Database = {
           subscription_id?: string | null
           total_installments?: number | null
           value: number
+          asaas_invoice_id?: string | null
+          nfe_status?: string | null
+          nfe_number?: string | null
+          nfe_pdf_url?: string | null
+          nfe_xml_url?: string | null
+          nfe_error_message?: string | null
         }
         Update: {
           asaas_customer_id?: string | null
@@ -2630,6 +2642,12 @@ export type Database = {
           subscription_id?: string | null
           total_installments?: number | null
           value?: number
+          asaas_invoice_id?: string | null
+          nfe_status?: string | null
+          nfe_number?: string | null
+          nfe_pdf_url?: string | null
+          nfe_xml_url?: string | null
+          nfe_error_message?: string | null
         }
         Relationships: [
           {

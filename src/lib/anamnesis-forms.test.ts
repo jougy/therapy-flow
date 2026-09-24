@@ -691,4 +691,62 @@ describe("anamnesis forms helpers", () => {
       },
     });
   });
+
+  it("sanitizes, compacts, and exports horizontal_section with horizontalDisplayMode safely", () => {
+    const rawSchema = [
+      {
+        id: "step_section_1",
+        label: "Etapas do Atendimento",
+        type: "horizontal_section",
+        horizontalDisplayMode: "stepper_mobile",
+      },
+      {
+        id: "step_section_2",
+        label: "Etapas Rigorosas",
+        type: "horizontal_section",
+        horizontalDisplayMode: "stepper_always",
+      },
+      {
+        id: "step_section_3",
+        label: "Rolagem Padrao",
+        type: "horizontal_section",
+        horizontalDisplayMode: "scroll",
+      },
+      {
+        id: "step_section_malicious",
+        label: "Secao com Modo Invalido",
+        type: "horizontal_section",
+        horizontalDisplayMode: "<script>alert('xss')</script>",
+      },
+      {
+        id: "field_not_horizontal",
+        label: "Texto",
+        type: "short_text",
+        horizontalDisplayMode: "stepper_mobile",
+      },
+    ];
+
+    const sanitized = sanitizeAnamnesisTemplateSchema(rawSchema);
+    expect(sanitized[0].horizontalDisplayMode).toBe("stepper_mobile");
+    expect(sanitized[1].horizontalDisplayMode).toBe("stepper_always");
+    expect(sanitized[2].horizontalDisplayMode).toBe("scroll");
+    expect(sanitized[3].horizontalDisplayMode).toBeUndefined();
+    expect(sanitized[4].horizontalDisplayMode).toBeUndefined();
+
+    const compacted = compactAnamnesisTemplateSchema(sanitized);
+    expect((compacted[0] as Record<string, unknown>).horizontalDisplayMode).toBe("stepper_mobile");
+    expect((compacted[1] as Record<string, unknown>).horizontalDisplayMode).toBe("stepper_always");
+    expect((compacted[2] as Record<string, unknown>).horizontalDisplayMode).toBeUndefined();
+
+    const payload = buildAnamnesisTemplateExchangePayload({
+      kind: "template",
+      name: "Template com Stepper",
+      schema: sanitized,
+    });
+    const serialized = JSON.stringify(payload);
+    const parsed = parseAnamnesisTemplateExchangePayload(serialized);
+    expect(parsed.template.schema[0].horizontalDisplayMode).toBe("stepper_mobile");
+    expect(parsed.template.schema[1].horizontalDisplayMode).toBe("stepper_always");
+  });
 });
+

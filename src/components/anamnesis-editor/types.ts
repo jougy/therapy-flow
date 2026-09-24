@@ -27,8 +27,11 @@ import {
   getOptionMatrixRows,
   type AnamnesisField,
   type AnamnesisTemplateSchema,
+  type HorizontalDisplayMode,
   type TemplateLayoutItem,
 } from "@/lib/anamnesis-forms";
+
+export type { HorizontalDisplayMode };
 import {
   DEFAULT_GROUP_COLOR_SLOT_SEEDS,
   hexToRgb,
@@ -92,7 +95,7 @@ export const COMPONENT_CATEGORIES = [
     name: "Estrutura & Agrupamento",
     items: [
       { type: "section" as const, label: "Seção sanfona", icon: Folder, description: "Agrupador vertical retrátil" },
-      { type: "horizontal_section" as const, label: "Seção horizontal", icon: Columns, description: "Colunas com rolagem lateral" },
+      { type: "horizontal_section" as const, label: "Etapas Horizontais", icon: Columns, description: "Colunas com rolagem lateral ou navegação em etapas" },
       { type: "section_selector" as const, label: "Seletor de seções", icon: ToggleLeft, description: "Switches de visibilidade condicional" },
       { type: "radar_section" as const, label: "Polígono de Status", icon: Hexagon, description: "Radar de atributos com sliders e métricas" },
     ],

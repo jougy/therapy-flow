@@ -557,5 +557,90 @@ describe("ClinicBillingSettings", () => {
     const checkoutBtn = screen.getByRole("button", { name: /Ir para Checkout \/ Pagamento/i });
     expect(checkoutBtn).toBeInTheDocument();
   });
+
+  it("renders NFS-e badges and Nota Fiscal (PDF) download link correctly", async () => {
+    supabaseMocks.rpc.mockImplementation((name: string) => {
+      if (name === "get_clinic_subscription_summary") {
+        return Promise.resolve({
+          data: [
+            {
+              subscription_id: "sub-nfe-1",
+              clinic_id: "clinic-nfe",
+              plan_type: "clinic",
+              status: "active",
+              billing_cycle: "MONTHLY",
+              payment_method: "CREDIT_CARD",
+              base_monthly_price: 159.0,
+              total_recurring_monthly_price: 159.0,
+              base_subaccount_limit: 30,
+              purchased_subaccount_extra_count: 0,
+              total_subaccount_limit: 30,
+            },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    const mockSelectInvoices = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: "inv-nfe-auth",
+              asaas_payment_id: "pay-nfe-1",
+              charge_type: "RECURRING_SUBSCRIPTION",
+              status: "RECEIVED",
+              value: 159.0,
+              due_date: "2026-09-01",
+              payment_date: "2026-09-01",
+              billing_type: "CREDIT_CARD",
+              nfe_status: "AUTHORIZED",
+              nfe_number: "00012345",
+              nfe_pdf_url: "https://asaas.com/nfe/pdf/12345",
+              created_at: "2026-09-01T10:00:00Z",
+            },
+            {
+              id: "inv-nfe-pending",
+              asaas_payment_id: "pay-nfe-2",
+              charge_type: "RECURRING_SUBSCRIPTION",
+              status: "CONFIRMED",
+              value: 159.0,
+              due_date: "2026-08-01",
+              payment_date: "2026-08-01",
+              billing_type: "CREDIT_CARD",
+              nfe_status: "PENDING",
+              created_at: "2026-08-01T10:00:00Z",
+            },
+          ],
+          error: null,
+        }),
+      }),
+    });
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "subscription_invoices") return { select: mockSelectInvoices };
+      return createChainedSelectMock();
+    });
+
+    render(
+      <MemoryRouter>
+        <ClinicBillingSettings
+          clinicId="clinic-nfe"
+          currentPlan="clinic"
+          accountRole="account_owner"
+        />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("NFS-e Emitida")).toBeInTheDocument();
+    expect(screen.getByText("NFS-e em processamento")).toBeInTheDocument();
+
+    const pdfLink = screen.getByRole("link", { name: /Download Nota Fiscal \(PDF\)/i });
+    expect(pdfLink).toBeInTheDocument();
+    expect(pdfLink).toHaveAttribute("href", "https://asaas.com/nfe/pdf/12345");
+    expect(pdfLink).toHaveAttribute("target", "_blank");
+  });
 });
 

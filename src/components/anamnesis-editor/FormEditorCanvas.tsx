@@ -32,8 +32,10 @@ import {
   type DesignLabTemplateLayoutItem,
 } from "./types";
 import { HorizontalScrollNavigator } from "./HorizontalScrollNavigator";
+import { HorizontalStepperNavigator, safeStepIndex } from "./HorizontalStepperNavigator";
 import { FormEditorLivePreview } from "./FormEditorLivePreview";
 import { StatusPolygonRadar } from "@/components/anamnesis/StatusPolygonRadar";
+import { hasMeaningfulFormValue } from "@/lib/anamnesis-forms";
 import type { useFormEditorState } from "./useFormEditorState";
 
 export interface FormEditorCanvasProps {
@@ -81,6 +83,7 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
   const [horizontalScrollState, setHorizontalScrollState] = useState<
     Record<string, { clientWidth: number; scrollLeft: number; scrollWidth: number }>
   >({});
+  const [canvasActiveSteps, setCanvasActiveSteps] = useState<Record<string, number>>({});
 
   const syncHorizontalScrollState = useCallback(() => {
     const nextState: Record<string, { clientWidth: number; scrollLeft: number; scrollWidth: number }> = {};
@@ -426,6 +429,27 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
             } satisfies CSSProperties;
           });
 
+          const isStepperMode =
+            item.field.horizontalDisplayMode === "stepper_always" ||
+            item.field.horizontalDisplayMode === "stepper_mobile";
+          const visibleStepperItems =
+            canvasMode === "test"
+              ? item.items.filter((child) => isFieldConditionallyVisible(child.field))
+              : item.items;
+          const totalStepperSteps = visibleStepperItems.length;
+          const rawStepperStep = canvasActiveSteps[item.field.id] ?? 0;
+          const selectedStepperIndex = visibleStepperItems.findIndex((c) =>
+            selectedFieldIds.includes(c.field.id)
+          );
+          const currentStepperStep =
+            selectedStepperIndex >= 0
+              ? selectedStepperIndex
+              : safeStepIndex(rawStepperStep, totalStepperSteps);
+          const completedStepperSteps = visibleStepperItems.filter((c) =>
+            hasMeaningfulFormValue(testAnswers[c.field.id])
+          ).length;
+          const activeStepperChild = visibleStepperItems[currentStepperStep];
+
           return (
             <div key={item.field.id} className="relative">
               {/* Visual Drop Line Indicator (Top) */}
@@ -536,73 +560,47 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                       {renderFieldQuickActions(item.field)}
                     </div>
                   </div>
-                  <div
-                    ref={(node) => {
-                      horizontalScrollRefs.current[scrollContainerId] = node;
-                    }}
-                    className={`w-full min-w-0 ${
-                      canvasMode === "test" ? "" : "overflow-x-auto"
-                    } [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
-                    onScroll={scheduleHorizontalScrollSync}
-                  >
-                    {item.items.length === 0 ? (
+                  {isStepperMode ? (
+                    item.items.length === 0 ? (
                       <div className="py-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-background/50 m-2">
-                        Arraste ou clique em componentes para adicionar a esta seção horizontal
+                        Arraste ou clique em componentes para adicionar a estas etapas horizontais
                       </div>
                     ) : (
-                      <div
-                        className={`flex ${
-                          canvasMode === "test" ? "flex-col sm:flex-row items-stretch" : "items-stretch"
-                        } gap-4 pb-4`}
-                      >
-                        {item.items.map((child) => {
-                          const preferredWidth = estimateFieldPreferredWidth(child.field);
-                          const maxWidth = getFieldMaxWidth(child.field);
+                      <div className="p-4 space-y-4">
+                        <HorizontalStepperNavigator
+                          currentStep={currentStepperStep}
+                          totalSteps={totalStepperSteps}
+                          completedSteps={completedStepperSteps}
+                          onPrev={() =>
+                            setCanvasActiveSteps((prev) => {
+                              const nextIdx = safeStepIndex(currentStepperStep - 1, totalStepperSteps);
+                              if (canvasMode === "edit" && visibleStepperItems[nextIdx]) {
+                                selectFieldAndOpenMobileInspector(visibleStepperItems[nextIdx].field.id);
+                              }
+                              return { ...prev, [item.field.id]: nextIdx };
+                            })
+                          }
+                          onNext={() =>
+                            setCanvasActiveSteps((prev) => {
+                              const nextIdx = safeStepIndex(currentStepperStep + 1, totalStepperSteps);
+                              if (canvasMode === "edit" && visibleStepperItems[nextIdx]) {
+                                selectFieldAndOpenMobileInspector(visibleStepperItems[nextIdx].field.id);
+                              }
+                              return { ...prev, [item.field.id]: nextIdx };
+                            })
+                          }
+                        />
+
+                        {activeStepperChild && (() => {
+                          const child = activeStepperChild;
                           const isChildSelected = selectedFieldIds.includes(child.field.id);
                           const isChildVisible = isFieldConditionallyVisible(child.field);
                           const isChildDragOver = dragOverFieldId === child.field.id;
                           const isChildDragging = draggedFieldId === child.field.id;
-
-                          if (canvasMode === "test" && !isChildVisible) return null;
-
                           const span = child.field.columnSpan;
-                          let childFlex = `${estimateLayoutWeight(child.field)} 1 ${preferredWidth}px`;
-                          let childMinWidth: string | number = Math.min(
-                            preferredWidth,
-                            maxWidth ?? preferredWidth
-                          );
-                          let childMaxWidth: string | number | undefined = maxWidth ?? undefined;
-
-                          if (span === "1/4") {
-                            childFlex = "0 0 calc(25% - 12px)";
-                            childMinWidth = 160;
-                          } else if (span === "1/3") {
-                            childFlex = "0 0 calc(33.333% - 12px)";
-                            childMinWidth = 180;
-                          } else if (span === "1/2") {
-                            childFlex = "0 0 calc(50% - 12px)";
-                            childMinWidth = 220;
-                          } else if (span === "2/3") {
-                            childFlex = "0 0 calc(66.666% - 12px)";
-                            childMinWidth = 260;
-                          } else if (span === "full") {
-                            childFlex = "0 0 100%";
-                            childMinWidth = "100%";
-                            childMaxWidth = "100%";
-                          }
 
                           return (
-                            <div
-                              key={child.field.id}
-                              className="relative min-w-0 flex items-stretch shrink-0"
-                              style={{
-                                flex: childFlex,
-                                maxWidth: childMaxWidth,
-                                minHeight: horizontalRowMinHeight,
-                                minWidth: childMinWidth,
-                              }}
-                            >
-                              {/* Horizontal Drop Line Indicators */}
+                            <div key={child.field.id} className="relative min-w-0 w-full">
                               {isChildDragOver && dragOverPosition === "before" && (
                                 <div className="absolute -left-2 top-0 bottom-0 z-30 flex flex-col items-center pointer-events-none">
                                   <div className="h-2 w-2 rounded-full bg-primary ring-2 ring-background shadow-md -mt-1" />
@@ -660,7 +658,7 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                                 onTouchStart={() => handleCardTouchStart(child.field.id)}
                                 onTouchEnd={handleCardTouchEnd}
                                 onTouchCancel={handleCardTouchEnd}
-                                className={`group relative w-full flex-1 cursor-pointer rounded-lg border p-3 transition-all ${
+                                className={`group relative w-full cursor-pointer rounded-lg border p-4 transition-all ${
                                   isChildSelected
                                     ? "border-primary bg-primary/[0.05] ring-2 ring-primary ring-offset-1 shadow-sm"
                                     : "border-border/60 hover:border-primary/50 hover:bg-muted/20"
@@ -716,24 +714,211 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({ state }) => 
                               </div>
                             </div>
                           );
-                        })}
+                        })()}
                       </div>
-                    )}
-                  </div>
-                  {item.items.length > 0 && (
-                    <div className="px-3 pb-3 hidden sm:block">
-                      <HorizontalScrollNavigator
-                        clientWidth={horizontalScrollSnapshot?.clientWidth ?? 0}
-                        markerStyles={horizontalMarkerStyles}
-                        onScrollLeft={() => scrollHorizontalSectionToSibling(scrollContainerId, "left")}
-                        onScrollRight={() => scrollHorizontalSectionToSibling(scrollContainerId, "right")}
-                        onTrackPointerDown={(event) => beginHorizontalDrag(scrollContainerId, event)}
-                        onTrackPointerMove={updateHorizontalDrag}
-                        onTrackPointerUp={endHorizontalDrag}
-                        scrollLeft={horizontalScrollSnapshot?.scrollLeft ?? 0}
-                        scrollWidth={horizontalScrollSnapshot?.scrollWidth ?? 0}
-                      />
-                    </div>
+                    )
+                  ) : (
+                    <>
+                      <div
+                        ref={(node) => {
+                          horizontalScrollRefs.current[scrollContainerId] = node;
+                        }}
+                        className={`w-full min-w-0 ${
+                          canvasMode === "test" ? "" : "overflow-x-auto"
+                        } [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden`}
+                        onScroll={scheduleHorizontalScrollSync}
+                      >
+                        {item.items.length === 0 ? (
+                          <div className="py-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg bg-background/50 m-2">
+                            Arraste ou clique em componentes para adicionar a estas etapas horizontais
+                          </div>
+                        ) : (
+                          <div
+                            className={`flex ${
+                              canvasMode === "test" ? "flex-col sm:flex-row items-stretch" : "items-stretch"
+                            } gap-4 pb-4`}
+                          >
+                            {item.items.map((child) => {
+                              const preferredWidth = estimateFieldPreferredWidth(child.field);
+                              const maxWidth = getFieldMaxWidth(child.field);
+                              const isChildSelected = selectedFieldIds.includes(child.field.id);
+                              const isChildVisible = isFieldConditionallyVisible(child.field);
+                              const isChildDragOver = dragOverFieldId === child.field.id;
+                              const isChildDragging = draggedFieldId === child.field.id;
+
+                              if (canvasMode === "test" && !isChildVisible) return null;
+
+                              const span = child.field.columnSpan;
+                              let childFlex = `${estimateLayoutWeight(child.field)} 1 ${preferredWidth}px`;
+                              let childMinWidth: string | number = Math.min(
+                                preferredWidth,
+                                maxWidth ?? preferredWidth
+                              );
+                              let childMaxWidth: string | number | undefined = maxWidth ?? undefined;
+
+                              if (span === "1/4") {
+                                childFlex = "0 0 calc(25% - 12px)";
+                                childMinWidth = 160;
+                              } else if (span === "1/3") {
+                                childFlex = "0 0 calc(33.333% - 12px)";
+                                childMinWidth = 180;
+                              } else if (span === "1/2") {
+                                childFlex = "0 0 calc(50% - 12px)";
+                                childMinWidth = 220;
+                              } else if (span === "2/3") {
+                                childFlex = "0 0 calc(66.666% - 12px)";
+                                childMinWidth = 260;
+                              } else if (span === "full") {
+                                childFlex = "0 0 100%";
+                                childMinWidth = "100%";
+                                childMaxWidth = "100%";
+                              }
+
+                              return (
+                                <div
+                                  key={child.field.id}
+                                  className="relative min-w-0 flex items-stretch shrink-0"
+                                  style={{
+                                    flex: childFlex,
+                                    maxWidth: childMaxWidth,
+                                    minHeight: horizontalRowMinHeight,
+                                    minWidth: childMinWidth,
+                                  }}
+                                >
+                                  {/* Horizontal Drop Line Indicators */}
+                                  {isChildDragOver && dragOverPosition === "before" && (
+                                    <div className="absolute -left-2 top-0 bottom-0 z-30 flex flex-col items-center pointer-events-none">
+                                      <div className="h-2 w-2 rounded-full bg-primary ring-2 ring-background shadow-md -mt-1" />
+                                      <div className="w-1 flex-1 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary)/0.8)]" />
+                                      <div className="h-2 w-2 rounded-full bg-primary ring-2 ring-background shadow-md -mb-1" />
+                                    </div>
+                                  )}
+                                  {isChildDragOver && dragOverPosition === "after" && (
+                                    <div className="absolute -right-2 top-0 bottom-0 z-30 flex flex-col items-center pointer-events-none">
+                                      <div className="h-2 w-2 rounded-full bg-primary ring-2 ring-background shadow-md -mt-1" />
+                                      <div className="w-1 flex-1 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary)/0.8)]" />
+                                      <div className="h-2 w-2 rounded-full bg-primary ring-2 ring-background shadow-md -mb-1" />
+                                    </div>
+                                  )}
+
+                                  <div
+                                    ref={(node) => {
+                                      editorCardRefs.current[child.field.id] = node;
+                                    }}
+                                    draggable={canvasMode === "edit"}
+                                    onDragStart={(e) => {
+                                      if (canvasMode !== "edit") return;
+                                      e.stopPropagation();
+                                      setDraggedFieldId(child.field.id);
+                                      e.dataTransfer.setData("text/plain", child.field.id);
+                                    }}
+                                    onDragOver={(e) => {
+                                      if (canvasMode !== "edit") return;
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (draggedFieldId === child.field.id) return;
+
+                                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                      const relativeX = e.clientX - rect.left;
+                                      const pos: "before" | "after" = relativeX < rect.width * 0.5 ? "before" : "after";
+
+                                      if (dragOverFieldId !== child.field.id || dragOverPosition !== pos) {
+                                        setDragOverFieldId(child.field.id);
+                                        setDragOverPosition(pos);
+                                      }
+                                    }}
+                                    onDragLeave={(e) => {
+                                      if (canvasMode !== "edit") return;
+                                      e.stopPropagation();
+                                      if (dragOverFieldId === child.field.id) {
+                                        setDragOverFieldId(null);
+                                        setDragOverPosition(null);
+                                      }
+                                    }}
+                                    onDrop={(e) => handleDropOnTarget(child.field.id, dragOverPosition ?? "after", e)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      selectFieldAndOpenMobileInspector(child.field.id, e);
+                                    }}
+                                    onTouchStart={() => handleCardTouchStart(child.field.id)}
+                                    onTouchEnd={handleCardTouchEnd}
+                                    onTouchCancel={handleCardTouchEnd}
+                                    className={`group relative w-full flex-1 cursor-pointer rounded-lg border p-3 transition-all ${
+                                      isChildSelected
+                                        ? "border-primary bg-primary/[0.05] ring-2 ring-primary ring-offset-1 shadow-sm"
+                                        : "border-border/60 hover:border-primary/50 hover:bg-muted/20"
+                                    } ${isChildDragging ? "opacity-40" : ""} ${
+                                      !isChildVisible && canvasMode === "edit" ? "opacity-60 border-dashed" : ""
+                                    }`}
+                                  >
+                                    <div className="flex h-full min-h-0 flex-col">
+                                      <div className="flex items-center justify-between gap-2 mb-2">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          {(isMultiSelecting || isChildSelected) && (
+                                            <div
+                                              className={cn(
+                                                "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors",
+                                                isChildSelected
+                                                  ? "border-primary bg-primary text-primary-foreground"
+                                                  : "border-muted-foreground/40 bg-background"
+                                              )}
+                                            >
+                                              {isChildSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+                                            </div>
+                                          )}
+                                          <Badge
+                                            variant="outline"
+                                            className="text-[9px] px-1 py-0 font-normal text-muted-foreground"
+                                          >
+                                            {getFieldTypeLabel(child.field.type)}
+                                          </Badge>
+                                          {span && span !== "auto" && (
+                                            <Badge
+                                              variant="secondary"
+                                              className="text-[9px] px-1 py-0 text-muted-foreground"
+                                            >
+                                              {span}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        {renderFieldQuickActions(child.field)}
+                                      </div>
+                                      {child.type === "field" ? (
+                                        <FormEditorLivePreview
+                                          field={child.field}
+                                          testAnswers={testAnswers}
+                                          setFieldTestAnswer={setFieldTestAnswer}
+                                          onFieldFocus={(id) => selectFieldAndOpenMobileInspector(id)}
+                                          isEditorMode={canvasMode === "edit"}
+                                          onUpdateField={updateField}
+                                        />
+                                      ) : (
+                                        renderPreviewLayout([child])
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      {item.items.length > 0 && (
+                        <div className="px-3 pb-3 hidden sm:block">
+                          <HorizontalScrollNavigator
+                            clientWidth={horizontalScrollSnapshot?.clientWidth ?? 0}
+                            markerStyles={horizontalMarkerStyles}
+                            onScrollLeft={() => scrollHorizontalSectionToSibling(scrollContainerId, "left")}
+                            onScrollRight={() => scrollHorizontalSectionToSibling(scrollContainerId, "right")}
+                            onTrackPointerDown={(event) => beginHorizontalDrag(scrollContainerId, event)}
+                            onTrackPointerMove={updateHorizontalDrag}
+                            onTrackPointerUp={endHorizontalDrag}
+                            scrollLeft={horizontalScrollSnapshot?.scrollLeft ?? 0}
+                            scrollWidth={horizontalScrollSnapshot?.scrollWidth ?? 0}
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>

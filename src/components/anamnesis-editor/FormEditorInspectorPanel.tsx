@@ -42,6 +42,7 @@ import {
   isSelectionChoiceFieldType,
   normalizeOptions,
   type AnamnesisField,
+  type HorizontalSectionDisplayMode,
 } from "@/lib/anamnesis-forms";
 import { INPUT_LIMITS } from "@/lib/input-security";
 import { toRgbaString } from "@/lib/group-colors";
@@ -563,6 +564,28 @@ export const FormEditorInspectorPanel: React.FC<FormEditorInspectorPanelProps> =
                   <SelectContent onCloseAutoFocus={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()}>
                     <SelectItem value="multiple_choice">Múltipla escolha (única resposta)</SelectItem>
                     <SelectItem value="checklist">Checklist (várias respostas)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {selectedField.type === "horizontal_section" && (
+              <div className="space-y-2">
+                <Label>Modo de Navegação</Label>
+                <Select
+                  value={selectedField.horizontalDisplayMode ?? "scroll"}
+                  onValueChange={(value) =>
+                    updateField(selectedField.id, {
+                      horizontalDisplayMode: value as HorizontalSectionDisplayMode,
+                    })
+                  }
+                >
+                  <SelectTrigger onClick={(e) => e.stopPropagation()}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent onCloseAutoFocus={(e) => e.preventDefault()} onClick={(e) => e.stopPropagation()}>
+                    <SelectItem value="scroll">Rolagem contínua (Scroll)</SelectItem>
+                    <SelectItem value="stepper_mobile">Etapas apenas no mobile</SelectItem>
+                    <SelectItem value="stepper_always">Etapas sempre (Desktop e Mobile)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

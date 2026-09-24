@@ -122,7 +122,7 @@ export const PrintBlankKitSheet: React.FC<PrintBlankKitSheetProps> = ({
               </h3>
             </div>
             <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
-              {field.type === "horizontal_section" ? "Módulo Lado a Lado" : "Módulo Clínico"}
+              {field.type === "horizontal_section" ? "Etapas Horizontais" : "Módulo Clínico"}
             </span>
           </div>
           {helpText && <p className="text-[10px] text-slate-500 italic mt-0.5 pl-4.5">{helpText}</p>}

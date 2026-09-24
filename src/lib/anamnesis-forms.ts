@@ -82,6 +82,14 @@ export interface AnamnesisTagItem {
   colorSlotId?: string | null;
 }
 
+export type HorizontalSectionDisplayMode = "scroll" | "stepper_mobile" | "stepper_always";
+export type HorizontalDisplayMode = HorizontalSectionDisplayMode;
+export const HORIZONTAL_DISPLAY_MODES = new Set<HorizontalSectionDisplayMode>([
+  "scroll",
+  "stepper_mobile",
+  "stepper_always",
+]);
+
 export interface AnamnesisField {
   id: string;
   label: string;
@@ -109,6 +117,7 @@ export interface AnamnesisField {
   tagMode?: "multiple" | "single";
   allowCustomTags?: boolean;
   calculatedConfig?: CalculatedFieldConfig;
+  horizontalDisplayMode?: HorizontalSectionDisplayMode;
 }
 
 export interface CalculatedFieldResponseValue {
@@ -129,6 +138,35 @@ export type AnamnesisFormValue =
   | CalculatedFieldResponseValue
   | null;
 export type AnamnesisFormResponse = Record<string, AnamnesisFormValue>;
+
+export const hasMeaningfulFormValue = (value: AnamnesisFormValue | undefined): boolean => {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === "number") {
+    return true;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value).some((item) => hasMeaningfulFormValue(item as AnamnesisFormValue));
+  }
+
+  return false;
+};
+
 export type AnamnesisTemplateExchangeKind = "base" | "template";
 
 export interface AnamnesisTemplateExchangePayload {
@@ -298,7 +336,7 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
   { type: "slider", label: "Slidebar" },
   { type: "address_block", label: "Bloco de Endereço" },
   { type: "section", label: "Seção" },
-  { type: "horizontal_section", label: "Seção horizontal" },
+  { type: "horizontal_section", label: "Etapas Horizontais" },
   { type: "section_selector", label: "Seletor de seções" },
   { type: "radar_section", label: "Polígono de Status" },
   { type: "calculated", label: "Campos calculados" },
@@ -454,6 +492,16 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         ? sanitizeSingleLineInput(rawAddButtonLabel, INPUT_LIMITS.formFieldLabel).trim()
         : undefined;
 
+      const rawHorizontalDisplayMode =
+        typeof source.horizontalDisplayMode === "string" &&
+        HORIZONTAL_DISPLAY_MODES.has(source.horizontalDisplayMode as HorizontalDisplayMode)
+          ? (source.horizontalDisplayMode as HorizontalDisplayMode)
+          : undefined;
+      const horizontalDisplayMode =
+        type === "horizontal_section" && rawHorizontalDisplayMode
+          ? rawHorizontalDisplayMode
+          : undefined;
+
       return {
         id: fieldId,
         label,
@@ -480,6 +528,7 @@ export const sanitizeAnamnesisTemplateSchema = (schema: unknown): AnamnesisTempl
         ...(tagMode !== undefined ? { tagMode } : {}),
         ...(allowCustomTags !== undefined ? { allowCustomTags } : {}),
         ...(type === "calculated" && source.calculatedConfig ? { calculatedConfig: sanitizeCalculatedFieldConfig(source.calculatedConfig) } : {}),
+        ...(horizontalDisplayMode ? { horizontalDisplayMode } : {}),
       };
     });
 
@@ -539,6 +588,9 @@ export const compactAnamnesisTemplateSchema = (schema: AnamnesisTemplateSchema):
     if (field.enableFilter) compact.enableFilter = true;
     if (field.enableGrouping) compact.enableGrouping = true;
     if (field.calculatedConfig) compact.calculatedConfig = field.calculatedConfig;
+    if (field.horizontalDisplayMode && field.horizontalDisplayMode !== "scroll") {
+      compact.horizontalDisplayMode = field.horizontalDisplayMode;
+    }
 
     return compact;
   });
@@ -896,16 +948,17 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
       ...baseField,
       label:
         type === "horizontal_section"
-          ? "Nova seção horizontal"
+          ? "Novas Etapas Horizontais"
           : type === "radar_section"
             ? "Polígono de Status"
             : "Nova seção",
       helpText:
         type === "horizontal_section"
-          ? "Agrupe campos lado a lado com rolagem horizontal."
+          ? "Agrupe campos lado a lado ou em etapas com navegação."
           : type === "radar_section"
             ? "Gráfico de radar com sliders e métricas multidimensionais."
             : "Texto introdutório da seção.",
+      ...(type === "horizontal_section" ? { horizontalDisplayMode: "scroll" as const } : {}),
     };
   }
 
@@ -1164,6 +1217,9 @@ export const isAnamnesisTemplateSchema = (value: unknown): value is AnamnesisTem
       typeof field.label === "string" &&
       typeof field.type === "string" &&
       ANAMNESIS_FIELD_TYPES.has(field.type as AnamnesisFieldType) &&
+      (!field.horizontalDisplayMode ||
+        (typeof field.horizontalDisplayMode === "string" &&
+          HORIZONTAL_DISPLAY_MODES.has(field.horizontalDisplayMode as HorizontalDisplayMode))) &&
       (!field.options ||
         (Array.isArray(field.options) &&
           field.options.length <= ANAMNESIS_OPTION_LIMIT &&
