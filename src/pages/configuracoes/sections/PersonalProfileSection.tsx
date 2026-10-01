@@ -292,7 +292,7 @@ export const PersonalProfileSection = () => {
 
       <div className="space-y-6">
         {/* Header com 4 Cards de Identidade Global */}
-        <Card data-tutorial="settings-profile-personal-card">
+        <Card data-tutorial="settings-profile-personal-card" className="overflow-hidden min-w-0">
           <CardHeader className="flex flex-row items-center justify-between gap-3 pb-4">
             <div className="flex items-center gap-2.5">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 ring-1 ring-sky-100">
@@ -308,11 +308,11 @@ export const PersonalProfileSection = () => {
             <ComponentHelpButton helpId="settings-profile-personal-block" size="sm" />
           </CardHeader>
 
-          <CardContent className="space-y-6">
-            {/* Grid com 4 KPIs: ID Global, Último acesso, Membro desde, Contexto */}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <CardContent className="space-y-6 overflow-hidden">
+            {/* Carousel tátil com 4 KPIs no mobile, grid no desktop */}
+            <div className="w-full flex overflow-x-auto snap-x snap-mandatory gap-3 pb-2 -mx-2 px-2 sm:mx-0 sm:px-0 sm:pb-0 sm:grid sm:grid-cols-2 lg:grid-cols-4 [-webkit-overflow-scrolling:touch]">
               {/* Card 1: ID Global Descritivo */}
-              <div className="rounded-xl border bg-muted/20 p-4 space-y-1.5 transition-all hover:bg-muted/30">
+              <div className="w-[78vw] max-w-[280px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-4 space-y-1.5 transition-all hover:bg-muted/30">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <Globe className="h-3.5 w-3.5 text-primary" />
@@ -340,7 +340,7 @@ export const PersonalProfileSection = () => {
               </div>
 
               {/* Card 2: Último Acesso */}
-              <div className="rounded-xl border bg-muted/20 p-4 space-y-1.5">
+              <div className="w-[78vw] max-w-[280px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-4 space-y-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <Clock className="h-3.5 w-3.5" />
                   Último Acesso
@@ -351,7 +351,7 @@ export const PersonalProfileSection = () => {
               </div>
 
               {/* Card 3: Membro Desde */}
-              <div className="rounded-xl border bg-muted/20 p-4 space-y-1.5">
+              <div className="w-[78vw] max-w-[280px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-4 space-y-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <Shield className="h-3.5 w-3.5" />
                   Membro Desde
@@ -362,7 +362,7 @@ export const PersonalProfileSection = () => {
               </div>
 
               {/* Card 4: Contexto Atual */}
-              <div className="rounded-xl border bg-muted/20 p-4 space-y-1.5">
+              <div className="w-[78vw] max-w-[280px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-4 space-y-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <Lock className="h-3.5 w-3.5" />
                   Contexto Atual

@@ -38,6 +38,7 @@ export type Database = {
         Row: {
           clinic_id: string | null
           created_at: string
+          duration_minutes: number
           event_type: string
           generated_by_recurring_patient: boolean
           id: string
@@ -54,6 +55,7 @@ export type Database = {
         Insert: {
           clinic_id?: string | null
           created_at?: string
+          duration_minutes?: number
           event_type: string
           generated_by_recurring_patient?: boolean
           id?: string
@@ -70,6 +72,7 @@ export type Database = {
         Update: {
           clinic_id?: string | null
           created_at?: string
+          duration_minutes?: number
           event_type?: string
           generated_by_recurring_patient?: boolean
           id?: string
@@ -272,6 +275,7 @@ export type Database = {
           job_title: string | null
           last_resent_at: string | null
           operational_role: Database["public"]["Enums"]["operational_role_type"]
+          role_key: string | null
           specialty: string | null
           status: string
           token_hash: string
@@ -290,6 +294,7 @@ export type Database = {
           job_title?: string | null
           last_resent_at?: string | null
           operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          role_key?: string | null
           specialty?: string | null
           status?: string
           token_hash: string
@@ -308,6 +313,7 @@ export type Database = {
           job_title?: string | null
           last_resent_at?: string | null
           operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          role_key?: string | null
           specialty?: string | null
           status?: string
           token_hash?: string
@@ -418,6 +424,7 @@ export type Database = {
           joined_at: string
           membership_status: Database["public"]["Enums"]["membership_status_type"]
           operational_role: Database["public"]["Enums"]["operational_role_type"]
+          role_key: string | null
           specialty: string | null
           updated_at: string
           user_id: string
@@ -435,6 +442,7 @@ export type Database = {
           joined_at?: string
           membership_status?: Database["public"]["Enums"]["membership_status_type"]
           operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          role_key?: string | null
           specialty?: string | null
           updated_at?: string
           user_id: string
@@ -452,6 +460,7 @@ export type Database = {
           joined_at?: string
           membership_status?: Database["public"]["Enums"]["membership_status_type"]
           operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          role_key?: string | null
           specialty?: string | null
           updated_at?: string
           user_id?: string
@@ -3543,6 +3552,7 @@ export type Database = {
           _email?: string
           _job_title?: string
           _operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          _role_key?: string
           _specialty?: string
         }
         Returns: Json
@@ -3597,6 +3607,7 @@ export type Database = {
           membership_id: string
           membership_status: Database["public"]["Enums"]["membership_status_type"]
           operational_role: Database["public"]["Enums"]["operational_role_type"]
+          role_key: string | null
         }[]
       }
       list_current_user_notification_preferences: {
@@ -3932,6 +3943,7 @@ export type Database = {
           _membership_id: string
           _membership_status?: Database["public"]["Enums"]["membership_status_type"]
           _operational_role?: Database["public"]["Enums"]["operational_role_type"]
+          _role_key?: string
           _specialty?: string
           _working_hours?: string
         }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Download,
   Edit,
+  Edit3,
   Eye,
   EyeOff,
   Filter,
@@ -22,6 +23,7 @@ import {
   Star,
   Tag,
   Trash2,
+  Upload,
   User,
   X,
 } from "lucide-react";
@@ -70,6 +72,15 @@ import {
 } from "@/lib/community-forms";
 import { FormLibraryPreviewModal } from "@/components/community-forms/FormLibraryPreviewModal";
 import { CommunityFormCard } from "@/components/community-forms/CommunityFormCard";
+import { PluriformDropzone } from "@/components/community-forms/PluriformDropzone";
+import {
+  buildAnamnesisTemplateExchangeFileName,
+  buildAnamnesisTemplateExchangePayload,
+  parseAnamnesisTemplateExchangePayload,
+  sanitizeAnamnesisTemplateSchema,
+  type AnamnesisTemplateSchema,
+} from "@/lib/anamnesis-forms";
+import { packPluriform } from "@/lib/pluriform/pluriform";
 
 const ARCHETYPE_SCHEMAS: Record<string, AnamnesisTemplateSchema> = {
   Psicologia: [
@@ -120,7 +131,8 @@ export const PlatformFormLibraryManager = () => {
   // Search and Filters
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("Todas");
-  const [statusFilter, setStatusFilter] = useState<"all" | "published" | "unpublished" | "featured">("all");
+  type FormStatusFilter = "all" | "published" | "unpublished" | "featured";
+  const [statusFilter, setStatusFilter] = useState<FormStatusFilter>("all");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
   // Modals & Actions
@@ -140,9 +152,118 @@ export const PlatformFormLibraryManager = () => {
   const [tagInput, setTagInput] = useState("");
   const [formIsFeatured, setFormIsFeatured] = useState(false);
   const [formIsPublished, setFormIsPublished] = useState(true);
-  const [schemaSource, setSchemaSource] = useState<"archetype" | "json">("archetype");
+  const [schemaSource, setSchemaSource] = useState<"archetype" | "file" | "json">("archetype");
   const [customJsonInput, setCustomJsonInput] = useState("");
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadedSchema, setUploadedSchema] = useState<AnamnesisTemplateSchema | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const topFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Helper to process uploaded .pluriform / .json file
+  const processUploadedFile = async (file: File, openModalAfter: boolean = false) => {
+    try {
+      if (file.size > ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES) {
+        throw new Error("O arquivo excede o limite máximo permitido de 256KB.");
+      }
+
+      const buffer = await file.arrayBuffer();
+      const imported = await parseAnamnesisTemplateExchangePayload(buffer);
+
+      const parsedSchema = sanitizeAnamnesisTemplateSchema(imported.template.schema);
+      setUploadedFileName(file.name);
+      setUploadedSchema(parsedSchema);
+      setSchemaSource("file");
+
+      if (imported.template.name && !isEditingExisting) {
+        setFormTitle((prev) => (!prev.trim() ? imported.template.name : prev));
+      }
+      if (imported.template.description && !isEditingExisting) {
+        setFormDescription((prev) => (!prev.trim() ? imported.template.description : prev));
+      }
+
+      // Try to infer category if present in COMMUNITY_FORM_CATEGORIES
+      if (!isEditingExisting) {
+        const foundCategory = COMMUNITY_FORM_CATEGORIES.find((cat) => {
+          const lowerCat = cat.toLowerCase();
+          return (
+            imported.template.name.toLowerCase().includes(lowerCat) ||
+            (imported.template.description && imported.template.description.toLowerCase().includes(lowerCat))
+          );
+        });
+        if (foundCategory) {
+          setFormCategory(foundCategory);
+        }
+      }
+
+      if (openModalAfter) {
+        setIsEditingExisting(false);
+        setEditingTemplateId(null);
+        setFormAuthor("Equipe Pluri-Health");
+        setFormClinic("Comunidade Oficial");
+        setFormTags(["oficial", "importado"]);
+        setFormIsFeatured(true);
+        setFormIsPublished(true);
+        setEditModalOpen(true);
+      }
+
+      toast({
+        title: "Arquivo carregado com sucesso",
+        description: `Modelo "${imported.template.name || file.name}" pronto com ${parsedSchema.length} campos identificados.`,
+      });
+    } catch (err) {
+      console.error("Erro ao processar arquivo:", err);
+      toast({
+        title: "Erro ao ler arquivo",
+        description: err instanceof Error ? err.message : "Arquivo .pluriform ou .json inválido ou corrompido.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Export template as .pluriform
+  const handleExportPluriform = async (template: CommunityFormTemplate) => {
+    try {
+      if (!template.schema || template.schema.length === 0) {
+        toast({
+          title: "Não foi possível exportar",
+          description: "O modelo não possui campos cadastrados.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const payload = buildAnamnesisTemplateExchangePayload({
+        name: template.title,
+        description: template.description || undefined,
+        schema: template.schema,
+        kind: template.kind || "template",
+      });
+
+      const binaryBytes = await packPluriform(payload);
+      const blob = new Blob([binaryBytes.buffer as ArrayBuffer], { type: "application/x-pluriform" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = buildAnamnesisTemplateExchangeFileName(template.kind || "template", template.title, "pluriform");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download iniciado",
+        description: `O arquivo ${a.download} foi gerado com sucesso.`,
+      });
+    } catch (err) {
+      console.error("Erro ao exportar modelo:", err);
+      toast({
+        title: "Erro na exportação",
+        description: err instanceof Error ? err.message : "Falha ao empacotar arquivo .pluriform.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Delete State
   const [deletingTemplate, setDeletingTemplate] = useState<CommunityFormTemplate | null>(null);
@@ -266,6 +387,9 @@ export const PlatformFormLibraryManager = () => {
     setFormTags(template.tags || []);
     setFormIsFeatured(template.is_featured);
     setFormIsPublished(template.is_published);
+    setUploadedFileName(null);
+    setUploadedSchema(null);
+    setSchemaSource("archetype");
     setEditModalOpen(true);
   };
 
@@ -281,6 +405,10 @@ export const PlatformFormLibraryManager = () => {
     setFormTags(["oficial", "padrao"]);
     setFormIsFeatured(true);
     setFormIsPublished(true);
+    setUploadedFileName(null);
+    setUploadedSchema(null);
+    setSchemaSource("archetype");
+    setCustomJsonInput("");
     setEditModalOpen(true);
   };
 
@@ -334,7 +462,9 @@ export const PlatformFormLibraryManager = () => {
       } else {
         // Determine Schema
         let templateSchema: AnamnesisTemplateSchema = [];
-        if (schemaSource === "json" && customJsonInput.trim()) {
+        if (schemaSource === "file" && uploadedSchema && uploadedSchema.length > 0) {
+          templateSchema = uploadedSchema;
+        } else if (schemaSource === "json" && customJsonInput.trim()) {
           try {
             const parsed = JSON.parse(customJsonInput.trim());
             const candidate = Array.isArray(parsed) ? parsed : parsed.schema || [];
@@ -483,7 +613,14 @@ export const PlatformFormLibraryManager = () => {
             </Select>
 
             {/* Status selector */}
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                if (v === "all" || v === "published" || v === "unpublished" || v === "featured") {
+                  setStatusFilter(v);
+                }
+              }}
+            >
               <SelectTrigger className="w-full sm:w-44 text-xs h-9">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -521,6 +658,43 @@ export const PlatformFormLibraryManager = () => {
               </button>
             </div>
 
+            {/* Hidden file input for top-level quick upload */}
+            <input
+              ref={topFileInputRef}
+              type="file"
+              accept=".pluriform,.json,application/json,application/x-pluriform"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) {
+                  void processUploadedFile(file, true);
+                }
+              }}
+            />
+
+            <Button
+              variant="outline"
+              onClick={() => topFileInputRef.current?.click()}
+              size="sm"
+              className="gap-2 h-9 text-xs"
+              title="Fazer upload de modelo .pluriform ou .json para criar modelo oficial"
+            >
+              <Upload className="h-4 w-4 text-primary" />
+              Upload (.pluriform)
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => navigate("/platform/formularios/editor/novo")}
+              size="sm"
+              className="gap-2 h-9 text-xs"
+              title="Criar novo modelo oficial no Editor Visual com arrastar e soltar"
+            >
+              <Edit3 className="h-4 w-4 text-primary" />
+              Editor Visual
+            </Button>
+
             <Button
               onClick={handleOpenCreateOfficial}
               size="sm"
@@ -551,6 +725,8 @@ export const PlatformFormLibraryManager = () => {
                 template={template}
                 isOwner={true}
                 onOpenDetail={() => navigate(`/platform/formularios/${template.id}`)}
+                onEditInVisualEditor={() => navigate(`/platform/formularios/editor/${template.id}`)}
+                onExportPluriform={(t) => void handleExportPluriform(t)}
                 onPreview={() => {
                   setPreviewTemplate(template);
                   setPreviewOpen(true);
@@ -723,6 +899,28 @@ export const PlatformFormLibraryManager = () => {
                               title="Inspecionar estrutura"
                             >
                               <Layers className="h-4 w-4" />
+                            </Button>
+
+                            {/* Export Pluriform */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-primary"
+                              onClick={() => void handleExportPluriform(template)}
+                              title="Exportar (.pluriform)"
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+
+                            {/* Open Visual Editor */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-primary hover:text-primary hover:bg-primary/10"
+                              onClick={() => navigate(`/platform/formularios/editor/${template.id}`)}
+                              title="Editar no Editor Visual"
+                            >
+                              <Edit3 className="h-4 w-4" />
                             </Button>
 
                             {/* Edit Details */}
@@ -906,12 +1104,12 @@ export const PlatformFormLibraryManager = () => {
               )}
             </div>
 
-            {/* Schema Archetype or JSON Selector (for new official models) */}
+            {/* Schema Archetype, File Upload or JSON Selector (for new official models) */}
             {!isEditingExisting && (
-              <div className="space-y-2.5 pt-2 border-t">
-                <div className="flex items-center justify-between">
+              <div className="space-y-3 pt-2 border-t">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                   <Label className="text-xs font-semibold">Estrutura do Formulário (Schema)</Label>
-                  <div className="flex items-center gap-1 bg-muted p-0.5 rounded-md">
+                  <div className="flex items-center gap-1 bg-muted p-0.5 rounded-md flex-wrap">
                     <button
                       type="button"
                       onClick={() => setSchemaSource("archetype")}
@@ -922,6 +1120,17 @@ export const PlatformFormLibraryManager = () => {
                       }`}
                     >
                       Arquétipo da Área
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSchemaSource("file")}
+                      className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
+                        schemaSource === "file"
+                          ? "bg-background text-foreground font-semibold shadow-xs"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      Upload de Arquivo (.pluriform / .json)
                     </button>
                     <button
                       type="button"
@@ -946,6 +1155,38 @@ export const PlatformFormLibraryManager = () => {
                       A estrutura será gerada automaticamente com as melhores práticas de perguntas, seções e escalas clínicas para a especialidade {formCategory}.
                     </p>
                   </div>
+                ) : schemaSource === "file" ? (
+                  <PluriformDropzone
+                    uploadedFileName={uploadedFileName}
+                    uploadedSchema={uploadedSchema}
+                    onFileLoaded={({ fileName, schema, title, description }) => {
+                      setUploadedFileName(fileName);
+                      setUploadedSchema(schema);
+                      setSchemaSource("file");
+                      if (title && !isEditingExisting) {
+                        setFormTitle((prev) => (!prev.trim() ? title : prev));
+                      }
+                      if (description && !isEditingExisting) {
+                        setFormDescription((prev) => (!prev.trim() ? description : prev));
+                      }
+                      if (!isEditingExisting) {
+                        const foundCategory = COMMUNITY_FORM_CATEGORIES.find((cat) => {
+                          const lowerCat = cat.toLowerCase();
+                          return (
+                            (title && title.toLowerCase().includes(lowerCat)) ||
+                            (description && description.toLowerCase().includes(lowerCat))
+                          );
+                        });
+                        if (foundCategory) {
+                          setFormCategory(foundCategory);
+                        }
+                      }
+                    }}
+                    onClear={() => {
+                      setUploadedFileName(null);
+                      setUploadedSchema(null);
+                    }}
+                  />
                 ) : (
                   <Textarea
                     value={customJsonInput}
@@ -955,6 +1196,22 @@ export const PlatformFormLibraryManager = () => {
                     className="font-mono text-[11px]"
                   />
                 )}
+
+                {/* Subtle link to visual editor */}
+                <div className="pt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>Ou prefere desenhar os campos?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditModalOpen(false);
+                      navigate("/platform/formularios/editor/novo");
+                    }}
+                    className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
+                  >
+                    <Edit3 className="h-3 w-3" />
+                    Abrir no Editor de Formulários
+                  </button>
+                </div>
               </div>
             )}
 

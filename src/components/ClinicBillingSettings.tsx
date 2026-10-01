@@ -28,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
-import { calculatePlanPrice, BillingCycle, parsePlanType, parseBillingCycle } from "@/utils/subscriptionPricing";
+import { calculatePlanPrice, BillingCycle, parsePlanType, parseBillingCycle, type PlanType } from "@/utils/subscriptionPricing";
 import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
 import { toast } from "sonner";
 import {
@@ -42,7 +42,7 @@ import {
 
 interface ClinicBillingSettingsProps {
   clinicId: string;
-  currentPlan: "solo" | "clinic" | "enterprise";
+  currentPlan: PlanType;
   accountRole?: string;
   refreshAuthState?: () => Promise<void>;
 }
@@ -51,7 +51,7 @@ interface SubscriptionSummary {
   subscription_id: string | null;
   clinic_id: string;
   account_owner_user_id: string | null;
-  plan_type: "solo" | "clinic" | "enterprise";
+  plan_type: PlanType;
   status: string;
   billing_cycle: string;
   payment_method: string;
@@ -85,6 +85,78 @@ interface SubscriptionSummary {
 
 import type { SubscriptionInvoice as Invoice } from "@/types/subscriptionInvoice";
 
+const PLAN_INFO_MAP: Record<PlanType, {
+  name: string;
+  category: "prof" | "clinic";
+  description: string;
+  baseSeats: number;
+  colorTheme: "emerald" | "blue" | "purple";
+}> = {
+  prof_basico: {
+    name: "Profissional Básico",
+    category: "prof",
+    description: "Ideal para profissionais autônomos iniciando consultório (1 acesso simultâneo).",
+    baseSeats: 1,
+    colorTheme: "emerald",
+  },
+  prof_medio: {
+    name: "Profissional Médio",
+    category: "prof",
+    description: "Alta demanda clínica com fichas e formulários ilimitados (1 acesso simultâneo).",
+    baseSeats: 1,
+    colorTheme: "blue",
+  },
+  prof_top: {
+    name: "Profissional Top",
+    category: "prof",
+    description: "Máxima autonomia: Você + Apoio de Secretária/Assistente (2 acessos simultâneos).",
+    baseSeats: 2,
+    colorTheme: "purple",
+  },
+  clinica_basico: {
+    name: "Clínica Básico",
+    category: "clinic",
+    description: "Consultórios e salas compartilhadas (base 2 acessos + extras a R$ 25/mês).",
+    baseSeats: 2,
+    colorTheme: "purple",
+  },
+  clinica_medio: {
+    name: "Clínica Médio",
+    category: "clinic",
+    description: "Equipes consolidadas com gestão de permissões e repasses (base 4 acessos).",
+    baseSeats: 4,
+    colorTheme: "blue",
+  },
+  clinica_top: {
+    name: "Clínica Top",
+    category: "clinic",
+    description: "Para grandes clínicas com alta escala e auditoria (base 8 acessos).",
+    baseSeats: 8,
+    colorTheme: "purple",
+  },
+  solo: {
+    name: "Profissional Solo (Legado)",
+    category: "prof",
+    description: "Plano individual legado (1 acesso simultâneo).",
+    baseSeats: 1,
+    colorTheme: "emerald",
+  },
+  clinic: {
+    name: "Clínica Pro (Legado)",
+    category: "clinic",
+    description: "Plano clínica legado com gestão de colaboradores (base 4 acessos).",
+    baseSeats: 4,
+    colorTheme: "blue",
+  },
+  enterprise: {
+    name: "Enterprise (Legado)",
+    category: "clinic",
+    description: "Plano enterprise legado (base 10 acessos).",
+    baseSeats: 10,
+    colorTheme: "purple",
+  },
+};
+
 export function ClinicBillingSettings({
   clinicId,
   currentPlan,
@@ -107,7 +179,7 @@ export function ClinicBillingSettings({
   const [copiedPix, setCopiedPix] = useState(false);
 
   // Form states
-  const [targetPlan, setTargetPlan] = useState<"solo" | "clinic" | "enterprise">(currentPlan);
+  const [targetPlan, setTargetPlan] = useState<PlanType>(currentPlan);
   const [targetCycle, setTargetCycle] = useState<BillingCycle>("annual");
   const [extraConcurrentCount, setExtraConcurrentCount] = useState(0);
 
@@ -171,15 +243,25 @@ export function ClinicBillingSettings({
   const handleManagePlan = async () => {
     if (!clinicId || submitting) return;
 
-    if (targetPlan === "solo" && activeCollaboratorsCount > 0) {
-      toast.error(`Sua clínica possui ${activeCollaboratorsCount} colaborador(es) cadastrado(s). Remova ou desative os colaboradores antes de mudar para o plano Solo.`);
+    const isOneSeat = targetPlan === "solo" || targetPlan === "prof_basico" || targetPlan === "prof_medio";
+    if (isOneSeat && activeCollaboratorsCount > 0) {
+      toast.error(`Sua clínica possui ${activeCollaboratorsCount} colaborador(es) cadastrado(s). Remova ou desative os colaboradores antes de mudar para um plano individual.`);
+      return;
+    }
+    if (targetPlan === "prof_top" && activeCollaboratorsCount > 1) {
+      toast.error(`O plano Profissional Top permite no máximo 1 colaborador de apoio além do titular. Sua clínica possui ${activeCollaboratorsCount} colaboradores ativos.`);
       return;
     }
 
     if (!hasActiveRecurringCard) {
       setIsPlanModalOpen(false);
-      const baseConcurrentParam = targetPlan === "enterprise" ? 10 : targetPlan === "clinic" ? 4 : 1;
-      navigate(`/pagamento/${clinicId}?plan=${targetPlan}&cycle=${targetCycle}${targetPlan !== "solo" && extraConcurrentCount > 0 ? `&concurrent=${baseConcurrentParam + extraConcurrentCount}` : ""}`);
+      const baseConcurrentParam =
+        targetPlan === "clinica_top" ? 8 :
+        targetPlan === "enterprise" ? 10 :
+        targetPlan === "clinica_medio" || targetPlan === "clinic" ? 4 :
+        targetPlan === "clinica_basico" || targetPlan === "prof_top" ? 2 : 1;
+
+      navigate(`/pagamento/${clinicId}?plan=${targetPlan}&cycle=${targetCycle}${extraConcurrentCount > 0 ? `&concurrent=${baseConcurrentParam + extraConcurrentCount}` : ""}`);
       return;
     }
 
@@ -209,13 +291,17 @@ export function ClinicBillingSettings({
 
       if (error) throw error;
 
-      toast.success(
-        targetPlan === "enterprise"
-          ? "Upgrade para o Plano Enterprise efetuado com sucesso!"
-          : targetPlan === "clinic"
-          ? "Upgrade para o Plano Clínica efetuado com sucesso!"
-          : "Alteração para o Plano Solo efetuada com sucesso!"
-      );
+      const getSuccessPlanTitle = (p: string) => {
+        if (p === "clinica_top" || p === "enterprise") return "Plano Clínica Top";
+        if (p === "clinica_medio" || p === "clinic") return "Plano Clínica Médio";
+        if (p === "clinica_basico") return "Plano Clínica Básico";
+        if (p === "prof_top") return "Plano Profissional Top";
+        if (p === "prof_medio" || p === "solo") return "Plano Profissional Médio";
+        if (p === "prof_basico") return "Plano Profissional Básico";
+        return "Plano";
+      };
+
+      toast.success(`Alteração para o ${getSuccessPlanTitle(targetPlan)} efetuada com sucesso!`);
       setIsPlanModalOpen(false);
 
       if (typeof refreshAuthState === "function") {
@@ -337,12 +423,13 @@ export function ClinicBillingSettings({
   }, []);
 
   const activePlan = summary?.plan_type || currentPlan;
-  const isSolo = activePlan === "solo";
-  const isEnterprise = activePlan === "enterprise";
+  const planInfo = PLAN_INFO_MAP[activePlan] || PLAN_INFO_MAP.prof_medio;
+  const isSolo = planInfo.category === "prof";
+  const isEnterprise = activePlan === "clinica_top" || activePlan === "enterprise";
   const isTrial = summary?.status === "TRIAL" || summary?.is_free_trial === true || quota.isFreeTrial;
   const activeCycle = parseBillingCycle(summary?.billing_cycle);
   const extraConcurrent = summary?.additional_concurrent_access_count ?? 0;
-  const defaultBase = isSolo ? 1 : isEnterprise ? 10 : 4;
+  const defaultBase = planInfo.baseSeats;
   const baseConcurrent = summary?.base_concurrent_access_count ?? defaultBase;
   const totalConcurrent = summary?.total_concurrent_access_limit ?? defaultBase;
 
@@ -404,18 +491,18 @@ export function ClinicBillingSettings({
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className={`p-3 rounded-2xl ${
-                isSolo 
+                planInfo.colorTheme === "emerald"
                   ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" 
-                  : isEnterprise 
+                  : planInfo.colorTheme === "purple"
                   ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
                   : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
               }`}>
-                {isSolo ? <UserRound className="w-6 h-6" /> : isEnterprise ? <Sparkles className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+                {planInfo.category === "prof" ? <UserRound className="w-6 h-6" /> : isEnterprise ? <Sparkles className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xl font-bold text-foreground">
-                    {isSolo ? "Profissional Solo" : isEnterprise ? "Enterprise (Alta Escala)" : "Clínica Pro"}
+                    {planInfo.name}
                   </h3>
                   <Badge variant="outline" className={`border-emerald-500/30 text-xs font-semibold ${isTrial ? "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30" : "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"}`}>
                     <Sparkles className="w-3 h-3 mr-1" />
@@ -432,11 +519,7 @@ export function ClinicBillingSettings({
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                   {isTrial
                     ? "Espaço em período de degustação gratuito com limites volumétricos."
-                    : isSolo
-                    ? "Ideal para profissionais autônomos organizarem seus atendimentos."
-                    : isEnterprise
-                    ? "Para grandes clínicas com alta escala: base de 10 acessos com tarifas reduzidas."
-                    : "Para clínicas compartilhadas com gestão de colaboradores e acessos simultâneos."}
+                    : planInfo.description}
                 </p>
               </div>
             </div>
@@ -841,8 +924,17 @@ export function ClinicBillingSettings({
         onConfirmChangePlan={handleManagePlan}
         onNavigateToCheckout={() => {
           setIsPlanModalOpen(false);
-          const baseConcurrentParam = targetPlan === "enterprise" ? 10 : targetPlan === "clinic" ? 4 : 1;
-          navigate(`/pagamento/${clinicId}?plan=${targetPlan}&cycle=${targetCycle}${targetPlan !== "solo" && extraConcurrentCount > 0 ? `&concurrent=${baseConcurrentParam + extraConcurrentCount}` : ""}`);
+          const baseConcurrentParam =
+            targetPlan === "clinica_top" ? 8 :
+            targetPlan === "enterprise" ? 10 :
+            targetPlan === "clinica_medio" || targetPlan === "clinic" ? 4 :
+            targetPlan === "clinica_basico" || targetPlan === "prof_top" ? 2 : 1;
+          const isIndividual =
+            targetPlan === "prof_basico" ||
+            targetPlan === "prof_medio" ||
+            targetPlan === "prof_top" ||
+            targetPlan === "solo";
+          navigate(`/pagamento/${clinicId}?plan=${targetPlan}&cycle=${targetCycle}${!isIndividual && extraConcurrentCount > 0 ? `&concurrent=${baseConcurrentParam + extraConcurrentCount}` : ""}`);
         }}
         modalPricingSolo={modalPricingSolo}
         modalPricingClinic={modalPricingClinic}

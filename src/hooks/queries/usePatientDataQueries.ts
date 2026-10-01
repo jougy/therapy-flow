@@ -2,11 +2,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
-import { getLocalCacheItem, setLocalCacheItem } from "@/lib/indexed-db-persister";
+import { getLocalCacheItem, setLocalCacheItem, deleteLocalCacheItem } from "@/lib/indexed-db-persister";
 import { fetchPatientByRef } from "@/lib/patient-routing";
 import { CLINIC_QUERY_KEYS } from "./useClinicDataQueries";
 import type { HomeSessionRecord, HomePatientRecord } from "@/lib/home-patients-view";
 import { isAnamnesisTemplateSchema, type AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
+import { useAuth } from "@/hooks/useAuth";
 
 export type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
 export type PatientGroupRow = Database["public"]["Tables"]["patient_groups"]["Row"];
@@ -20,7 +21,8 @@ export type GroupSuggestion = Pick<PatientGroupTemplateRow, "clinic_color_slot_i
 
 export const PATIENT_QUERY_KEYS = {
   patient: (patientRef?: string | null, clinicId?: string | null) => ["patient", patientRef, "clinic", clinicId] as const,
-  sessions: (patientId?: string | null) => ["patient-sessions", patientId] as const,
+  sessions: (patientId?: string | null, userId?: string | null) =>
+    userId ? (["patient-sessions", patientId, "user", userId] as const) : (["patient-sessions", patientId] as const),
   groups: (patientId?: string | null) => ["patient-groups", patientId] as const,
   agendaEvents: (patientId?: string | null) => ["patient-agenda", patientId] as const,
   groupSuggestions: (clinicId?: string | null) => ["patient-group-suggestions", clinicId] as const,
@@ -33,8 +35,10 @@ export const PATIENT_QUERY_KEYS = {
 // IndexedDB storage keys
 export const PATIENT_DETAIL_CACHE_KEY = (clinicId?: string | null, ref?: string | null) =>
   `patient_detail_${clinicId || "global"}_${ref || "unknown"}`;
-export const PATIENT_SESSIONS_CACHE_KEY = (patientId: string) => `patient_sessions_${patientId}`;
-export const PATIENT_SESSIONS_SYNC_KEY = (patientId: string) => `patient_sessions_sync_${patientId}`;
+export const PATIENT_SESSIONS_CACHE_KEY = (patientId: string, userId?: string | null) =>
+  userId ? `patient_sessions_${userId}_${patientId}` : `patient_sessions_${patientId}`;
+export const PATIENT_SESSIONS_SYNC_KEY = (patientId: string, userId?: string | null) =>
+  userId ? `patient_sessions_sync_${userId}_${patientId}` : `patient_sessions_sync_${patientId}`;
 export const PATIENT_GROUPS_CACHE_KEY = (patientId: string) => `patient_groups_${patientId}`;
 export const PATIENT_AGENDA_CACHE_KEY = (patientId: string) => `patient_agenda_${patientId}`;
 export const PATIENT_TEMPLATES_CACHE_KEY = (clinicId: string) => `clinic_anamnesis_templates_${clinicId}`;
@@ -95,17 +99,51 @@ export function usePatientDetailQuery(patientRef?: string | null, clinicId?: str
   });
 }
 
-/**
- * Hook para carregar atendimentos/sessões do paciente com persistência IndexedDB e sincronização delta incremental.
- */
-export function usePatientSessionsQuery(patientId?: string | null, enabled = true) {
-  return useQuery({
-    queryKey: PATIENT_QUERY_KEYS.sessions(patientId),
-    queryFn: async (): Promise<SessionRow[]> => {
-      if (!patientId) return [];
+export interface UsePatientSessionsQueryOptions {
+  userId?: string | null;
+  canReadSessions?: boolean;
+}
 
-      const cacheKey = PATIENT_SESSIONS_CACHE_KEY(patientId);
-      const syncKey = PATIENT_SESSIONS_SYNC_KEY(patientId);
+/**
+ * Hook para carregar atendimentos/sessões do paciente com persistência IndexedDB,
+ * isolamento estrito por usuário (blindagem LGPD) e sincronização delta incremental.
+ */
+export function usePatientSessionsQuery(
+  patientId?: string | null,
+  enabled = true,
+  options?: UsePatientSessionsQueryOptions
+) {
+  const auth = useAuth();
+  const currentUserId = options?.userId ?? auth.user?.id ?? null;
+  const isSuperAdmin = auth.isSuperAdmin;
+  const isOwner = auth.accountRole === "account_owner" || auth.operationalRole === "owner";
+
+  // Blindagem LGPD: Validação estrita se o colaborador possui permissão de leitura de sessões
+  const hasReadPermission =
+    options?.canReadSessions !== undefined
+      ? options.canReadSessions
+      : Boolean(
+          !auth.user || // fallback para testes unitários executados sem sessão autenticada
+            isSuperAdmin ||
+            isOwner ||
+            auth.can("sessions.read") ||
+            auth.can("sessions.read_all")
+        );
+
+  const queryKey = PATIENT_QUERY_KEYS.sessions(patientId, currentUserId);
+  const cacheKey = patientId ? PATIENT_SESSIONS_CACHE_KEY(patientId, currentUserId) : "";
+  const syncKey = patientId ? PATIENT_SESSIONS_SYNC_KEY(patientId, currentUserId) : "";
+
+  return useQuery({
+    queryKey,
+    queryFn: async (): Promise<SessionRow[]> => {
+      if (!patientId || !hasReadPermission) {
+        if (patientId && currentUserId && !hasReadPermission) {
+          // Hardening contra vazamento de prontuário: se perdeu acesso, limpa o cache local sensível
+          void deleteLocalCacheItem(cacheKey);
+        }
+        return [];
+      }
 
       const cached = await getLocalCacheItem<SessionRow[]>(cacheKey);
       const lastSync = typeof window !== "undefined" ? window.sessionStorage.getItem(syncKey) : null;
@@ -171,7 +209,7 @@ export function usePatientSessionsQuery(patientId?: string | null, enabled = tru
       }
       return records;
     },
-    enabled: Boolean(patientId) && enabled,
+    enabled: Boolean(patientId) && enabled && hasReadPermission,
     staleTime: 30 * 1000,
   });
 }

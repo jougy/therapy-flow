@@ -410,6 +410,7 @@ describe("Index", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /abrir agenda/i })[0]);
 
     expect(await screen.findByRole("dialog")).toHaveTextContent("Agenda");
+    expect(screen.getByRole("button", { name: /ver agenda completa/i })).toBeVisible();
     expect(screen.getByText("Agenda mock")).toBeVisible();
   });
 

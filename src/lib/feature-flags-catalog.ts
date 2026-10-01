@@ -8,7 +8,8 @@ export type FeatureFlagCategory =
   | 'Impressão'
   | 'UI/Experiência'
   | 'Tutoriais & Ajuda'
-  | 'Assinaturas';
+  | 'Assinaturas'
+  | 'Agenda';
 
 export interface FeatureFlagDefinition {
   key: string;
@@ -20,6 +21,39 @@ export interface FeatureFlagDefinition {
 }
 
 export const featureFlagsCatalog: FeatureFlagDefinition[] = [
+  // Agenda da Clínica
+  {
+    key: 'agenda_module',
+    label: 'Módulo da Agenda Clínica',
+    description: 'Controla a exibição e funcionamento global da agenda clínica (/clinica/:clinicKey/agenda), widget na home e atalhos rápidos de compromissos.',
+    category: 'Agenda',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'agenda_night_dawn_shift',
+    label: 'Turno de Madrugada (00h00 às 06h59)',
+    description: 'Habilita o 4º bloco de horários na visão diária e semanal cobrindo as 24 horas contínuas sem lacunas (Madrugada 00:00–06:59).',
+    category: 'Agenda',
+    hasConfiguration: false,
+    hasToggle: true,
+  },
+  {
+    key: 'agenda_conflict_warning',
+    label: 'Alerta de Conflitos e Sobreposições em Tempo Real',
+    description: 'Exibe banner de aviso em tempo real no modal de agendamento ao selecionar horários que colidem com outros compromissos ativos do dia.',
+    category: 'Agenda',
+    hasConfiguration: false,
+    hasToggle: true,
+  },
+  {
+    key: 'agenda_slot_condenser',
+    label: 'Motor de Blocos Condensados de Horários Livres',
+    description: 'Agrupa lacunas contíguas de horários disponíveis em botões compactos de agendamento direto com um clique, substituindo colunas extensas vazias.',
+    category: 'Agenda',
+    hasConfiguration: false,
+    hasToggle: true,
+  },
   // Assinaturas & Financeiro
   {
     key: 'subscriptions_module',
@@ -354,5 +388,41 @@ export const DEFAULT_FORM_EDITOR_FLAG_CONFIG: FormEditorFlagConfig = {
     logic_parent_section: true,
     logic_conditional_visibility: true,
   },
+};
+
+export interface AgendaFlagConfig {
+  enabled?: boolean;
+  allowedViews: {
+    day: boolean;
+    week: boolean;
+    month: boolean;
+    year: boolean;
+  };
+  defaultView: "day" | "week" | "month" | "year";
+  defaultDurationMinutes: number;
+  enableDawnShift: boolean;
+  enableConflictWarning: boolean;
+  enableCondensedSlots: boolean;
+  showEndTimeOnCards: boolean;
+  showSpanningBadges: boolean;
+  maintenanceMessage?: string;
+}
+
+export const DEFAULT_AGENDA_FLAG_CONFIG: AgendaFlagConfig = {
+  enabled: true,
+  allowedViews: {
+    day: true,
+    week: true,
+    month: true,
+    year: true,
+  },
+  defaultView: "day",
+  defaultDurationMinutes: 50,
+  enableDawnShift: true,
+  enableConflictWarning: true,
+  enableCondensedSlots: true,
+  showEndTimeOnCards: true,
+  showSpanningBadges: true,
+  maintenanceMessage: "",
 };
 

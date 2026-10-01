@@ -302,11 +302,77 @@ describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
     });
   });
 
+  describe("calculatePlanPrice - New 6 Subscription Plans", () => {
+    it("calculates prof_basico pricing correctly", () => {
+      const resMonthly = calculatePlanPrice({ planType: "prof_basico", billingCycle: "monthly" });
+      expect(resMonthly.monthlyEquivalent).toBe(39.99);
+      expect(resMonthly.periodTotal).toBe(39.99);
+
+      const resQuarterly = calculatePlanPrice({ planType: "prof_basico", billingCycle: "quarterly" });
+      expect(resQuarterly.monthlyEquivalent).toBe(35.99);
+      expect(resQuarterly.periodTotal).toBe(107.97);
+
+      const resAnnual = calculatePlanPrice({ planType: "prof_basico", billingCycle: "annual" });
+      expect(resAnnual.monthlyEquivalent).toBe(26.66);
+      expect(resAnnual.periodTotal).toBe(319.92);
+    });
+
+    it("calculates prof_medio pricing correctly", () => {
+      const resMonthly = calculatePlanPrice({ planType: "prof_medio", billingCycle: "monthly" });
+      expect(resMonthly.monthlyEquivalent).toBe(59.99);
+      expect(resMonthly.periodTotal).toBe(59.99);
+
+      const resAnnual = calculatePlanPrice({ planType: "prof_medio", billingCycle: "annual" });
+      expect(resAnnual.monthlyEquivalent).toBe(44.99);
+      expect(resAnnual.periodTotal).toBe(539.88);
+    });
+
+    it("calculates prof_top pricing correctly", () => {
+      const resMonthly = calculatePlanPrice({ planType: "prof_top", billingCycle: "monthly" });
+      expect(resMonthly.monthlyEquivalent).toBe(89.99);
+      expect(resMonthly.periodTotal).toBe(89.99);
+
+      const resAnnual = calculatePlanPrice({ planType: "prof_top", billingCycle: "annual" });
+      expect(resAnnual.monthlyEquivalent).toBe(67.49);
+      expect(resAnnual.periodTotal).toBe(809.88);
+    });
+
+    it("calculates clinica_basico with extra seats", () => {
+      const resMonthly = calculatePlanPrice({ planType: "clinica_basico", billingCycle: "monthly", additionalSeats: 2 });
+      expect(resMonthly.baseMonthlyEq).toBe(99.00);
+      expect(resMonthly.extraSeatRate).toBe(25.0);
+      expect(resMonthly.extraSeatsCount).toBe(2);
+      expect(resMonthly.monthlyEquivalent).toBe(149.00); // 99 + 2 * 25
+      expect(resMonthly.periodTotal).toBe(149.00);
+    });
+
+    it("calculates clinica_medio with extra seats", () => {
+      const resMonthly = calculatePlanPrice({ planType: "clinica_medio", billingCycle: "monthly", additionalSeats: 1 });
+      expect(resMonthly.baseMonthlyEq).toBe(139.00);
+      expect(resMonthly.monthlyEquivalent).toBe(164.00); // 139 + 25
+    });
+
+    it("calculates clinica_top with extra seats and annual discount", () => {
+      const resAnnual = calculatePlanPrice({ planType: "clinica_top", billingCycle: "annual", additionalSeats: 3 });
+      expect(resAnnual.baseMonthlyEq).toBe(149.25);
+      expect(resAnnual.monthlyEquivalent).toBe(224.25); // 149.25 + 3 * 25
+      expect(resAnnual.periodTotal).toBe(2691.00); // 224.25 * 12
+    });
+  });
+
   describe("parsePlanType", () => {
-    it("correctly parses plan types", () => {
+    it("correctly parses legacy and new plan types", () => {
       expect(parsePlanType("solo")).toBe("solo");
       expect(parsePlanType("clinic")).toBe("clinic");
       expect(parsePlanType("enterprise")).toBe("enterprise");
+      expect(parsePlanType("prof_basico")).toBe("prof_basico");
+      expect(parsePlanType("prof-basico")).toBe("prof_basico");
+      expect(parsePlanType("prof_medio")).toBe("prof_medio");
+      expect(parsePlanType("prof_top")).toBe("prof_top");
+      expect(parsePlanType("clinica_basico")).toBe("clinica_basico");
+      expect(parsePlanType("clinica-basico")).toBe("clinica_basico");
+      expect(parsePlanType("clinica_medio")).toBe("clinica_medio");
+      expect(parsePlanType("clinica_top")).toBe("clinica_top");
       expect(parsePlanType(null)).toBe("solo");
       expect(parsePlanType("other")).toBe("solo");
     });

@@ -24,6 +24,7 @@ export type ActiveMember = {
   id: string;
   user_id: string;
   operational_role: SubaccountOperationalRole | "owner";
+  role_key?: string | null;
   membership_status: "active" | "suspended" | "inactive" | "invited" | string;
   is_active: boolean;
   created_at: string;

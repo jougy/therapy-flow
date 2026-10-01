@@ -520,20 +520,41 @@ export const canDeleteSelectedSessions = <TSession extends SearchableSession>(se
   selectedSessions.length > 0 && selectedSessions.every((session) => session.status === "rascunho");
 
 export const canDeleteSelectedSessionsForRole = <TSession extends SearchableOwnedSession>({
+  canDeleteAll,
+  canDeleteDraft,
   currentUserId,
   operationalRole,
   selectedSessions,
 }: {
+  canDeleteAll?: boolean;
+  canDeleteDraft?: boolean;
   currentUserId: string | null | undefined;
-  operationalRole: "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
+  operationalRole?: "owner" | "admin" | "professional" | "assistant" | "estagiario" | string | null;
   selectedSessions: TSession[];
 }) => {
-  if (operationalRole === "owner" || operationalRole === "admin") {
-    return selectedSessions.length > 0;
+  if (selectedSessions.length === 0) {
+    return false;
   }
 
-  if (operationalRole === "professional" && currentUserId) {
-    return selectedSessions.length > 0 && selectedSessions.every((session) => session.user_id === currentUserId);
+  if (canDeleteAll) {
+    return true;
+  }
+
+  if (canDeleteDraft && currentUserId) {
+    return selectedSessions.every(
+      (session) => session.user_id === currentUserId && session.status === "rascunho"
+    );
+  }
+
+  // Fallback para compatibilidade caso permissões granulares não sejam fornecidas
+  if (canDeleteAll === undefined && canDeleteDraft === undefined) {
+    if (operationalRole === "owner" || operationalRole === "admin") {
+      return true;
+    }
+
+    if (operationalRole === "professional" && currentUserId) {
+      return selectedSessions.every((session) => session.user_id === currentUserId);
+    }
   }
 
   return false;

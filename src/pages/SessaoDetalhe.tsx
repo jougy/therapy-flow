@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Info, Loader2, FileText, CheckCircle2, Layers } from "lucide-react";
+import { Info, Loader2, FileText, CheckCircle2, Layers, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -134,7 +134,8 @@ const SessaoDetalhe = () => {
   const { id: patientId, sessionId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { can, user, clinic, clinicId, operationalRole, profile } = useAuth();
+  const { accountRole, can, user, clinic, clinicId, operationalRole, profile } = useAuth();
+  const isAccountOwner = accountRole === "account_owner" || clinic?.account_owner_user_id === user?.id || operationalRole === "owner";
   const quota = useClinicPlanQuota(clinicId);
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const isNew = sessionId === "novo";
@@ -1611,15 +1612,15 @@ const SessaoDetalhe = () => {
     toast({ title: "Pagamento atualizado" });
   };
 
-  const canManageSessionDeletion = operationalRole === "owner" || operationalRole === "admin";
+  const canManageSessionDeletion = can("sessions.delete") || isAccountOwner;
   const canEditOthersSessions = can("sessions.write_others") || canManageSessionDeletion;
   const canEditSessionContent = createdByUserId === user?.id || canEditOthersSessions;
   const currentShareRecipient = shareRecipients.find((r) => r.id === user?.id);
   const isSharedWithReadOnlyAccess = currentShareRecipient && currentShareRecipient.access_level === "read_only" && createdByUserId !== user?.id && !canEditOthersSessions;
   const canStartNewSessionFromThis = !isSharedWithReadOnlyAccess;
   const canDeleteOwnProfessionalSession =
-    (operationalRole === "professional" && createdByUserId === user?.id && can("sessions.delete")) ||
-    (operationalRole === "estagiario" && createdByUserId === user?.id && status === "rascunho");
+    createdByUserId === user?.id &&
+    (canManageSessionDeletion || (status === "rascunho" && can("session.delete_draft")));
   const canManageSessionSharing = !isNew && (canManageSessionDeletion || canEditSessionContent);
   const canEditSavedDraft = !isNew && status === "rascunho";
   const canEditPresenceSummary = !isNew && !isEditing && canEditSessionContent;
@@ -1818,7 +1819,7 @@ const SessaoDetalhe = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
-      className="mx-auto w-full max-w-[min(100vw-1.5rem,1680px)] space-y-6 px-3 sm:max-w-[min(100vw-2rem,1680px)] sm:px-6 lg:max-w-[min(100vw-3rem,1760px)] [overscroll-behavior-x:contain]"
+      className="mx-auto w-full max-w-[min(100vw-1.5rem,1680px)] space-y-6 px-3 pb-24 sm:pb-8 sm:max-w-[min(100vw-2rem,1680px)] sm:px-6 lg:max-w-[min(100vw-3rem,1760px)] [overscroll-behavior-x:contain]"
     >
       <SessionHeaderBar
         canDeleteSession={canDeleteSession}
@@ -2441,6 +2442,33 @@ const SessaoDetalhe = () => {
         clinicId={clinicId}
         actionAttempted="evoluir ou registrar atendimentos"
       />
+
+      {/* Floating Action Bar fixa inferior no mobile para salvar ou concluir rapidamente durante a anamnese */}
+      {(isNew || isEditing) && !locked && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90 sm:hidden">
+          <div className="flex items-center gap-2 max-w-md mx-auto">
+            <Button
+              size="sm"
+              onClick={() => void handleSave("concluído")}
+              disabled={saving}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold h-11 text-xs gap-1.5 shadow-sm"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              <span>Concluir</span>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleSave("rascunho")}
+              disabled={saving}
+              className="flex-1 h-11 text-xs gap-1.5"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              <span>Salvar Rascunho</span>
+            </Button>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 };

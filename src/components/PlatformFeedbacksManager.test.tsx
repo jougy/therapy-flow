@@ -98,4 +98,24 @@ describe("PlatformFeedbacksManager Component", () => {
     expect(screen.queryByText("Dr. Roberto")).not.toBeInTheDocument();
     expect(screen.getByText("Dra. Ana")).toBeInTheDocument();
   });
+
+  it("expands feedback card and displays admin notes section without errors", async () => {
+    render(<PlatformFeedbacksManager />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Dr. Roberto")).toBeInTheDocument();
+    });
+
+    const expandButtons = screen.getAllByRole("button").filter((btn) =>
+      btn.querySelector("svg.lucide-chevron-down")
+    );
+    expect(expandButtons.length).toBeGreaterThan(0);
+
+    fireEvent.click(expandButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Anotações Internas da Administração")).toBeInTheDocument();
+    });
+  });
 });
+

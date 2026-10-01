@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +73,7 @@ import {
   AGENDA_PAST_EVENT_ERROR_MESSAGE,
   assertAgendaEventDateTimeIsFuture,
   buildAgendaEventPayload,
+  formatSupabaseErrorMessage,
   getAgendaEventDateTime,
   isAgendaEventDateTimeInPast,
   notifyAgendaEventsUpdated,
@@ -1029,7 +1031,8 @@ const PacienteDetalhe = () => {
   const { id, clinicKey } = useParams<{ id?: string; clinicKey?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { can, clinic, clinicId, operationalRole, profile, user } = useAuth();
+  const { accountRole, can, clinic, clinicId, operationalRole, profile, user } = useAuth();
+  const isAccountOwner = accountRole === "account_owner" || clinic?.account_owner_user_id === user?.id || operationalRole === "owner";
   const { isFeatureEnabled } = useFeatureFlags();
   const { trackDocumentPrint, trackExportJson } = useTelemetry();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
@@ -1093,8 +1096,7 @@ const PacienteDetalhe = () => {
   useEffect(() => {
     if (user && operationalRole) {
       const hasReadPermission = typeof can === "function" ? can("patients.read") : false;
-      const isOwnerOrAdmin = operationalRole === "owner" || operationalRole === "admin";
-      if (!hasReadPermission && !isOwnerOrAdmin) {
+      if (!hasReadPermission && !isAccountOwner) {
         toast({
           title: "Acesso restrito",
           description: "Você não possui permissão para consultar o prontuário deste paciente.",
@@ -1103,7 +1105,7 @@ const PacienteDetalhe = () => {
         navigate("/espacopessoal", { replace: true });
       }
     }
-  }, [can, navigate, operationalRole, user]);
+  }, [can, isAccountOwner, navigate, operationalRole, user]);
 
   const allSessionIdsKey = useMemo(() => allSessions.map((session) => session.id).join(","), [allSessions]);
 
@@ -1290,6 +1292,7 @@ const PacienteDetalhe = () => {
   };
 
   const [recordsView, setRecordsView] = useState<PatientRecordsView>("list");
+  const [mobileFilterDrawerOpen, setMobileFilterDrawerOpen] = useState(false);
   const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState("all");
   const [dashboardChartPreferences, setDashboardChartPreferences] = useState<Record<string, PatientAnamnesisChartType>>({});
   const [showDashboardPrintModal, setShowDashboardPrintModal] = useState(false);
@@ -1299,7 +1302,7 @@ const PacienteDetalhe = () => {
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const isIntern = operationalRole === "estagiario";
-  const canDeletePatient = can("patients.delete") || can("clinic_profile.manage") || operationalRole === "owner" || operationalRole === "admin";
+  const canDeletePatient = can("patients.delete") || isAccountOwner;
   const parsedClinicalProfile = useMemo(() => parseClinicalProfile(patient?.clinical_profile), [patient?.clinical_profile]);
   const parsedEmergencyContact = useMemo(() => parseEmergencyContact(patient?.emergency_contact), [patient?.emergency_contact]);
   const patientOriginDetails = useMemo(() => patient ? formatPatientOriginDetails(patient) : null, [patient]);
@@ -2099,11 +2102,13 @@ const PacienteDetalhe = () => {
   );
 
   const canDeleteSelection = canDeleteSelectedSessionsForRole({
+    canDeleteAll: can("sessions.delete") || isAccountOwner,
+    canDeleteDraft: can("session.delete_draft"),
     currentUserId: user?.id,
     operationalRole,
     selectedSessions,
   });
-  const canManageSessions = operationalRole === "owner" || operationalRole === "admin";
+  const canManageSessions = can("sessions.read_all") || can("sessions.write_others") || isAccountOwner;
   const canShareSelection =
     selectedSessions.length > 0 &&
     selectedSessions.every((session) => canManageSessions || session.user_id === user?.id || session.provider_id === user?.id);
@@ -2258,7 +2263,7 @@ const PacienteDetalhe = () => {
 
   const handleBulkDelete = async () => {
     if (!canDeleteSelection) {
-      const canDeleteAnyStatus = operationalRole === "owner" || operationalRole === "admin";
+      const canDeleteAnyStatus = can("sessions.delete") || isAccountOwner;
       toast({
         title: canDeleteAnyStatus ? "Não foi possível excluir os atendimentos" : "Seleção sem permissão para exclusão",
         description: canDeleteAnyStatus
@@ -2411,11 +2416,11 @@ const PacienteDetalhe = () => {
   const visiblePatientAgendaEvents = [...overdueAgendaEvents, ...futureAgendaEvents];
   const upcomingAgendaEvent = visiblePatientAgendaEvents[0] ?? null;
   const futureAgendaCount = futureAgendaEvents.length;
-  const agendaDialogDateTime = agendaDate && agendaTime ? getAgendaEventDateTime(new Date(`${agendaDate}T12:00:00`), agendaTime) : null;
-  const isAgendaDialogDateTimePast = agendaDialogDateTime ? isAgendaEventDateTimeInPast(agendaDialogDateTime) : false;
+  const agendaDialogDateTime = agendaDate && agendaTime ? getAgendaEventDateTime(agendaDate, agendaTime) : null;
+  const isAgendaDialogDateTimePast = agendaDialogDateTime ? isAgendaEventDateTimeInPast(agendaDialogDateTime, undefined, 15) : false;
   const selectedAgendaDateTime =
-    selectedAgendaDate && selectedAgendaTime ? new Date(`${selectedAgendaDate}T${selectedAgendaTime || "00:00"}:00`) : null;
-  const isSelectedAgendaDateTimePast = selectedAgendaDateTime ? isAgendaEventDateTimeInPast(selectedAgendaDateTime) : false;
+    selectedAgendaDate && selectedAgendaTime ? getAgendaEventDateTime(selectedAgendaDate, selectedAgendaTime || "00:00") : null;
+  const isSelectedAgendaDateTimePast = selectedAgendaDateTime ? isAgendaEventDateTimeInPast(selectedAgendaDateTime, undefined, 15) : false;
   const canceledSessionsCount = sessions.filter((session) => session.status === "cancelado").length;
   const draftSessionsCount = sessions.filter((session) => session.status === "rascunho").length;
   const totalSessionsCount = sessions.length;
@@ -2444,41 +2449,58 @@ const PacienteDetalhe = () => {
     setSelectedAgendaDate(getDateInputValue(new Date(event.scheduled_for)));
     setSelectedAgendaTime(getTimeInputValue(event.scheduled_for));
   };
+  const effectiveClinicId = clinicId || clinic?.id || null;
+
   const handleSchedulePatientAgendaEvent = async () => {
     if (!user || !patient) {
       return;
     }
 
     try {
-      const selectedDateTime = getAgendaEventDateTime(new Date(`${agendaDate}T12:00:00`), agendaTime);
-      assertAgendaEventDateTimeIsFuture(selectedDateTime);
+      const selectedDateTime = getAgendaEventDateTime(agendaDate, agendaTime);
+      assertAgendaEventDateTimeIsFuture(selectedDateTime, undefined, 15);
       setSavingAgendaEvent(true);
       const payload = buildAgendaEventPayload({
-        clinicId,
+        clinicId: effectiveClinicId,
         eventType: "atendimento",
-        selectedDate: new Date(`${agendaDate}T12:00:00`),
+        graceMinutes: 15,
+        selectedDate: agendaDate as any,
         selectedPatient: { id: patient.id, name: patient.name },
         time: agendaTime,
         title: patient.name,
         userId: user.id,
       });
 
-      const { data, error } = await supabase
+      let insertedResult = await supabase
         .from("agenda_events")
         .insert(payload)
         .select("*")
         .single();
 
-      if (error) {
-        throw error;
+      if (insertedResult.error && (insertedResult.error.code === "42703" || insertedResult.error.message.includes("duration_minutes"))) {
+        const fallbackPayload = { ...payload };
+        delete (fallbackPayload as any).duration_minutes;
+        insertedResult = await supabase
+          .from("agenda_events")
+          .insert(fallbackPayload)
+          .select("*")
+          .single();
       }
 
-      optimisticAddAgendaEvent(data as AgendaEvent);
+      if (insertedResult.error) {
+        throw insertedResult.error;
+      }
+
+      const data = insertedResult.data;
+
+      if (data) {
+        optimisticAddAgendaEvent(data as AgendaEvent);
+      }
       setAgendaDialogOpen(false);
       notifyAgendaEventsUpdated();
       toast({ title: "Agendamento confirmado" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel salvar o agendamento.";
+      const message = formatSupabaseErrorMessage(error, "Não foi possível salvar o agendamento.");
       toast({ title: "Erro ao salvar agendamento", description: message, variant: "destructive" });
     } finally {
       setSavingAgendaEvent(false);
@@ -2560,7 +2582,7 @@ const PacienteDetalhe = () => {
 
           if (!alreadyHasManualEvent) {
             const { error: insertError } = await supabase.from("agenda_events").insert({
-              clinic_id: clinicId,
+              clinic_id: effectiveClinicId,
               event_type: "atendimento",
               generated_by_recurring_patient: true,
               patient_id: patient.id,
@@ -2583,7 +2605,7 @@ const PacienteDetalhe = () => {
       setRecurrenceDialogOpen(false);
       toast({ title: "Recorrência atualizada" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Não foi possível salvar a recorrência.";
+      const message = formatSupabaseErrorMessage(error, "Não foi possível salvar a recorrência.");
       toast({ title: "Erro ao salvar recorrência", description: message, variant: "destructive" });
     } finally {
       setSavingRecurrence(false);
@@ -2660,7 +2682,7 @@ const PacienteDetalhe = () => {
       notifyAgendaEventsUpdated();
       toast({ title: "Status do agendamento atualizado" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel atualizar o agendamento.";
+      const message = formatSupabaseErrorMessage(error, "Não foi possível atualizar o agendamento.");
       toast({ title: "Erro ao atualizar agendamento", description: message, variant: "destructive" });
     } finally {
       setSavingAgendaDetails(false);
@@ -2673,8 +2695,8 @@ const PacienteDetalhe = () => {
 
     try {
       setSavingAgendaDetails(true);
-      const nextDate = new Date(`${selectedAgendaDate}T${selectedAgendaTime || "00:00"}:00`);
-      assertAgendaEventDateTimeIsFuture(nextDate);
+      const nextDate = getAgendaEventDateTime(selectedAgendaDate, selectedAgendaTime || "00:00");
+      assertAgendaEventDateTimeIsFuture(nextDate, undefined, 15);
       const { data, error } = await supabase
         .from("agenda_events")
         .update({ scheduled_for: nextDate.toISOString() })
@@ -2692,7 +2714,7 @@ const PacienteDetalhe = () => {
       notifyAgendaEventsUpdated();
       toast({ title: "Data e horário atualizados" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel trocar data/horario.";
+      const message = formatSupabaseErrorMessage(error, "Não foi possível trocar data/horário.");
       toast({ title: "Erro ao trocar data/horário", description: message, variant: "destructive" });
     } finally {
       setSavingAgendaDetails(false);
@@ -2778,21 +2800,21 @@ const PacienteDetalhe = () => {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="min-w-0 space-y-2">
+            <div className="min-w-0 space-y-1.5 sm:space-y-2">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Paciente</p>
-                <h1 className="truncate text-3xl font-bold tracking-tight">{patient.name}</h1>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Paciente</p>
+                <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl md:text-3xl break-words line-clamp-2">{patient.name}</h1>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
                 {patient.age ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border bg-background/80 px-3 py-1">
-                    <Calendar className="h-3.5 w-3.5" />
+                  <span className="inline-flex items-center gap-1 rounded-full border bg-background/80 px-2.5 py-0.5 sm:px-3 sm:py-1">
+                    <Calendar className="h-3 sm:h-3.5 w-3 sm:w-3.5" />
                     {patient.age} anos
                   </span>
                 ) : null}
                 {canViewPatientContact && patient.phone ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border bg-background/80 px-3 py-1">
-                    <Phone className="h-3.5 w-3.5" />
+                  <span className="inline-flex items-center gap-1 rounded-full border bg-background/80 px-2.5 py-0.5 sm:px-3 sm:py-1">
+                    <Phone className="h-3 sm:h-3.5 w-3 sm:w-3.5" />
                     {patient.phone}
                   </span>
                 ) : null}
@@ -2800,17 +2822,17 @@ const PacienteDetalhe = () => {
                   type="button"
                   onClick={() => navigate(getPatientPath(patient, "cadastro"))}
                   title="Editar cadastro completo"
-                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-left transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 sm:px-3 sm:py-1 text-left transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     patient.registration_complete
                       ? "bg-success/10 text-success hover:bg-success/15"
                       : "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
                   }`}
                 >
-                  {patient.registration_complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                  {patient.registration_complete ? <CheckCircle2 className="h-3 sm:h-3.5 w-3 sm:w-3.5" /> : <FileText className="h-3 sm:h-3.5 w-3 sm:w-3.5" />}
                   {patientRegistrationStatus}
                 </button>
               </div>
-              <p className="max-w-2xl text-sm text-muted-foreground">
+              <p className="hidden sm:block max-w-2xl text-xs sm:text-sm text-muted-foreground">
                 {canViewPatientContact
                   ? "Acesse rapidamente contato, cadastro, status e novo atendimento sem sair da ficha do paciente."
                   : "Acesse rapidamente cadastro, status e novo atendimento sem sair da ficha do paciente."}
@@ -2839,62 +2861,63 @@ const PacienteDetalhe = () => {
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border bg-background/70 p-2.5 shadow-sm backdrop-blur xl:shrink-0">
-            {canViewPatientContact ? (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => patientWhatsAppHref && window.open(patientWhatsAppHref, "_blank", "noopener,noreferrer")}
-                disabled={!patientWhatsAppHref}
-                aria-label="Abrir WhatsApp do paciente"
-                title="Abrir WhatsApp"
-                className="h-9 w-9 rounded-xl border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success shrink-0"
-              >
-                <WhatsAppLogo className="h-4.5 w-4.5" />
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPatientInfoDialogOpen(true)}
-              className={getDesignLabButtonClass(
-                "hover:w-[165px]",
-                "h-9 rounded-xl border-primary/20 bg-background hover:border-primary/50 hover:bg-primary/5 text-xs font-medium shrink-0"
-              )}
-              title="Abrir resumo clínico do paciente"
-            >
-              <FileText className={`${designLabIconClass} h-4 w-4 text-primary`} />
-              <span className={designLabLabelClass}>Resumo clínico</span>
-            </Button>
-            <Select
-              value={patient.status}
-              onValueChange={(value) => void handlePatientStatusChange(value as PatientStatusSelectValue)}
-              disabled={updatingPatientStatus || deletingPatient}
-            >
-              <SelectTrigger className="h-9 w-[130px] rounded-xl text-xs bg-background shrink-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {EDITABLE_PATIENT_STATUS_OPTIONS.map((status) => (
-                  <SelectItem key={status.value} value={status.value} className="text-xs">{status.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+          <div className="flex items-center gap-2 rounded-2xl border bg-background/70 p-2 shadow-sm backdrop-blur w-full sm:w-auto justify-between sm:justify-start xl:shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {canViewPatientContact ? (
                 <Button
                   variant="outline"
-                  size="sm"
-                  aria-label="Mais opções"
-                  title="Mais opções do paciente"
-                  className="h-9 rounded-xl border-border/80 bg-background hover:bg-muted/50 text-xs font-medium text-foreground gap-1.5 px-2.5 shrink-0"
+                  size="icon"
+                  onClick={() => patientWhatsAppHref && window.open(patientWhatsAppHref, "_blank", "noopener,noreferrer")}
+                  disabled={!patientWhatsAppHref}
+                  aria-label="Abrir WhatsApp do paciente"
+                  title="Abrir WhatsApp"
+                  className="h-9 w-9 rounded-xl border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success shrink-0"
                 >
-                  <MoreHorizontal className="h-4 w-4" />
-                  <span className="hidden sm:inline">Opções</span>
+                  <WhatsAppLogo className="h-4.5 w-4.5" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
+              ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPatientInfoDialogOpen(true)}
+                className="h-9 rounded-xl border-primary/20 bg-background hover:border-primary/50 hover:bg-primary/5 text-xs font-medium shrink-0 px-2.5 sm:px-3"
+                title="Abrir resumo clínico do paciente"
+              >
+                <FileText className="h-4 w-4 text-primary sm:mr-1.5" />
+                <span className="hidden sm:inline">Resumo clínico</span>
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Select
+                value={patient.status}
+                onValueChange={(value) => void handlePatientStatusChange(value as PatientStatusSelectValue)}
+                disabled={updatingPatientStatus || deletingPatient}
+              >
+                <SelectTrigger className="h-9 w-[115px] sm:w-[130px] rounded-xl text-xs bg-background shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EDITABLE_PATIENT_STATUS_OPTIONS.map((status) => (
+                    <SelectItem key={status.value} value={status.value} className="text-xs">{status.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Mais opções"
+                    title="Mais opções do paciente"
+                    className="h-9 rounded-xl border-border/80 bg-background hover:bg-muted/50 text-xs font-medium text-foreground gap-1.5 px-2.5 shrink-0"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                    <span className="hidden sm:inline">Opções</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
                   Opções do paciente
                 </DropdownMenuLabel>
@@ -2952,24 +2975,25 @@ const PacienteDetalhe = () => {
           </div>
         </div>
       </div>
+      </div>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]">
-        {/* Compact Metrics Grid */}
-        <div data-tutorial="patient-metrics-panel" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 rounded-2xl border bg-card p-4 shadow-sm relative">
-          <div className="rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
+      <div className="w-full min-w-0 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]">
+        {/* Compact Metrics Carousel (Horizontal snap scroll on mobile, grid on desktop) */}
+        <div data-tutorial="patient-metrics-panel" className="w-full min-w-0 flex overflow-x-auto snap-x snap-mandatory gap-3 p-3 sm:p-4 rounded-2xl border bg-card shadow-sm relative [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 lg:grid-cols-3">
+          <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Último Atendimento</span>
               <ComponentHelpButton helpId="patient-metrics-panel" size="xs" />
             </div>
             <div className="mt-2">
-              <p className="text-lg font-bold text-foreground">{formatSessionMetaDate(latestSession?.session_date ?? null)}</p>
+              <p className="text-base sm:text-lg font-bold text-foreground">{formatSessionMetaDate(latestSession?.session_date ?? null)}</p>
               <p className="text-xs text-muted-foreground capitalize mt-0.5">{latestSession ? `Status: ${latestSession.status}` : "Sem atendimentos anteriores"}</p>
             </div>
           </div>
-          <div className="rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
+          <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Presença & Histórico</span>
             <div className="mt-2">
-              <p className="text-lg font-bold text-foreground">{totalSessionsCount} atendimento{totalSessionsCount !== 1 ? "s" : ""}</p>
+              <p className="text-base sm:text-lg font-bold text-foreground">{totalSessionsCount} atendimento{totalSessionsCount !== 1 ? "s" : ""}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {completedSessionsCount} concluído{completedSessionsCount !== 1 ? "s" : ""} · {canceledSessionsCount} cancelado{canceledSessionsCount !== 1 ? "s" : ""}
                 {operationalSummary.averageDelayMinutes > 0 ? ` · média ${operationalSummary.averageDelayMinutes}min` : ""}
@@ -2977,10 +3001,10 @@ const PacienteDetalhe = () => {
             </div>
           </div>
           {canViewFinancialData ? (
-            <div className="rounded-xl border bg-muted/20 p-3 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+            <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Financeiro do Paciente</span>
               <div className="mt-2">
-                <p className="text-lg font-bold text-foreground">{formatMoneyCents(settledPaymentCents)}</p>
+                <p className="text-base sm:text-lg font-bold text-foreground">{formatMoneyCents(settledPaymentCents)}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Cobrado: {formatMoneyCents(operationalSummary.chargedCents)}
                   {operationalSummary.openBalanceCents > 0 ? ` · Aberto: ${formatMoneyCents(operationalSummary.openBalanceCents)}` : " · Em dia"}
@@ -2988,10 +3012,10 @@ const PacienteDetalhe = () => {
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border bg-muted/20 p-3 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+            <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agendamentos</span>
               <div className="mt-2">
-                <p className="text-lg font-bold text-foreground">{futureAgendaCount} agendado{futureAgendaCount !== 1 ? "s" : ""}</p>
+                <p className="text-base sm:text-lg font-bold text-foreground">{futureAgendaCount} agendado{futureAgendaCount !== 1 ? "s" : ""}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {upcomingAgendaEvent ? `Próximo: ${formatAgendaEventDateTime(upcomingAgendaEvent.scheduled_for)}` : "Nenhum agendamento futuro"}
                 </p>
@@ -3107,7 +3131,139 @@ const PacienteDetalhe = () => {
           </div>
         )}
 
-        <Card>
+        {/* Mobile Filters Trigger & Compact Search */}
+        <div className="flex items-center gap-2 md:hidden">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Buscar no prontuário..."
+              className="pl-9 h-10 rounded-xl bg-card border text-sm"
+            />
+          </div>
+          <Sheet open={mobileFilterDrawerOpen} onOpenChange={setMobileFilterDrawerOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant={sessionStatusFilter !== "all" || selectedTagFilter !== "all" ? "default" : "outline"}
+                size="icon"
+                className="h-10 w-10 shrink-0 rounded-xl relative"
+                aria-label="Abrir filtros de atendimentos"
+                title="Filtros"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                {(sessionStatusFilter !== "all" || selectedTagFilter !== "all") && (
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+                  </span>
+                )}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto px-5 py-6">
+              <SheetHeader className="text-left pb-4 border-b">
+                <SheetTitle className="text-lg font-bold">Filtros de Atendimento</SheetTitle>
+                <SheetDescription className="text-xs text-muted-foreground">
+                  Refine o histórico de sessões do paciente
+                </SheetDescription>
+              </SheetHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Status do atendimento</Label>
+                  <Select value={sessionStatusFilter} onValueChange={setSessionStatusFilter}>
+                    <SelectTrigger className="h-11 rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os status</SelectItem>
+                      {SESSION_STATUSES.map((status) => (
+                        <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Filtrar por Sintoma / Tag</Label>
+                  <Select value={selectedTagFilter} onValueChange={setSelectedTagFilter}>
+                    <SelectTrigger className="h-11 rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os sintomas / tags</SelectItem>
+                      {groups.map((group) => (
+                        <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>
+                      ))}
+                      <SelectItem value="none">Sintomas não definidos</SelectItem>
+                      {filterableModularItems.length > 0 && (
+                        <>
+                          {filterableModularItems.map((item) => (
+                            <SelectItem key={item.filterKey} value={item.filterKey}>
+                              {item.fieldLabel}: {item.value}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t">
+                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block">Agrupamento</Label>
+                  <div className="flex items-center justify-between p-3 rounded-xl border bg-muted/20">
+                    <Label htmlFor="mobile-group-by-toggle" className="text-sm font-medium cursor-pointer">
+                      Visualizar grupos
+                    </Label>
+                    <Switch
+                      id="mobile-group-by-toggle"
+                      checked={groupByEvolution}
+                      onCheckedChange={handleToggleGroupByEvolution}
+                    />
+                  </div>
+                  {groupByEvolution && (
+                    <div className="pt-2">
+                      <Label className="text-xs text-muted-foreground mb-1.5 block">Modo de agrupamento:</Label>
+                      <Select value={groupByMode} onValueChange={setGroupByMode}>
+                        <SelectTrigger className="h-11 rounded-xl bg-background">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="evolution">Evolução</SelectItem>
+                          {groupableModularFields.map((field) => (
+                            <SelectItem key={field.id} value={field.id}>
+                              {field.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="pt-2 flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-xl h-11"
+                  onClick={() => {
+                    setSessionStatusFilter("all");
+                    setSelectedTagFilter("all");
+                  }}
+                >
+                  Limpar
+                </Button>
+                <Button
+                  className="flex-1 rounded-xl h-11"
+                  onClick={() => setMobileFilterDrawerOpen(false)}
+                >
+                  Aplicar Filtros
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+
+        {/* Desktop Filter Bar */}
+        <Card className="hidden md:block">
           <CardContent className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr),180px,200px,auto] items-end">
             <div className="space-y-2">
               <Label htmlFor="sessions-search">Buscar no prontuário</Label>

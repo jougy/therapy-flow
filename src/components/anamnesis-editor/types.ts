@@ -45,7 +45,20 @@ import {
 import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 import type { SectionColorSlot } from "@/components/anamnesis/SectionColorPaletteField";
 
-export type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"];
+import type { CommunityFormTemplate } from "@/lib/community-forms";
+
+export type TemplateRow = Database["public"]["Tables"]["anamnesis_form_templates"]["Row"] | CommunityFormTemplate;
+
+export function getTemplateDisplayName(template: TemplateRow | null | undefined): string {
+  if (!template) return "";
+  if ("name" in template && typeof template.name === "string") {
+    return template.name;
+  }
+  if ("title" in template && typeof template.title === "string") {
+    return template.title;
+  }
+  return "";
+}
 
 export type DesignLabAnamnesisField = AnamnesisField & {
   accentAlpha?: number;

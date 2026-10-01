@@ -18,6 +18,10 @@ vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
 }));
 
+vi.mock("@/components/tutorial/ComponentHelpButton", () => ({
+  ComponentHelpButton: () => <button type="button">Ajuda</button>,
+}));
+
 interface MockSelectProps {
   children?: React.ReactNode;
   onValueChange?: (value: string) => void;
@@ -163,11 +167,15 @@ describe("FormularioEditor", () => {
 
     await waitFor(() => expect(screen.getByText("Nova ficha")).toBeInTheDocument());
 
-    const file = new File([JSON.stringify(importedPayload)], "modelo.json", { type: "application/json" });
+    const fileContent = JSON.stringify(importedPayload);
+    const file = new File([fileContent], "modelo.json", { type: "application/json" });
     Object.defineProperty(file, "text", {
-      value: vi.fn(async () => JSON.stringify(importedPayload)),
+      value: vi.fn(async () => fileContent),
     });
-    const input = document.querySelector('input[type="file"][accept="application/json,.json"]') as HTMLInputElement | null;
+    Object.defineProperty(file, "arrayBuffer", {
+      value: vi.fn(async () => new TextEncoder().encode(fileContent).buffer),
+    });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
 
     expect(input).not.toBeNull();
     fireEvent.change(input!, { target: { files: [file] } });
@@ -247,7 +255,7 @@ describe("FormularioEditor", () => {
       text: { value: textSpy },
     });
 
-    const input = document.querySelector('input[type="file"][accept="application/json,.json"]') as HTMLInputElement | null;
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement | null;
 
     expect(input).not.toBeNull();
     fireEvent.change(input!, { target: { files: [file] } });
@@ -280,7 +288,36 @@ describe("FormularioEditor", () => {
     await waitFor(() => expect(screen.getByText(/Nome e Apresentação da sua Ficha/i)).toBeInTheDocument());
     expect(screen.getByText(/Dê um nome bem acolhedor e intuitivo/i)).toBeInTheDocument();
   });
+
+  it("blocks rendering and shows toast when user lacks permission in platform mode", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      can: () => false,
+      isPlatformOwner: false,
+      loading: false,
+      user: { id: "user-unauthorized" } as never,
+    } as never);
+
+    render(
+      <MemoryRouter initialEntries={["/platform/formularios/editor/novo"]}>
+        <Routes>
+          <Route path="/platform/formularios/editor/:templateId" element={<FormularioEditor />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Acesso restrito",
+          variant: "destructive",
+        })
+      );
+    });
+
+    expect(screen.queryByText("Novo Modelo Oficial da Plataforma")).not.toBeInTheDocument();
+  });
 });
+
 
 
 

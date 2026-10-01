@@ -16,12 +16,12 @@ import {
   Tag,
   Trash2,
   User,
+  Edit3,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { type CommunityFormTemplate, toggleLikeCommunityTemplate } from "@/lib/community-forms";
-import { type AnamnesisField } from "@/lib/anamnesis-forms";
 
 interface CommunityFormCardProps {
   template: CommunityFormTemplate;
@@ -29,6 +29,8 @@ interface CommunityFormCardProps {
   onImport: (template: CommunityFormTemplate) => void;
   onDelete?: (template: CommunityFormTemplate) => void;
   onOpenDetail?: (template: CommunityFormTemplate) => void;
+  onEditInVisualEditor?: (template: CommunityFormTemplate) => void;
+  onExportPluriform?: (template: CommunityFormTemplate) => void;
   isOwner?: boolean;
 }
 
@@ -167,6 +169,8 @@ export const CommunityFormCard: React.FC<CommunityFormCardProps> = ({
   onImport,
   onDelete,
   onOpenDetail,
+  onEditInVisualEditor,
+  onExportPluriform,
   isOwner = false,
 }) => {
   const [likesCount, setLikesCount] = useState(template.likes_count);
@@ -294,7 +298,7 @@ export const CommunityFormCard: React.FC<CommunityFormCardProps> = ({
       </div>
 
       <CardFooter
-        className="p-3.5 pt-2.5 bg-muted/15 border-t flex items-center gap-2 justify-between"
+        className="p-3.5 pt-2.5 bg-muted/15 border-t flex items-center gap-2 justify-between flex-wrap"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -302,7 +306,33 @@ export const CommunityFormCard: React.FC<CommunityFormCardProps> = ({
           <span>{template.imports_count} usos</span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {onEditInVisualEditor && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={() => onEditInVisualEditor(template)}
+              title="Editar no Editor Visual"
+            >
+              <Edit3 className="h-3 w-3" />
+              <span className="hidden sm:inline">Editor</span>
+            </Button>
+          )}
+
+          {onExportPluriform && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={() => onExportPluriform(template)}
+              title="Exportar (.pluriform)"
+            >
+              <Download className="h-3 w-3" />
+              <span className="hidden sm:inline">.pluriform</span>
+            </Button>
+          )}
+
           {isOwner && onDelete && (
             <Button
               variant="ghost"

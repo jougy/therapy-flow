@@ -75,6 +75,28 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
+const createStorageMock = () => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => {
+      store[key] = value.toString();
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+  };
+};
+
+const localStorageMock = createStorageMock();
+Object.defineProperty(window, "localStorage", {
+  value: localStorageMock,
+  writable: true,
+});
+
 describe("SelecionarClinica", () => {
   const getNavButton = (name: RegExp) => screen.getAllByRole("button", { name })[0]!;
 
@@ -85,6 +107,9 @@ describe("SelecionarClinica", () => {
       unobserve = vi.fn();
     };
     navigateMock.mockReset();
+    localStorageMock.clear();
+    // Default: set welcome seen so previous tests are not affected by the welcome modal
+    localStorageMock.setItem("pluri_welcome_seen_user-1", new Date().toISOString());
     vi.mocked(supabase.from).mockReset();
     vi.mocked(supabase.from).mockImplementation(() => buildSupabaseQueryMock() as never);
     vi.mocked(supabase.rpc).mockReset();
@@ -367,6 +392,8 @@ describe("SelecionarClinica", () => {
       user: { email: "master@example.com", id: "master-user" } as never,
     }) as ReturnType<typeof useAuth>);
 
+    localStorageMock.setItem("pluri_welcome_seen_master-user", new Date().toISOString());
+
     render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
@@ -375,7 +402,7 @@ describe("SelecionarClinica", () => {
 
     expect(screen.getByText("Use o painel administrativo global para acessar clínicas como suporte.")).toBeInTheDocument();
     expect(screen.queryByText("Escolha a clínica")).not.toBeInTheDocument();
-    expect(screen.queryByText("Nenhuma clínica ativa encontrada")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("empty-clinics-callout")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /abrir painel global/i }));
     expect(navigateMock).toHaveBeenCalledWith("/platform");
@@ -664,5 +691,74 @@ describe("SelecionarClinica", () => {
     expect(screen.queryByTestId("header-portfolio-mobile-btn")).not.toBeInTheDocument();
     // Lateral menu should not have Meu Portfólio button
     expect(screen.queryByRole("button", { name: /^Meu Portfólio$/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the personal welcome modal on first login and records dismissal in localStorage", async () => {
+    vi.mocked(useAuth).mockReturnValue(
+      buildAuthMock({
+        profile: { full_name: "Dra. Joana Silva", email: "joana@example.com" },
+        user: { id: "user-joana", email: "joana@example.com" },
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId("personal-welcome-modal")).toBeInTheDocument();
+    expect(screen.getByText(/bem-vindo\(a\) à pluri health/i)).toBeInTheDocument();
+    expect(screen.getByText(/seu novo centro de prática clínica/i)).toBeInTheDocument();
+
+    const startButton = screen.getByTestId("welcome-start-button");
+    fireEvent.click(startButton);
+
+    expect(localStorage.getItem("pluri_welcome_seen_user-joana")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByTestId("personal-welcome-modal")).not.toBeInTheDocument();
+    });
+  });
+
+  it("does not render the welcome modal if already seen in localStorage", () => {
+    localStorage.setItem("pluri_welcome_seen_user-1", new Date().toISOString());
+
+    vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByTestId("personal-welcome-modal")).not.toBeInTheDocument();
+  });
+
+  it("renders EmptyClinicsCallout when accessibleClinics is empty and lets user create their clinic", () => {
+    localStorage.setItem("pluri_welcome_seen_user-1", new Date().toISOString());
+
+    vi.mocked(useAuth).mockReturnValue(
+      buildAuthMock({
+        accessibleClinics: [],
+        user: { id: "user-1", email: "newuser@example.com" },
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId("empty-clinics-callout")).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma clínica ativa no momento")).toBeInTheDocument();
+    expect(screen.getByText("Criar meu próprio espaço")).toBeInTheDocument();
+    expect(screen.getByText(/Aguardando convite de uma clínica\?/i)).toBeInTheDocument();
+    expect(screen.getByText(/\(newuser@example\.com\)/i)).toBeInTheDocument();
+
+    const createBtn = screen.getByTestId("empty-clinics-create-btn");
+    fireEvent.click(createBtn);
+
+    expect(navigateMock).toHaveBeenCalledWith("/onboarding-clinica?mode=create");
   });
 });

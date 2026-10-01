@@ -110,8 +110,12 @@ const Index = () => {
   const isDesignLab = location.pathname.startsWith("/designlab");
   const effectiveClinicKey = clinicKey || clinic?.route_key;
   const fullAgendaPath = effectiveClinicKey
-    ? `/designlab/clinica/${effectiveClinicKey}/agenda`
-    : "/designlab/agenda";
+    ? isDesignLab
+      ? `/designlab/clinica/${effectiveClinicKey}/agenda`
+      : `/clinica/${effectiveClinicKey}/agenda`
+    : isDesignLab
+      ? "/designlab/agenda"
+      : "/espacopessoal";
 
   const deletedPatientId =
     typeof (location.state as { deletedPatientId?: unknown } | null)?.deletedPatientId === "string"
@@ -792,22 +796,21 @@ const Index = () => {
                 </div>
                 <DialogDescription>Veja e gerencie os agendamentos da clínica.</DialogDescription>
               </div>
-              {isDesignLab && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs shrink-0 rounded-lg text-primary border-primary/20 hover:bg-primary/5"
-                  onClick={() => {
-                    setAgendaDialogOpen(false);
-                    navigate(fullAgendaPath);
-                  }}
-                  title="Abrir agenda em tela cheia"
-                >
-                  <Maximize2 className="h-3.5 w-3.5" />
-                  <span>Expandir</span>
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs shrink-0 rounded-lg text-primary border-primary/20 hover:bg-primary/5"
+                onClick={() => {
+                  setAgendaDialogOpen(false);
+                  navigate(fullAgendaPath);
+                }}
+                title="Ver agenda completa"
+                aria-label="Ver agenda completa"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span>Ver agenda completa</span>
+              </Button>
             </DialogHeader>
             <AgendaWidget variant="modal" />
           </DialogContent>
@@ -822,8 +825,22 @@ const Index = () => {
             patients={patients}
             sessions={sessions}
             agendaEvents={agendaEvents}
-            onNavigateForms={() => navigate("configuracoes?secao=forms")}
-            onNavigateDashboard={() => navigate("dashboard")}
+            onNavigateForms={() => {
+              const formsPath = effectiveClinicKey
+                ? isDesignLab
+                  ? `/designlab/clinica/${effectiveClinicKey}/configuracoes?secao=forms`
+                  : `/clinica/${effectiveClinicKey}/configuracoes?secao=forms`
+                : "/configuracoes";
+              navigate(formsPath);
+            }}
+            onNavigateDashboard={() => {
+              const dashPath = effectiveClinicKey
+                ? isDesignLab
+                  ? `/designlab/clinica/${effectiveClinicKey}/dashboard`
+                  : `/clinica/${effectiveClinicKey}/dashboard`
+                : "/espacopessoal";
+              navigate(dashPath);
+            }}
           />
         )}
       </div>

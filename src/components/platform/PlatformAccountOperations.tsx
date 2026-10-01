@@ -3,7 +3,7 @@ import { CheckCircle2, Info, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,7 +25,9 @@ import {
   clinicStatusLabels,
   destructiveOperations,
   getErrorMessage,
+  getPlanDefaultLimits,
   planLabels,
+  planOptionGroups,
 } from "./platform-api";
 
 export interface PlatformAccountOperationsProps {
@@ -38,7 +40,7 @@ export interface PlatformAccountOperationsProps {
   defaultPatientId?: string;
   onDone: () => void;
   subaccountLimit?: string;
-  subscriptionPlan?: "solo" | "clinic";
+  subscriptionPlan?: string;
   subscriptionData?: PlatformSubscriptionData | null;
   title: string;
 }
@@ -53,7 +55,7 @@ export const PlatformAccountOperations = ({
   defaultPatientId = "",
   onDone,
   subaccountLimit = "4",
-  subscriptionPlan: initialSubscriptionPlan = "clinic",
+  subscriptionPlan: initialSubscriptionPlan = "clinica_medio",
   subscriptionData,
   title,
 }: PlatformAccountOperationsProps) => {
@@ -63,7 +65,7 @@ export const PlatformAccountOperations = ({
   const [reason, setReason] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [isReauthOpen, setIsReauthOpen] = useState(false);
-  const [subscriptionPlan, setSubscriptionPlan] = useState<"solo" | "clinic">(initialSubscriptionPlan ?? "clinic");
+  const [subscriptionPlan, setSubscriptionPlan] = useState<string>(initialSubscriptionPlan ?? "clinica_medio");
   const [isCourtesy, setIsCourtesy] = useState<boolean>(
     subscriptionData?.is_courtesy === true || subscriptionData?.status === "COURTESY"
   );
@@ -214,21 +216,14 @@ export const PlatformAccountOperations = ({
     setForm((current) => ({ ...current, [key]: value }));
   }, []);
 
-  const handlePlanChange = useCallback((newPlan: "solo" | "clinic") => {
+  const handlePlanChange = useCallback((newPlan: string) => {
     setSubscriptionPlan(newPlan);
-    if (newPlan === "solo") {
-      setForm((current) => ({
-        ...current,
-        concurrentAccessLimit: "1",
-        subaccountLimit: "1",
-      }));
-    } else {
-      setForm((current) => ({
-        ...current,
-        concurrentAccessLimit: "2",
-        subaccountLimit: "30",
-      }));
-    }
+    const limits = getPlanDefaultLimits(newPlan);
+    setForm((current) => ({
+      ...current,
+      concurrentAccessLimit: String(limits.concurrent),
+      subaccountLimit: String(limits.subaccounts),
+    }));
   }, []);
 
   const currentExpiresAt = subscriptionData?.expires_at || subscriptionData?.current_period_end;
@@ -448,12 +443,22 @@ export const PlatformAccountOperations = ({
             <Label>Tipo de plano</Label>
             <Select
               value={subscriptionPlan}
-              onValueChange={(value) => handlePlanChange(value as "solo" | "clinic")}
+              onValueChange={handlePlanChange}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="solo">Plano Solo (1 profissional)</SelectItem>
-                <SelectItem value="clinic">Plano com Equipe (Clínica)</SelectItem>
+                {planOptionGroups.map((group) => (
+                  <SelectGroup key={group.label}>
+                    <SelectLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      {group.label}
+                    </SelectLabel>
+                    {group.options.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -491,13 +496,13 @@ export const PlatformAccountOperations = ({
         {(operation === "update_owner_access" || operation === "update_clinic_access") && (
           <div className="space-y-1">
             <Label>Acessos simultâneos</Label>
-            <Input value={form.concurrentAccessLimit} onChange={(event) => updateField("concurrentAccessLimit", event.target.value)} inputMode="numeric" maxLength={3} />
+            <Input value={form.concurrentAccessLimit} onChange={(event) => updateField("concurrentAccessLimit", event.target.value)} inputMode="numeric" maxLength={6} />
           </div>
         )}
         {operation === "update_clinic_access" && (
           <div className="space-y-1">
             <Label>Limite de subcontas</Label>
-            <Input value={form.subaccountLimit} onChange={(event) => updateField("subaccountLimit", event.target.value)} inputMode="numeric" maxLength={3} />
+            <Input value={form.subaccountLimit} onChange={(event) => updateField("subaccountLimit", event.target.value)} inputMode="numeric" maxLength={6} />
           </div>
         )}
       </div>

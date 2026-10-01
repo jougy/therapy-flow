@@ -84,12 +84,13 @@ export function BrowserAppDownloadBanner({ variant = "top", className = "" }: Br
   return (
     <div className={`w-full bg-gradient-to-r from-primary via-primary/95 to-sky-600 text-primary-foreground px-3 py-2 text-xs shadow-md flex items-center justify-between gap-3 sticky top-0 z-50 animate-in fade-in slide-in-from-top-2 duration-300 ${className}`}>
       <div className="container mx-auto flex items-center justify-between gap-2 max-w-6xl">
-        <div className="flex items-center gap-2 sm:gap-2.5 overflow-hidden">
+        <div className="flex items-center gap-2 overflow-hidden min-w-0">
           <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">
             <Download className="h-3.5 w-3.5 text-white" />
           </div>
-          <p className="truncate font-medium text-white/95 text-xs sm:text-[13px]">
-            <strong className="font-semibold text-white">Você está usando pelo navegador.</strong> Deseja ter o aplicativo oficial instalado no seu {osLabel}?
+          <p className="truncate font-medium text-white/95 text-xs">
+            <span className="hidden sm:inline"><strong className="font-semibold text-white">Você está usando pelo navegador.</strong> Deseja ter o aplicativo oficial instalado no seu {osLabel}?</span>
+            <span className="sm:hidden font-medium">Instalar app oficial</span>
           </p>
         </div>
 
@@ -98,9 +99,10 @@ export function BrowserAppDownloadBanner({ variant = "top", className = "" }: Br
             <Button
               size="sm"
               variant="secondary"
-              className="h-7 px-3 text-xs font-bold text-primary bg-white hover:bg-white/90 shadow-xs"
+              className="h-7 px-2.5 sm:px-3 text-xs font-bold text-primary bg-white hover:bg-white/90 shadow-xs"
             >
-              Baixar Aplicativo
+              <span className="hidden sm:inline">Baixar Aplicativo</span>
+              <span className="sm:hidden">Baixar App</span>
             </Button>
           </Link>
           <button

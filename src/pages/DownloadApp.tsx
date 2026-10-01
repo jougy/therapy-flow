@@ -85,16 +85,17 @@ export default function DownloadApp() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link to="/auth">
-              <Button variant="outline" size="sm" className="h-9 font-medium">
-                Já tenho conta
+              <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm px-2.5 sm:px-3 font-medium">
+                <span className="hidden xs:inline">Já tenho conta</span>
+                <span className="xs:hidden">Entrar</span>
               </Button>
             </Link>
             <Link to="/auth/cadastro">
-              <Button size="sm" className="h-9 gap-1.5 font-medium shadow-xs">
-                Criar Conta
-                <ArrowRight className="h-3.5 w-3.5" />
+              <Button size="sm" className="h-8 sm:h-9 text-xs sm:text-sm px-2.5 sm:px-3 gap-1 sm:gap-1.5 font-medium shadow-xs">
+                <span>Criar Conta</span>
+                <ArrowRight className="h-3.5 w-3.5 hidden xs:inline" />
               </Button>
             </Link>
           </div>

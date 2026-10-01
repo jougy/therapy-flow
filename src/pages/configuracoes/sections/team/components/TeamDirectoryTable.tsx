@@ -112,6 +112,15 @@ export const TeamDirectoryTable: React.FC<TeamDirectoryTableProps> = ({
     });
   }, [members, normalizedSearch, roleFilter, statusFilter]);
 
+  // Otimização Big-O: Mapa O(1) para resolução de rótulos dos papéis operacionais
+  const roleLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of sortedOperationalRoleDefinitions) {
+      map.set(d.role_key, d.label);
+    }
+    return map;
+  }, [sortedOperationalRoleDefinitions]);
+
   return (
     <Card data-tutorial="settings-team-directory-box">
       <CardHeader>
@@ -175,11 +184,12 @@ export const TeamDirectoryTable: React.FC<TeamDirectoryTableProps> = ({
           <div className="divide-y rounded-xl border">
             {filteredMembers.map((member) => {
               const isOwner = member.operational_role === "owner";
-              const roleDef = sortedOperationalRoleDefinitions.find(
-                (r) => r.role_key === member.operational_role
-              );
+              const targetKey = member.role_key || member.operational_role;
               const roleLabel =
-                roleDef?.label || OPERATIONAL_ROLE_LABELS[member.operational_role] || member.operational_role;
+                roleLabelMap.get(targetKey) ||
+                roleLabelMap.get(member.operational_role) ||
+                OPERATIONAL_ROLE_LABELS[member.operational_role as keyof typeof OPERATIONAL_ROLE_LABELS] ||
+                member.operational_role;
               const canManage = canManageMember(member);
               const isToggling = togglingMemberId === member.id;
 

@@ -129,8 +129,63 @@ export const clinicStatusLabels: Record<string, string> = {
 };
 
 export const planLabels: Record<string, string> = {
-  solo: "Plano Solo (1 profissional)",
-  clinic: "Plano com Equipe (Clínica)",
+  prof_basico: "Profissional Básico (1 acesso)",
+  prof_medio: "Profissional Médio (1 acesso)",
+  prof_top: "Profissional Top (2 acessos / Dono + Apoio)",
+  clinica_basico: "Clínica Básico (2 acessos base)",
+  clinica_medio: "Clínica Médio (4 acessos base)",
+  clinica_top: "Clínica Top (8 acessos base)",
+  solo: "Profissional Solo (Legado)",
+  clinic: "Clínica com Equipe (Legado)",
+  enterprise: "Enterprise (Legado)",
+};
+
+export interface PlanOptionGroup {
+  label: string;
+  options: Array<{ value: string; label: string }>;
+}
+
+export const planOptionGroups: PlanOptionGroup[] = [
+  {
+    label: "Planos Profissionais",
+    options: [
+      { value: "prof_basico", label: planLabels.prof_basico },
+      { value: "prof_medio", label: planLabels.prof_medio },
+      { value: "prof_top", label: planLabels.prof_top },
+    ],
+  },
+  {
+    label: "Planos para Clínicas & Equipes",
+    options: [
+      { value: "clinica_basico", label: planLabels.clinica_basico },
+      { value: "clinica_medio", label: planLabels.clinica_medio },
+      { value: "clinica_top", label: planLabels.clinica_top },
+    ],
+  },
+  {
+    label: "Planos Legados",
+    options: [
+      { value: "solo", label: planLabels.solo },
+      { value: "clinic", label: planLabels.clinic },
+      { value: "enterprise", label: planLabels.enterprise },
+    ],
+  },
+];
+
+export const PLAN_DEFAULT_LIMITS: Record<string, { concurrent: number; subaccounts: number }> = {
+  prof_basico: { concurrent: 1, subaccounts: 1 },
+  prof_medio: { concurrent: 1, subaccounts: 1 },
+  prof_top: { concurrent: 2, subaccounts: 2 },
+  clinica_basico: { concurrent: 2, subaccounts: 999999 },
+  clinica_medio: { concurrent: 4, subaccounts: 999999 },
+  clinica_top: { concurrent: 8, subaccounts: 999999 },
+  solo: { concurrent: 1, subaccounts: 1 },
+  clinic: { concurrent: 4, subaccounts: 999999 },
+  enterprise: { concurrent: 8, subaccounts: 999999 },
+};
+
+export const getPlanDefaultLimits = (plan: string): { concurrent: number; subaccounts: number } => {
+  return PLAN_DEFAULT_LIMITS[plan] ?? { concurrent: 1, subaccounts: 1 };
 };
 
 

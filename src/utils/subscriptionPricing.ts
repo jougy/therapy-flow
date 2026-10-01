@@ -26,7 +26,15 @@
  */
 
 export type BillingCycle = "annual" | "quarterly" | "monthly";
-export type PlanType = "solo" | "clinic" | "enterprise";
+export type LegacyPlanType = "solo" | "clinic" | "enterprise";
+export type NewPlanType =
+  | "prof_basico"
+  | "prof_medio"
+  | "prof_top"
+  | "clinica_basico"
+  | "clinica_medio"
+  | "clinica_top";
+export type PlanType = LegacyPlanType | NewPlanType;
 
 /**
  * Estrutura de dados contendo o resultado detalhado de cálculo de precificação.
@@ -73,8 +81,44 @@ export interface CouponDiscount {
 
 /**
  * Tabela oficial e imutável de parâmetros de preços do ecossistema Pluri-Health.
+ * Contempla os 6 planos da nova matriz e retrocompatibilidade com solo, clinic e enterprise.
  */
 export const PLAN_PRICING_CONFIG = {
+  // --- Novos Planos para Profissional Autônomo ---
+  prof_basico: {
+    annual: { monthlyEq: 26.66, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" }, // R$ 319,90/ano = ~26,66/mês (33% OFF)
+    quarterly: { monthlyEq: 35.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 39,99 * 0.9 = 35.99
+    monthly: { monthlyEq: 39.99, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+  },
+  prof_medio: {
+    annual: { monthlyEq: 44.99, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 59,99 * 0.75 = ~44.99
+    quarterly: { monthlyEq: 53.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 59,99 * 0.9 = 53.99
+    monthly: { monthlyEq: 59.99, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+  },
+  prof_top: {
+    annual: { monthlyEq: 67.49, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 89,99 * 0.75 = 67.49
+    quarterly: { monthlyEq: 80.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 89,99 * 0.9 = 80.99
+    monthly: { monthlyEq: 89.99, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+  },
+
+  // --- Novos Planos para Clínicas (Colaboradores Ilimitados, Extras R$ 25/mês) ---
+  clinica_basico: {
+    annual: { baseMonthlyEq: 74.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 99 * 0.75 = 74.25
+    quarterly: { baseMonthlyEq: 89.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 99 * 0.9 = 89.10
+    monthly: { baseMonthlyEq: 99.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+  },
+  clinica_medio: {
+    annual: { baseMonthlyEq: 104.0, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 139 * 0.75 =~ 104.0
+    quarterly: { baseMonthlyEq: 125.0, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 139 * 0.9 = 125.0
+    monthly: { baseMonthlyEq: 139.0, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+  },
+  clinica_top: {
+    annual: { baseMonthlyEq: 149.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 199 * 0.75 = 149.25
+    quarterly: { baseMonthlyEq: 179.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 199 * 0.9 = 179.10
+    monthly: { baseMonthlyEq: 199.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+  },
+
+  // --- Planos Legados (Retrocompatibilidade 100%) ---
   solo: {
     annual: { monthlyEq: 40.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" },
     quarterly: { monthlyEq: 53.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" },
@@ -110,15 +154,24 @@ export function calculatePlanPrice(params: {
   additionalSeats?: number;
   coupon?: CouponDiscount | null;
 }): PlanPricingResult {
-  const plan: PlanType = params.planType === "enterprise" ? "enterprise" : params.planType === "clinic" ? "clinic" : "solo";
+  const planKey = (params.planType || "solo") as PlanType;
+  const plan: PlanType = planKey in PLAN_PRICING_CONFIG ? planKey : "solo";
   const cycleKey = (params.billingCycle || "annual").toLowerCase() as BillingCycle;
   const cycle: BillingCycle = cycleKey in PLAN_PRICING_CONFIG[plan] ? cycleKey : "annual";
-  const config = PLAN_PRICING_CONFIG[plan][cycle];
+  const rawConfig = PLAN_PRICING_CONFIG[plan][cycle];
+  const config = rawConfig as {
+    periodMultiplier: number;
+    periodLabel: string;
+    cycleTitle: string;
+    monthlyEq?: number;
+    baseMonthlyEq?: number;
+    extraSeatRate?: number;
+  };
 
-  const hasExtraSeats = plan === "clinic" || plan === "enterprise";
-  const extraSeats = hasExtraSeats ? Math.max(0, Math.floor(params.additionalSeats || 0)) : 0;
-  const extraSeatRate = hasExtraSeats && "extraSeatRate" in config ? config.extraSeatRate : 0;
-  const baseMonthly = "baseMonthlyEq" in config ? config.baseMonthlyEq : config.monthlyEq;
+  const isClinicTier = plan === "clinic" || plan === "enterprise" || plan === "clinica_basico" || plan === "clinica_medio" || plan === "clinica_top";
+  const extraSeats = isClinicTier ? Math.max(0, Math.floor(params.additionalSeats || 0)) : 0;
+  const extraSeatRate = isClinicTier && typeof config.extraSeatRate === "number" ? config.extraSeatRate : 0;
+  const baseMonthly = typeof config.baseMonthlyEq === "number" ? config.baseMonthlyEq : (config.monthlyEq ?? 0);
 
   const rawMonthlyTotal = baseMonthly + extraSeats * extraSeatRate;
   let finalMonthlyTotal = rawMonthlyTotal;
@@ -176,11 +229,16 @@ export function parseBillingCycle(val?: string | null): BillingCycle {
  * Converte e normaliza strings de planos em tipos estritos `PlanType`.
  * 
  * @param val Valor vindo de banco de dados, query param ou payload externo.
- * @returns `"solo" | "clinic" | "enterprise"` com fallback seguro para `"solo"`.
+ * @returns `"prof_basico" | "prof_medio" | "prof_top" | "clinica_basico" | "clinica_medio" | "clinica_top" | "solo" | "clinic" | "enterprise"` com fallback seguro para `"solo"`.
  */
 export function parsePlanType(val?: string | null): PlanType {
   if (!val) return "solo";
-  const normalized = val.trim().toLowerCase();
+  const normalized = val.trim().toLowerCase().replace("-", "_");
+  if (normalized in PLAN_PRICING_CONFIG) {
+    return normalized as PlanType;
+  }
   if (normalized === "enterprise") return "enterprise";
-  return normalized === "clinic" ? "clinic" : "solo";
+  if (normalized === "clinic") return "clinic";
+  return "solo";
 }
+

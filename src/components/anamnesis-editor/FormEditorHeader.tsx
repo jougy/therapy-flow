@@ -19,8 +19,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
+import { useLocation } from "react-router-dom";
 import { useTutorial } from "@/contexts/TutorialContext";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
+import { getTemplateDisplayName } from "./types";
 import type { useFormEditorState } from "./useFormEditorState";
 
 export interface FormEditorHeaderProps {
@@ -29,6 +31,8 @@ export interface FormEditorHeaderProps {
 
 export const FormEditorHeader: React.FC<FormEditorHeaderProps> = ({ state }) => {
   const { showComponentHelp } = useTutorial();
+  const location = useLocation();
+  const isPlatformMode = location.pathname.startsWith("/platform");
 
   const updateTemplateName = (value: string) => {
     state.setTemplateName(sanitizeSingleLineInput(value, INPUT_LIMITS.formTemplateName));
@@ -37,6 +41,28 @@ export const FormEditorHeader: React.FC<FormEditorHeaderProps> = ({ state }) => 
   const updateTemplateDescription = (value: string) => {
     state.setTemplateDescription(sanitizeMultilineInput(value, INPUT_LIMITS.formDescription));
   };
+
+  const templateDisplayName = getTemplateDisplayName(state.template);
+
+  const headerTitle = isPlatformMode
+    ? state.isNew
+      ? "Novo Modelo Oficial da Plataforma"
+      : templateDisplayName
+      ? `Editar Modelo Oficial: ${templateDisplayName}`
+      : "Editar Modelo Oficial"
+    : state.isBase
+    ? "Bloco padrão universal"
+    : state.isNew
+    ? "Nova ficha"
+    : templateDisplayName || "Editar ficha";
+
+  const headerSubtitle = isPlatformMode
+    ? "Crie ou edite a estrutura de campos deste modelo oficial da biblioteca compartilhada. Ao salvar, as alterações ficam disponíveis para todas as clínicas."
+    : state.isBase
+    ? "Edite a primeira parte obrigatória da anamnese, aplicada automaticamente em todas as fichas da clínica."
+    : "Monte e personalize os campos no canvas interativo. Alterne entre os modos de edição e teste de preenchimento.";
+
+  const saveButtonLabel = isPlatformMode ? "Publicar Modelo Oficial" : "Salvar ficha";
 
   return (
     <>
@@ -53,14 +79,12 @@ export const FormEditorHeader: React.FC<FormEditorHeaderProps> = ({ state }) => 
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold tracking-tight">
-                  {state.isBase ? "Bloco padrão universal" : state.isNew ? "Nova ficha" : state.template?.name || "Editar ficha"}
+                  {headerTitle}
                 </h1>
                 <ComponentHelpButton helpId="form-editor-tour" size="sm" />
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                {state.isBase
-                  ? "Edite a primeira parte obrigatória da anamnese, aplicada automaticamente em todas as fichas da clínica."
-                  : "Monte e personalize os campos no canvas interativo. Alterne entre os modos de edição e teste de preenchimento."}
+                {headerSubtitle}
               </p>
             </div>
           </div>
@@ -72,7 +96,7 @@ export const FormEditorHeader: React.FC<FormEditorHeaderProps> = ({ state }) => 
                 size="sm"
                 className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive gap-1.5"
                 onClick={() => state.setDeleteTemplateDialogOpen(true)}
-                title="Excluir este formulário da clínica"
+                title={isPlatformMode ? "Excluir este modelo oficial" : "Excluir este formulário da clínica"}
               >
                 <Trash2 className="h-4 w-4" />
                 <span className="hidden sm:inline">Excluir ficha</span>
@@ -125,7 +149,7 @@ export const FormEditorHeader: React.FC<FormEditorHeaderProps> = ({ state }) => 
                 disabled={state.saving || !state.templateName.trim() || (!state.isDirty && !state.isNew)}
               >
                 {state.saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Salvar ficha
+                {saveButtonLabel}
               </Button>
             </div>
           </div>

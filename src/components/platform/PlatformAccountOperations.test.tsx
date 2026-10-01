@@ -17,6 +17,32 @@ vi.mock("./platform-api", () => ({
   callPlatformAccountAdmin: vi.fn(),
   destructiveOperations: new Set(["delete_subaccount"]),
   getErrorMessage: vi.fn((err: unknown) => String(err)),
+  planOptionGroups: [
+    {
+      label: "Planos Profissionais",
+      options: [
+        { value: "prof_basico", label: "Profissional Básico" },
+        { value: "prof_medio", label: "Profissional Médio" },
+        { value: "prof_top", label: "Profissional Top" },
+      ],
+    },
+    {
+      label: "Planos para Clínicas & Equipes",
+      options: [
+        { value: "clinica_basico", label: "Clínica Básico" },
+        { value: "clinica_medio", label: "Clínica Médio" },
+        { value: "clinica_top", label: "Clínica Top" },
+      ],
+    },
+    {
+      label: "Planos Legados",
+      options: [
+        { value: "solo", label: "Solo (Legado)" },
+        { value: "clinic", label: "Clínica (Legado)" },
+        { value: "enterprise", label: "Enterprise (Legado)" },
+      ],
+    },
+  ],
 }));
 
 vi.mock("@/hooks/use-toast", () => ({

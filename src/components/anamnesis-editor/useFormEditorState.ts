@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type RefObject } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  adminCreateOfficialTemplate,
+  deleteCommunityTemplate,
+  fetchCommunityFormTemplateById,
+  updateCommunityTemplateByAdmin,
+  type CommunityFormCategory,
+} from "@/lib/community-forms";
+import {
   ANAMNESIS_SCHEMA_FIELD_LIMIT,
   ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES,
   buildTemplateLayout,
+  buildAnamnesisTemplateExchangeFileName,
+  buildAnamnesisTemplateExchangePayload,
   compactAnamnesisTemplateSchema,
   createAnamnesisField,
   createDefaultTemplateSchema,
@@ -18,6 +27,7 @@ import {
   sanitizeAnamnesisTemplateSchema,
   type AnamnesisField,
 } from "@/lib/anamnesis-forms";
+import { packPluriform } from "@/lib/pluriform/pluriform";
 import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 import {
   castDesignLabLayout,
@@ -33,14 +43,17 @@ import {
 
 export function useFormEditorState() {
   const { clinicKey, templateId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
-  const { can, clinic, clinicId, user } = useAuth();
+  const { can, clinic, clinicId, isPlatformOwner, user } = useAuth();
+
+  const isPlatformMode = location.pathname.startsWith("/platform");
   const routeClinicKey = clinicKey ?? clinic?.route_key;
   const clinicSettingsPath = routeClinicKey ? `/clinica/${routeClinicKey}/configuracoes` : "/configuracoes";
-  const clinicFormsManagerPath = `${clinicSettingsPath}?secao=forms`;
+  const clinicFormsManagerPath = isPlatformMode ? "/platform/formularios" : `${clinicSettingsPath}?secao=forms`;
   const isNew = templateId === "novo";
   const isBase = templateId === "base" || templateId === "universal";
-  const canManageForms = can("forms.manage");
+  const canManageForms = isPlatformMode ? Boolean(isPlatformOwner) : can("forms.manage");
 
   const [loading, setLoading] = useState(!isNew && !isBase);
   const [saving, setSaving] = useState(false);
@@ -94,9 +107,12 @@ export function useFormEditorState() {
   }, [isNew, templateName, templateDescription, templateFields]);
 
   const draftStorageKey = useMemo(() => {
+    if (isPlatformMode) {
+      return `pluri_platform_form_draft_${templateId || "novo"}`;
+    }
     if (!clinicId) return null;
     return `pluri_anamnesis_draft_${clinicId}_${templateId || "novo"}`;
-  }, [clinicId, templateId]);
+  }, [clinicId, isPlatformMode, templateId]);
 
   const [recoverableDraft, setRecoverableDraft] = useState<{
     name: string;
@@ -105,11 +121,42 @@ export function useFormEditorState() {
     savedAt: string;
   } | null>(null);
 
+  const safeStorage = useMemo(() => ({
+    getItem: (key: string): string | null => {
+      try {
+        if (typeof window !== "undefined" && window.localStorage && typeof window.localStorage.getItem === "function") {
+          return window.localStorage.getItem(key);
+        }
+      } catch {
+        // Ignore storage access errors
+      }
+      return null;
+    },
+    setItem: (key: string, value: string): void => {
+      try {
+        if (typeof window !== "undefined" && window.localStorage && typeof window.localStorage.setItem === "function") {
+          window.localStorage.setItem(key, value);
+        }
+      } catch {
+        // Ignore storage write errors
+      }
+    },
+    removeItem: (key: string): void => {
+      try {
+        if (typeof window !== "undefined" && window.localStorage && typeof window.localStorage.removeItem === "function") {
+          window.localStorage.removeItem(key);
+        }
+      } catch {
+        // Ignore storage removal errors
+      }
+    },
+  }), []);
+
   const checkRecoverableDraft = useCallback(
     (loadedFields: DesignLabTemplateSchema, loadedName: string, loadedDesc: string) => {
-      if (!draftStorageKey || typeof window === "undefined") return;
+      if (!draftStorageKey) return;
       try {
-        const rawDraft = localStorage.getItem(draftStorageKey);
+        const rawDraft = safeStorage.getItem(draftStorageKey);
         if (!rawDraft) return;
         const parsed = JSON.parse(rawDraft);
         if (
@@ -135,18 +182,18 @@ export function useFormEditorState() {
               savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : new Date().toISOString(),
             });
           } else {
-            localStorage.removeItem(draftStorageKey);
+            safeStorage.removeItem(draftStorageKey);
           }
         }
       } catch (err) {
         console.warn("Falha ao recuperar rascunho do formulário:", err);
       }
     },
-    [draftStorageKey]
+    [draftStorageKey, safeStorage]
   );
 
   useEffect(() => {
-    if (!draftStorageKey || !isDirty || saving || typeof window === "undefined") return;
+    if (!draftStorageKey || !isDirty || saving) return;
 
     const timer = window.setTimeout(() => {
       try {
@@ -156,14 +203,14 @@ export function useFormEditorState() {
           fields: templateFields,
           savedAt: new Date().toISOString(),
         };
-        localStorage.setItem(draftStorageKey, JSON.stringify(payload));
+        safeStorage.setItem(draftStorageKey, JSON.stringify(payload));
       } catch (err) {
         console.warn("Falha ao salvar rascunho local:", err);
       }
     }, 600);
 
     return () => window.clearTimeout(timer);
-  }, [draftStorageKey, isDirty, saving, templateName, templateDescription, templateFields]);
+  }, [draftStorageKey, isDirty, safeStorage, saving, templateName, templateDescription, templateFields]);
 
   const setTemplateFields = useCallback(
     (
@@ -223,19 +270,15 @@ export function useFormEditorState() {
   }, [recoverableDraft]);
 
   const handleDiscardDraft = useCallback(() => {
-    if (draftStorageKey && typeof window !== "undefined") {
-      try {
-        localStorage.removeItem(draftStorageKey);
-      } catch (err) {
-        console.warn("Falha ao remover rascunho:", err);
-      }
+    if (draftStorageKey) {
+      safeStorage.removeItem(draftStorageKey);
     }
     setRecoverableDraft(null);
     toast({
       title: "Rascunho descartado",
       description: "As alterações locais não salvas foram descartadas.",
     });
-  }, [draftStorageKey]);
+  }, [draftStorageKey, safeStorage]);
 
   const handleUndo = useCallback(() => {
     if (historyPointer <= 0) return;
@@ -1155,6 +1198,62 @@ export function useFormEditorState() {
       return;
     }
 
+    if (isPlatformMode) {
+      if (isNew) {
+        const fetchPlatformNew = async () => {
+          const emptyFields: DesignLabTemplateSchema = [];
+          const { count } = await supabase
+            .from("community_form_templates")
+            .select("id", { count: "exact", head: true });
+
+          const formNum = (count ?? 0) + 1;
+          const newName = `Novo modelo oficial ${formNum}`;
+          const newDesc = "Descrição do modelo oficial da comunidade";
+          setTemplateName(newName);
+          setTemplateDescription(newDesc);
+          setInitialTemplateFields(emptyFields, newName, newDesc);
+          checkRecoverableDraft(emptyFields, newName, newDesc);
+          setLoading(false);
+        };
+
+        void fetchPlatformNew();
+        return;
+      }
+
+      const fetchPlatformTemplate = async () => {
+        if (!templateId) return;
+
+        const data = await fetchCommunityFormTemplateById(templateId, user?.id);
+
+        if (!data) {
+          toast({
+            title: "Modelo da comunidade não encontrado",
+            description: "Este formulário não existe ou foi removido.",
+            variant: "destructive",
+          });
+          navigate(clinicFormsManagerPath);
+          return;
+        }
+
+        const tName = sanitizeSingleLineInput(data.title, INPUT_LIMITS.formTemplateName).trim();
+        const tDesc = sanitizeMultilineInput(data.description ?? "", INPUT_LIMITS.formDescription).trim();
+        const tFields = castDesignLabSchema(
+          isAnamnesisTemplateSchema(data.schema)
+            ? sanitizeAnamnesisTemplateSchema(data.schema)
+            : createDefaultTemplateSchema()
+        );
+        setTemplate(data);
+        setTemplateName(tName);
+        setTemplateDescription(tDesc);
+        setInitialTemplateFields(tFields, tName, tDesc);
+        checkRecoverableDraft(tFields, tName, tDesc);
+        setLoading(false);
+      };
+
+      void fetchPlatformTemplate();
+      return;
+    }
+
     if (isNew) {
       const fetchCount = async () => {
         const emptyFields: DesignLabTemplateSchema = [];
@@ -1215,7 +1314,7 @@ export function useFormEditorState() {
     };
 
     void fetchTemplate();
-  }, [canManageForms, checkRecoverableDraft, clinicFormsManagerPath, clinicId, isBase, isNew, navigate, setInitialTemplateFields, templateId]);
+  }, [canManageForms, checkRecoverableDraft, clinicFormsManagerPath, clinicId, isBase, isNew, isPlatformMode, navigate, setInitialTemplateFields, templateId, user?.id]);
 
   // Window bounds and scrolling tracking
   useEffect(() => {
@@ -1264,7 +1363,17 @@ export function useFormEditorState() {
     const safeTemplateDescription = sanitizeMultilineInput(templateDescription, INPUT_LIMITS.formDescription).trim();
     const safeTemplateFields = sanitizeAnamnesisTemplateSchema(templateFields);
 
-    if (!clinicId || !user || !safeTemplateName || safeTemplateFields.length === 0) {
+    const isClinicSave = !isPlatformMode;
+    if (isClinicSave && !clinicId) {
+      toast({
+        title: "Dados incompletos",
+        description: "Clínica não identificada para salvar o formulário.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!user || !safeTemplateName || safeTemplateFields.length === 0) {
       toast({
         title: "Dados incompletos",
         description: "O formulário deve ter um nome válido e conter ao menos um campo.",
@@ -1287,11 +1396,76 @@ export function useFormEditorState() {
     try {
       const compactedFields = compactAnamnesisTemplateSchema(safeTemplateFields);
 
+      if (isPlatformMode) {
+        const authorName =
+          user.user_metadata?.full_name ||
+          (user.email ? user.email.split("@")[0] : null) ||
+          "Equipe Pluri-Health";
+
+        if (isNew) {
+          const res = await adminCreateOfficialTemplate({
+            title: safeTemplateName,
+            description: safeTemplateDescription || null,
+            category: "Geral",
+            tags: ["oficial", "padrao"],
+            schema: safeTemplateFields,
+            kind: "template",
+            is_featured: true,
+            author_name: authorName,
+            clinic_name: "Comunidade Oficial",
+            clinic_id: null,
+            user_id: user.id,
+          });
+
+          if (!res.success || !res.data) {
+            toast({
+              title: "Erro ao publicar modelo oficial",
+              description: res.error || "Não foi possível salvar o modelo.",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          markCleanState(safeTemplateName, safeTemplateDescription, safeTemplateFields);
+          if (draftStorageKey) {
+            safeStorage.removeItem(draftStorageKey);
+          }
+          setRecoverableDraft(null);
+          toast({ title: "Modelo oficial publicado com sucesso!" });
+          navigate(`/platform/formularios/editor/${res.data.id}`);
+          return;
+        } else {
+          const res = await updateCommunityTemplateByAdmin(templateId!, {
+            title: safeTemplateName,
+            description: safeTemplateDescription || null,
+            schema: safeTemplateFields,
+          });
+
+          if (!res.success || !res.data) {
+            toast({
+              title: "Erro ao atualizar modelo oficial",
+              description: res.error || "Não foi possível salvar as alterações.",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          setTemplate(res.data);
+          markCleanState(safeTemplateName, safeTemplateDescription, safeTemplateFields);
+          if (draftStorageKey) {
+            safeStorage.removeItem(draftStorageKey);
+          }
+          setRecoverableDraft(null);
+          toast({ title: "Modelo oficial salvo com sucesso!" });
+          return;
+        }
+      }
+
       if (isBase) {
         const { error } = await supabase
           .from("clinics")
           .update({ anamnesis_base_schema: compactedFields })
-          .eq("id", clinicId);
+          .eq("id", clinicId!);
 
         if (error) {
           toast({ title: "Erro ao salvar bloco universal", description: error.message, variant: "destructive" });
@@ -1299,12 +1473,8 @@ export function useFormEditorState() {
         }
 
         markCleanState(safeTemplateName, safeTemplateDescription, safeTemplateFields);
-        if (draftStorageKey && typeof window !== "undefined") {
-          try {
-            localStorage.removeItem(draftStorageKey);
-          } catch (err) {
-            console.warn("Falha ao limpar rascunho após salvar bloco:", err);
-          }
+        if (draftStorageKey) {
+          safeStorage.removeItem(draftStorageKey);
         }
         setRecoverableDraft(null);
         toast({ title: "Bloco padrão universal salvo com sucesso!" });
@@ -1313,7 +1483,7 @@ export function useFormEditorState() {
       }
 
       const payload = {
-        clinic_id: clinicId,
+        clinic_id: clinicId!,
         description: safeTemplateDescription || null,
         is_active: true,
         is_system_default: false,
@@ -1328,7 +1498,7 @@ export function useFormEditorState() {
             .from("anamnesis_form_templates")
             .update(payload)
             .eq("id", templateId!)
-            .eq("clinic_id", clinicId)
+            .eq("clinic_id", clinicId!)
             .select("id")
             .single();
 
@@ -1340,12 +1510,8 @@ export function useFormEditorState() {
       }
 
       markCleanState(safeTemplateName, safeTemplateDescription, safeTemplateFields);
-      if (draftStorageKey && typeof window !== "undefined") {
-        try {
-          localStorage.removeItem(draftStorageKey);
-        } catch (err) {
-          console.warn("Falha ao limpar rascunho após salvar formulário:", err);
-        }
+      if (draftStorageKey) {
+        safeStorage.removeItem(draftStorageKey);
       }
       setRecoverableDraft(null);
       toast({ title: isNew ? "Formulário criado com sucesso!" : "Formulário atualizado com sucesso!" });
@@ -1356,7 +1522,7 @@ export function useFormEditorState() {
     }
   };
 
-  // Import JSON template
+  // Import .pluriform / JSON template
   const handleImportDraftModel = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -1368,8 +1534,8 @@ export function useFormEditorState() {
         throw new Error("O arquivo excede o limite de tamanho permitido de 256KB.");
       }
 
-      const raw = await file.text();
-      const imported = parseAnamnesisTemplateExchangePayload(raw);
+      const buffer = await file.arrayBuffer();
+      const imported = await parseAnamnesisTemplateExchangePayload(buffer);
 
       if (!isBase) {
         setTemplateName(sanitizeSingleLineInput(imported.template.name, INPUT_LIMITS.formTemplateName));
@@ -1393,16 +1559,84 @@ export function useFormEditorState() {
     }
   };
 
+  // Export current draft as .pluriform
+  const handleExportDraftModel = async () => {
+    try {
+      if (!templateFields || templateFields.length === 0) {
+        toast({
+          title: "Não foi possível exportar",
+          description: "O formulário não possui campos cadastrados.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const payload = buildAnamnesisTemplateExchangePayload({
+        description: templateDescription,
+        kind: isBase ? "base" : "template",
+        name: templateName,
+        schema: templateFields,
+      });
+
+      const binaryBytes = await packPluriform(payload);
+      const blob = new Blob([binaryBytes.buffer as ArrayBuffer], { type: "application/x-pluriform" });
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = buildAnamnesisTemplateExchangeFileName(isBase ? "base" : "template", templateName, "pluriform");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+
+      toast({
+        title: "Modelo exportado com sucesso",
+        description: "O arquivo .pluriform protegido foi gerado.",
+      });
+    } catch (err) {
+      toast({
+        title: "Erro na exportação",
+        description: err instanceof Error ? err.message : "Falha ao gerar arquivo .pluriform.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Delete entire template
   const handleDeleteTemplate = async () => {
-    if (isBase || isNew || !templateId || !clinicId) return;
+    if (isBase || isNew || !templateId) return;
+    if (!isPlatformMode && !clinicId) return;
+
     setDeletingTemplate(true);
     try {
+      if (isPlatformMode) {
+        const success = await deleteCommunityTemplate(templateId);
+        if (!success) {
+          toast({
+            title: "Erro ao excluir modelo oficial",
+            description: "Não foi possível remover o modelo da biblioteca comunitária.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        if (draftStorageKey) {
+          safeStorage.removeItem(draftStorageKey);
+        }
+
+        toast({
+          title: "Modelo oficial excluído",
+          description: "O modelo foi removido com sucesso da biblioteca comunitária.",
+        });
+        navigate("/platform/formularios");
+        return;
+      }
+
       const { error } = await supabase
         .from("anamnesis_form_templates")
         .delete()
         .eq("id", templateId)
-        .eq("clinic_id", clinicId);
+        .eq("clinic_id", clinicId!);
 
       if (error) {
         toast({
@@ -1593,9 +1827,13 @@ export function useFormEditorState() {
     setUnsavedChangesDialogOpen,
     handleSave,
     handleImportDraftModel,
+    handleExportDraftModel,
     handleDeleteTemplate,
     handleBack,
     handleCanvasBackgroundClick,
     clinicFormsManagerPath,
+    clinicBasePath: routeClinicKey ? `/clinica/${routeClinicKey}` : "",
+    isPlatformMode,
+    canManageForms,
   };
 }

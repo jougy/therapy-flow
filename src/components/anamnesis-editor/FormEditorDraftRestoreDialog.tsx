@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FormEditorGuideModal } from "@/components/anamnesis/FormEditorGuideModal";
 import { isContainerField } from "@/lib/anamnesis-forms";
+import { getTemplateDisplayName } from "./types";
 import type { useFormEditorState } from "./useFormEditorState";
 
 export interface FormEditorDraftRestoreDialogProps {
@@ -183,8 +184,8 @@ export const FormEditorDraftRestoreDialog: React.FC<FormEditorDraftRestoreDialog
             </DialogTitle>
             <DialogDescription>
               Tem certeza que deseja excluir permanentemente o modelo{" "}
-              <strong>&quot;{state.templateName || state.template?.name}&quot;</strong>?
-              Esta ação removerá este modelo da lista de formulários da clínica. Atendimentos e evoluções já preenchidos
+              <strong>&quot;{state.templateName || getTemplateDisplayName(state.template)}&quot;</strong>?
+              Esta ação removerá este modelo da lista de formulários. Atendimentos e evoluções já preenchidos
               anteriormente no histórico dos pacientes continuarão preservados intactos.
             </DialogDescription>
           </DialogHeader>

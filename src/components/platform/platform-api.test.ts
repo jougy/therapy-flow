@@ -136,4 +136,21 @@ describe("platform-api - Security & Logging Sanitization", () => {
     expect(getErrorMessage({ message: "Objeto de erro" })).toBe("Objeto de erro");
     expect(getErrorMessage(null)).toBe("Operação indisponível.");
   });
+
+  it("verifies O(1) PLAN_DEFAULT_LIMITS mapping matches business specs", async () => {
+    const { getPlanDefaultLimits, PLAN_DEFAULT_LIMITS } = await import("./platform-api");
+
+    expect(PLAN_DEFAULT_LIMITS["prof_basico"]).toEqual({ concurrent: 1, subaccounts: 1 });
+    expect(PLAN_DEFAULT_LIMITS["prof_medio"]).toEqual({ concurrent: 1, subaccounts: 1 });
+    expect(PLAN_DEFAULT_LIMITS["prof_top"]).toEqual({ concurrent: 2, subaccounts: 2 });
+    expect(PLAN_DEFAULT_LIMITS["clinica_basico"]).toEqual({ concurrent: 2, subaccounts: 999999 });
+    expect(PLAN_DEFAULT_LIMITS["clinica_medio"]).toEqual({ concurrent: 4, subaccounts: 999999 });
+    expect(PLAN_DEFAULT_LIMITS["clinica_top"]).toEqual({ concurrent: 8, subaccounts: 999999 });
+    expect(PLAN_DEFAULT_LIMITS["solo"]).toEqual({ concurrent: 1, subaccounts: 1 });
+    expect(PLAN_DEFAULT_LIMITS["clinic"]).toEqual({ concurrent: 4, subaccounts: 999999 });
+    expect(PLAN_DEFAULT_LIMITS["enterprise"]).toEqual({ concurrent: 8, subaccounts: 999999 });
+
+    expect(getPlanDefaultLimits("clinica_top")).toEqual({ concurrent: 8, subaccounts: 999999 });
+    expect(getPlanDefaultLimits("unknown_plan")).toEqual({ concurrent: 1, subaccounts: 1 });
+  });
 });
