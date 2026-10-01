@@ -23,6 +23,7 @@ const CadastroContaAlfa = lazy(() => import("./pages/CadastroContaAlfa"));
 const CadastroPacienteCompartilhado = lazy(() => import("./pages/CadastroPacienteCompartilhado"));
 const AutorizacaoMenorPublica = lazy(() => import("./pages/AutorizacaoMenorPublica"));
 const ClinicDashboard = lazy(() => import("./pages/ClinicDashboard"));
+const ClinicAgendaPage = lazy(() => import("./pages/ClinicAgendaPage"));
 import {
   SettingsLayout,
   ConfiguracoesLegacyRedirect,
@@ -290,6 +291,7 @@ const App = () => (
                               <Routes>
                                 <Route index element={<Index />} />
                                 <Route path="dashboard" element={<ClinicDashboard />} />
+                                <Route path="agenda" element={<ClinicAgendaPage />} />
                                 <Route path="configuracoes" element={<SettingsLayout />}>
                                   <Route index element={<ConfiguracoesLegacyRedirect />} />
                                   <Route path="perfil" element={<ClinicProfileSection />} />

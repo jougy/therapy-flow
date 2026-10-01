@@ -40,6 +40,7 @@ import {
   buildAnamnesisTemplateExchangePayload,
   parseAnamnesisTemplateExchangePayload,
 } from "@/lib/anamnesis-forms";
+import { packPluriform } from "@/lib/pluriform/pluriform";
 import type { SubscriptionInvoice } from "@/types/subscriptionInvoice";
 import { InvoiceStatusBadge, InvoiceNfeBadge } from "@/components/clinic-billing/InvoiceBadges";
 import type {
@@ -54,6 +55,7 @@ import {
   callRpc,
   formatClinicAccessStatus,
   getErrorMessage,
+  planLabels,
 } from "@/components/platform/platform-api";
 
 export const PlatformClinicDetailPage = ({
@@ -130,7 +132,7 @@ export const PlatformClinicDetailPage = ({
   }, [clinicKey]);
 
   const handleExportTemplateModel = useCallback(
-    ({
+    async ({
       description,
       kind,
       name,
@@ -150,28 +152,37 @@ export const PlatformClinicDetailPage = ({
         return;
       }
 
-      const payload = buildAnamnesisTemplateExchangePayload({
-        description,
-        kind,
-        name,
-        schema,
-      });
+      try {
+        const payload = buildAnamnesisTemplateExchangePayload({
+          description,
+          kind,
+          name,
+          schema,
+        });
 
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const objectUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
+        const binaryBytes = await packPluriform(payload);
+        const blob = new Blob([binaryBytes.buffer as ArrayBuffer], { type: "application/x-pluriform" });
+        const objectUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
 
-      link.href = objectUrl;
-      link.download = buildAnamnesisTemplateExchangeFileName(kind, name);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(objectUrl);
+        link.href = objectUrl;
+        link.download = buildAnamnesisTemplateExchangeFileName(kind, name, "pluriform");
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(objectUrl);
 
-      toast({
-        title: kind === "base" ? "Bloco padrão exportado" : "Modelo exportado",
-        description: "O arquivo JSON foi baixado com a estrutura completa do formulário.",
-      });
+        toast({
+          title: kind === "base" ? "Bloco padrão exportado" : "Modelo exportado",
+          description: "O arquivo .pluriform seguro foi baixado com a estrutura completa do formulário.",
+        });
+      } catch (err) {
+        toast({
+          title: "Erro na exportação",
+          description: err instanceof Error ? err.message : "Falha ao gerar arquivo .pluriform.",
+          variant: "destructive",
+        });
+      }
     },
     []
   );
@@ -200,8 +211,8 @@ export const PlatformClinicDetailPage = ({
           throw new Error("Arquivo de modelo muito grande");
         }
 
-        const raw = await file.text();
-        const imported = parseAnamnesisTemplateExchangePayload(raw);
+        const buffer = await file.arrayBuffer();
+        const imported = await parseAnamnesisTemplateExchangePayload(buffer);
 
         if (startPlatformClinicAccess) {
           await startPlatformClinicAccess(resolvedClinicId, supportReason.trim(), supportRole);
@@ -345,7 +356,7 @@ export const PlatformClinicDetailPage = ({
                     items={[
                       ["Nome", String(clinic?.name ?? "-")],
                       ["CNPJ", String(clinic?.cnpj ?? "-")],
-                      ["Plano", String(clinic?.subscription_plan ?? "-")],
+                      ["Plano", clinic?.subscription_plan ? (planLabels[clinic.subscription_plan] || clinic.subscription_plan) : "-"],
                       ["Status", formatClinicAccessStatus(String(clinic?.access_status ?? "active"))],
                       ["Data de cadastro", clinic?.created_at ? new Date(clinic.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"],
                       ["Rota", routeKey || "-"],
@@ -449,7 +460,7 @@ export const PlatformClinicDetailPage = ({
                 compact
                 onDone={() => void loadDetail()}
                 subaccountLimit={String(clinic?.subaccount_limit ?? 4)}
-                subscriptionPlan={clinic?.subscription_plan ?? "clinic"}
+                subscriptionPlan={clinic?.subscription_plan ?? "clinica_medio"}
                 subscriptionData={clinicSubscription}
                 title="Acesso e plano da clínica"
               />
@@ -668,7 +679,7 @@ export const PlatformClinicDetailPage = ({
             <input
               type="file"
               ref={templateImportInputRef}
-              accept=".json,application/json"
+              accept=".pluriform,.json,application/json,application/x-pluriform"
               className="hidden"
               onChange={handleImportTemplateFile}
             />

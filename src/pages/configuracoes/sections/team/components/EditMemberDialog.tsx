@@ -31,7 +31,7 @@ export interface EditMemberDialogProps {
   savingMember: boolean;
   canManageRoles: boolean;
   assignableRoleDefinitions: ClinicOperationalRoleDefinition[];
-  onSaveMember: () => Promise<void>;
+  onSaveMember: (payload?: { roleKey: string; baseOperationalRole: string }) => Promise<void>;
 }
 
 export const EditMemberDialog: React.FC<EditMemberDialogProps> = ({
@@ -52,6 +52,12 @@ export const EditMemberDialog: React.FC<EditMemberDialogProps> = ({
   assignableRoleDefinitions,
   onSaveMember,
 }) => {
+  const handleSave = () => {
+    const selectedDef = assignableRoleDefinitions.find((r) => r.role_key === editMemberRole);
+    const roleKey = selectedDef?.role_key || editMemberRole;
+    const baseOperationalRole = (selectedDef?.base_operational_role || editMemberRole) as string;
+    void onSaveMember({ roleKey, baseOperationalRole });
+  };
   return (
     <Dialog open={editingMember !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
@@ -158,7 +164,7 @@ export const EditMemberDialog: React.FC<EditMemberDialogProps> = ({
           <Button variant="outline" type="button" onClick={onClose} disabled={savingMember}>
             Cancelar
           </Button>
-          <Button type="button" onClick={() => void onSaveMember()} disabled={savingMember}>
+          <Button type="button" onClick={handleSave} disabled={savingMember}>
             {savingMember ? (
               <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
             ) : (

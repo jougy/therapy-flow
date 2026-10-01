@@ -38,6 +38,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 - [[Clinica e colaborador no MVP]]
 - [[Hierarquias de colaboradores e acessos]]
+- [[Guia Arquitetural de Papeis Operacionais, Hierarquias e RBAC]]
 - [[Identidade global do usuario e seletor de clinicas]]
 - [[Compartilhamento de fichas de atendimento]]
 - [[Grupos reutilizaveis de atendimentos]]

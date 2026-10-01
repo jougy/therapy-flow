@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Copy,
   Download,
+  Edit3,
   Eye,
   Heart,
   Layers,
@@ -52,6 +53,7 @@ import {
   buildAnamnesisTemplateExchangeFileName,
   buildAnamnesisTemplateExchangePayload,
 } from "@/lib/anamnesis-forms";
+import { packPluriform } from "@/lib/pluriform/pluriform";
 import { InteractiveFormLivePreview } from "@/components/community-forms/InteractiveFormLivePreview";
 
 export const FormTemplateDetailPage = () => {
@@ -136,25 +138,34 @@ export const FormTemplateDetailPage = () => {
     });
   };
 
-  // Handle Export JSON
-  const handleExportJSON = () => {
+  // Handle Export .pluriform
+  const handleExportJSON = async () => {
     if (!template) return;
-    const payload = buildAnamnesisTemplateExchangePayload({
-      name: template.title,
-      description: template.description,
-      schema: template.schema,
-      kind: template.kind,
-    });
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = buildAnamnesisTemplateExchangeFileName(template.kind, template.title);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toast({ title: "Arquivo exportado", description: "O JSON do modelo foi baixado com sucesso." });
+    try {
+      const payload = buildAnamnesisTemplateExchangePayload({
+        name: template.title,
+        description: template.description,
+        schema: template.schema,
+        kind: template.kind,
+      });
+      const binaryBytes = await packPluriform(payload);
+      const blob = new Blob([binaryBytes.buffer as ArrayBuffer], { type: "application/x-pluriform" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = buildAnamnesisTemplateExchangeFileName(template.kind, template.title, "pluriform");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Arquivo exportado", description: "O modelo seguro (.pluriform) foi baixado com sucesso." });
+    } catch (err) {
+      toast({
+        title: "Erro na exportação",
+        description: err instanceof Error ? err.message : "Falha ao gerar arquivo .pluriform.",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle Confirm Import
@@ -382,6 +393,17 @@ export const FormTemplateDetailPage = () => {
                   <p className="text-[10px]">{comments.length} avaliações</p>
                 </div>
               </div>
+
+              {isBackoffice && isPlatformOwner && (
+                <Button
+                  size="lg"
+                  onClick={() => navigate(`/platform/formularios/editor/${template.id}`)}
+                  className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold shadow-md"
+                >
+                  <Edit3 className="h-4 w-4" />
+                  Editar Estrutura no Editor Visual
+                </Button>
+              )}
 
               {!isBackoffice && (
                 <Button

@@ -47,6 +47,37 @@ describe("PlatformBillingMaster", () => {
       if (table === "subscription_coupons") {
         return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
       }
+      if (table === "subscription_invoices") {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: "inv-1",
+                    clinic_id: "clinic-alfa",
+                    asaas_payment_id: "pay_test_real_123",
+                    status: "RECEIVED",
+                    value: 99.0,
+                    net_value: 97.01,
+                    billing_type: "PIX",
+                    due_date: "2026-09-30",
+                    payment_date: "2026-09-30T10:00:00Z",
+                    invoice_url: "https://asaas.com/i/test",
+                    bank_slip_url: null,
+                    pix_qr_code: null,
+                    nfe_number: "001452",
+                    nfe_pdf_url: "https://asaas.com/nfe/test.pdf",
+                    created_at: "2026-09-30T09:00:00Z",
+                    clinics: { name: "Clínica Alfa Teste" },
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
       return { select: vi.fn() };
     });
 
@@ -56,14 +87,15 @@ describe("PlatformBillingMaster", () => {
           data: [
             {
               id: "log-1",
-              event: "PAYMENT_RECEIVED",
-              payment_id: "pay-100",
-              customer_id: "cus-100",
-              subscription_id: "sub-100",
+              event_type: "PAYMENT_RECEIVED",
+              asaas_event_id: "evt-123",
               error_message: null,
               signature: "sig-123",
               created_at: "2026-08-18T11:00:00Z",
-              payload: { event: "PAYMENT_RECEIVED", payment: { value: 60 } },
+              payload: {
+                event: "PAYMENT_RECEIVED",
+                payment: { id: "pay_test_real_123", customer: "cus_123", subscription: "sub_123", value: 99 },
+              },
             },
           ],
           error: null,
@@ -92,6 +124,67 @@ describe("PlatformBillingMaster", () => {
     fireEvent.change(reasonArea, { target: { value: "Concessão aprovada no ticket #9901" } });
 
     expect(confirmBtn).not.toBeDisabled();
+  });
+
+  it("renders invoices tab with real payment data and links", async () => {
+    const mockSelectSubs = vi.fn().mockReturnValue({
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    });
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_subscriptions") return { select: mockSelectSubs };
+      if (table === "subscription_coupons") {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === "subscription_invoices") {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: "inv-99",
+                    clinic_id: "clinic-beta",
+                    asaas_payment_id: "pay_pix_real_888",
+                    status: "RECEIVED",
+                    value: 139.0,
+                    net_value: 137.01,
+                    billing_type: "PIX",
+                    due_date: "2026-09-30",
+                    payment_date: "2026-09-30T11:00:00Z",
+                    invoice_url: "https://asaas.com/i/pix_real",
+                    bank_slip_url: null,
+                    pix_qr_code: null,
+                    nfe_number: "98765",
+                    nfe_pdf_url: "https://asaas.com/nfe/real.pdf",
+                    created_at: "2026-09-30T10:00:00Z",
+                    clinics: { name: "Clínica Fisioterapia Viva" },
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    supabaseMocks.rpc.mockResolvedValue({ data: [], error: null });
+
+    render(<PlatformBillingMaster />);
+
+    // Click on Cobranças & Faturas Tab
+    const invoicesTab = await screen.findByRole("tab", { name: /Cobranças & Faturas/i });
+    fireEvent.focus(invoicesTab);
+    fireEvent.keyDown(invoicesTab, { key: "Enter" });
+    fireEvent.click(invoicesTab);
+
+    // Verify invoice elements
+    expect(await screen.findByText(/Clínica Fisioterapia Viva/i)).toBeInTheDocument();
+    expect(screen.getByText(/pay_pix_real_888/i)).toBeInTheDocument();
+    expect(screen.getByText(/RECEBIDO/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nº 98765/i)).toBeInTheDocument();
   });
 
   it("renders coupons tab, lists SOUPLURIBETA, and opens new coupon modal", async () => {
@@ -133,6 +226,15 @@ describe("PlatformBillingMaster", () => {
           insert: mockInsertCoupon,
           update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
           delete: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        };
+      }
+      if (table === "subscription_invoices") {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
         };
       }
       return { select: vi.fn() };

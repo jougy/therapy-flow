@@ -50,12 +50,14 @@ describe("FeatureConfigModal - Assinaturas", () => {
 
     expect(screen.getByText(/Ambiente do Gateway Asaas: Oficial \(Produção\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Tabela de Preços e Ciclos Oficiais/i)).toBeInTheDocument();
-    expect(screen.getByText(/Plano Profissional Solo/i)).toBeInTheDocument();
-    expect(screen.getByText(/Plano Clínica com Equipe/i)).toBeInTheDocument();
+    expect(screen.getByText(/Grupo 1: Planos Profissionais/i)).toBeInTheDocument();
+    expect(screen.getByText(/Grupo 2: Planos para Clínicas & Equipes/i)).toBeInTheDocument();
+    expect(screen.getByText(/Profissional Básico/i)).toBeInTheDocument();
+    expect(screen.getByText(/Clínica Básico/i)).toBeInTheDocument();
     expect(screen.getByText(/Ambiente Seguro & Proteção de Credenciais/i)).toBeInTheDocument();
     expect(screen.getByText(/ASAAS_API_KEY/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/R\$ 52,00/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/R\$ 78,00/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/R\$ 39,99/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/R\$ 99,00/i).length).toBeGreaterThan(0);
 
     // Toggle to sandbox
     const sandboxCard = screen.getByText(/🟡 Sandbox \(Testes\)/i);

@@ -129,6 +129,28 @@ describe("useClinicPlanQuota", () => {
     expect(result.current.forms.max).toBe(-1);
   });
 
+  it("limits custom forms to 1 for prof_basico active subscription, keeping patients and attendances unlimited", async () => {
+    setupMocks({
+      id: "sub-prof-basico",
+      clinic_id: "clinic-pb",
+      status: "ACTIVE",
+      plan_type: "prof_basico",
+    });
+
+    const { result } = renderHook(() => useClinicPlanQuota("clinic-pb"));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.isFreeTrial).toBe(false);
+    expect(result.current.attendances.max).toBe(-1);
+    expect(result.current.patients.max).toBe(-1);
+    expect(result.current.forms.max).toBe(1);
+    expect(result.current.forms.current).toBe(1);
+    expect(result.current.forms.isLimitReached).toBe(true);
+  });
+
   it("handles null clinicId gracefully", async () => {
     const { result } = renderHook(() => useClinicPlanQuota(null));
 

@@ -198,5 +198,19 @@ describe("CadastroContaAlfa", () => {
       expect(screen.getByText(/aguarde 45s para tentar criar a conta novamente/i)).toBeInTheDocument();
     });
   });
+
+  it("navigates to /auth when clicking 'Já possui uma conta? Entrar'", () => {
+    render(
+      <MemoryRouter initialEntries={["/auth/cadastro"]}>
+        <CadastroContaAlfa />
+      </MemoryRouter>
+    );
+
+    const loginButton = screen.getByRole("button", { name: /Já possui uma conta\? Entrar/i });
+    expect(loginButton).toBeInTheDocument();
+
+    fireEvent.click(loginButton);
+    expect(mockNavigate).toHaveBeenCalledWith("/auth");
+  });
 });
 

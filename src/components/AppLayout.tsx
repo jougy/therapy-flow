@@ -159,12 +159,14 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               )}
             </button>
 
-            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-              <TutorialTriggerButton />
+            <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
+              <div className="hidden sm:block">
+                <TutorialTriggerButton />
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
+                className="hidden sm:inline-flex h-8 w-8 text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
                 onClick={openManualFeedback}
                 aria-label="Dar feedback e avaliar a plataforma"
                 title="Avaliar a plataforma"
@@ -187,7 +189,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="group/clinic-settings h-8 w-8 justify-center gap-0 overflow-hidden px-0 text-muted-foreground transition-[width,gap,padding,box-shadow,border-color,background-color,color,transform] duration-700 ease-in-out hover:text-foreground sm:hover:w-[144px] sm:hover:justify-start sm:hover:gap-2 sm:hover:px-3 sm:hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.08),0_8px_18px_hsl(var(--primary)/0.08)] sm:focus-visible:w-[144px] sm:focus-visible:justify-start sm:focus-visible:gap-2 sm:focus-visible:px-3"
+                  className="hidden sm:inline-flex group/clinic-settings h-8 w-8 justify-center gap-0 overflow-hidden px-0 text-muted-foreground transition-[width,gap,padding,box-shadow,border-color,background-color,color,transform] duration-700 ease-in-out hover:text-foreground sm:hover:w-[144px] sm:hover:justify-start sm:hover:gap-2 sm:hover:px-3 sm:hover:shadow-[0_0_0_3px_hsl(var(--primary)/0.08),0_8px_18px_hsl(var(--primary)/0.08)] sm:focus-visible:w-[144px] sm:focus-visible:justify-start sm:focus-visible:gap-2 sm:focus-visible:px-3"
                   onClick={() => navigate(`${clinicHomePath}/configuracoes/perfil`)}
                   aria-label="Editar Clínica"
                 >

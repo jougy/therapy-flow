@@ -151,6 +151,7 @@ const supabaseMocks = vi.hoisted(() => {
           membership_id: "membership-1",
           membership_status: "active",
           operational_role: "owner",
+          role_key: null,
         },
       ]);
     }
@@ -251,6 +252,46 @@ describe("useAuth runtime resilience", () => {
 
     // The active clinic should be preserved seamlessly without resetting to "none"
     expect(screen.getByTestId("clinic-id")).toHaveTextContent("clinic-1");
+  });
+
+  it("populates role_key in membership and respects effectiveRoleKey in capabilities", async () => {
+    let currentMembership: any = null;
+    let canFn: any = null;
+
+    const MembershipProbe = () => {
+      const { can, membership, selectClinic } = useAuth();
+      currentMembership = membership;
+      canFn = can;
+
+      return (
+        <button
+          onClick={() => void selectClinic("clinic-1")}
+          data-testid="select-clinic"
+        >
+          Select
+        </button>
+      );
+    };
+
+    render(
+      <AuthProvider>
+        <MembershipProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("select-clinic")).toBeInTheDocument();
+    });
+
+    screen.getByTestId("select-clinic").click();
+
+    await waitFor(() => {
+      expect(currentMembership).not.toBeNull();
+    });
+
+    expect(currentMembership?.role_key).toBeNull();
+    expect(currentMembership?.operational_role).toBe("owner");
+    expect(canFn("patients.read")).toBe(true);
   });
 });
 

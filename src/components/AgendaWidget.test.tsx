@@ -316,7 +316,10 @@ describe("AgendaWidget", () => {
 
     await waitFor(() => {
       expect(supabaseMocks.updateCalls).toContainEqual({
-        filters: [{ column: "id", value: "agenda-1" }],
+        filters: [
+          { column: "id", value: "agenda-1" },
+          { column: "clinic_id", value: "clinic-1" },
+        ],
         payload: { status: "cancelado" },
         table: "agenda_events",
       });

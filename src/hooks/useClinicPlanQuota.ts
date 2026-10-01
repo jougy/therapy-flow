@@ -37,6 +37,21 @@ export interface ClinicPlanUsage {
   refresh: () => Promise<void>;
 }
 
+interface ClinicSubscriptionRecord {
+  status?: string | null;
+  is_free_trial?: boolean | null;
+  expires_at?: string | null;
+  current_period_end?: string | null;
+  is_read_only?: boolean | null;
+  trial_ended?: boolean | null;
+  is_expired?: boolean | null;
+  plan_type?: string | null;
+  trial_max_attendances?: number | null;
+  trial_max_patients?: number | null;
+  trial_max_custom_forms?: number | null;
+  [key: string]: unknown;
+}
+
 export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
   const [loading, setLoading] = useState(true);
   const [usage, setUsage] = useState<Omit<ClinicPlanUsage, "loading" | "refresh">>({
@@ -57,21 +72,22 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
 
     try {
       // 1. Buscar assinatura da clínica
-      const { data: sub } = await supabase
+      const { data: subData } = await supabase
         .from("clinic_subscriptions")
         .select("*")
         .eq("clinic_id", clinicId)
         .maybeSingle();
 
+      const sub = subData as ClinicSubscriptionRecord | null;
       const rawStatus = (sub?.status || "").toUpperCase();
-      const isTrial = !sub ? false : (rawStatus === "TRIAL" || (sub as any).is_free_trial === true);
-      const isTimeExpired = (sub as any)?.expires_at
-        ? new Date((sub as any).expires_at).getTime() < Date.now()
-        : (sub as any)?.current_period_end
-        ? new Date((sub as any).current_period_end).getTime() < Date.now()
+      const isTrial = !sub ? false : (rawStatus === "TRIAL" || sub.is_free_trial === true);
+      const isTimeExpired = sub?.expires_at
+        ? new Date(sub.expires_at).getTime() < Date.now()
+        : sub?.current_period_end
+        ? new Date(sub.current_period_end).getTime() < Date.now()
         : false;
-      const isExplicitReadOnly = Boolean((sub as any)?.is_read_only);
-      const isTrialExplicitEnded = (sub as any)?.trial_ended === true || (sub as any)?.is_expired === true;
+      const isExplicitReadOnly = Boolean(sub?.is_read_only);
+      const isTrialExplicitEnded = sub?.trial_ended === true || sub?.is_expired === true;
 
       // 2. Contar Atendimentos Realizados (não cancelados e não rascunho)
       const { count: attendanceCount } = await supabase
@@ -96,9 +112,12 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
         .eq("is_system_default", false)
         .eq("is_active", true);
 
-      const maxAtt = isTrial ? ((sub as any)?.trial_max_attendances || 20) : -1;
-      const maxPat = isTrial ? ((sub as any)?.trial_max_patients || 5) : -1;
-      const maxFrm = isTrial ? ((sub as any)?.trial_max_custom_forms || 1) : -1;
+      const planType = sub?.plan_type || "";
+      const isProfBasico = planType === "prof_basico" || planType === "prof-basico";
+
+      const maxAtt = isTrial ? (sub?.trial_max_attendances || 20) : -1;
+      const maxPat = isTrial ? (sub?.trial_max_patients || 5) : -1;
+      const maxFrm = isTrial ? (sub?.trial_max_custom_forms || 1) : isProfBasico ? 1 : -1;
 
       const currentAtt = attendanceCount || 0;
       const currentPat = patientCount || 0;

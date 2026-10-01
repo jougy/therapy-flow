@@ -703,7 +703,7 @@ export async function fetchAdminCommunityFormTemplates(
 
 export async function updateCommunityTemplateByAdmin(
   templateId: string,
-  updates: Partial<Pick<CommunityFormTemplate, "title" | "description" | "category" | "author_name" | "clinic_name" | "tags" | "is_featured" | "is_published">>
+  updates: Partial<Pick<CommunityFormTemplate, "title" | "description" | "category" | "author_name" | "clinic_name" | "tags" | "is_featured" | "is_published" | "schema" | "fields_count">>
 ): Promise<{ success: boolean; data?: CommunityFormTemplate; error?: string }> {
   try {
     const payload: Record<string, any> = { ...updates };
@@ -715,6 +715,11 @@ export async function updateCommunityTemplateByAdmin(
     }
     if (updates.tags) {
       payload.tags = updates.tags.map((t) => sanitizeSingleLineInput(t, 40).trim().toLowerCase().replace(/^#/, "")).filter(Boolean);
+    }
+    if (updates.schema) {
+      const stripped = stripSchemaDefaultProperties(updates.schema);
+      payload.schema = stripped;
+      payload.fields_count = stripped.length;
     }
 
     const { data, error } = await supabase
@@ -729,6 +734,8 @@ export async function updateCommunityTemplateByAdmin(
     const updated = {
       ...(data as CommunityFormTemplate),
       schema: sanitizeAnamnesisTemplateSchema(data.schema),
+      preview_fields: sanitizeAnamnesisTemplateSchema(data.schema).slice(0, 4),
+      fields_count: data.fields_count || sanitizeAnamnesisTemplateSchema(data.schema).length,
     };
 
     const cached = getLocalStoredCache()?.templates;

@@ -3,10 +3,12 @@ import { Sparkles, Clock, ShieldAlert, CheckCircle2, HeartHandshake, Eye } from 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
+import { PlanType } from "@/utils/subscriptionPricing";
+
 export interface PlanTrialExplanationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectPlan?: (planId: "solo" | "clinic" | "enterprise") => void;
+  onSelectPlan?: (planId: PlanType) => void;
 }
 
 /**
@@ -88,7 +90,7 @@ export const PlanTrialExplanationModal: React.FC<PlanTrialExplanationModalProps>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 p-3 rounded-xl border border-border/50">
             <HeartHandshake className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Sem fidelidade, sem pegadinhas e sem necessidade de cartão para começar a testar.</span>
+            <span>Sem fidelidade, sem pegadinhas e com cancelamento a qualquer momento.</span>
           </div>
         </div>
 
@@ -101,7 +103,7 @@ export const PlanTrialExplanationModal: React.FC<PlanTrialExplanationModalProps>
               size="sm"
               onClick={() => {
                 onClose();
-                onSelectPlan("clinic");
+                onSelectPlan("clinica_medio");
               }}
               className="rounded-xl text-xs h-9 bg-primary text-primary-foreground font-semibold"
             >

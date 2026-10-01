@@ -12,6 +12,8 @@ import {
   buildAnamnesisTemplateExchangePayload,
   buildTemplateLayout,
   compactAnamnesisTemplateSchema,
+  pruneAnamnesisTemplateSchema,
+  hydrateAnamnesisTemplateSchema,
   countTemplateQuestionFields,
   countTemplateSections,
   createDefaultTemplateSchema,
@@ -240,7 +242,7 @@ describe("anamnesis forms helpers", () => {
     ).toBe(true);
   });
 
-  it("exports and re-imports a template model without changing its schema", () => {
+  it("exports and re-imports a template model without changing its schema", async () => {
     const schema = createDefaultTemplateSchema();
     const payload = buildAnamnesisTemplateExchangePayload({
       description: "Triagem inicial",
@@ -249,27 +251,51 @@ describe("anamnesis forms helpers", () => {
       schema,
     });
 
-    expect(parseAnamnesisTemplateExchangePayload(JSON.stringify(payload))).toEqual(payload);
+    const parsed = await parseAnamnesisTemplateExchangePayload(JSON.stringify(payload));
+    expect(parsed).toEqual(payload);
   });
 
-  it("rejects invalid imported template models", () => {
-    expect(() => parseAnamnesisTemplateExchangePayload(JSON.stringify({ foo: "bar" }))).toThrow(
+  it("rejects invalid imported template models", async () => {
+    await expect(parseAnamnesisTemplateExchangePayload(JSON.stringify({ foo: "bar" }))).rejects.toThrow(
       "Arquivo de modelo inválido"
     );
   });
 
-  it("rejects imported template models larger than the accepted envelope", () => {
-    expect(() => parseAnamnesisTemplateExchangePayload("x".repeat(ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES + 1))).toThrow(
+  it("rejects imported template models larger than the accepted envelope", async () => {
+    await expect(parseAnamnesisTemplateExchangePayload("x".repeat(ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES + 1))).rejects.toThrow(
       "Arquivo de modelo muito grande"
     );
   });
 
-  it("builds a predictable export file name", () => {
+  it("safely parses raw JSON schemas and community format payloads", async () => {
+    const defaultSchema = createDefaultTemplateSchema();
+
+    // 1. Raw array of fields
+    const parsedFromRawArray = await parseAnamnesisTemplateExchangePayload(JSON.stringify(defaultSchema));
+    expect(parsedFromRawArray.template.name).toBe("Formulário Importado");
+    expect(parsedFromRawArray.template.schema.length).toBe(defaultSchema.length);
+
+    // 2. Object with { title, schema }
+    const communityObj = {
+      title: "Modelo da Comunidade",
+      description: "Descrição teste",
+      schema: defaultSchema,
+    };
+    const parsedFromCommunityObj = await parseAnamnesisTemplateExchangePayload(JSON.stringify(communityObj));
+    expect(parsedFromCommunityObj.template.name).toBe("Modelo da Comunidade");
+    expect(parsedFromCommunityObj.template.description).toBe("Descrição teste");
+    expect(parsedFromCommunityObj.template.schema.length).toBe(defaultSchema.length);
+  });
+
+  it("builds a predictable export file name with .pluriform default and optional .json", () => {
     expect(buildAnamnesisTemplateExchangeFileName("template", "Ficha ortopédica inicial")).toBe(
-      "pronto-health-fisio-modelo-ficha-ortopedica-inicial.json"
+      "pronto-health-fisio-modelo-ficha-ortopedica-inicial.pluriform"
     );
     expect(buildAnamnesisTemplateExchangeFileName("base", "Bloco padrão universal")).toBe(
-      "pronto-health-fisio-modelo-bloco-padrao-universal.json"
+      "pronto-health-fisio-modelo-bloco-padrao-universal.pluriform"
+    );
+    expect(buildAnamnesisTemplateExchangeFileName("template", "Ficha ortopédica inicial", "json")).toBe(
+      "pronto-health-fisio-modelo-ficha-ortopedica-inicial.json"
     );
   });
 
@@ -692,7 +718,7 @@ describe("anamnesis forms helpers", () => {
     });
   });
 
-  it("sanitizes, compacts, and exports horizontal_section with horizontalDisplayMode safely", () => {
+  it("sanitizes, compacts, and exports horizontal_section with horizontalDisplayMode safely", async () => {
     const rawSchema = [
       {
         id: "step_section_1",
@@ -744,9 +770,39 @@ describe("anamnesis forms helpers", () => {
       schema: sanitized,
     });
     const serialized = JSON.stringify(payload);
-    const parsed = parseAnamnesisTemplateExchangePayload(serialized);
+    const parsed = await parseAnamnesisTemplateExchangePayload(serialized);
     expect(parsed.template.schema[0].horizontalDisplayMode).toBe("stepper_mobile");
     expect(parsed.template.schema[1].horizontalDisplayMode).toBe("stepper_always");
+  });
+
+  it("prunes default nullish attributes and hydrates them back accurately", () => {
+    const fullSchema: AnamnesisTemplateSchema = [
+      {
+        id: "field_test",
+        label: "Teste Prune",
+        type: "short_text",
+        required: false,
+        showInPatientList: false,
+        groupKey: null,
+        sectionKey: null,
+      },
+    ];
+
+    const pruned = pruneAnamnesisTemplateSchema(fullSchema);
+    expect(pruned[0]).toEqual({
+      id: "field_test",
+      label: "Teste Prune",
+      type: "short_text",
+    });
+    expect((pruned[0] as any).required).toBeUndefined();
+    expect((pruned[0] as any).groupKey).toBeUndefined();
+
+    const hydrated = hydrateAnamnesisTemplateSchema(pruned);
+    expect(hydrated[0].id).toBe("field_test");
+    expect(hydrated[0].label).toBe("Teste Prune");
+    expect(hydrated[0].type).toBe("short_text");
+    expect(hydrated[0].required).toBe(false);
+    expect(hydrated[0].groupKey).toBeNull();
   });
 });
 

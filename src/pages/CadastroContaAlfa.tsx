@@ -567,10 +567,24 @@ const CadastroContaAlfa = () => {
                   </div>
                 )}
 
-                <Button type="submit" className="w-full sm:w-auto" disabled={loading || !canSubmit}>
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {signupCooldown > 0 ? `Aguarde ${signupCooldown}s` : "Criar conta"}
-                </Button>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <Button type="submit" className="w-full sm:w-auto h-11" disabled={loading || !canSubmit}>
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {signupCooldown > 0 ? `Aguarde ${signupCooldown}s` : "Criar conta"}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full sm:w-auto h-11 px-4 py-1 text-center text-xs sm:text-sm font-medium leading-tight text-muted-foreground hover:text-foreground hover:bg-accent/60"
+                    onClick={() => navigate("/auth")}
+                  >
+                    <span>
+                      Já possui uma conta? <br />
+                      <span className="font-semibold text-primary">Entrar</span>
+                    </span>
+                  </Button>
+                </div>
               </form>
             )}
           </CardContent>

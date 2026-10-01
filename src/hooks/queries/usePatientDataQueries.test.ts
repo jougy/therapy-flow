@@ -22,6 +22,9 @@ describe("usePatientDataQueries", () => {
     it("generates correct IndexedDB keys for patient sessions and sync", () => {
       expect(PATIENT_SESSIONS_CACHE_KEY("p-1")).toBe("patient_sessions_p-1");
       expect(PATIENT_SESSIONS_SYNC_KEY("p-1")).toBe("patient_sessions_sync_p-1");
+      // Hardening LGPD: Chaves isoladas por colaborador
+      expect(PATIENT_SESSIONS_CACHE_KEY("p-1", "user-123")).toBe("patient_sessions_user-123_p-1");
+      expect(PATIENT_SESSIONS_SYNC_KEY("p-1", "user-123")).toBe("patient_sessions_sync_user-123_p-1");
     });
 
     it("generates correct keys for groups, agenda, and clinic templates", () => {
@@ -37,6 +40,7 @@ describe("usePatientDataQueries", () => {
     it("builds correct hierarchical query keys", () => {
       expect(PATIENT_QUERY_KEYS.patient("p-1", "c-1")).toEqual(["patient", "p-1", "clinic", "c-1"]);
       expect(PATIENT_QUERY_KEYS.sessions("p-1")).toEqual(["patient-sessions", "p-1"]);
+      expect(PATIENT_QUERY_KEYS.sessions("p-1", "user-123")).toEqual(["patient-sessions", "p-1", "user", "user-123"]);
       expect(PATIENT_QUERY_KEYS.groups("p-1")).toEqual(["patient-groups", "p-1"]);
       expect(PATIENT_QUERY_KEYS.agendaEvents("p-1")).toEqual(["patient-agenda", "p-1"]);
       expect(PATIENT_QUERY_KEYS.groupSuggestions("c-1")).toEqual(["patient-group-suggestions", "c-1"]);

@@ -530,19 +530,57 @@ const ClinicDashboard = () => {
     <main className="mx-auto flex w-full max-w-screen-2xl flex-1 flex-col gap-5 overflow-x-hidden px-4 pb-28 pt-4 sm:p-6 lg:px-8">
       <header className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <Button type="button" variant="ghost" className="-ml-2 mb-2 gap-2" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
-          </Button>
+          <div className="flex items-center justify-between sm:justify-start gap-2">
+            <Button type="button" variant="ghost" size="sm" className="-ml-2 mb-1 gap-1.5 h-8 px-2 text-xs" onClick={() => navigate(-1)}>
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Voltar
+            </Button>
+
+            <div className="flex items-center gap-1.5 sm:hidden">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 rounded-lg"
+                title="Formulários & Anamneses"
+                onClick={() => navigate(`${clinicHomePath}/configuracoes?secao=forms`)}
+              >
+                <ClipboardList className="h-3.5 w-3.5 text-primary" />
+              </Button>
+              {canPrintStats && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg border-primary/40 text-primary"
+                  title="Imprimir"
+                  onClick={() => setIsPrintModalOpen(true)}
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 rounded-lg"
+                title="Atualizar"
+                onClick={() => void invalidateClinicData(clinicId, ["analytics"])}
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Estatísticas completas</h1>
+            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-3xl">Estatísticas completas</h1>
             <ComponentHelpButton helpId="clinic-kpis-block" size="sm" />
           </div>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          <p className="mt-1 max-w-3xl text-xs sm:text-sm text-muted-foreground">
             Analytics operacionais, financeiros e clínicos para acompanhar a saúde da clínica com mais profundidade.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="hidden sm:flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
@@ -607,19 +645,29 @@ const ClinicDashboard = () => {
       {/* 1. BENTO BLOCK: VISÃO GERAL & PROPORÇÕES (Visível em overview) */}
       {isSectionActive("overview", activeSection) && (
         <section data-tutorial="clinic-kpis-block" className="flex flex-col gap-4">
-          {/* 4 Cards Principais */}
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {/* 4 Cards Principais - Carrossel no Mobile com snap / Grid no Desktop */}
+          <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 xl:grid-cols-4">
             {analytics.cards.map((metric) => (
-              <MetricCard key={metric.title} {...metric} />
+              <div key={metric.title} className="w-[78vw] shrink-0 snap-start sm:w-auto">
+                <MetricCard {...metric} />
+              </div>
             ))}
           </div>
 
-          {/* 4 Cards de Volume por Período */}
-          <div className="grid min-w-0 gap-3 grid-cols-2 sm:grid-cols-4">
-            <MetricCard detail="atendimentos hoje" icon={CalendarClock} title="Hoje" value={String(analytics.todaySessions)} />
-            <MetricCard detail="nesta semana" icon={CalendarClock} title="Esta semana" value={String(analytics.weekSessions)} />
-            <MetricCard detail="neste mês" icon={CalendarClock} title="Este mês" value={String(analytics.monthSessions)} />
-            <MetricCard detail="no ano" icon={CalendarClock} title="Neste ano" value={String(analytics.yearSessions)} />
+          {/* 4 Cards de Volume por Período - Carrossel no Mobile com snap / Grid no Desktop */}
+          <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-4 sm:overflow-visible sm:pb-0">
+            <div className="w-[45vw] shrink-0 snap-start sm:w-auto">
+              <MetricCard detail="atendimentos hoje" icon={CalendarClock} title="Hoje" value={String(analytics.todaySessions)} />
+            </div>
+            <div className="w-[45vw] shrink-0 snap-start sm:w-auto">
+              <MetricCard detail="nesta semana" icon={CalendarClock} title="Esta semana" value={String(analytics.weekSessions)} />
+            </div>
+            <div className="w-[45vw] shrink-0 snap-start sm:w-auto">
+              <MetricCard detail="neste mês" icon={CalendarClock} title="Este mês" value={String(analytics.monthSessions)} />
+            </div>
+            <div className="w-[45vw] shrink-0 snap-start sm:w-auto">
+              <MetricCard detail="no ano" icon={CalendarClock} title="Neste ano" value={String(analytics.yearSessions)} />
+            </div>
           </div>
 
           {/* 3 Cards de Proporção em Grid 3 Colunas Perfeitas */}

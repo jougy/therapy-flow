@@ -31,15 +31,15 @@ export const CapacityOverviewCards: React.FC<CapacityOverviewCardsProps> = ({
         </p>
       </div>
 
-      {/* 4 Cards de Capacidade */}
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-        <div className="rounded-xl border bg-card p-4 shadow-sm">
+      {/* 4 Cards de Capacidade - Carrossel no mobile, grid no desktop */}
+      <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 md:grid-cols-4 sm:overflow-visible sm:pb-0">
+        <div className="w-[72vw] max-w-[260px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-card p-4 shadow-sm">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Colaboradores na Equipe
           </p>
           <p className="mt-2 text-2xl font-bold text-foreground">{membersCount}</p>
         </div>
-        <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <div className="w-[72vw] max-w-[260px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-card p-4 shadow-sm">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Acessos Simultâneos Ativos
           </p>
@@ -47,7 +47,7 @@ export const CapacityOverviewCards: React.FC<CapacityOverviewCardsProps> = ({
             {activeSessions.length} / {concurrentCapacity.limit}
           </p>
         </div>
-        <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <div className="w-[72vw] max-w-[260px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-card p-4 shadow-sm">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Acessos Disponíveis Agora
           </p>
@@ -55,7 +55,7 @@ export const CapacityOverviewCards: React.FC<CapacityOverviewCardsProps> = ({
             {concurrentCapacity.available}
           </p>
         </div>
-        <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <div className="w-[72vw] max-w-[260px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-card p-4 shadow-sm">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Conta Principal
           </p>

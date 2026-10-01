@@ -235,15 +235,63 @@ describe("canDeleteSelectedSessionsForRole", () => {
       })
     ).toBe(false);
 
-    expect(
-      canDeleteSelectedSessionsForRole({
-        currentUserId: "intern-user",
-        operationalRole: "estagiario",
-        selectedSessions: [{ ...sessions[0], user_id: "intern-user" }],
-      })
-    ).toBe(false);
+      expect(
+        canDeleteSelectedSessionsForRole({
+          currentUserId: "intern-user",
+          operationalRole: "estagiario",
+          selectedSessions: [{ ...sessions[0], user_id: "intern-user" }],
+        })
+      ).toBe(false);
+    });
+
+    it("allows deletion when canDeleteAll is true regardless of role or creator", () => {
+      expect(
+        canDeleteSelectedSessionsForRole({
+          canDeleteAll: true,
+          currentUserId: "collaborator-1",
+          selectedSessions: [sessions[0], sessions[1]],
+        })
+      ).toBe(true);
+    });
+
+    it("allows deletion of own drafts when canDeleteDraft is true", () => {
+      expect(
+        canDeleteSelectedSessionsForRole({
+          canDeleteDraft: true,
+          canDeleteAll: false,
+          currentUserId: "user-1",
+          selectedSessions: [
+            { ...sessions[0], user_id: "user-1", status: "rascunho" },
+            { ...sessions[1], user_id: "user-1", status: "rascunho" },
+          ],
+        })
+      ).toBe(true);
+    });
+
+    it("denies deletion if sessions are not drafts or belong to others when canDeleteDraft is true", () => {
+      expect(
+        canDeleteSelectedSessionsForRole({
+          canDeleteDraft: true,
+          canDeleteAll: false,
+          currentUserId: "user-1",
+          selectedSessions: [
+            { ...sessions[0], user_id: "user-1", status: "concluido" },
+          ],
+        })
+      ).toBe(false);
+
+      expect(
+        canDeleteSelectedSessionsForRole({
+          canDeleteDraft: true,
+          canDeleteAll: false,
+          currentUserId: "user-1",
+          selectedSessions: [
+            { ...sessions[0], user_id: "other-user", status: "rascunho" },
+          ],
+        })
+      ).toBe(false);
+    });
   });
-});
 
 describe("filterSessionsForOperationalRole", () => {
   it("limits estagiario to sessions created by the current user", () => {

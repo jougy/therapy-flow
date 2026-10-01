@@ -1,10 +1,11 @@
 // src/services/asaasService.ts
 import { supabase } from "@/integrations/supabase/client";
+import type { PlanType } from "@/utils/subscriptionPricing";
 
 export interface ProcessPaymentOptions {
   action: "CREATE" | "UPDATE_SEATS" | "CHANGE_PLAN" | "CANCEL" | "TOKENIZE_TRIAL_CARD";
   clinic_id: string;
-  plan_type: "solo" | "clinic" | "enterprise";
+  plan_type: PlanType;
   billing_cycle?: "annual" | "quarterly" | "monthly";
   billing_type: "PIX" | "CREDIT_CARD" | "BOLETO";
   installment_count?: number;
@@ -202,7 +203,7 @@ export async function checkAsaasPaymentStatus(
 }
 
 export interface CreateClinicWithCardOptions {
-  plan_type: "solo" | "clinic" | "enterprise";
+  plan_type: PlanType;
   billing_cycle?: "annual" | "quarterly" | "monthly";
   cpf_cnpj: string;
   coupon_code?: string;

@@ -8,3 +8,7 @@ export * from "./PlanFAQ";
 export * from "./PlanFAQModal";
 export * from "./PlanTrialExplanationModal";
 export * from "./PlanDetailsModal";
+export * from "./PlanCardTier";
+export * from "./PlanAudienceSelector";
+export * from "./PlanEnterpriseBanner";
+export * from "./PlanComparisonModal";

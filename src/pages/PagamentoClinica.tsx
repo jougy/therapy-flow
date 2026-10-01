@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { processAsaasPayment, checkAsaasPaymentStatus, getPixQrCode } from "@/services/asaasService";
-import { calculatePlanPrice, type CouponDiscount } from "@/utils/subscriptionPricing";
+import { calculatePlanPrice, parsePlanType, type CouponDiscount, type PlanType } from "@/utils/subscriptionPricing";
 import { formatOwnerDocument, validateCPF, validateCNPJ } from "@/lib/owner-document";
 import { CheckoutSummaryCard } from "@/components/checkout/CheckoutSummaryCard";
 import { PixCheckoutTab } from "@/components/checkout/PixCheckoutTab";
@@ -30,7 +30,7 @@ import { toast } from "sonner";
 interface SubscriptionDetails {
   id: string;
   clinic_id: string;
-  plan_type: "solo" | "clinic" | "enterprise";
+  plan_type: PlanType;
   billing_cycle?: "ANNUAL" | "QUARTERLY" | "MONTHLY";
   status: string;
   total_recurring_monthly_price: number;
@@ -60,6 +60,25 @@ interface InvoiceDetails {
   bar_code?: string | null;
 }
 
+interface ClinicDetails {
+  id: string;
+  name: string;
+  cnpj?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  legal_name?: string | null;
+  address?: {
+    cep?: string;
+    number?: string;
+    street?: string;
+    complement?: string;
+    neighborhood?: string;
+    city?: string;
+    state?: string;
+  } | Record<string, unknown> | string | null;
+  [key: string]: unknown;
+}
+
 export default function PagamentoClinica() {
   const { clinicId } = useParams<{ clinicId: string }>();
   const [searchParams] = useSearchParams();
@@ -68,19 +87,36 @@ export default function PagamentoClinica() {
 
   const isTrial = searchParams.get("trial") === "true";
   const cycleParam = (searchParams.get("cycle") || "annual").toLowerCase() as "annual" | "quarterly" | "monthly";
-  const planParam = (searchParams.get("plan") || "solo") as "solo" | "clinic" | "enterprise";
-  const defaultConcurrent = planParam === "enterprise" ? 10 : planParam === "clinic" ? 4 : 1;
+  const rawPlanParam = searchParams.get("plan") || "solo";
+  const planParam: PlanType = parsePlanType(rawPlanParam);
+
+  const defaultConcurrent =
+    planParam === "clinica_top" ? 8 :
+    planParam === "enterprise" ? 10 :
+    planParam === "clinica_medio" || planParam === "clinic" ? 4 :
+    planParam === "clinica_basico" || planParam === "prof_top" ? 2 : 1;
+
   const concurrentParam = parseInt(searchParams.get("concurrent") || String(defaultConcurrent), 10);
   const couponParam = searchParams.get("coupon") || undefined;
-  const extraSeatsCount = planParam === "enterprise"
-    ? Math.max(0, concurrentParam - 10)
-    : planParam === "clinic"
-    ? Math.max(0, concurrentParam - 4)
-    : 0;
+
+  const baseClinicSeats =
+    planParam === "clinica_top" ? 8 :
+    planParam === "enterprise" ? 10 :
+    planParam === "clinica_medio" || planParam === "clinic" ? 4 :
+    planParam === "clinica_basico" ? 2 : 1;
+
+  const isClinicFamily =
+    planParam === "clinica_basico" ||
+    planParam === "clinica_medio" ||
+    planParam === "clinica_top" ||
+    planParam === "clinic" ||
+    planParam === "enterprise";
+
+  const extraSeatsCount = isClinicFamily ? Math.max(0, concurrentParam - baseClinicSeats) : 0;
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(isTrial ? "card" : "pix");
-  const [clinicData, setClinicData] = useState<any>(null);
+  const [clinicData, setClinicData] = useState<ClinicDetails | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionDetails | null>(null);
   const [invoice, setInvoice] = useState<InvoiceDetails | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
@@ -622,7 +658,19 @@ export default function PagamentoClinica() {
     ? "Degustação Grátis (7 dias)"
     : pricing.cycleTitle;
   const planTitle =
-    planParam === "enterprise"
+    planParam === "clinica_top"
+      ? "Plano Clínica Top (8 Acessos Base)"
+      : planParam === "clinica_medio"
+      ? "Plano Clínica Médio (4 Acessos Base)"
+      : planParam === "clinica_basico"
+      ? "Plano Clínica Básico (2 Acessos Base)"
+      : planParam === "prof_top"
+      ? "Plano Profissional Top (Você + Apoio)"
+      : planParam === "prof_medio"
+      ? "Plano Profissional Médio"
+      : planParam === "prof_basico"
+      ? "Plano Profissional Básico"
+      : planParam === "enterprise"
       ? "Plano Enterprise"
       : planParam === "clinic"
       ? "Plano Clínica com Equipe"

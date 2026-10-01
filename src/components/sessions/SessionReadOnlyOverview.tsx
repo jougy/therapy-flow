@@ -198,12 +198,12 @@ export const SessionReadOnlyOverview = ({
                 </Button>
               ) : null}
             </div>
-            <div className="grid gap-3 xl:grid-cols-3">
-              <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] xl:grid xl:grid-cols-3 xl:overflow-visible xl:pb-0">
+              <div className="w-[68vw] max-w-[240px] xl:w-auto xl:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Agendado</p>
                 <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(scheduledStartAt)}</p>
               </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="w-[68vw] max-w-[240px] xl:w-auto xl:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Chegada</p>
                   {arrivalDeltaLabel ? (
@@ -216,7 +216,7 @@ export const SessionReadOnlyOverview = ({
                 </div>
                 <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(patientArrivedAt)}</p>
               </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="w-[68vw] max-w-[240px] xl:w-auto xl:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Início do atendimento</p>
                 <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(sessionDate)}</p>
               </div>
@@ -238,16 +238,16 @@ export const SessionReadOnlyOverview = ({
                 </Button>
               ) : null}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 xl:grid-cols-5 sm:overflow-visible sm:pb-0">
+              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
                 <p className="mt-1 text-sm font-medium">{getPaymentStatusLabel(paymentStatus)}</p>
               </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Data</p>
                 <p className="mt-1 text-sm font-medium">{formatDateLabel(paymentStatusDate)}</p>
               </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Método</p>
                 <p className="mt-1 text-sm font-medium">
                   {getPaymentMethodLabel(
@@ -255,11 +255,11 @@ export const SessionReadOnlyOverview = ({
                   )}
                 </p>
               </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Parcelas</p>
                 <p className="mt-1 text-sm font-medium">{getPaymentInstallmentLabel(paymentInstallments)}</p>
               </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Consulta</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium">
                   {currentHasPaymentAdjustment ? (
@@ -279,7 +279,7 @@ export const SessionReadOnlyOverview = ({
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{paymentAdjustmentReason}</p>
                 ) : null}
               </div>
-              <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Pago</p>
                 <p className="mt-1 text-sm font-medium">{formatMoneyCents(amountPaidCents)}</p>
               </div>

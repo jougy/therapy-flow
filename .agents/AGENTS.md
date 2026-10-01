@@ -28,6 +28,11 @@ Este projeto utiliza uma Vault do Obsidian local como extensão exclusiva de mem
 - **Compliance Clínico e Soft Delete:** Prontuários e pacientes usam `deleted_at timestamptz` e `ON DELETE RESTRICT` (retenção legal obrigatória de 20 anos CFM 1.821 / LGPD). Proibido `ON DELETE CASCADE` em `sessions`.
 - **Proibido Overload de RPC:** Nunca crie duas funções com mesmo nome e parâmetros diferentes no schema `public` para evitar erro `PGRST203` no PostgREST.
 - Antes de alterar permissões, logins, Row Level Security (RLS) ou sessões, consulte o `Plano de seguranca - hub` na Vault.
+- **Governança Estrita de Papéis Operacionais e RBAC:**
+  - **Proibido Hardcode de Papéis na UI:** É expressamente proibido checar papéis manualmente com strings nas telas (ex: `operationalRole === 'admin' || operationalRole === 'owner'`). Toda e qualquer restrição visual de acesso deve utilizar a função soberana `can(capability)`.
+  - **SSOT Obrigatório:** Consulte obrigatoriamente a nota `[[Guia Arquitetural de Papeis Operacionais, Hierarquias e RBAC]]` na Vault antes de alterar ou criar regras de acesso.
+  - **Papéis Dinâmicos:** O sistema suporta papéis customizados via `role_key text` em `clinic_memberships` e convites; avaliações de permissão devem sempre utilizar `effectiveRoleKey = membership.role_key || membership.operational_role`.
+  - **Sincronismo RLS com Capabilities:** Políticas RLS no Postgres devem testar a capability exata (ex: `patients.delete` para exclusão de paciente, `session.delete_draft` para rascunhos de atendimento). Proibido checar capabilities divergentes.
 
 ## 5. Legenda Visual de Mapeamento
 Quando o usuário mandar capturas de tela (screenshots) ou vídeos editados, siga as instruções de cor estritas:

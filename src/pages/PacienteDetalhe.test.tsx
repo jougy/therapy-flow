@@ -591,7 +591,7 @@ describe("PacienteDetalhe", () => {
 
     await waitFor(() => {
       expect(supabaseMocks.updateCalls).toContainEqual({
-        filters: [{ column: "id", value: "agenda-existing-1" }],
+        filters: expect.arrayContaining([{ column: "id", value: "agenda-existing-1" }]),
         payload: { status: "cancelado" },
         table: "agenda_events",
       });

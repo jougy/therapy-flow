@@ -27,6 +27,7 @@ import {
   getAgendaEventDateTime,
   isAgendaEventDateTimeInPast,
   notifyAgendaEventsUpdated,
+  formatSupabaseErrorMessage,
   resolvePatientSelection,
   type AgendaEventStatus,
   type AgendaEventType,
@@ -144,12 +145,16 @@ const AgendaWidget = ({
   const { can, clinic, clinicId, user } = useAuth();
   const isDesignLab = location.pathname.startsWith("/designlab");
   const effectiveClinicKey = clinicKey || clinic?.route_key;
-  const canExpand = isDesignLab && (showExpandButton ?? true);
-  const fullAgendaPath = effectiveClinicKey
-    ? `/designlab/clinica/${effectiveClinicKey}/agenda`
-    : "/designlab/agenda";
   const fixedPatientId = fixedPatient?.id ?? null;
   const fixedPatientName = fixedPatient?.name ?? null;
+  const canExpand = (showExpandButton ?? true) && !fixedPatientId;
+  const fullAgendaPath = effectiveClinicKey
+    ? isDesignLab
+      ? `/designlab/clinica/${effectiveClinicKey}/agenda`
+      : `/clinica/${effectiveClinicKey}/agenda`
+    : isDesignLab
+      ? "/designlab/agenda"
+      : "/espacopessoal";
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [patients, setPatients] = useState<AgendaPatientOption[]>([]);
@@ -283,15 +288,15 @@ const AgendaWidget = ({
     [newTime, selectedDate]
   );
   const isNewEventDateTimePast = useMemo(
-    () => (newEventDateTime ? isAgendaEventDateTimeInPast(newEventDateTime) : false),
+    () => (newEventDateTime ? isAgendaEventDateTimeInPast(newEventDateTime, undefined, 15) : false),
     [newEventDateTime]
   );
   const selectedEventDateTime = useMemo(
-    () => (selectedEventDate && selectedEventTime ? new Date(`${selectedEventDate}T${selectedEventTime || "00:00"}:00`) : null),
+    () => (selectedEventDate && selectedEventTime ? getAgendaEventDateTime(selectedEventDate, selectedEventTime || "00:00") : null),
     [selectedEventDate, selectedEventTime]
   );
   const isSelectedEventDateTimePast = useMemo(
-    () => (selectedEventDateTime ? isAgendaEventDateTimeInPast(selectedEventDateTime) : false),
+    () => (selectedEventDateTime ? isAgendaEventDateTimeInPast(selectedEventDateTime, undefined, 15) : false),
     [selectedEventDateTime]
   );
   const filteredPatients = useMemo(() => {
@@ -354,15 +359,18 @@ const AgendaWidget = ({
     setPatientComboboxOpen(false);
   };
 
+  const effectiveClinicId = clinicId || clinic?.id || null;
+
   const handleAdd = async () => {
     if (!user) return;
 
     try {
-      assertAgendaEventDateTimeIsFuture(getAgendaEventDateTime(selectedDate, newTime));
+      assertAgendaEventDateTimeIsFuture(getAgendaEventDateTime(selectedDate, newTime), undefined, 15);
       setSaving(true);
       const payload = buildAgendaEventPayload({
-        clinicId,
+        clinicId: effectiveClinicId,
         eventType,
+        graceMinutes: 15,
         selectedDate,
         selectedPatient: fixedPatientId && fixedPatientName ? { id: fixedPatientId, name: fixedPatientName } : selectedPatient,
         time: newTime,
@@ -370,35 +378,49 @@ const AgendaWidget = ({
         userId: user.id,
       });
 
-      const { data, error } = await supabase
+      let insertedResult = await supabase
         .from("agenda_events")
         .insert(payload)
         .select("id, event_type, patient_id, status, title, scheduled_for")
         .single();
 
-      if (error) {
-        throw error;
+      if (insertedResult.error && (insertedResult.error.code === "42703" || insertedResult.error.message.includes("duration_minutes"))) {
+        const fallbackPayload = { ...payload };
+        delete (fallbackPayload as any).duration_minutes;
+        insertedResult = await supabase
+          .from("agenda_events")
+          .insert(fallbackPayload)
+          .select("id, event_type, patient_id, status, title, scheduled_for")
+          .single();
       }
 
-      setEvents((previous) => [
-        ...previous,
-        {
-          id: data.id,
-          eventType: data.event_type as AgendaEventType,
-          patientId: data.patient_id,
-          scheduledFor: data.scheduled_for,
-          status: normalizeAgendaStatus(data.status),
-          title: data.title,
-          date: parseISO(data.scheduled_for),
-          time: format(parseISO(data.scheduled_for), "HH:mm"),
-        },
-      ]);
+      if (insertedResult.error) {
+        throw insertedResult.error;
+      }
+
+      const data = insertedResult.data;
+
+      if (data) {
+        setEvents((previous) => [
+          ...previous,
+          {
+            id: data.id,
+            eventType: data.event_type as AgendaEventType,
+            patientId: data.patient_id,
+            scheduledFor: data.scheduled_for,
+            status: normalizeAgendaStatus(data.status),
+            title: data.title,
+            date: parseISO(data.scheduled_for),
+            time: format(parseISO(data.scheduled_for), "HH:mm"),
+          },
+        ]);
+      }
 
       notifyAgendaEventsUpdated();
       toast({ title: "Agendamento confirmado" });
       resetDialog();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel salvar o agendamento.";
+      const message = formatSupabaseErrorMessage(error, "Não foi possível salvar o agendamento.");
       toast({ title: "Erro ao salvar agendamento", description: message, variant: "destructive" });
     } finally {
       setSaving(false);
@@ -431,7 +453,7 @@ const AgendaWidget = ({
         }
 
         const deleteQuery = supabase.from("agenda_events").delete().eq("id", selectedEvent.id);
-        const { error } = clinicId ? await deleteQuery.eq("clinic_id", clinicId) : await deleteQuery;
+        const { error } = effectiveClinicId ? await deleteQuery.eq("clinic_id", effectiveClinicId) : await deleteQuery;
 
         if (error) {
           throw error;
@@ -445,12 +467,14 @@ const AgendaWidget = ({
       }
 
       const previousStatus = selectedEvent.status;
-      const { data, error } = await supabase
+      const updateQuery = supabase
         .from("agenda_events")
         .update({ status: selectedStatusAction })
-        .eq("id", selectedEvent.id)
-        .select("id, event_type, patient_id, status, title, scheduled_for")
-        .single();
+        .eq("id", selectedEvent.id);
+
+      const { data, error } = effectiveClinicId
+        ? await updateQuery.eq("clinic_id", effectiveClinicId).select("id, event_type, patient_id, status, title, scheduled_for").single()
+        : await updateQuery.select("id, event_type, patient_id, status, title, scheduled_for").single();
 
       if (error) {
         throw error;
@@ -485,7 +509,7 @@ const AgendaWidget = ({
         const { error: sessionError } = await supabase
           .from("sessions")
           .insert({
-            clinic_id: clinicId,
+            clinic_id: effectiveClinicId,
             group_id: canceledGroup?.id ?? null,
             notes: "Atendimento cancelado a partir da agenda da homepage.",
             patient_id: selectedEvent.patientId,
@@ -503,7 +527,7 @@ const AgendaWidget = ({
       notifyAgendaEventsUpdated();
       toast({ title: "Status do agendamento atualizado" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel atualizar o agendamento.";
+      const message = formatSupabaseErrorMessage(error, "Não foi possível atualizar o agendamento.");
       toast({ title: "Erro ao atualizar agendamento", description: message, variant: "destructive" });
     } finally {
       setSavingSelectedEvent(false);
@@ -517,14 +541,16 @@ const AgendaWidget = ({
 
     try {
       setSavingSelectedEvent(true);
-      const nextDate = new Date(`${selectedEventDate}T${selectedEventTime || "00:00"}:00`);
-      assertAgendaEventDateTimeIsFuture(nextDate);
-      const { data, error } = await supabase
+      const nextDate = getAgendaEventDateTime(selectedEventDate, selectedEventTime || "00:00");
+      assertAgendaEventDateTimeIsFuture(nextDate, undefined, 15);
+      const updateQuery = supabase
         .from("agenda_events")
         .update({ scheduled_for: nextDate.toISOString() })
-        .eq("id", selectedEvent.id)
-        .select("id, event_type, patient_id, status, title, scheduled_for")
-        .single();
+        .eq("id", selectedEvent.id);
+
+      const { data, error } = effectiveClinicId
+        ? await updateQuery.eq("clinic_id", effectiveClinicId).select("id, event_type, patient_id, status, title, scheduled_for").single()
+        : await updateQuery.select("id, event_type, patient_id, status, title, scheduled_for").single();
 
       if (error) {
         throw error;
@@ -550,7 +576,7 @@ const AgendaWidget = ({
       notifyAgendaEventsUpdated();
       toast({ title: "Data e horário atualizados" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Nao foi possivel trocar data/horario.";
+      const message = formatSupabaseErrorMessage(error, "Não foi possível trocar data/horário.");
       toast({ title: "Erro ao trocar data/horário", description: message, variant: "destructive" });
     } finally {
       setSavingSelectedEvent(false);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { Activity, Award, Building2, CalendarDays, CheckCircle2, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, PlusCircle, RefreshCw, Settings, ShieldCheck, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
@@ -25,6 +25,8 @@ import ProfileAccountButton from "@/components/ProfileAccountButton";
 import { PlatformReleaseNotesManager } from "@/components/PlatformReleaseNotesManager";
 import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
 import { PersonalClinicalPortfolioTab } from "@/components/personal/PersonalClinicalPortfolioTab";
+import { PersonalWelcomeModal } from "@/components/personal/PersonalWelcomeModal";
+import { EmptyClinicsCallout } from "@/components/personal/EmptyClinicsCallout";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
@@ -641,6 +643,10 @@ const SelecionarClinica = () => {
     setLeavingClinicId(null);
     await refreshAuthState();
   };
+
+  const handleCreateClinicFromEmpty = useCallback(() => {
+    navigate("/onboarding-clinica?mode=create");
+  }, [navigate]);
 
   const updateMobileDockTooltipForButton = (button: HTMLButtonElement, title: string) => {
     const rect = button.getBoundingClientRect();
@@ -1293,13 +1299,10 @@ const SelecionarClinica = () => {
             </CardHeader>
             <CardContent className="px-4 sm:px-6">
               {accessibleClinics.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-6 text-center">
-                  <UserRound className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                  <p className="font-medium text-foreground">Nenhuma clínica ativa encontrada</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Seu acesso ainda precisa ser liberado pelo administrador da clínica.
-                  </p>
-                </div>
+                <EmptyClinicsCallout
+                  userEmail={user?.email || profile?.email}
+                  onCreateClinic={handleCreateClinicFromEmpty}
+                />
               ) : (
                 <div className="grid gap-3">
                   {accessibleClinics.map((clinicOption, index) => {
@@ -1440,44 +1443,36 @@ const SelecionarClinica = () => {
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card px-4 py-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
-          <div data-tutorial="personal-welcome" className="flex items-center gap-3">
+          <div data-tutorial="personal-welcome" className="flex items-center gap-2 sm:gap-3 min-w-0">
             <img
               src="/branding/logo/pluri_health_icon_gradient.svg"
               alt="Pluri-Health"
-              className="h-9 w-9 shrink-0 drop-shadow-xs"
+              className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 drop-shadow-xs"
             />
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pluri-Health</p>
-              <h1 className="text-xl font-semibold tracking-tight text-foreground">Espaço pessoal</h1>
+            <div className="min-w-0">
+              <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">Pluri-Health</p>
+              <h1 className="text-base sm:text-xl font-semibold tracking-tight text-foreground whitespace-nowrap">Espaço pessoal</h1>
             </div>
-            <ComponentHelpButton helpId="personal-welcome-block" size="sm" />
+            <div className="hidden xs:block">
+              <ComponentHelpButton helpId="personal-welcome-block" size="sm" />
+            </div>
           </div>
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {isPortfolioEnabled && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="header-portfolio-btn"
-                  className="hidden sm:inline-flex items-center gap-1.5 border-primary/30 text-xs font-medium hover:border-primary hover:bg-primary/5"
-                  onClick={() => setActiveSection("portfolio")}
-                >
-                  <Award className="h-4 w-4 text-primary" />
-                  <span>Meu Portfólio</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  data-testid="header-portfolio-mobile-btn"
-                  className="sm:hidden h-8 w-8 border-primary/30 text-primary hover:border-primary hover:bg-primary/5 shrink-0"
-                  onClick={() => setActiveSection("portfolio")}
-                  aria-label="Abrir Meu Portfólio Clínico"
-                >
-                  <Award className="h-4 w-4" />
-                </Button>
-              </>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="header-portfolio-btn"
+                className="hidden md:inline-flex items-center gap-1.5 border-primary/30 text-xs font-medium hover:border-primary hover:bg-primary/5"
+                onClick={() => setActiveSection("portfolio")}
+              >
+                <Award className="h-4 w-4 text-primary" />
+                <span>Meu Portfólio</span>
+              </Button>
             )}
-            <TutorialTriggerButton />
+            <div className="hidden sm:block">
+              <TutorialTriggerButton />
+            </div>
             <PersonalNotificationsButton />
             <div data-tutorial="personal-account-btn">
               <ProfileAccountButton
@@ -1490,8 +1485,8 @@ const SelecionarClinica = () => {
             </div>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" className="shrink-0">
-                  <LogOut className="mr-0 h-4 w-4 sm:mr-2" />
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 sm:w-auto sm:px-3">
+                  <LogOut className="h-4 w-4 sm:mr-2" />
                   <span className="hidden sm:inline">Sair</span>
                 </Button>
               </AlertDialogTrigger>
@@ -1528,6 +1523,7 @@ const SelecionarClinica = () => {
         </div>
       </main>
       {personalMobileNav}
+      <PersonalWelcomeModal userId={user?.id} userName={displayName} />
       <TermsUpdatePromptModal />
     </div>
   );

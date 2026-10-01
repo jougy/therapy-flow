@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { calculatePlanPrice, BillingCycle, PlanPriceCalculation } from "@/utils/subscriptionPricing";
+import { calculatePlanPrice, BillingCycle, PlanPriceCalculation, PlanType } from "@/utils/subscriptionPricing";
 import { CouponValidationResult } from "../components/PlanCouponInput";
 import { toast } from "sonner";
 
@@ -12,6 +12,8 @@ export interface UsePlanosStateReturn {
   existingClinicName: string | undefined;
   hasActiveSubscription: boolean;
   isFreeTrialEnabled: boolean;
+  audience: "prof" | "clinic";
+  setAudience: (aud: "prof" | "clinic") => void;
   selectedCycle: BillingCycle | "free";
   setSelectedCycle: (cycle: BillingCycle | "free") => void;
   isFreeCycle: boolean;
@@ -28,10 +30,18 @@ export interface UsePlanosStateReturn {
   couponError: string | null;
   handleValidateCoupon: () => Promise<void>;
   handleRemoveCoupon: () => void;
+  // Preços dos novos 6 planos
+  profBasicoPricing: PlanPriceCalculation;
+  profMedioPricing: PlanPriceCalculation;
+  profTopPricing: PlanPriceCalculation;
+  clinicaBasicoPricing: PlanPriceCalculation;
+  clinicaMedioPricing: PlanPriceCalculation;
+  clinicaTopPricing: PlanPriceCalculation;
+  // Aliases legados para compatibilidade
   soloPricing: PlanPriceCalculation;
   clinicPricing: PlanPriceCalculation;
   enterprisePricing: PlanPriceCalculation;
-  handleSelectPlan: (planId: "solo" | "clinic" | "enterprise") => Promise<void>;
+  handleSelectPlan: (planId: PlanType) => Promise<void>;
   isTermsModalOpen: boolean;
   setIsTermsModalOpen: (open: boolean) => void;
   loading: boolean;
@@ -60,6 +70,9 @@ export function usePlanosState(): UsePlanosStateReturn {
   const existingClinicId = searchParams.get("clinicId") || activeClinicId || clinic?.id;
   const existingClinicName = clinic?.name;
   const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
+
+  // Perfil Selecionado: Para Profissional ('prof') vs Para Clínica ('clinic')
+  const [audience, setAudience] = useState<"prof" | "clinic">("prof");
 
   // Ciclo Selecionado: Degustação Grátis (Free), Mensal, Trimestral ou Anual
   const [selectedCycle, setSelectedCycle] = useState<BillingCycle | "free">("annual");
@@ -122,7 +135,7 @@ export function usePlanosState(): UsePlanosStateReturn {
     try {
       const { data, error } = await supabase.rpc("validate_subscription_coupon", {
         _code: couponInput.trim().toUpperCase(),
-        _plan_type: selectedPlanId || "clinic",
+        _plan_type: selectedPlanId || (audience === "clinic" ? "clinica_medio" : "prof_medio"),
         _clinic_id: existingClinicId || null,
         _billing_cycle: selectedCycle !== "free" ? selectedCycle : null,
       });
@@ -141,7 +154,7 @@ export function usePlanosState(): UsePlanosStateReturn {
     } finally {
       setValidatingCoupon(false);
     }
-  }, [couponInput, selectedPlanId]);
+  }, [couponInput, selectedPlanId, audience, existingClinicId, selectedCycle]);
 
   const handleRemoveCoupon = useCallback(() => {
     setAppliedCoupon(null);
@@ -151,35 +164,62 @@ export function usePlanosState(): UsePlanosStateReturn {
 
   const isFreeCycle = selectedCycle === "free";
 
-  // Cálculos de precificação memoizados (Complexidade O(1))
+  // Cálculos de precificação memoizados para os 6 novos planos (Complexidade O(1))
   const targetBillingCycle = isFreeCycle ? "annual" : selectedCycle;
-  const soloPricing = useMemo(() => calculatePlanPrice({
-    planType: "solo",
+
+  // Planos Profissionais
+  const profBasicoPricing = useMemo(() => calculatePlanPrice({
+    planType: "prof_basico",
     billingCycle: targetBillingCycle,
     coupon: appliedCoupon,
   }), [targetBillingCycle, appliedCoupon]);
 
-  const clinicPricing = useMemo(() => calculatePlanPrice({
-    planType: "clinic",
+  const profMedioPricing = useMemo(() => calculatePlanPrice({
+    planType: "prof_medio",
+    billingCycle: targetBillingCycle,
+    coupon: appliedCoupon,
+  }), [targetBillingCycle, appliedCoupon]);
+
+  const profTopPricing = useMemo(() => calculatePlanPrice({
+    planType: "prof_top",
+    billingCycle: targetBillingCycle,
+    coupon: appliedCoupon,
+  }), [targetBillingCycle, appliedCoupon]);
+
+  // Planos Clínicas
+  const clinicaBasicoPricing = useMemo(() => calculatePlanPrice({
+    planType: "clinica_basico",
     billingCycle: targetBillingCycle,
     additionalSeats: extraConcurrent,
     coupon: appliedCoupon,
   }), [targetBillingCycle, extraConcurrent, appliedCoupon]);
 
-  const enterprisePricing = useMemo(() => calculatePlanPrice({
-    planType: "enterprise",
+  const clinicaMedioPricing = useMemo(() => calculatePlanPrice({
+    planType: "clinica_medio",
     billingCycle: targetBillingCycle,
-    additionalSeats: extraConcurrentEnterprise,
+    additionalSeats: extraConcurrent,
     coupon: appliedCoupon,
-  }), [targetBillingCycle, extraConcurrentEnterprise, appliedCoupon]);
+  }), [targetBillingCycle, extraConcurrent, appliedCoupon]);
+
+  const clinicaTopPricing = useMemo(() => calculatePlanPrice({
+    planType: "clinica_top",
+    billingCycle: targetBillingCycle,
+    additionalSeats: extraConcurrent,
+    coupon: appliedCoupon,
+  }), [targetBillingCycle, extraConcurrent, appliedCoupon]);
+
+  // Aliases Legados para retrocompatibilidade
+  const soloPricing = profMedioPricing;
+  const clinicPricing = clinicaMedioPricing;
+  const enterprisePricing = clinicaTopPricing;
 
   // Seleção e ativação de plano (Trial ou Checkout)
-  const handleSelectPlan = useCallback(async (planId: "solo" | "clinic" | "enterprise") => {
+  const handleSelectPlan = useCallback(async (planId: PlanType) => {
     setSelectedPlanId(planId);
     if (activatingTrial) return;
 
     if (isFreeCycle) {
-      const trialPlan = "clinic";
+      const trialPlan = "clinica_medio";
       if (!existingClinicId) {
         navigate(`/onboarding-clinica?plan=${trialPlan}&cycle=annual&trial=true`);
         return;
@@ -223,25 +263,43 @@ export function usePlanosState(): UsePlanosStateReturn {
       return;
     }
 
-    const targetSeats = planId === "clinic" ? 4 + extraConcurrent : planId === "enterprise" ? 10 + extraConcurrentEnterprise : 1;
+    // Cálculo dinâmico de assentos base do plano selecionado
+    const baseSeats =
+      planId === "clinica_top" ? 8 :
+      planId === "clinica_medio" ? 4 :
+      planId === "clinica_basico" ? 2 :
+      planId === "prof_top" ? 2 :
+      planId === "clinic" ? 4 :
+      planId === "enterprise" ? 10 : 1;
+
+    const isClinicPlan =
+      planId === "clinica_basico" ||
+      planId === "clinica_medio" ||
+      planId === "clinica_top" ||
+      planId === "clinic" ||
+      planId === "enterprise";
+
+    const targetSeats = isClinicPlan ? baseSeats + extraConcurrent : baseSeats;
     const couponQuery = appliedCoupon?.code ? `&coupon=${appliedCoupon.code}` : "";
 
     if (existingClinicId) {
-      const seatsQuery = planId !== "solo" ? `&concurrent=${targetSeats}` : "";
+      const seatsQuery = isClinicPlan ? `&concurrent=${targetSeats}` : "";
       navigate(`/pagamento/${existingClinicId}?plan=${planId}&cycle=${selectedCycle}${seatsQuery}${couponQuery}`);
       return;
     }
 
-    const spacesQuery = planId === "clinic" ? "&spaces=30" : planId === "enterprise" ? "&spaces=100" : "";
-    const seatsQuery = planId !== "solo" ? `&concurrent=${targetSeats}` : "";
+    const spacesQuery = isClinicPlan ? "&spaces=30" : "";
+    const seatsQuery = isClinicPlan ? `&concurrent=${targetSeats}` : "";
     navigate(`/onboarding-clinica?plan=${planId}&cycle=${selectedCycle}${seatsQuery}${spacesQuery}${couponQuery}`);
-  }, [activatingTrial, isFreeCycle, existingClinicId, extraConcurrent, extraConcurrentEnterprise, appliedCoupon, selectedCycle, navigate, refreshAuthState, selectClinic]);
+  }, [activatingTrial, isFreeCycle, existingClinicId, extraConcurrent, appliedCoupon, selectedCycle, navigate, refreshAuthState, selectClinic]);
 
   return {
     existingClinicId,
     existingClinicName,
     hasActiveSubscription,
     isFreeTrialEnabled,
+    audience,
+    setAudience,
     selectedCycle,
     setSelectedCycle,
     isFreeCycle,
@@ -258,6 +316,12 @@ export function usePlanosState(): UsePlanosStateReturn {
     couponError,
     handleValidateCoupon,
     handleRemoveCoupon,
+    profBasicoPricing,
+    profMedioPricing,
+    profTopPricing,
+    clinicaBasicoPricing,
+    clinicaMedioPricing,
+    clinicaTopPricing,
     soloPricing,
     clinicPricing,
     enterprisePricing,

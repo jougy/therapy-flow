@@ -646,7 +646,7 @@ export function usePrefetchPatientDetail(clinicId?: string | null) {
               .from("agenda_events")
               .select("*")
               .eq("patient_id", patientId)
-              .order("event_date", { ascending: false });
+              .order("scheduled_for", { ascending: false });
 
             if (error) throw error;
             const records = data ?? [];

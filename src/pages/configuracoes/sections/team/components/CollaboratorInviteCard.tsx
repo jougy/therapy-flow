@@ -11,6 +11,7 @@ import type { ClinicOperationalRoleDefinition } from "../types";
 
 export interface CollaboratorInviteCardProps {
   canInviteCollaborators: boolean;
+  inviteDisabledReason?: string;
   clinicName?: string;
   sendingInvite: boolean;
   lastGeneratedInviteUrl: string;
@@ -21,6 +22,8 @@ export interface CollaboratorInviteCardProps {
     role: string;
     jobTitle: string;
     specialty: string;
+    roleKey?: string;
+    baseOperationalRole?: string;
   }) => Promise<void>;
   onCopyLink: (url: string, email: string) => Promise<void>;
 }
@@ -51,6 +54,7 @@ export const formatDisplayInviteUrl = (url: string): string => {
 
 export const CollaboratorInviteCard: React.FC<CollaboratorInviteCardProps> = ({
   canInviteCollaborators,
+  inviteDisabledReason,
   clinicName,
   sendingInvite,
   lastGeneratedInviteUrl,
@@ -66,9 +70,15 @@ export const CollaboratorInviteCard: React.FC<CollaboratorInviteCardProps> = ({
 
   const handleSubmit = async () => {
     if (!inviteEmail.trim() || sendingInvite) return;
+    const selectedRoleDef = assignableRoleDefinitions?.find((r) => r.role_key === inviteRole);
+    const roleKey = selectedRoleDef?.role_key || inviteRole;
+    const baseOperationalRole = selectedRoleDef?.base_operational_role || inviteRole;
+
     await onSendInvite({
       email: inviteEmail.trim(),
-      role: inviteRole,
+      role: baseOperationalRole,
+      roleKey,
+      baseOperationalRole,
       jobTitle: inviteJobTitle.trim(),
       specialty: inviteSpecialty.trim(),
     });
@@ -212,7 +222,7 @@ export const CollaboratorInviteCard: React.FC<CollaboratorInviteCardProps> = ({
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
           {!canInviteCollaborators && (
             <p className="text-xs text-amber-600 dark:text-amber-400">
-              Seu papel atual não possui permissão para convidar novos colaboradores.
+              {inviteDisabledReason || "Seu papel atual não possui permissão para convidar novos colaboradores."}
             </p>
           )}
           <div className="flex justify-end w-full sm:w-auto ml-auto">

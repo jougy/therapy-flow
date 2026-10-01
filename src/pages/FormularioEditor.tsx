@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { BookOpen, Loader2, Save, Upload } from "lucide-react";
+import { BookOpen, Download, Loader2, Save, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -26,6 +26,10 @@ const FormularioEditor = () => {
     );
   }
 
+  if (!state.canManageForms) {
+    return null;
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -37,7 +41,7 @@ const FormularioEditor = () => {
       <input
         ref={state.templateImportInputRef}
         type="file"
-        accept="application/json,.json"
+        accept=".pluriform,.json,application/json,application/x-pluriform"
         className="sr-only"
         onChange={(event) => void state.handleImportDraftModel(event)}
       />
@@ -107,12 +111,21 @@ const FormularioEditor = () => {
                 Importar arquivo
               </Button>
               <Button
+                type="button"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={() => void state.handleExportDraftModel()}
+              >
+                <Download className="h-3.5 w-3.5 mr-2" />
+                Exportar (.pluriform)
+              </Button>
+              <Button
                 asChild
                 type="button"
                 variant="ghost"
                 className="w-full text-xs text-muted-foreground hover:text-foreground"
               >
-                <Link to={`${state.clinicBasePath}/configuracoes/formularios/biblioteca`}>
+                <Link to={state.isPlatformMode ? "/platform/formularios" : `${state.clinicBasePath}/configuracoes/formularios/biblioteca`}>
                   <BookOpen className="h-3.5 w-3.5 mr-2 text-primary" />
                   Biblioteca de Modelos
                 </Link>

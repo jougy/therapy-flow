@@ -18,7 +18,9 @@ import {
   Plus,
   Trash2,
   Pencil,
-  AlertTriangle
+  AlertTriangle,
+  ExternalLink,
+  FileCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,21 +28,37 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PlatformCouponsManager, type SubscriptionCouponItem } from "@/components/platform/PlatformCouponsManager";
+import { planLabels, getPlanDefaultLimits, planOptionGroups } from "@/components/platform/platform-api";
+import type { PlanType } from "@/utils/subscriptionPricing";
 
 export type { SubscriptionCouponItem };
+
+interface ClinicSubscriptionRawRow {
+  id: string;
+  clinic_id: string;
+  plan_type: PlanType | string;
+  status: string;
+  subaccount_limit: number | null;
+  concurrent_access_limit: number | null;
+  coupon_code?: string | null;
+  total_recurring_monthly_price?: number;
+  override_reason?: string | null;
+  updated_at: string;
+  clinics: { name: string } | null;
+}
 
 interface ClinicSubscriptionItem {
   id: string;
   clinic_id: string;
   clinic_name: string;
-  plan_type: "solo" | "clinic";
+  plan_type: PlanType | string;
   status: string;
   subaccount_limit: number;
   concurrent_access_limit: number;
@@ -48,6 +66,25 @@ interface ClinicSubscriptionItem {
   total_recurring_monthly_price?: number;
   override_reason?: string | null;
   updated_at: string;
+}
+
+export interface PlatformInvoiceItem {
+  id: string;
+  clinic_id: string;
+  clinic_name: string;
+  asaas_payment_id: string;
+  status: string;
+  value: number;
+  net_value: number | null;
+  billing_type: string | null;
+  due_date: string;
+  payment_date: string | null;
+  invoice_url: string | null;
+  bank_slip_url: string | null;
+  pix_qr_code: string | null;
+  nfe_number: string | null;
+  nfe_pdf_url: string | null;
+  created_at: string;
 }
 
 interface WebhookLogItem {
@@ -73,11 +110,16 @@ export function PlatformBillingMaster() {
   const [selectedSub, setSelectedSub] = useState<ClinicSubscriptionItem | null>(null);
 
   // Form Override State
-  const [overridePlan, setOverridePlan] = useState<"solo" | "clinic">("clinic");
+  const [overridePlan, setOverridePlan] = useState<string>("clinica_medio");
   const [overrideStatus, setOverrideStatus] = useState("active");
   const [overrideSubaccounts, setOverrideSubaccounts] = useState(30);
   const [overrideConcurrent, setOverrideConcurrent] = useState(2);
   const [overrideReason, setReason] = useState("");
+
+  // Invoices State
+  const [invoices, setInvoices] = useState<PlatformInvoiceItem[]>([]);
+  const [invoiceQuery, setInvoiceQuery] = useState("");
+  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "paid" | "pending">("all");
 
   // Webhooks State
   const [webhookLogs, setWebhookLogs] = useState<WebhookLogItem[]>([]);
@@ -100,14 +142,14 @@ export function PlatformBillingMaster() {
           total_recurring_monthly_price,
           override_reason,
           updated_at,
-          clinics!inner ( name )
+          clinics ( name )
         `)
         .order("updated_at", { ascending: false });
 
       if (error) throw error;
 
       if (data) {
-        const formatted = data.map((item: any) => ({
+        const formatted = (data as unknown as ClinicSubscriptionRawRow[]).map((item) => ({
           id: item.id,
           clinic_id: item.clinic_id,
           clinic_name: item.clinics?.name || "Clínica Desconhecida",
@@ -130,6 +172,76 @@ export function PlatformBillingMaster() {
     }
   }, []);
 
+  const fetchInvoices = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("subscription_invoices")
+        .select(`
+          id,
+          clinic_id,
+          asaas_payment_id,
+          status,
+          value,
+          net_value,
+          billing_type,
+          due_date,
+          payment_date,
+          invoice_url,
+          bank_slip_url,
+          pix_qr_code,
+          nfe_number,
+          nfe_pdf_url,
+          created_at,
+          clinics ( name )
+        `)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+
+      if (data) {
+        const formatted = (data as unknown as Array<{
+          id: string;
+          clinic_id: string;
+          asaas_payment_id: string;
+          status: string;
+          value: number;
+          net_value: number | null;
+          billing_type: string | null;
+          due_date: string;
+          payment_date: string | null;
+          invoice_url: string | null;
+          bank_slip_url: string | null;
+          pix_qr_code: string | null;
+          nfe_number: string | null;
+          nfe_pdf_url: string | null;
+          created_at: string;
+          clinics: { name: string } | null;
+        }>).map((item) => ({
+          id: item.id,
+          clinic_id: item.clinic_id,
+          clinic_name: item.clinics?.name || "Clínica Desconhecida",
+          asaas_payment_id: item.asaas_payment_id,
+          status: item.status,
+          value: Number(item.value || 0),
+          net_value: item.net_value ? Number(item.net_value) : null,
+          billing_type: item.billing_type,
+          due_date: item.due_date,
+          payment_date: item.payment_date,
+          invoice_url: item.invoice_url,
+          bank_slip_url: item.bank_slip_url,
+          pix_qr_code: item.pix_qr_code,
+          nfe_number: item.nfe_number,
+          nfe_pdf_url: item.nfe_pdf_url,
+          created_at: item.created_at,
+        }));
+        setInvoices(formatted);
+      }
+    } catch (err) {
+      console.error("Erro ao carregar faturas das clínicas:", err);
+    }
+  }, []);
+
   const fetchWebhookLogs = useCallback(async () => {
     try {
       const { data, error } = await supabase.rpc("get_asaas_webhook_logs", {
@@ -140,7 +252,38 @@ export function PlatformBillingMaster() {
       if (error) throw error;
 
       if (data) {
-        setWebhookLogs(data as WebhookLogItem[]);
+        const formatted = (data as Array<{
+          id: string;
+          asaas_event_id?: string;
+          event_type?: string;
+          event?: string;
+          payload?: Record<string, unknown> | null;
+          processed?: boolean;
+          processed_at?: string;
+          error_message?: string | null;
+          signature?: string | null;
+          created_at: string;
+          payment_id?: string | null;
+          customer_id?: string | null;
+          subscription_id?: string | null;
+        }>).map((item) => {
+          const payload = (item.payload || {}) as Record<string, unknown>;
+          const payment = (payload.payment || {}) as Record<string, unknown>;
+          const subscription = (payload.subscription || {}) as Record<string, unknown>;
+
+          return {
+            id: item.id,
+            event: item.event_type || item.event || (payload.event as string) || "DESCONHECIDO",
+            payment_id: item.payment_id || (payment.id as string) || (payload.paymentId as string) || null,
+            customer_id: item.customer_id || (payment.customer as string) || (payload.customer as string) || null,
+            subscription_id: item.subscription_id || (payment.subscription as string) || (subscription.id as string) || null,
+            error_message: item.error_message || null,
+            signature: item.signature || null,
+            created_at: item.created_at,
+            payload: item.payload || null,
+          };
+        });
+        setWebhookLogs(formatted);
       }
     } catch (err) {
       console.error("Erro ao carregar logs de webhooks:", err);
@@ -149,8 +292,9 @@ export function PlatformBillingMaster() {
 
   useEffect(() => {
     fetchSubscriptions();
+    fetchInvoices();
     fetchWebhookLogs();
-  }, [fetchSubscriptions, fetchWebhookLogs]);
+  }, [fetchSubscriptions, fetchInvoices, fetchWebhookLogs]);
 
   // Abrir Modal de Override
   const handleOpenOverrideModal = (sub: ClinicSubscriptionItem) => {
@@ -172,12 +316,15 @@ export function PlatformBillingMaster() {
 
     setSubmitting(true);
     try {
+      const safeSubaccounts = Math.min(Math.max(Math.trunc(overrideSubaccounts || 1), 1), 999999);
+      const safeConcurrent = Math.min(Math.max(Math.trunc(overrideConcurrent || 1), 1), 999999);
+
       const { error } = await supabase.rpc("platform_override_clinic_subscription", {
         _clinic_id: selectedSub.clinic_id,
-        _plan_type: overridePlan,
+        _new_plan: overridePlan as never,
         _status: overrideStatus,
-        _subaccount_limit: overrideSubaccounts,
-        _concurrent_access_limit: overrideConcurrent,
+        _subaccount_limit: safeSubaccounts,
+        _concurrent_access_limit: safeConcurrent,
         _reason: overrideReason.trim(),
       });
 
@@ -201,12 +348,27 @@ export function PlatformBillingMaster() {
       (s.coupon_code && s.coupon_code.toLowerCase().includes(subQuery.toLowerCase()))
   );
 
+  const filteredInvoices = invoices.filter((inv) => {
+    const matchesQuery =
+      inv.clinic_name.toLowerCase().includes(invoiceQuery.toLowerCase()) ||
+      inv.asaas_payment_id.toLowerCase().includes(invoiceQuery.toLowerCase()) ||
+      (inv.nfe_number && inv.nfe_number.toLowerCase().includes(invoiceQuery.toLowerCase()));
+
+    if (!matchesQuery) return false;
+
+    if (invoiceFilter === "paid") {
+      return inv.status === "RECEIVED" || inv.status === "CONFIRMED" || inv.status === "RECEIVED_IN_CASH";
+    }
+    if (invoiceFilter === "pending") {
+      return inv.status === "PENDING" || inv.status === "AWAITING_PAYMENT";
+    }
+    return true;
+  });
+
   const filteredWebhookLogs = webhookLogs.filter((log) => {
     if (webhookFilter === "errors") return !!log.error_message;
     return true;
   });
-
-
 
   return (
     <div className="space-y-6">
@@ -226,6 +388,7 @@ export function PlatformBillingMaster() {
         <Button
           onClick={() => {
             fetchSubscriptions();
+            fetchInvoices();
             fetchWebhookLogs();
           }}
           variant="outline"
@@ -240,6 +403,9 @@ export function PlatformBillingMaster() {
         <TabsList className="bg-muted p-1 rounded-xl">
           <TabsTrigger value="subscriptions" className="rounded-lg text-xs font-semibold">
             <Building2 className="w-4 h-4 mr-2" /> Assinaturas das Clínicas ({subscriptions.length})
+          </TabsTrigger>
+          <TabsTrigger value="invoices" className="rounded-lg text-xs font-semibold">
+            <CreditCard className="w-4 h-4 mr-2" /> Cobranças & Faturas ({invoices.length})
           </TabsTrigger>
           <TabsTrigger value="coupons" className="rounded-lg text-xs font-semibold">
             <Tag className="w-4 h-4 mr-2" /> Cupons Promocionais
@@ -301,8 +467,15 @@ export function PlatformBillingMaster() {
                           <p className="text-[10px] text-muted-foreground font-mono">{sub.clinic_id}</p>
                         </td>
                         <td className="p-4">
-                          <Badge variant={sub.plan_type === "clinic" ? "default" : "secondary"}>
-                            {sub.plan_type === "clinic" ? "Clínica com Equipe" : "Profissional Solo"}
+                          <Badge
+                            variant="secondary"
+                            className={
+                              sub.plan_type.startsWith("clinica_") || sub.plan_type === "clinic" || sub.plan_type === "enterprise"
+                                ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-medium"
+                                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium"
+                            }
+                          >
+                            {planLabels[sub.plan_type] || sub.plan_type}
                           </Badge>
                         </td>
                         <td className="p-4 font-mono">
@@ -351,7 +524,178 @@ export function PlatformBillingMaster() {
           </Card>
         </TabsContent>
 
-        {/* Tab 2: Leitor de Logs de Webhooks Asaas */}
+        {/* Tab 2: Gestão de Cobranças & Faturas Reais */}
+        <TabsContent value="invoices" className="space-y-4">
+          <Card className="border bg-card shadow-lg rounded-2xl">
+            <CardHeader className="p-4 sm:p-6 pb-3 border-b">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg font-bold text-foreground">Faturas e Pagamentos das Clínicas</CardTitle>
+                  <CardDescription className="text-xs text-muted-foreground">
+                    Registro em tempo real de pagamentos processados pelo Asaas (PIX, Cartão e Boleto) e NFS-e.
+                  </CardDescription>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                  <div className="flex gap-1 w-full sm:w-auto">
+                    <Button
+                      size="sm"
+                      variant={invoiceFilter === "all" ? "default" : "outline"}
+                      onClick={() => setInvoiceFilter("all")}
+                      className="h-9 text-xs rounded-xl flex-1 sm:flex-initial"
+                    >
+                      Todas ({invoices.length})
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={invoiceFilter === "paid" ? "default" : "outline"}
+                      onClick={() => setInvoiceFilter("paid")}
+                      className="h-9 text-xs rounded-xl flex-1 sm:flex-initial"
+                    >
+                      Pagas
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={invoiceFilter === "pending" ? "default" : "outline"}
+                      onClick={() => setInvoiceFilter("pending")}
+                      className="h-9 text-xs rounded-xl flex-1 sm:flex-initial"
+                    >
+                      Pendentes
+                    </Button>
+                  </div>
+
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar clínica, ID Asaas ou NFS-e..."
+                      value={invoiceQuery}
+                      onChange={(e) => setInvoiceQuery(e.target.value)}
+                      className="h-9 pl-9 rounded-xl text-xs bg-muted/50"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              {filteredInvoices.length === 0 ? (
+                <div className="p-8 text-center text-xs text-muted-foreground">
+                  Nenhuma fatura ou pagamento encontrado com os filtros atuais.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs text-foreground">
+                  <thead className="bg-muted/60 text-muted-foreground uppercase tracking-wider font-semibold border-b">
+                    <tr>
+                      <th className="p-4">Data Pagamento / Venc.</th>
+                      <th className="p-4">Clínica</th>
+                      <th className="p-4">Valor</th>
+                      <th className="p-4">Método</th>
+                      <th className="p-4">Status</th>
+                      <th className="p-4">NFS-e</th>
+                      <th className="p-4 text-right">Comprovantes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border font-mono text-[11px]">
+                    {filteredInvoices.map((inv) => (
+                      <tr key={inv.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="p-4 text-muted-foreground">
+                          {inv.payment_date ? (
+                            <div>
+                              <span className="font-semibold text-foreground">
+                                {new Date(inv.payment_date).toLocaleDateString("pt-BR")}
+                              </span>
+                              <div className="text-[10px] text-muted-foreground">
+                                Pago às {new Date(inv.payment_date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <span>Venc: {new Date(inv.due_date).toLocaleDateString("pt-BR")}</span>
+                              <div className="text-[10px] text-yellow-600 dark:text-yellow-400">Aguardando</div>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-4 font-sans">
+                          <p className="font-bold text-foreground text-xs">{inv.clinic_name}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono">{inv.asaas_payment_id}</p>
+                        </td>
+                        <td className="p-4 font-bold text-foreground">
+                          R$ {inv.value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {inv.net_value && (
+                            <div className="text-[10px] font-normal text-muted-foreground">
+                              Líq: R$ {inv.net_value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          <Badge variant="outline" className="border-border text-foreground font-semibold">
+                            {inv.billing_type || "PIX"}
+                          </Badge>
+                        </td>
+                        <td className="p-4">
+                          <Badge
+                            variant="outline"
+                            className={
+                              inv.status === "RECEIVED" || inv.status === "CONFIRMED" || inv.status === "RECEIVED_IN_CASH"
+                                ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 text-[10px]"
+                                : inv.status === "OVERDUE"
+                                ? "border-red-500/30 text-red-600 dark:text-red-400 bg-red-500/10 text-[10px]"
+                                : "border-yellow-500/30 text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 text-[10px]"
+                            }
+                          >
+                            {inv.status === "RECEIVED" || inv.status === "CONFIRMED"
+                              ? "RECEBIDO"
+                              : inv.status === "PENDING" || inv.status === "AWAITING_PAYMENT"
+                              ? "PENDENTE"
+                              : inv.status}
+                          </Badge>
+                        </td>
+                        <td className="p-4">
+                          {inv.nfe_number ? (
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px]">
+                                <FileCheck className="w-3 h-3 mr-1" />
+                                Nº {inv.nfe_number}
+                              </Badge>
+                              {inv.nfe_pdf_url && (
+                                <a
+                                  href={inv.nfe_pdf_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-500 hover:text-blue-600"
+                                  title="Baixar PDF da NFS-e"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-right">
+                          {inv.invoice_url ? (
+                            <a
+                              href={inv.invoice_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 hover:underline font-sans font-medium"
+                            >
+                              Fatura Asaas <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground font-sans">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab 3: Leitor de Logs de Webhooks Asaas */}
         <TabsContent value="webhooks" className="space-y-4">
           <Card className="border bg-card shadow-lg rounded-2xl">
             <CardHeader className="p-4 sm:p-6 pb-3 border-b">
@@ -469,13 +813,31 @@ export function PlatformBillingMaster() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label className="text-xs">Plano de Assinatura</Label>
-                <Select value={overridePlan} onValueChange={(v) => setOverridePlan(v as "solo" | "clinic")}>
+                <Select
+                  value={overridePlan}
+                  onValueChange={(newPlan) => {
+                    setOverridePlan(newPlan);
+                    const limits = getPlanDefaultLimits(newPlan);
+                    setOverrideConcurrent(limits.concurrent);
+                    setOverrideSubaccounts(limits.subaccounts);
+                  }}
+                >
                   <SelectTrigger className="h-10 rounded-xl">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="solo">Profissional Solo</SelectItem>
-                    <SelectItem value="clinic">Clínica com Equipe</SelectItem>
+                    {planOptionGroups.map((group) => (
+                      <SelectGroup key={group.label}>
+                        <SelectLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          {group.label}
+                        </SelectLabel>
+                        {group.options.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -502,7 +864,7 @@ export function PlatformBillingMaster() {
                 <Input
                   type="number"
                   min={1}
-                  max={500}
+                  max={999999}
                   value={overrideSubaccounts}
                   onChange={(e) => setOverrideSubaccounts(parseInt(e.target.value || "1", 10))}
                   className="h-10 rounded-xl font-mono"
@@ -514,7 +876,7 @@ export function PlatformBillingMaster() {
                 <Input
                   type="number"
                   min={1}
-                  max={50}
+                  max={999999}
                   value={overrideConcurrent}
                   onChange={(e) => setOverrideConcurrent(parseInt(e.target.value || "1", 10))}
                   className="h-10 rounded-xl font-mono"

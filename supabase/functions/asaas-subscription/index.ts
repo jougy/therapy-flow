@@ -29,20 +29,53 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient } from '../_shared/asaas-client.ts';
 
 const PLAN_PRICING_CONFIG = {
+  // --- Novos Planos: Profissional Individual ---
+  prof_basico: {
+    monthly: { baseMonthlyEq: 39.99, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 35.99, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
+    annual: { baseMonthlyEq: 29.99, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+  },
+  prof_medio: {
+    monthly: { baseMonthlyEq: 59.99, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 53.99, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
+    annual: { baseMonthlyEq: 44.99, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+  },
+  prof_top: {
+    monthly: { baseMonthlyEq: 89.99, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 80.99, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
+    annual: { baseMonthlyEq: 67.49, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+  },
+  // --- Novos Planos: Clínica & Equipes ---
+  clinica_basico: {
+    monthly: { baseMonthlyEq: 99.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 89.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
+    annual: { baseMonthlyEq: 74.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+  },
+  clinica_medio: {
+    monthly: { baseMonthlyEq: 139.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 125.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
+    annual: { baseMonthlyEq: 104.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+  },
+  clinica_top: {
+    monthly: { baseMonthlyEq: 199.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 179.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
+    annual: { baseMonthlyEq: 149.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+  },
+  // --- Retrocompatibilidade com Planos Legados ---
   solo: {
-    annual: { baseMonthlyEq: 40.0, extraSeatRate: 35.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
-    quarterly: { baseMonthlyEq: 53.99, extraSeatRate: 35.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
-    monthly: { baseMonthlyEq: 59.99, extraSeatRate: 35.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    monthly: { baseMonthlyEq: 59.99, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 53.99, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
+    annual: { baseMonthlyEq: 44.99, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
   },
   clinic: {
-    annual: { baseMonthlyEq: 104.0, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
-    quarterly: { baseMonthlyEq: 125.0, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
-    monthly: { baseMonthlyEq: 139.0, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    monthly: { baseMonthlyEq: 139.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 125.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
+    annual: { baseMonthlyEq: 104.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
   },
   enterprise: {
-    annual: { baseMonthlyEq: 224.0, extraSeatRate: 15.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
-    quarterly: { baseMonthlyEq: 269.0, extraSeatRate: 15.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
-    monthly: { baseMonthlyEq: 299.0, extraSeatRate: 15.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    monthly: { baseMonthlyEq: 199.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 179.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
+    annual: { baseMonthlyEq: 149.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
   },
 } as const;
 
@@ -106,6 +139,69 @@ function isValidDocument(doc: string): boolean {
   if (clean.length === 11) return isValidCpf(clean);
   if (clean.length === 14) return isValidCnpj(clean);
   return false;
+}
+
+function safeCompare(a: string, b: string): boolean {
+  if (!a || !b || a.length !== b.length) {
+    return false;
+  }
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+function validateCreditCard(card: any): { valid: boolean; error?: string } {
+  if (!card || typeof card !== 'object') {
+    return { valid: false, error: 'Dados do cartão de crédito ausentes ou mal formatados.' };
+  }
+  const holderName = String(card.holderName || '').trim();
+  if (!holderName || holderName.length < 3 || holderName.length > 100) {
+    return { valid: false, error: 'Nome do titular no cartão inválido (mínimo 3 caracteres).' };
+  }
+  const cleanNumber = String(card.number || '').replace(/\D/g, '');
+  if (!cleanNumber || cleanNumber.length < 13 || cleanNumber.length > 19) {
+    return { valid: false, error: 'Número de cartão inválido (deve conter entre 13 e 19 dígitos numéricos).' };
+  }
+  const cleanCcv = String(card.ccv || '').trim().replace(/\D/g, '');
+  if (!cleanCcv || cleanCcv.length < 3 || cleanCcv.length > 4) {
+    return { valid: false, error: 'Código de segurança (CVV) inválido (3 ou 4 dígitos numéricos).' };
+  }
+  const month = parseInt(String(card.expiryMonth || '').replace(/\D/g, ''), 10);
+  if (isNaN(month) || month < 1 || month > 12) {
+    return { valid: false, error: 'Mês de validade do cartão inválido (01 a 12).' };
+  }
+  const rawYear = String(card.expiryYear || '').replace(/\D/g, '');
+  const year = rawYear.length === 2 ? 2000 + parseInt(rawYear, 10) : parseInt(rawYear, 10);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  if (isNaN(year) || year < currentYear || year > currentYear + 25) {
+    return { valid: false, error: 'Ano de validade do cartão inválido ou vencido.' };
+  }
+  if (year === currentYear && month < currentMonth) {
+    return { valid: false, error: 'Cartão de crédito informado expirado.' };
+  }
+  return { valid: true };
+}
+
+function maskSensitiveForLogs(obj: any): any {
+  if (!obj || typeof obj !== 'object') return obj;
+  const clone = { ...obj };
+  if (clone.creditCard) {
+    clone.creditCard = '***MASKED_CARD***';
+  }
+  if (clone.creditCardToken) {
+    clone.creditCardToken = '***TOKEN***';
+  }
+  if (clone.creditCardHolderInfo) {
+    clone.creditCardHolderInfo = {
+      ...clone.creditCardHolderInfo,
+      cpfCnpj: clone.creditCardHolderInfo.cpfCnpj ? `${String(clone.creditCardHolderInfo.cpfCnpj).slice(0, 3)}***` : undefined,
+    };
+  }
+  return clone;
 }
 
 function buildCustomerPayload(params: {
@@ -254,15 +350,35 @@ serve(async (req) => {
     } = body;
 
     const getPlanLimits = (p: string) => {
-      if (p === 'enterprise') return { baseSeats: 10, baseSubaccounts: 10 };
-      if (p === 'clinic') return { baseSeats: 4, baseSubaccounts: 4 };
+      const plan = (p || '').toLowerCase();
+      if (plan === 'clinica_top' || plan === 'enterprise') return { baseSeats: 8, baseSubaccounts: 999999 };
+      if (plan === 'clinica_medio' || plan === 'clinic') return { baseSeats: 4, baseSubaccounts: 999999 };
+      if (plan === 'clinica_basico') return { baseSeats: 2, baseSubaccounts: 999999 };
+      if (plan === 'prof_top') return { baseSeats: 2, baseSubaccounts: 2 };
+      if (plan === 'prof_medio' || plan === 'solo') return { baseSeats: 1, baseSubaccounts: 1 };
+      if (plan === 'prof_basico') return { baseSeats: 1, baseSubaccounts: 1 };
       return { baseSeats: 1, baseSubaccounts: 1 };
     };
 
     const getPlanTitle = (p: string) => {
-      if (p === 'enterprise') return 'Plano Enterprise';
-      if (p === 'clinic') return 'Plano Clínica com Equipe';
+      const plan = (p || '').toLowerCase();
+      if (plan === 'clinica_top') return 'Plano Clínica Top';
+      if (plan === 'clinica_medio') return 'Plano Clínica Médio';
+      if (plan === 'clinica_basico') return 'Plano Clínica Básico';
+      if (plan === 'prof_top') return 'Plano Profissional Top';
+      if (plan === 'prof_medio') return 'Plano Profissional Médio';
+      if (plan === 'prof_basico') return 'Plano Profissional Básico';
+      if (plan === 'enterprise') return 'Plano Enterprise';
+      if (plan === 'clinic') return 'Plano Clínica com Equipe';
       return 'Plano Profissional Solo';
+    };
+
+    const normalizePlanKey = (p: string): string => {
+      const plan = (p || '').toLowerCase();
+      if (plan in PLAN_PRICING_CONFIG) return plan;
+      if (plan === 'enterprise') return 'clinica_top';
+      if (plan === 'clinic') return 'clinica_medio';
+      return 'prof_medio';
     };
 
     // Determinar ambiente ativo (Sandbox vs Produção) via Feature Flags hierárquicas
@@ -409,8 +525,9 @@ serve(async (req) => {
       }
 
       const card = credit_card_data.card;
-      if (!card.holderName || !card.number || !card.expiryMonth || !card.expiryYear || !card.ccv) {
-        return new Response(JSON.stringify({ error: 'Por favor, preencha todos os campos do cartão de crédito (Nome, Número, Validade e CVV).' }), {
+      const cardValidation = validateCreditCard(card);
+      if (!cardValidation.valid) {
+        return new Response(JSON.stringify({ error: cardValidation.error || 'Cartão de crédito inválido.' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -554,7 +671,7 @@ serve(async (req) => {
       }
 
       // 5. Cartão aprovado! Criar clínica atomicamente no Supabase com service_role
-      const selectedPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
+      const selectedPlan = normalizePlanKey(plan_type);
       const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
       const config = (PLAN_PRICING_CONFIG[selectedPlan] as any)[cycleKey] || (PLAN_PRICING_CONFIG[selectedPlan] as any).annual;
 
@@ -596,6 +713,8 @@ serve(async (req) => {
         console.warn('[asaas-subscription] Falha ao atualizar externalReference no Asaas:', e);
       }
 
+      const initialLimits = getPlanLimits(selectedPlan);
+
       // Atualizar dados cadastrais da clínica
       await supabase
         .from('clinics')
@@ -607,8 +726,8 @@ serve(async (req) => {
           legal_name: clinic_data?.legal_name || null,
           address: clinic_data?.address || null,
           business_hours: clinic_data?.business_hours ? { description: clinic_data.business_hours } : null,
-          subaccount_limit: selectedPlan === 'clinic' ? Math.max(1, parseInt(String(clinic_data?.subaccount_limit || '30'), 10)) : 1,
-          concurrent_access_limit: selectedPlan === 'clinic' ? Math.max(2, parseInt(String(clinic_data?.concurrent_access_limit || '4'), 10)) : 1,
+          subaccount_limit: initialLimits.baseSubaccounts,
+          concurrent_access_limit: initialLimits.baseSeats,
           updated_at: new Date().toISOString(),
         })
         .eq('id', createdClinicId);
@@ -662,8 +781,8 @@ serve(async (req) => {
         plan_type: selectedPlan,
         billing_cycle: 'ANNUAL',
         base_monthly_price: config.baseMonthlyEq,
-        base_concurrent_access_count: 4,
-        base_subaccount_limit: selectedPlan === 'clinic' ? 30 : 1,
+        base_concurrent_access_count: initialLimits.baseSeats,
+        base_subaccount_limit: initialLimits.baseSubaccounts,
         total_recurring_monthly_price: 0,
         status: subscriptionStatus,
         is_free_trial: true,
@@ -770,12 +889,13 @@ serve(async (req) => {
     // AÇÃO 1: CREATE (Criação ou Atualização de Assinatura com Ciclos e Cupons)
     // =========================================================================
     if (action === 'CREATE') {
-      const selectedPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
+      const selectedPlan = normalizePlanKey(plan_type);
+      const isIndividualPlan = selectedPlan === 'prof_basico' || selectedPlan === 'prof_medio' || selectedPlan === 'prof_top' || selectedPlan === 'solo';
       const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
       const cycle = cycleKey in PLAN_PRICING_CONFIG[selectedPlan] ? cycleKey : 'annual';
       const config = (PLAN_PRICING_CONFIG[selectedPlan] as any)[cycle];
 
-      const extraConcurrentSeats = selectedPlan === 'solo' ? 0 : Math.max(0, Math.floor(additional_seats_count || 0));
+      const extraConcurrentSeats = isIndividualPlan ? 0 : Math.max(0, Math.floor(additional_seats_count || 0));
       const baseMonthlyPrice = config.baseMonthlyEq;
       const extraSeatPrice = config.extraSeatRate;
       const periodMultiplier = config.periodMultiplier;
@@ -925,6 +1045,14 @@ serve(async (req) => {
       let cardHolderPayload: any = undefined;
 
       if (billing_type === 'CREDIT_CARD' && credit_card_data?.card) {
+        const cardValidation = validateCreditCard(credit_card_data.card);
+        if (!cardValidation.valid) {
+          return new Response(JSON.stringify({ error: cardValidation.error || 'Cartão de crédito inválido.' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         cardPayload = {
           holderName: String(credit_card_data.card.holderName || '').trim(),
           number: String(credit_card_data.card.number || '').replace(/\D/g, ''),
@@ -979,7 +1107,7 @@ serve(async (req) => {
           }
         }
 
-        console.log('[asaas-subscription] Processando cobrança parcelada de cartão no Asaas:', JSON.stringify({ ...installmentPaymentData, creditCard: '***' }));
+        console.log('[asaas-subscription] Processando cobrança parcelada de cartão no Asaas:', JSON.stringify(maskSensitiveForLogs(installmentPaymentData)));
         asaasPaymentDirect = await asaas.createPayment(installmentPaymentData);
       } else {
         // Assinatura recorrente padrão no Asaas (/subscriptions)
@@ -1000,7 +1128,7 @@ serve(async (req) => {
           asaasSubData.creditCardHolderInfo = cardHolderPayload;
         }
 
-        console.log('[asaas-subscription] Processando assinatura no Asaas:', JSON.stringify(asaasSubData));
+        console.log('[asaas-subscription] Processando assinatura no Asaas:', JSON.stringify(maskSensitiveForLogs(asaasSubData)));
         
         if (billing_type === 'CREDIT_CARD') {
           if (subscription?.asaas_subscription_id) {
@@ -1157,6 +1285,9 @@ serve(async (req) => {
     // =========================================================================
     // AÇÃO 2: UPDATE_SEATS (Ajuste de Acessos Simultâneos)
     // =========================================================================
+    // =========================================================================
+    // AÇÃO 2: UPDATE_SEATS (Ajuste de Acessos Simultâneos)
+    // =========================================================================
     if (action === 'UPDATE_SEATS') {
       if (!subscription || !subscription.asaas_subscription_id) {
         return new Response(JSON.stringify({ error: 'Nenhuma assinatura ativa encontrada no Asaas.' }), {
@@ -1165,7 +1296,17 @@ serve(async (req) => {
         });
       }
 
-      const currentPlan = subscription.plan_type === 'enterprise' ? 'enterprise' : 'clinic';
+      const currentPlan = normalizePlanKey(subscription.plan_type);
+      const isIndividualPlan = currentPlan === 'prof_basico' || currentPlan === 'prof_medio' || currentPlan === 'prof_top' || currentPlan === 'solo';
+      if (isIndividualPlan) {
+        return new Response(JSON.stringify({
+          error: 'Não é possível adicionar acessos simultâneos extras nos planos individuais. Faça upgrade para um plano Clínica primeiro.'
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const cycle = (subscription.billing_cycle || 'ANNUAL').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
       const config = (PLAN_PRICING_CONFIG[currentPlan] as any)[cycle] || (PLAN_PRICING_CONFIG[currentPlan] as any).annual;
       const newSeatsCount = Math.max(0, Math.floor(additional_seats_count || 0));
@@ -1209,13 +1350,13 @@ serve(async (req) => {
     }
 
     // =========================================================================
-    // AÇÃO 3: CHANGE_PLAN (Troca de Plano Solo <-> Clínica <-> Enterprise)
+    // AÇÃO 3: CHANGE_PLAN (Troca de Plano na Esteira de Planos)
     // =========================================================================
     if (action === 'CHANGE_PLAN') {
-      const targetPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
+      const targetPlan = normalizePlanKey(plan_type);
       const cycle = (billing_cycle || subscription?.billing_cycle || 'ANNUAL').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
 
-      if (targetPlan === 'solo') {
+      if (targetPlan === 'prof_basico' || targetPlan === 'prof_medio' || targetPlan === 'solo') {
         const { count: colabCount } = await supabase
           .from('clinic_memberships')
           .select('id', { count: 'exact', head: true })
@@ -1227,16 +1368,51 @@ serve(async (req) => {
 
         if (colabCount && colabCount > 0) {
           return new Response(JSON.stringify({
-            error: `Não é possível alterar para o plano Solo enquanto houver ${colabCount} colaborador(es) ativo(s) cadastrado(s). Desative ou remova os colaboradores primeiro.`
+            error: `Não é possível alterar para plano individual enquanto houver ${colabCount} colaborador(es) ativo(s) cadastrado(s). Desative ou remova os colaboradores primeiro.`
           }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+
+        // Cancelar convites pendentes residuais para evitar que sejam aceitos posteriormente
+        await supabase
+          .from('clinic_collaborator_invitations')
+          .update({ status: 'cancelled' })
+          .eq('clinic_id', clinic_id)
+          .eq('status', 'pending');
+      } else if (targetPlan === 'prof_top') {
+        const { count: colabCount } = await supabase
+          .from('clinic_memberships')
+          .select('id', { count: 'exact', head: true })
+          .eq('clinic_id', clinic_id)
+          .eq('is_active', true)
+          .eq('membership_status', 'active')
+          .neq('account_role', 'account_owner')
+          .neq('account_role', 'owner');
+
+        if (colabCount && colabCount > 1) {
+          return new Response(JSON.stringify({
+            error: `O plano Profissional Top permite no máximo 1 colaborador de apoio (total de 2 membros). Atualmente há ${colabCount} colaboradores ativos.`
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (colabCount === 1) {
+          // Se já tem 1 colaborador ativo de apoio, cancela convites pendentes extras
+          await supabase
+            .from('clinic_collaborator_invitations')
+            .update({ status: 'cancelled' })
+            .eq('clinic_id', clinic_id)
+            .eq('status', 'pending');
+        }
       }
 
+      const isTargetIndividual = targetPlan === 'prof_basico' || targetPlan === 'prof_medio' || targetPlan === 'prof_top' || targetPlan === 'solo';
       const config = (PLAN_PRICING_CONFIG[targetPlan] as any)[cycle] || (PLAN_PRICING_CONFIG[targetPlan] as any).annual;
-      const extraSeats = targetPlan === 'solo' ? 0 : (subscription?.additional_concurrent_access_count || 0);
+      const extraSeats = isTargetIndividual ? 0 : (subscription?.additional_concurrent_access_count || 0);
       const rawMonthlyTotal = config.baseMonthlyEq + (extraSeats * config.extraSeatRate);
       let finalPeriodTotal = rawMonthlyTotal * config.periodMultiplier;
 
@@ -1319,6 +1495,14 @@ serve(async (req) => {
     if (action === 'TOKENIZE_TRIAL_CARD') {
       if (!credit_card_data?.card) {
         return new Response(JSON.stringify({ error: 'Dados do cartão de crédito são obrigatórios.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const cardValidation = validateCreditCard(credit_card_data.card);
+      if (!cardValidation.valid) {
+        return new Response(JSON.stringify({ error: cardValidation.error || 'Cartão de crédito inválido.' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -1473,7 +1657,7 @@ serve(async (req) => {
         });
       }
 
-      const selectedPlan = plan_type === 'enterprise' ? 'enterprise' : plan_type === 'clinic' ? 'clinic' : 'solo';
+      const selectedPlan = normalizePlanKey(plan_type);
       const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
       const cycle = cycleKey in PLAN_PRICING_CONFIG[selectedPlan] ? cycleKey : 'annual';
       const config = (PLAN_PRICING_CONFIG[selectedPlan] as any)[cycle];

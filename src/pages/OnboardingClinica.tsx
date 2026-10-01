@@ -27,6 +27,7 @@ import {
 } from "@/utils/creditCardValidator";
 import { toast } from "sonner";
 import { lookupCep } from "@/lib/cep-service";
+import { parsePlanType, type PlanType } from "@/utils/subscriptionPricing";
 
 const formatCPF = (v: string) => {
   v = v.replace(/\D/g, "");
@@ -93,10 +94,22 @@ export default function OnboardingClinica() {
   const { clinic, profile, session, selectClinic, refreshAuthState } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
   
-  const plan = (searchParams.get("plan") as "solo" | "clinic" | null) || "solo";
+  const rawPlan = searchParams.get("plan");
+  const plan: PlanType = parsePlanType(rawPlan);
+  const isClinicPlan =
+    plan === "clinica_basico" ||
+    plan === "clinica_medio" ||
+    plan === "clinica_top" ||
+    plan === "clinic" ||
+    plan === "enterprise";
   const isTrial = searchParams.get("trial") === "true";
-  const initialConcurrent = parseInt(searchParams.get("concurrent") || (plan === "clinic" ? "2" : "1"), 10);
-  const initialSpaces = parseInt(searchParams.get("spaces") || (plan === "clinic" ? "30" : "1"), 10);
+  const defaultConcurrent =
+    plan === "clinica_top" ? 8 :
+    plan === "enterprise" ? 10 :
+    plan === "clinica_medio" || plan === "clinic" ? 4 :
+    plan === "clinica_basico" || plan === "prof_top" ? 2 : 1;
+  const initialConcurrent = parseInt(searchParams.get("concurrent") || String(defaultConcurrent), 10);
+  const initialSpaces = parseInt(searchParams.get("spaces") || (isClinicPlan ? "999999" : plan === "prof_top" ? "2" : "1"), 10);
 
   const isExplicitCreate = searchParams.get("mode") === "create" || !!searchParams.get("plan");
   const isCurrentClinicOwnedByMe = Boolean(clinic?.account_owner_user_id && session?.user?.id && clinic.account_owner_user_id === session.user.id);
@@ -127,7 +140,7 @@ export default function OnboardingClinica() {
     city: "",
     state: "",
     subaccount_limit: (!isCreateMode && clinic?.subaccount_limit) ? clinic.subaccount_limit.toString() : initialSpaces.toString(),
-    concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? Math.max(plan === "clinic" ? 2 : 1, clinic.concurrent_access_limit).toString() : initialConcurrent.toString(),
+    concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? Math.max(isClinicPlan ? 2 : 1, clinic.concurrent_access_limit).toString() : initialConcurrent.toString(),
   });
 
   // Estado dos campos do Cartão de Crédito (Obrigatório em modo de criação)
@@ -164,7 +177,7 @@ export default function OnboardingClinica() {
     try {
       const { data, error } = await supabase.rpc("validate_subscription_coupon", {
         _code: targetCode,
-        _plan_type: plan === "clinic" ? "clinic" : "solo",
+        _plan_type: plan,
       });
       if (error) throw error;
       const res = data as any;
@@ -279,7 +292,7 @@ export default function OnboardingClinica() {
     }
   };
 
-  const parsedConcurrent = Math.max(plan === "clinic" ? 2 : 1, parseInt(formData.concurrent_access_limit || "2", 10));
+  const parsedConcurrent = Math.max(isClinicPlan ? 2 : 1, parseInt(formData.concurrent_access_limit || String(defaultConcurrent), 10));
 
   const [duplicateCnpjModalOpen, setDuplicateCnpjModalOpen] = useState(false);
   const [existingClinicNameForCnpj, setExistingClinicNameForCnpj] = useState("");
@@ -365,7 +378,7 @@ export default function OnboardingClinica() {
         description: formData.business_hours,
       };
 
-      const parsedSubaccounts = plan === "clinic" ? Math.max(1, parseInt(formData.subaccount_limit || "30", 10)) : 1;
+      const parsedSubaccounts = isClinicPlan ? Math.max(1, parseInt(formData.subaccount_limit || "999999", 10)) : (plan === "prof_top" ? 2 : 1);
 
       if (isCreateMode) {
         const cleanCard = cleanDigits(cardForm.number);
@@ -374,7 +387,7 @@ export default function OnboardingClinica() {
         const [expMonth, expYearShort] = cleanExpiry.split("/");
 
         const result = await createClinicWithVerifiedCard({
-          plan_type: plan === "clinic" ? "clinic" : "solo",
+          plan_type: plan,
           billing_cycle: "annual",
           cpf_cnpj: documentToUse,
           coupon_code: appliedCoupon?.code || (couponInput.trim() ? couponInput.trim().toUpperCase() : undefined),
@@ -578,7 +591,7 @@ export default function OnboardingClinica() {
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs sm:text-sm font-medium mb-3">
               <Building2 className="w-3.5 h-3.5 shrink-0" />
-              <span>{isCreateMode ? (plan === "clinic" ? "Novo Espaço: Clínica com Equipe" : "Novo Espaço: Profissional Solo") : "Configuração da Clínica"}</span>
+              <span>{isCreateMode ? (isClinicPlan ? "Novo Espaço: Clínica com Equipe" : "Novo Espaço: Profissional Individual") : "Configuração da Clínica"}</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-2">
               {isCreateMode ? "Cadastre seu Próprio Espaço" : "Configure sua Clínica"}
@@ -701,7 +714,7 @@ export default function OnboardingClinica() {
           </Card>
 
           {/* Equipe e Acessos para Plano Clínica */}
-          {plan === "clinic" && (
+          {isClinicPlan && (
             <Card className="bg-primary/5 border-primary/20 backdrop-blur-md rounded-2xl overflow-hidden">
               <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-primary/10">
                 <CardTitle className="text-lg sm:text-xl text-primary font-semibold">Equipe e Acessos</CardTitle>
@@ -730,14 +743,14 @@ export default function OnboardingClinica() {
                   <FieldLabel 
                     htmlFor="concurrent_access_limit" 
                     label="Acessos Simultâneos" 
-                    tooltip="Quantos acessos simultâneos precisará na clínica? (2 inclusos na base + R$ 10 a R$ 13/mês por extra)" 
+                    tooltip="Quantos acessos simultâneos precisará na clínica? (Base do plano + R$ 25/mês por extra)" 
                     required
                   />
                   <Input 
                     id="concurrent_access_limit" 
                     name="concurrent_access_limit" 
                     type="number" 
-                    min={plan === "clinic" ? 2 : 1} 
+                    min={isClinicPlan ? 2 : 1} 
                     required 
                     value={formData.concurrent_access_limit} 
                     onChange={handleChange} 

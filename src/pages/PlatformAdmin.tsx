@@ -11,6 +11,7 @@ import { PlatformClinicTags } from "@/components/PlatformClinicTags";
 import { PlatformFeatureFlags } from "@/components/PlatformFeatureFlags";
 import { PlatformGovernanceSettings } from "@/components/PlatformGovernanceSettings";
 import { PlatformBillingMaster } from "@/components/PlatformBillingMaster";
+import FormularioEditor from "@/pages/FormularioEditor";
 import { readStoredPlatformClinicKey } from "@/components/platform/platform-api";
 
 const ClinicDetailRoute = () => {
@@ -70,6 +71,10 @@ const PlatformAdmin = () => {
             <PlatformFormLibraryManager />
           </PlatformLayout>
         }
+      />
+      <Route
+        path="formularios/editor/:templateId"
+        element={<FormularioEditor />}
       />
       <Route
         path="formularios/:templateId"

@@ -5,6 +5,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { appQueryClient } from "@/lib/query-client";
+import { clearLocalCache } from "@/lib/indexed-db-persister";
 import { clearSecuritySessionKey, createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
@@ -38,7 +39,9 @@ type Profile = Pick<
   | "birth_date"
 >;
 
-type Membership = Database["public"]["Tables"]["clinic_memberships"]["Row"];
+export type Membership = Database["public"]["Tables"]["clinic_memberships"]["Row"] & {
+  role_key?: string | null;
+};
 type PlatformSupportRole = NonNullable<OperationalRole>;
 type ClinicSummary = Pick<
   Database["public"]["Tables"]["clinics"]["Row"],
@@ -123,7 +126,7 @@ const ACTIVE_CLINIC_STORAGE_KEY = "therapy-flow.activeClinicId";
 type RoleCapabilityOverride = {
   capability: AccessCapability;
   enabled: boolean;
-  operational_role: NonNullable<OperationalRole>;
+  operational_role: string;
 };
 
 const getErrorMessage = (error: unknown) => {
@@ -371,6 +374,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           joined_at: row.joined_at,
           membership_status: row.membership_status,
           operational_role: row.operational_role,
+          role_key: (row as { role_key?: string | null }).role_key ?? null,
           updated_at: row.joined_at,
           user_id: userId,
         },
@@ -603,6 +607,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const refreshRoleCapabilityOverrides = () => {
       void fetchRoleCapabilityOverrides(clinic.id).then(setRoleCapabilityOverrides);
+      void appQueryClient.invalidateQueries();
     };
 
     const channel = supabase
@@ -616,6 +621,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           filter: `clinic_id=eq.${clinic.id}`,
         },
         refreshRoleCapabilityOverrides,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "clinic_operational_roles",
+          filter: `clinic_id=eq.${clinic.id}`,
+        },
+        () => {
+          refreshRoleCapabilityOverrides();
+          if (session?.user?.id) {
+            void fetchAuthState(session.user.id, session);
+          }
+        },
       )
       .subscribe((status, error) => {
         if (error) {
@@ -631,7 +651,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         void supabase.removeChannel(channel);
       }
     };
-  }, [clinic?.id, fetchRoleCapabilityOverrides, session?.user]);
+  }, [clinic?.id, fetchAuthState, fetchRoleCapabilityOverrides, session]);
 
 
   const [simulatedRoleCapabilityOverrides, setSimulatedRoleCapabilityOverrides] = useState<Partial<Record<AccessCapability, boolean>>>({});
@@ -651,10 +671,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return emptyCapabilities;
     }
 
+    const effectiveRoleKey = membership.role_key || membership.operational_role;
+
     const roleOverrides = {
       ...Object.fromEntries(
         roleCapabilityOverrides
-          .filter((row) => row.operational_role === membership.operational_role)
+          .filter((row) => row.operational_role === effectiveRoleKey)
           .map((row) => [row.capability, row.enabled]),
       ),
       ...simulatedRoleCapabilityOverrides,
@@ -683,6 +705,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setPlatformMfaVerified(false);
     setIsPasswordRecovery(false);
     appQueryClient.clear();
+    void clearLocalCache();
     await supabase.auth.signOut();
   };
 
@@ -719,6 +742,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setMembership(null);
     setClinic(null);
     setRoleCapabilityOverrides([]);
+    void clearLocalCache();
   };
 
   const activateClinic = async (
@@ -806,6 +830,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     joined_at: new Date().toISOString(),
     membership_status: "active",
     operational_role: role,
+    role_key: null,
     updated_at: new Date().toISOString(),
     user_id: userId,
   });

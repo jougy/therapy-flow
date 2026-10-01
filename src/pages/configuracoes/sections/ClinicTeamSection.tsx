@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertCircle, RefreshCw, Sparkles, Users } from "lucide-react";
+import { AlertCircle, RefreshCw, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,7 +9,7 @@ import { CapacityOverviewCards } from "./team/components/CapacityOverviewCards";
 import { CollaboratorInviteCard } from "./team/components/CollaboratorInviteCard";
 import { PendingInvitationsList } from "./team/components/PendingInvitationsList";
 import { TeamDirectoryTable } from "./team/components/TeamDirectoryTable";
-import { OperationalRolesModal } from "./team/components/OperationalRolesModal";
+import { RolesManagementModal } from "./team/components/RolesManagementModal";
 import { EditMemberDialog } from "./team/components/EditMemberDialog";
 import { RevokeMemberDialog } from "./team/components/RevokeMemberDialog";
 
@@ -52,6 +52,7 @@ export const ClinicTeamSection: React.FC = () => {
     // Permissões
     isAccountOwner,
     canInviteCollaborators,
+    inviteDisabledReason,
     canEditCollaborators,
     canDeleteCollaborators,
     canManageRoles,
@@ -153,7 +154,12 @@ export const ClinicTeamSection: React.FC = () => {
     );
   }
 
-  if (subscriptionPlan === "solo" && !canInviteCollaborators) {
+  const isOneSeatPlan =
+    subscriptionPlan === "solo" ||
+    subscriptionPlan === "prof_basico" ||
+    subscriptionPlan === "prof_medio";
+
+  if (isOneSeatPlan && !canInviteCollaborators) {
     const routeKey = authClinic?.route_key;
     const billingPath = routeKey
       ? `/clinica/${routeKey}/configuracoes/assinatura`
@@ -170,21 +176,21 @@ export const ClinicTeamSection: React.FC = () => {
               <div>
                 <CardTitle className="text-xl">Gestão de Equipe e Colaboradores</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Recurso exclusivo a partir do plano Clínica.
+                  Recurso exclusivo a partir do plano Profissional Top (2 acessos) ou Clínicas.
                 </p>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Sua clínica está atualmente no plano <strong>Solo</strong>, ideal para atendimento individual. 
-              Para convidar profissionais, secretárias e estagiários, configurar permissões personalizadas e ter múltiplos acessos simultâneos conectados, faça o upgrade para o <strong>Plano Clínica</strong>.
+              Seu espaço está atualmente em um plano <strong>Individual (1 Acesso)</strong>, ideal para atendimento autônomo. 
+              Para convidar uma secretária ou assistente (Você + Apoio), ou expandir para equipe com múltiplos acessos simultâneos, conheça os planos de expansão.
             </p>
             <div className="pt-2">
               <Button asChild className="gap-2 bg-gradient-to-r from-amber-600 to-amber-500 text-white hover:from-amber-700 hover:to-amber-600 shadow-sm">
                 <a href={billingPath}>
                   <Sparkles className="h-4 w-4" />
-                  Conhecer o Plano Clínica
+                  Conhecer Planos de Expansão
                 </a>
               </Button>
             </div>
@@ -234,20 +240,26 @@ export const ClinicTeamSection: React.FC = () => {
             </p>
           </div>
 
-          <OperationalRolesModal
+          <RolesManagementModal
             open={roleManagementOpen}
             onOpenChange={setRoleManagementOpen}
-            sortedOperationalRoleDefinitions={sortedOperationalRoleDefinitions}
+            trigger={
+              <Button type="button" variant="outline" className="gap-2 shrink-0">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                Gerenciar papéis operacionais
+              </Button>
+            }
+            operationalRoleDefinitions={sortedOperationalRoleDefinitions}
             selectedOperationalRole={selectedOperationalRole}
-            setSelectedOperationalRole={setSelectedOperationalRole}
+            onSelectOperationalRole={setSelectedOperationalRole}
             selectedRoleDefinition={selectedRoleDefinition}
             editingRoleLabel={editingRoleLabel}
             setEditingRoleLabel={setEditingRoleLabel}
             rolePermissionCategory={rolePermissionCategory}
-            setRolePermissionCategory={setRolePermissionCategory}
+            onSelectPermissionCategory={setRolePermissionCategory}
             savingRoleDefinition={savingRoleDefinition}
             roleUsageCounts={roleUsageCounts}
-            rolePermissionCategoryCounts={rolePermissionCategoryCounts}
+            categoryCounts={rolePermissionCategoryCounts}
             visibleRolePermissionItems={visibleRolePermissionItems}
             selectedRoleCapabilities={selectedRoleCapabilities}
             canEditSelectedRole={canEditSelectedRole}
@@ -256,8 +268,8 @@ export const ClinicTeamSection: React.FC = () => {
             selectedRoleIndex={selectedRoleIndex}
             onToggleRoleCapability={handleToggleRoleCapability}
             onCreateOperationalRole={handleCreateOperationalRole}
-            onMoveSelectedRole={handleMoveSelectedRole}
-            onDeleteSelectedRole={handleDeleteSelectedRole}
+            onMoveRole={handleMoveSelectedRole}
+            onDeleteRole={handleDeleteSelectedRole}
             onSaveSelectedRoleLabel={handleSaveSelectedRoleLabel}
           />
         </CardHeader>
@@ -275,6 +287,7 @@ export const ClinicTeamSection: React.FC = () => {
       {/* Formulário de Envio de Convite */}
       <CollaboratorInviteCard
         canInviteCollaborators={canInviteCollaborators}
+        inviteDisabledReason={inviteDisabledReason}
         clinicName={authClinic?.name}
         sendingInvite={sendingInvite}
         lastGeneratedInviteUrl={lastGeneratedInviteUrl}

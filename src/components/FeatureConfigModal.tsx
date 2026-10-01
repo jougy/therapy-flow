@@ -17,7 +17,9 @@ import {
   UserRound, 
   Building2,
   Globe,
-  Briefcase
+  Briefcase,
+  Calendar,
+  Clock
 } from "lucide-react";
 import { featureFlagsCatalog } from "@/lib/feature-flags-catalog";
 import { supabase } from "@/integrations/supabase/client";
@@ -627,6 +629,270 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
     );
   };
 
+  const renderAgendaConfig = () => {
+    const allowedViews = (formData.allowedViews as Record<string, boolean>) || {
+      day: true,
+      week: true,
+      month: true,
+      year: true,
+    };
+
+    const toggleView = (viewKey: string, checked: boolean) => {
+      const updated = { ...allowedViews, [viewKey]: checked };
+      // Garante que ao menos 1 visão fique ativa
+      const hasAny = Object.values(updated).some(Boolean);
+      if (!hasAny) {
+        toast({
+          title: "Atenção",
+          description: "Ao menos uma visão da agenda deve permanecer habilitada.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setFormData({ ...formData, allowedViews: updated });
+    };
+
+    return (
+      <div className="grid gap-6">
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 mb-1 text-primary font-semibold text-sm">
+            <Calendar className="w-4 h-4" />
+            Módulo da Agenda Clínica & Parâmetros Operacionais
+          </div>
+          <p>
+            Configure as regras de negócio, visões ativas, turno noturno/madrugada, duração padrão de atendimentos e comportamento de blocos condensados na agenda clínica.
+          </p>
+        </div>
+
+        {/* 1. Visões da Agenda Liberadas */}
+        <div className="space-y-3">
+          <div className="space-y-0.5">
+            <Label className="text-sm font-semibold">Modos de Visualização Liberados</Label>
+            <p className="text-xs text-muted-foreground">
+              Selecione quais botões de visão estarão disponíveis no seletor da barra superior da agenda.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center space-x-2.5 p-3 rounded-lg border bg-muted/20">
+              <Checkbox
+                id="view-day"
+                checked={allowedViews.day ?? true}
+                onCheckedChange={(c) => toggleView("day", Boolean(c))}
+              />
+              <Label htmlFor="view-day" className="text-xs font-medium cursor-pointer">
+                Visão Diária (Dia)
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2.5 p-3 rounded-lg border bg-muted/20">
+              <Checkbox
+                id="view-week"
+                checked={allowedViews.week ?? true}
+                onCheckedChange={(c) => toggleView("week", Boolean(c))}
+              />
+              <Label htmlFor="view-week" className="text-xs font-medium cursor-pointer">
+                Visão Semanal (Semana)
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2.5 p-3 rounded-lg border bg-muted/20">
+              <Checkbox
+                id="view-month"
+                checked={allowedViews.month ?? true}
+                onCheckedChange={(c) => toggleView("month", Boolean(c))}
+              />
+              <Label htmlFor="view-month" className="text-xs font-medium cursor-pointer">
+                Visão Mensal (Mês)
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2.5 p-3 rounded-lg border bg-muted/20">
+              <Checkbox
+                id="view-year"
+                checked={allowedViews.year ?? true}
+                onCheckedChange={(c) => toggleView("year", Boolean(c))}
+              />
+              <Label htmlFor="view-year" className="text-xs font-medium cursor-pointer">
+                Visão Anual (Ano)
+              </Label>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Visão Inicial Padrão & Duração */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+          <div className="space-y-1.5">
+            <Label htmlFor="agenda-default-view" className="text-xs font-semibold">
+              Visão Padrão Inicial
+            </Label>
+            <Select
+              value={(formData.defaultView as string) || "day"}
+              onValueChange={(val) => setFormData({ ...formData, defaultView: val })}
+            >
+              <SelectTrigger id="agenda-default-view" className="h-9 text-xs">
+                <SelectValue placeholder="Selecione..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">Visão Diária (Padrão)</SelectItem>
+                <SelectItem value="week">Visão Semanal</SelectItem>
+                <SelectItem value="month">Visão Mensal</SelectItem>
+                <SelectItem value="year">Visão Anual</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Modo exibido ao entrar na tela da agenda.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="agenda-default-duration" className="text-xs font-semibold">
+              Duração Padrão (Minutos)
+            </Label>
+            <div className="relative">
+              <Input
+                id="agenda-default-duration"
+                type="number"
+                min={10}
+                max={480}
+                step={5}
+                value={Number(formData.defaultDurationMinutes ?? 50)}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    defaultDurationMinutes: Math.max(5, Math.min(480, Number(e.target.value) || 50)),
+                  })
+                }
+                className="h-9 text-xs pr-12"
+              />
+              <span className="absolute right-3 top-2.5 text-xs text-muted-foreground pointer-events-none">
+                min
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Pré-preenchimento ao abrir o modal de novo evento.
+            </p>
+          </div>
+        </div>
+
+        {/* 3. Recursos e Parâmetros Operacionais */}
+        <div className="space-y-3 pt-2 border-t">
+          <div className="space-y-0.5">
+            <Label className="text-sm font-semibold">Recursos e Comportamentos Operacionais</Label>
+            <p className="text-xs text-muted-foreground">
+              Ative ou desative lógicas visuais e mecanismos de apoio da agenda clínica.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {/* Turno Madrugada */}
+            <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+              <div className="space-y-0.5 pr-4">
+                <Label htmlFor="agenda-dawn-shift" className="font-semibold text-xs cursor-pointer">
+                  Turno de Madrugada (00h00 às 06h59)
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Garante cobertura ininterrupta das 24 horas do dia sem lacunas na visão diária e semanal.
+                </p>
+              </div>
+              <Switch
+                id="agenda-dawn-shift"
+                checked={Boolean(formData.enableDawnShift ?? true)}
+                onCheckedChange={(val) => setFormData({ ...formData, enableDawnShift: val })}
+              />
+            </div>
+
+            {/* Alerta de Conflitos em Tempo Real */}
+            <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+              <div className="space-y-0.5 pr-4">
+                <Label htmlFor="agenda-conflict-warn" className="font-semibold text-xs cursor-pointer">
+                  Aviso de Conflitos em Tempo Real
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Alerta no modal ao digitar horários que sobrepõem outros compromissos ativos do profissional.
+                </p>
+              </div>
+              <Switch
+                id="agenda-conflict-warn"
+                checked={Boolean(formData.enableConflictWarning ?? true)}
+                onCheckedChange={(val) => setFormData({ ...formData, enableConflictWarning: val })}
+              />
+            </div>
+
+            {/* Blocos Condensados */}
+            <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+              <div className="space-y-0.5 pr-4">
+                <Label htmlFor="agenda-condensed-slots" className="font-semibold text-xs cursor-pointer">
+                  Blocos Condensados de Horários Livres
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Agrupa lacunas contíguas em botões rápidos de 1 clique em vez de renderizar colunas vazias.
+                </p>
+              </div>
+              <Switch
+                id="agenda-condensed-slots"
+                checked={Boolean(formData.enableCondensedSlots ?? true)}
+                onCheckedChange={(val) => setFormData({ ...formData, enableCondensedSlots: val })}
+              />
+            </div>
+
+            {/* Horário de Término nos Cards */}
+            <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+              <div className="space-y-0.5 pr-4">
+                <Label htmlFor="agenda-show-endtime" className="font-semibold text-xs cursor-pointer">
+                  Exibição de Início e Término nos Cards
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Mostra a faixa completa (HH:mm – HH:mm) e a duração em minutos nos cards ocupados.
+                </p>
+              </div>
+              <Switch
+                id="agenda-show-endtime"
+                checked={Boolean(formData.showEndTimeOnCards ?? true)}
+                onCheckedChange={(val) => setFormData({ ...formData, showEndTimeOnCards: val })}
+              />
+            </div>
+
+            {/* Badges de Spanning (Interperíodo) */}
+            <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+              <div className="space-y-0.5 pr-4">
+                <Label htmlFor="agenda-spanning-badges" className="font-semibold text-xs cursor-pointer">
+                  Badges de Continuidade (Eventos Interperíodos)
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Destaca quando um atendimento atravessa a fronteira entre turnos (ex: das 06h30 às 07h20).
+                </p>
+              </div>
+              <Switch
+                id="agenda-spanning-badges"
+                checked={Boolean(formData.showSpanningBadges ?? true)}
+                onCheckedChange={(val) => setFormData({ ...formData, showSpanningBadges: val })}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 4. Mensagem de Manutenção (Opcional) */}
+        <div className="space-y-2 pt-2 border-t">
+          <Label htmlFor="agenda-maintenance-msg" className="text-sm font-semibold">
+            Mensagem de Manutenção / Aviso da Agenda (Opcional)
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Se preenchida, será exibida aos profissionais da clínica como aviso especial de sincronização na página da agenda.
+          </p>
+          <Textarea
+            id="agenda-maintenance-msg"
+            placeholder="Ex: A agenda passará por calibração de horários das 22h às 23h..."
+            value={(formData.maintenanceMessage as string) || ""}
+            onChange={(e) => setFormData({ ...formData, maintenanceMessage: e.target.value })}
+            className="resize-none text-xs"
+            rows={2}
+          />
+        </div>
+      </div>
+    );
+  };
+
   const renderSubscriptionsConfig = () => {
     if (feature.key === "subscription_free_trial_enabled") {
       return (
@@ -916,60 +1182,197 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
           </p>
         </div>
 
-        {/* Matriz Solo */}
-        <div className="rounded-xl border p-4 space-y-3 bg-muted/30">
-          <div className="flex justify-between items-center">
+        {/* Grupo 1: Planos Profissionais (Individuais & Apoio) */}
+        <div className="rounded-xl border p-4 space-y-4 bg-muted/30">
+          <div className="flex justify-between items-center border-b pb-2">
             <div className="flex items-center gap-2">
               <UserRound className="w-4 h-4 text-emerald-600" />
-              <Label className="font-bold text-sm">Plano Profissional Solo (1 Profissional / 1 Acesso)</Label>
+              <Label className="font-bold text-sm">Grupo 1: Planos Profissionais (Individuais & Apoio)</Label>
             </div>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">Individual</span>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+              Profissionais
+            </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 text-xs">
-            <div className="p-2.5 rounded-lg border bg-background space-y-1">
-              <span className="text-muted-foreground block">Mensal (1 mês)</span>
-              <span className="font-bold text-sm text-foreground">R$ 52,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-              <span className="text-[10px] text-muted-foreground block">Total: R$ 52,00</span>
+          <div className="space-y-3">
+            {/* Profissional Básico */}
+            <div className="rounded-lg border bg-background p-3 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <span className="font-bold text-foreground text-xs sm:text-sm">Profissional Básico</span>
+                  <span className="text-[11px] text-muted-foreground ml-2">(1 acesso, 1 formulário customizado)</span>
+                </div>
+                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded w-fit">Entrada</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Mensal</span>
+                  <span className="font-bold text-foreground">R$ 39,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
+                  <span className="font-bold text-foreground">R$ 35,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 107,97</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Anual (-33%)</span>
+                  <span className="font-bold text-foreground">R$ 26,66<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 319,90</span>
+                </div>
+              </div>
             </div>
-            <div className="p-2.5 rounded-lg border bg-background space-y-1">
-              <span className="text-muted-foreground block">Trimestral (-10%)</span>
-              <span className="font-bold text-sm text-foreground">R$ 48,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 144,00</span>
+
+            {/* Profissional Médio */}
+            <div className="rounded-lg border bg-background p-3 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <span className="font-bold text-foreground text-xs sm:text-sm">Profissional Médio</span>
+                  <span className="text-[11px] text-muted-foreground ml-2">(1 acesso, formulários ilimitados)</span>
+                </div>
+                <span className="text-[10px] font-semibold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded w-fit">Mais Popular</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Mensal</span>
+                  <span className="font-bold text-foreground">R$ 59,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
+                  <span className="font-bold text-foreground">R$ 53,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 161,97</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
+                  <span className="font-bold text-foreground">R$ 44,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 539,88</span>
+                </div>
+              </div>
             </div>
-            <div className="p-2.5 rounded-lg border bg-background space-y-1">
-              <span className="text-muted-foreground block">Anual (-25%)</span>
-              <span className="font-bold text-sm text-foreground">R$ 40,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 480,00</span>
+
+            {/* Profissional Top */}
+            <div className="rounded-lg border bg-background p-3 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <span className="font-bold text-foreground text-xs sm:text-sm">Profissional Top</span>
+                  <span className="text-[11px] text-muted-foreground ml-2">(2 acessos: Dono + 1 Apoio, formulários ilimitados)</span>
+                </div>
+                <span className="text-[10px] font-semibold text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded w-fit">Dono + Apoio</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Mensal</span>
+                  <span className="font-bold text-foreground">R$ 89,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
+                  <span className="font-bold text-foreground">R$ 80,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 242,97</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
+                  <span className="font-bold text-foreground">R$ 67,49<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 809,88</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Matriz Clínica */}
-        <div className="rounded-xl border p-4 space-y-3 bg-muted/30">
-          <div className="flex justify-between items-center">
+        {/* Grupo 2: Planos para Clínicas & Equipes (Colaboradores Ilimitados no Cadastro) */}
+        <div className="rounded-xl border p-4 space-y-4 bg-muted/30">
+          <div className="flex justify-between items-center border-b pb-2">
             <div className="flex items-center gap-2">
               <Building2 className="w-4 h-4 text-blue-600" />
-              <Label className="font-bold text-sm">Plano Clínica com Equipe (Colaboradores Ilimitados)</Label>
+              <Label className="font-bold text-sm">Grupo 2: Planos para Clínicas & Equipes (Colaboradores Ilimitados no Cadastro)</Label>
             </div>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">Equipe</span>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
+              Equipes & Clínicas
+            </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 text-xs">
-            <div className="p-2.5 rounded-lg border bg-background space-y-1">
-              <span className="text-muted-foreground block">Mensal (1 mês)</span>
-              <span className="font-bold text-sm text-foreground">R$ 78,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-              <span className="text-[10px] text-muted-foreground block">+R$ 13/acesso extra</span>
+          <div className="space-y-3">
+            {/* Clínica Básico */}
+            <div className="rounded-lg border bg-background p-3 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <span className="font-bold text-foreground text-xs sm:text-sm">Clínica Básico</span>
+                  <span className="text-[11px] text-muted-foreground ml-2">(2 acessos simultâneos base + R$ 25/mês por conexão extra)</span>
+                </div>
+                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded w-fit">2 Acessos Base</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Mensal</span>
+                  <span className="font-bold text-foreground">R$ 99,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-muted-foreground block">+ R$ 25/mês conexão extra</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
+                  <span className="font-bold text-foreground">R$ 89,10<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 267,30</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
+                  <span className="font-bold text-foreground">R$ 74,25<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 891,00</span>
+                </div>
+              </div>
             </div>
-            <div className="p-2.5 rounded-lg border bg-background space-y-1">
-              <span className="text-muted-foreground block">Trimestral (-10%)</span>
-              <span className="font-bold text-sm text-foreground">R$ 72,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">+R$ 12/acesso extra</span>
+
+            {/* Clínica Médio */}
+            <div className="rounded-lg border bg-background p-3 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <span className="font-bold text-foreground text-xs sm:text-sm">Clínica Médio</span>
+                  <span className="text-[11px] text-muted-foreground ml-2">(4 acessos simultâneos base + R$ 25/mês por conexão extra)</span>
+                </div>
+                <span className="text-[10px] font-semibold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded w-fit">4 Acessos Base</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Mensal</span>
+                  <span className="font-bold text-foreground">R$ 139,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-muted-foreground block">+ R$ 25/mês conexão extra</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
+                  <span className="font-bold text-foreground">R$ 125,10<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 375,30</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
+                  <span className="font-bold text-foreground">R$ 104,25<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 1.251,00</span>
+                </div>
+              </div>
             </div>
-            <div className="p-2.5 rounded-lg border bg-background space-y-1">
-              <span className="text-muted-foreground block">Anual (-25%)</span>
-              <span className="font-bold text-sm text-foreground">R$ 60,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">+R$ 10/acesso extra</span>
+
+            {/* Clínica Top */}
+            <div className="rounded-lg border bg-background p-3 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <span className="font-bold text-foreground text-xs sm:text-sm">Clínica Top</span>
+                  <span className="text-[11px] text-muted-foreground ml-2">(8 acessos simultâneos base + R$ 25/mês por conexão extra)</span>
+                </div>
+                <span className="text-[10px] font-semibold text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded w-fit">8 Acessos Base</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Mensal</span>
+                  <span className="font-bold text-foreground">R$ 199,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-muted-foreground block">+ R$ 25/mês conexão extra</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
+                  <span className="font-bold text-foreground">R$ 179,10<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 537,30</span>
+                </div>
+                <div className="p-2 rounded border bg-muted/20">
+                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
+                  <span className="font-bold text-foreground">R$ 149,25<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 1.791,00</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1043,6 +1446,7 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
       return renderMedicalRecordConfig();
     }
     if (feature.key === "clinical_portfolio_enabled") return renderClinicalPortfolioConfig();
+    if (feature.category === "Agenda") return renderAgendaConfig();
     if (feature.category === "UI/Experiência") return renderUIConfig();
     
     return (

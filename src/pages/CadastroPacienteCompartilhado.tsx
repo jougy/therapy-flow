@@ -635,25 +635,25 @@ const CadastroPacienteCompartilhado = () => {
             )}
 
             <Tabs defaultValue="basicos" className="w-full">
-              <TabsList className="grid w-full grid-cols-5">
-                <TabsTrigger value="basicos" className="gap-2 text-xs sm:text-sm">
+              <TabsList className="flex w-full overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-5 sm:overflow-visible sm:pb-0 h-auto p-1">
+                <TabsTrigger value="basicos" className="gap-2 text-xs sm:text-sm shrink-0 sm:shrink">
                   <UserRoundCog className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Dados Básicos</span>
                   <span className="sm:hidden">Básicos</span>
                 </TabsTrigger>
-                <TabsTrigger value="contatos" className="gap-2 text-xs sm:text-sm">
+                <TabsTrigger value="contatos" className="gap-2 text-xs sm:text-sm shrink-0 sm:shrink">
                   <Phone className="h-3.5 w-3.5" />
                   Contatos
                 </TabsTrigger>
-                <TabsTrigger value="endereco" className="gap-2 text-xs sm:text-sm">
+                <TabsTrigger value="endereco" className="gap-2 text-xs sm:text-sm shrink-0 sm:shrink">
                   <MapPin className="h-3.5 w-3.5" />
                   Endereço
                 </TabsTrigger>
-                <TabsTrigger value="saude" className="gap-2 text-xs sm:text-sm">
+                <TabsTrigger value="saude" className="gap-2 text-xs sm:text-sm shrink-0 sm:shrink">
                   <HeartPulse className="h-3.5 w-3.5" />
                   Saúde
                 </TabsTrigger>
-                <TabsTrigger value="historico" className="gap-2 text-xs sm:text-sm">
+                <TabsTrigger value="historico" className="gap-2 text-xs sm:text-sm shrink-0 sm:shrink">
                   <FileText className="h-3.5 w-3.5" />
                   Clínico
                 </TabsTrigger>

@@ -148,16 +148,16 @@ export const ClinicProfileSection = () => {
       </CardHeader>
 
       <CardContent className="space-y-5">
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-          <div className="rounded-xl border bg-card p-3.5 shadow-sm">
+        <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 md:grid-cols-4 sm:overflow-visible sm:pb-0">
+          <div className="w-[72vw] max-w-[260px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-card p-3.5 shadow-sm">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Marca ativa</p>
             <p className="mt-1 font-bold text-foreground">{getClinicBrandName(clinicName)}</p>
           </div>
-          <div className="rounded-xl border bg-card p-3.5 shadow-sm">
+          <div className="w-[72vw] max-w-[260px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-card p-3.5 shadow-sm">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Plano da clínica</p>
             <p className="mt-1 font-bold text-sky-700 dark:text-sky-400">{formattedPlan}</p>
           </div>
-          <div className="rounded-xl border bg-card p-3.5 shadow-sm">
+          <div className="w-[72vw] max-w-[260px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-card p-3.5 shadow-sm">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Cadastrada em</p>
             <p className="mt-1 font-medium text-foreground">
               {createdAt
@@ -169,7 +169,7 @@ export const ClinicProfileSection = () => {
                 : "-"}
             </p>
           </div>
-          <div className="rounded-xl border bg-card p-3.5 shadow-sm">
+          <div className="w-[72vw] max-w-[260px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-card p-3.5 shadow-sm">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Responsável</p>
             <p className="mt-1 font-medium text-foreground">{accountRole === "account_owner" ? "Você (Proprietário)" : "Administração"}</p>
           </div>

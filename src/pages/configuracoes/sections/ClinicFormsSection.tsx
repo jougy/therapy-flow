@@ -24,6 +24,7 @@ import { ToastAction } from "@/components/ui/toast";
 import { createTrashToastAction } from "@/lib/trashUtils";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { packPluriform } from "@/lib/pluriform/pluriform";
 import {
   ANAMNESIS_TEMPLATE_IMPORT_MAX_BYTES,
   buildAnamnesisTemplateExchangeFileName,
@@ -366,8 +367,10 @@ export const ClinicFormsSection = () => {
 
   // ---- Export --------------------------------------------------------------
 
+  // ---- Export --------------------------------------------------------------
+
   const handleExport = useCallback(
-    (schema: AnamnesisTemplateSchema, name: string, description: string | null, kind: "base" | "template") => {
+    async (schema: AnamnesisTemplateSchema, name: string, description: string | null, kind: "base" | "template") => {
       if (!schema || schema.length === 0) {
         toast({
           title: "Não foi possível exportar",
@@ -376,20 +379,29 @@ export const ClinicFormsSection = () => {
         });
         return;
       }
-      const payload = buildAnamnesisTemplateExchangePayload({ description, kind, name, schema });
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const objectUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = buildAnamnesisTemplateExchangeFileName(kind, name);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(objectUrl);
-      toast({
-        title: kind === "base" ? "Bloco padrão exportado" : "Modelo exportado",
-        description: "O arquivo JSON foi baixado com a estrutura completa do formulário.",
-      });
+      try {
+        const payload = buildAnamnesisTemplateExchangePayload({ description, kind, name, schema });
+        const binaryBytes = await packPluriform(payload);
+        const blob = new Blob([binaryBytes.buffer as ArrayBuffer], { type: "application/x-pluriform" });
+        const objectUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = buildAnamnesisTemplateExchangeFileName(kind, name, "pluriform");
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(objectUrl);
+        toast({
+          title: kind === "base" ? "Bloco padrão exportado" : "Modelo exportado",
+          description: "O arquivo .pluriform seguro foi baixado com sucesso.",
+        });
+      } catch (err) {
+        toast({
+          title: "Erro na exportação",
+          description: err instanceof Error ? err.message : "Falha ao gerar arquivo .pluriform.",
+          variant: "destructive",
+        });
+      }
     },
     []
   );
@@ -409,8 +421,8 @@ export const ClinicFormsSection = () => {
 
       setImportingTemplate(true);
       try {
-        const raw = await file.text();
-        const imported = parseAnamnesisTemplateExchangePayload(raw);
+        const buffer = await file.arrayBuffer();
+        const imported = await parseAnamnesisTemplateExchangePayload(buffer);
 
         if (imported.kind === "base") {
           const { error } = await supabase
@@ -520,14 +532,14 @@ export const ClinicFormsSection = () => {
       <input
         ref={templateImportRef}
         type="file"
-        accept="application/json,.json"
+        accept=".pluriform,.json,application/json,application/x-pluriform"
         className="sr-only"
         onChange={(e) => void handleImportTemplateFile(e)}
       />
       <input
         ref={baseImportRef}
         type="file"
-        accept="application/json,.json"
+        accept=".pluriform,.json,application/json,application/x-pluriform"
         className="sr-only"
         onChange={(e) => void handleImportTemplateFile(e)}
       />
@@ -648,28 +660,36 @@ export const ClinicFormsSection = () => {
               </p>
             </div>
 
-            {/* KPIs */}
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <KpiCard
-                label="Atendimentos"
-                value={baseKpis.totalSessions}
-                icon={<Activity className="h-4 w-4" />}
-              />
-              <KpiCard
-                label="Pacientes únicos"
-                value={baseKpis.uniquePatients}
-                icon={<Users className="h-4 w-4" />}
-              />
-              <KpiCard
-                label="Últimos 30 dias"
-                value={baseKpis.last30Days}
-                icon={<Calendar className="h-4 w-4" />}
-              />
-              <KpiCard
-                label="Último uso"
-                value={formatDate(baseKpis.lastUsedDate)}
-                icon={<Clock className="h-4 w-4" />}
-              />
+            {/* KPIs - Carrossel no mobile, grid no desktop */}
+            <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:overflow-visible sm:pb-0">
+              <div className="w-[68vw] max-w-[240px] sm:w-auto sm:max-w-none shrink-0 snap-start">
+                <KpiCard
+                  label="Atendimentos"
+                  value={baseKpis.totalSessions}
+                  icon={<Activity className="h-4 w-4" />}
+                />
+              </div>
+              <div className="w-[68vw] max-w-[240px] sm:w-auto sm:max-w-none shrink-0 snap-start">
+                <KpiCard
+                  label="Pacientes únicos"
+                  value={baseKpis.uniquePatients}
+                  icon={<Users className="h-4 w-4" />}
+                />
+              </div>
+              <div className="w-[68vw] max-w-[240px] sm:w-auto sm:max-w-none shrink-0 snap-start">
+                <KpiCard
+                  label="Últimos 30 dias"
+                  value={baseKpis.last30Days}
+                  icon={<Calendar className="h-4 w-4" />}
+                />
+              </div>
+              <div className="w-[68vw] max-w-[240px] sm:w-auto sm:max-w-none shrink-0 snap-start">
+                <KpiCard
+                  label="Último uso"
+                  value={formatDate(baseKpis.lastUsedDate)}
+                  icon={<Clock className="h-4 w-4" />}
+                />
+              </div>
             </div>
 
             {/* Action buttons */}
