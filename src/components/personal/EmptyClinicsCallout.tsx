@@ -11,7 +11,16 @@ interface EmptyClinicsCalloutProps {
 
 const sanitizeDisplayEmail = (email?: string): string => {
   if (!email) return "";
-  return email.replace(/[\u0000-\u001F\u007F-\u009F]/g, "").trim().slice(0, 100);
+  // Strip non-printable ASCII control characters (0-31 and 127) and extended control characters
+  return email
+    .split("")
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return !(code <= 31 || (code >= 127 && code <= 159));
+    })
+    .join("")
+    .trim()
+    .slice(0, 100);
 };
 
 export const EmptyClinicsCallout: React.FC<EmptyClinicsCalloutProps> = React.memo(({

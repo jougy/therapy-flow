@@ -71,10 +71,6 @@ export default function PlanosAssinatura() {
     isModuleEnabled,
   } = usePlanosState();
 
-  if (!loading && !isModuleEnabled) {
-    return <Navigate to="/espacopessoal" replace />;
-  }
-
   const handleOpenDetails = React.useCallback((p: PlanType) => {
     setDetailsPlanId(p);
   }, []);
@@ -98,6 +94,10 @@ export default function PlanosAssinatura() {
     clinicaMedioPricing,
     clinicaTopPricing,
   ]);
+
+  if (!loading && !isModuleEnabled) {
+    return <Navigate to="/espacopessoal" replace />;
+  }
 
   const currentDetailsPricing = detailsPlanId ? (pricingByPlanMap[detailsPlanId] || profMedioPricing) : profMedioPricing;
 

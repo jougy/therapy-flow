@@ -35,7 +35,14 @@ const safeSetItem = (key: string, value: string): void => {
 
 const sanitizeGreetingName = (name?: string): string => {
   if (!name) return "";
-  const cleaned = name.replace(/[\u0000-\u001F\u007F-\u009F]/g, "").trim();
+  const cleaned = name
+    .split("")
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return !(code <= 31 || (code >= 127 && code <= 159));
+    })
+    .join("")
+    .trim();
   const first = cleaned.split(/\s+/)[0] || "";
   return first.slice(0, 50);
 };
