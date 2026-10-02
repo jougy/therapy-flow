@@ -31,6 +31,7 @@ const supabaseMocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   signUp: vi.fn(),
   signOut: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -41,6 +42,9 @@ vi.mock("@/integrations/supabase/client", () => ({
     },
     from: supabaseMocks.from,
     rpc: supabaseMocks.rpc,
+    functions: {
+      invoke: supabaseMocks.invoke,
+    },
   },
 }));
 
@@ -57,6 +61,8 @@ describe("CadastroContaAlfa", () => {
     supabaseMocks.rpc.mockReset();
     supabaseMocks.signUp.mockReset();
     supabaseMocks.signOut.mockReset();
+    supabaseMocks.invoke.mockReset();
+    supabaseMocks.invoke.mockResolvedValue({ data: {}, error: null });
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     window.HTMLElement.prototype.hasPointerCapture = vi.fn();
     window.HTMLElement.prototype.releasePointerCapture = vi.fn();

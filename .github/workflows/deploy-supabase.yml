@@ -53,3 +53,8 @@ jobs:
           ENCODED_PASSWORD=$(node -e "console.log(encodeURIComponent(process.env.SUPABASE_DB_PASSWORD))")
           DB_URL="postgresql://postgres.${PROJECT_ID}:${ENCODED_PASSWORD}@aws-1-sa-east-1.pooler.supabase.com:5432/postgres"
           supabase db push --include-all --db-url "$DB_URL"
+
+      - name: Deploy Edge Functions
+        shell: bash
+        run: |
+          supabase functions deploy --project-ref "$PROJECT_ID"

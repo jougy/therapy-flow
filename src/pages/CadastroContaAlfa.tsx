@@ -303,6 +303,20 @@ const CadastroContaAlfa = () => {
         eventId: trialEventId,
       });
 
+      // Disparar notificação para o Telegram via Edge Function (assíncrono e fail-safe)
+      void supabase.functions.invoke("notify-admin-telegram", {
+        body: {
+          event: "SIGNUP_COMPLETED",
+          userId,
+          email: nextEmail,
+          name: nextOwnerName,
+          phone: cleanPhone,
+          plan: "Degustação Gratuita (7 dias)",
+        },
+      }).catch((notifyErr) => {
+        console.warn("[CadastroContaAlfa] Notificação do Telegram ignorada por erro:", notifyErr);
+      });
+
       if (signupData.session) {
         await supabase.auth.signOut();
       }
