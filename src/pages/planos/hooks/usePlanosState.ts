@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { calculatePlanPrice, BillingCycle, PlanPriceCalculation, PlanType } from "@/utils/subscriptionPricing";
+import { trackInitiateCheckout } from "@/lib/meta-pixel";
 import { CouponValidationResult } from "../components/PlanCouponInput";
 import { toast } from "sonner";
 
@@ -74,7 +75,7 @@ export function usePlanosState(): UsePlanosStateReturn {
   // Perfil Selecionado: Para Profissional ('prof') vs Para Clínica ('clinic')
   const [audience, setAudience] = useState<"prof" | "clinic">("prof");
 
-  // Ciclo Selecionado: Degustação Grátis (Free), Mensal, Trimestral ou Anual
+  // Ciclo Selecionado: Teste Gratuito (Free), Mensal, Trimestral ou Anual
   const [selectedCycle, setSelectedCycle] = useState<BillingCycle | "free">("annual");
 
   // State da Calculadora de Acessos Extras na Clínica e Enterprise
@@ -282,15 +283,58 @@ export function usePlanosState(): UsePlanosStateReturn {
     const targetSeats = isClinicPlan ? baseSeats + extraConcurrent : baseSeats;
     const couponQuery = appliedCoupon?.code ? `&coupon=${appliedCoupon.code}` : "";
 
-    if (existingClinicId) {
-      const seatsQuery = isClinicPlan ? `&concurrent=${targetSeats}` : "";
-      navigate(`/pagamento/${existingClinicId}?plan=${planId}&cycle=${selectedCycle}${seatsQuery}${couponQuery}`);
+    const checkoutCycle: BillingCycle = selectedCycle === "free" ? "monthly" : selectedCycle;
+    const pricing = calculatePlanPrice({
+      planType: planId,
+      billingCycle: checkoutCycle,
+      additionalSeats: isClinicPlan ? extraConcurrent : 0,
+      coupon: appliedCoupon,
+    });
+
+    void trackInitiateCheckout({
+      planKey: planId,
+      category: isClinicPlan ? "Equipe" : "Solo",
+      value: pricing.periodTotal,
+      valueCents: Math.round(pricing.periodTotal * 100),
+      currency: "BRL",
+    });
+
+    const isSoloPlan =
+      planId === "prof_basico" ||
+      planId === "prof_medio" ||
+      planId === "prof_top" ||
+      planId === "solo";
+
+    // 1. Se for plano Profissional Solo:
+    // Se o usuário já possui sua clínica solo provisionada (userSoloClinicId / existingClinicId),
+    // direciona DIRETAMENTE para o checkout Asaas da clínica solo, com ZERO formulários adicionais.
+    if (isSoloPlan && existingClinicId) {
+      navigate(`/pagamento/${existingClinicId}?plan=${planId}&cycle=${selectedCycle}${couponQuery}`);
       return;
     }
 
-    const spacesQuery = isClinicPlan ? "&spaces=30" : "";
-    const seatsQuery = isClinicPlan ? `&concurrent=${targetSeats}` : "";
-    navigate(`/onboarding-clinica?plan=${planId}&cycle=${selectedCycle}${seatsQuery}${spacesQuery}${couponQuery}`);
+    // 2. Se for plano Clínica com Equipe (clinica_basico, clinica_medio, clinica_top, clinic, enterprise):
+    // Se o usuário já tiver uma clínica solo e quiser transformá-la em clínica com equipe,
+    // permite upgrade sem perder prontuários via onboarding-clinica?mode=upgrade.
+    if (isClinicPlan) {
+      const seatsQuery = `&concurrent=${targetSeats}`;
+      const spacesQuery = "&spaces=30";
+
+      if (existingClinicId) {
+        navigate(`/onboarding-clinica?mode=upgrade&clinicId=${existingClinicId}&plan=${planId}&cycle=${selectedCycle}${seatsQuery}${couponQuery}`);
+        return;
+      }
+
+      navigate(`/onboarding-clinica?plan=${planId}&cycle=${selectedCycle}${seatsQuery}${spacesQuery}${couponQuery}`);
+      return;
+    }
+
+    if (existingClinicId) {
+      navigate(`/pagamento/${existingClinicId}?plan=${planId}&cycle=${selectedCycle}${couponQuery}`);
+      return;
+    }
+
+    navigate(`/onboarding-clinica?plan=${planId}&cycle=${selectedCycle}${couponQuery}`);
   }, [activatingTrial, isFreeCycle, existingClinicId, extraConcurrent, appliedCoupon, selectedCycle, navigate, refreshAuthState, selectClinic]);
 
   return {

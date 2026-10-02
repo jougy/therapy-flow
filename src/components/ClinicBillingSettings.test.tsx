@@ -241,9 +241,9 @@ describe("ClinicBillingSettings", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText(/Plano Gratuito \/ Degustação/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/Degustação de 7 dias ou até 20 atendimentos|Sem prazo de expiração/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Consumo de Cotas da Degustação/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Plano Gratuito \/ Teste Gratuito/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Teste gratuito de 7 dias ou até 20 atendimentos|Sem prazo de expiração/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Consumo de Cotas do Teste Gratuito/i)).toBeInTheDocument();
 
     const upgradeButtons = screen.getAllByText(/Fazer Upgrade para Plano Ilimitado|Fazer Upgrade para Ilimitado/i);
     expect(upgradeButtons.length).toBeGreaterThan(0);

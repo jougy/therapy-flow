@@ -446,7 +446,7 @@ export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({
               {isFreeCycle ? "Modalidade de Teste" : `Investimento (${pricing.periodLabel})`}
             </span>
             <span className="text-xl sm:text-2xl font-black text-foreground">
-              {isFreeCycle ? "Degustação Grátis (7 dias)" : `R$ ${pricing.monthlyEquivalent.toFixed(2).replace(".", ",")}/mês`}
+              {isFreeCycle ? "Teste Gratuito (7 dias)" : `R$ ${pricing.monthlyEquivalent.toFixed(2).replace(".", ",")}/mês`}
             </span>
           </div>
           {!isFreeCycle && (

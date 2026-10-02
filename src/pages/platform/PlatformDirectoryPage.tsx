@@ -27,6 +27,7 @@ import { PlatformAuditList } from "@/components/platform/PlatformAuditList";
 import { DirectoryCard, DirectoryPill } from "@/components/platform/DirectoryCard";
 import { consolidateDirectoryItems } from "@/components/platform/directory-utils";
 import type {
+  ClinicCategory,
   DetailKind,
   DirectoryKind,
   DirectoryStatusFilter,
@@ -36,9 +37,11 @@ import type {
 } from "@/components/platform/types";
 import {
   callRpc,
+  clinicCategoryLabels,
   clinicMaskedRouteKey,
   directoryKindLabels,
   directoryStatusLabels,
+  getClinicCategory,
   getErrorMessage,
   PLATFORM_CLINIC_DETAIL_ROUTE,
   storePlatformClinicKey,
@@ -49,6 +52,7 @@ import { supabase } from "@/integrations/supabase/client";
 export const PlatformDirectoryPage = () => {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<DirectoryKind>("all");
+  const [clinicCategory, setClinicCategory] = useState<ClinicCategory>("all");
   const [statusFilter, setStatusFilter] = useState<DirectoryStatusFilter>("all");
   const [selectedTagId, setSelectedTagId] = useState<string>("all");
   const [tags, setTags] = useState<PlatformTagItem[]>([]);
@@ -95,7 +99,8 @@ export const PlatformDirectoryPage = () => {
     targetKind: DirectoryKind = kind,
     targetStatus: DirectoryStatusFilter = statusFilter,
     targetTag: string = selectedTagId,
-    targetQuery: string = query
+    targetQuery: string = query,
+    targetClinicCategory: ClinicCategory = clinicCategory
   ) => {
     setLoading(true);
     setHasSearched(true);
@@ -137,6 +142,15 @@ export const PlatformDirectoryPage = () => {
         );
       }
 
+      // Filtragem por categoria de clínica se aplicável
+      if (targetClinicCategory !== "all") {
+        finalDirectory = finalDirectory.filter((item) => {
+          if (item.item_type !== "clinic") return false;
+          const cat = getClinicCategory(item);
+          return cat === targetClinicCategory;
+        });
+      }
+
       setDirectory(finalDirectory);
     } catch (error) {
       toast({
@@ -147,7 +161,7 @@ export const PlatformDirectoryPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [kind, statusFilter, selectedTagId, query]);
+  }, [kind, statusFilter, selectedTagId, query, clinicCategory]);
 
   const loadAuditEvents = useCallback(async () => {
     try {
@@ -163,14 +177,17 @@ export const PlatformDirectoryPage = () => {
     void loadAuditEvents();
   }, [loadAuditEvents]);
 
-  const handleQuickList = (selectedKind: DirectoryKind) => {
+  const handleQuickList = (selectedKind: DirectoryKind, selectedCategory: ClinicCategory = "all", selectedStatus: DirectoryStatusFilter = "all") => {
     setKind(selectedKind);
-    void loadDirectory(selectedKind, statusFilter, selectedTagId, query);
+    setClinicCategory(selectedCategory);
+    setStatusFilter(selectedStatus);
+    void loadDirectory(selectedKind, selectedStatus, selectedTagId, query, selectedCategory);
   };
 
   const handleClearFilters = () => {
     setQuery("");
     setKind("all");
+    setClinicCategory("all");
     setStatusFilter("all");
     setSelectedTagId("all");
     setHasSearched(false);
@@ -197,7 +214,7 @@ export const PlatformDirectoryPage = () => {
 
   return (
     <div className="space-y-5">
-      {/* Barra de Filtros em 3 Menus + Busca */}
+      {/* Barra de Filtros em 4 Menus + Busca */}
       <section className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
         <form onSubmit={handleSearchSubmit} className="flex flex-wrap items-center gap-3">
           {/* Busca textual */}
@@ -220,6 +237,23 @@ export const PlatformDirectoryPage = () => {
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(directoryKindLabels).map(([key, label]) => (
+                  <SelectItem key={key} value={key}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Menu Segmento de Clínicas */}
+          <div className="w-full sm:w-auto min-w-[180px]">
+            <Select value={clinicCategory} onValueChange={(value) => setClinicCategory(value as ClinicCategory)}>
+              <SelectTrigger className="h-10">
+                <Building2 className="mr-2 h-4 w-4 text-muted-foreground" />
+                <SelectValue placeholder="Segmento da clínica" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(clinicCategoryLabels).map(([key, label]) => (
                   <SelectItem key={key} value={key}>
                     {label}
                   </SelectItem>
@@ -280,25 +314,41 @@ export const PlatformDirectoryPage = () => {
           </div>
         </form>
 
-        {/* Linha de Ações Auxiliares: Botões de Criação e Reset */}
+        {/* Linha de Ações Auxiliares: Botões de Criação e Segmentação Comercial */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="font-medium mr-1">Atalhos rápidos:</span>
+            <span className="font-medium mr-1">Segmentos & Atalhos:</span>
             <Button
               size="sm"
               variant="outline"
               className="h-7 text-xs border-sky-500/30 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950/40"
-              onClick={() => handleQuickList("clinic")}
+              onClick={() => handleQuickList("clinic", "solo")}
             >
-              Listar Clínicas
+              Listar Clínicas Solo
             </Button>
             <Button
               size="sm"
               variant="outline"
               className="h-7 text-xs border-purple-500/30 text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-950/40"
-              onClick={() => handleQuickList("owner")}
+              onClick={() => handleQuickList("clinic", "team")}
             >
-              Listar Owners
+              Listar Clínicas Equipe
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-amber-500/40 text-amber-800 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+              onClick={() => handleQuickList("clinic", "enterprise")}
+            >
+              Listar Enterprise
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-neutral-400/40 text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-900/60"
+              onClick={() => handleQuickList("clinic", "inactive")}
+            >
+              Listar Inativas
             </Button>
             <Button
               size="sm"
@@ -352,7 +402,7 @@ export const PlatformDirectoryPage = () => {
       {hasSearched && (
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <DirectoryPill icon={Building2} label="Clínicas na busca" value={counters.clinic} colorClass="bg-sky-500/15 text-sky-700 dark:text-sky-300" />
-          <DirectoryPill icon={UsersRound} label="Contas / Owners" value={counters.account} colorClass="bg-purple-500/15 text-purple-700 dark:text-purple-300" />
+          <DirectoryPill icon={UsersRound} label="Contas / Colaboradores" value={counters.account} colorClass="bg-purple-500/15 text-purple-700 dark:text-purple-300" />
           <DirectoryPill icon={Clock3} label="Pendências na busca" value={counters.pending} colorClass="bg-amber-500/15 text-amber-700 dark:text-amber-300" />
           <DirectoryPill icon={Stethoscope} label="Pacientes na busca" value={counters.patient} colorClass="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" />
           <DirectoryPill icon={ShieldCheck} label="Resultados retornados" value={directory.length} colorClass="bg-primary/10 text-primary" />
@@ -371,11 +421,20 @@ export const PlatformDirectoryPage = () => {
               Para otimizar o consumo de dados e o tempo de carregamento, escolha os filtros acima ou utilize um dos atalhos rápidos para listar registros específicos.
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic")}>
-                Listar Clínicas
+              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "solo")}>
+                Listar Clínicas Solo
               </Button>
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("owner")}>
-                Listar Owners
+              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "team")}>
+                Listar Clínicas Equipe
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "enterprise")}>
+                Listar Enterprise
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "inactive")}>
+                Listar Inativas
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic")}>
+                Todas Clínicas
               </Button>
               <Button variant="outline" size="sm" onClick={() => handleQuickList("account")}>
                 Listar Usuários

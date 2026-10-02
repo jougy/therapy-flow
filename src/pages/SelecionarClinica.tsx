@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { Activity, Award, Building2, CalendarDays, CheckCircle2, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, PlusCircle, RefreshCw, Settings, ShieldCheck, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
+import { Activity, Award, Building2, CalendarDays, CheckCircle2, Clock, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, PlusCircle, RefreshCw, Settings, ShieldCheck, Sparkles, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
 import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
 import {
   AlertDialog,
@@ -31,9 +31,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 import { logRuntimeError } from "@/lib/runtime-debug";
+import { getSignupIntent, clearSignupIntent } from "@/lib/signup-intent";
 import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { evaluateClinicTrialStatus } from "@/lib/trial";
 import { cn } from "@/lib/utils";
 
 type PersonalSection = "clinics" | "dashboard" | "portfolio" | "news" | "settings";
@@ -100,6 +102,14 @@ interface ClinicInvitation {
   job_title: string | null;
   operational_role: string;
   specialty: string | null;
+}
+
+interface ClinicSubscriptionSummary {
+  status: string;
+  trial_ends_at: string | null;
+  is_free_trial: boolean | null;
+  expires_at: string | null;
+  current_period_end: string | null;
 }
 
 const roleLabel: Record<string, string> = {
@@ -236,6 +246,7 @@ const SelecionarClinica = () => {
   const [actingInvitationId, setActingInvitationId] = useState<string | null>(null);
   const [decliningInvitation, setDecliningInvitation] = useState<ClinicInvitation | null>(null);
   const [leavingClinicId, setLeavingClinicId] = useState<string | null>(null);
+  const [clinicSubscriptions, setClinicSubscriptions] = useState<Record<string, ClinicSubscriptionSummary>>({});
   const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
   const [mobileDockPressedSection, setMobileDockPressedSection] = useState<PersonalSection | null>(null);
   const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
@@ -296,6 +307,130 @@ const SelecionarClinica = () => {
       cancelled = true;
     };
   }, [user?.id]);
+
+  useEffect(() => {
+    const clinicIds = accessibleClinics.map((option) => option.clinic.id).filter(Boolean);
+    if (clinicIds.length === 0) {
+      setClinicSubscriptions({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchSubscriptions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("clinic_subscriptions")
+          .select("clinic_id, status, trial_ends_at, is_free_trial, expires_at, current_period_end")
+          .in("clinic_id", clinicIds);
+
+        if (cancelled || error || !data) {
+          return;
+        }
+
+        const map: Record<string, ClinicSubscriptionSummary> = {};
+        for (const sub of data) {
+          if (sub.clinic_id) {
+            map[sub.clinic_id] = {
+              status: sub.status ?? "",
+              trial_ends_at: sub.trial_ends_at ?? null,
+              is_free_trial: sub.is_free_trial ?? null,
+              expires_at: sub.expires_at ?? null,
+              current_period_end: sub.current_period_end ?? null,
+            };
+          }
+        }
+        setClinicSubscriptions(map);
+      } catch (err) {
+        // Silently continue with clinicOption fallbacks
+      }
+    };
+
+    void fetchSubscriptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessibleClinics]);
+
+  // Processar intenção de cadastro vinda da Landing Page (plurifisio.com.br) ou login externo
+  useEffect(() => {
+    if (!accessibleClinics || accessibleClinics.length === 0) return;
+
+    const intent = getSignupIntent();
+    if (!intent) return;
+
+    // Buscar a clínica solo / de propriedade do usuário autenticado
+    const ownedClinic =
+      accessibleClinics.find(
+        (opt) =>
+          (opt.membership.account_role === "account_owner" || opt.membership.operational_role === "owner") &&
+          opt.clinic.account_owner_user_id === user?.id
+      ) ||
+      accessibleClinics.find(
+        (opt) => opt.membership.account_role === "account_owner" || opt.membership.operational_role === "owner"
+      ) ||
+      accessibleClinics[0];
+
+    if (!ownedClinic?.clinic?.id) return;
+
+    const targetClinicId = ownedClinic.clinic.id;
+    const isClinicTeamPlan =
+      intent.plan === "clinica_basico" ||
+      intent.plan === "clinica_medio" ||
+      intent.plan === "clinica_top" ||
+      intent.plan === "clinic" ||
+      intent.plan === "enterprise";
+
+    // 1. Se intenção for Teste Gratuito de 7 dias
+    if (intent.trial) {
+      const sub = clinicSubscriptions[targetClinicId];
+      const hasUsedTrial = sub?.is_free_trial || sub?.status === "trial_expired" || ownedClinic.clinic.subscription_status === "trial_expired";
+
+      clearSignupIntent();
+
+      if (hasUsedTrial) {
+        toast({
+          title: "Período de teste já utilizado",
+          description: "Sua conta já utilizou o período de teste gratuito de 7 dias. Conheça nossos planos para continuar aproveitando todos os recursos.",
+        });
+        navigate(`/planos?clinicId=${targetClinicId}`, { replace: true });
+        return;
+      }
+
+      toast({
+        title: "Teste gratuito de 7 dias ativo",
+        description: "Bem-vindo ao seu Consultório Pessoal! Aproveite seus 7 dias gratuitos.",
+      });
+      return;
+    }
+
+    // 2. Se intenção for Plano de Clínica com Equipe -> Onboarding de Upgrade
+    if (isClinicTeamPlan) {
+      clearSignupIntent();
+      const params = new URLSearchParams();
+      params.set("mode", "upgrade");
+      params.set("clinicId", targetClinicId);
+      if (intent.plan) params.set("plan", intent.plan);
+      if (intent.cycle) params.set("cycle", intent.cycle);
+      if (intent.coupon) params.set("coupon", intent.coupon);
+
+      navigate(`/onboarding-clinica?${params.toString()}`, { replace: true });
+      return;
+    }
+
+    // 3. Se intenção for Plano Profissional Solo -> Direto para Checkout da Clínica Solo
+    if (intent.plan) {
+      clearSignupIntent();
+      const params = new URLSearchParams();
+      params.set("plan", intent.plan);
+      params.set("cycle", intent.cycle || "annual");
+      if (intent.coupon) params.set("coupon", intent.coupon);
+
+      navigate(`/pagamento/${targetClinicId}?${params.toString()}`, { replace: true });
+      return;
+    }
+  }, [accessibleClinics, clinicSubscriptions, navigate, user?.id]);
 
   const handleAcceptInvitation = async (invitationId: string) => {
     setActingInvitationId(invitationId);
@@ -604,6 +739,32 @@ const SelecionarClinica = () => {
       totalAttendances: completedSessions.length,
     };
   }, [attendanceRange, dashboardGroups, dashboardSessions]);
+
+  // Ordenação inteligente das clínicas:
+  // 1. Clínicas pagas / ativas ou convidadas de terceiros com atendimento regular têm maior destaque
+  // 2. Clínicas solo de teste gratuito (trial) sem personalização têm menor destaque (ao final da lista)
+  const sortedAccessibleClinics = useMemo(() => {
+    return [...accessibleClinics].sort((a, b) => {
+      const subA = clinicSubscriptions[a.clinic.id];
+      const subB = clinicSubscriptions[b.clinic.id];
+
+      const isTrialA = subA?.is_free_trial || a.clinic.subscription_status === "trialing" || a.clinic.subscription_status === "TRIAL";
+      const isTrialB = subB?.is_free_trial || b.clinic.subscription_status === "trialing" || b.clinic.subscription_status === "TRIAL";
+
+      const isOwnerA = a.membership.account_role === "account_owner" || a.membership.operational_role === "owner";
+      const isOwnerB = b.membership.account_role === "account_owner" || b.membership.operational_role === "owner";
+
+      // Se uma for paga/convite e outra for trial solo, a não-trial vem primeiro
+      if (!isTrialA && isTrialB) return -1;
+      if (isTrialA && !isTrialB) return 1;
+
+      // Se ambas forem pagas ou ambas forem trial, clínicas onde é colaborador/convidado com equipe têm prioridade de uso
+      if (!isOwnerA && isOwnerB) return -1;
+      if (isOwnerA && !isOwnerB) return 1;
+
+      return a.clinic.name.localeCompare(b.clinic.name);
+    });
+  }, [accessibleClinics, clinicSubscriptions]);
 
   const handleSelectClinic = async (clinicId: string) => {
     setSelectingClinicId(clinicId);
@@ -1285,16 +1446,10 @@ const SelecionarClinica = () => {
 
           <Card className="overflow-hidden">
             <CardHeader className="px-4 sm:px-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-base">Escolha a clínica</CardTitle>
-                  <ComponentHelpButton helpId="personal-clinics-block" size="xs" />
-                  <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
-                </div>
-                <Button data-tutorial="create-clinic-btn" variant="outline" size="sm" onClick={() => navigate("/onboarding-clinica?mode=create")} className="w-fit">
-                  <Building2 className="mr-2 h-4 w-4" />
-                  Comprar meu próprio espaço
-                </Button>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">Escolha a clínica</CardTitle>
+                <ComponentHelpButton helpId="personal-clinics-block" size="xs" />
+                <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
               </div>
             </CardHeader>
             <CardContent className="px-4 sm:px-6">
@@ -1305,11 +1460,20 @@ const SelecionarClinica = () => {
                 />
               ) : (
                 <div className="grid gap-3">
-                  {accessibleClinics.map((clinicOption, index) => {
+                  {sortedAccessibleClinics.map((clinicOption, index) => {
                     const clinicName = getClinicBrandName(clinicOption.clinic.name);
                     const isSelecting = selectingClinicId === clinicOption.clinic.id;
                     const canLeaveClinic = clinicOption.membership.account_role !== "account_owner" && clinicOption.membership.operational_role !== "owner";
                     const isLeavingClinic = leavingClinicId === clinicOption.clinic.id;
+
+                    const subInfo = clinicSubscriptions[clinicOption.clinic.id];
+                    const trialEvaluation = evaluateClinicTrialStatus({
+                      status: subInfo?.status || clinicOption.clinic.subscription_status,
+                      isFreeTrial: subInfo?.is_free_trial,
+                      trialEndsAt: subInfo?.trial_ends_at || clinicOption.clinic.trial_ends_at,
+                      expiresAt: subInfo?.expires_at,
+                      currentPeriodEnd: subInfo?.current_period_end,
+                    });
 
                     return (
                       <div
@@ -1331,8 +1495,31 @@ const SelecionarClinica = () => {
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-foreground">{clinicName}</p>
-                          <p className="truncate text-sm text-muted-foreground">{getAccessLabel(clinicOption)}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="truncate font-medium text-foreground">{clinicName}</p>
+                            {trialEvaluation.hasTrial && (
+                              <Badge
+                                variant="outline"
+                                data-testid="clinic-trial-badge"
+                                className={`text-[10px] px-1.5 py-0 font-medium ${trialEvaluation.badgeVariantClass}`}
+                              >
+                                <Sparkles className="w-2.5 h-2.5 mr-1 inline" />
+                                {trialEvaluation.badgeLabel}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                            <p className="truncate text-sm text-muted-foreground">{getAccessLabel(clinicOption)}</p>
+                            {trialEvaluation.hasTrial && (
+                              <span
+                                data-testid="clinic-trial-notice"
+                                className={`text-xs inline-flex items-center gap-1 ${trialEvaluation.noticeVariantClass}`}
+                              >
+                                <Clock className="w-3 h-3 shrink-0" />
+                                {trialEvaluation.noticeText}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </button>
                       <div className="flex min-w-0 shrink-0 items-center gap-1 pr-1 sm:gap-2 sm:pr-2">

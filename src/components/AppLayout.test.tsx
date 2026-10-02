@@ -196,4 +196,32 @@ describe("AppLayout", () => {
     expect(leaveClinic).toHaveBeenCalled();
     expect(signOut).not.toHaveBeenCalled();
   });
+
+  it("renders both clinic logo and clinic brand name together in header", () => {
+    const { leaveClinic, signOut } = setupAuthMock();
+    vi.mocked(useAuth).mockReturnValue({
+      ...vi.mocked(useAuth)(),
+      clinic: {
+        account_owner_user_id: "user-1",
+        concurrent_access_limit: 4,
+        id: "clinic-1",
+        logo_url: "https://b2.storage/logo.webp",
+        name: "Clinica Aurora",
+        route_key: "clinic-route-1",
+        subaccount_limit: 4,
+        subscription_plan: "clinic",
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <AppLayout>
+          <div>Conteúdo</div>
+        </AppLayout>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByAltText("Logo da Clinica Aurora")).toBeInTheDocument();
+    expect(screen.getAllByText("Clinica Aurora").length).toBeGreaterThanOrEqual(1);
+  });
 });

@@ -42,6 +42,7 @@ describe("OnboardingClinica", () => {
   };
 
   beforeEach(() => {
+    localStorage.clear();
     supabaseMocks.from.mockReset();
     supabaseMocks.rpc.mockReset();
     asaasMocks.createClinicWithVerifiedCard.mockReset();
@@ -79,7 +80,7 @@ describe("OnboardingClinica", () => {
     expect(screen.queryByPlaceholderText(/DIGITE O CUPOM/i)).not.toBeInTheDocument();
   });
 
-  it("renders credit card fields in create mode (isCreateMode=true)", () => {
+  it("renders optional credit card fields in create mode (isCreateMode=true)", () => {
     vi.mocked(useAuth).mockReturnValue({
       clinic: null,
       profile: { cpf: "12345678901" },
@@ -92,12 +93,12 @@ describe("OnboardingClinica", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/Cartão de Crédito para Ativação \(Obrigatório\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cartão de Crédito \(Opcional\)/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Nome Impresso no Cartão/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Número do Cartão/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Validade/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Código de Segurança/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i })).toBeInTheDocument();
   });
 
   it("blocks submission and keeps submit button disabled until terms of consent are accepted", async () => {
@@ -118,10 +119,10 @@ describe("OnboardingClinica", () => {
     fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "São Paulo" } });
     fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "SP" } });
 
-    const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
+    const submitBtn = screen.getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
     expect(submitBtn).toBeDisabled();
 
-    const termsCheckbox = screen.getByRole("checkbox");
+    const termsCheckbox = screen.getByTestId("owner-terms-consent-checkbox");
     expect(termsCheckbox).not.toBeChecked();
 
     // Check the terms
@@ -151,7 +152,7 @@ describe("OnboardingClinica", () => {
     const acceptModalBtn = screen.getByRole("button", { name: /Li e Aceito os Termos/i });
     fireEvent.click(acceptModalBtn);
 
-    const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
+    const submitBtn = screen.getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
     expect(submitBtn).not.toBeDisabled();
   });
 
@@ -198,7 +199,7 @@ describe("OnboardingClinica", () => {
     fillValidCard();
 
     // Accept terms
-    const termsCheckbox = screen.getByRole("checkbox");
+    const termsCheckbox = screen.getByTestId("owner-terms-consent-checkbox");
     fireEvent.click(termsCheckbox);
 
     // Submit form
@@ -278,7 +279,7 @@ describe("OnboardingClinica", () => {
     fillValidCard();
 
     // Accept terms
-    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByTestId("owner-terms-consent-checkbox"));
 
     const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
     fireEvent.click(submitBtn);
@@ -354,18 +355,74 @@ describe("OnboardingClinica", () => {
     );
 
     // In edit mode, card section should NOT be displayed
-    expect(screen.queryByText(/Cartão de Crédito para Ativação \(Obrigatório\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Cartão de Crédito \(Opcional\)/i)).not.toBeInTheDocument();
     const saveBtn = screen.getByRole("button", { name: /Salvar Alterações/i });
     expect(saveBtn).toBeInTheDocument();
 
     // Accept terms if required
-    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByTestId("owner-terms-consent-checkbox"));
     fireEvent.submit(saveBtn.closest("form")!);
 
     await waitFor(() => {
       expect(supabaseMocks.from).toHaveBeenCalledWith("clinics");
       expect(mockUpdate).toHaveBeenCalled();
       expect(asaasMocks.createClinicWithVerifiedCard).not.toHaveBeenCalled();
+    });
+  });
+
+  it("creates clinic without credit card when user leaves card inputs blank and routes to checkout", async () => {
+    const mockSelectClinic = vi.fn().mockResolvedValue(undefined);
+    const mockRefreshAuthState = vi.fn().mockResolvedValue(undefined);
+
+    vi.mocked(useAuth).mockReturnValue({
+      clinic: null,
+      profile: {
+        cpf: "12345678901",
+        email: "autonomo@exemplo.com",
+      },
+      session: {
+        user: { id: "user-solo-no-card", email: "autonomo@exemplo.com" },
+      },
+      selectClinic: mockSelectClinic,
+      refreshAuthState: mockRefreshAuthState,
+    } as unknown as ReturnType<typeof useAuth>);
+
+    const mockUpdate = vi.fn().mockReturnValue({
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    });
+    supabaseMocks.from.mockReturnValue({
+      update: mockUpdate,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/onboarding-clinica?plan=prof_medio"]}>
+        <OnboardingClinica />
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText(/Nome da Clínica/i), { target: { value: "Consultório Sem Cartão" } });
+    fireEvent.change(screen.getByLabelText(/Logradouro/i), { target: { value: "Av. Paulista" } });
+    fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "São Paulo" } });
+    fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "SP" } });
+
+    // Accept terms
+    fireEvent.click(screen.getByTestId("owner-terms-consent-checkbox"));
+
+    // Submit form sem preencher cartão
+    const submitBtn = screen.getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(asaasMocks.createClinicWithVerifiedCard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          plan_type: "prof_medio",
+          cpf_cnpj: "12345678901",
+          clinic_data: expect.objectContaining({
+            name: "Consultório Sem Cartão",
+          }),
+          credit_card_data: undefined,
+        })
+      );
     });
   });
 });

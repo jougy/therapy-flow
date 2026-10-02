@@ -402,4 +402,27 @@ describe("AgendaWidget", () => {
     // Botão de deletar inline não deve ser renderizado quando can('agenda.delete_events') é false
     expect(screen.queryByLabelText("Excluir agendamento")).not.toBeInTheDocument();
   });
+
+  it("opens add event dialog with date button and dismissible info tip", async () => {
+    render(
+      <MemoryRouter>
+        <AgendaWidget />
+      </MemoryRouter>
+    );
+
+    const addBtn = await screen.findByRole("button", { name: /adicionar evento/i });
+    fireEvent.click(addBtn);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /novo agendamento/i })).toBeInTheDocument();
+    expect(screen.getByTitle("Selecione a data do agendamento")).toBeInTheDocument();
+    expect(screen.getByText("Crie um novo agendamento usando a mesma agenda compartilhada da clínica.")).toBeInTheDocument();
+
+    // Dispensar a dica de ajuda
+    const dismissTipBtn = screen.getByRole("button", { name: /dispensar aviso permanentemente/i });
+    fireEvent.click(dismissTipBtn);
+
+    expect(screen.queryByText("Crie um novo agendamento usando a mesma agenda compartilhada da clínica.")).not.toBeInTheDocument();
+  });
 });
+

@@ -179,8 +179,8 @@ const ConviteClinica = () => {
     }
 
     toast({
-      title: "Acesso confirmado!",
-      description: `Você agora faz parte da equipe de ${invite?.clinic_name || "sua nova clínica"}.`,
+      title: "Acesso ativado com sucesso!",
+      description: `Bem-vindo(a) à equipe da ${invite?.clinic_name || "sua nova clínica"}! Seu acesso foi ativado com sucesso.`,
     });
     navigate("/espacopessoal", { replace: true });
   };
@@ -296,7 +296,7 @@ const ConviteClinica = () => {
       const createdUserId = authResult.user?.id;
 
       if (createdUserId) {
-        await supabase.rpc("handle_personal_signup", {
+        const { error: rpcError } = await supabase.rpc("handle_personal_signup", {
           _user_id: createdUserId,
           _full_name: fullName.trim(),
           _cpf: cleanCpf,
@@ -304,6 +304,10 @@ const ConviteClinica = () => {
           _phone: cleanPhone,
           _email: invite.email,
         });
+
+        if (rpcError) {
+          throw rpcError;
+        }
       }
 
       if (authResult.session) {

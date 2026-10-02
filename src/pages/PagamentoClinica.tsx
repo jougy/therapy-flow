@@ -554,7 +554,7 @@ export default function PagamentoClinica() {
 
         const successMsg = isTrialCoupon
           ? `Cartão validado com cobrança de R$ 0,01! Acesso Beta de ${appliedCoupon?.discount_value || 180} dias ativado.`
-          : "Cartão validado com cobrança de R$ 0,01! Sua degustação gratuita de 7 dias está ativa.";
+          : "Cartão validado com cobrança de R$ 0,01! Seu teste gratuito de 7 dias está ativo.";
         toast.success(successMsg);
         setPaymentConfirmed(true);
         setPaymentRefused(false);
@@ -629,7 +629,58 @@ export default function PagamentoClinica() {
     }
   };
 
+  const applyUpgradeDraftIfPresent = async () => {
+    if (!clinicId) return;
+    try {
+      const rawDraft = localStorage.getItem("pluri_clinic_upgrade_draft");
+      if (rawDraft) {
+        const draft = JSON.parse(rawDraft);
+        if (draft && typeof draft === "object") {
+          const addressJson = {
+            country: draft.country || "BR",
+            cep: draft.cep,
+            street: draft.street,
+            number: draft.number,
+            complement: draft.complement,
+            neighborhood: draft.neighborhood,
+            city: draft.city,
+            state: draft.state,
+          };
+
+          const businessHoursJson = {
+            description: draft.business_hours,
+          };
+
+          const parsedSubaccounts = isClinicFamily ? Math.max(1, parseInt(draft.subaccount_limit || "999999", 10)) : 1;
+          const parsedConcurrent = Math.max(isClinicFamily ? 2 : 1, parseInt(draft.concurrent_access_limit || String(defaultConcurrent), 10));
+
+          await supabase
+            .from("clinics")
+            .update({
+              name: draft.name || undefined,
+              logo_url: draft.logo_url || null,
+              email: draft.email || null,
+              phone: draft.phone || null,
+              legal_name: draft.legal_name || null,
+              cnpj: draft.cnpj ? String(draft.cnpj).replace(/\D/g, "") : null,
+              address: addressJson,
+              business_hours: businessHoursJson,
+              subscription_plan: planParam,
+              subaccount_limit: parsedSubaccounts,
+              concurrent_access_limit: parsedConcurrent,
+            })
+            .eq("id", clinicId);
+
+          localStorage.removeItem("pluri_clinic_upgrade_draft");
+        }
+      }
+    } catch (err) {
+      console.warn("Falha ao aplicar rascunho de upgrade pós-pagamento:", err);
+    }
+  };
+
   const handleFinishAndEnter = async () => {
+    await applyUpgradeDraftIfPresent();
     if (typeof refreshAuthState === "function") {
       await refreshAuthState();
     }
@@ -655,7 +706,7 @@ export default function PagamentoClinica() {
   const cycleTitle = isTrialCoupon
     ? `Acesso Beta Gratuito (${appliedCoupon?.discount_value || 180} dias)`
     : isTrial
-    ? "Degustação Grátis (7 dias)"
+    ? "Teste Gratuito (7 dias)"
     : pricing.cycleTitle;
   const planTitle =
     planParam === "clinica_top"
@@ -687,15 +738,25 @@ export default function PagamentoClinica() {
       <div className="z-10 w-full max-w-5xl space-y-3 sm:space-y-4 my-auto">
         {/* Navigation Bar */}
         <div className="flex items-center justify-between">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate("/espacopessoal")}
-            className="text-muted-foreground hover:text-foreground hover:bg-muted border border-border rounded-xl px-3 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-2 min-h-[36px]"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Voltar ao Espaço Pessoal</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/espacopessoal")}
+              className="text-muted-foreground hover:text-foreground hover:bg-muted border border-border rounded-xl px-3 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-2 min-h-[36px]"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Voltar ao Espaço Pessoal</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(clinicId ? `/planos?clinicId=${clinicId}` : "/planos")}
+              className="text-muted-foreground hover:text-foreground hover:bg-muted text-xs font-medium rounded-xl px-3 py-1.5 min-h-[36px]"
+            >
+              Ver outros planos
+            </Button>
+          </div>
 
           <Button
             variant="ghost"
@@ -747,7 +808,7 @@ export default function PagamentoClinica() {
                   isTrialCoupon
                     ? `Acesso Beta Gratuito de ${appliedCoupon?.discount_value || 180} dias (cobrança simbólica de R$ 0,01)`
                     : isTrial
-                    ? "Degustação Grátis de 7 dias (cobrança simbólica de R$ 0,01)"
+                    ? "Teste Gratuito de 7 dias (cobrança simbólica de R$ 0,01)"
                     : pricing.periodLabel
                 }
                 invoiceUrl={invoice?.invoice_url}
@@ -816,7 +877,7 @@ export default function PagamentoClinica() {
                         <span>
                           {isTrialCoupon
                             ? `O cupom ${appliedCoupon?.code} concede ${appliedCoupon?.discount_value || 180} dias gratuitos e exige validação de um cartão de crédito (R$ 0,01) para garantia antifraude e tokenização.`
-                            : "A degustação gratuita exige validação de um cartão de crédito (R$ 0,01) para garantia antifraude."}
+                            : "O teste gratuito exige validação de um cartão de crédito (R$ 0,01) para garantia antifraude."}
                         </span>
                       </div>
                     ) : (

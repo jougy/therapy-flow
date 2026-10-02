@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Download, Eye, EyeOff, KeyRound, Loader2, LogIn, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { getSignupIntent, clearSignupIntent, saveSignupIntent } from "@/lib/signup-intent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,8 +28,41 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
+  const [searchParams] = useSearchParams();
   const [recoveryTab, setRecoveryTab] = useState<"email" | "cpf">("email");
+
+  // Capturar e persistir intenção caso venha por query param direto na tela de login
+  useEffect(() => {
+    const planParam = searchParams.get("plan");
+    const cycleParam = searchParams.get("cycle");
+    const trialParam = searchParams.get("trial");
+    const couponParam = searchParams.get("coupon") || searchParams.get("cupom");
+
+    if (planParam || trialParam === "true") {
+      saveSignupIntent({
+        plan: planParam,
+        cycle: cycleParam,
+        trial: trialParam,
+        coupon: couponParam,
+      });
+    }
+  }, [searchParams]);
+
+  const signupCadastroUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    const plan = searchParams.get("plan");
+    const cycle = searchParams.get("cycle");
+    const trial = searchParams.get("trial");
+    const coupon = searchParams.get("coupon") || searchParams.get("cupom");
+
+    if (plan) params.set("plan", plan);
+    if (cycle) params.set("cycle", cycle);
+    if (trial) params.set("trial", trial);
+    if (coupon) params.set("coupon", coupon);
+
+    const qs = params.toString();
+    return qs ? `/auth/cadastro?${qs}` : "/auth/cadastro";
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -424,7 +458,7 @@ const Auth = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => navigate("/auth/cadastro")}
+                    onClick={() => navigate(signupCadastroUrl)}
                     className="w-full text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Não tem uma conta? Criar conta

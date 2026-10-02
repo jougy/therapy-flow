@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { getDesignLabButtonClass, designLabIconClass, designLabLabelClass } from "@/lib/design-animations";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -886,16 +887,19 @@ const AgendaWidget = ({
       {containerContent}
 
         <Dialog open={showAdd} onOpenChange={setShowAdd}>
-          <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-sm sm:p-6">
-            <DialogHeader>
-              <DialogTitle>Novo evento — {format(selectedDate, "dd/MM/yyyy")}</DialogTitle>
-              <DialogDescription>
-                  Crie um novo agendamento usando a mesma agenda compartilhada da clínica.
+          <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-md sm:p-6">
+            <DialogHeader className="space-y-1 text-left">
+              <DialogTitle className="text-base font-semibold">Novo agendamento</DialogTitle>
+              <DialogDescription className="sr-only">
+                Formulário para criação de agendamento na agenda da clínica.
               </DialogDescription>
+              <DismissibleInfoTip id="agenda-new-event-helper" className="mt-1">
+                Crie um novo agendamento usando a mesma agenda compartilhada da clínica.
+              </DismissibleInfoTip>
             </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label>Tipo</Label>
+            <div className="space-y-3.5 pt-1">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Tipo</Label>
                 <div className="grid grid-cols-3 gap-2">
                   {(Object.entries(eventTypeLabels) as Array<[AgendaEventType, string]>).map(([value, label]) => (
                     <Button
@@ -982,10 +986,51 @@ const AgendaWidget = ({
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label>Horário</Label>
-                <Input type="time" value={newTime} onChange={(event) => setNewTime(event.target.value)} />
+              {/* Linha com Data e Horário no mesmo estilo da Agenda da Clínica */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Data */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Data</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-10 w-full justify-start text-xs rounded-xl font-normal"
+                        title="Selecione a data do agendamento"
+                      >
+                        <CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />
+                        {format(selectedDate, "dd/MM/yyyy")}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={(date) => date && getLocalDayTimestamp(date) >= todayDay.getTime() && setSelectedDate(date)}
+                        disabled={(date) => getLocalDayTimestamp(date) < todayDay.getTime()}
+                        className={cn("p-3 pointer-events-auto")}
+                        modifiers={{ hasEvent: datesWithEvents }}
+                        modifiersClassNames={{ hasEvent: "bg-primary/20 font-bold" }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Horário */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="agenda-new-time" className="text-xs font-semibold">Horário</Label>
+                  <Input
+                    id="agenda-new-time"
+                    type="time"
+                    value={newTime}
+                    onChange={(event) => setNewTime(event.target.value)}
+                    className="h-10 rounded-xl text-xs"
+                    required
+                  />
+                </div>
               </div>
+
               {isNewEventDateTimePast ? (
                 <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                   {AGENDA_PAST_EVENT_ERROR_MESSAGE}

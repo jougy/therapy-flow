@@ -524,7 +524,7 @@ describe("PacienteDetalhe", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^agendar$/i }));
 
-    const dialog = await screen.findByRole("dialog", { name: /novo evento/i });
+    const dialog = await screen.findByRole("dialog", { name: /novo (agendamento|evento)/i });
     expect(dialog).toBeInTheDocument();
 
     // The AgendaWidget dialog uses a Label "Horário" with a time input (no id on the input)

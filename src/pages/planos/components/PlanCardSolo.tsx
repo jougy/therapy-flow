@@ -36,7 +36,7 @@ export const PlanCardSolo: React.FC<PlanCardSoloProps> = React.memo(({
     ? [
         "1 Profissional de saúde (titular)",
         "1 Acesso simultâneo individual",
-        "Até 20 atendimentos na degustação",
+        "Até 20 atendimentos no teste gratuito",
         "Até 5 pacientes cadastrados",
       ]
     : [
@@ -147,7 +147,7 @@ export const PlanCardSolo: React.FC<PlanCardSoloProps> = React.memo(({
             }}
           >
             {activatingTrial && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {isFreeCycle ? "Ativar Degustação Solo" : "Contratar Solo"}
+            {isFreeCycle ? "Iniciar Teste Gratuito" : "Contratar Solo"}
             {!activatingTrial && <ChevronRight className="w-4 h-4 ml-1" />}
           </Button>
         </div>

@@ -20,6 +20,7 @@ import {
   getEventShift,
   eventTypeColors,
 } from "./types";
+import { AgendaWeekMobileMatrix } from "./AgendaWeekMobileMatrix";
 
 interface AgendaWeekViewProps {
   currentDate: Date;
@@ -288,28 +289,45 @@ export const AgendaWeekView = React.memo<AgendaWeekViewProps>(({
   }, [events]);
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 w-full">
-      {weekDays.map((day) => {
-        const isDayToday = isToday(day);
-        const isSelected = isSameDay(day, currentDate);
-        const dayKey = format(day, "yyyy-MM-dd");
-        const dayEvents = eventsByDayKey.get(dayKey) || [];
+    <div className="w-full">
+      {/* Visão Semanal Mobile Compacta (Matriz 6x7 com Acordeon e Auto-Scroll Suave) */}
+      <div className="block md:hidden">
+        <AgendaWeekMobileMatrix
+          currentDate={currentDate}
+          weekDays={weekDays}
+          events={events}
+          patients={patients}
+          onSelectDate={onSelectDate}
+          onNavigateToDay={onNavigateToDay}
+          onOpenAddModal={onOpenAddModal}
+          onOpenEditModal={onOpenEditModal}
+        />
+      </div>
 
-        return (
-          <AgendaWeekDayCard
-            key={day.toISOString()}
-            day={day}
-            isSelected={isSelected}
-            isDayToday={isDayToday}
-            dayEvents={dayEvents}
-            patientById={patientById}
-            onSelectDate={onSelectDate}
-            onNavigateToDay={onNavigateToDay}
-            onOpenAddModal={onOpenAddModal}
-            onOpenEditModal={onOpenEditModal}
-          />
-        );
-      })}
+      {/* Visão Semanal Clássica Desktop (Grade de 7 Colunas Expandidas) */}
+      <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-7 gap-3 w-full">
+        {weekDays.map((day) => {
+          const isDayToday = isToday(day);
+          const isSelected = isSameDay(day, currentDate);
+          const dayKey = format(day, "yyyy-MM-dd");
+          const dayEvents = eventsByDayKey.get(dayKey) || [];
+
+          return (
+            <AgendaWeekDayCard
+              key={day.toISOString()}
+              day={day}
+              isSelected={isSelected}
+              isDayToday={isDayToday}
+              dayEvents={dayEvents}
+              patientById={patientById}
+              onSelectDate={onSelectDate}
+              onNavigateToDay={onNavigateToDay}
+              onOpenAddModal={onOpenAddModal}
+              onOpenEditModal={onOpenEditModal}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 });

@@ -33,7 +33,7 @@ const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-const allowedCategories = new Set(["anamnesis", "exam", "image", "document", "terms", "other"]);
+const allowedCategories = new Set(["anamnesis", "exam", "image", "document", "terms", "branding", "other"]);
 const allowedStorageEncodings = new Set(["gzip", "deflate"]);
 const allowedContentTypes = new Set([
   "application/pdf",
@@ -42,6 +42,7 @@ const allowedContentTypes = new Set([
   "image/webp",
   "image/heic",
   "image/heif",
+  "image/svg+xml",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/markdown",
@@ -102,6 +103,7 @@ Deno.serve(async (req) => {
     const checksumSha256 = normalizeSha256(body.checksumSha256);
     const category = allowedCategories.has(String(body.category)) ? String(body.category) : "other";
     const isTerms = category === "terms";
+    const isBranding = category === "branding";
     const storageEncoding = allowedStorageEncodings.has(String(body.storageEncoding)) ? String(body.storageEncoding) : null;
     const compressionProfile = normalizeText(body.compressionProfile, 80) || "original";
     const imageWidth = normalizePositiveInteger(body.imageWidth, 20_000);
@@ -112,7 +114,7 @@ Deno.serve(async (req) => {
       return json({ error: "Informe clínica e nome do arquivo." }, 400);
     }
 
-    if (!isTerms && !patientId) {
+    if (!isTerms && !isBranding && !patientId) {
       return json({ error: "Informe clínica, paciente e nome do arquivo." }, 400);
     }
 
@@ -135,6 +137,77 @@ Deno.serve(async (req) => {
 
     const { data: userData, error: userError } = await userClient.auth.getUser(token);
     if (userError || !userData.user) return json({ error: "Usuário não autenticado." }, 401);
+
+    if (isBranding) {
+      const { data: canManageProfile } = await userClient.rpc("current_user_can", {
+        _capability: "clinic_profile.manage",
+        _clinic_id: clinicId,
+      });
+
+      let hasPermission = canManageProfile === true;
+
+      if (!hasPermission) {
+        const { data: canManageTerms } = await userClient.rpc("current_user_can", {
+          _capability: "clinic_terms.manage",
+          _clinic_id: clinicId,
+        });
+        hasPermission = canManageTerms === true;
+      }
+
+      if (!hasPermission) {
+        const { data: membership } = await userClient
+          .from("clinic_memberships")
+          .select("role, status")
+          .eq("clinic_id", clinicId)
+          .eq("user_id", userData.user.id)
+          .eq("status", "active")
+          .maybeSingle();
+
+        if (membership && (membership.role === "owner" || membership.role === "admin")) {
+          hasPermission = true;
+        }
+      }
+
+      if (!hasPermission) {
+        return json({ error: "Você não tem permissão para gerenciar a identidade visual desta clínica." }, 403);
+      }
+
+      const uploadId = crypto.randomUUID();
+      const filename = sanitizeFilename(originalFilename);
+      const objectKey = `clinics/${clinicId}/branding/logo_${Date.now()}-${filename}`;
+      const expiresIn = 900;
+      const uploadExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+
+      const uploadUrl = await createPresignedS3Url({
+        accessKeyId: b2KeyId,
+        bucket: bucketName,
+        endpoint: b2Endpoint,
+        expiresIn,
+        key: objectKey,
+        method: "PUT",
+        region: b2Region,
+        secretAccessKey: b2ApplicationKey,
+      });
+
+      const endpointUrl = new URL(b2Endpoint);
+      const publicUrl = `${endpointUrl.protocol}//${bucketName}.${endpointUrl.host}/${objectKey}`;
+
+      return json({
+        bucket: bucketName,
+        contentType: storedContentType,
+        downloadUrl: publicUrl,
+        expiresIn,
+        headers: {
+          "content-type": storedContentType,
+          ...(storageEncoding ? { "content-encoding": storageEncoding } : {}),
+        },
+        objectKey,
+        publicUrl,
+        uploadId,
+        uploadUrl,
+        uploadExpiresAt,
+      });
+    }
 
     if (isTerms) {
       const { data: canManageTerms, error: permissionError } = await userClient.rpc("current_user_can", {

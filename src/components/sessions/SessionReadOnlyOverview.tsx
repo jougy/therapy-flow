@@ -185,7 +185,7 @@ export const SessionReadOnlyOverview = ({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardContent className="space-y-4 p-6">
+          <CardContent className="space-y-4 p-3.5 sm:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Presença</h2>
@@ -225,7 +225,7 @@ export const SessionReadOnlyOverview = ({
         </Card>
 
         <Card>
-          <CardContent className="space-y-4 p-6">
+          <CardContent className="space-y-4 p-3.5 sm:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Pagamento</h2>
@@ -321,7 +321,7 @@ export const SessionReadOnlyOverview = ({
       </PatientFilesProvider>
 
       <Card>
-        <CardContent className="space-y-4 p-6">
+        <CardContent className="space-y-4 p-3.5 sm:p-6">
           <div>
             <h2 className="text-lg font-semibold">Anamnese</h2>
             <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
@@ -332,7 +332,7 @@ export const SessionReadOnlyOverview = ({
       </Card>
 
       <Card>
-        <CardContent className="space-y-4 p-6">
+        <CardContent className="space-y-4 p-3.5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">Tratamento</h2>
             <Badge variant="outline">{treatmentBlocks.length} bloco(s)</Badge>

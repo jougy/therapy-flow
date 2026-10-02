@@ -10,3 +10,4 @@ export * from "./SessionPrintDocumentsModal";
 export * from "./SessionQuickEditModals";
 export * from "./SessionReadOnlyOverview";
 export * from "./EvolveSessionModal";
+export * from "./SessionFloatingActionPills";

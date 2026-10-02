@@ -2126,6 +2126,8 @@ export type Database = {
           owner_terms_accepted_at: string | null
           password_temporary: boolean
           phone: string | null
+          profession: string | null
+          council_name: string | null
           professional_license: string | null
           public_code: string
           social_name: string | null
@@ -2151,6 +2153,8 @@ export type Database = {
           owner_terms_accepted_at?: string | null
           password_temporary?: boolean
           phone?: string | null
+          profession?: string | null
+          council_name?: string | null
           professional_license?: string | null
           public_code: string
           social_name?: string | null
@@ -2176,6 +2180,8 @@ export type Database = {
           owner_terms_accepted_at?: string | null
           password_temporary?: boolean
           phone?: string | null
+          profession?: string | null
+          council_name?: string | null
           professional_license?: string | null
           public_code?: string
           social_name?: string | null
@@ -3484,10 +3490,12 @@ export type Database = {
       handle_personal_signup: {
         Args: {
           _birth_date?: string
+          _council_number?: string
           _cpf?: string
           _email: string
           _full_name?: string
           _phone?: string
+          _profession?: string
           _user_id: string
         }
         Returns: Json

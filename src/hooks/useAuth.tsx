@@ -37,6 +37,8 @@ type Profile = Pick<
   | "specialty"
   | "working_hours"
   | "birth_date"
+  | "profession"
+  | "council_name"
 >;
 
 export type Membership = Database["public"]["Tables"]["clinic_memberships"]["Row"] & {
@@ -53,7 +55,10 @@ type ClinicSummary = Pick<
   | "route_key"
   | "subaccount_limit"
   | "subscription_plan"
->;
+> & {
+  subscription_status?: string | null;
+  trial_ends_at?: string | null;
+};
 
 export interface AccessibleClinic {
   membership: Membership;
@@ -434,7 +439,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         supabase
           .from("profiles")
           .select(
-            "address, avatar_url, bio, birth_date, clinic_id, cpf, email, full_name, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours"
+            "address, avatar_url, bio, birth_date, clinic_id, cpf, email, full_name, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours, profession, council_name"
           )
           .eq("id", userId)
           .maybeSingle(),

@@ -28,6 +28,8 @@ import {
 import { toast } from "sonner";
 import { lookupCep } from "@/lib/cep-service";
 import { parsePlanType, type PlanType } from "@/utils/subscriptionPricing";
+import { saveLocalCardMetadata, getSavedLocalCardMetadata } from "@/lib/local-card-storage";
+import type { CouponValidationResult } from "@/pages/planos/components/PlanCouponInput";
 
 const formatCPF = (v: string) => {
   v = v.replace(/\D/g, "");
@@ -64,6 +66,8 @@ const formatCEP = (v: string) => {
 
 const cleanDigits = (v: string) => v.replace(/\D/g, "");
 
+export const CLINIC_UPGRADE_DRAFT_KEY = "pluri_clinic_upgrade_draft";
+
 type ClinicAddress = {
   country?: string;
   cep?: string;
@@ -96,6 +100,7 @@ export default function OnboardingClinica() {
   
   const rawPlan = searchParams.get("plan");
   const plan: PlanType = parsePlanType(rawPlan);
+  const cycleParam = searchParams.get("cycle") || "annual";
   const isClinicPlan =
     plan === "clinica_basico" ||
     plan === "clinica_medio" ||
@@ -111,9 +116,11 @@ export default function OnboardingClinica() {
   const initialConcurrent = parseInt(searchParams.get("concurrent") || String(defaultConcurrent), 10);
   const initialSpaces = parseInt(searchParams.get("spaces") || (isClinicPlan ? "999999" : plan === "prof_top" ? "2" : "1"), 10);
 
-  const isExplicitCreate = searchParams.get("mode") === "create" || !!searchParams.get("plan");
+  const isUpgradeMode = searchParams.get("mode") === "upgrade";
+  const upgradeClinicId = searchParams.get("clinicId") || clinic?.id;
+  const isExplicitCreate = searchParams.get("mode") === "create" || (!!searchParams.get("plan") && !isUpgradeMode);
   const isCurrentClinicOwnedByMe = Boolean(clinic?.account_owner_user_id && session?.user?.id && clinic.account_owner_user_id === session.user.id);
-  const isCreateMode = !clinic || !isCurrentClinicOwnedByMe || isExplicitCreate;
+  const isCreateMode = !isUpgradeMode && (!clinic || !isCurrentClinicOwnedByMe || isExplicitCreate);
 
   const requireOwnerTerms = isFeatureEnabled("require_owner_terms_on_clinic_creation");
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -143,7 +150,7 @@ export default function OnboardingClinica() {
     concurrent_access_limit: (!isCreateMode && clinic?.concurrent_access_limit) ? Math.max(isClinicPlan ? 2 : 1, clinic.concurrent_access_limit).toString() : initialConcurrent.toString(),
   });
 
-  // Estado dos campos do Cartão de Crédito (Obrigatório em modo de criação)
+  // Estado dos campos do Cartão de Crédito (Opcional - Cartão não obrigatório para criação)
   const [cardForm, setCardForm] = useState({
     holderName: "",
     number: "",
@@ -151,17 +158,26 @@ export default function OnboardingClinica() {
     ccv: "",
   });
 
+  // Preferência para salvar metadados do cartão localmente (PCI-DSS compliant)
+  const [saveCardLocally, setSaveCardLocally] = useState(true);
+
+  // Inicializar dados de cartão salvo localmente se existirem
+  useEffect(() => {
+    const savedCard = getSavedLocalCardMetadata();
+    if (savedCard && !cardForm.holderName) {
+      setCardForm((prev) => ({
+        ...prev,
+        holderName: savedCard.holderName,
+        expiry: savedCard.expiry || prev.expiry,
+      }));
+    }
+  }, []);
+
   const cardBrand = detectCardBrand(cardForm.number);
 
   // Estado de Cupom Promocional (Opcional, ex: SOUPLURIBETA)
   const [couponInput, setCouponInput] = useState(searchParams.get("coupon") || searchParams.get("cupom") || "");
-  const [appliedCoupon, setAppliedCoupon] = useState<{
-    valid: boolean;
-    code?: string;
-    description?: string;
-    discount_type?: string;
-    discount_value?: number;
-  } | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponValidationResult | null>(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [couponError, setCouponError] = useState<string | null>(null);
 
@@ -180,7 +196,7 @@ export default function OnboardingClinica() {
         _plan_type: plan,
       });
       if (error) throw error;
-      const res = data as any;
+      const res = data as CouponValidationResult | null;
       if (res && res.valid) {
         setAppliedCoupon(res);
         setCouponInput(res.code || targetCode);
@@ -205,16 +221,17 @@ export default function OnboardingClinica() {
     }
   }, [searchParams, isCreateMode, handleValidateCoupon]);
 
-  // Carregar dados detalhados da clínica existente quando em modo de edição
+  // Carregar dados detalhados da clínica existente quando em modo de edição ou upgrade
   useEffect(() => {
-    if (isCreateMode || !clinic?.id) return;
+    const targetId = isUpgradeMode ? upgradeClinicId : clinic?.id;
+    if ((isCreateMode && !isUpgradeMode) || !targetId) return;
     let active = true;
 
     async function loadExistingClinic() {
       const { data, error } = await supabase
         .from("clinics")
         .select("*")
-        .eq("id", clinic.id)
+        .eq("id", targetId)
         .single();
 
       if (!active || error || !data) return;
@@ -242,6 +259,24 @@ export default function OnboardingClinica() {
         subaccount_limit: data.subaccount_limit ? data.subaccount_limit.toString() : prev.subaccount_limit,
         concurrent_access_limit: data.concurrent_access_limit ? data.concurrent_access_limit.toString() : prev.concurrent_access_limit,
       }));
+
+      // Se houver rascunho de upgrade salvo localmente, mesclar
+      if (isUpgradeMode) {
+        try {
+          const rawDraft = localStorage.getItem(CLINIC_UPGRADE_DRAFT_KEY);
+          if (rawDraft) {
+            const parsedDraft = JSON.parse(rawDraft);
+            if (parsedDraft && typeof parsedDraft === "object") {
+              setFormData((prev) => ({
+                ...prev,
+                ...parsedDraft,
+              }));
+            }
+          }
+        } catch {
+          // ignore draft parse error
+        }
+      }
     }
 
     void loadExistingClinic();
@@ -249,7 +284,7 @@ export default function OnboardingClinica() {
     return () => {
       active = false;
     };
-  }, [clinic?.id, isCreateMode]);
+  }, [clinic?.id, isCreateMode, isUpgradeMode, upgradeClinicId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fieldName = e.target.name;
@@ -263,11 +298,31 @@ export default function OnboardingClinica() {
       handleCepChange(value);
     }
 
-    setFormData((prev) => ({ ...prev, [fieldName]: value }));
+    setFormData((prev) => {
+      const updated = { ...prev, [fieldName]: value };
+      if (isUpgradeMode) {
+        try {
+          localStorage.setItem(CLINIC_UPGRADE_DRAFT_KEY, JSON.stringify(updated));
+        } catch {
+          // ignore storage error
+        }
+      }
+      return updated;
+    });
   };
 
   const handleSelectChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => {
+      const updated = { ...prev, [name]: value };
+      if (isUpgradeMode) {
+        try {
+          localStorage.setItem(CLINIC_UPGRADE_DRAFT_KEY, JSON.stringify(updated));
+        } catch {
+          // ignore storage error
+        }
+      }
+      return updated;
+    });
   };
 
   const handleCepChange = async (cepValue: string) => {
@@ -329,12 +384,12 @@ export default function OnboardingClinica() {
     }
 
     const documentToUse = cleanCnpj || cleanCpf;
+    const cleanCard = cleanDigits(cardForm.number);
+    const cleanCvv = cleanDigits(cardForm.ccv);
+    const cleanExpiry = cardForm.expiry.trim();
+    const hasCardProvided = Boolean(cleanCard || cardForm.holderName.trim() || cleanCvv || cleanExpiry);
 
-    if (isCreateMode) {
-      const cleanCard = cleanDigits(cardForm.number);
-      const cleanCvv = cleanDigits(cardForm.ccv);
-      const cleanExpiry = cardForm.expiry.trim();
-
+    if (isCreateMode && hasCardProvided) {
       if (!cardForm.holderName.trim() || !validateCardHolder(cardForm.holderName)) {
         toast.error("Informe o nome completo do titular como impresso no cartão.");
         return;
@@ -361,7 +416,7 @@ export default function OnboardingClinica() {
     let isSuccess = false;
 
     try {
-      let targetClinicId = clinic?.id;
+      let targetClinicId = isUpgradeMode ? upgradeClinicId : clinic?.id;
 
       const addressJson = {
         country: formData.country,
@@ -381,10 +436,28 @@ export default function OnboardingClinica() {
       const parsedSubaccounts = isClinicPlan ? Math.max(1, parseInt(formData.subaccount_limit || "999999", 10)) : (plan === "prof_top" ? 2 : 1);
 
       if (isCreateMode) {
-        const cleanCard = cleanDigits(cardForm.number);
-        const cleanCvv = cleanDigits(cardForm.ccv);
-        const cleanExpiry = cardForm.expiry.trim();
-        const [expMonth, expYearShort] = cleanExpiry.split("/");
+        let creditCardData: Parameters<typeof createClinicWithVerifiedCard>[0]["credit_card_data"] | undefined;
+
+        if (hasCardProvided) {
+          const [expMonth, expYearShort] = cleanExpiry.split("/");
+          creditCardData = {
+            card: {
+              holderName: cardForm.holderName.trim().toUpperCase(),
+              number: cleanCard,
+              expiryMonth: expMonth,
+              expiryYear: `20${expYearShort}`,
+              ccv: cleanCvv,
+            },
+            holder: {
+              name: cardForm.holderName.trim().toUpperCase(),
+              email: formData.email || session.user.email || undefined,
+              cpfCnpj: documentToUse,
+              postalCode: cleanDigits(formData.cep) || undefined,
+              addressNumber: formData.number || "SN",
+              phone: cleanDigits(formData.phone) || undefined,
+            },
+          };
+        }
 
         const result = await createClinicWithVerifiedCard({
           plan_type: plan,
@@ -405,23 +478,7 @@ export default function OnboardingClinica() {
             subaccount_limit: parsedSubaccounts,
             concurrent_access_limit: parsedConcurrent,
           },
-          credit_card_data: {
-            card: {
-              holderName: cardForm.holderName.trim().toUpperCase(),
-              number: cleanCard,
-              expiryMonth: expMonth,
-              expiryYear: `20${expYearShort}`,
-              ccv: cleanCvv,
-            },
-            holder: {
-              name: cardForm.holderName.trim().toUpperCase(),
-              email: formData.email || session.user.email || undefined,
-              cpfCnpj: documentToUse,
-              postalCode: cleanDigits(formData.cep) || undefined,
-              addressNumber: formData.number || "SN",
-              phone: cleanDigits(formData.phone) || undefined,
-            },
-          },
+          credit_card_data: creditCardData,
         });
 
         if (!result.success) {
@@ -445,7 +502,7 @@ export default function OnboardingClinica() {
             setLoading(false);
             return;
           }
-          throw new Error(msg || "Não foi possível validar o cartão e criar a clínica.");
+          throw new Error(msg || "Não foi possível cadastrar a clínica.");
         }
 
         if (!result.clinic_id) {
@@ -453,7 +510,17 @@ export default function OnboardingClinica() {
         }
 
         targetClinicId = result.clinic_id;
-      } else {
+
+        // Se o cartão foi informado e o usuário optou por salvar localmente
+        if (hasCardProvided && saveCardLocally) {
+          saveLocalCardMetadata({
+            holderName: cardForm.holderName,
+            cardNumber: cleanCard,
+            brand: cardBrand,
+            expiry: cleanExpiry,
+          });
+        }
+      } else if (!isUpgradeMode) {
         if (!targetClinicId) {
           toast.error("Clínica não encontrada.");
           return;
@@ -479,6 +546,15 @@ export default function OnboardingClinica() {
           .eq("id", targetClinicId);
 
         if (clinicError) throw clinicError;
+      } else {
+        // Modo Upgrade: manter dados salvos em localStorage (CLINIC_UPGRADE_DRAFT_KEY)
+        // para que a clínica só tenha suas permissões/limites modificados após
+        // a aprovação da assinatura no Asaas.
+        try {
+          localStorage.setItem(CLINIC_UPGRADE_DRAFT_KEY, JSON.stringify(formData));
+        } catch {
+          // ignore storage error
+        }
       }
 
       // Atualizar termos e CPF no perfil do usuário
@@ -502,8 +578,24 @@ export default function OnboardingClinica() {
           }
         }
         isSuccess = true;
-        toast.success("Clínica cadastrada e cartão verificado com sucesso! Degustação de 7 dias ativada.");
-        navigate("/espacopessoal", { replace: true });
+
+        if (hasCardProvided) {
+          toast.success("Clínica cadastrada e cartão verificado com sucesso! Teste gratuito ativado.");
+          navigate("/espacopessoal", { replace: true });
+        } else {
+          toast.success("Espaço criado com sucesso! Escolha sua forma de pagamento preferida (PIX, Boleto ou Cartão).");
+          navigate(`/pagamento/${targetClinicId}?plan=${plan}&cycle=${cycleParam}`);
+        }
+        return;
+      }
+
+      if (isUpgradeMode && targetClinicId) {
+        if (typeof refreshAuthState === "function") {
+          await refreshAuthState();
+        }
+        isSuccess = true;
+        toast.success("Dados da equipe salvos! Prosseguindo para o checkout.");
+        navigate(`/pagamento/${targetClinicId}?plan=${plan}&cycle=${cycleParam}`);
         return;
       }
 
@@ -591,14 +683,28 @@ export default function OnboardingClinica() {
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs sm:text-sm font-medium mb-3">
               <Building2 className="w-3.5 h-3.5 shrink-0" />
-              <span>{isCreateMode ? (isClinicPlan ? "Novo Espaço: Clínica com Equipe" : "Novo Espaço: Profissional Individual") : "Configuração da Clínica"}</span>
+              <span>
+                {isUpgradeMode
+                  ? "Upgrade de Espaço: Migrar para Clínica com Equipe"
+                  : isCreateMode
+                  ? isClinicPlan
+                    ? "Novo Espaço: Clínica com Equipe"
+                    : "Novo Espaço: Profissional Individual"
+                  : "Configuração da Clínica"}
+              </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-2">
-              {isCreateMode ? "Cadastre seu Próprio Espaço" : "Configure sua Clínica"}
+              {isUpgradeMode
+                ? "Evolua sua Clínica para Atendimento em Equipe"
+                : isCreateMode
+                ? "Cadastre seu Próprio Espaço"
+                : "Configure sua Clínica"}
             </h1>
             <p className="text-xs sm:text-base text-muted-foreground max-w-2xl">
-              {isTrial
-                ? "Preencha os dados abaixo para ativar seu espaço em Modo Degustação Gratuita (20 atendimentos)."
+              {isUpgradeMode
+                ? "Mantenha todos os seus prontuários e pacientes existentes. Atualize os dados cadastrais da clínica para liberar múltiplos profissionais e colaboradores."
+                : isTrial
+                ? "Preencha os dados abaixo para ativar seu espaço em Modo de Teste Gratuito (20 atendimentos)."
                 : "Preencha os dados abaixo para configurar o ambiente de atendimento e prosseguir ao checkout seguro."}
             </p>
           </div>
@@ -830,36 +936,34 @@ export default function OnboardingClinica() {
             </Card>
           )}
 
-          {/* Seção Obrigatória de Cartão de Crédito para Ativação da Degustação (Apenas em Modo de Criação) */}
+          {/* Seção Opcional de Cartão de Crédito para Ativação do Teste Gratuito ou Pagamento */}
           {isCreateMode && (
             <Card className="bg-card border-border backdrop-blur-md rounded-2xl overflow-hidden shadow-sm">
               <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-4 border-b border-border">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <CardTitle className="text-lg sm:text-xl text-foreground font-semibold flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-primary" />
-                    <span>Cartão de Crédito para Ativação (Obrigatório)</span>
+                    <span>Cartão de Crédito (Opcional)</span>
                   </CardTitle>
                   <Badge variant="outline" className="border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 text-xs w-fit">
-                    Validação Antifraude (R$ 0,01)
+                    {cardForm.number.trim() ? "Validação Antifraude (R$ 0,01)" : "Pague Depois ou via PIX/Boleto"}
                   </Badge>
                 </div>
                 <CardDescription className="text-xs sm:text-sm text-muted-foreground">
-                  Para autenticação de segurança e combate a fraudes, realizamos uma cobrança simbólica de <strong>R$ 0,01</strong> no cartão. Nenhuma mensalidade será debitada durante os 7 dias de degustação gratuita.
+                  O preenchimento do cartão é <strong>opcional</strong>. Se preferir não informar agora, você poderá cadastrar seu espaço normalmente e escolher pagar via <strong>PIX, Boleto ou Cartão</strong> no checkout Asaas a seguir.
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-4 sm:p-6 grid gap-4 sm:gap-6 sm:grid-cols-2">
                 <div className="space-y-1 sm:col-span-2">
                   <FieldLabel
                     htmlFor="card_holder_name"
-                    label="Nome Impresso no Cartão"
+                    label="Nome Impresso no Cartão (Opcional)"
                     tooltip="Nome completo do titular como impresso no cartão de crédito."
-                    required
                   />
                   <Input
                     id="card_holder_name"
                     name="card_holder_name"
                     placeholder="NOME COMO ESTÁ NO CARTÃO"
-                    required
                     value={cardForm.holderName}
                     onChange={(e) => setCardForm((prev) => ({ ...prev, holderName: e.target.value.toUpperCase() }))}
                     className="bg-background border-border text-foreground h-11 sm:h-10 text-base sm:text-sm rounded-xl uppercase font-mono"
@@ -870,9 +974,8 @@ export default function OnboardingClinica() {
                   <div className="flex items-center justify-between">
                     <FieldLabel
                       htmlFor="card_number"
-                      label="Número do Cartão"
+                      label="Número do Cartão (Opcional)"
                       tooltip="16 dígitos do cartão de crédito (Visa, Mastercard, Elo, Amex, Hipercard)."
-                      required
                     />
                     {cardBrand !== "unknown" && (
                       <Badge variant="secondary" className="text-[10px] font-semibold capitalize">
@@ -884,7 +987,6 @@ export default function OnboardingClinica() {
                     id="card_number"
                     name="card_number"
                     placeholder="0000 0000 0000 0000"
-                    required
                     maxLength={19}
                     value={cardForm.number}
                     onChange={(e) => {
@@ -901,13 +1003,11 @@ export default function OnboardingClinica() {
                     htmlFor="card_expiry"
                     label="Validade (MM/AA)"
                     tooltip="Mês e ano de vencimento gravados no cartão."
-                    required
                   />
                   <Input
                     id="card_expiry"
                     name="card_expiry"
                     placeholder="MM/AA"
-                    required
                     maxLength={5}
                     value={cardForm.expiry}
                     onChange={(e) => {
@@ -924,14 +1024,12 @@ export default function OnboardingClinica() {
                     htmlFor="card_ccv"
                     label="Código de Segurança (CVV)"
                     tooltip="Código de 3 ou 4 dígitos no verso do cartão."
-                    required
                   />
                   <Input
                     id="card_ccv"
                     name="card_ccv"
                     placeholder="CVV"
                     type="password"
-                    required
                     maxLength={4}
                     value={cardForm.ccv}
                     onChange={(e) => {
@@ -942,11 +1040,34 @@ export default function OnboardingClinica() {
                   />
                 </div>
 
-                <div className="sm:col-span-2 p-3 bg-muted/40 border border-border rounded-xl flex items-start gap-2.5 text-xs text-muted-foreground">
-                  <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                {/* Checkbox para Salvar Cartão no Dispositivo (Conforme PCI-DSS) */}
+                {cardForm.number.trim().length > 0 && (
+                  <div className="sm:col-span-2 pt-1">
+                    <div className="flex items-center gap-2.5 p-3 rounded-xl bg-muted/30 border border-border">
+                      <Checkbox
+                        id="save_card_locally"
+                        checked={saveCardLocally}
+                        onCheckedChange={(checked) => setSaveCardLocally(Boolean(checked))}
+                      />
+                      <label
+                        htmlFor="save_card_locally"
+                        className="text-xs sm:text-sm text-foreground font-medium cursor-pointer select-none"
+                      >
+                        Salvar cartão neste dispositivo para pagamentos rápidos futuros
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Callout de Segurança e Conformidade PCI com Ícone de Escudo */}
+                <div className="sm:col-span-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-2.5 text-xs text-foreground">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                   <div>
-                    <span>
-                      Cobrança simbólica de <strong>R$ 0,01</strong> para validação imediata pelo banco emissor. Cancele quando quiser antes do fim dos {appliedCoupon?.discount_type === "TRIAL_DAYS" ? (appliedCoupon.discount_value || 180) : 7} dias sem qualquer cobrança de plano. Criptografia ponta a ponta (PCI-DSS) gerenciada via gateway Asaas.
+                    <span className="font-semibold text-emerald-800 dark:text-emerald-300">Conformidade e Segurança PCI-DSS:</span>{" "}
+                    <span className="text-muted-foreground">
+                      {cardForm.number.trim()
+                        ? "Cobrança simbólica de R$ 0,01 para validação imediata pelo banco emissor. Cancele quando quiser sem fidelidade. Seus dados de cartão são processados e tokenizados diretamente pelo gateway Asaas."
+                        : "Você não é obrigado a preencher o cartão agora. Se preferir, crie seu espaço e pague via PIX, Boleto Bancário ou Cartão no próximo passo com total segurança."}
                     </span>
                   </div>
                 </div>
@@ -959,6 +1080,8 @@ export default function OnboardingClinica() {
             <div className="flex items-start gap-3">
               <Checkbox
                 id="owner-terms-consent"
+                aria-label="Declaro que li e concordo com os Termos de Uso"
+                data-testid="owner-terms-consent-checkbox"
                 checked={termsAccepted}
                 onCheckedChange={(checked) => setTermsAccepted(Boolean(checked))}
                 className="mt-0.5"
@@ -1019,16 +1142,23 @@ export default function OnboardingClinica() {
             </Button>
             <Button
               type="submit"
+              onClick={handleSubmit}
               disabled={loading || (requireOwnerTerms && !termsAccepted)}
               className="w-full sm:w-auto min-w-[220px] h-12 px-6 text-base font-semibold bg-primary hover:bg-primary/90 active:scale-[0.98] text-primary-foreground rounded-xl shadow-lg transition-all min-h-[48px]"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
               {loading
-                ? (isCreateMode ? "Validando cartão e criando espaço..." : "Salvando...")
-                : (isCreateMode
-                    ? (appliedCoupon?.discount_type === "TRIAL_DAYS"
-                        ? `Verificar Cartão e Ativar Beta (${appliedCoupon.discount_value || 180} Dias)`
-                        : "Verificar Cartão e Criar Clínica (R$ 0,01)")
+                ? (isCreateMode
+                    ? (cardForm.number.trim() ? "Validando cartão e criando espaço..." : "Criando espaço...")
+                    : "Salvando...")
+                : (isUpgradeMode
+                    ? "Atualizar Espaço e Ir para Pagamento"
+                    : isCreateMode
+                    ? (cardForm.number.trim()
+                        ? (appliedCoupon?.discount_type === "TRIAL_DAYS"
+                            ? `Verificar Cartão e Ativar Beta (${appliedCoupon.discount_value || 180} Dias)`
+                            : "Verificar Cartão e Criar Clínica (R$ 0,01)")
+                        : "Criar Espaço e Ir para Pagamento")
                     : "Salvar Alterações")}
             </Button>
           </div>

@@ -42,7 +42,7 @@ export const PlanCardEnterprise: React.FC<PlanCardEnterpriseProps> = React.memo(
   const highlights = isFreeCycle
     ? [
         "Para grandes clínicas e redes em teste",
-        "Até 20 atendimentos na degustação",
+        "Até 20 atendimentos no teste gratuito",
         "Até 5 pacientes cadastrados",
         "Suporte prioritário e auditoria avançada",
       ]
@@ -203,7 +203,7 @@ export const PlanCardEnterprise: React.FC<PlanCardEnterpriseProps> = React.memo(
             }}
           >
             {activatingTrial && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {isFreeCycle ? "Ativar Degustação" : "Contratar Enterprise"}
+            {isFreeCycle ? "Iniciar Teste Gratuito" : "Contratar Enterprise"}
             {!activatingTrial && <ChevronRight className="w-4 h-4 ml-1" />}
           </Button>
         </div>
