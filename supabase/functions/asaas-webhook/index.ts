@@ -4,6 +4,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient } from '../_shared/asaas-client.ts';
+import { TelegramClient } from '../_shared/telegram-client.ts';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -203,6 +204,85 @@ serve(async (req) => {
         }
       } catch (nfseErr) {
         console.error('[asaas-webhook] Erro ao emitir NFS-e (fail-safe ativado):', nfseErr);
+      }
+
+      // Tentativa de notificação no Telegram com fail-safe estrito
+      try {
+        let clinicName = 'Clínica';
+        let subscriberName = 'Assinante';
+        let subscriberEmail = '';
+        let subscriberPhone = '';
+        let planName = 'Plano Pluri Health';
+        let billingCycle = 'Mensal';
+
+        if (targetClinicId) {
+          const { data: clinicData } = await supabase
+            .from('clinics')
+            .select('name, account_owner_user_id, subscription_plan')
+            .eq('id', targetClinicId)
+            .maybeSingle();
+
+          if (clinicData) {
+            clinicName = clinicData.name || clinicName;
+            if (clinicData.subscription_plan) {
+              planName = clinicData.subscription_plan;
+            }
+
+            const ownerId = clinicData.account_owner_user_id;
+            if (ownerId) {
+              const { data: profileData } = await supabase
+                .from('profiles')
+                .select('full_name, email, phone')
+                .eq('id', ownerId)
+                .maybeSingle();
+
+              if (profileData) {
+                subscriberName = profileData.full_name || subscriberName;
+                subscriberEmail = profileData.email || subscriberEmail;
+                subscriberPhone = profileData.phone || subscriberPhone;
+              }
+            }
+          }
+
+          // Buscar detalhes da assinatura
+          const { data: subData } = await supabase
+            .from('clinic_subscriptions')
+            .select('plan_type, billing_cycle, billing_email, billing_name')
+            .eq('clinic_id', targetClinicId)
+            .maybeSingle();
+
+          if (subData) {
+            if (subData.plan_type) planName = subData.plan_type;
+            if (subData.billing_cycle) billingCycle = subData.billing_cycle;
+            if (subData.billing_name && (!subscriberName || subscriberName === 'Assinante')) {
+              subscriberName = subData.billing_name;
+            }
+            if (subData.billing_email && !subscriberEmail) {
+              subscriberEmail = subData.billing_email;
+            }
+          }
+        }
+
+        const rawAmount = payment.value || payment.netValue || 0;
+        const amountFormatted = new Intl.NumberFormat('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        }).format(typeof rawAmount === 'number' ? rawAmount : parseFloat(String(rawAmount)) || 0);
+
+        const telegramClient = new TelegramClient();
+        await telegramClient.notifyPlanPurchase({
+          clinicName,
+          subscriberName,
+          email: subscriberEmail,
+          phone: subscriberPhone,
+          planName,
+          billingCycle,
+          amountFormatted,
+          paymentMethod: billingType,
+          paidAt: paymentDate,
+        });
+      } catch (telegramErr) {
+        console.error('[asaas-webhook] Erro ao notificar Telegram (fail-safe ativado):', telegramErr);
       }
     } else if (eventType === 'PAYMENT_OVERDUE') {
       if (payment.id) {
