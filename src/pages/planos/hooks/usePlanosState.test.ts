@@ -9,7 +9,7 @@ vi.mock("react-router-dom", () => ({
   useSearchParams: () => [new URLSearchParams(), vi.fn()],
 }));
 
-let mockAuthValues = {
+const mockAuthValues = {
   user: { id: "user-1" },
   clinic: null as any,
   clinicId: null as string | null,
