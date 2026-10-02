@@ -213,7 +213,7 @@ export default function PlanosAssinatura() {
               planId="clinica_medio"
               name="Clínica Médio"
               tagline="Clínicas consolidadas com equipe"
-              badge="Degustação Completa"
+              badge="Mais Escolhido"
               featured={true}
               icon={Building2}
               colorTheme="blue"

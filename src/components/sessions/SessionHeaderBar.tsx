@@ -27,6 +27,8 @@ export interface SessionHeaderBarProps {
   sessionDate: string;
   startingFromThis: boolean;
   status: string;
+  summaryDialogOpen?: boolean;
+  onSummaryDialogOpenChange?: (open: boolean) => void;
   onBack: () => void;
   onDelete: () => Promise<void>;
   onEdit: () => void;
@@ -53,6 +55,8 @@ export const SessionHeaderBar = ({
   sessionDate,
   startingFromThis,
   status,
+  summaryDialogOpen: controlledSummaryOpen,
+  onSummaryDialogOpenChange: onControlledSummaryOpenChange,
   onBack,
   onDelete,
   onEdit,
@@ -63,7 +67,9 @@ export const SessionHeaderBar = ({
   onStartFromThis,
   onStatusChange,
 }: SessionHeaderBarProps) => {
-  const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
+  const [internalSummaryOpen, setInternalSummaryOpen] = useState(false);
+  const summaryDialogOpen = controlledSummaryOpen !== undefined ? controlledSummaryOpen : internalSummaryOpen;
+  const setSummaryDialogOpen = onControlledSummaryOpenChange || setInternalSummaryOpen;
 
   const statusColors: Record<string, string> = {
     concluído: "bg-success/15 text-success border-success/20",

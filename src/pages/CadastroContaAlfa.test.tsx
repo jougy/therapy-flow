@@ -6,6 +6,17 @@ import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 
 const mockNavigate = vi.fn();
+const mockTrackCompleteRegistration = vi.fn();
+const mockTrackStartTrial = vi.fn();
+
+vi.mock("@/lib/meta-pixel", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/meta-pixel")>("@/lib/meta-pixel");
+  return {
+    ...actual,
+    trackCompleteRegistration: (...args: unknown[]) => mockTrackCompleteRegistration(...args),
+    trackStartTrial: (...args: unknown[]) => mockTrackStartTrial(...args),
+  };
+});
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -40,10 +51,15 @@ vi.mock("@/hooks/use-toast", () => ({
 describe("CadastroContaAlfa", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
+    mockTrackCompleteRegistration.mockReset();
+    mockTrackStartTrial.mockReset();
     supabaseMocks.from.mockReset();
     supabaseMocks.rpc.mockReset();
     supabaseMocks.signUp.mockReset();
     supabaseMocks.signOut.mockReset();
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.hasPointerCapture = vi.fn();
+    window.HTMLElement.prototype.releasePointerCapture = vi.fn();
     vi.stubGlobal(
       "ResizeObserver",
       class ResizeObserver {
@@ -107,6 +123,22 @@ describe("CadastroContaAlfa", () => {
         "/auth/confirmado?email=alpha%40example.com&aguardando=true",
         { state: { email: "alpha@example.com" } }
       );
+      expect(mockTrackCompleteRegistration).toHaveBeenCalledWith(expect.objectContaining({
+        profession: "physiotherapist",
+        userData: {
+          email: "alpha@example.com",
+          phone: "11999998888",
+          name: "Owner Teste",
+        },
+      }));
+      expect(mockTrackStartTrial).toHaveBeenCalledWith(expect.objectContaining({
+        profession: "physiotherapist",
+        userData: {
+          email: "alpha@example.com",
+          phone: "11999998888",
+          name: "Owner Teste",
+        },
+      }));
     });
   });
 
@@ -211,6 +243,58 @@ describe("CadastroContaAlfa", () => {
 
     fireEvent.click(loginButton);
     expect(mockNavigate).toHaveBeenCalledWith("/auth");
+  });
+
+  it("submits profession and council number when filled", async () => {
+    supabaseMocks.signUp.mockResolvedValue({
+      data: { user: { id: "user-alpha-2" }, session: null },
+      error: null,
+    });
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { user_id: "user-alpha-2", has_clinic: true },
+      error: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/auth/cadastro"]}>
+        <CadastroContaAlfa />
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText(/seu nome completo/i), { target: { value: "Dra. Maria Fisioterapeuta" } });
+    fireEvent.change(screen.getByLabelText(/^cpf$/i), { target: { value: "529.982.247-25" } });
+    fireEvent.change(screen.getByLabelText(/data de nascimento/i), { target: { value: "1988-06-15" } });
+    fireEvent.change(screen.getByLabelText(/número de contato/i), { target: { value: "(11) 98888-1111" } });
+    fireEvent.change(screen.getByLabelText(/^e-mail$/i), { target: { value: "maria@example.com" } });
+    fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "senhaSegura123" } });
+    fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "senhaSegura123" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    // Simula seleção de profissão via Select
+    const professionSelect = screen.getByLabelText(/profissão/i);
+    fireEvent.click(professionSelect);
+
+    const optionFisio = await screen.findByRole("option", { name: "Fisioterapeuta" });
+    fireEvent.click(optionFisio);
+
+    // O campo de conselho regional aparece
+    const councilInput = await screen.findByLabelText(/número do crefito/i);
+    fireEvent.change(councilInput, { target: { value: "123456-F" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /^criar conta$/i }));
+
+    await waitFor(() => {
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("handle_personal_signup", expect.objectContaining({
+        _birth_date: "1988-06-15",
+        _council_number: "123456-F",
+        _cpf: "52998224725",
+        _email: "maria@example.com",
+        _full_name: "Dra. Maria Fisioterapeuta",
+        _phone: "11988881111",
+        _profession: "fisioterapeuta",
+        _user_id: "user-alpha-2",
+      }));
+    });
   });
 });
 

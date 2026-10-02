@@ -57,8 +57,8 @@ describe("PlanosAssinatura", () => {
 
     // Verify main title and plans cards exist
     expect(screen.getByText(/Planos que cabem no momento do seu trabalho/i)).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Para Profissional/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Para Clínica/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Profissional Solo|Para Profissional/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Clínica com Equipe|Para Clínica/i })).toBeInTheDocument();
     // Default audience is 'prof', with Básico, Médio and Top
     expect(screen.getByRole("heading", { name: /^Básico$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^Médio$/i })).toBeInTheDocument();
@@ -133,7 +133,7 @@ describe("PlanosAssinatura", () => {
     );
 
     // Switch to Clinic audience
-    const clinicTab = screen.getByRole("tab", { name: /Para Clínica/i });
+    const clinicTab = screen.getByRole("tab", { name: /Clínica com Equipe|Para Clínica/i });
     fireEvent.click(clinicTab);
 
     // Should see Clinic base seats labels

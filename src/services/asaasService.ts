@@ -36,13 +36,13 @@ export interface ProcessPaymentOptions {
 export interface AsaasServiceResult {
   success: boolean;
   error?: string;
-  subscription?: any;
-  invoice?: any;
+  subscription?: Record<string, unknown> | null;
+  invoice?: Record<string, unknown> | null;
   invoiceUrl?: string | null;
   bankSlipUrl?: string | null;
   pixQrCode?: string | null;
   pixCopyPaste?: string | null;
-  rawResponse?: any;
+  rawResponse?: unknown;
   source: "EDGE_FUNCTION";
 }
 
@@ -142,7 +142,7 @@ export async function checkAsaasPaymentStatus(
   refused: boolean;
   paymentDate?: string;
   paymentId?: string;
-  raw?: any;
+  raw?: unknown;
 }> {
   try {
     // 1. Verificar status local no Supabase
@@ -216,13 +216,13 @@ export interface CreateClinicWithCardOptions {
     legal_name?: string;
     cnpj?: string;
     cpf?: string;
-    address?: any;
+    address?: Record<string, unknown> | null;
     business_hours?: string;
     subaccount_limit?: number;
     concurrent_access_limit?: number;
   };
-  credit_card_data: {
-    card: {
+  credit_card_data?: {
+    card?: {
       holderName: string;
       number: string;
       expiryMonth: string;
@@ -244,7 +244,7 @@ export interface CreateClinicServiceResult {
   success: boolean;
   clinic_id?: string;
   clinic_name?: string;
-  subscription?: any;
+  subscription?: Record<string, unknown> | null;
   creditCardToken?: string | null;
   error?: string;
   source: "EDGE_FUNCTION";

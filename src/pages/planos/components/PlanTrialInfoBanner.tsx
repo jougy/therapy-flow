@@ -8,10 +8,10 @@ export interface PlanTrialInfoBannerProps {
 }
 
 /**
- * Banner explicativo sobre a modalidade de Degustação Gratuita Volumétrica/Temporal.
+ * Banner explicativo sobre a modalidade de Teste Gratuito Volumétrico/Temporal.
  *
  * Racional de Negócio:
- * - Reduz atrito cognitivo e objeção de compra esclarecendo os termos da degustação.
+ * - Reduz atrito cognitivo e objeção de compra esclarecendo os termos do teste gratuito.
  * - Deixa explícito que NÃO exige cartão de crédito inicial.
  *
  * Complexidade Assintótica: O(1).

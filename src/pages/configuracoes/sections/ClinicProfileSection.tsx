@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Building2, Loader2, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,29 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
+import { ImageUploadSquare } from "@/components/ui/ImageUploadSquare";
+import { processSquareImageToWebp, ImageProcessingMetrics } from "@/lib/image-processing";
+
+interface ClinicAddress {
+  cep: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+}
+
+interface ClinicBusinessHours {
+  summary: string;
+}
 
 export const ClinicProfileSection = () => {
   const { accountRole, clinic: authClinic, clinicId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoMetrics, setLogoMetrics] = useState<ImageProcessingMetrics | null>(null);
 
   const [clinicName, setClinicName] = useState("");
   const [clinicLegalName, setClinicLegalName] = useState("");
@@ -25,7 +43,7 @@ export const ClinicProfileSection = () => {
   const [subscriptionPlan, setSubscriptionPlan] = useState("");
   const [createdAt, setCreatedAt] = useState<string | null>(null);
 
-  const [clinicAddress, setClinicAddress] = useState({
+  const [clinicAddress, setClinicAddress] = useState<ClinicAddress>({
     cep: "",
     street: "",
     number: "",
@@ -35,7 +53,7 @@ export const ClinicProfileSection = () => {
     state: "",
   });
 
-  const [clinicBusinessHours, setClinicBusinessHours] = useState({ summary: "" });
+  const [clinicBusinessHours, setClinicBusinessHours] = useState<ClinicBusinessHours>({ summary: "" });
 
   useEffect(() => {
     let active = true;
@@ -91,6 +109,126 @@ export const ClinicProfileSection = () => {
     return () => {
       active = false;
     };
+  }, [clinicId]);
+
+  const handleLogoSelected = useCallback(
+    async (file: File) => {
+      if (!clinicId) return;
+
+      try {
+        setUploadingLogo(true);
+
+        // 1. Processamento e corte 1:1 quadrado para WebP
+        const processed = await processSquareImageToWebp(file, {
+          maxDimension: 512,
+          quality: 0.85,
+        });
+
+        setLogoMetrics({
+          originalSize: processed.originalSize,
+          compressedSize: processed.compressedSize,
+          reductionPercent: processed.reductionPercent,
+        });
+
+        // 2. Upload para Backblaze B2 via edge function b2-upload-url
+        let finalLogoUrl: string | null = null;
+
+        try {
+          const { data: b2Data, error: b2Error } = await supabase.functions.invoke("b2-upload-url", {
+            body: {
+              clinicId,
+              category: "branding",
+              filename: processed.filename,
+              byteSize: processed.compressedSize,
+              originalByteSize: processed.originalSize,
+              storedByteSize: processed.compressedSize,
+              contentType: "image/webp",
+              storedContentType: "image/webp",
+              imageWidth: processed.width,
+              imageHeight: processed.height,
+            },
+          });
+
+          if (!b2Error && b2Data?.uploadUrl) {
+            // PUT direto no B2 com headers apropriados
+            const putRes = await fetch(b2Data.uploadUrl, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "image/webp",
+              },
+              body: processed.blob,
+            });
+
+            if (putRes.ok) {
+              finalLogoUrl = b2Data.downloadUrl || b2Data.publicUrl || null;
+            }
+          }
+        } catch (b2Err) {
+          console.warn("Upload B2 offline ou ambiente sem credenciais B2 configuradas. Prosseguindo com fallback resiliente.", b2Err);
+        }
+
+        // 3. Fallback gracioso: se o B2 estiver indisponível (ex: local), usar Data URL para não quebrar a experiência
+        if (!finalLogoUrl) {
+          finalLogoUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(processed.blob);
+          });
+        }
+
+        // 4. Atualizar estado e persistir imediatamente no banco de dados
+        setClinicLogoUrl(finalLogoUrl);
+
+        const { error: updateError } = await supabase
+          .from("clinics")
+          .update({
+            logo_url: finalLogoUrl,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", clinicId);
+
+        if (updateError) {
+          toast({
+            title: "Logotipo carregado temporariamente",
+            description: "O preview foi atualizado, clique em 'Salvar dados da clínica' para confirmar.",
+          });
+        } else {
+          toast({
+            title: "Logotipo atualizado com sucesso!",
+            description: `Imagem otimizada em WebP (-${processed.reductionPercent}% do tamanho original).`,
+          });
+        }
+      } catch (err) {
+        console.error("Erro no processamento ou envio do logotipo:", err);
+        toast({
+          title: "Erro ao processar logotipo",
+          description: err instanceof Error ? err.message : "Não foi possível carregar a imagem.",
+          variant: "destructive",
+        });
+      } finally {
+        setUploadingLogo(false);
+      }
+    },
+    [clinicId]
+  );
+
+  const handleLogoRemoved = useCallback(async () => {
+    setClinicLogoUrl("");
+    setLogoMetrics(null);
+
+    if (clinicId) {
+      const { error } = await supabase
+        .from("clinics")
+        .update({
+          logo_url: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", clinicId);
+
+      if (!error) {
+        toast({ title: "Logotipo removido com sucesso." });
+      }
+    }
   }, [clinicId]);
 
   const handleSaveClinic = async () => {
@@ -175,41 +313,49 @@ export const ClinicProfileSection = () => {
           </div>
         </div>
 
-        <div className="rounded-xl border p-4 space-y-4 shadow-sm bg-card">
+        <div className="rounded-xl border p-4 sm:p-5 space-y-4 shadow-sm bg-card">
           <div>
             <p className="font-semibold text-foreground">Identidade e Marca</p>
             <p className="text-xs text-muted-foreground">
-              O nome e o logo cadastrados aqui passam a representar a clínica no topo da plataforma e documentos.
+              O nome e o logotipo cadastrados aqui representam a clínica nos cabeçalhos, documentos e painel do paciente.
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-[120px,1fr] items-start">
-            <div className="rounded-xl border bg-muted/40 p-3 flex items-center justify-center min-h-[100px]">
-              {clinicLogoUrl ? (
-                <img
-                  src={clinicLogoUrl}
-                  alt={`Logo da ${getClinicBrandName(clinicName)}`}
-                  className="max-h-20 max-w-full object-contain"
+
+          <div className="grid gap-6 lg:grid-cols-[auto,1fr] items-start pt-1">
+            <ImageUploadSquare
+              value={clinicLogoUrl}
+              fallbackText={`Logo da ${getClinicBrandName(clinicName)}`}
+              disabled={saving}
+              isProcessing={uploadingLogo}
+              metrics={logoMetrics}
+              onImageSelected={handleLogoSelected}
+              onImageRemoved={handleLogoRemoved}
+            />
+
+            <div className="grid gap-3.5 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Nome fantasia da clínica</Label>
+                <Input
+                  value={clinicName}
+                  onChange={(e) => setClinicName(e.target.value)}
+                  placeholder="Ex.: Clínica Bem Viver"
                 />
-              ) : (
-                <span className="text-xs text-muted-foreground text-center font-medium">{getClinicBrandName(clinicName)}</span>
-              )}
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>Nome da clínica</Label>
-                <Input value={clinicName} onChange={(e) => setClinicName(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>URL do logotipo</Label>
-                <Input value={clinicLogoUrl} onChange={(e) => setClinicLogoUrl(e.target.value)} placeholder="https://..." />
               </div>
               <div className="space-y-1.5">
                 <Label>E-mail institucional</Label>
-                <Input value={clinicEmail} onChange={(e) => setClinicEmail(e.target.value)} placeholder="contato@clinica.com" />
+                <Input
+                  value={clinicEmail}
+                  onChange={(e) => setClinicEmail(e.target.value)}
+                  placeholder="contato@clinica.com"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Telefone institucional</Label>
-                <Input value={clinicPhone} onChange={(e) => setClinicPhone(e.target.value)} placeholder="(11) 99999-9999" />
+                <Input
+                  value={clinicPhone}
+                  onChange={(e) => setClinicPhone(e.target.value)}
+                  placeholder="(11) 99999-9999"
+                />
               </div>
             </div>
           </div>

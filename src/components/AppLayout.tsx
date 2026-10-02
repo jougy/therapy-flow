@@ -143,20 +143,24 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               onClick={() => navigate(isPersonalOriginSettings ? "/espacopessoal" : clinicHomePath)}
               aria-label={isPersonalOriginSettings ? "Ir para o espaço pessoal" : `Ir para a página inicial da clínica ${clinicBrandName}`}
             >
-              {clinic?.logo_url && !isPersonalOriginSettings ? (
-                <img src={clinic.logo_url} alt={`Logo da ${clinicBrandName}`} className="h-9 max-w-[140px] object-contain" />
-              ) : (
-                <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {clinic?.logo_url && !isPersonalOriginSettings ? (
+                  <img
+                    src={clinic.logo_url}
+                    alt={`Logo da ${clinicBrandName}`}
+                    className="h-8 w-8 shrink-0 rounded-md object-contain border bg-card/60 p-0.5 shadow-2xs"
+                  />
+                ) : (
                   <img
                     src="/branding/logo/pluri_health_icon_gradient.svg"
                     alt="Pluri-Health"
                     className="h-8 w-8 shrink-0 drop-shadow-xs"
                   />
-                  <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
-                    {isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}
-                  </span>
-                </div>
-              )}
+                )}
+                <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
+                  {isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}
+                </span>
+              </div>
             </button>
 
             <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
@@ -250,7 +254,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         </header>
       )}
 
-      {/* Banner de Modo Leitura para Teste / Degustação Expirada */}
+      {/* Banner de Modo Leitura para Teste Gratuito Expirado */}
       {!isPreviewIframe && <TrialReadOnlyBanner clinicId={clinic?.id} />}
 
       {/* Banner Informativo de Cota de Teste Grátis */}
@@ -421,7 +425,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
       {viewMode === "mobile" && isPlatformSupportMode && !isPreviewIframe ? (
         <MobileTouchSimulator iframeSrc={iframeSrc} />
       ) : (
-        <main className="min-w-0 flex-1 p-4 sm:p-6 lg:px-8">
+        <main className="min-w-0 flex-1 px-2 py-4 sm:p-6 lg:px-8">
           {children}
         </main>
       )}

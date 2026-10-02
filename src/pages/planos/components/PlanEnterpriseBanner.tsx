@@ -3,7 +3,7 @@ import { MessageSquare, ArrowRight } from "lucide-react";
 
 export const PlanEnterpriseBanner: React.FC = React.memo(() => {
   return (
-    <div className="z-10 w-full max-w-7xl mx-auto my-2 p-3 sm:p-4 rounded-2xl bg-card/80 border border-dashed border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-foreground shadow-xs">
+    <div id="enterprise-banner" className="z-10 w-full max-w-7xl mx-auto my-2 p-3 sm:p-4 rounded-2xl bg-card/80 border border-dashed border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-foreground shadow-xs">
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 shrink-0">
           <MessageSquare className="w-4 h-4" />

@@ -89,6 +89,10 @@ describe("ConviteClinica", () => {
         _full_name: null,
         _token: "valid-token-123",
       });
+      expect(toast).toHaveBeenCalledWith({
+        title: "Acesso ativado com sucesso!",
+        description: "Bem-vindo(a) à equipe da Clínica Bem Estar! Seu acesso foi ativado com sucesso.",
+      });
     });
   });
 

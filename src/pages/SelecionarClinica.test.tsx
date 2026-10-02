@@ -761,4 +761,121 @@ describe("SelecionarClinica", () => {
 
     expect(navigateMock).toHaveBeenCalledWith("/onboarding-clinica?mode=create");
   });
+
+  it("does not render 'Comprar meu próprio espaço' button in the CardHeader", () => {
+    vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByRole("button", { name: /comprar meu próprio espaço/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Escolha a clínica")).toBeInTheDocument();
+  });
+
+  it("renders trial badge and notice with days remaining when clinic has trialing status", () => {
+    const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+
+    vi.mocked(useAuth).mockReturnValue(
+      buildAuthMock({
+        accessibleClinics: [
+          {
+            activeAccessCount: 1,
+            activeAccessUsers: [],
+            clinic: {
+              account_owner_user_id: "user-1",
+              concurrent_access_limit: 4,
+              id: "clinic-trial-1",
+              logo_url: null,
+              name: "Clínica Experimental",
+              route_key: "clinica-exp",
+              subaccount_limit: 4,
+              subscription_plan: "clinic",
+              subscription_status: "trialing",
+              trial_ends_at: futureDate,
+            },
+            membership: {
+              account_role: "account_owner",
+              clinic_id: "clinic-trial-1",
+              created_at: "2026-05-29T00:00:00.000Z",
+              ended_at: null,
+              id: "membership-trial-1",
+              invited_by: null,
+              is_active: true,
+              joined_at: "2026-05-29T00:00:00.000Z",
+              membership_status: "active",
+              operational_role: "owner",
+              updated_at: "2026-05-29T00:00:00.000Z",
+              user_id: "user-1",
+            },
+          },
+        ],
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId("clinic-trial-badge")).toBeInTheDocument();
+    expect(screen.getByText(/Teste Gratuito: 5 dias restantes/i)).toBeInTheDocument();
+    expect(screen.getByTestId("clinic-trial-notice")).toBeInTheDocument();
+    expect(screen.getByText(/5 dias de teste gratuito restantes/i)).toBeInTheDocument();
+  });
+
+  it("renders 'Período de teste encerrado' badge and notice when trial has expired", () => {
+    const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    vi.mocked(useAuth).mockReturnValue(
+      buildAuthMock({
+        accessibleClinics: [
+          {
+            activeAccessCount: 1,
+            activeAccessUsers: [],
+            clinic: {
+              account_owner_user_id: "user-1",
+              concurrent_access_limit: 4,
+              id: "clinic-trial-expired",
+              logo_url: null,
+              name: "Clínica Expirada",
+              route_key: "clinica-exp-old",
+              subaccount_limit: 4,
+              subscription_plan: "clinic",
+              subscription_status: "trialing",
+              trial_ends_at: pastDate,
+            },
+            membership: {
+              account_role: "account_owner",
+              clinic_id: "clinic-trial-expired",
+              created_at: "2026-05-29T00:00:00.000Z",
+              ended_at: null,
+              id: "membership-trial-2",
+              invited_by: null,
+              is_active: true,
+              joined_at: "2026-05-29T00:00:00.000Z",
+              membership_status: "active",
+              operational_role: "owner",
+              updated_at: "2026-05-29T00:00:00.000Z",
+              user_id: "user-1",
+            },
+          },
+        ],
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId("clinic-trial-badge")).toBeInTheDocument();
+    expect(screen.getByText("Período de teste encerrado")).toBeInTheDocument();
+    expect(screen.getByTestId("clinic-trial-notice")).toBeInTheDocument();
+    expect(screen.getByText(/Período de teste encerrado \(somente leitura\)/i)).toBeInTheDocument();
+  });
 });

@@ -65,8 +65,8 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
   },
   {
     key: 'subscription_free_trial_enabled',
-    label: 'Degustação Gratuita (Free Tier / Trial)',
-    description: 'Habilita o período e cota de degustação gratuita no onboarding e seleção de planos sem exigir cartão de crédito inicial.',
+    label: 'Teste Gratuito (Free Tier / Trial)',
+    description: 'Habilita o período e cota de teste gratuito no onboarding e seleção de planos sem exigir cartão de crédito inicial.',
     category: 'Assinaturas',
     hasConfiguration: true,
     hasToggle: true,

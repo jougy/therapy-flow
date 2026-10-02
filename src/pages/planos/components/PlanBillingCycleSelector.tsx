@@ -6,23 +6,23 @@ import { BillingCycle } from "@/utils/subscriptionPricing";
  * Propriedades para o componente seletor de ciclo de faturamento.
  */
 export interface PlanBillingCycleSelectorProps {
-  /** Ciclo atualmente selecionado (mensal, trimestral, anual ou degustação grátis). */
+  /** Ciclo atualmente selecionado (mensal, trimestral, anual ou teste gratuito). */
   selectedCycle: BillingCycle | "free";
   /** Callback acionado ao alternar o ciclo de faturamento. */
   onSelectCycle: (cycle: BillingCycle | "free") => void;
-  /** Indica se a clínica já possui uma assinatura ativa/paga (ocultando a aba de degustação grátis). */
+  /** Indica se a clínica já possui uma assinatura ativa/paga (ocultando a aba de teste gratuito). */
   hasActiveSubscription: boolean;
   /** Flag do sistema indicando se a modalidade de trial gratuito está habilitada. */
   isFreeTrialEnabled: boolean;
 }
 
 /**
- * Seletor de Ciclos de Faturamento e Modalidade Degustação Grátis.
+ * Seletor de Ciclos de Faturamento e Modalidade de Teste Gratuito.
  * 
  * Racional de Negócio / Efeito Ancoragem:
  * - O ciclo Anual (-25% OFF) é o default para incentivar LTV e retenção.
  * - Ciclo Trimestral oferece desconto intermediário (-10% OFF).
- * - O ciclo "Degustação Grátis" permite ativação instantânea sem cartão quando elegível.
+ * - O ciclo "Teste gratuito (7 dias)" permite ativação instantânea sem cartão quando elegível.
  *
  * Complexidade Assintótica: O(1) de tempo e memória.
  */

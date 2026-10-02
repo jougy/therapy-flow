@@ -2,10 +2,12 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
+  Briefcase,
   Calendar,
   CheckCircle2,
   Eye,
   EyeOff,
+  FileBadge,
   IdCard,
   Loader2,
   LockKeyhole,
@@ -14,17 +16,36 @@ import {
   Phone,
   UserRound,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { saveSignupIntent } from "@/lib/signup-intent";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCpf, formatPhone } from "@/lib/profile-settings";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { toast } from "@/hooks/use-toast";
+import {
+  SUPPORTED_PROFESSIONS,
+  getProfessionOption,
+  type SupportedProfession,
+} from "@/lib/professions";
+import {
+  generateEventId,
+  trackCompleteRegistration,
+  trackStartTrial,
+  type PixelProfession,
+} from "@/lib/meta-pixel";
 
 const onlyDigits = (value: string) => value.replace(/\D/g, "");
 
@@ -105,10 +126,47 @@ const getErrorMessage = (error: unknown) => {
 
 const CadastroContaAlfa = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Capturar e persistir intenção de plano vinda da Landing Page (plurifisio.com.br)
+  useEffect(() => {
+    const planParam = searchParams.get("plan");
+    const cycleParam = searchParams.get("cycle");
+    const trialParam = searchParams.get("trial");
+    const couponParam = searchParams.get("coupon") || searchParams.get("cupom");
+
+    if (planParam || trialParam === "true") {
+      saveSignupIntent({
+        plan: planParam,
+        cycle: cycleParam,
+        trial: trialParam,
+        coupon: couponParam,
+      });
+    }
+  }, [searchParams]);
+
+  const authLoginUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    const plan = searchParams.get("plan");
+    const cycle = searchParams.get("cycle");
+    const trial = searchParams.get("trial");
+    const coupon = searchParams.get("coupon") || searchParams.get("cupom");
+
+    if (plan) params.set("plan", plan);
+    if (cycle) params.set("cycle", cycle);
+    if (trial) params.set("trial", trial);
+    if (coupon) params.set("coupon", coupon);
+
+    const qs = params.toString();
+    return qs ? `/auth?${qs}` : "/auth";
+  }, [searchParams]);
+
   const [ownerName, setOwnerName] = useState("");
   const [cpf, setCpf] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
+  const [profession, setProfession] = useState<string>("");
+  const [councilNumber, setCouncilNumber] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -208,13 +266,42 @@ const CadastroContaAlfa = () => {
 
       const { error: rpcError } = await supabase.rpc("handle_personal_signup", {
         _birth_date: birthDate,
+        _council_number: councilNumber.trim() || undefined,
         _cpf: cleanCpf,
         _email: nextEmail,
         _full_name: nextOwnerName,
         _phone: cleanPhone,
+        _profession: profession || undefined,
         _user_id: userId,
       });
       if (rpcError) throw rpcError;
+
+      const pixelProfession: PixelProfession =
+        profession === "terapeuta_ocupacional"
+          ? "occupational_therapist"
+          : "physiotherapist";
+      const registrationEventId = generateEventId("reg");
+      const trialEventId = generateEventId("trial");
+
+      void trackCompleteRegistration({
+        profession: pixelProfession,
+        userData: {
+          email: nextEmail,
+          phone: cleanPhone,
+          name: nextOwnerName,
+        },
+        eventId: registrationEventId,
+      });
+
+      void trackStartTrial({
+        profession: pixelProfession,
+        userData: {
+          email: nextEmail,
+          phone: cleanPhone,
+          name: nextOwnerName,
+        },
+        eventId: trialEventId,
+      });
 
       if (signupData.session) {
         await supabase.auth.signOut();
@@ -256,7 +343,7 @@ const CadastroContaAlfa = () => {
         transition={{ duration: 0.25 }}
         className="mx-auto w-full max-w-2xl"
       >
-        <Button variant="ghost" className="mb-4 px-0" onClick={() => navigate("/auth")}>
+        <Button variant="ghost" className="mb-4 px-0" onClick={() => navigate(authLoginUrl)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Voltar para o login
         </Button>
@@ -429,6 +516,56 @@ const CadastroContaAlfa = () => {
                     )}
                   </div>
 
+                  {/* Profissão & Conselho */}
+                  <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3.5">
+                    <div className="space-y-2">
+                      <Label htmlFor="profession-select">Profissão</Label>
+                      <Select
+                        value={profession}
+                        onValueChange={(val) => {
+                          setProfession(val);
+                          markTouched("profession");
+                        }}
+                      >
+                        <SelectTrigger id="profession-select" className="w-full bg-background">
+                          <div className="flex items-center gap-2">
+                            <Briefcase className="h-4 w-4 text-muted-foreground" />
+                            <SelectValue placeholder="Selecione sua profissão (opcional)" />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUPPORTED_PROFESSIONS.map((p) => (
+                            <SelectItem key={p.value} value={p.value}>
+                              {p.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {profession && (
+                      <div className="space-y-2">
+                        <Label htmlFor="council-number">
+                          Número do {getProfessionOption(profession)?.councilName || "CREFITO"}
+                        </Label>
+                        <div className="relative">
+                          <FileBadge className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="council-number"
+                            value={councilNumber}
+                            onChange={(e) => setCouncilNumber(e.target.value)}
+                            className="pl-9 bg-background"
+                            maxLength={30}
+                            placeholder={getProfessionOption(profession)?.councilPlaceholder || "Ex: 123456-F"}
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Opcional. Você também pode preencher ou alterar depois nas configurações do seu perfil.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   {/* E-mail */}
                   <div className="space-y-2">
                     <Label htmlFor="signup-email">E-mail</Label>
@@ -577,7 +714,7 @@ const CadastroContaAlfa = () => {
                     type="button"
                     variant="outline"
                     className="w-full sm:w-auto h-11 px-4 py-1 text-center text-xs sm:text-sm font-medium leading-tight text-muted-foreground hover:text-foreground hover:bg-accent/60"
-                    onClick={() => navigate("/auth")}
+                    onClick={() => navigate(authLoginUrl)}
                   >
                     <span>
                       Já possui uma conta? <br />

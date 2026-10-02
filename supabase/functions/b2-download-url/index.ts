@@ -26,7 +26,7 @@ const b2Region = requiredEnv("B2_REGION");
 const b2Endpoint = requiredEnv("B2_S3_ENDPOINT");
 const b2KeyId = requiredEnv("B2_APPLICATION_KEY_ID");
 const b2ApplicationKey = requiredEnv("B2_APPLICATION_KEY");
-const bucketName = Deno.env.get("B2_BUCKET_NAME") || "";
+const bucketName = requiredEnv("B2_BUCKET_NAME");
 
 const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -67,12 +67,33 @@ Deno.serve(async (req) => {
         return json({ error: "Chave do arquivo não pertence à clínica informada." }, 403);
       }
 
-      const { data: canRead, error: permissionError } = await userClient.rpc("current_user_can", {
-        _capability: "patients.read",
-        _clinic_id: clinicId,
-      });
-      if (permissionError) throw new Error(permissionError.message);
-      if (canRead !== true) return json({ error: "Você não tem permissão para baixar este arquivo." }, 403);
+      const isBranding = objectKey.startsWith(`clinics/${clinicId}/branding/`);
+      let canRead = false;
+
+      if (isBranding) {
+        const { data: canReadProfile } = await userClient.rpc("current_user_can", {
+          _capability: "clinic_profile.read",
+          _clinic_id: clinicId,
+        });
+        if (canReadProfile === true) {
+          canRead = true;
+        } else {
+          const { data: canReadPatients } = await userClient.rpc("current_user_can", {
+            _capability: "patients.read",
+            _clinic_id: clinicId,
+          });
+          canRead = canReadPatients === true;
+        }
+      } else {
+        const { data: canReadPatients, error: permissionError } = await userClient.rpc("current_user_can", {
+          _capability: "patients.read",
+          _clinic_id: clinicId,
+        });
+        if (permissionError) throw new Error(permissionError.message);
+        canRead = canReadPatients === true;
+      }
+
+      if (!canRead) return json({ error: "Você não tem permissão para baixar este arquivo." }, 403);
 
       const expiresIn = 300;
       const downloadUrl = await createPresignedS3Url({

@@ -1,6 +1,7 @@
 // src/hooks/useClinicPlanQuota.ts
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { calculateTrialRemainingTime } from "@/lib/trial";
 
 export interface QuotaCheckResult {
   allowed: boolean;
@@ -15,6 +16,9 @@ export interface ClinicPlanUsage {
   isTrialExpired: boolean;
   isExpired: boolean;
   subscriptionStatus: string;
+  trialEndsAt: string | null;
+  daysRemaining: number | null;
+  hoursRemaining: number | null;
   attendances: {
     current: number;
     max: number;
@@ -42,6 +46,7 @@ interface ClinicSubscriptionRecord {
   is_free_trial?: boolean | null;
   expires_at?: string | null;
   current_period_end?: string | null;
+  trial_ends_at?: string | null;
   is_read_only?: boolean | null;
   trial_ended?: boolean | null;
   is_expired?: boolean | null;
@@ -59,6 +64,9 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
     isTrialExpired: false,
     isExpired: false,
     subscriptionStatus: "",
+    trialEndsAt: null,
+    daysRemaining: null,
+    hoursRemaining: null,
     attendances: { current: 0, max: 20, remaining: 20, isLimitReached: false },
     patients: { current: 0, max: 5, remaining: 5, isLimitReached: false },
     forms: { current: 0, max: 1, remaining: 1, isLimitReached: false },
@@ -137,11 +145,18 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
         isTrialExpiredCalculated ||
         (isTimeExpired && !isTrial);
 
+      const trialEndsAtDate = sub?.trial_ends_at || sub?.expires_at || sub?.current_period_end || null;
+      const { daysRemaining: calculatedDaysRemaining, hoursRemaining: calculatedHoursRemaining } =
+        calculateTrialRemainingTime(trialEndsAtDate);
+
       setUsage({
         isFreeTrial: isTrial,
         isTrialExpired: isTrialExpiredCalculated,
         isExpired: isSubscriptionExpired,
         subscriptionStatus: rawStatus,
+        trialEndsAt: trialEndsAtDate,
+        daysRemaining: calculatedDaysRemaining,
+        hoursRemaining: calculatedHoursRemaining,
         attendances: {
           current: currentAtt,
           max: maxAtt,

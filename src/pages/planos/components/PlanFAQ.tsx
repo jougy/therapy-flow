@@ -9,11 +9,11 @@ interface FAQItem {
 
 const FAQ_ITEMS: FAQItem[] = [
   {
-    question: "Preciso cadastrar cartão de crédito para iniciar a degustação?",
-    answer: "Sim. Para garantir a autenticidade das contas e a segurança antifraude, é necessário cadastrar um cartão de crédito válido, realizando uma cobrança simbólica de confirmação de R$ 0,01 junto ao emissor. Durante os 7 dias de degustação gratuita, nenhuma mensalidade será cobrada e você pode cancelar quando quiser sem custos.",
+    question: "Preciso cadastrar cartão de crédito para iniciar o teste gratuito?",
+    answer: "Sim. Para garantir a autenticidade das contas e a segurança antifraude, é necessário cadastrar um cartão de crédito válido, realizando uma cobrança simbólica de confirmação de R$ 0,01 junto ao emissor. Durante os 7 dias de teste gratuito, nenhuma mensalidade será cobrada e você pode cancelar quando quiser sem custos.",
   },
   {
-    question: "O que acontece ao final da degustação ou se eu cancelar minha assinatura?",
+    question: "O que acontece ao final do período de teste ou se eu cancelar minha assinatura?",
     answer: "Seus dados e prontuários continuam 100% seguros e acessíveis em Modo Leitura estrito. Em respeito às resoluções éticas profissionais (CFM/CFP) e à LGPD, nós nunca bloqueamos a visualização ou excluímos registros clínicos de seus pacientes.",
   },
   {

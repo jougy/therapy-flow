@@ -30,12 +30,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import ThemeModeSwitch from "@/components/ThemeModeSwitch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { generateGlobalUserId } from "@/lib/user-identity";
+import {
+  SUPPORTED_PROFESSIONS,
+  getProfessionOption,
+} from "@/lib/professions";
 
 interface AddressState {
   cep: string;
@@ -107,6 +118,8 @@ export const PersonalProfileSection = () => {
   const [cpf, setCpf] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
+  const [profession, setProfession] = useState("");
+  const [councilName, setCouncilName] = useState("CREFITO");
   const [professionalLicense, setProfessionalLicense] = useState("");
   const [address, setAddress] = useState<AddressState>({
     cep: "",
@@ -134,6 +147,8 @@ export const PersonalProfileSection = () => {
     setCpf(profile.cpf ? formatCpf(profile.cpf) : "");
     setBirthDate(profile.birth_date || "");
     setPhone(profile.phone ? formatPhone(profile.phone) : "");
+    setProfession(profile.profession || "");
+    setCouncilName(profile.council_name || "CREFITO");
     setProfessionalLicense(profile.professional_license || "");
 
     const rawAddr = profile.address && typeof profile.address === "object" ? (profile.address as Record<string, unknown>) : {};
@@ -193,6 +208,7 @@ export const PersonalProfileSection = () => {
       checkChange("full_name", profile?.full_name, fullName);
       checkChange("cpf", profile?.cpf, cpf.replace(/\D/g, ""));
       checkChange("phone", profile?.phone, phone.replace(/\D/g, ""));
+      checkChange("profession", profile?.profession, profession);
       checkChange("professional_license", profile?.professional_license, professionalLicense);
       checkChange("birth_date", profile?.birth_date, birthDate);
 
@@ -205,6 +221,8 @@ export const PersonalProfileSection = () => {
           cpf: cpf.replace(/\D/g, "") || null,
           birth_date: birthDate || null,
           phone: phone.replace(/\D/g, "") || null,
+          profession: profession.trim() || null,
+          council_name: councilName.trim() || "CREFITO",
           professional_license: professionalLicense.trim() || null,
           address: {
             cep: address.cep.replace(/\D/g, ""),
@@ -469,8 +487,18 @@ export const PersonalProfileSection = () => {
                     <p className="text-sm font-semibold text-foreground">{phone || "Não informado"}</p>
                   </div>
                   <div className="rounded-lg border bg-muted/15 p-3 space-y-1">
-                    <span className="text-[11px] font-medium text-muted-foreground">Registro Profissional</span>
-                    <p className="text-sm font-semibold text-foreground">{professionalLicense || "Não informado"}</p>
+                    <span className="text-[11px] font-medium text-muted-foreground">Profissão</span>
+                    <p className="text-sm font-semibold text-foreground">
+                      {getProfessionOption(profession)?.label || profession || "Não informada"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/15 p-3 space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      Número do {getProfessionOption(profession)?.councilName || councilName || "Conselho"}
+                    </span>
+                    <p className="text-sm font-semibold text-foreground">
+                      {professionalLicense ? `${councilName || "CREFITO"} ${professionalLicense}` : "Não informado"}
+                    </p>
                   </div>
 
                   {/* Endereço em visualização se houver */}
@@ -525,12 +553,36 @@ export const PersonalProfileSection = () => {
                         maxLength={15}
                       />
                     </div>
-                    <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
-                      <Label className="text-xs font-semibold">Registro profissional (CRP / CRM / CREFITO)</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Profissão</Label>
+                      <Select
+                        value={profession}
+                        onValueChange={(val) => {
+                          setProfession(val);
+                          const opt = getProfessionOption(val);
+                          if (opt) setCouncilName(opt.councilName);
+                        }}
+                      >
+                        <SelectTrigger className="w-full bg-background text-xs">
+                          <SelectValue placeholder="Selecione sua profissão" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUPPORTED_PROFESSIONS.map((p) => (
+                            <SelectItem key={p.value} value={p.value}>
+                              {p.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label className="text-xs font-semibold">
+                        Número do {getProfessionOption(profession)?.councilName || councilName || "Conselho"}
+                      </Label>
                       <Input
                         value={professionalLicense}
                         onChange={(e) => setProfessionalLicense(e.target.value)}
-                        placeholder="Ex: CRP 06/123456"
+                        placeholder={getProfessionOption(profession)?.councilPlaceholder || "Ex: 123456-F"}
                       />
                     </div>
                   </div>

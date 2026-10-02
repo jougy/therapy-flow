@@ -516,21 +516,17 @@ serve(async (req) => {
     // AÇÃO EXTRA 3: CREATE_CLINIC_WITH_VERIFIED_CARD
     // Criação de Clínica com Validação Obrigatória de Cartão e Cobrança de R$ 0,01
     // =========================================================================
-    if (action === 'CREATE_CLINIC_WITH_VERIFIED_CARD') {
-      if (!credit_card_data?.card) {
-        return new Response(JSON.stringify({ error: 'Os dados do cartão de crédito são obrigatórios para criar o espaço.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      const card = credit_card_data.card;
-      const cardValidation = validateCreditCard(card);
-      if (!cardValidation.valid) {
-        return new Response(JSON.stringify({ error: cardValidation.error || 'Cartão de crédito inválido.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+    if (action === 'CREATE_CLINIC_WITH_VERIFIED_CARD' || action === 'CREATE_CLINIC_WITHOUT_CARD') {
+      const card = credit_card_data?.card;
+      const hasCard = Boolean(card && card.number && card.holderName);
+      if (hasCard) {
+        const cardValidation = validateCreditCard(card);
+        if (!cardValidation.valid) {
+          return new Response(JSON.stringify({ error: cardValidation.error || 'Cartão de crédito inválido.' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
       }
 
       if (!clinic_data?.name) {
@@ -548,24 +544,24 @@ serve(async (req) => {
         });
       }
 
-      // 1. Preparar payloads do cartão e do titular
-      const cleanCard = String(card.number || '').replace(/\D/g, '');
-      const cardPayload = {
+      // 1. Preparar payloads do cartão e do titular (se fornecido)
+      const cleanCard = hasCard ? String(card.number || '').replace(/\D/g, '') : '';
+      const cardPayload = hasCard ? {
         holderName: String(card.holderName || '').trim(),
         number: cleanCard,
         expiryMonth: String(card.expiryMonth || '').padStart(2, '0'),
         expiryYear: String(card.expiryYear || '').length === 2 ? `20${card.expiryYear}` : String(card.expiryYear || ''),
         ccv: String(card.ccv || '').trim(),
-      };
+      } : null;
 
-      const holder = credit_card_data.holder || {};
+      const holder = credit_card_data?.holder || {};
       const addr = (clinic_data?.address && typeof clinic_data.address === 'object') ? clinic_data.address : {};
       const holderPostalCode = String(holder.postalCode || addr.cep || '01001000').replace(/\D/g, '') || '01001000';
       const holderPhone = String(holder.phone || clinic_data?.phone || '11999999999').replace(/\D/g, '') || '11999999999';
       const holderAddressNumber = String(holder.addressNumber || addr.number || 'SN').trim() || 'SN';
 
       const cardHolderPayload = {
-        name: String(holder.name || cardPayload.holderName || clinic_data?.name || 'Titular').trim(),
+        name: String(holder.name || cardPayload?.holderName || clinic_data?.name || 'Titular').trim(),
         email: String(holder.email || clinic_data?.email || user.email || 'contato@plurihealth.com').trim(),
         cpfCnpj: String(holder.cpfCnpj || targetDoc).replace(/\D/g, ''),
         postalCode: holderPostalCode,
@@ -605,72 +601,74 @@ serve(async (req) => {
         customerId = newCust.id;
       }
 
-      // 3. Executar Cobrança de Confirmação de R$ 0,01 no Asaas
+      // 3. Se fornecido cartão, executar cobrança simbólica (R$ 0,01) e tokenização no Asaas
       const todayStr = new Date().toISOString().split('T')[0];
       let verificationPayment: any = null;
       let tokenResult: any = null;
 
-      try {
-        console.log('[asaas-subscription] Processando cobrança de verificação (R$ 0,01) para customer:', customerId);
-        verificationPayment = await asaas.createPayment({
-          customer: customerId,
-          billingType: 'CREDIT_CARD',
-          value: 0.01,
-          dueDate: todayStr,
-          description: 'Pluri-Health - Validação de Cartão de Crédito (R$ 0,01)',
-          creditCard: cardPayload,
-          creditCardHolderInfo: cardHolderPayload,
-        });
-      } catch (chargeErr: any) {
-        const errStr = String(chargeErr?.message || chargeErr || '');
-        console.warn('[asaas-subscription] Cobrança de 0.01 retornou:', errStr);
-
-        // Se o erro for de valor mínimo (ex: R$ 5,00)
-        if (errStr.toLowerCase().includes('mínimo') || errStr.toLowerCase().includes('minimo') || errStr.includes('5.00') || errStr.includes('5,00')) {
-          console.log('[asaas-subscription] Processando validação com piso de R$ 5,00 e estorno imediato...');
+      if (hasCard && cardPayload) {
+        try {
+          console.log('[asaas-subscription] Processando cobrança de verificação (R$ 0,01) para customer:', customerId);
           verificationPayment = await asaas.createPayment({
             customer: customerId,
             billingType: 'CREDIT_CARD',
-            value: 5.00,
+            value: 0.01,
             dueDate: todayStr,
-            description: 'Pluri-Health - Validação de Segurança (Estorno Automático)',
+            description: 'Pluri-Health - Validação de Cartão de Crédito (R$ 0,01)',
             creditCard: cardPayload,
             creditCardHolderInfo: cardHolderPayload,
           });
+        } catch (chargeErr: any) {
+          const errStr = String(chargeErr?.message || chargeErr || '');
+          console.warn('[asaas-subscription] Cobrança de 0.01 retornou:', errStr);
 
-          // Estorno imediato para não onerar o usuário
-          if (verificationPayment?.id) {
-            try {
-              await asaas.refundPayment(verificationPayment.id, 5.00, 'Estorno automático de validação Pluri-Health');
-              console.log('[asaas-subscription] Estorno imediato realizado com sucesso para payment:', verificationPayment.id);
-            } catch (refErr) {
-              console.warn('[asaas-subscription] Aviso ao estornar cobrança de teste:', refErr);
+          // Se o erro for de valor mínimo (ex: R$ 5,00)
+          if (errStr.toLowerCase().includes('mínimo') || errStr.toLowerCase().includes('minimo') || errStr.includes('5.00') || errStr.includes('5,00')) {
+            console.log('[asaas-subscription] Processando validação com piso de R$ 5,00 e estorno imediato...');
+            verificationPayment = await asaas.createPayment({
+              customer: customerId,
+              billingType: 'CREDIT_CARD',
+              value: 5.00,
+              dueDate: todayStr,
+              description: 'Pluri-Health - Validação de Segurança (Estorno Automático)',
+              creditCard: cardPayload,
+              creditCardHolderInfo: cardHolderPayload,
+            });
+
+            // Estorno imediato para não onerar o usuário
+            if (verificationPayment?.id) {
+              try {
+                await asaas.refundPayment(verificationPayment.id, 5.00, 'Estorno automático de validação Pluri-Health');
+                console.log('[asaas-subscription] Estorno imediato realizado com sucesso para payment:', verificationPayment.id);
+              } catch (refErr) {
+                console.warn('[asaas-subscription] Aviso ao estornar cobrança de teste:', refErr);
+              }
             }
+          } else {
+            // O cartão foi realmente recusado pelo banco emissor (saldo, dados inválidos, etc.)
+            return new Response(JSON.stringify({
+              success: false,
+              error: chargeErr.message || 'Cartão de crédito não autorizado pelo banco emissor. Por favor, revise os dados ou tente outro cartão.',
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
           }
-        } else {
-          // O cartão foi realmente recusado pelo banco emissor (saldo, dados inválidos, etc.)
-          return new Response(JSON.stringify({
-            success: false,
-            error: chargeErr.message || 'Cartão de crédito não autorizado pelo banco emissor. Por favor, revise os dados ou tente outro cartão.',
-          }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+
+        // 4. Tokenizar o cartão aprovado
+        try {
+          tokenResult = await asaas.tokenizeCreditCard({
+            customer: customerId,
+            creditCard: cardPayload,
+            creditCardHolderInfo: cardHolderPayload,
           });
+        } catch (tokErr) {
+          console.warn('[asaas-subscription] Aviso ao tokenizar cartão:', tokErr);
         }
       }
 
-      // 4. Tokenizar o cartão aprovado
-      try {
-        tokenResult = await asaas.tokenizeCreditCard({
-          customer: customerId,
-          creditCard: cardPayload,
-          creditCardHolderInfo: cardHolderPayload,
-        });
-      } catch (tokErr) {
-        console.warn('[asaas-subscription] Aviso ao tokenizar cartão:', tokErr);
-      }
-
-      // 5. Cartão aprovado! Criar clínica atomicamente no Supabase com service_role
+      // 5. Criar clínica atomicamente no Supabase com service_role
       const selectedPlan = normalizePlanKey(plan_type);
       const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
       const config = (PLAN_PRICING_CONFIG[selectedPlan] as any)[cycleKey] || (PLAN_PRICING_CONFIG[selectedPlan] as any).annual;
@@ -777,7 +775,7 @@ serve(async (req) => {
         clinic_id: createdClinicId,
         account_owner_user_id: user.id,
         asaas_customer_id: customerId,
-        payment_method: 'CREDIT_CARD',
+        payment_method: hasCard ? 'CREDIT_CARD' : 'PENDING_CHOICE',
         plan_type: selectedPlan,
         billing_cycle: 'ANNUAL',
         base_monthly_price: config.baseMonthlyEq,
@@ -787,7 +785,7 @@ serve(async (req) => {
         status: subscriptionStatus,
         is_free_trial: true,
         is_read_only: false,
-        trial_card_token: tokenResult?.creditCardToken || 'verified_card',
+        trial_card_token: tokenResult?.creditCardToken || (hasCard ? 'verified_card' : null),
         period_duration_days: trialDays,
         current_period_start: nowIso,
         current_period_end: expiresAt,
@@ -824,6 +822,10 @@ serve(async (req) => {
         });
       }
 
+      const successMsg = hasCard
+        ? 'Clínica criada e teste de 7 dias ativado com cartão validado com sucesso!'
+        : 'Clínica criada com sucesso! Você pode escolher sua forma de pagamento via PIX, Boleto ou Cartão.';
+
       return new Response(JSON.stringify({
         success: true,
         clinic_id: createdClinicId,
@@ -831,7 +833,7 @@ serve(async (req) => {
         subscription: createdSub,
         creditCardToken: tokenResult?.creditCardToken || null,
         paymentId: verificationPayment?.id || null,
-        message: 'Clínica criada e teste de 7 dias ativado com cartão validado com sucesso!',
+        message: successMsg,
       }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

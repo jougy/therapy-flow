@@ -12,7 +12,7 @@ export interface PlanTrialExplanationModalProps {
 }
 
 /**
- * Modal explicativo detalhado sobre o funcionamento da Degustação Gratuita e regras do Modo Leitura.
+ * Modal explicativo detalhado sobre o funcionamento do Teste Gratuito e regras do Modo Leitura.
  */
 export const PlanTrialExplanationModal: React.FC<PlanTrialExplanationModalProps> = ({
   isOpen,

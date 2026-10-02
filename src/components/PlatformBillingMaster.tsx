@@ -889,7 +889,7 @@ export function PlatformBillingMaster() {
                 Motivo Auditável da Alteração <span className="text-red-500">* (mín. 8 caracteres)</span>
               </Label>
               <Textarea
-                placeholder="Ex: Concessão especial de degustação estendida solicitada via suporte ticket #102..."
+                placeholder="Ex: Concessão especial de teste gratuito estendido solicitada via suporte ticket #102..."
                 value={overrideReason}
                 onChange={(e) => setReason(e.target.value)}
                 maxLength={1000}

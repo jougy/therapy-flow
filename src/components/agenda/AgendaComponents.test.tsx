@@ -169,8 +169,8 @@ describe("Agenda Modular Components", () => {
       const addButtons = screen.getAllByRole("button", { name: /adicionar/i });
       expect(addButtons.length).toBe(7);
 
-      // Check event rendered in the week
-      expect(screen.getByText("Atendimento Lucas")).toBeInTheDocument();
+      // Check event rendered in the week (both mobile matrix and desktop grid render the event)
+      expect(screen.getAllByText("Atendimento Lucas").length).toBeGreaterThanOrEqual(1);
     });
   });
 

@@ -2,7 +2,7 @@ import React from "react";
 import { Building2, Clock3, Stethoscope, UsersRound, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { PlatformDirectoryItem } from "./types";
-import { compactDocument, itemLabels, metadataNumber } from "./platform-api";
+import { compactDocument, getClinicCategory, itemLabels, metadataNumber } from "./platform-api";
 import { getEntityTheme } from "./directory-utils";
 
 export interface DirectoryPillProps {
@@ -100,6 +100,38 @@ export const DirectoryCard: React.FC<DirectoryCardProps> = ({ item, onClick }) =
           <Badge className={`border font-medium ${theme.badgeClass}`}>
             {isPending ? "Pendente" : isOwner ? "Owner" : itemLabels[item.item_type]}
           </Badge>
+          {item.item_type === "clinic" && (() => {
+            const cat = getClinicCategory(item);
+            if (cat === "solo") {
+              return (
+                <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-300 font-medium">
+                  Solo
+                </Badge>
+              );
+            }
+            if (cat === "team") {
+              return (
+                <Badge variant="outline" className="border-purple-500/40 bg-purple-500/10 text-purple-700 dark:border-purple-500/30 dark:bg-purple-500/15 dark:text-purple-300 font-medium">
+                  Equipe
+                </Badge>
+              );
+            }
+            if (cat === "enterprise") {
+              return (
+                <Badge variant="outline" className="border-amber-500/50 bg-amber-500/15 text-amber-800 dark:border-amber-400/40 dark:bg-amber-500/20 dark:text-amber-300 font-medium">
+                  Enterprise
+                </Badge>
+              );
+            }
+            if (cat === "inactive") {
+              return (
+                <Badge variant="secondary" className="border-neutral-400/30 bg-neutral-200/60 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 font-medium">
+                  Inativa / Hibernada
+                </Badge>
+              );
+            }
+            return null;
+          })()}
           {renderStatusBadge()}
           {isPending && (
             <Badge className="bg-amber-500/15 text-amber-900 dark:text-amber-200 border-amber-400/30 text-[10px]">

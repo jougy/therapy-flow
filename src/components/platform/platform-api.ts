@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { logRuntimeRpc, logRuntimeError } from "@/lib/runtime-debug";
-import type { AccountOperation, DetailKind, PlatformDirectoryItem } from "./types";
+import type { AccountOperation, ClinicCategory, DetailKind, PlatformDirectoryItem } from "./types";
 
 export const callRpc = async (
   fn: string,
@@ -225,10 +225,46 @@ export const itemLabels: Record<DetailKind, string> = {
 export const directoryKindLabels: Record<string, string> = {
   all: "Todos os tipos",
   clinic: "Clínicas",
-  owner: "Owners (Proprietários)",
   account: "Usuários comuns",
   patient: "Pacientes",
   pending_account: "Pendências de cadastro",
+  owner: "Owners (Legado)",
+};
+
+export const clinicCategoryLabels: Record<ClinicCategory, string> = {
+  all: "Todas as clínicas",
+  solo: "Clínica Solo",
+  team: "Clínica Equipe",
+  enterprise: "Enterprise",
+  inactive: "Inativa / Hibernada",
+};
+
+export const SOLO_PLANS = new Set(["prof_basico", "prof_medio", "prof_top", "solo"]);
+export const TEAM_PLANS = new Set(["clinica_basico", "clinica_medio", "clinica_top", "clinic"]);
+export const ENTERPRISE_PLANS = new Set(["enterprise"]);
+
+export const getClinicCategory = (item: PlatformDirectoryItem): ClinicCategory | null => {
+  if (item.item_type !== "clinic") return null;
+
+  const isHibernated = Boolean(item.metadata?.is_hibernated);
+  const status = String(item.status ?? "").toLowerCase();
+  const isInactive = isHibernated || status === "paused" || status === "expired" || status === "banned" || status === "temporarily_paused";
+
+  if (isInactive) return "inactive";
+
+  const plan = String(item.metadata?.subscription_plan ?? "").toLowerCase();
+  if (ENTERPRISE_PLANS.has(plan)) return "enterprise";
+  if (TEAM_PLANS.has(plan)) return "team";
+  if (SOLO_PLANS.has(plan)) return "solo";
+
+  // Fallback heurístico: se tem limite de subcontas/acessos > 1 ou team_count > 1, considera equipe, senão solo
+  const teamCount = Number(item.metadata?.team_count ?? 0);
+  const subLimit = Number(item.metadata?.subaccount_limit ?? 1);
+  if (teamCount > 1 || subLimit > 1) {
+    return "team";
+  }
+
+  return "solo";
 };
 
 export const directoryStatusLabels: Record<string, string> = {

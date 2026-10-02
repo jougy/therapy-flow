@@ -909,7 +909,7 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-xs font-semibold">Duração da Degustação (Dias)</Label>
+              <Label className="text-xs font-semibold">Duração do Teste Gratuito (Dias)</Label>
               <Input
                 type="number"
                 min={1}

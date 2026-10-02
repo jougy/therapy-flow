@@ -7,6 +7,7 @@ import {
   getEntityTheme,
 } from "@/components/platform/directory-utils";
 import { DirectoryCard, DirectoryPill } from "@/components/platform/DirectoryCard";
+import { getClinicCategory } from "@/components/platform/platform-api";
 import type { PlatformDirectoryItem } from "@/components/platform/types";
 import { Building2 } from "lucide-react";
 
@@ -338,6 +339,119 @@ describe("DirectoryCard status badges rendering", () => {
     render(<DirectoryPill icon={Building2} label="Total de Clínicas" value={42} />);
     expect(screen.getByText("Total de Clínicas")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
+  });
+
+  it("renders 'Solo' badge for solo professional plans", () => {
+    const soloClinic: PlatformDirectoryItem = {
+      item_id: "clinic-solo",
+      item_type: "clinic",
+      title: "Consultório Dra. Marina",
+      subtitle: "marina@consultorio.com",
+      status: "active",
+      clinic_id: "clinic-solo",
+      clinic_name: "Consultório Dra. Marina",
+      primary_document: "11.222.333/0001-44",
+      secondary_document: null,
+      metadata: {
+        subscription_plan: "prof_basico",
+        team_count: 1,
+        subaccount_limit: 1,
+      },
+      updated_at: "2026-09-01T10:00:00Z",
+    };
+
+    render(<DirectoryCard item={soloClinic} onClick={mockOnClick} />);
+    expect(screen.getByText("Solo")).toBeInTheDocument();
+    expect(getClinicCategory(soloClinic)).toBe("solo");
+  });
+
+  it("renders 'Equipe' badge for clinic team plans", () => {
+    const teamClinic: PlatformDirectoryItem = {
+      item_id: "clinic-team",
+      item_type: "clinic",
+      title: "Clínica Integrada Equipe",
+      subtitle: "contato@integradateam.com",
+      status: "active",
+      clinic_id: "clinic-team",
+      clinic_name: "Clínica Integrada Equipe",
+      primary_document: "22.333.444/0001-55",
+      secondary_document: null,
+      metadata: {
+        subscription_plan: "clinica_medio",
+        team_count: 5,
+        subaccount_limit: 10,
+      },
+      updated_at: "2026-09-01T10:00:00Z",
+    };
+
+    render(<DirectoryCard item={teamClinic} onClick={mockOnClick} />);
+    expect(screen.getByText("Equipe")).toBeInTheDocument();
+    expect(getClinicCategory(teamClinic)).toBe("team");
+  });
+
+  it("renders 'Enterprise' badge for enterprise clinics", () => {
+    const enterpriseClinic: PlatformDirectoryItem = {
+      item_id: "clinic-enterprise",
+      item_type: "clinic",
+      title: "Rede Hospitalar Enterprise",
+      subtitle: "corp@enterprise.com",
+      status: "active",
+      clinic_id: "clinic-enterprise",
+      clinic_name: "Rede Hospitalar Enterprise",
+      primary_document: "33.444.555/0001-66",
+      secondary_document: null,
+      metadata: {
+        subscription_plan: "enterprise",
+        team_count: 35,
+        subaccount_limit: 100,
+      },
+      updated_at: "2026-09-01T10:00:00Z",
+    };
+
+    render(<DirectoryCard item={enterpriseClinic} onClick={mockOnClick} />);
+    expect(screen.getByText("Enterprise")).toBeInTheDocument();
+    expect(getClinicCategory(enterpriseClinic)).toBe("enterprise");
+  });
+
+  it("renders 'Inativa / Hibernada' badge for hibernated or paused clinics", () => {
+    const hibernatedClinic: PlatformDirectoryItem = {
+      item_id: "clinic-hibernated",
+      item_type: "clinic",
+      title: "Clínica Antiga Hibernada",
+      subtitle: "antiga@hibernada.com",
+      status: "active",
+      clinic_id: "clinic-hibernated",
+      clinic_name: "Clínica Antiga Hibernada",
+      primary_document: "44.555.666/0001-77",
+      secondary_document: null,
+      metadata: {
+        subscription_plan: "clinica_basico",
+        is_hibernated: true,
+      },
+      updated_at: "2026-09-01T10:00:00Z",
+    };
+
+    render(<DirectoryCard item={hibernatedClinic} onClick={mockOnClick} />);
+    expect(screen.getByText("Inativa / Hibernada")).toBeInTheDocument();
+    expect(getClinicCategory(hibernatedClinic)).toBe("inactive");
+
+    const pausedClinic: PlatformDirectoryItem = {
+      item_id: "clinic-paused",
+      item_type: "clinic",
+      title: "Clínica Pausada",
+      subtitle: "pausa@clinica.com",
+      status: "paused",
+      clinic_id: "clinic-paused",
+      clinic_name: "Clínica Pausada",
+      primary_document: "55.666.777/0001-88",
+      secondary_document: null,
+      metadata: {
+        subscription_plan: "prof_top",
+      },
+      updated_at: "2026-09-01T10:00:00Z",
+    };
+
+    expect(getClinicCategory(pausedClinic)).toBe("inactive");
   });
 });
 

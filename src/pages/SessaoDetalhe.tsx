@@ -120,6 +120,7 @@ import {
   SessionQuickEditModals,
   SessionReadOnlyOverview,
   SessionTreatmentFields,
+  SessionFloatingActionPills,
   type ClinicColorSlotRow,
   type ClinicDocumentSummary,
   type CollaboratorProfile,
@@ -129,6 +130,7 @@ import {
   type PatientPaymentSession,
   type SessionEditHistoryRow,
 } from "@/components/sessions";
+import { useScrollDirection } from "@/hooks/useScrollDirection";
 
 const SessaoDetalhe = () => {
   const { id: patientId, sessionId } = useParams();
@@ -178,6 +180,11 @@ const SessaoDetalhe = () => {
   const canPrintSessionDoc = can("system.print") && isFeatureEnabled("print_general") && isFeatureEnabled("records_session_print");
   const [isPrintTermsOpen, setIsPrintTermsOpen] = useState(false);
   const [pendingPrintKind, setPendingPrintKind] = useState<SessionDocumentKind | null>(null);
+  const [clinicalSummaryDialogOpen, setClinicalSummaryDialogOpen] = useState(false);
+
+  // Hook de direção de rolagem para botões flutuantes inteligentes nos cantos inferiores
+  const { scrollDirection, isNearTop } = useScrollDirection({ threshold: 14, topOffset: 110 });
+  const showFloatingPills = scrollDirection === "up" && !isNearTop;
 
   // Form state
   const [queixa, setQueixa] = useState("");
@@ -1819,7 +1826,7 @@ const SessaoDetalhe = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
-      className="mx-auto w-full max-w-[min(100vw-1.5rem,1680px)] space-y-6 px-3 pb-24 sm:pb-8 sm:max-w-[min(100vw-2rem,1680px)] sm:px-6 lg:max-w-[min(100vw-3rem,1760px)] [overscroll-behavior-x:contain]"
+      className="mx-auto w-full max-w-full space-y-6 px-1 pb-24 sm:pb-8 sm:max-w-[min(100vw-2rem,1680px)] sm:px-6 lg:max-w-[min(100vw-3rem,1760px)] [overscroll-behavior-x:contain]"
     >
       <SessionHeaderBar
         canDeleteSession={canDeleteSession}
@@ -1838,6 +1845,8 @@ const SessaoDetalhe = () => {
         sessionDate={sessionDate}
         startingFromThis={startingFromThis}
         status={status}
+        summaryDialogOpen={clinicalSummaryDialogOpen}
+        onSummaryDialogOpenChange={setClinicalSummaryDialogOpen}
         onBack={handleBackNavigation}
         onDelete={handleDelete}
         onEdit={() => setIsEditing(true)}
@@ -2014,7 +2023,7 @@ const SessaoDetalhe = () => {
               {renderBaseSliderSection("edit")}
 
               <Card data-tutorial="session-anamnesis-form">
-                <CardContent className="p-6 space-y-5">
+                <CardContent className="p-3.5 sm:p-6 space-y-5">
                   <SessionAnamnesisRuntime
                     anamnesisFormResponse={anamnesisFormResponse}
                     complexityScore={complexityScore}
@@ -2443,32 +2452,15 @@ const SessaoDetalhe = () => {
         actionAttempted="evoluir ou registrar atendimentos"
       />
 
-      {/* Floating Action Bar fixa inferior no mobile para salvar ou concluir rapidamente durante a anamnese */}
-      {(isNew || isEditing) && !locked && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 backdrop-blur supports-[backdrop-filter]:bg-background/90 sm:hidden">
-          <div className="flex items-center gap-2 max-w-md mx-auto">
-            <Button
-              size="sm"
-              onClick={() => void handleSave("concluído")}
-              disabled={saving}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold h-11 text-xs gap-1.5 shadow-sm"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              <span>Concluir</span>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void handleSave("rascunho")}
-              disabled={saving}
-              className="flex-1 h-11 text-xs gap-1.5"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              <span>Salvar Rascunho</span>
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Pílulas flutuantes inteligentes nos cantos inferiores (Resumo Clínico à esquerda e Salvar/Concluir à direita ao scrollar para cima) */}
+      <SessionFloatingActionPills
+        visible={showFloatingPills}
+        canEdit={(isNew || isEditing) && !locked}
+        saving={saving}
+        hasPatient={Boolean(patientRow)}
+        onOpenSummary={() => setClinicalSummaryDialogOpen(true)}
+        onSave={handleSave}
+      />
     </motion.div>
   );
 };
