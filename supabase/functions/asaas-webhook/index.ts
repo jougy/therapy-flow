@@ -216,11 +216,27 @@ serve(async (req) => {
         let billingCycle = 'Mensal';
 
         if (targetClinicId) {
-          const { data: clinicData } = await supabase
-            .from('clinics')
-            .select('name, account_owner_user_id, subscription_plan')
-            .eq('id', targetClinicId)
-            .maybeSingle();
+          // Otimização Big-O: Execução paralela de consultas independentes
+          const [clinicRes, subRes, adminsRes] = await Promise.all([
+            supabase
+              .from('clinics')
+              .select('name, account_owner_user_id, subscription_plan')
+              .eq('id', targetClinicId)
+              .maybeSingle(),
+            supabase
+              .from('clinic_subscriptions')
+              .select('plan_type, billing_cycle, billing_email, billing_name')
+              .eq('clinic_id', targetClinicId)
+              .maybeSingle(),
+            supabase
+              .from('platform_admins')
+              .select('user_id')
+              .eq('is_active', true),
+          ]);
+
+          const clinicData = clinicRes.data;
+          const subData = subRes.data;
+          const admins = adminsRes.data;
 
           if (clinicData) {
             clinicName = clinicData.name || clinicName;
@@ -244,13 +260,6 @@ serve(async (req) => {
             }
           }
 
-          // Buscar detalhes da assinatura
-          const { data: subData } = await supabase
-            .from('clinic_subscriptions')
-            .select('plan_type, billing_cycle, billing_email, billing_name')
-            .eq('clinic_id', targetClinicId)
-            .maybeSingle();
-
           if (subData) {
             if (subData.plan_type) planName = subData.plan_type;
             if (subData.billing_cycle) billingCycle = subData.billing_cycle;
@@ -261,28 +270,59 @@ serve(async (req) => {
               subscriberEmail = subData.billing_email;
             }
           }
+
+          const rawAmount = payment.value || payment.netValue || 0;
+          const amountFormatted = new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL',
+          }).format(typeof rawAmount === 'number' ? rawAmount : parseFloat(String(rawAmount)) || 0);
+
+          const telegramClient = new TelegramClient();
+          await telegramClient.notifyPlanPurchase({
+            clinicName,
+            subscriberName,
+            email: subscriberEmail,
+            phone: subscriberPhone,
+            planName,
+            billingCycle,
+            amountFormatted,
+            paymentMethod: billingType,
+            paidAt: paymentDate,
+          });
+
+          // Inserir notificação in-app em lote (O(1) round-trip) em app_notifications para todos os platform_admins ativos
+          if (admins && admins.length > 0) {
+            const notifications = admins.map((admin) => ({
+              user_id: admin.user_id,
+              clinic_id: targetClinicId || null,
+              category: 'system',
+              event_type: 'plan_payment_confirmed',
+              title: `Novo Pagamento: ${planName}`,
+              body: `Pagamento de ${amountFormatted} (${billingType}) confirmado para a clínica ${clinicName}.`,
+              action_label: 'Ver Faturas',
+              action_url: '/platform/faturamento',
+              payload: {
+                clinic_id: targetClinicId,
+                clinic_name: clinicName,
+                subscriber_name: subscriberName,
+                email: subscriberEmail,
+                phone: subscriberPhone,
+                plan_name: planName,
+                billing_cycle: billingCycle,
+                amount: rawAmount,
+                amount_formatted: amountFormatted,
+                payment_method: billingType,
+                paid_at: paymentDate,
+                asaas_payment_id: payment.id,
+              },
+            }));
+
+            await supabase.from('app_notifications').insert(notifications);
+            console.log(`[asaas-webhook] ${notifications.length} notificações de pagamento inseridas em app_notifications para platform_admins.`);
+          }
         }
-
-        const rawAmount = payment.value || payment.netValue || 0;
-        const amountFormatted = new Intl.NumberFormat('pt-BR', {
-          style: 'currency',
-          currency: 'BRL',
-        }).format(typeof rawAmount === 'number' ? rawAmount : parseFloat(String(rawAmount)) || 0);
-
-        const telegramClient = new TelegramClient();
-        await telegramClient.notifyPlanPurchase({
-          clinicName,
-          subscriberName,
-          email: subscriberEmail,
-          phone: subscriberPhone,
-          planName,
-          billingCycle,
-          amountFormatted,
-          paymentMethod: billingType,
-          paidAt: paymentDate,
-        });
       } catch (telegramErr) {
-        console.error('[asaas-webhook] Erro ao notificar Telegram (fail-safe ativado):', telegramErr);
+        console.error('[asaas-webhook] Erro ao notificar Telegram / app_notifications (fail-safe ativado):', telegramErr);
       }
     } else if (eventType === 'PAYMENT_OVERDUE') {
       if (payment.id) {
@@ -342,7 +382,18 @@ serve(async (req) => {
       const invoicePaymentId = invoice.payment;
 
       if (invoiceId || invoicePaymentId) {
-        let updateData: Record<string, any> = {};
+        interface InvoiceNfeUpdateData {
+          asaas_invoice_id?: string;
+          nfe_status: string;
+          nfe_number?: string | null;
+          nfe_pdf_url?: string | null;
+          nfe_xml_url?: string | null;
+          nfe_error_message?: string | null;
+        }
+
+        let updateData: InvoiceNfeUpdateData = {
+          nfe_status: 'PENDING',
+        };
 
         if (eventType === 'INVOICE_CREATED') {
           updateData = {

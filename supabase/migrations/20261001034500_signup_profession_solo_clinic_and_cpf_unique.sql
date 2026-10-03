@@ -24,6 +24,17 @@
 -- 1. ÍNDICE ÚNICO PARCIAL DE CPF EM public.profiles
 -- ==============================================================================
 
+-- Deduplicação segura prévia: anula CPFs duplicados legados mantendo o primeiro registro
+UPDATE public.profiles
+SET cpf = NULL
+WHERE id NOT IN (
+  SELECT min(id)
+  FROM public.profiles
+  WHERE cpf IS NOT NULL AND cpf != ''
+  GROUP BY cpf
+)
+AND cpf IS NOT NULL AND cpf != '';
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_cpf_unique
   ON public.profiles (cpf)
   WHERE cpf IS NOT NULL AND cpf != '';

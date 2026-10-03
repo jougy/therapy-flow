@@ -264,16 +264,42 @@ const CadastroContaAlfa = () => {
       const userId = signupData.user?.id;
       if (!userId) throw new Error("Conta criada sem ID de usuário. Tente entrar pelo login.");
 
-      const { error: rpcError } = await supabase.rpc("handle_personal_signup", {
-        _birth_date: birthDate,
-        _council_number: councilNumber.trim() || undefined,
-        _cpf: cleanCpf,
+      let { error: rpcError } = await supabase.rpc("handle_personal_signup", {
+        _birth_date: birthDate || null,
+        _council_number: councilNumber.trim() || null,
+        _cpf: cleanCpf || null,
         _email: nextEmail,
-        _full_name: nextOwnerName,
-        _phone: cleanPhone,
-        _profession: profession || undefined,
+        _full_name: nextOwnerName || null,
+        _phone: cleanPhone || null,
+        _profession: profession || null,
         _user_id: userId,
-      });
+      } as any);
+
+      // Fallback resiliente: se a função com 8 parâmetros não for encontrada no schema cache remoto
+      if (rpcError && (rpcError.message?.includes("schema cache") || rpcError.message?.includes("Could not find the function"))) {
+        console.warn("[Signup] RPC handle_personal_signup 8 params failed, retrying with legacy signature fallback:", rpcError);
+        const legacyRes = await supabase.rpc("handle_personal_signup", {
+          _user_id: userId,
+          _email: nextEmail,
+          _full_name: nextOwnerName || null,
+          _cpf: cleanCpf || null,
+          _phone: cleanPhone || null,
+          _birth_date: birthDate || null,
+        } as any);
+
+        if (!legacyRes.error) {
+          rpcError = null;
+          // Atualiza dados de conselho e profissão diretamente no profile
+          await supabase.from("profiles").update({
+            profession: profession || null,
+            council_name: "CREFITO",
+            professional_license: councilNumber.trim() || null,
+          }).eq("id", userId);
+        } else {
+          rpcError = legacyRes.error;
+        }
+      }
+
       if (rpcError) throw rpcError;
 
       const pixelProfession: PixelProfession =
