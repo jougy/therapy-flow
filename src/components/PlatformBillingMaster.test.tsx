@@ -5,12 +5,16 @@ import { PlatformBillingMaster } from "@/components/PlatformBillingMaster";
 const supabaseMocks = vi.hoisted(() => ({
   from: vi.fn(),
   rpc: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: supabaseMocks.from,
     rpc: supabaseMocks.rpc,
+    functions: {
+      invoke: supabaseMocks.invoke,
+    },
   },
 }));
 
@@ -266,5 +270,111 @@ describe("PlatformBillingMaster", () => {
     const codeInput = screen.getByLabelText(/Código do Cupom/i);
     fireEvent.change(codeInput, { target: { value: "PROMO2026" } });
     expect((codeInput as HTMLInputElement).value).toBe("PROMO2026");
+  });
+
+  it("renders telegram alerts tab, shows status cards and preview mockup, and triggers test notification successfully", async () => {
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_subscriptions") {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === "subscription_coupons") {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === "subscription_invoices") {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    supabaseMocks.rpc.mockResolvedValue({ data: [], error: null });
+    supabaseMocks.invoke.mockResolvedValue({
+      data: { success: true, message: "Mensagem de teste enviada com sucesso ao canal de avisos!" },
+      error: null,
+    });
+
+    render(<PlatformBillingMaster />);
+
+    // Switch to Telegram Tab
+    const telegramTab = await screen.findByRole("tab", { name: /Alertas Telegram & Teste/i });
+    fireEvent.focus(telegramTab);
+    fireEvent.keyDown(telegramTab, { key: "Enter" });
+    fireEvent.click(telegramTab);
+
+    // Verify Title & Rule Cards
+    expect(await screen.findByText(/Central de Alertas & Notificações Telegram/i)).toBeInTheDocument();
+    expect(screen.getByText(/Novo Cadastro Orgânico/i)).toBeInTheDocument();
+    expect(screen.getByText(/Pagamento de Plano Asaas/i)).toBeInTheDocument();
+
+    // Verify Preview Mockup
+    expect(screen.getByText(/Pré-visualização do Layout no Telegram/i)).toBeInTheDocument();
+    expect(screen.getByText(/🌱 NOVO CADASTRO NA PLATAFORMA/i)).toBeInTheDocument();
+    expect(screen.getByText(/💰 NOVA VENDA \/ PAGAMENTO CONFIRMADO/i)).toBeInTheDocument();
+
+    // Trigger Telegram Test
+    const triggerBtn = await screen.findByRole("button", { name: /Disparar Mensagem de Teste no Telegram/i });
+    fireEvent.click(triggerBtn);
+
+    // Verify invoke payload
+    await waitFor(() => {
+      expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", {
+        body: { action: "SEND_TEST_NOTIFICATION" },
+      });
+    });
+
+    // Verify success result displayed
+    expect(await screen.findByText(/Sucesso no envio/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mensagem de teste enviada com sucesso ao canal de avisos!/i)).toBeInTheDocument();
+  });
+
+  it("handles error when triggering telegram test notification", async () => {
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_subscriptions") {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === "subscription_coupons") {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === "subscription_invoices") {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    supabaseMocks.rpc.mockResolvedValue({ data: [], error: null });
+    supabaseMocks.invoke.mockResolvedValue({
+      data: null,
+      error: { message: "TELEGRAM_BOT_TOKEN não configurado no Supabase Vault" },
+    });
+
+    render(<PlatformBillingMaster />);
+
+    const telegramTab = await screen.findByRole("tab", { name: /Alertas Telegram & Teste/i });
+    fireEvent.focus(telegramTab);
+    fireEvent.keyDown(telegramTab, { key: "Enter" });
+    fireEvent.click(telegramTab);
+
+    const triggerBtn = await screen.findByRole("button", { name: /Disparar Mensagem de Teste no Telegram/i });
+    fireEvent.click(triggerBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", {
+        body: { action: "SEND_TEST_NOTIFICATION" },
+      });
+    });
+
+    expect(await screen.findByText(/Falha no envio/i)).toBeInTheDocument();
+    expect(screen.getByText(/TELEGRAM_BOT_TOKEN não configurado no Supabase Vault/i)).toBeInTheDocument();
   });
 });

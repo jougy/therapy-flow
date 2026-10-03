@@ -193,7 +193,11 @@ export class AsaasClient {
       ...(options.headers || {}),
     };
 
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: options.signal || AbortSignal.timeout(10000),
+    });
     const json = await response.json();
 
     if (!response.ok) {

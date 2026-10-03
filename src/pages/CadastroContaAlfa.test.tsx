@@ -119,10 +119,12 @@ describe("CadastroContaAlfa", () => {
       }));
       expect(supabaseMocks.rpc).toHaveBeenCalledWith("handle_personal_signup", {
         _birth_date: "1990-01-20",
+        _council_number: null,
         _cpf: "52998224725",
         _email: "alpha@example.com",
         _full_name: "Owner Teste",
         _phone: "11999998888",
+        _profession: null,
         _user_id: "user-alpha-1",
       });
       expect(mockNavigate).toHaveBeenCalledWith(

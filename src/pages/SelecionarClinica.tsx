@@ -353,6 +353,34 @@ const SelecionarClinica = () => {
     };
   }, [accessibleClinics]);
 
+  // Auto-healing: Se o usuário estiver autenticado e sem clínicas, tentar reconciliar/provisionar seu consultório solo gratuito
+  useEffect(() => {
+    if (!user?.id || isPlatformOwner) return;
+    if (accessibleClinics && accessibleClinics.length > 0) return;
+
+    let isSubscribed = true;
+    const autoProvisionSoloClinic = async () => {
+      try {
+        const { data, error } = await supabase.rpc("reconcile_legacy_users_solo_clinic");
+        if (!error && data && data > 0 && isSubscribed) {
+          console.info(`[SoloClinic] Auto-provisioned solo clinic (${data}) for user.`);
+          await refreshAuthState();
+        }
+      } catch (e) {
+        // Ignora silenciosamente caso a RPC ainda não exista no schema remoto
+      }
+    };
+
+    const timer = setTimeout(() => {
+      void autoProvisionSoloClinic();
+    }, 800);
+
+    return () => {
+      isSubscribed = false;
+      clearTimeout(timer);
+    };
+  }, [accessibleClinics, isPlatformOwner, refreshAuthState, user?.id]);
+
   // Processar intenção de cadastro vinda da Landing Page (plurifisio.com.br) ou login externo
   useEffect(() => {
     if (!accessibleClinics || accessibleClinics.length === 0) return;

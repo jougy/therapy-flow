@@ -62,9 +62,9 @@ export function generateWhatsAppUrl(phone: string, text: string): string {
  * Escapa caracteres HTML para exibição segura no Telegram com parse_mode: 'HTML'.
  * Previne HTML Injection contra formatação indevida de tags na Bot API.
  */
-export function escapeHtml(text?: string | null): string {
-  if (!text) return '';
-  return text
+export function escapeHtml(text?: string | number | null): string {
+  if (text === null || text === undefined) return '';
+  return String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

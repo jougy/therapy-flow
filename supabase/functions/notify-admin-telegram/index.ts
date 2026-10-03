@@ -3,7 +3,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
-import { TelegramClient } from '../_shared/telegram-client.ts';
+import { TelegramClient, escapeHtml } from '../_shared/telegram-client.ts';
 
 // Map de rate limiting em memória por chave (IP ou e-mail): máximo 5 disparos por minuto
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -87,10 +87,155 @@ serve(async (req) => {
 
     console.log(`[notify-admin-telegram] Requisição recebida. Ação: "${action}" | User Auth: ${authenticatedUser?.id || 'anon'}`);
 
+    const isValidUuid = (id?: string | null): boolean => {
+      if (!id) return false;
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim());
+    };
+
+    // ==========================================
+    // AÇÃO 1: TEST_TELEGRAM_NOTIFICATION / SEND_TEST_NOTIFICATION
+    // ==========================================
+    if (action === 'SEND_TEST_NOTIFICATION' || action === 'TEST_TELEGRAM_NOTIFICATION') {
+      let isPlatformAdmin = false;
+      let adminUserId: string | null = null;
+      let adminName = 'Platform Admin';
+      let adminEmail = authenticatedUser?.email || '';
+
+      if (authenticatedUser?.id === 'service_role') {
+        isPlatformAdmin = true;
+        if (payload.userId && isValidUuid(payload.userId)) {
+          adminUserId = payload.userId;
+        }
+      } else if (authenticatedUser?.id && isValidUuid(authenticatedUser.id)) {
+        const { data: paData, error: paErr } = await adminSupabase
+          .from('platform_admins')
+          .select('user_id, role, is_active')
+          .eq('user_id', authenticatedUser.id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (!paErr && paData) {
+          isPlatformAdmin = true;
+          adminUserId = authenticatedUser.id;
+        }
+      }
+
+      if (!isPlatformAdmin) {
+        console.warn(`[notify-admin-telegram] Acesso negado para ação ${action}. Usuário não autenticado como platform admin.`);
+        return new Response(
+          JSON.stringify({ error: 'Acesso não autorizado. Apenas administradores da plataforma podem disparar notificações de teste.' }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      // Buscar perfil do usuário solicitante se disponível e for UUID válido
+      if (adminUserId && isValidUuid(adminUserId)) {
+        const { data: profile } = await adminSupabase
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', adminUserId)
+          .maybeSingle();
+
+        if (profile) {
+          if (profile.full_name) adminName = profile.full_name;
+          if (profile.email) adminEmail = profile.email;
+        }
+      }
+
+      if (payload.name && adminName === 'Platform Admin') adminName = String(payload.name).slice(0, 100);
+      if (payload.email && !adminEmail) adminEmail = String(payload.email).slice(0, 150);
+
+      const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+      const testMessage =
+        `🔔 <b>Teste de Conexão com Telegram!</b>\n\n` +
+        `✅ O Bot Pluri Health Alertas está conectado e operando com sucesso!\n` +
+        `🗓️ <b>Data:</b> ${escapeHtml(dataHora)}\n` +
+        `👤 <b>Solicitado por:</b> ${escapeHtml(adminName)} (${escapeHtml(adminEmail || 'admin')})\n\n` +
+        `👉 <i>Se você recebeu esta mensagem, as notificações de novos cadastros e vendas de planos estão 100% ativas no seu celular!</i>`;
+
+      const telegramClient = new TelegramClient();
+      const sendResult = await telegramClient.sendMessage(testMessage, { parseMode: 'HTML' });
+
+      if (!sendResult.success) {
+        console.error('[notify-admin-telegram] Falha no teste do Telegram:', sendResult.error);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: sendResult.error || 'Falha ao enviar mensagem para o Telegram via Bot API.',
+          }),
+          {
+            status: 502,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      // Inserir notificação de teste na tabela app_notifications
+      try {
+        const targetUserIds: string[] = [];
+        if (adminUserId && isValidUuid(adminUserId)) {
+          targetUserIds.push(adminUserId);
+        } else {
+          const { data: allAdmins } = await adminSupabase
+            .from('platform_admins')
+            .select('user_id')
+            .eq('is_active', true);
+          if (allAdmins) {
+            allAdmins.forEach((a) => {
+              if (isValidUuid(a.user_id)) targetUserIds.push(a.user_id);
+            });
+          }
+        }
+
+        if (targetUserIds.length > 0) {
+          const notifs = targetUserIds.map((uid) => ({
+            user_id: uid,
+            actor_user_id: (adminUserId && isValidUuid(adminUserId)) ? adminUserId : null,
+            category: 'system',
+            event_type: 'admin_telegram_test',
+            title: 'Teste de Notificação do Telegram',
+            body: 'Disparo de teste realizado com sucesso para o Telegram.',
+            action_label: 'Ver Faturamento',
+            action_url: '/platform/faturamento',
+            payload: {
+              message_id: sendResult.messageId || null,
+              sent_at: new Date().toISOString(),
+              solicitado_por: adminEmail,
+              admin_name: adminName,
+            },
+          }));
+
+          await adminSupabase.from('app_notifications').insert(notifs);
+        }
+      } catch (notifErr) {
+        console.error('[notify-admin-telegram] Erro ao gravar app_notifications de teste:', notifErr);
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          messageId: sendResult.messageId,
+          skipped: sendResult.skipped,
+          telegram: sendResult,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // ==========================================
+    // AÇÃO 2: NOTIFY_NEW_SIGNUP / SIGNUP_COMPLETED
+    // ==========================================
     if (action === 'NOTIFY_NEW_SIGNUP' || action === 'SIGNUP_COMPLETED') {
       const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown-ip';
       const targetUserId = payload.userId || payload.user_id || authenticatedUser?.id;
-      const targetEmail = (payload.email || authenticatedUser?.email || '').trim().toLowerCase();
+      const targetEmail = (payload.email || authenticatedUser?.email || '').trim().toLowerCase().slice(0, 150);
 
       // 1. Rate Limiting por IP e por E-mail para mitigar flood / spam no Telegram
       const rateKey = `${clientIp}:${targetEmail || targetUserId || 'anon'}`;
@@ -110,11 +255,10 @@ serve(async (req) => {
       }
 
       // 2. Proteção contra requisições forjadas: Verificar se o usuário REALMENTE existe no banco
-      // Busca em profiles ou auth.users (via admin API) para garantir legitimidade do cadastro
       let verifiedUserId: string | null = null;
       let profile: { full_name?: string; email?: string; phone?: string; created_at?: string } | null = null;
 
-      if (targetUserId && targetUserId !== 'service_role') {
+      if (targetUserId && isValidUuid(targetUserId)) {
         const { data: pData } = await adminSupabase
           .from('profiles')
           .select('full_name, email, phone, created_at')
@@ -139,7 +283,7 @@ serve(async (req) => {
         }
       }
 
-      // Se não encontrou por ID mas tem email, busca pelo perfil ou auth
+      // Se não encontrou por ID mas tem email, busca pelo perfil
       if (!verifiedUserId && targetEmail) {
         const { data: pByEmail } = await adminSupabase
           .from('profiles')
@@ -162,13 +306,12 @@ serve(async (req) => {
         });
       }
 
-      const email = (payload.email || profile?.email || targetEmail).trim().toLowerCase();
-      const name = payload.name || payload.fullName || profile?.full_name || '';
-      const phone = payload.phone || profile?.phone || '';
+      const email = String(payload.email || profile?.email || targetEmail).trim().toLowerCase().slice(0, 150);
+      const name = String(payload.name || payload.fullName || profile?.full_name || '').trim().slice(0, 100);
+      const phone = String(payload.phone || profile?.phone || '').trim().slice(0, 30);
       const createdAt = payload.createdAt || profile?.created_at || new Date().toISOString();
 
       // REGRA: Verificar se o cadastro veio por convite (não é orgânico)
-      // Se existir convite em clinic_collaborator_invitations para este e-mail (ou aceito por este userId), ignorar notificação de novo signup
       let isInvited = false;
 
       if (email) {
@@ -183,7 +326,7 @@ serve(async (req) => {
         }
       }
 
-      if (!isInvited && targetUserId && targetUserId !== 'service_role') {
+      if (!isInvited && targetUserId && isValidUuid(targetUserId)) {
         const { data: inviteByAcceptedUser } = await adminSupabase
           .from('clinic_collaborator_invitations')
           .select('id')
@@ -204,10 +347,10 @@ serve(async (req) => {
       }
 
       // Buscar nome da clínica criada para o usuário (se houver)
-      let clinicName = payload.clinicName || '';
-      let plan = payload.plan || 'Degustação Gratuita (7 dias)';
+      let clinicName = payload.clinicName ? String(payload.clinicName).slice(0, 120) : '';
+      let plan = payload.plan ? String(payload.plan).slice(0, 80) : 'Degustação Gratuita (7 dias)';
 
-      if (!clinicName && targetUserId && targetUserId !== 'service_role') {
+      if (!clinicName && targetUserId && isValidUuid(targetUserId)) {
         const { data: clinicData } = await adminSupabase
           .from('clinics')
           .select('name, subscription_plan')
@@ -234,6 +377,39 @@ serve(async (req) => {
         createdAt,
       });
 
+      // Inserir notificação in-app em lote (O(1) round-trip) em app_notifications para todos os platform_admins ativos
+      try {
+        const { data: activeAdmins } = await adminSupabase
+          .from('platform_admins')
+          .select('user_id')
+          .eq('is_active', true);
+
+        if (activeAdmins && activeAdmins.length > 0) {
+          const appNotifications = activeAdmins.map((admin) => ({
+            user_id: admin.user_id,
+            category: 'system',
+            event_type: 'new_organic_signup',
+            title: `Novo Cadastro: ${name || 'Profissional'}`,
+            body: `Novo cadastro direto de ${email} (${clinicName || 'Consultório Solo'}).`,
+            action_label: 'Ver no Diretório',
+            action_url: '/platform/diretorio',
+            payload: {
+              email,
+              name,
+              phone,
+              clinicName: clinicName || 'Consultório Solo',
+              plan,
+              createdAt,
+            },
+          }));
+
+          await adminSupabase.from('app_notifications').insert(appNotifications);
+          console.log(`[notify-admin-telegram] ${appNotifications.length} notificações de novo cadastro criadas em app_notifications.`);
+        }
+      } catch (appNotifErr) {
+        console.error('[notify-admin-telegram] Erro ao inserir app_notifications de novo cadastro (fail-safe):', appNotifErr);
+      }
+
       return new Response(JSON.stringify({ success: sendResult.success, telegram: sendResult }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -247,7 +423,6 @@ serve(async (req) => {
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error('[notify-admin-telegram] Erro inesperado:', errorMsg);
-    // Retorno gracioso para evitar crash no client
     return new Response(JSON.stringify({ error: errorMsg }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

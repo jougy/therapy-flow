@@ -2,25 +2,18 @@ import { useEffect, useState, useCallback } from "react";
 import { 
   CreditCard, 
   Receipt, 
-  ShieldCheck, 
-  AlertCircle, 
   Search, 
   Loader2, 
   RefreshCw, 
   Building2, 
-  Layers, 
   Tag, 
   CheckCircle2, 
   XCircle,
   FileCode,
   SlidersHorizontal,
-  ChevronRight,
-  Plus,
-  Trash2,
-  Pencil,
-  AlertTriangle,
   ExternalLink,
-  FileCheck
+  FileCheck,
+  BellRing
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,10 +24,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PlatformCouponsManager, type SubscriptionCouponItem } from "@/components/platform/PlatformCouponsManager";
+import { PlatformTelegramAlerts } from "@/components/platform/PlatformTelegramAlerts";
 import { planLabels, getPlanDefaultLimits, planOptionGroups } from "@/components/platform/platform-api";
 import type { PlanType } from "@/utils/subscriptionPricing";
 
@@ -400,7 +393,7 @@ export function PlatformBillingMaster() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="bg-muted p-1 rounded-xl">
+        <TabsList className="bg-muted p-1 rounded-xl flex flex-wrap gap-1 h-auto">
           <TabsTrigger value="subscriptions" className="rounded-lg text-xs font-semibold">
             <Building2 className="w-4 h-4 mr-2" /> Assinaturas das Clínicas ({subscriptions.length})
           </TabsTrigger>
@@ -412,6 +405,9 @@ export function PlatformBillingMaster() {
           </TabsTrigger>
           <TabsTrigger value="webhooks" className="rounded-lg text-xs font-semibold">
             <Receipt className="w-4 h-4 mr-2" /> Logs de Webhooks Asaas ({webhookLogs.length})
+          </TabsTrigger>
+          <TabsTrigger value="telegram" className="rounded-lg text-xs font-semibold">
+            <BellRing className="w-4 h-4 mr-2" /> Alertas Telegram & Teste
           </TabsTrigger>
         </TabsList>
 
@@ -793,6 +789,11 @@ export function PlatformBillingMaster() {
         {/* Tab 3: Gestão de Cupons Promocionais */}
         <TabsContent value="coupons" className="space-y-4">
           <PlatformCouponsManager />
+        </TabsContent>
+
+        {/* Tab 5: Alertas Telegram & Notificações */}
+        <TabsContent value="telegram" className="space-y-6">
+          <PlatformTelegramAlerts />
         </TabsContent>
       </Tabs>
 
