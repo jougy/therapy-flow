@@ -47,3 +47,6 @@ verify_jwt = false
 [functions.notify-admin-telegram]
 verify_jwt = false
 
+[functions.send-auth-confirmation]
+verify_jwt = false
+

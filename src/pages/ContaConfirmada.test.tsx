@@ -7,6 +7,7 @@ import { toast } from "@/hooks/use-toast";
 const supabaseMocks = vi.hoisted(() => ({
   exchangeCodeForSession: vi.fn(),
   resend: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -14,6 +15,9 @@ vi.mock("@/integrations/supabase/client", () => ({
     auth: {
       exchangeCodeForSession: supabaseMocks.exchangeCodeForSession,
       resend: supabaseMocks.resend,
+    },
+    functions: {
+      invoke: supabaseMocks.invoke,
     },
   },
 }));
@@ -24,8 +28,10 @@ vi.mock("@/hooks/use-toast", () => ({
 
 describe("ContaConfirmada", () => {
   beforeEach(() => {
+    sessionStorage.clear();
     supabaseMocks.exchangeCodeForSession.mockReset();
     supabaseMocks.resend.mockReset();
+    supabaseMocks.invoke.mockReset();
   });
 
   it("exchanges code for session and displays Claymorphism confirmed state", async () => {
@@ -46,7 +52,50 @@ describe("ContaConfirmada", () => {
     });
   });
 
-  it("renders resend screen when aguardando is true and allows resending with cooldown", async () => {
+  it("renders resend screen with read-only email and sends confirmation via Edge Function", async () => {
+    supabaseMocks.invoke.mockResolvedValue({
+      data: { success: true },
+      error: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/auth/confirmado?email=paciente@exemplo.com&aguardando=true"]}>
+        <ContaConfirmada />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText(/confirme seu e-mail/i)).toBeInTheDocument();
+    
+    // Validar visual somente leitura protegido
+    const emailInput = screen.getByDisplayValue("paciente@exemplo.com");
+    expect(emailInput).toBeInTheDocument();
+    expect(emailInput).toHaveAttribute("readonly");
+    expect(emailInput).toBeDisabled();
+    expect(screen.getByText(/somente leitura/i)).toBeInTheDocument();
+    expect(screen.getByText(/exclusivamente para o e-mail previamente cadastrado/i)).toBeInTheDocument();
+
+    const resendBtn = screen.getByRole("button", { name: /enviar novo e-mail/i });
+    fireEvent.click(resendBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.invoke).toHaveBeenCalledWith("send-auth-confirmation", {
+        body: {
+          email: "paciente@exemplo.com",
+          actionType: "signup",
+        },
+      });
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({
+        title: "E-mail enviado",
+      }));
+      expect(screen.getByText(/reenviar disponível em 60s/i)).toBeInTheDocument();
+    });
+  });
+
+  it("falls back to supabase.auth.resend when Edge Function fails", async () => {
+    supabaseMocks.invoke.mockResolvedValue({
+      data: null,
+      error: new Error("Edge Function temporary failure"),
+    });
     supabaseMocks.resend.mockResolvedValue({
       data: {},
       error: null,
@@ -58,13 +107,16 @@ describe("ContaConfirmada", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/confirme seu e-mail/i)).toBeInTheDocument();
-    expect(screen.getByDisplayValue("paciente@exemplo.com")).toBeInTheDocument();
-
     const resendBtn = screen.getByRole("button", { name: /enviar novo e-mail/i });
     fireEvent.click(resendBtn);
 
     await waitFor(() => {
+      expect(supabaseMocks.invoke).toHaveBeenCalledWith("send-auth-confirmation", {
+        body: {
+          email: "paciente@exemplo.com",
+          actionType: "signup",
+        },
+      });
       expect(supabaseMocks.resend).toHaveBeenCalledWith(expect.objectContaining({
         email: "paciente@exemplo.com",
         type: "signup",
@@ -72,7 +124,6 @@ describe("ContaConfirmada", () => {
       expect(toast).toHaveBeenCalledWith(expect.objectContaining({
         title: "E-mail enviado",
       }));
-      expect(screen.getByText(/reenviar disponível em 60s/i)).toBeInTheDocument();
     });
   });
 
