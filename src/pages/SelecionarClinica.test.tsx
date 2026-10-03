@@ -734,12 +734,36 @@ describe("SelecionarClinica", () => {
     expect(screen.queryByTestId("personal-welcome-modal")).not.toBeInTheDocument();
   });
 
-  it("renders EmptyClinicsCallout when accessibleClinics is empty and lets user create their clinic", () => {
+  it("renders loading skeleton instead of empty callout while auth is loading", () => {
     localStorage.setItem("pluri_welcome_seen_user-1", new Date().toISOString());
 
     vi.mocked(useAuth).mockReturnValue(
       buildAuthMock({
         accessibleClinics: [],
+        loading: true,
+        user: { id: "user-1", email: "loading@example.com" },
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId("clinics-loading-skeleton")).toBeInTheDocument();
+    expect(screen.queryByTestId("empty-clinics-callout")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nenhuma clínica ativa no momento")).not.toBeInTheDocument();
+    expect(screen.queryByText("0 acessos")).not.toBeInTheDocument();
+  });
+
+  it("renders EmptyClinicsCallout when accessibleClinics is empty and auth loading is false", () => {
+    localStorage.setItem("pluri_welcome_seen_user-1", new Date().toISOString());
+
+    vi.mocked(useAuth).mockReturnValue(
+      buildAuthMock({
+        accessibleClinics: [],
+        loading: false,
         user: { id: "user-1", email: "newuser@example.com" },
       }) as ReturnType<typeof useAuth>
     );
@@ -750,6 +774,7 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
+    expect(screen.queryByTestId("clinics-loading-skeleton")).not.toBeInTheDocument();
     expect(screen.getByTestId("empty-clinics-callout")).toBeInTheDocument();
     expect(screen.getByText("Nenhuma clínica ativa no momento")).toBeInTheDocument();
     expect(screen.getByText("Criar meu próprio espaço")).toBeInTheDocument();
