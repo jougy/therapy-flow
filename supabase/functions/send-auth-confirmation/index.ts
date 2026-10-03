@@ -11,10 +11,12 @@ const json = (body: unknown, status = 200) =>
 const DEFAULT_ORIGIN =
   Deno.env.get("SITE_URL") ||
   Deno.env.get("PUBLIC_APP_URL") ||
-  "https://fisioterapia.prontohealth.workers.dev";
+  "https://pluri.health";
 
 // Whitelist de domínios confiáveis para prevenir ataques de Open Redirect
 const TRUSTED_DOMAINS = [
+  "pluri.health",
+  "www.pluri.health",
   "fisioterapia.prontohealth.workers.dev",
   "plurifisio.com.br",
   "www.plurifisio.com.br",

@@ -1,4 +1,4 @@
-export const PUBLIC_APP_ORIGIN = "https://fisioterapia.prontohealth.workers.dev";
+export const PUBLIC_APP_ORIGIN = "https://pluri.health";
 
 export const getPublicAppOrigin = (): string => {
   if (typeof window !== "undefined" && window.location?.origin) {
