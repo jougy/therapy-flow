@@ -56,8 +56,8 @@ describe("FeatureConfigModal - Assinaturas", () => {
     expect(screen.getByText(/Clínica Básico/i)).toBeInTheDocument();
     expect(screen.getByText(/Ambiente Seguro & Proteção de Credenciais/i)).toBeInTheDocument();
     expect(screen.getByText(/ASAAS_API_KEY/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/R\$ 39,99/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/R\$ 99,00/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/R\$ 57,00/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/R\$ 147,00/i).length).toBeGreaterThan(0);
 
     // Toggle to sandbox
     const sandboxCard = screen.getByText(/🟡 Sandbox \(Testes\)/i);

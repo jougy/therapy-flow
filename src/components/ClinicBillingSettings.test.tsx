@@ -30,15 +30,14 @@ vi.mock("@/integrations/supabase/client", () => ({
 }));
 
 const createChainedSelectMock = () => {
-  const mockObj: any = {};
-  mockObj.select = vi.fn(() => mockObj);
-  mockObj.eq = vi.fn(() => mockObj);
-  mockObj.neq = vi.fn(() => mockObj);
-  mockObj.order = vi.fn(() => mockObj);
-  mockObj.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
-  mockObj.single = vi.fn().mockResolvedValue({ data: null, error: null });
-  mockObj.then = (resolve: any) => Promise.resolve({ count: 0, data: [], error: null }).then(resolve);
-  return mockObj;
+  const chain: any = {};
+  chain.select = vi.fn(() => chain);
+  chain.eq = vi.fn(() => chain);
+  chain.neq = vi.fn(() => Promise.resolve({ count: 0, data: [], error: null }));
+  chain.order = vi.fn(() => Promise.resolve({ count: 0, data: [], error: null }));
+  chain.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+  chain.single = vi.fn().mockResolvedValue({ data: null, error: null });
+  return chain;
 };
 
 describe("ClinicBillingSettings", () => {
@@ -642,5 +641,119 @@ describe("ClinicBillingSettings", () => {
     expect(pdfLink).toHaveAttribute("href", "https://asaas.com/nfe/pdf/12345");
     expect(pdfLink).toHaveAttribute("target", "_blank");
   });
+
+  it("renders billing due window selection and handles update successfully", async () => {
+    supabaseMocks.rpc.mockImplementation((name: string) => {
+      if (name === "get_clinic_subscription_summary") {
+        return Promise.resolve({
+          data: [
+            {
+              subscription_id: "sub-window-1",
+              clinic_id: "clinic-window-1",
+              plan_type: "prof_medio",
+              status: "ACTIVE",
+              billing_cycle: "MONTHLY",
+              payment_method: "CREDIT_CARD",
+              billing_due_window: "DAY_1_TO_5",
+              can_change_billing_window: true,
+              total_recurring_monthly_price: 87.0,
+            },
+          ],
+          error: null,
+        });
+      }
+      if (name === "update_clinic_billing_due_window") {
+        return Promise.resolve({
+          data: { success: true, billing_due_window: "DAY_10_TO_15" },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    supabaseMocks.functions.invoke.mockResolvedValue({
+      data: { success: true, billing_due_window: "DAY_10_TO_15" },
+      error: null,
+    });
+
+    supabaseMocks.from.mockImplementation(() => createChainedSelectMock());
+
+    render(
+      <MemoryRouter>
+        <ClinicBillingSettings
+          clinicId="clinic-window-1"
+          currentPlan="prof_medio"
+          accountRole="account_owner"
+        />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Janela de Cobrança e Vencimento")).toBeInTheDocument();
+    expect(screen.getByText("Dia 01 a 05 (Venc. 05)")).toBeInTheDocument();
+
+    // Clicar na opção Dia 10 a 15
+    const windowOption10To15 = screen.getByText("Dia 10 a 15").closest("button");
+    expect(windowOption10To15).toBeInTheDocument();
+    fireEvent.click(windowOption10To15!);
+
+    // Clicar em salvar preferência
+    const saveBtn = screen.getByRole("button", { name: /Salvar Preferência de Vencimento/i });
+    expect(saveBtn).not.toBeDisabled();
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.functions.invoke).toHaveBeenCalledWith("asaas-subscription", {
+        body: {
+          action: "UPDATE_BILLING_WINDOW",
+          clinic_id: "clinic-window-1",
+          billing_due_window: "DAY_10_TO_15",
+        },
+      });
+    });
+  });
+
+  it("blocks billing due window change when cooldown is active (can_change_billing_window is false)", async () => {
+    supabaseMocks.rpc.mockImplementation((name: string) => {
+      if (name === "get_clinic_subscription_summary") {
+        return Promise.resolve({
+          data: [
+            {
+              subscription_id: "sub-window-cooldown",
+              clinic_id: "clinic-cooldown-1",
+              plan_type: "prof_medio",
+              status: "ACTIVE",
+              billing_cycle: "MONTHLY",
+              payment_method: "CREDIT_CARD",
+              billing_due_window: "DAY_10_TO_15",
+              can_change_billing_window: false,
+              next_allowed_billing_window_change: "2026-11-03T10:00:00Z",
+              total_recurring_monthly_price: 87.0,
+            },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    supabaseMocks.from.mockImplementation(() => createChainedSelectMock());
+
+    render(
+      <MemoryRouter>
+        <ClinicBillingSettings
+          clinicId="clinic-cooldown-1"
+          currentPlan="prof_medio"
+          accountRole="account_owner"
+        />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Janela de Cobrança e Vencimento")).toBeInTheDocument();
+    expect(screen.getByText(/Alteração bloqueada temporariamente \(1x por mês\)/i)).toBeInTheDocument();
+
+    const saveBtn = screen.getByRole("button", { name: /Salvar Preferência de Vencimento/i });
+    expect(saveBtn).toBeDisabled();
+  });
 });
+
 
