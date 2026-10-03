@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, ArrowLeft, Loader2, LogIn, Mail, MailCheck, RefreshCw, Send } from "lucide-react";
+import { motion } from "framer-motion";
+import { AlertCircle, Loader2, Lock, LogIn, Mail, MailCheck, Send, ShieldCheck } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,31 @@ import { ConfirmationAnimationFlow } from "@/components/ui/clay-confirmation-art
 import { useAuth } from "@/hooks/useAuth";
 
 type ConfirmationState = "waiting_resend" | "checking" | "animating_success" | "expired" | "error";
+
+const STORAGE_COOLDOWN_KEY = "pluri_auth_resend_cooldown";
+
+const getRemainingCooldown = (): number => {
+  try {
+    const expiresAt = sessionStorage.getItem(STORAGE_COOLDOWN_KEY);
+    if (!expiresAt) return 0;
+    const diff = Math.ceil((Number(expiresAt) - Date.now()) / 1000);
+    return diff > 0 ? diff : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const setStoredCooldown = (seconds: number) => {
+  try {
+    if (seconds <= 0) {
+      sessionStorage.removeItem(STORAGE_COOLDOWN_KEY);
+    } else {
+      sessionStorage.setItem(STORAGE_COOLDOWN_KEY, String(Date.now() + seconds * 1000));
+    }
+  } catch {
+    // Ignore sessionStorage errors
+  }
+};
 
 const readAuthParam = (name: string, locationSearch = "", locationHash = "") => {
   const searchStr = locationSearch || (typeof window !== "undefined" ? window.location.search : "");
@@ -29,8 +54,9 @@ const ContaConfirmada = () => {
 
   const queryEmail = readAuthParam("email", location.search, location.hash) || (location.state as { email?: string })?.email || user?.email || "";
   const [emailInput, setEmailInput] = useState(queryEmail);
-  const [cooldown, setCooldown] = useState(0);
+  const [cooldown, setCooldown] = useState<number>(() => getRemainingCooldown());
   const [isResending, setIsResending] = useState(false);
+  const isResendingRef = useRef(false);
 
   useEffect(() => {
     if (!emailInput && (queryEmail || user?.email)) {
@@ -48,11 +74,15 @@ const ContaConfirmada = () => {
     [location.search, location.hash]
   );
 
-  // Cooldown countdown timer
+  // Cooldown countdown timer sincronizado com sessionStorage
   useEffect(() => {
     if (cooldown <= 0) return;
     const interval = window.setInterval(() => {
-      setCooldown((prev) => Math.max(prev - 1, 0));
+      const remaining = getRemainingCooldown();
+      setCooldown(remaining);
+      if (remaining <= 0) {
+        setStoredCooldown(0);
+      }
     }, 1000);
     return () => window.clearInterval(interval);
   }, [cooldown]);
@@ -128,27 +158,54 @@ const ContaConfirmada = () => {
     const targetEmail = emailInput.trim().toLowerCase();
     if (!targetEmail || !targetEmail.includes("@")) {
       toast({
-        title: "E-mail inválido",
-        description: "Por favor, informe um endereço de e-mail válido.",
+        title: "E-mail não identificado",
+        description: "Não identificamos o endereço cadastrado para reenvio.",
         variant: "destructive",
       });
       return;
     }
 
-    if (cooldown > 0 || isResending) return;
+    if (cooldown > 0 || isResending || isResendingRef.current) return;
 
+    isResendingRef.current = true;
     setIsResending(true);
     try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email: targetEmail,
-        options: {
-          emailRedirectTo: buildPublicAppUrl("/auth/confirmado"),
+      // 1. Invoca Edge Function dedicada de envio de e-mail via Resend
+      const { data: fnData, error: fnError } = await supabase.functions.invoke("send-auth-confirmation", {
+        body: {
+          email: targetEmail,
+          actionType: "signup",
         },
       });
 
-      if (error) throw error;
+      if (fnError) {
+        // Se for erro de rate limit explícito da Edge Function
+        const errorText = fnError.message || "";
+        if (errorText.includes("429") || errorText.toLowerCase().includes("limite")) {
+          setStoredCooldown(60);
+          setCooldown(60);
+          toast({
+            title: "Muitas tentativas",
+            description: "Por favor, aguarde alguns instantes antes de solicitar um novo e-mail.",
+            variant: "destructive",
+          });
+          return;
+        }
 
+        console.warn("[ContaConfirmada] Edge function falhou, acionando fallback auth.resend:", fnError);
+        // Fallback para o endpoint nativo do Supabase Auth
+        const { error: fallbackError } = await supabase.auth.resend({
+          type: "signup",
+          email: targetEmail,
+          options: {
+            emailRedirectTo: buildPublicAppUrl("/auth/confirmado"),
+          },
+        });
+
+        if (fallbackError) throw fallbackError;
+      }
+
+      setStoredCooldown(60);
       setCooldown(60);
       toast({
         title: "E-mail enviado",
@@ -156,14 +213,20 @@ const ContaConfirmada = () => {
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Não foi possível reenviar o e-mail.";
+      const isRate = /rate|muitas tentativas|limite|429/i.test(msg);
+      if (isRate) {
+        setStoredCooldown(60);
+        setCooldown(60);
+      }
       toast({
         title: "Erro ao reenviar",
-        description: msg.includes("rate")
-          ? "Muitas tentativas em pouco tempo. Por favor, aguarde alguns instantes."
+        description: isRate
+          ? "Muitas tentativas em pouco tempo. Por favor, aguarde 60 segundos."
           : msg,
         variant: "destructive",
       });
     } finally {
+      isResendingRef.current = false;
       setIsResending(false);
     }
   };
@@ -269,20 +332,32 @@ const ContaConfirmada = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="resend-email" className="text-xs font-medium text-muted-foreground">
-                    E-mail cadastrado
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="resend-email" className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                      <ShieldCheck className="h-4 w-4 text-sky-600" />
+                      E-mail cadastrado
+                    </label>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-700 bg-sky-100/80 px-2 py-0.5 rounded-full border border-sky-200/60">
+                      <Lock className="h-3 w-3 text-sky-600" />
+                      Somente leitura
+                    </span>
+                  </div>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="resend-email"
                       type="email"
+                      readOnly
+                      disabled
                       placeholder="seu@email.com"
                       value={emailInput}
-                      onChange={(e) => setEmailInput(e.target.value)}
-                      className="pl-9"
+                      className="pl-9 pr-9 bg-muted/60 text-foreground font-medium border-dashed border-sky-200 cursor-not-allowed select-all"
                     />
+                    <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" />
                   </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Por segurança, o reenvio é realizado exclusivamente para o e-mail previamente cadastrado na sua conta.
+                  </p>
                 </div>
 
                 <Button

@@ -261,6 +261,16 @@ const CadastroContaAlfa = () => {
       });
       if (signupError) throw signupError;
 
+      // Disparar envio de confirmação personalizado via Edge Function / Resend em segundo plano
+      void supabase.functions.invoke("send-auth-confirmation", {
+        body: {
+          email: nextEmail,
+          actionType: "signup",
+        },
+      }).catch((sendErr) => {
+        console.warn("[CadastroContaAlfa] Falha ao invocar send-auth-confirmation:", sendErr);
+      });
+
       const userId = signupData.user?.id;
       if (!userId) throw new Error("Conta criada sem ID de usuário. Tente entrar pelo login.");
 
@@ -556,56 +566,6 @@ const CadastroContaAlfa = () => {
                     )}
                   </div>
 
-                  {/* Profissão & Conselho */}
-                  <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3.5">
-                    <div className="space-y-2">
-                      <Label htmlFor="profession-select">Profissão</Label>
-                      <Select
-                        value={profession}
-                        onValueChange={(val) => {
-                          setProfession(val);
-                          markTouched("profession");
-                        }}
-                      >
-                        <SelectTrigger id="profession-select" className="w-full bg-background">
-                          <div className="flex items-center gap-2">
-                            <Briefcase className="h-4 w-4 text-muted-foreground" />
-                            <SelectValue placeholder="Selecione sua profissão (opcional)" />
-                          </div>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SUPPORTED_PROFESSIONS.map((p) => (
-                            <SelectItem key={p.value} value={p.value}>
-                              {p.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {profession && (
-                      <div className="space-y-2">
-                        <Label htmlFor="council-number">
-                          Número do {getProfessionOption(profession)?.councilName || "CREFITO"}
-                        </Label>
-                        <div className="relative">
-                          <FileBadge className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            id="council-number"
-                            value={councilNumber}
-                            onChange={(e) => setCouncilNumber(e.target.value)}
-                            className="pl-9 bg-background"
-                            maxLength={30}
-                            placeholder={getProfessionOption(profession)?.councilPlaceholder || "Ex: 123456-F"}
-                          />
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">
-                          Opcional. Você também pode preencher ou alterar depois nas configurações do seu perfil.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
                   {/* E-mail */}
                   <div className="space-y-2">
                     <Label htmlFor="signup-email">E-mail</Label>
@@ -627,6 +587,53 @@ const CadastroContaAlfa = () => {
                     {touched.email && fieldErrors.email && (
                       <p className="text-xs text-destructive">{fieldErrors.email}</p>
                     )}
+                  </div>
+
+                  {/* Profissão */}
+                  <div className="space-y-2">
+                    <Label htmlFor="profession-select">Profissão</Label>
+                    <Select
+                      value={profession}
+                      onValueChange={(val) => {
+                        setProfession(val);
+                        markTouched("profession");
+                      }}
+                    >
+                      <SelectTrigger id="profession-select" className="w-full bg-background">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="h-4 w-4 text-muted-foreground" />
+                          <SelectValue placeholder="Selecione sua profissão (opcional)" />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SUPPORTED_PROFESSIONS.map((p) => (
+                          <SelectItem key={p.value} value={p.value}>
+                            {p.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {touched.profession && fieldErrors.profession && (
+                      <p className="text-xs text-destructive">{fieldErrors.profession}</p>
+                    )}
+                  </div>
+
+                  {/* Número do Conselho */}
+                  <div className="space-y-2">
+                    <Label htmlFor="council-number">
+                      {profession ? `Número do ${getProfessionOption(profession)?.councilName || "CREFITO"}` : "Número do conselho (opcional)"}
+                    </Label>
+                    <div className="relative">
+                      <FileBadge className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="council-number"
+                        value={councilNumber}
+                        onChange={(e) => setCouncilNumber(e.target.value)}
+                        className="pl-9 bg-background"
+                        maxLength={30}
+                        placeholder={getProfessionOption(profession)?.councilPlaceholder || "Ex: 123456-F"}
+                      />
+                    </div>
                   </div>
 
                   {/* Senha */}
@@ -656,9 +663,10 @@ const CadastroContaAlfa = () => {
                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">Mínimo de 8 caracteres, com letras e números.</p>
-                    {touched.password && fieldErrors.password && (
+                    {touched.password && fieldErrors.password ? (
                       <p className="text-xs text-destructive">{fieldErrors.password}</p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">Mínimo de 8 caracteres, com letras e números.</p>
                     )}
                   </div>
 
