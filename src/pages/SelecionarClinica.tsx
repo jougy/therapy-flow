@@ -225,7 +225,7 @@ const formatShortDay = (date: Date) => `${weekdayLabels[date.getDay()]} ${String
 const isCompletedAttendance = (session: DashboardSession) => session.status !== "rascunho" && session.status !== "cancelado";
 
 const SelecionarClinica = () => {
-  const { accessibleClinics, isPlatformOwner, profile, refreshAuthState, selectClinic, signOut, user } = useAuth();
+  const { accessibleClinics, isPlatformOwner, loading: authLoading, profile, refreshAuthState, selectClinic, signOut, user } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
   const isPortfolioEnabled = isFeatureEnabled("clinical_portfolio_enabled");
   const location = useLocation();
@@ -353,9 +353,9 @@ const SelecionarClinica = () => {
     };
   }, [accessibleClinics]);
 
-  // Auto-healing: Se o usuário estiver autenticado e sem clínicas, tentar reconciliar/provisionar seu consultório solo gratuito
+  // Auto-healing: Se o usuário estiver autenticado, carregamento finalizado e sem clínicas, tentar reconciliar/provisionar seu consultório solo gratuito
   useEffect(() => {
-    if (!user?.id || isPlatformOwner) return;
+    if (authLoading || !user?.id || isPlatformOwner) return;
     if (accessibleClinics && accessibleClinics.length > 0) return;
 
     let isSubscribed = true;
@@ -379,7 +379,7 @@ const SelecionarClinica = () => {
       isSubscribed = false;
       clearTimeout(timer);
     };
-  }, [accessibleClinics, isPlatformOwner, refreshAuthState, user?.id]);
+  }, [accessibleClinics, authLoading, isPlatformOwner, refreshAuthState, user?.id]);
 
   // Processar intenção de cadastro vinda da Landing Page (plurifisio.com.br) ou login externo
   useEffect(() => {
@@ -1477,11 +1477,29 @@ const SelecionarClinica = () => {
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">Escolha a clínica</CardTitle>
                 <ComponentHelpButton helpId="personal-clinics-block" size="xs" />
-                <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
+                {!authLoading && (
+                  <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent className="px-4 sm:px-6">
-              {accessibleClinics.length === 0 ? (
+              {authLoading ? (
+                <div data-testid="clinics-loading-skeleton" className="space-y-3 py-1">
+                  {[1, 2].map((slot) => (
+                    <div
+                      key={slot}
+                      className="flex w-full items-center gap-3 rounded-lg border bg-card/50 p-3 animate-pulse"
+                    >
+                      <div className="h-10 w-10 shrink-0 rounded-md bg-muted/60" />
+                      <div className="flex-1 space-y-2 py-0.5">
+                        <div className="h-4 w-40 rounded bg-muted/70" />
+                        <div className="h-3 w-24 rounded bg-muted/50" />
+                      </div>
+                      <div className="h-6 w-12 rounded-full bg-muted/40" />
+                    </div>
+                  ))}
+                </div>
+              ) : accessibleClinics.length === 0 ? (
                 <EmptyClinicsCallout
                   userEmail={user?.email || profile?.email}
                   onCreateClinic={handleCreateClinicFromEmpty}
