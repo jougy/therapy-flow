@@ -28,7 +28,7 @@
 UPDATE public.profiles
 SET cpf = NULL
 WHERE id NOT IN (
-  SELECT min(id)
+  SELECT min(id::text)::uuid
   FROM public.profiles
   WHERE cpf IS NOT NULL AND cpf != ''
   GROUP BY cpf
