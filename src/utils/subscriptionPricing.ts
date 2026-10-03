@@ -86,53 +86,53 @@ export interface CouponDiscount {
 export const PLAN_PRICING_CONFIG = {
   // --- Novos Planos para Profissional Autônomo ---
   prof_basico: {
-    annual: { monthlyEq: 26.66, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" }, // R$ 319,90/ano = ~26,66/mês (33% OFF)
-    quarterly: { monthlyEq: 35.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 39,99 * 0.9 = 35.99
-    monthly: { monthlyEq: 39.99, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { monthlyEq: 37.00, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 35%)" }, // R$ 37/mês = R$ 444/ano
+    quarterly: { monthlyEq: 47.00, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-17% OFF)" }, // R$ 47/mês = R$ 141/tri
+    monthly: { monthlyEq: 57.00, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
   prof_medio: {
-    annual: { monthlyEq: 44.99, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 59,99 * 0.75 = ~44.99
-    quarterly: { monthlyEq: 53.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 59,99 * 0.9 = 53.99
-    monthly: { monthlyEq: 59.99, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { monthlyEq: 57.00, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 34%)" }, // R$ 57/mês = R$ 684/ano
+    quarterly: { monthlyEq: 67.00, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-23% OFF)" }, // R$ 67/mês = R$ 201/tri
+    monthly: { monthlyEq: 87.00, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
   prof_top: {
-    annual: { monthlyEq: 67.49, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 89,99 * 0.75 = 67.49
-    quarterly: { monthlyEq: 80.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 89,99 * 0.9 = 80.99
-    monthly: { monthlyEq: 89.99, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { monthlyEq: 87.00, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 31%)" }, // R$ 87/mês = R$ 1044/ano
+    quarterly: { monthlyEq: 107.00, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-15% OFF)" }, // R$ 107/mês = R$ 321/tri
+    monthly: { monthlyEq: 127.00, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
 
   // --- Novos Planos para Clínicas (Colaboradores Ilimitados, Extras R$ 25/mês) ---
   clinica_basico: {
-    annual: { baseMonthlyEq: 74.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 99 * 0.75 = 74.25
-    quarterly: { baseMonthlyEq: 89.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 99 * 0.9 = 89.10
-    monthly: { baseMonthlyEq: 99.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { baseMonthlyEq: 97.00, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 34%)" }, // R$ 97/mês = R$ 1164/ano
+    quarterly: { baseMonthlyEq: 127.00, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-13% OFF)" }, // R$ 127/mês = R$ 381/tri
+    monthly: { baseMonthlyEq: 147.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
   clinica_medio: {
-    annual: { baseMonthlyEq: 104.0, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 139 * 0.75 =~ 104.0
-    quarterly: { baseMonthlyEq: 125.0, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 139 * 0.9 = 125.0
-    monthly: { baseMonthlyEq: 139.0, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { baseMonthlyEq: 177.00, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" }, // R$ 177/mês = R$ 2124/ano
+    quarterly: { baseMonthlyEq: 227.00, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-15% OFF)" }, // R$ 227/mês = R$ 681/tri
+    monthly: { baseMonthlyEq: 267.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
   clinica_top: {
-    annual: { baseMonthlyEq: 149.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" }, // 199 * 0.75 = 149.25
-    quarterly: { baseMonthlyEq: 179.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" }, // 199 * 0.9 = 179.10
-    monthly: { baseMonthlyEq: 199.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { baseMonthlyEq: 297.00, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" }, // R$ 297/mês = R$ 3564/ano
+    quarterly: { baseMonthlyEq: 387.00, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-13% OFF)" }, // R$ 387/mês = R$ 1161/tri
+    monthly: { baseMonthlyEq: 447.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
 
   // --- Planos Legados (Retrocompatibilidade 100%) ---
   solo: {
-    annual: { monthlyEq: 40.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" },
-    quarterly: { monthlyEq: 53.99, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" },
-    monthly: { monthlyEq: 59.99, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { monthlyEq: 57.00, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 34%)" },
+    quarterly: { monthlyEq: 67.00, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-23% OFF)" },
+    monthly: { monthlyEq: 87.00, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
   clinic: {
-    annual: { baseMonthlyEq: 104.0, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" },
-    quarterly: { baseMonthlyEq: 125.0, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" },
-    monthly: { baseMonthlyEq: 139.0, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { baseMonthlyEq: 177.00, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" },
+    quarterly: { baseMonthlyEq: 227.00, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-15% OFF)" },
+    monthly: { baseMonthlyEq: 267.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
   enterprise: {
-    annual: { baseMonthlyEq: 224.0, extraSeatRate: 15.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 25%)" },
-    quarterly: { baseMonthlyEq: 269.0, extraSeatRate: 15.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-10% OFF)" },
-    monthly: { baseMonthlyEq: 299.0, extraSeatRate: 15.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
+    annual: { baseMonthlyEq: 297.00, extraSeatRate: 15.0, periodMultiplier: 12, periodLabel: "ano", cycleTitle: "Plano Anual (Economia de 33%)" },
+    quarterly: { baseMonthlyEq: 387.00, extraSeatRate: 15.0, periodMultiplier: 3, periodLabel: "trimestre", cycleTitle: "Plano Trimestral (-13% OFF)" },
+    monthly: { baseMonthlyEq: 447.00, extraSeatRate: 15.0, periodMultiplier: 1, periodLabel: "mês", cycleTitle: "Plano Mensal" },
   },
 } as const;
 

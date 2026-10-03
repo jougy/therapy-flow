@@ -34,42 +34,42 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({ isOpen
                     Profissional
                   </span>
                   <div className="font-bold text-sm text-foreground mt-1">Básico</div>
-                  <div className="text-primary font-extrabold text-xs">R$ 39,99/mês</div>
+                  <div className="text-primary font-extrabold text-xs">R$ 57,00/mês</div>
                 </th>
                 <th className="p-3 text-center border-l">
                   <span className="inline-block px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 dark:text-sky-300 text-[10px] font-bold uppercase">
                     Profissional
                   </span>
                   <div className="font-bold text-sm text-foreground mt-1">Médio</div>
-                  <div className="text-primary font-extrabold text-xs">R$ 59,99/mês</div>
+                  <div className="text-primary font-extrabold text-xs">R$ 87,00/mês</div>
                 </th>
                 <th className="p-3 text-center border-l">
                   <span className="inline-block px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-700 dark:text-sky-300 text-[10px] font-bold uppercase">
                     Profissional
                   </span>
                   <div className="font-bold text-sm text-foreground mt-1">Top</div>
-                  <div className="text-primary font-extrabold text-xs">R$ 89,99/mês</div>
+                  <div className="text-primary font-extrabold text-xs">R$ 127,00/mês</div>
                 </th>
                 <th className="p-3 text-center border-l">
                   <span className="inline-block px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[10px] font-bold uppercase">
                     Clínica
                   </span>
                   <div className="font-bold text-sm text-foreground mt-1">Básico</div>
-                  <div className="text-primary font-extrabold text-xs">R$ 99,00/mês</div>
+                  <div className="text-primary font-extrabold text-xs">R$ 147,00/mês</div>
                 </th>
                 <th className="p-3 text-center border-l">
                   <span className="inline-block px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[10px] font-bold uppercase">
                     Clínica
                   </span>
                   <div className="font-bold text-sm text-foreground mt-1">Médio</div>
-                  <div className="text-primary font-extrabold text-xs">R$ 139,00/mês</div>
+                  <div className="text-primary font-extrabold text-xs">R$ 267,00/mês</div>
                 </th>
                 <th className="p-3 text-center border-l">
                   <span className="inline-block px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[10px] font-bold uppercase">
                     Clínica
                   </span>
                   <div className="font-bold text-sm text-foreground mt-1">Top</div>
-                  <div className="text-primary font-extrabold text-xs">R$ 199,00/mês</div>
+                  <div className="text-primary font-extrabold text-xs">R$ 447,00/mês</div>
                 </th>
               </tr>
             </thead>

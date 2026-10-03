@@ -31,51 +31,51 @@ import { AsaasClient } from '../_shared/asaas-client.ts';
 const PLAN_PRICING_CONFIG = {
   // --- Novos Planos: Profissional Individual ---
   prof_basico: {
-    monthly: { baseMonthlyEq: 39.99, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 35.99, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
-    annual: { baseMonthlyEq: 29.99, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+    monthly: { baseMonthlyEq: 57.00, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 47.00, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-17% OFF)' },
+    annual: { baseMonthlyEq: 37.00, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 35%)' },
   },
   prof_medio: {
-    monthly: { baseMonthlyEq: 59.99, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 53.99, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
-    annual: { baseMonthlyEq: 44.99, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+    monthly: { baseMonthlyEq: 87.00, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 67.00, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-23% OFF)' },
+    annual: { baseMonthlyEq: 57.00, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 34%)' },
   },
   prof_top: {
-    monthly: { baseMonthlyEq: 89.99, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 80.99, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
-    annual: { baseMonthlyEq: 67.49, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+    monthly: { baseMonthlyEq: 127.00, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 107.00, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-15% OFF)' },
+    annual: { baseMonthlyEq: 87.00, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 31%)' },
   },
   // --- Novos Planos: Clínica & Equipes ---
   clinica_basico: {
-    monthly: { baseMonthlyEq: 99.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 89.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
-    annual: { baseMonthlyEq: 74.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+    monthly: { baseMonthlyEq: 147.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 127.00, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-13% OFF)' },
+    annual: { baseMonthlyEq: 97.00, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 34%)' },
   },
   clinica_medio: {
-    monthly: { baseMonthlyEq: 139.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 125.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
-    annual: { baseMonthlyEq: 104.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+    monthly: { baseMonthlyEq: 267.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 227.00, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-15% OFF)' },
+    annual: { baseMonthlyEq: 177.00, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 33%)' },
   },
   clinica_top: {
-    monthly: { baseMonthlyEq: 199.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 179.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (10% OFF)' },
-    annual: { baseMonthlyEq: 149.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (25% OFF)' },
+    monthly: { baseMonthlyEq: 447.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 387.00, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-13% OFF)' },
+    annual: { baseMonthlyEq: 297.00, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 33%)' },
   },
   // --- Retrocompatibilidade com Planos Legados ---
   solo: {
-    monthly: { baseMonthlyEq: 59.99, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 53.99, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
-    annual: { baseMonthlyEq: 44.99, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
+    monthly: { baseMonthlyEq: 87.00, extraSeatRate: 0.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 67.00, extraSeatRate: 0.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-23% OFF)' },
+    annual: { baseMonthlyEq: 57.00, extraSeatRate: 0.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 34%)' },
   },
   clinic: {
-    monthly: { baseMonthlyEq: 139.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 125.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
-    annual: { baseMonthlyEq: 104.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
+    monthly: { baseMonthlyEq: 267.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 227.00, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-15% OFF)' },
+    annual: { baseMonthlyEq: 177.00, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 33%)' },
   },
   enterprise: {
-    monthly: { baseMonthlyEq: 199.00, extraSeatRate: 25.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
-    quarterly: { baseMonthlyEq: 179.10, extraSeatRate: 25.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral' },
-    annual: { baseMonthlyEq: 149.25, extraSeatRate: 25.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia)' },
+    monthly: { baseMonthlyEq: 447.00, extraSeatRate: 15.0, periodMultiplier: 1, periodLabel: 'mês', cycleTitle: 'Plano Mensal' },
+    quarterly: { baseMonthlyEq: 387.00, extraSeatRate: 15.0, periodMultiplier: 3, periodLabel: 'trimestre', cycleTitle: 'Plano Trimestral (-13% OFF)' },
+    annual: { baseMonthlyEq: 297.00, extraSeatRate: 15.0, periodMultiplier: 12, periodLabel: 'ano', cycleTitle: 'Plano Anual (Economia de 33%)' },
   },
 } as const;
 
@@ -1737,6 +1737,62 @@ serve(async (req) => {
         customerId,
         subscription: updatedSub || subscription,
       }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // =========================================================================
+    // AÇÃO 6: UPDATE_BILLING_WINDOW (Alteração de Janela de Débito/Vencimento)
+    // =========================================================================
+    if (action === 'UPDATE_BILLING_WINDOW') {
+      const windowKey = billing_due_window || reqData?.window;
+      if (!windowKey || !['DAY_1_TO_5', 'DAY_10_TO_15', 'DAY_25_TO_30'].includes(windowKey)) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'Janela de vencimento inválida. Opções: DAY_1_TO_5, DAY_10_TO_15, DAY_25_TO_30' 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Invocar RPC update_clinic_billing_due_window
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('update_clinic_billing_due_window', {
+        _clinic_id: clinic_id,
+        _window: windowKey,
+      });
+
+      if (rpcError) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: rpcError.message || 'Erro ao processar alteração da janela de vencimento.',
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!rpcResult?.success) {
+        return new Response(JSON.stringify(rpcResult), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Se houver assinatura ativa no Asaas e nova data de vencimento, sincronizar nextDueDate
+      if (subscription?.asaas_subscription_id && rpcResult?.next_due_date) {
+        try {
+          await asaas.updateSubscription(subscription.asaas_subscription_id, {
+            nextDueDate: rpcResult.next_due_date,
+          });
+          console.log(`[asaas-subscription] Sincronizado nextDueDate ${rpcResult.next_due_date} na assinatura Asaas ${subscription.asaas_subscription_id}`);
+        } catch (asaasErr: any) {
+          console.warn('[asaas-subscription] Aviso: Não foi possível sincronizar nextDueDate diretamente no Asaas:', asaasErr?.message || asaasErr);
+        }
+      }
+
+      return new Response(JSON.stringify(rpcResult), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

@@ -25,8 +25,8 @@ import {
  * - Seletor de Perfil no Topo: [Para Profissional] vs [Para Clínica] (Fiel à Landing Page).
  * - Seletor de Ciclos: Teste gratuito (7 dias), Mensal, Trimestral (-10%), Anual (Até 33% OFF).
  * - Grid dinâmico dos 3 tiers do perfil ativo:
- *   - Profissional: Básico (R$ 39,99/mês), Médio ("Mais Popular", R$ 59,99/mês), Top ("Você + Apoio", R$ 89,99/mês).
- *   - Clínica: Básico (R$ 99/mês), Médio ("Recomendado", R$ 139/mês), Top (R$ 199/mês).
+ *   - Profissional: Básico (R$ 57/mês), Médio ("Mais Popular", R$ 87/mês), Top ("Você + Apoio", R$ 127/mês).
+ *   - Clínica: Básico (R$ 147/mês), Médio ("Recomendado", R$ 267/mês), Top (R$ 447/mês).
  * - Banner Enterprise inferior ("Redes de clínicas ou hospitais? Vamos conversar").
  * - Modal com a Tabela Comparativa Completa dos planos.
  * - Mobile-first rigoroso: overflow-y-auto funcional com suporte a telas 375px/390px.

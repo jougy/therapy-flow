@@ -1207,17 +1207,17 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 <div className="p-2 rounded border bg-muted/20">
                   <span className="text-muted-foreground block text-[11px]">Mensal</span>
-                  <span className="font-bold text-foreground">R$ 39,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="font-bold text-foreground">R$ 57,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
-                  <span className="font-bold text-foreground">R$ 35,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 107,97</span>
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-17%)</span>
+                  <span className="font-bold text-foreground">R$ 47,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 141,00</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Anual (-33%)</span>
-                  <span className="font-bold text-foreground">R$ 26,66<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 319,90</span>
+                  <span className="text-muted-foreground block text-[11px]">Anual (-35%)</span>
+                  <span className="font-bold text-foreground">R$ 37,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 444,00</span>
                 </div>
               </div>
             </div>
@@ -1234,17 +1234,17 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 <div className="p-2 rounded border bg-muted/20">
                   <span className="text-muted-foreground block text-[11px]">Mensal</span>
-                  <span className="font-bold text-foreground">R$ 59,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="font-bold text-foreground">R$ 87,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
-                  <span className="font-bold text-foreground">R$ 53,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 161,97</span>
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-23%)</span>
+                  <span className="font-bold text-foreground">R$ 67,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 201,00</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
-                  <span className="font-bold text-foreground">R$ 44,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 539,88</span>
+                  <span className="text-muted-foreground block text-[11px]">Anual (-34%)</span>
+                  <span className="font-bold text-foreground">R$ 57,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 684,00</span>
                 </div>
               </div>
             </div>
@@ -1261,17 +1261,17 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 <div className="p-2 rounded border bg-muted/20">
                   <span className="text-muted-foreground block text-[11px]">Mensal</span>
-                  <span className="font-bold text-foreground">R$ 89,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="font-bold text-foreground">R$ 127,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
-                  <span className="font-bold text-foreground">R$ 80,99<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 242,97</span>
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-15%)</span>
+                  <span className="font-bold text-foreground">R$ 107,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 321,00</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
-                  <span className="font-bold text-foreground">R$ 67,49<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 809,88</span>
+                  <span className="text-muted-foreground block text-[11px]">Anual (-31%)</span>
+                  <span className="font-bold text-foreground">R$ 87,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 1.044,00</span>
                 </div>
               </div>
             </div>
@@ -1303,18 +1303,18 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 <div className="p-2 rounded border bg-muted/20">
                   <span className="text-muted-foreground block text-[11px]">Mensal</span>
-                  <span className="font-bold text-foreground">R$ 99,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="font-bold text-foreground">R$ 147,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
                   <span className="text-[10px] text-muted-foreground block">+ R$ 25/mês conexão extra</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
-                  <span className="font-bold text-foreground">R$ 89,10<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 267,30</span>
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-13%)</span>
+                  <span className="font-bold text-foreground">R$ 127,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 381,00</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
-                  <span className="font-bold text-foreground">R$ 74,25<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 891,00</span>
+                  <span className="text-muted-foreground block text-[11px]">Anual (-34%)</span>
+                  <span className="font-bold text-foreground">R$ 97,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 1.164,00</span>
                 </div>
               </div>
             </div>
@@ -1331,18 +1331,18 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 <div className="p-2 rounded border bg-muted/20">
                   <span className="text-muted-foreground block text-[11px]">Mensal</span>
-                  <span className="font-bold text-foreground">R$ 139,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="font-bold text-foreground">R$ 267,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
                   <span className="text-[10px] text-muted-foreground block">+ R$ 25/mês conexão extra</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
-                  <span className="font-bold text-foreground">R$ 125,10<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 375,30</span>
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-15%)</span>
+                  <span className="font-bold text-foreground">R$ 227,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 681,00</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
-                  <span className="font-bold text-foreground">R$ 104,25<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 1.251,00</span>
+                  <span className="text-muted-foreground block text-[11px]">Anual (-33%)</span>
+                  <span className="font-bold text-foreground">R$ 177,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 2.124,00</span>
                 </div>
               </div>
             </div>
@@ -1359,18 +1359,18 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 <div className="p-2 rounded border bg-muted/20">
                   <span className="text-muted-foreground block text-[11px]">Mensal</span>
-                  <span className="font-bold text-foreground">R$ 199,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="font-bold text-foreground">R$ 447,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
                   <span className="text-[10px] text-muted-foreground block">+ R$ 25/mês conexão extra</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Trimestral (-10%)</span>
-                  <span className="font-bold text-foreground">R$ 179,10<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 537,30</span>
+                  <span className="text-muted-foreground block text-[11px]">Trimestral (-13%)</span>
+                  <span className="font-bold text-foreground">R$ 387,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 1.161,00</span>
                 </div>
                 <div className="p-2 rounded border bg-muted/20">
-                  <span className="text-muted-foreground block text-[11px]">Anual (-25%)</span>
-                  <span className="font-bold text-foreground">R$ 149,25<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 1.791,00</span>
+                  <span className="text-muted-foreground block text-[11px]">Anual (-33%)</span>
+                  <span className="font-bold text-foreground">R$ 297,00<span className="text-[10px] font-normal text-muted-foreground">/mês</span></span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium block">Total: R$ 3.564,00</span>
                 </div>
               </div>
             </div>

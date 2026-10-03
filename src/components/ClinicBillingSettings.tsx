@@ -81,6 +81,10 @@ interface SubscriptionSummary {
   billing_email?: string | null;
   billing_name?: string | null;
   override_reason?: string | null;
+  billing_due_window?: "DAY_1_TO_5" | "DAY_10_TO_15" | "DAY_25_TO_30" | string | null;
+  billing_due_window_updated_at?: string | null;
+  can_change_billing_window?: boolean;
+  next_allowed_billing_window_change?: string | null;
 }
 
 import type { SubscriptionInvoice as Invoice } from "@/types/subscriptionInvoice";
@@ -182,6 +186,7 @@ export function ClinicBillingSettings({
   const [targetPlan, setTargetPlan] = useState<PlanType>(currentPlan);
   const [targetCycle, setTargetCycle] = useState<BillingCycle>("annual");
   const [extraConcurrentCount, setExtraConcurrentCount] = useState(0);
+  const [selectedBillingWindow, setSelectedBillingWindow] = useState<"DAY_1_TO_5" | "DAY_10_TO_15" | "DAY_25_TO_30">("DAY_1_TO_5");
 
   const navigate = useNavigate();
   const quota = useClinicPlanQuota(clinicId);
@@ -202,6 +207,9 @@ export function ClinicBillingSettings({
         setExtraConcurrentCount(item.additional_concurrent_access_count || 0);
         if (item.billing_cycle) {
           setTargetCycle(parseBillingCycle(item.billing_cycle));
+        }
+        if (item.billing_due_window && ["DAY_1_TO_5", "DAY_10_TO_15", "DAY_25_TO_30"].includes(item.billing_due_window)) {
+          setSelectedBillingWindow(item.billing_due_window as "DAY_1_TO_5" | "DAY_10_TO_15" | "DAY_25_TO_30");
         }
       }
 
@@ -409,6 +417,39 @@ export function ClinicBillingSettings({
       await fetchSubscriptionData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Erro ao cancelar assinatura.";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSaveBillingWindow = async () => {
+    if (!clinicId || submitting) return;
+    setSubmitting(true);
+    try {
+      const { data: asaasData, error: asaasError } = await supabase.functions.invoke("asaas-subscription", {
+        body: {
+          action: "UPDATE_BILLING_WINDOW",
+          clinic_id: clinicId,
+          billing_due_window: selectedBillingWindow,
+        },
+      });
+
+      if (asaasError || asaasData?.success === false) {
+        const { data: rpcData, error: rpcError } = await supabase.rpc("update_clinic_billing_due_window", {
+          _clinic_id: clinicId,
+          _window: selectedBillingWindow,
+        });
+
+        if (rpcError || !rpcData?.success) {
+          throw new Error(rpcData?.error || rpcError?.message || asaasData?.error || asaasError?.message || "Erro ao atualizar janela de vencimento.");
+        }
+      }
+
+      toast.success("Janela de vencimento atualizada com sucesso! A nova data passará a valer a partir do próximo ciclo.");
+      await fetchSubscriptionData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao atualizar janela de vencimento.";
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -888,6 +929,136 @@ export function ClinicBillingSettings({
           </Card>
         </div>
       )}
+
+      {/* Card: Janela de Cobrança e Vencimento da Assinatura */}
+      <Card className="border bg-card text-card-foreground shadow-lg rounded-2xl">
+        <CardHeader className="p-6 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="w-5 h-5 text-blue-500" />
+              <div>
+                <CardTitle className="text-lg font-semibold text-foreground">Janela de Cobrança e Vencimento</CardTitle>
+                <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                  Escolha o melhor período do mês para o débito em cartão, PIX recorrente ou emissão automática do boleto.
+                </CardDescription>
+              </div>
+            </div>
+            <Badge variant="outline" className="border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/10">
+              {summary?.billing_due_window === "DAY_25_TO_30"
+                ? "Dia 25 a 30 (Venc. 30)"
+                : summary?.billing_due_window === "DAY_10_TO_15"
+                ? "Dia 10 a 15 (Venc. 15)"
+                : "Dia 01 a 05 (Venc. 05)"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6 pt-2 space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                key: "DAY_1_TO_5",
+                title: "Dia 01 a 05",
+                sub: "Vencimento dia 05",
+                desc: "Cobrança no início do mês. Ideal para fechamento de ciclo padrão.",
+              },
+              {
+                key: "DAY_10_TO_15",
+                title: "Dia 10 a 15",
+                sub: "Vencimento dia 15",
+                desc: "Cobrança no meio do mês. Ideal após recebimentos do 5º dia útil.",
+              },
+              {
+                key: "DAY_25_TO_30",
+                title: "Dia 25 a 30",
+                sub: "Vencimento dia 30",
+                desc: "Cobrança no encerramento do mês. Ideal para alinhamento contábil.",
+              },
+            ].map((option) => {
+              const isSelected = selectedBillingWindow === option.key;
+              const isCurrentActive = (summary?.billing_due_window || "DAY_1_TO_5") === option.key;
+              const canEdit = isOwner && summary?.can_change_billing_window !== false;
+
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  disabled={!isOwner || (!canEdit && !isSelected)}
+                  onClick={() => isOwner && setSelectedBillingWindow(option.key as any)}
+                  className={`text-left p-4 rounded-xl border transition-all relative flex flex-col justify-between min-h-[110px] ${
+                    isSelected
+                      ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 ring-2 ring-blue-500/20 shadow-sm"
+                      : "border-border bg-card hover:bg-muted/40 hover:border-muted-foreground/30"
+                  } ${!isOwner || (!canEdit && !isSelected) ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-sm text-foreground">{option.title}</span>
+                      {isCurrentActive && (
+                        <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-wider">
+                          Ativa
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs font-medium text-blue-600 dark:text-blue-400">{option.sub}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{option.desc}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Aviso sobre regra de 30 dias e próximo ciclo */}
+          {summary?.can_change_billing_window === false ? (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <div className="space-y-0.5">
+                <p className="font-semibold">Alteração bloqueada temporariamente (1x por mês)</p>
+                <p className="text-[11px] opacity-90">
+                  A data de cobrança só pode ser modificada uma vez a cada 30 dias. Próxima alteração disponível a partir de{" "}
+                  <strong>
+                    {summary.next_allowed_billing_window_change
+                      ? new Date(summary.next_allowed_billing_window_change).toLocaleDateString("pt-BR")
+                      : "30 dias após a última alteração"}
+                  </strong>.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-muted/40 border text-muted-foreground text-xs flex items-start gap-2.5">
+              <Clock className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+              <p className="text-[11px] leading-relaxed">
+                <strong>Regra de ciclo:</strong> Você pode alterar a janela de vencimento 1 vez por mês. A nova janela entrará em vigor no <strong>próximo ciclo subsequente</strong> da assinatura.
+              </p>
+            </div>
+          )}
+
+          {isOwner && (
+            <div className="flex justify-end pt-2">
+              <Button
+                onClick={handleSaveBillingWindow}
+                disabled={
+                  submitting ||
+                  summary?.can_change_billing_window === false ||
+                  selectedBillingWindow === (summary?.billing_due_window || "DAY_1_TO_5")
+                }
+                className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl text-xs h-10 px-5 min-h-[44px]"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <CalendarClock className="w-3.5 h-3.5 mr-1.5" />
+                    Salvar Preferência de Vencimento
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Tabela de Faturas e Cobranças */}
       <Card className="border bg-card text-card-foreground shadow-lg rounded-2xl">

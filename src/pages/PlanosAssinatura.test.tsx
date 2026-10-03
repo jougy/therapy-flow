@@ -86,25 +86,25 @@ describe("PlanosAssinatura", () => {
       </MemoryRouter>
     );
 
-    // Default is annual: prof_medio is R$ 44,99/mês, prof_basico is R$ 26,66/mês
-    expect(screen.getAllByText(/44[,.]99/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/26[,.]66/i).length).toBeGreaterThan(0);
+    // Default is annual: prof_medio is R$ 57,00/mês, prof_basico is R$ 37,00/mês
+    expect(screen.getAllByText(/57[,.]00/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/37[,.]00/i).length).toBeGreaterThan(0);
 
     // Click Mensal
     const monthlyBtn = screen.getByRole("button", { name: /^Mensal$/i });
     fireEvent.click(monthlyBtn);
 
-    // prof_medio should become R$ 59,99/mês, prof_basico R$ 39,99/mês
-    expect(screen.getAllByText(/59[,.]99/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/39[,.]99/i).length).toBeGreaterThan(0);
+    // prof_medio should become R$ 87,00/mês, prof_basico R$ 57,00/mês
+    expect(screen.getAllByText(/87[,.]00/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/57[,.]00/i).length).toBeGreaterThan(0);
 
     // Click Trimestral
     const quarterlyBtn = screen.getByRole("button", { name: /Trimestral/i });
     fireEvent.click(quarterlyBtn);
 
-    // prof_medio should become R$ 53,99/mês, prof_basico R$ 35,99/mês
-    expect(screen.getAllByText(/53[,.]99/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/35[,.]99/i).length).toBeGreaterThan(0);
+    // prof_medio should become R$ 67,00/mês, prof_basico R$ 47,00/mês
+    expect(screen.getAllByText(/67[,.]00/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/47[,.]00/i).length).toBeGreaterThan(0);
   });
 
   it("switches to Teste gratuito (7 dias) cycle and displays single Clínica Médio option", async () => {
