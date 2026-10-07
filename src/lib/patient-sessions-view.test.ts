@@ -321,14 +321,27 @@ describe("filterSessionsForOperationalRole", () => {
     ).toEqual(["session-1", "session-2"]);
   });
 
-  it("keeps clinic-wide visibility for owner and admin", () => {
+  it("returns all sessions when canReadAll is true regardless of operationalRole", () => {
     expect(
       filterSessionsForOperationalRole({
+        canReadAll: true,
         currentUserId: "intern-user",
-        operationalRole: "admin",
+        operationalRole: "estagiario",
         sessions: [
           { ...sessions[0], user_id: "intern-user" },
           { ...sessions[1], user_id: "other-user" },
+        ],
+      }).map((session) => session.id)
+    ).toEqual(["session-1", "session-2"]);
+  });
+
+  it("returns all sessions when currentUserId is not provided", () => {
+    expect(
+      filterSessionsForOperationalRole({
+        currentUserId: null,
+        sessions: [
+          { ...sessions[0], user_id: "user-1" },
+          { ...sessions[1], user_id: "user-2" },
         ],
       }).map((session) => session.id)
     ).toEqual(["session-1", "session-2"]);

@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { PatientRiskAlerts, PatientClinicalSummaryDialog } from "@/components/patients";
 import type { SessionDocumentKind } from "@/lib/session-documents";
 import type { Database } from "@/integrations/supabase/types";
+import { formatDateTimeLabel } from "./types";
 
 type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
 
@@ -78,28 +79,29 @@ export const SessionHeaderBar = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full min-w-0">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between w-full min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           <Button
             variant="ghost"
             size="icon"
             onClick={onBack}
             aria-label="Voltar para paciente"
+            className="shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">
-              {isNew ? "Novo Atendimento" : `Atendimento — ${sessionDate}`}
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold tracking-tight truncate sm:whitespace-normal">
+              {isNew ? "Novo Atendimento" : `Atendimento — ${formatDateTimeLabel(sessionDate)}`}
             </h1>
-            <p className="text-sm text-muted-foreground">{patientName}</p>
+            <p className="text-sm text-muted-foreground truncate">{patientName}</p>
           </div>
         </div>
 
         {/* Alertas de Risco do Paciente e Resumo Clínico */}
-        <div className="flex items-center gap-2.5 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap sm:justify-end">
           <PatientRiskAlerts patient={patient} size="sm" />
           <Button
             type="button"
@@ -107,13 +109,13 @@ export const SessionHeaderBar = ({
             size="sm"
             onClick={() => setSummaryDialogOpen(true)}
             disabled={!patient}
-            className="h-8 rounded-full border-primary/25 bg-background hover:border-primary/50 hover:bg-primary/5 text-xs font-medium gap-1.5 px-3 shadow-2xs cursor-pointer"
+            className="h-8 rounded-full border-primary/25 bg-background hover:border-primary/50 hover:bg-primary/5 text-xs font-medium gap-1.5 px-3 shadow-2xs cursor-pointer shrink-0"
             title="Abrir resumo clínico do paciente"
           >
             <FileText className="h-3.5 w-3.5 text-primary" />
             <span>Resumo clínico</span>
           </Button>
-          <Badge variant="outline" className={statusColors[status] || ""}>
+          <Badge variant="outline" className={`shrink-0 ${statusColors[status] || ""}`}>
             {status}
           </Badge>
         </div>
@@ -126,7 +128,7 @@ export const SessionHeaderBar = ({
       />
 
       {/* Action Bar */}
-      <div className="flex gap-2 flex-wrap items-center">
+      <div className="flex gap-2 flex-wrap items-center w-full min-w-0">
         {(isNew || isEditing) && !locked && (
           <div className="flex items-center gap-2 flex-wrap">
             <Button

@@ -51,7 +51,7 @@ import { toast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { createTrashToastAction } from "@/lib/trashUtils";
 import { logRuntimeError } from "@/lib/runtime-debug";
-import { fetchPatientByRef, getPatientRouteKey, getClinicPatientPath, getPatientPath } from "@/lib/patient-routing";
+import { fetchPatientByRef, getPatientRouteKey, getClinicPatientPath, getPatientPath, getPatientSessionPath } from "@/lib/patient-routing";
 import {
   usePatientDetailQuery,
   usePatientSessionsQuery,
@@ -1110,28 +1110,24 @@ const PacienteDetalhe = () => {
   const allSessionIdsKey = useMemo(() => allSessions.map((session) => session.id).join(","), [allSessions]);
 
   // Carregar resumos de compartilhamento das sessões
-  useEffect(() => {
-    if (!allSessionIdsKey) {
+  const refreshSessionShareSummaries = useCallback(async () => {
+    const sessionIds = allSessions.map((session) => session.id);
+    if (sessionIds.length === 0) {
       setSessionShareSummaries((current) => (Object.keys(current).length === 0 ? current : {}));
       return;
     }
 
-    let isMounted = true;
-    const sessionIds = allSessions.map((session) => session.id);
-    fetchSessionShareSummaries(sessionIds)
-      .then((summaries) => {
-        if (isMounted) {
-          setSessionShareSummaries(Object.fromEntries(summaries.map((summary) => [summary.session_id, summary])));
-        }
-      })
-      .catch((error) => {
-        logRuntimeError("patient_detail.fetch_session_share_summaries", error, { patientId: id });
-      });
+    try {
+      const summaries = await fetchSessionShareSummaries(sessionIds);
+      setSessionShareSummaries(Object.fromEntries(summaries.map((summary) => [summary.session_id, summary])));
+    } catch (error) {
+      logRuntimeError("patient_detail.fetch_session_share_summaries", error, { patientId: id });
+    }
+  }, [allSessions, id]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [allSessionIdsKey, allSessions, id]);
+  useEffect(() => {
+    void refreshSessionShareSummaries();
+  }, [allSessionIdsKey, refreshSessionShareSummaries]);
 
   // Carregar colaboradores para compartilhamento da clínica
   useEffect(() => {
@@ -1183,10 +1179,17 @@ const PacienteDetalhe = () => {
   }, [allSessions, operationalRole, optimisticUpdateSessionStatus, user?.id]);
 
   // Sessões filtradas conforme o perfil operacional
-  const sharedSessionIds = useMemo(
-    () => new Set(Object.keys(sessionShareSummaries)),
-    [sessionShareSummaries]
-  );
+  const sharedSessionIds = useMemo(() => {
+    if (!user?.id) {
+      return new Set<string>();
+    }
+
+    return new Set(
+      Object.values(sessionShareSummaries)
+        .filter((summary) => summary.recipients.some((r) => r.id === user.id))
+        .map((summary) => summary.session_id)
+    );
+  }, [sessionShareSummaries, user?.id]);
 
   const sessions = useMemo(
     () =>
@@ -1698,8 +1701,23 @@ const PacienteDetalhe = () => {
       return;
     }
 
-    navigate(`/pacientes/${id}/sessao/${sessionId}`);
+    const sessionRef = sessionCodeMap.get(sessionId) || sessionId;
+    navigate(getPatientSessionPath(patient || id, sessionRef));
   };
+
+  const sessionCodeMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const sorted = [...sessions].sort((a, b) => {
+      const dateA = new Date(a.session_date).getTime();
+      const dateB = new Date(b.session_date).getTime();
+      if (dateA !== dateB) return dateA - dateB;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+    sorted.forEach((sess, idx) => {
+      map.set(sess.id, `ATD-${idx + 1}`);
+    });
+    return map;
+  }, [sessions]);
 
   const handleExitSelectionMode = () => {
     setSelectionMode(false);
@@ -1906,7 +1924,8 @@ const PacienteDetalhe = () => {
           title: isBlank ? "Novo atendimento em branco iniciado" : "Novo atendimento de evolução iniciado",
           description: isBlank ? "Uma nova ficha vinculada a este ciclo está pronta para preenchimento." : "Os dados foram copiados e o atendimento está pronto para preenchimento.",
         });
-        navigate(`/pacientes/${id}/sessao/${data.id}?edit=true`, {
+        const nextIndex = sessions.length + 1;
+        navigate(getPatientSessionPath(patient || id, `ATD-${nextIndex}`, "?edit=true"), {
           state: { startInEditMode: true },
         });
       }
@@ -2725,7 +2744,7 @@ const PacienteDetalhe = () => {
       return;
     }
 
-    navigate(`/pacientes/${id}/sessao/novo`, {
+    navigate(getPatientSessionPath(patient || id, "novo"), {
       state: {
         agendaEventId: selectedAgendaEvent.id,
         scheduledFor: selectedAgendaEvent.scheduled_for,
@@ -2737,7 +2756,7 @@ const PacienteDetalhe = () => {
     if (!patient || !user) return;
 
     if (upcomingAgendaEvent) {
-      navigate(`/pacientes/${id}/sessao/novo`, {
+      navigate(getPatientSessionPath(patient || id, "novo"), {
         state: {
           agendaEventId: upcomingAgendaEvent.id,
           scheduledFor: upcomingAgendaEvent.scheduled_for,
@@ -2770,7 +2789,7 @@ const PacienteDetalhe = () => {
 
       notifyAgendaEventsUpdated();
 
-      navigate(`/pacientes/${id}/sessao/novo`, {
+      navigate(getPatientSessionPath(patient || id, "novo"), {
         state: {
           agendaEventId: data.id,
           scheduledFor: data.scheduled_for,
@@ -2780,7 +2799,7 @@ const PacienteDetalhe = () => {
       logRuntimeError("patient_detail.start_attendance_now_agenda_fallback", err);
       // Resiliência clínica: se o registro na agenda falhar (permissão de colaborador, RLS ou offline),
       // não bloqueia o início do atendimento médico/fisioterapêutico
-      navigate(`/pacientes/${id}/sessao/novo`);
+      navigate(getPatientSessionPath(patient || id, "novo"));
     }
   };
 
@@ -4490,6 +4509,7 @@ const PacienteDetalhe = () => {
         onOpenChange={setSessionShareDialogOpen}
         onShared={() => {
           handleExitSelectionMode();
+          void refreshSessionShareSummaries();
           if (realPatientId) {
             void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
           }

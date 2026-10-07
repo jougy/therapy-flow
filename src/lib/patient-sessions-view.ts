@@ -519,6 +519,9 @@ export const buildPatientSessionsView = <
 export const canDeleteSelectedSessions = <TSession extends SearchableSession>(selectedSessions: TSession[]) =>
   selectedSessions.length > 0 && selectedSessions.every((session) => session.status === "rascunho");
 
+/**
+ * Determines whether the user has permission to delete the selected sessions based on capability checks or operational role.
+ */
 export const canDeleteSelectedSessionsForRole = <TSession extends SearchableOwnedSession>({
   canDeleteAll,
   canDeleteDraft,
@@ -531,7 +534,7 @@ export const canDeleteSelectedSessionsForRole = <TSession extends SearchableOwne
   currentUserId: string | null | undefined;
   operationalRole?: "owner" | "admin" | "professional" | "assistant" | "estagiario" | string | null;
   selectedSessions: TSession[];
-}) => {
+}): boolean => {
   if (selectedSessions.length === 0) {
     return false;
   }
@@ -546,7 +549,7 @@ export const canDeleteSelectedSessionsForRole = <TSession extends SearchableOwne
     );
   }
 
-  // Fallback para compatibilidade caso permissões granulares não sejam fornecidas
+  // Fallback for compatibility if granular capabilities are not explicitly provided
   if (canDeleteAll === undefined && canDeleteDraft === undefined) {
     if (operationalRole === "owner" || operationalRole === "admin") {
       return true;
@@ -560,20 +563,23 @@ export const canDeleteSelectedSessionsForRole = <TSession extends SearchableOwne
   return false;
 };
 
+/**
+ * Filters sessions based on the user's operational role and shared session access.
+ */
 export const filterSessionsForOperationalRole = <TSession extends SearchableOwnedSession>({
   canReadAll,
   currentUserId,
-  operationalRole,
+  operationalRole: _operationalRole,
   sharedSessionIds = new Set<string>(),
   sessions,
 }: {
   canReadAll?: boolean;
   currentUserId: string | null | undefined;
-  operationalRole: "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
+  operationalRole?: string | null;
   sharedSessionIds?: Set<string>;
   sessions: TSession[];
-}) => {
-  if (canReadAll || operationalRole === "owner" || operationalRole === "admin" || !currentUserId) {
+}): TSession[] => {
+  if (canReadAll || !currentUserId) {
     return sessions;
   }
 

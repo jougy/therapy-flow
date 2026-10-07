@@ -125,4 +125,25 @@ describe("filterAndSortHomeSessions", () => {
     expect(resultsDesc[0].id).toBe("s-2");
     expect(resultsDesc[1].id).toBe("s-1");
   });
+
+  it("filters sessions by collaborator including explicitly shared sessions", () => {
+    const sessionWithShare: HomeSessionRecord = {
+      ...session2,
+      id: "s-3",
+      provider_id: "u-99",
+      shared_with_user_ids: ["collab-10"],
+    };
+
+    const results = filterAndSortHomeSessions({
+      sessions: [session1, session2, sessionWithShare],
+      patientById,
+      groupById,
+      patientGroupsByPatientId,
+      filters: { selectedCollaboratorIds: ["collab-10"] },
+      sortKey: "session_date_desc",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("s-3");
+  });
 });

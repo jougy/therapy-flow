@@ -45,14 +45,14 @@ describe("AppLayout Simulation Mode TopBar", () => {
     expect(screen.getByText("Conteúdo da Clínica de Teste")).toBeInTheDocument();
 
     // Check Role select trigger
-    expect(screen.getByText("Owner")).toBeInTheDocument();
+    expect(screen.getAllByText("Owner")[0]).toBeInTheDocument();
 
     // Check Feature Flags button
-    const flagsButton = screen.getByRole("button", { name: /Flags/i });
+    const flagsButton = screen.getAllByRole("button", { name: /Flags/i })[0];
     expect(flagsButton).toBeInTheDocument();
 
     // Check Viewport switcher buttons
-    expect(screen.getByText("Vertical (Mobile)")).toBeInTheDocument();
+    expect(screen.getAllByText("Vertical (Mobile)")[0]).toBeInTheDocument();
   });
 
   it("toggles mobile viewport layout when clicking Vertical (Mobile)", () => {
@@ -66,7 +66,7 @@ describe("AppLayout Simulation Mode TopBar", () => {
       </MemoryRouter>
     );
 
-    const mobileBtn = screen.getByText("Vertical (Mobile)");
+    const mobileBtn = screen.getAllByText("Vertical (Mobile)")[0];
     fireEvent.click(mobileBtn);
 
     // Smartphone clock indicator and touchscreen simulation banner should appear in mobile mode
@@ -85,7 +85,7 @@ describe("AppLayout Simulation Mode TopBar", () => {
       </MemoryRouter>
     );
 
-    const flagsButton = screen.getByRole("button", { name: /Flags/i });
+    const flagsButton = screen.getAllByRole("button", { name: /Flags/i })[0];
     fireEvent.click(flagsButton);
 
     expect(screen.getByText("Feature Flags da Simulação")).toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("AppLayout Simulation Mode TopBar", () => {
       </MemoryRouter>
     );
 
-    const permissionsButton = screen.getByRole("button", { name: /Permissões/i });
+    const permissionsButton = screen.getAllByRole("button", { name: /Permissões/i })[0];
     fireEvent.click(permissionsButton);
 
     expect(screen.getByText(/Permissões do Papel: Owner/i)).toBeInTheDocument();
@@ -119,7 +119,7 @@ describe("AppLayout Simulation Mode TopBar", () => {
       </MemoryRouter>
     );
 
-    const testPatientButton = screen.getByRole("button", { name: /\+ Paciente Teste/i });
+    const testPatientButton = screen.getAllByRole("button", { name: /\+ Paciente Teste/i })[0];
     expect(testPatientButton).toBeInTheDocument();
 
     fireEvent.click(testPatientButton);

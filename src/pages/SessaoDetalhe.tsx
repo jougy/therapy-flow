@@ -44,7 +44,7 @@ import { TrialReadOnlyModal } from "@/components/TrialReadOnlyModal";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { notifySessionCompletedFeedback } from "@/hooks/useFeedbackTrigger";
-import { fetchPatientByRef, isUuid, type PatientRow } from "@/lib/patient-routing";
+import { fetchPatientByRef, getPatientPath, getPatientSessionPath, isUuid, resolveSessionReference, type PatientRow } from "@/lib/patient-routing";
 import { ToastAction } from "@/components/ui/toast";
 import { createTrashToastAction } from "@/lib/trashUtils";
 import { readBusinessHours } from "@/lib/clinic-settings";
@@ -348,14 +348,27 @@ const SessaoDetalhe = () => {
     let loadedFormValues: SessionFormValues | null = null;
 
     if (!isNew && sessionId) {
-      const [{ data: fetchedSessionData }, { data: historyData }] = await Promise.all([
-        supabase.from("sessions").select("*").eq("id", sessionId).maybeSingle(),
-        supabase.from("session_edit_history").select("*").eq("session_id", sessionId).order("edited_at", { ascending: false }),
-      ]);
+      const sessionResolution = await resolveSessionReference(sessionId, patientId, clinicId, clinic?.route_key);
+      let sessionData = sessionResolution.data;
 
-      let sessionData = fetchedSessionData;
+      const historyDataRes = sessionData
+        ? await supabase.from("session_edit_history").select("*").eq("session_id", sessionData.id).order("edited_at", { ascending: false })
+        : { data: [] };
+      const historyData = historyDataRes.data;
 
       if (sessionData) {
+        const canonicalPatientKey = patientRes.data?.patient_code || realPatientId;
+        const canonicalSessionKey = sessionResolution.sessionIndex ? `ATD-${sessionResolution.sessionIndex}` : sessionData.id;
+        const isClinicScoped = location.pathname.startsWith("/clinica/");
+        const canonicalPath = isClinicScoped && clinic?.route_key
+          ? `/clinica/${clinic.route_key}/pacientes/${canonicalPatientKey}/sessao/${canonicalSessionKey}`
+          : `/pacientes/${canonicalPatientKey}/sessao/${canonicalSessionKey}`;
+
+        if (location.pathname !== canonicalPath && !location.pathname.endsWith("/sessao/novo")) {
+          loadedSessionKeyRef.current = `${clinicId}:${canonicalPatientKey}:${canonicalSessionKey}`;
+          navigate(`${canonicalPath}${location.search}`, { replace: true, state: location.state });
+        }
+
         let recipients: SessionShareRecipient[] = [];
         try {
           recipients = await fetchSessionShareRecipients(sessionData.id);
@@ -379,7 +392,7 @@ const SessaoDetalhe = () => {
             description: "Você não possui permissão para visualizar atendimentos de outros colaboradores.",
             variant: "destructive",
           });
-          navigate(`/pacientes/${patientId}`);
+          navigate(getPatientPath(patientRow || patientId));
           setLoading(false);
           return;
         }
@@ -933,7 +946,7 @@ const SessaoDetalhe = () => {
   }, [isDirty]);
 
   const handleBackNavigation = () => {
-    const targetPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : `/pacientes/${patientId}`;
+    const targetPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : getPatientPath(patientRow || patientId);
     if (isDirty) {
       setPendingNavigationPath(targetPath);
       setLeaveConfirmModalOpen(true);
@@ -1319,7 +1332,13 @@ const SessaoDetalhe = () => {
           });
         }
         setIsEditing(false);
-        navigate(`/pacientes/${patientId}/sessao/${data.id}`, { replace: true });
+        const { count: sessionCount } = await supabase
+          .from("sessions")
+          .select("id", { count: "exact", head: true })
+          .eq("patient_id", targetPatientId)
+          .eq("clinic_id", targetClinicId);
+        const nextSessionKey = sessionCount ? `ATD-${sessionCount}` : data.id;
+        navigate(getPatientSessionPath(patientRow || patientId, nextSessionKey), { replace: true });
       }
     } else {
       const { error } = await supabase
@@ -1466,7 +1485,13 @@ const SessaoDetalhe = () => {
           title: isBlank ? "Novo atendimento em branco iniciado" : "Novo atendimento de evolução iniciado",
           description: isBlank ? "Uma nova ficha vinculada a este ciclo está pronta para preenchimento." : "Os dados foram copiados e o atendimento está pronto para preenchimento.",
         });
-        navigate(`/pacientes/${patientId}/sessao/${data.id}?edit=true`, {
+        const { count: sessionCount } = await supabase
+          .from("sessions")
+          .select("id", { count: "exact", head: true })
+          .eq("patient_id", targetPatientId)
+          .eq("clinic_id", targetClinicId);
+        const nextSessionKey = sessionCount ? `ATD-${sessionCount}` : data.id;
+        navigate(getPatientSessionPath(patientRow || patientId, nextSessionKey, "?edit=true"), {
           state: { startInEditMode: true },
         });
       }
@@ -1681,7 +1706,7 @@ const SessaoDetalhe = () => {
     if ((location.state as any)?.from === "/espacopessoal") {
       navigate("/espacopessoal");
     } else {
-      navigate(`/pacientes/${patientId}`);
+      navigate(getPatientPath(patientRow || patientId));
     }
   };
 
@@ -1826,7 +1851,7 @@ const SessaoDetalhe = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2 }}
-      className="mx-auto w-full max-w-full space-y-6 px-1 pb-24 sm:pb-8 sm:max-w-[min(100vw-2rem,1680px)] sm:px-6 lg:max-w-[min(100vw-3rem,1760px)] [overscroll-behavior-x:contain]"
+      className="mx-auto w-full min-w-0 max-w-full space-y-6 px-1 pb-24 sm:pb-8 sm:max-w-[min(100vw-2rem,1680px)] sm:px-6 lg:max-w-[min(100vw-3rem,1760px)] [overscroll-behavior-x:contain] overflow-x-hidden"
     >
       <SessionHeaderBar
         canDeleteSession={canDeleteSession}
@@ -2400,7 +2425,7 @@ const SessaoDetalhe = () => {
               onClick={async () => {
                 await handleSave("rascunho");
                 setLeaveConfirmModalOpen(false);
-                const fallbackPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : `/pacientes/${patientId}`;
+                const fallbackPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : getPatientPath(patientRow || patientId);
                 navigate(pendingNavigationPath || fallbackPath);
               }}
               disabled={saving}
@@ -2415,7 +2440,7 @@ const SessaoDetalhe = () => {
               onClick={() => {
                 clearSessionDraft(clinicId, resolvedPatientId || patientId, sessionId);
                 setLeaveConfirmModalOpen(false);
-                const fallbackPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : `/pacientes/${patientId}`;
+                const fallbackPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : getPatientPath(patientRow || patientId);
                 navigate(pendingNavigationPath || fallbackPath);
               }}
               disabled={saving}

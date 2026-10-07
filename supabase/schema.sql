@@ -5145,7 +5145,7 @@ CREATE OR REPLACE FUNCTION "public"."get_session_share_summary"("_session_ids" "
         order by profiles.full_name nulls last, profiles.email
       ) as recipients
     from public.session_shares
-    join public.profiles
+    left join public.profiles
       on profiles.id = session_shares.shared_with_user_id
     where session_shares.session_id = any(_session_ids)
       and session_shares.revoked_at is null
@@ -8538,86 +8538,6 @@ $$;
 ALTER FUNCTION "public"."set_updated_at"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[]) RETURNS json
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
-    AS $$
-DECLARE
-  _actor_id uuid := auth.uid();
-  _session_id uuid;
-  _target_user_id uuid;
-  _session public.sessions%ROWTYPE;
-  _inserted_count integer := 0;
-  _row_count integer := 0;
-BEGIN
-  IF _actor_id IS NULL THEN
-    RAISE EXCEPTION 'Usuário não autenticado';
-  END IF;
-
-  IF COALESCE(array_length(_session_ids, 1), 0) = 0 OR COALESCE(array_length(_user_ids, 1), 0) = 0 THEN
-    RETURN json_build_object('shared_count', 0);
-  END IF;
-
-  FOR _session_id IN
-    SELECT DISTINCT item
-    FROM unnest(_session_ids) AS item
-    WHERE item IS NOT NULL
-  LOOP
-    SELECT *
-    INTO _session
-    FROM public.sessions
-    WHERE id = _session_id;
-
-    IF _session.id IS NULL OR _session.clinic_id IS NULL THEN
-      RAISE EXCEPTION 'Ficha de atendimento não encontrada';
-    END IF;
-
-    IF NOT public.can_share_session(_session.id) THEN
-      RAISE EXCEPTION 'Sem permissão para compartilhar uma ou mais fichas';
-    END IF;
-
-    FOR _target_user_id IN
-      SELECT DISTINCT item
-      FROM unnest(_user_ids) AS item
-      WHERE item IS NOT NULL
-    LOOP
-      IF _target_user_id = _session.user_id OR _target_user_id = _session.provider_id THEN
-        CONTINUE;
-      END IF;
-
-      IF NOT public.is_active_clinic_member(_session.clinic_id, _target_user_id) THEN
-        RAISE EXCEPTION 'Um dos colaboradores selecionados não pertence à clínica';
-      END IF;
-
-      INSERT INTO public.session_shares (
-        clinic_id,
-        session_id,
-        shared_with_user_id,
-        shared_by_user_id,
-        access_level
-      )
-      VALUES (
-        _session.clinic_id,
-        _session.id,
-        _target_user_id,
-        _actor_id,
-        'read'
-      )
-      ON CONFLICT (session_id, shared_with_user_id) WHERE revoked_at IS NULL DO NOTHING;
-
-      GET DIAGNOSTICS _row_count = ROW_COUNT;
-      _inserted_count := _inserted_count + _row_count;
-    END LOOP;
-  END LOOP;
-
-  RETURN json_build_object('shared_count', _inserted_count);
-END;
-$$;
-
-
-ALTER FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[]) OWNER TO "postgres";
-
-
 CREATE OR REPLACE FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[], "_access_level" "text" DEFAULT 'can_evolve'::"text") RETURNS json
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -11041,6 +10961,8 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_operational_roles" (
     CONSTRAINT "clinic_operational_roles_label_not_blank" CHECK (("btrim"("label") <> ''::"text")),
     CONSTRAINT "clinic_operational_roles_no_custom_owner" CHECK ((("is_system" = true) OR ("role_key" <> 'owner'::"text")))
 );
+
+ALTER TABLE ONLY "public"."clinic_operational_roles" REPLICA IDENTITY FULL;
 
 
 ALTER TABLE "public"."clinic_operational_roles" OWNER TO "postgres";
@@ -14181,6 +14103,7 @@ ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
 
 
 ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."clinic_operational_role_capabilities";
+ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."clinic_operational_roles";
 
 
 
@@ -14991,13 +14914,9 @@ GRANT ALL ON FUNCTION "public"."set_updated_at"() TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[]) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[]) TO "service_role";
-GRANT ALL ON FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[]) TO "authenticated";
-
-
-
+REVOKE ALL ON FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[], "_access_level" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[], "_access_level" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[], "_access_level" "text") TO "authenticated";
 
 
 

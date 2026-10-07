@@ -44,10 +44,47 @@ vi.mock("@/lib/patient-routing", () => ({
     },
     error: null,
   }),
-  getPatientPath: vi.fn(),
+  getPatientPath: vi.fn((patient: any, subpath?: string) => {
+    const key = typeof patient === "string" ? patient : patient?.patient_code || patient?.id || "patient-123";
+    const cleanSub = subpath ? (subpath.startsWith("/") ? subpath : `/${subpath}`) : "";
+    return `/pacientes/${key}${cleanSub}`;
+  }),
+  getPatientSessionPath: vi.fn((patient: any, session: any, subpath?: string) => {
+    const key = typeof patient === "string" ? patient : patient?.patient_code || patient?.id || "patient-123";
+    const sessionKey = typeof session === "string" ? session : session?.id || "session-123";
+    const cleanSub = subpath ? (subpath.startsWith("/") ? subpath : `/${subpath}`) : "";
+    return `/pacientes/${key}/sessao/${sessionKey}${cleanSub}`;
+  }),
   getClinicPatientPath: vi.fn(),
   getPatientRouteKey: (patient: any) => patient?.patient_code || patient?.id || "patient-123",
   isUuid: () => true,
+  resolveSessionReference: vi.fn().mockImplementation(async (sessionRef: string) => ({
+    data: sessionRef === "novo" ? null : {
+      id: sessionRef,
+      patient_id: "patient-123",
+      user_id: "user-1",
+      session_date: "2026-08-25T16:57:00.000Z",
+      status: "rascunho",
+      pain_score: 0,
+      complexity_score: 0,
+      notes: "",
+      amount_charged_cents: 0,
+      amount_paid_cents: 0,
+      amount_original_cents: 0,
+      payment_status: "nao_cobrado",
+      created_at: "2026-08-25T16:57:00.000Z",
+    },
+    error: null,
+    isNew: sessionRef === "novo",
+    sessionIndex: 1,
+    patient: {
+      id: "patient-123",
+      patient_code: "PAC-123",
+      name: "Carlos Eduardo Silva",
+      clinic_id: "clinic-1",
+    },
+    totalSessions: 1,
+  })),
 }));
 
 vi.mock("@/lib/session-sharing", () => ({

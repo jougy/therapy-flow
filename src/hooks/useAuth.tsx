@@ -643,11 +643,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         },
       )
       .subscribe((status, error) => {
-        if (error) {
-          logRuntimeError("auth.clinic_operational_role_capabilities.realtime", error, {
-            clinicId: clinic.id,
-            status,
-          });
+        if (error && status !== "CLOSED" && status !== "TIMED_OUT") {
+          const errorMessage = getErrorMessage(error).toLowerCase();
+          const isNormalClosureOrReconnect =
+            errorMessage.includes("closed") ||
+            errorMessage.includes("unsubscribed") ||
+            errorMessage.includes("websocket") ||
+            errorMessage.includes("network error");
+
+          if (!isNormalClosureOrReconnect) {
+            logRuntimeError("auth.clinic_operational_role_capabilities.realtime", error, {
+              clinicId: clinic.id,
+              status,
+            });
+          }
         }
       });
 

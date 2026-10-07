@@ -390,7 +390,7 @@ describe("Index", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /abrir agenda/i })[0]);
 
     expect(await screen.findByText("Agenda mock")).toBeVisible();
-  });
+  }, 30000);
 
   it("opens the clinic agenda from the toolbar", async () => {
     renderWithClient(

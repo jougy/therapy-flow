@@ -40,6 +40,7 @@ import { PATIENT_ORIGIN_OPTIONS, type PatientOriginType } from "@/lib/patient-or
 import { AGENDA_EVENTS_UPDATED_EVENT } from "@/lib/agenda-events";
 import { PATIENTS_UPDATED_EVENT } from "@/lib/patient-events";
 import { formatMoneyCents, getPaymentMethodLabel, getPaymentStatusLabel, sanitizeDashboardCents } from "@/lib/session-operations";
+import { getPatientPath, getPatientSessionPath } from "@/lib/patient-routing";
 import {
   useClinicPatientsQuery,
   useClinicSessionsSummaryQuery,
@@ -567,8 +568,9 @@ const Index = () => {
     const paid = sanitizeDashboardCents(session.amount_paid_cents);
     const balance = Math.max(0, charged - paid);
     const credit = Math.max(0, paid - charged);
-    const sessionPath = `/pacientes/${session.patient_id}/sessao/${session.id}`;
-    const patientPath = `/pacientes/${session.patient_id}`;
+    const patientRef = patient?.patient_code || session.patient_id;
+    const sessionPath = getPatientSessionPath(patientRef, session.id);
+    const patientPath = getPatientPath(patientRef);
     const isSelected = selectedSessionIds.includes(session.id);
 
     return (
@@ -851,6 +853,7 @@ const Index = () => {
         onListModeChange={setListMode}
         hasClinicSessionsList={hasClinicSessionsList}
         canViewFinancialData={canViewFinancialData}
+        clinicHomePath={effectiveClinicKey ? `/clinica/${effectiveClinicKey}` : "/espacopessoal"}
         onOpenNewPatient={() => navigate("/pacientes/novo")}
         onOpenAgenda={() => setAgendaDialogOpen(true)}
         onOpenDashboard={() => setDashboardDialogOpen(true)}

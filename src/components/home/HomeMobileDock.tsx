@@ -1,14 +1,23 @@
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
-import { BarChart3, CalendarDays, FileText, Plus, UsersRound } from "lucide-react";
+import { BarChart3, CalendarDays, FileText, Plus, UsersRound, Settings, Building2, UserCog, ChevronRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { HomeListMode } from "@/components/home/PatientSearchToolbar";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 
-export type ClinicMobileDockAction = "patients" | "sessions" | "new-patient" | "agenda" | "stats";
+export type ClinicMobileDockAction = "patients" | "sessions" | "new-patient" | "agenda" | "stats" | "settings";
 
 interface HomeMobileDockProps {
   listMode: HomeListMode;
   onListModeChange: (mode: HomeListMode) => void;
   hasClinicSessionsList: boolean;
   canViewFinancialData: boolean;
+  clinicHomePath?: string;
   onOpenNewPatient: () => void;
   onOpenAgenda: () => void;
   onOpenDashboard: () => void;
@@ -19,14 +28,17 @@ export const HomeMobileDock = memo(function HomeMobileDock({
   onListModeChange,
   hasClinicSessionsList,
   canViewFinancialData,
+  clinicHomePath = "",
   onOpenNewPatient,
   onOpenAgenda,
   onOpenDashboard,
 }: HomeMobileDockProps) {
+  const navigate = useNavigate();
   const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
   const [mobileDockPressedAction, setMobileDockPressedAction] = useState<ClinicMobileDockAction | null>(null);
   const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
   const [mobileDockTooltip, setMobileDockTooltip] = useState<{ title: string; x: number } | null>(null);
+  const [settingsSheetOpen, setSettingsSheetOpen] = useState(false);
 
   const mobileLongPressTimerRef = useRef<number | null>(null);
   const mobileLongPressTriggeredRef = useRef(false);
@@ -195,6 +207,11 @@ export const HomeMobileDock = memo(function HomeMobileDock({
 
       if (action === "stats" && canViewFinancialData) {
         onOpenDashboard();
+        return;
+      }
+
+      if (action === "settings") {
+        setSettingsSheetOpen(true);
       }
     },
     [canViewFinancialData, onListModeChange, onOpenAgenda, onOpenDashboard, onOpenNewPatient]
@@ -238,6 +255,7 @@ export const HomeMobileDock = memo(function HomeMobileDock({
     { action: "new-patient" as const, title: "Novo paciente", icon: Plus, active: false, primary: true },
     { action: "agenda" as const, title: "Agenda", icon: CalendarDays, active: false },
     { action: "stats" as const, title: "Estatísticas", icon: BarChart3, active: false, disabled: !canViewFinancialData },
+    { action: "settings" as const, title: "Configurações", icon: Settings, active: false },
   ];
 
   return (
@@ -324,6 +342,75 @@ export const HomeMobileDock = memo(function HomeMobileDock({
           })}
         </div>
       </div>
+
+      {/* Mobile Settings Action Sheet */}
+      <Sheet open={settingsSheetOpen} onOpenChange={setSettingsSheetOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-8 pt-5">
+          <SheetHeader className="text-left pb-3">
+            <SheetTitle className="text-lg font-bold flex items-center gap-2">
+              <Settings className="h-5 w-5 text-primary" />
+              Configurações
+            </SheetTitle>
+            <SheetDescription className="text-xs text-muted-foreground">
+              Escolha qual área de configuração você deseja gerenciar.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="grid gap-3 pt-2">
+            {/* Opção 1: Configurações da Clínica */}
+            <button
+              type="button"
+              className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-card/80 hover:bg-muted/50 active:scale-[0.99] transition-all text-left group"
+              onClick={() => {
+                setSettingsSheetOpen(false);
+                const target = clinicHomePath
+                  ? `${clinicHomePath}/configuracoes/perfil`
+                  : "/configuracoes/perfil";
+                navigate(target);
+              }}
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-foreground">Configurações da clínica</h4>
+                  <p className="text-xs text-muted-foreground truncate">
+                    Perfil da clínica, logo, equipe, planos e preferências
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 ml-2" />
+            </button>
+
+            {/* Opção 2: Configurações Pessoais */}
+            <button
+              type="button"
+              className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-card/80 hover:bg-muted/50 active:scale-[0.99] transition-all text-left group"
+              onClick={() => {
+                setSettingsSheetOpen(false);
+                const target = clinicHomePath
+                  ? `${clinicHomePath}/configuracoes/pessoal/perfil`
+                  : "/configuracoes/pessoal/perfil";
+                navigate(target);
+              }}
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:bg-blue-500/20 transition-colors">
+                  <UserCog className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-foreground">Configurações da sua conta pessoal</h4>
+                  <p className="text-xs text-muted-foreground truncate">
+                    Seu perfil, segurança, e-mail, senha e notificações
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 ml-2" />
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </nav>
   );
 });

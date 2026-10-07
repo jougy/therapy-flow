@@ -81,6 +81,8 @@ export interface HomeSessionRecord {
   session_date: string;
   status: string;
   user_id?: string | null;
+  shared_with_user_ids?: string[] | null;
+  shared_user_ids?: string[] | null;
 }
 
 export interface HomeAgendaEventRecord {
@@ -571,7 +573,12 @@ export const buildHomePatientViews = ({
       const collaboratorIds = Array.from(
         new Set(
           patientSessions.flatMap((session) =>
-            [session.user_id, session.provider_id].filter((value): value is string => Boolean(value)),
+            [
+              session.user_id,
+              session.provider_id,
+              ...(session.shared_with_user_ids ?? []),
+              ...(session.shared_user_ids ?? []),
+            ].filter((value): value is string => Boolean(value)),
           ),
         ),
       );

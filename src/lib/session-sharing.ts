@@ -1,6 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 
+/**
+ * Type representing a clinic collaborator eligible for session sharing.
+ */
 export type SessionShareCollaborator = {
   email: string | null;
   full_name: string | null;
@@ -9,12 +12,18 @@ export type SessionShareCollaborator = {
   operational_role: string | null;
 };
 
+/**
+ * Type representing a recipient with whom a session was shared.
+ */
 export type SessionShareRecipient = SessionShareCollaborator & {
   access_level?: "read_only" | "can_evolve" | string | null;
   created_at: string | null;
   shared_by_user_id?: string | null;
 };
 
+/**
+ * Summary of shares for a given session.
+ */
 export type SessionShareSummary = {
   recipients: SessionShareRecipient[];
   session_id: string;
@@ -24,9 +33,11 @@ export type SessionShareSummary = {
 const isRecord = (value: Json): value is Record<string, Json | undefined> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const readString = (value: Json | undefined) => (typeof value === "string" ? value : null);
+const readString = (value: Json | undefined): string | null =>
+  typeof value === "string" ? value : null;
 
-const readNumber = (value: Json | undefined) => (typeof value === "number" ? value : 0);
+const readNumber = (value: Json | undefined): number =>
+  typeof value === "number" ? value : 0;
 
 const parseCollaborator = (value: Json): SessionShareCollaborator | null => {
   if (!isRecord(value)) {
@@ -72,6 +83,9 @@ const parseRecipients = (value: Json | undefined): SessionShareRecipient[] => {
   return value.map(parseRecipient).filter((item): item is SessionShareRecipient => item !== null);
 };
 
+/**
+ * Parses raw JSON responses into typed SessionShareSummary array.
+ */
 export const parseSessionShareSummaries = (value: Json): SessionShareSummary[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -97,7 +111,10 @@ export const parseSessionShareSummaries = (value: Json): SessionShareSummary[] =
     .filter((item): item is SessionShareSummary => item !== null);
 };
 
-export const fetchClinicShareCollaborators = async (clinicId?: string | null) => {
+/**
+ * Fetches available clinic collaborators eligible for sharing sessions.
+ */
+export const fetchClinicShareCollaborators = async (clinicId?: string | null): Promise<SessionShareCollaborator[]> => {
   const { data, error } = await supabase.rpc("get_clinic_share_collaborators", {
     _clinic_id: clinicId ?? undefined,
   });
@@ -113,7 +130,10 @@ export const fetchClinicShareCollaborators = async (clinicId?: string | null) =>
   return data.map(parseCollaborator).filter((item): item is SessionShareCollaborator => item !== null);
 };
 
-export const fetchSessionShareRecipients = async (sessionId: string) => {
+/**
+ * Fetches recipients with whom a specific session is currently shared.
+ */
+export const fetchSessionShareRecipients = async (sessionId: string): Promise<SessionShareRecipient[]> => {
   const { data, error } = await supabase.rpc("get_session_share_recipients", {
     _session_id: sessionId,
   });
@@ -129,7 +149,10 @@ export const fetchSessionShareRecipients = async (sessionId: string) => {
   return data.map(parseRecipient).filter((item): item is SessionShareRecipient => item !== null);
 };
 
-export const fetchSessionShareSummaries = async (sessionIds: string[]) => {
+/**
+ * Fetches share summaries for multiple session IDs.
+ */
+export const fetchSessionShareSummaries = async (sessionIds: string[]): Promise<SessionShareSummary[]> => {
   if (sessionIds.length === 0) {
     return [];
   }
@@ -145,43 +168,30 @@ export const fetchSessionShareSummaries = async (sessionIds: string[]) => {
   return parseSessionShareSummaries(data);
 };
 
+/**
+ * Shares given sessions with target collaborators.
+ */
 export const shareSessionsWithCollaborators = async (
   sessionIds: string[],
   userIds: string[],
   accessLevel: "read_only" | "can_evolve" = "read_only"
-) => {
+): Promise<Json> => {
   const { data, error } = await supabase.rpc("share_sessions_with_collaborators", {
     _access_level: accessLevel,
     _session_ids: sessionIds,
     _user_ids: userIds,
-  } as never);
+  });
 
   if (error) {
-    const { data: fallbackData, error: fallbackError } = await supabase.rpc("share_sessions_with_collaborators", {
-      _session_ids: sessionIds,
-      _user_ids: userIds,
-    });
-
-    if (fallbackError) {
-      throw fallbackError;
-    }
-
-    try {
-      await supabase
-        .from("session_shares")
-        .update({ access_level: accessLevel })
-        .in("session_id", sessionIds)
-        .in("shared_with_user_id", userIds)
-        .is("revoked_at", null);
-    } catch {
-      // Ignore fallback table update errors if column or policies differ
-    }
-
-    return fallbackData;
+    throw error;
   }
 
   return data;
 };
 
-export const getShareRecipientLabel = (recipient: Pick<SessionShareRecipient, "email" | "full_name">) =>
+/**
+ * Returns formatted display label for a session share recipient.
+ */
+export const getShareRecipientLabel = (recipient: Pick<SessionShareRecipient, "email" | "full_name">): string =>
   recipient.full_name?.trim() || recipient.email?.trim() || "Colaborador";
+

@@ -16,6 +16,8 @@ import {
   type SessionShareRecipient,
 } from "./types";
 import { getShareRecipientLabel } from "@/lib/session-sharing";
+import type { AnamnesisField } from "@/lib/anamnesis-forms";
+import type { SessionPaymentMethod, SessionPaymentStatus } from "@/lib/session-operations";
 import type { TreatmentBlock } from "@/lib/session-treatment";
 import { ScaleIndicator } from "./SessionAnamnesisRuntime";
 import { SessionAuditHistoryModal } from "./SessionAuditHistoryModal";
@@ -48,8 +50,8 @@ export interface SessionReadOnlyOverviewProps {
   paymentAdjustmentReason: string;
   paymentBalanceCents: number;
   paymentInstallments: number;
-  paymentMethod: string;
-  paymentStatus: any;
+  paymentMethod: SessionPaymentMethod | string;
+  paymentStatus: SessionPaymentStatus | string;
   paymentStatusDate: string;
   resolvedPatientId: string | null;
   scheduledStartAt: string;
@@ -61,8 +63,8 @@ export interface SessionReadOnlyOverviewProps {
   status: string;
   treatmentBlocks: TreatmentBlock[];
   treatmentGeneralGuidance: string;
-  visibleBaseSliderFields: any[];
-  readBaseSliderValue: (field: any) => number;
+  visibleBaseSliderFields: AnamnesisField[];
+  readBaseSliderValue: (field: AnamnesisField) => number;
   onNavigate: (path: string) => void;
   onOpenHistoryDialogChange: (open: boolean) => void;
   onOpenPaymentDialog: () => void;
@@ -116,28 +118,28 @@ export const SessionReadOnlyOverview = ({
   onOpenPresenceDialog,
 }: SessionReadOnlyOverviewProps) => {
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-5">
-          <div>
+    <div className="space-y-4 w-full min-w-0 max-w-full">
+      <Card className="w-full min-w-0 overflow-hidden">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 p-4 sm:p-6 min-w-0">
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
-            <p className="mt-1 font-medium">{status}</p>
+            <p className="mt-1 font-medium capitalize">{status}</p>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Linha de Cuidado / Motivo</p>
-            <p className="mt-1 font-medium">
+            <p className="mt-1 font-medium truncate">
               {groups.find((group) => group.id === groupId)?.name || "Geral / Sintomas não definidos"}
             </p>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Ficha complementar</p>
-            <div className="mt-1 flex items-center gap-1.5">
-              <p className="font-medium">{activeTemplate?.name || "Sem ficha extra"}</p>
+            <div className="mt-1 flex items-center gap-1.5 min-w-0">
+              <p className="font-medium truncate">{activeTemplate?.name || "Sem ficha extra"}</p>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-5 w-5 p-0 text-muted-foreground hover:text-primary"
+                className="h-5 w-5 p-0 text-muted-foreground hover:text-primary shrink-0"
                 onClick={() => onNavigate(`${clinicHomePath}/configuracoes?secao=forms`)}
                 title="Abrir gerenciador de formulários"
               >
@@ -145,10 +147,10 @@ export const SessionReadOnlyOverview = ({
               </Button>
             </div>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Criado por</p>
-            <p className="mt-1 font-medium">{getSessionPersonLabel(creatorProfile as any)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 font-medium truncate">{getSessionPersonLabel(creatorProfile)}</p>
+            <p className="mt-1 text-xs text-muted-foreground truncate">
               {sessionCreatedAt ? formatSessionAuditDateTime(sessionCreatedAt) : "Ainda não salvo"}
             </p>
             <SessionAuditHistoryModal
@@ -157,7 +159,7 @@ export const SessionReadOnlyOverview = ({
               onOpenChange={onOpenHistoryDialogChange}
             />
           </div>
-          <div>
+          <div className="min-w-0 sm:col-span-2 xl:col-span-1">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Compartilhamento</p>
             {shareRecipients.length > 0 ? (
               <div className="mt-2 space-y-2">
@@ -183,27 +185,27 @@ export const SessionReadOnlyOverview = ({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardContent className="space-y-4 p-3.5 sm:p-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="grid gap-4 lg:grid-cols-2 w-full min-w-0">
+        <Card className="w-full min-w-0 overflow-hidden">
+          <CardContent className="space-y-4 p-4 sm:p-6 min-w-0">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between min-w-0">
               <div>
                 <h2 className="text-lg font-semibold">Presença</h2>
-                <p className="text-sm text-muted-foreground">Horário combinado e chegada do paciente.</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Horário combinado e chegada do paciente.</p>
               </div>
               {canEditPresenceSummary ? (
-                <Button type="button" variant="outline" size="sm" onClick={onOpenPresenceDialog}>
+                <Button type="button" variant="outline" size="sm" onClick={onOpenPresenceDialog} className="shrink-0 self-start sm:self-auto">
                   <Pencil className="mr-2 h-4 w-4" />
                   Editar presença
                 </Button>
               ) : null}
             </div>
-            <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] xl:grid xl:grid-cols-3 xl:overflow-visible xl:pb-0">
-              <div className="w-[68vw] max-w-[240px] xl:w-auto xl:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 min-w-0">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Agendado</p>
                 <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(scheduledStartAt)}</p>
               </div>
-              <div className="w-[68vw] max-w-[240px] xl:w-auto xl:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Chegada</p>
                   {arrivalDeltaLabel ? (
@@ -216,7 +218,7 @@ export const SessionReadOnlyOverview = ({
                 </div>
                 <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(patientArrivedAt)}</p>
               </div>
-              <div className="w-[68vw] max-w-[240px] xl:w-auto xl:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Início do atendimento</p>
                 <p className="mt-1 text-sm font-medium">{formatDateTimeLabel(sessionDate)}</p>
               </div>
@@ -224,46 +226,46 @@ export const SessionReadOnlyOverview = ({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="space-y-4 p-3.5 sm:p-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <Card className="w-full min-w-0 overflow-hidden">
+          <CardContent className="space-y-4 p-4 sm:p-6 min-w-0">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between min-w-0">
               <div>
                 <h2 className="text-lg font-semibold">Pagamento</h2>
-                <p className="text-sm text-muted-foreground">Valor da consulta e baixa simples do pagamento.</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Valor da consulta e baixa simples do pagamento.</p>
               </div>
               {canEditPaymentSummary ? (
-                <Button type="button" variant="outline" size="sm" onClick={onOpenPaymentDialog}>
+                <Button type="button" variant="outline" size="sm" onClick={onOpenPaymentDialog} className="shrink-0 self-start sm:self-auto">
                   <Pencil className="mr-2 h-4 w-4" />
                   Editar pagamento
                 </Button>
               ) : null}
             </div>
-            <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 xl:grid-cols-5 sm:overflow-visible sm:pb-0">
-              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 min-w-0">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
-                <p className="mt-1 text-sm font-medium">{getPaymentStatusLabel(paymentStatus)}</p>
+                <p className="mt-1 text-sm font-medium truncate">{getPaymentStatusLabel(paymentStatus)}</p>
               </div>
-              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Data</p>
-                <p className="mt-1 text-sm font-medium">{formatDateLabel(paymentStatusDate)}</p>
+                <p className="mt-1 text-sm font-medium truncate">{formatDateLabel(paymentStatusDate)}</p>
               </div>
-              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Método</p>
-                <p className="mt-1 text-sm font-medium">
+                <p className="mt-1 text-sm font-medium truncate">
                   {getPaymentMethodLabel(
-                    currentNormalizedPaymentStatus === "cortesia" ? "cortesia" : (paymentMethod as any)
+                    currentNormalizedPaymentStatus === "cortesia" ? "cortesia" : (paymentMethod as SessionPaymentMethod)
                   )}
                 </p>
               </div>
-              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Parcelas</p>
-                <p className="mt-1 text-sm font-medium">{getPaymentInstallmentLabel(paymentInstallments)}</p>
+                <p className="mt-1 text-sm font-medium truncate">{getPaymentInstallmentLabel(paymentInstallments)}</p>
               </div>
-              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Consulta</p>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium">
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm font-medium">
                   {currentHasPaymentAdjustment ? (
-                    <span className="text-muted-foreground line-through">{formatMoneyCents(amountOriginalCents)}</span>
+                    <span className="text-muted-foreground line-through text-xs">{formatMoneyCents(amountOriginalCents)}</span>
                   ) : null}
                   <span>{formatMoneyCents(amountChargedCents)}</span>
                   {currentHasPaymentAdjustment ? (
@@ -279,9 +281,9 @@ export const SessionReadOnlyOverview = ({
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{paymentAdjustmentReason}</p>
                 ) : null}
               </div>
-              <div className="w-[50vw] max-w-[200px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-lg border bg-muted/20 p-3">
+              <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Pago</p>
-                <p className="mt-1 text-sm font-medium">{formatMoneyCents(amountPaidCents)}</p>
+                <p className="mt-1 text-sm font-medium truncate">{formatMoneyCents(amountPaidCents)}</p>
               </div>
             </div>
             {paymentBalanceCents > 0 ? (

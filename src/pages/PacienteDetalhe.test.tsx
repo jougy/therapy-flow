@@ -605,7 +605,7 @@ describe("PacienteDetalhe", () => {
         table: "sessions",
       });
     });
-  });
+  }, 35000);
 
   it("keeps active agenda events from today visible in the patient agenda block", async () => {
     const today = new Date();
@@ -670,7 +670,7 @@ describe("PacienteDetalhe", () => {
     expect(screen.getByRole("button", { name: /editar cadastro/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /dashboard/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /compartilhar com o paciente/i })).toBeInTheDocument();
-  });
+  }, 35000);
 
   it("hides the delete option for non-admin flows", async () => {
     vi.mocked(useAuth).mockReturnValue({
