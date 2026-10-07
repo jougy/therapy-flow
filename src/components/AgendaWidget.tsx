@@ -35,6 +35,7 @@ import {
   type AgendaPatientOption,
 } from "@/lib/agenda-events";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
+import { getPatientSessionPath } from "@/lib/patient-routing";
 import type { Database } from "@/integrations/supabase/types";
 
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
@@ -589,7 +590,7 @@ const AgendaWidget = ({
       return;
     }
 
-    navigate(`/pacientes/${selectedEvent.patientId}/sessao/novo`, {
+    navigate(getPatientSessionPath(selectedEvent.patientId, "novo"), {
       state: {
         agendaEventId: selectedEvent.id,
         scheduledFor: selectedEvent.scheduledFor,
@@ -602,7 +603,7 @@ const AgendaWidget = ({
       return;
     }
 
-    navigate(`/pacientes/${fixedPatientId}/sessao/novo`);
+    navigate(getPatientSessionPath(fixedPatientId, "novo"));
   };
 
   const handleRemove = async (id: string) => {
@@ -738,7 +739,7 @@ const AgendaWidget = ({
                     className="h-8 min-h-[36px] px-2 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 gap-1 shrink-0"
                     onClick={(eventClick) => {
                       eventClick.stopPropagation();
-                      navigate(`/pacientes/${event.patientId}/sessao/novo`, {
+                      navigate(getPatientSessionPath(event.patientId!, "novo"), {
                         state: {
                           agendaEventId: event.id,
                           scheduledFor: event.scheduledFor,
@@ -787,7 +788,7 @@ const AgendaWidget = ({
                 className="hidden sm:inline-flex h-7 px-2 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 gap-1 shrink-0"
                 onClick={(eventClick) => {
                   eventClick.stopPropagation();
-                  navigate(`/pacientes/${event.patientId}/sessao/novo`, {
+                  navigate(getPatientSessionPath(event.patientId!, "novo"), {
                     state: {
                       agendaEventId: event.id,
                       scheduledFor: event.scheduledFor,

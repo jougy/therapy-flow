@@ -132,8 +132,13 @@ export function filterAndSortHomeSessions({
       }
 
       if (collaboratorIds.length > 0) {
-        const sessionCollaborators = [session.provider_id, session.user_id].filter(Boolean);
-        if (!sessionCollaborators.some((id) => collaboratorIds.includes(id as string))) {
+        const sessionCollaborators = [
+          session.provider_id,
+          session.user_id,
+          ...(session.shared_with_user_ids ?? []),
+          ...(session.shared_user_ids ?? []),
+        ].filter((id): id is string => Boolean(id));
+        if (!sessionCollaborators.some((id) => collaboratorIds.includes(id))) {
           return false;
         }
       }

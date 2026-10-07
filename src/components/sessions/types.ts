@@ -84,16 +84,23 @@ export const readJsonRecord = (value: Json | null): AnamnesisFormResponse =>
 export const readTemplateSchema = (value: Json): AnamnesisTemplateSchema =>
   Array.isArray(value) ? (value as AnamnesisTemplateSchema) : [];
 
-export const formatDateTimeLabel = (value: string | null | undefined) =>
-  value
-    ? new Date(value).toLocaleString("pt-BR", {
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      })
-    : "—";
+export const formatDateTimeLabel = (value: string | null | undefined) => {
+  if (!value) return "—";
+  const clean = value.trim();
+  if (!clean) return "—";
+  const date = new Date(clean.includes("T") || clean.includes(" ") ? clean : `${clean}T00:00:00`);
+  if (isNaN(date.getTime())) return value;
+  const dateStr = date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const timeStr = date.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${dateStr} às ${timeStr}`;
+};
 
 export const formatDateLabel = (value: string | null | undefined) =>
   value

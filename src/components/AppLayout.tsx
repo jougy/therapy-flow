@@ -35,6 +35,7 @@ import { useAntiPrintProtection } from "@/hooks/useAntiPrintProtection";
 import { AntiPrintOverlay } from "@/components/AntiPrintOverlay";
 import { useGovernance } from "@/hooks/useGovernance";
 import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
+import { SimulationTopDock } from "@/components/SimulationTopDock";
 import { FreeTrialUsageBanner } from "@/components/FreeTrialUsageBanner";
 import { TrialReadOnlyBanner } from "@/components/TrialReadOnlyBanner";
 
@@ -119,21 +120,43 @@ const AppLayout = ({ children }: AppLayoutProps) => {
   const activeOverrideCount = Object.keys(flagOverrides).length;
   const activeRoleOverridesCount = Object.keys(simulatedRoleCapabilityOverrides).length;
 
-  const platformRoleLabels = {
-    admin: "Administrador",
-    assistant: "Assistente",
-    estagiario: "Estagiário",
-    owner: "Owner",
-    professional: "Profissional",
-  };
-
   return (
     <div className="min-h-screen flex flex-col w-full bg-background">
+      {/* 1. Simulation Top Dock - Posicionada no topo absoluto */}
+      {isPlatformSupportMode && !isPreviewIframe && (
+        <SimulationTopDock
+          clinicBrandName={clinicBrandName}
+          isSimulationMode={isSimulationMode}
+          simulatedRole={platformAccess?.simulatedRole ?? "owner"}
+          onRoleChange={(role) => {
+            void setPlatformSupportRole?.(role as any);
+          }}
+          subscriptionPlan={subscriptionPlan}
+          onPlanChange={(plan) => {
+            setPlatformSimulatedPlan?.(plan);
+          }}
+          activeRoleOverridesCount={activeRoleOverridesCount}
+          onOpenRoleModal={() => setRoleModalOpen(true)}
+          activeOverrideCount={activeOverrideCount}
+          onOpenFlagsModal={() => setFlagsModalOpen(true)}
+          errorCount={errorCount}
+          onOpenDebugModal={() => setDebugModalOpen(true)}
+          onOpenGeneratePatientModal={() => setGeneratePatientModalOpen(true)}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onExitSimulation={() => {
+            void endPlatformClinicAccess?.().finally(() => navigate("/platform"));
+          }}
+        />
+      )}
+
       {isReadOnly && (
         <div className="bg-amber-600 text-white text-xs font-semibold px-4 py-2 text-center shadow-inner flex items-center justify-center gap-2">
           <span>🔒 Modo Somente Leitura Ativo: Esta conta está temporariamente restrita a visualizações por motivos de governança.</span>
         </div>
       )}
+
+      {/* 2. Header Principal */}
       {!isPreviewIframe && (
         <header className="border-b bg-card shrink-0">
           <div className="mx-auto flex h-14 w-full max-w-screen-2xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -163,6 +186,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               </div>
             </button>
 
+            {/* Ações do Header: No mobile (< sm), estritamente Notificações. Tutorial, Feedback, Perfil, Configurações e Logout são ocultados no mobile */}
             <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
               <div className="hidden sm:block">
                 <TutorialTriggerButton />
@@ -178,17 +202,19 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                 <Star className="h-4 w-4 fill-amber-400/20 text-amber-500" />
               </Button>
               <PersonalNotificationsButton />
-              <ProfileAccountButton
-                displayName={displayName}
-                subtitle={isPersonalOriginSettings ? (profile?.email || "Conta pessoal") : clinicBrandName}
-                avatarUrl={profile?.avatar_url}
-                initials={initials}
-                onClick={() => navigate(
-                  isPersonalOriginSettings || !clinic?.route_key
-                    ? "/configuracoes/pessoal/perfil"
-                    : `${clinicHomePath}/configuracoes/pessoal/perfil`
-                )}
-              />
+              <div className="hidden sm:inline-flex">
+                <ProfileAccountButton
+                  displayName={displayName}
+                  subtitle={isPersonalOriginSettings ? (profile?.email || "Conta pessoal") : clinicBrandName}
+                  avatarUrl={profile?.avatar_url}
+                  initials={initials}
+                  onClick={() => navigate(
+                    isPersonalOriginSettings || !clinic?.route_key
+                      ? "/configuracoes/pessoal/perfil"
+                      : `${clinicHomePath}/configuracoes/pessoal/perfil`
+                  )}
+                />
+              </div>
               {!isPersonalOriginSettings && clinic?.route_key && (
                 <Button
                   variant="ghost"
@@ -207,7 +233,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  className="hidden sm:inline-flex h-8 w-8 text-muted-foreground hover:text-destructive"
                   onClick={signOut}
                   aria-label="Sair da conta"
                 >
@@ -219,7 +245,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      className="hidden sm:inline-flex h-8 w-8 text-muted-foreground hover:text-foreground"
                       aria-label="Voltar ao painel pessoal"
                     >
                       <LogOut className="h-4 w-4" />
@@ -259,168 +285,6 @@ const AppLayout = ({ children }: AppLayoutProps) => {
 
       {/* Banner Informativo de Cota de Teste Grátis */}
       {!isPreviewIframe && <FreeTrialUsageBanner clinicId={clinic?.id} />}
-
-      {isPlatformSupportMode && !isPreviewIframe && (
-        <div className="sticky top-0 z-40 flex flex-col gap-2.5 border-b border-amber-300 bg-amber-500/15 backdrop-blur-md px-4 py-2 text-sm text-amber-950 dark:text-amber-200 xl:flex-row xl:items-center xl:justify-between sm:px-6 shadow-xs">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 font-semibold text-amber-900 dark:text-amber-300">
-              {isSimulationMode ? <FlaskConical className="h-4 w-4 shrink-0 text-amber-600 animate-pulse" /> : <ShieldCheck className="h-4 w-4 shrink-0 text-amber-600" />}
-              <span>{isSimulationMode ? "Modo Simulação Backoffice" : "Modo Suporte Ativo"} ({clinicBrandName})</span>
-            </div>
-
-            <div className="h-4 w-px bg-amber-300/60 hidden sm:block" />
-
-            {/* Papéis Operacionais */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-amber-800 dark:text-amber-400">Papel:</span>
-              <Select
-                value={platformAccess?.simulatedRole ?? "owner"}
-                onValueChange={(value) => {
-                  void setPlatformSupportRole?.(value as keyof typeof platformRoleLabels);
-                }}
-              >
-                <SelectTrigger className="h-8 w-[140px] border-amber-300 bg-background text-foreground text-xs font-medium">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="owner">{platformRoleLabels.owner}</SelectItem>
-                  <SelectItem value="admin">{platformRoleLabels.admin}</SelectItem>
-                  <SelectItem value="professional">{platformRoleLabels.professional}</SelectItem>
-                  <SelectItem value="assistant">{platformRoleLabels.assistant}</SelectItem>
-                  <SelectItem value="estagiario">{platformRoleLabels.estagiario}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 px-2 border-amber-300 bg-background text-amber-950 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs gap-1"
-                onClick={() => setRoleModalOpen(true)}
-                title="Ajustar permissões do papel no simulador"
-              >
-                <UserCog className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                <span className="hidden sm:inline">Permissões</span>
-                {activeRoleOverridesCount > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10px] font-bold">
-                    {activeRoleOverridesCount}
-                  </span>
-                )}
-              </Button>
-            </div>
-
-            {/* Tipo de Plano */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-amber-800 dark:text-amber-400">Plano:</span>
-              <Select
-                value={subscriptionPlan ?? "clinic"}
-                onValueChange={(value) => {
-                  setPlatformSimulatedPlan?.(value as SubscriptionPlan);
-                }}
-              >
-                <SelectTrigger className="h-8 w-[140px] border-amber-300 bg-background text-foreground text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="solo">Solo (Individual)</SelectItem>
-                  <SelectItem value="clinic">Clinic (Equipe)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Feature Flags Trigger */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 border-amber-300 bg-background text-amber-950 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs gap-1.5"
-              onClick={() => setFlagsModalOpen(true)}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span>Flags</span>
-              {activeOverrideCount > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full bg-amber-600 text-white text-[10px] font-bold">
-                  {activeOverrideCount}
-                </span>
-              )}
-            </Button>
-
-            {/* Painel de Debug em Tempo Real */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs"
-              onClick={() => setDebugModalOpen(true)}
-              title="Abrir Painel de Diagnóstico e Debug em Tempo Real (Atalho: Cmd+Ctrl+D / Ctrl+Alt+D)"
-            >
-              <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse" />
-              <span>Debug</span>
-              {errorCount > 0 ? (
-                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
-                  {errorCount}
-                </span>
-              ) : (
-                <span className="h-2 w-2 rounded-full bg-emerald-500" title="Sistema saudável" />
-              )}
-            </Button>
-
-            {/* Gerador de Paciente Teste */}
-            {isSimulationMode && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 border-amber-300 bg-background text-amber-950 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs gap-1.5 font-medium"
-                onClick={() => setGeneratePatientModalOpen(true)}
-                title="Gerar paciente fictício com dados válidos para teste"
-              >
-                <UserPlus className="h-3.5 w-3.5 text-amber-700 dark:text-amber-300" />
-                <span>+ Paciente Teste</span>
-              </Button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-1 xl:pt-0">
-            {/* Viewport Mode Switcher */}
-            <div className="inline-flex items-center p-0.5 border border-amber-300 rounded-lg bg-background">
-              <Button
-                type="button"
-                variant={viewMode === "widescreen" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 px-2 text-xs gap-1 rounded-md"
-                onClick={() => setViewMode("widescreen")}
-                title="Visualização Widescreen / Desktop"
-              >
-                <Monitor className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Horizontal</span>
-              </Button>
-              <Button
-                type="button"
-                variant={viewMode === "mobile" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 px-2 text-xs gap-1 rounded-md"
-                onClick={() => setViewMode("mobile")}
-                title="Visualização Mobile / Smartphone"
-              >
-                <Smartphone className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Vertical (Mobile)</span>
-              </Button>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 border-amber-300 bg-background text-amber-950 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs"
-              onClick={() => {
-                void endPlatformClinicAccess?.().finally(() => navigate("/platform"));
-              }}
-            >
-              Sair da Simulação
-            </Button>
-          </div>
-        </div>
-      )}
 
       {viewMode === "mobile" && isPlatformSupportMode && !isPreviewIframe ? (
         <MobileTouchSimulator iframeSrc={iframeSrc} />
