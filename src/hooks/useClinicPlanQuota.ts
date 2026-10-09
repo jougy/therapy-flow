@@ -16,6 +16,8 @@ export interface ClinicPlanUsage {
   isTrialExpired: boolean;
   isExpired: boolean;
   subscriptionStatus: string;
+  planType: string | null;
+  billingCycle: string | null;
   trialEndsAt: string | null;
   daysRemaining: number | null;
   hoursRemaining: number | null;
@@ -51,6 +53,7 @@ interface ClinicSubscriptionRecord {
   trial_ended?: boolean | null;
   is_expired?: boolean | null;
   plan_type?: string | null;
+  billing_cycle?: string | null;
   trial_max_attendances?: number | null;
   trial_max_patients?: number | null;
   trial_max_custom_forms?: number | null;
@@ -64,6 +67,8 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
     isTrialExpired: false,
     isExpired: false,
     subscriptionStatus: "",
+    planType: null,
+    billingCycle: null,
     trialEndsAt: null,
     daysRemaining: null,
     hoursRemaining: null,
@@ -154,6 +159,8 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
         isTrialExpired: isTrialExpiredCalculated,
         isExpired: isSubscriptionExpired,
         subscriptionStatus: rawStatus,
+        planType: sub?.plan_type || null,
+        billingCycle: sub?.billing_cycle || null,
         trialEndsAt: trialEndsAtDate,
         daysRemaining: calculatedDaysRemaining,
         hoursRemaining: calculatedHoursRemaining,

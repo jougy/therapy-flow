@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { ConfirmationAnimationFlow } from "@/components/ui/clay-confirmation-art";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
 import { useAuth } from "@/hooks/useAuth";
 
@@ -324,12 +325,18 @@ const ContaConfirmada = () => {
 
             {(isWaitingResend || isExpired || isError) && (
               <div className="space-y-4 text-left">
-                <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4 text-sm text-sky-950">
-                  <p className="font-medium text-sky-900">Não encontrou o e-mail de ativação?</p>
-                  <p className="mt-1 text-xs text-sky-800">
-                    Verifique a pasta de <strong>Spam/Lixo Eletrônico</strong>. Você também pode solicitar um novo envio para o seu e-mail abaixo.
-                  </p>
-                </div>
+                <DismissibleInfoTip
+                  id="auth-email-resend-tip"
+                  scope="global"
+                  variant="subtle"
+                >
+                  <div>
+                    <p className="font-medium text-foreground">Não encontrou o e-mail de ativação?</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Verifique a pasta de <strong>Spam/Lixo Eletrônico</strong>. Você também pode solicitar um novo envio para o seu e-mail abaixo.
+                    </p>
+                  </div>
+                </DismissibleInfoTip>
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">

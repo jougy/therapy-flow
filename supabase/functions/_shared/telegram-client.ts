@@ -11,6 +11,16 @@ export interface NotifyNewSignupParams {
   name?: string | null;
   email: string;
   phone?: string | null;
+  profession?: string | null;
+  councilNumber?: string | null;
+  councilName?: string | null;
+  gender?: string | null;
+  preferredPronoun?: string | null;
+  origin?: string | null;
+  signupOrigin?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
   clinicName?: string | null;
   plan?: string | null;
   createdAt?: string | null;
@@ -47,6 +57,158 @@ export function sanitizePhoneNumber(rawPhone?: string | null): string {
   }
 
   return digits;
+}
+
+/**
+ * Formata amigavelmente a profissão e número de registro de classe.
+ */
+export function formatProfessionLabel(
+  profession?: string | null,
+  councilNumber?: string | null,
+  councilName?: string | null
+): string {
+  if (!profession && !councilNumber) return '';
+
+  const professionMap: Record<string, string> = {
+    fisioterapeuta: 'Fisioterapeuta',
+    terapeuta_ocupacional: 'Terapeuta Ocupacional',
+    psicologo: 'Psicólogo(a)',
+    fonoaudiologo: 'Fonoaudiólogo(a)',
+    nutricionista: 'Nutricionista',
+    medico: 'Médico(a)',
+    educador_fisico: 'Educador(a) Físico(a)',
+    enfermeiro: 'Enfermeiro(a)',
+    outro: 'Outro Profissional de Saúde',
+  };
+
+  const rawProf = (profession || '').trim().toLowerCase();
+  const baseProf = professionMap[rawProf] || (profession ? profession.trim() : 'Profissional de Saúde');
+  const cleanCouncilNumber = (councilNumber || '').trim();
+  const cleanCouncilName = (councilName || '').trim() || 'CREFITO';
+
+  if (cleanCouncilNumber) {
+    return `${baseProf} (${cleanCouncilName}: ${cleanCouncilNumber})`;
+  }
+
+  return baseProf;
+}
+
+/**
+ * Formata a identidade de gênero e pronome de tratamento.
+ */
+export function formatIdentityLabel(gender?: string | null, preferredPronoun?: string | null): string {
+  const g = (gender || '').trim();
+  const p = (preferredPronoun || '').trim();
+
+  if (g && p) {
+    // Se o pronome já contiver parênteses ou não
+    const formattedPronoun = p.startsWith('(') && p.endsWith(')') ? p : `(${p})`;
+    return `${g} ${formattedPronoun}`;
+  }
+
+  if (g) return g;
+  if (p) return p.startsWith('(') && p.endsWith(')') ? p : `(${p})`;
+
+  return '';
+}
+
+/**
+ * Detecta e formata a origem do cadastro / canais de marketing / UTMs.
+ */
+export function formatOriginLabel(
+  origin?: string | null,
+  signupOrigin?: string | null,
+  utmSource?: string | null,
+  utmMedium?: string | null,
+  utmCampaign?: string | null
+): string {
+  const explicitOrigin = (origin || signupOrigin || '').trim();
+  const rawSource = (utmSource || '').trim().toLowerCase();
+  const rawMedium = (utmMedium || '').trim().toLowerCase();
+  const rawCampaign = (utmCampaign || '').trim();
+
+  // Se o canal ou UTMs contêm Instagram
+  if (
+    rawSource.includes('instagram') ||
+    rawSource.includes('ig') ||
+    explicitOrigin.toLowerCase() === 'instagram' ||
+    explicitOrigin.toLowerCase() === 'ig'
+  ) {
+    if (rawMedium.includes('cpc') || rawMedium.includes('ads') || rawMedium.includes('paid')) {
+      return rawCampaign ? `Instagram Ads (Campanha: ${rawCampaign})` : 'Instagram (Campanha Anúncio / Inbound)';
+    }
+    return rawCampaign ? `Instagram (${rawCampaign})` : 'Instagram';
+  }
+
+  // Se o canal ou UTMs contêm Google
+  if (rawSource.includes('google') || explicitOrigin.toLowerCase() === 'google') {
+    if (rawMedium.includes('cpc') || rawMedium.includes('ads') || rawMedium.includes('paid')) {
+      return rawCampaign ? `Google Ads (Campanha: ${rawCampaign})` : 'Google Ads';
+    }
+    return 'Google (Busca Orgânica)';
+  }
+
+  // Se contém Facebook / Meta
+  if (rawSource.includes('facebook') || rawSource.includes('meta') || explicitOrigin.toLowerCase() === 'facebook') {
+    return rawCampaign ? `Facebook / Meta Ads (Campanha: ${rawCampaign})` : 'Facebook / Meta';
+  }
+
+  // Se contém LinkedIn
+  if (rawSource.includes('linkedin') || explicitOrigin.toLowerCase() === 'linkedin') {
+    return rawCampaign ? `LinkedIn Ads (Campanha: ${rawCampaign})` : 'LinkedIn';
+  }
+
+  // Se contém YouTube
+  if (rawSource.includes('youtube') || explicitOrigin.toLowerCase() === 'youtube') {
+    return 'YouTube';
+  }
+
+  // Se contém TikTok
+  if (rawSource.includes('tiktok') || explicitOrigin.toLowerCase() === 'tiktok') {
+    return 'TikTok';
+  }
+
+  // Se é convite de clínica
+  if (
+    explicitOrigin.toLowerCase() === 'convite_clinica' ||
+    explicitOrigin.toLowerCase() === 'convite' ||
+    explicitOrigin.toLowerCase() === 'invite'
+  ) {
+    return 'Convite de Clínica';
+  }
+
+  // Se é indicação
+  if (
+    explicitOrigin.toLowerCase() === 'indicacao' ||
+    explicitOrigin.toLowerCase() === 'referral' ||
+    explicitOrigin.toLowerCase() === 'indicação'
+  ) {
+    return 'Indicação';
+  }
+
+  // Se é landing page / orgânico padrão
+  if (
+    explicitOrigin.toLowerCase() === 'landing_page' ||
+    explicitOrigin.toLowerCase() === 'landing' ||
+    explicitOrigin.toLowerCase() === 'organic' ||
+    explicitOrigin.toLowerCase() === 'organico'
+  ) {
+    return 'Landing Page Oficial';
+  }
+
+  // Se já veio uma string customizada preenchida (ex: "Instagram (Bio/Campanha)" ou "Indicação Dr. Paulo")
+  if (explicitOrigin) {
+    if (rawCampaign && !explicitOrigin.includes(rawCampaign)) {
+      return `${explicitOrigin} (Campanha: ${rawCampaign})`;
+    }
+    return explicitOrigin;
+  }
+
+  if (rawCampaign) {
+    return `Campanha: ${rawCampaign}`;
+  }
+
+  return 'Landing Page / Direto';
 }
 
 /**
@@ -160,6 +322,16 @@ export class TelegramClient {
         ? new Date(params.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
         : new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
+      const professionFormatted = formatProfessionLabel(params.profession, params.councilNumber, params.councilName);
+      const identityFormatted = formatIdentityLabel(params.gender, params.preferredPronoun);
+      const originFormatted = formatOriginLabel(
+        params.origin,
+        params.signupOrigin,
+        params.utmSource,
+        params.utmMedium,
+        params.utmCampaign
+      );
+
       const whatsappText = `Olá ${name}! Seja bem-vindo(a) ao Pluri Health. Sou da equipe de suporte e gostaria de saber se precisa de ajuda nos primeiros passos!`;
       const waUrl = phoneRaw ? generateWhatsAppUrl(phoneRaw, whatsappText) : '';
 
@@ -167,7 +339,21 @@ export class TelegramClient {
       message += `👤 <b>Nome:</b> ${escapeHtml(name)}\n`;
       message += `📧 <b>E-mail:</b> ${escapeHtml(email)}\n`;
       message += `📱 <b>Telefone:</b> ${escapeHtml(phoneRaw || 'Não informado')}\n`;
+
+      if (professionFormatted) {
+        message += `🩺 <b>Profissão:</b> ${escapeHtml(professionFormatted)}\n`;
+      }
+
+      if (identityFormatted) {
+        message += `⚧️ <b>Identidade:</b> ${escapeHtml(identityFormatted)}\n`;
+      }
+
       message += `🏥 <b>Clínica / Consultório:</b> ${escapeHtml(clinicName)}\n`;
+
+      if (originFormatted) {
+        message += `🌐 <b>Origem:</b> ${escapeHtml(originFormatted)}\n`;
+      }
+
       message += `📦 <b>Plano:</b> ${escapeHtml(plan)}\n`;
       message += `📅 <b>Data:</b> ${escapeHtml(createdAt)}\n`;
 

@@ -3,8 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { calculatePlanPrice, BillingCycle, PlanPriceCalculation, PlanType } from "@/utils/subscriptionPricing";
-import { trackInitiateCheckout } from "@/lib/meta-pixel";
+import { calculatePlanPrice, BillingCycle, PlanPriceCalculation, PlanType, parsePlanType, parseBillingCycle } from "@/utils/subscriptionPricing";
+import { trackBeginCheckoutEvent } from "@/lib/analytics-tracker";
 import { CouponValidationResult } from "../components/PlanCouponInput";
 import { toast } from "sonner";
 
@@ -12,6 +12,8 @@ export interface UsePlanosStateReturn {
   existingClinicId: string | null | undefined;
   existingClinicName: string | undefined;
   hasActiveSubscription: boolean;
+  activeSubscriptionPlan: PlanType | null;
+  activeSubscriptionCycle: BillingCycle | null;
   isFreeTrialEnabled: boolean;
   audience: "prof" | "clinic";
   setAudience: (aud: "prof" | "clinic") => void;
@@ -61,7 +63,7 @@ export interface UsePlanosStateReturn {
 export function usePlanosState(): UsePlanosStateReturn {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { clinic, clinicId: activeClinicId, selectClinic, refreshAuthState } = useAuth();
+  const { user, clinic, clinicId: activeClinicId, selectClinic, refreshAuthState } = useAuth();
   const { isFeatureEnabled, loading } = useFeatureFlags();
 
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
@@ -71,6 +73,8 @@ export function usePlanosState(): UsePlanosStateReturn {
   const existingClinicId = searchParams.get("clinicId") || activeClinicId || clinic?.id;
   const existingClinicName = clinic?.name;
   const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
+  const [activeSubscriptionPlan, setActiveSubscriptionPlan] = useState<PlanType | null>(null);
+  const [activeSubscriptionCycle, setActiveSubscriptionCycle] = useState<BillingCycle | null>(null);
 
   // Perfil Selecionado: Para Profissional ('prof') vs Para Clínica ('clinic')
   const [audience, setAudience] = useState<"prof" | "clinic">("prof");
@@ -90,23 +94,58 @@ export function usePlanosState(): UsePlanosStateReturn {
 
   // Verificação assíncrona se a clínica já possui assinatura ativa/paga
   useEffect(() => {
-    if (!existingClinicId) {
-      setHasActiveSubscription(false);
-      return;
-    }
     let active = true;
     async function checkExistingSubscription() {
+      let targetClinicId = existingClinicId;
+      if (!targetClinicId && user?.id) {
+        try {
+          const { data: memData } = await supabase
+            .from("clinic_memberships")
+            .select("clinic_id")
+            .eq("user_id", user.id)
+            .eq("operational_role", "owner")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (memData?.clinic_id) {
+            targetClinicId = memData.clinic_id;
+          }
+        } catch (err) {
+          console.warn("Aviso ao buscar clínica do usuário:", err);
+        }
+      }
+
+      if (!targetClinicId) {
+        if (active) {
+          setHasActiveSubscription(false);
+          setActiveSubscriptionPlan(null);
+          setActiveSubscriptionCycle(null);
+        }
+        return;
+      }
+
       try {
         const { data, error } = await supabase
           .from("clinic_subscriptions")
-          .select("status, is_free_trial")
-          .eq("clinic_id", existingClinicId)
+          .select("status, is_free_trial, plan_type, billing_cycle")
+          .eq("clinic_id", targetClinicId)
           .maybeSingle();
 
         if (active && !error && data) {
           const status = (data.status || "").toUpperCase();
           const isPaidActive = status === "ACTIVE" || status === "CONFIRMED" || status === "RECEIVED";
           setHasActiveSubscription(isPaidActive);
+          if (isPaidActive && data.plan_type) {
+            const parsedPlan = parsePlanType(data.plan_type);
+            setActiveSubscriptionPlan(parsedPlan);
+            if (data.billing_cycle) {
+              setActiveSubscriptionCycle(parseBillingCycle(data.billing_cycle));
+            }
+          } else {
+            setActiveSubscriptionPlan(null);
+            setActiveSubscriptionCycle(null);
+          }
         }
       } catch (err) {
         console.warn("Aviso ao checar assinatura ativa da clínica:", err);
@@ -114,7 +153,7 @@ export function usePlanosState(): UsePlanosStateReturn {
     }
     void checkExistingSubscription();
     return () => { active = false; };
-  }, [existingClinicId]);
+  }, [existingClinicId, user?.id]);
 
   const isFreeTrialEnabled = isFeatureEnabled("subscription_free_trial_enabled");
 
@@ -291,13 +330,14 @@ export function usePlanosState(): UsePlanosStateReturn {
       coupon: appliedCoupon,
     });
 
-    void trackInitiateCheckout({
+    trackBeginCheckoutEvent({
       planKey: planId,
       category: isClinicPlan ? "Equipe" : "Solo",
       value: pricing.periodTotal,
       valueCents: Math.round(pricing.periodTotal * 100),
-      currency: "BRL",
+      couponCode: appliedCoupon?.code,
     });
+
 
     const isSoloPlan =
       planId === "prof_basico" ||
@@ -306,11 +346,32 @@ export function usePlanosState(): UsePlanosStateReturn {
       planId === "solo";
 
     // 1. Se for plano Profissional Solo:
-    // Se o usuário já possui sua clínica solo provisionada (userSoloClinicId / existingClinicId),
-    // direciona DIRETAMENTE para o checkout Asaas da clínica solo, com ZERO formulários adicionais.
-    if (isSoloPlan && existingClinicId) {
-      navigate(`/pagamento/${existingClinicId}?plan=${planId}&cycle=${selectedCycle}${couponQuery}`);
-      return;
+    // Pula qualquer etapa de registro de clínica e vai direto para a página de checkout Asaas
+    if (isSoloPlan) {
+      let targetClinicId = existingClinicId;
+      if (!targetClinicId && user?.id) {
+        try {
+          const { data: memData } = await supabase
+            .from("clinic_memberships")
+            .select("clinic_id")
+            .eq("user_id", user.id)
+            .eq("operational_role", "owner")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (memData?.clinic_id) {
+            targetClinicId = memData.clinic_id;
+          }
+        } catch (err) {
+          console.warn("Aviso ao buscar clínica solo:", err);
+        }
+      }
+
+      if (targetClinicId) {
+        navigate(`/pagamento/${targetClinicId}?plan=${planId}&cycle=${checkoutCycle}${couponQuery}`);
+        return;
+      }
     }
 
     // 2. Se for plano Clínica com Equipe (clinica_basico, clinica_medio, clinica_top, clinic, enterprise):
@@ -334,13 +395,15 @@ export function usePlanosState(): UsePlanosStateReturn {
       return;
     }
 
-    navigate(`/onboarding-clinica?plan=${planId}&cycle=${selectedCycle}${couponQuery}`);
-  }, [activatingTrial, isFreeCycle, existingClinicId, extraConcurrent, appliedCoupon, selectedCycle, navigate, refreshAuthState, selectClinic]);
+    navigate(`/pagamento/solo?plan=${planId}&cycle=${selectedCycle}${couponQuery}`);
+  }, [activatingTrial, isFreeCycle, existingClinicId, user?.id, extraConcurrent, appliedCoupon, selectedCycle, navigate, refreshAuthState, selectClinic]);
 
   return {
     existingClinicId,
     existingClinicName,
     hasActiveSubscription,
+    activeSubscriptionPlan,
+    activeSubscriptionCycle,
     isFreeTrialEnabled,
     audience,
     setAudience,

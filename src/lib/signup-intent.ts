@@ -6,6 +6,7 @@
  */
 
 import { PlanType, BillingCycle, parsePlanType } from "@/utils/subscriptionPricing";
+import { captureSignupOrigin } from "@/lib/signup-origin";
 
 export interface SignupIntent {
   plan: PlanType;
@@ -28,6 +29,7 @@ export function saveSignupIntent(intent: {
   coupon?: string | null;
 }): void {
   try {
+    captureSignupOrigin();
     if (!intent.plan && !intent.trial) return;
 
     const normalizedPlan: PlanType = intent.plan ? parsePlanType(intent.plan) : "prof_basico";

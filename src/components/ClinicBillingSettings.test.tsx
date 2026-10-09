@@ -33,10 +33,12 @@ const createChainedSelectMock = () => {
   const chain: any = {};
   chain.select = vi.fn(() => chain);
   chain.eq = vi.fn(() => chain);
-  chain.neq = vi.fn(() => Promise.resolve({ count: 0, data: [], error: null }));
+  chain.neq = vi.fn(() => chain);
+  chain.not = vi.fn(() => chain);
   chain.order = vi.fn(() => Promise.resolve({ count: 0, data: [], error: null }));
   chain.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
   chain.single = vi.fn().mockResolvedValue({ data: null, error: null });
+  chain.then = (resolve: any) => Promise.resolve({ count: 0, data: [], error: null }).then(resolve);
   return chain;
 };
 

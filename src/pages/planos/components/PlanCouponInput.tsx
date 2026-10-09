@@ -63,13 +63,13 @@ export const PlanCouponInput: React.FC<PlanCouponInputProps> = React.memo(({
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
+      initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.4 }}
-      className="z-10 w-full max-w-xl mb-8 p-4 rounded-2xl bg-card border border-border shadow-md dark:bg-neutral-900/80 dark:border-neutral-800 backdrop-blur-xl space-y-3"
+      transition={{ duration: 0.3 }}
+      className="z-10 w-full p-3 sm:p-3.5 rounded-2xl bg-card text-card-foreground border border-border shadow-xs backdrop-blur-md space-y-2.5"
     >
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary dark:text-blue-400">
-        <Tag className="w-4 h-4" />
+        <Tag className="w-3.5 h-3.5" />
         <span>Possui um Cupom Promocional?</span>
       </div>
 

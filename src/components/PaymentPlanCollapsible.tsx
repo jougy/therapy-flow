@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import {
   DEFAULT_PAYMENT_PLAN_FORM_VALUES,
   PAYMENT_PLAN_STATUS_OPTIONS,
@@ -154,15 +155,17 @@ export const PaymentPlanCollapsible = ({
           >
             <div className="mt-3 space-y-4 rounded-lg border bg-muted/20 p-4">
               {/* Informational Banner */}
-              <div className="flex items-start gap-2.5 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-primary">
-                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+              <DismissibleInfoTip
+                id="payment-plan-package-helper"
+                variant="subtle"
+              >
                 <div>
-                  <p className="font-semibold">Pacote de Sessões com Crédito Antecipado</p>
+                  <p className="font-semibold text-foreground">Pacote de Sessões com Crédito Antecipado</p>
                   <p className="mt-0.5 text-muted-foreground">
                     Ao criar este plano, os créditos de sessão serão gerados automaticamente. O paciente poderá ter suas sessões pré-agendadas na agenda da clínica.
                   </p>
                 </div>
-              </div>
+              </DismissibleInfoTip>
 
               {/* Main Form Fields */}
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

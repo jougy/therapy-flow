@@ -773,9 +773,17 @@ describe("PacienteDetalhe", () => {
 
     // Print & Export separate options
     const printOption = screen.getByText("Imprimir cadastro (PDF)");
+    const printAdultOption = screen.getByText("Imprimir Termo de Consentimento (Adulto)");
+    const printGuardianOption = screen.getByText("Imprimir Termo do Responsável (Menor)");
     const exportOption = screen.getByText("Exportar dados (JSON)");
     expect(printOption).toBeInTheDocument();
+    expect(printAdultOption).toBeInTheDocument();
+    expect(printGuardianOption).toBeInTheDocument();
     expect(exportOption).toBeInTheDocument();
+
+    // Test Adult consent modal open
+    fireEvent.click(printAdultOption);
+    expect(await screen.findByText("Termo de Consentimento Livre e Esclarecido (Adulto)")).toBeInTheDocument();
 
     // Test Navigation to full registration
     fireEvent.click(viewFullRegistrationOption);

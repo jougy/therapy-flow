@@ -29,6 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
 const getErrorMessage = (err: unknown): string => {
   if (err instanceof Error) return err.message;
@@ -345,9 +346,13 @@ export function PlatformReleaseNotesManager({ onNotesUpdated, standalone = false
             <Megaphone className="h-5 w-5 text-primary" />
             Editor de Novidades da Plataforma (Acesso Mestre)
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Gerencie as notas de atualização visíveis aos usuários das clínicas. NUNCA publique dados confidenciais do Backoffice.
-          </p>
+          <DismissibleInfoTip
+            id="platform-release-notes-security-tip"
+            variant="subtle"
+            className="mt-2"
+          >
+            Gerencie as notas de atualização visíveis aos usuários das clínicas. <strong>NUNCA</strong> publique dados confidenciais do Backoffice.
+          </DismissibleInfoTip>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={loading}>

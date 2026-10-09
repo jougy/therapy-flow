@@ -14,6 +14,7 @@ import { formatCpf } from "@/lib/profile-settings";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 import { BrowserAppDownloadBanner } from "@/components/BrowserAppDownloadBanner";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
 const normalizeCpf = (value: string) => value.replace(/\D/g, "").slice(0, 11);
 
@@ -312,7 +313,14 @@ const Auth = () => {
             ) : (
               <>
                 <CardTitle className="text-lg">Entrar</CardTitle>
-                <CardDescription>Use seu e-mail e senha. A clínica será escolhida na próxima etapa.</CardDescription>
+                <DismissibleInfoTip
+                  id="auth-login-hint-tip"
+                  scope="global"
+                  variant="subtle"
+                  className="mt-2 text-left"
+                >
+                  Use seu e-mail e senha. A clínica será escolhida na próxima etapa.
+                </DismissibleInfoTip>
               </>
             )}
           </CardHeader>

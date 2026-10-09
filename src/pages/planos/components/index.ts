@@ -12,3 +12,8 @@ export * from "./PlanCardTier";
 export * from "./PlanAudienceSelector";
 export * from "./PlanEnterpriseBanner";
 export * from "./PlanComparisonModal";
+export * from "./PlanStepper";
+export * from "./PlanTrialBanner";
+export * from "./PlanStagePaid";
+export * from "./PlanStageEnterprise";
+export * from "./PlanStageTrial";

@@ -336,5 +336,60 @@ describe("PagamentoClinica", () => {
     // Não deve chamar o serviço pois o documento é inválido
     expect(asaasService.processAsaasPayment).not.toHaveBeenCalled();
   });
+
+  it("renders saved credit cards list when available and allows toggling to new card", async () => {
+    setupDefaultMocks([]);
+
+    // Salvar cartão simulado no localStorage
+    const sampleSavedCards = [
+      {
+        id: "card_123",
+        brand: "mastercard",
+        bankLabel: "BTG Pactual",
+        last4: "4279",
+        holderName: "DR OWNER TESTE",
+        expiry: "12/28",
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    localStorage.setItem("pluri_saved_cards_clinic-123", JSON.stringify(sampleSavedCards));
+
+    render(
+      <MemoryRouter initialEntries={["/pagamento/clinic-123?plan=solo&cycle=annual"]}>
+        <Routes>
+          <Route path="/pagamento/:clinicId" element={<PagamentoClinica />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Selecione a Forma de Pagamento/i)).toBeInTheDocument();
+    });
+
+    // Mudar para a aba de cartão
+    const cardTab = screen.getByRole("tab", { name: /Cartão/i });
+    fireEvent.pointerDown(cardTab, { button: 0, ctrlKey: false });
+    fireEvent.click(cardTab);
+    fireEvent.keyDown(cardTab, { key: " " });
+
+    // Deve exibir o cartão salvo
+    await waitFor(() => {
+      expect(screen.getByText(/Seus Cartões Salvos/i)).toBeInTheDocument();
+      expect(screen.getByText(/BTG Pactual \*\*\*\* 4279/i)).toBeInTheDocument();
+      expect(screen.getByText(/Pagar com outro cartão de crédito/i)).toBeInTheDocument();
+    });
+
+    // Clicar para pagar com outro cartão
+    const newCardOption = screen.getByText(/Pagar com outro cartão de crédito/i);
+    fireEvent.click(newCardOption);
+
+    // Deve exibir os campos do novo cartão
+    expect(screen.getByPlaceholderText(/NOME COMPLETO IGUAL AO CARTÃO/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/0000 0000 0000 0000/i)).toBeInTheDocument();
+
+    // Limpar localStorage após o teste
+    localStorage.removeItem("pluri_saved_cards_clinic-123");
+  });
 });
+
 

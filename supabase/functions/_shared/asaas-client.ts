@@ -164,11 +164,15 @@ export class AsaasClient {
     const defaultEnv = (Deno.env.get('ASAAS_ENV') || 'sandbox').toLowerCase() as 'production' | 'sandbox';
     this.environment = envOverride || (defaultEnv === 'production' ? 'production' : 'sandbox');
 
+    const sandboxKey = Deno.env.get('ASAAS_SANDBOX_API_KEY') || Deno.env.get('ASAAS_API_KEY_SANDBOX') || '';
+    const prodKey = Deno.env.get('ASAAS_PROD_API_KEY') || Deno.env.get('ASAAS_API_KEY_PROD') || '';
+    const genericKey = Deno.env.get('ASAAS_API_KEY') || Deno.env.get('ASAAS_KEY') || '';
+
     if (this.environment === 'production') {
-      this.apiKey = Deno.env.get('ASAAS_API_KEY') || Deno.env.get('ASAAS_PROD_API_KEY') || '';
+      this.apiKey = prodKey || genericKey || sandboxKey;
       this.baseUrl = 'https://api.asaas.com/v3';
     } else {
-      this.apiKey = Deno.env.get('ASAAS_SANDBOX_API_KEY') || Deno.env.get('ASAAS_API_KEY_SANDBOX') || '';
+      this.apiKey = sandboxKey || genericKey || prodKey;
       this.baseUrl = 'https://sandbox.asaas.com/api/v3';
     }
   }
@@ -183,7 +187,7 @@ export class AsaasClient {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     if (!this.apiKey) {
-      throw new Error(`Chave da API Asaas não configurada para o ambiente [${this.environment}]. Verifique ASAAS_API_KEY / ASAAS_PROD_API_KEY / ASAAS_SANDBOX_API_KEY.`);
+      throw new Error(`Chave da API Asaas não configurada no Supabase Secrets (ambiente [${this.environment}]). Configure ASAAS_API_KEY ou ASAAS_SANDBOX_API_KEY no painel do Supabase ou via CLI.`);
     }
 
     const url = `${this.baseUrl}${endpoint}`;
@@ -306,6 +310,17 @@ export class AsaasClient {
 
   async getPaymentQrCode(paymentId: string): Promise<{ encodedImage: string; payload: string; expirationDate?: string }> {
     return this.request(`/payments/${paymentId}/pixQrCode`, {
+      method: 'GET',
+    });
+  }
+
+  // Boleto Identification Field / Linha Digitável e Código de Barras
+  async getPaymentIdentificationField(paymentId: string): Promise<{
+    identificationField?: string;
+    nossoNumero?: string;
+    barCode?: string;
+  }> {
+    return this.request(`/payments/${paymentId}/identificationField`, {
       method: 'GET',
     });
   }

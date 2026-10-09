@@ -43,6 +43,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
 interface SecuritySessionRow {
   id: string;
@@ -438,9 +439,12 @@ export const PersonalSecuritySection = () => {
                 />
               </div>
 
-              <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+              <DismissibleInfoTip
+                id="personal-security-password-rule-tip"
+                variant="muted"
+              >
                 Sua nova senha deve ter no mínimo 8 caracteres. Ao salvar, se você estiver usando senha provisória, ela será marcada como definitiva.
-              </div>
+              </DismissibleInfoTip>
 
               <DialogFooter className="pt-2">
                 <Button

@@ -14,6 +14,7 @@ import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 import { TutorialProvider } from "@/contexts/TutorialContext";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
 import { EmailConfirmationRequiredModal } from "@/components/EmailConfirmationRequiredModal";
+import { AnalyticsRouteTracker } from "@/components/AnalyticsRouteTracker";
 
 
 const Auth = lazy(() => import("./pages/Auth"));
@@ -193,6 +194,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <AnalyticsRouteTracker />
               <AuthProvider>
                 <FeatureFlagsProvider>
                   <TutorialProvider>

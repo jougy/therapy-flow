@@ -57,7 +57,11 @@ describe("CadastroContaAlfa", () => {
     mockNavigate.mockReset();
     mockTrackCompleteRegistration.mockReset();
     mockTrackStartTrial.mockReset();
-    supabaseMocks.from.mockReset();
+    supabaseMocks.from.mockReturnValue({
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+      }),
+    });
     supabaseMocks.rpc.mockReset();
     supabaseMocks.signUp.mockReset();
     supabaseMocks.signOut.mockReset();
@@ -133,20 +137,21 @@ describe("CadastroContaAlfa", () => {
       );
       expect(mockTrackCompleteRegistration).toHaveBeenCalledWith(expect.objectContaining({
         profession: "physiotherapist",
-        userData: {
+        userData: expect.objectContaining({
           email: "alpha@example.com",
           phone: "11999998888",
           name: "Owner Teste",
-        },
+        }),
       }));
       expect(mockTrackStartTrial).toHaveBeenCalledWith(expect.objectContaining({
         profession: "physiotherapist",
-        userData: {
+        userData: expect.objectContaining({
           email: "alpha@example.com",
           phone: "11999998888",
           name: "Owner Teste",
-        },
+        }),
       }));
+
     });
   });
 
@@ -301,6 +306,74 @@ describe("CadastroContaAlfa", () => {
         _phone: "11988881111",
         _profession: "fisioterapeuta",
         _user_id: "user-alpha-2",
+      }));
+      expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", expect.objectContaining({
+        body: expect.objectContaining({
+          event: "SIGNUP_COMPLETED",
+          profession: "fisioterapeuta",
+          councilNumber: "123456-F",
+        }),
+      }));
+    });
+  });
+
+  it("submits gender, preferred pronoun and origin properly", async () => {
+    supabaseMocks.signUp.mockResolvedValue({
+      data: { user: { id: "user-alpha-3" }, session: null },
+      error: null,
+    });
+    supabaseMocks.rpc.mockResolvedValue({
+      data: { user_id: "user-alpha-3", has_clinic: true },
+      error: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/auth/cadastro?utm_source=instagram&utm_medium=bio"]}>
+        <CadastroContaAlfa />
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText(/seu nome completo/i), { target: { value: "Carlos Eduardo" } });
+    fireEvent.change(screen.getByLabelText(/^cpf$/i), { target: { value: "529.982.247-25" } });
+    fireEvent.change(screen.getByLabelText(/data de nascimento/i), { target: { value: "1992-04-10" } });
+    fireEvent.change(screen.getByLabelText(/número de contato/i), { target: { value: "(11) 97777-2222" } });
+    fireEvent.change(screen.getByLabelText(/^e-mail$/i), { target: { value: "carlos@example.com" } });
+    fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "senhaSegura123" } });
+    fireEvent.change(screen.getByLabelText(/confirmar senha/i), { target: { value: "senhaSegura123" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    // Seleciona Gênero Masculino
+    const genderSelect = screen.getByLabelText(/gênero \(opcional\)/i);
+    fireEvent.click(genderSelect);
+    const optionMasc = await screen.findByRole("option", { name: "Masculino" });
+    fireEvent.click(optionMasc);
+
+    // Seleciona Pronome Ele/Dele
+    const pronounSelect = screen.getByLabelText(/pronome de preferência \(opcional\)/i);
+    fireEvent.click(pronounSelect);
+    const optionEle = await screen.findByRole("option", { name: "Ele/Dele" });
+    fireEvent.click(optionEle);
+
+    fireEvent.click(screen.getByRole("button", { name: /^criar conta$/i }));
+
+    await waitFor(() => {
+      expect(supabaseMocks.signUp).toHaveBeenCalledWith(expect.objectContaining({
+        options: expect.objectContaining({
+          data: expect.objectContaining({
+            gender: "Masculino",
+            pronoun: "Ele/Dele",
+            preferred_pronoun: "Ele/Dele",
+            origin: "Instagram (Bio/Perfil)",
+          }),
+        }),
+      }));
+      expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", expect.objectContaining({
+        body: expect.objectContaining({
+          event: "SIGNUP_COMPLETED",
+          gender: "Masculino",
+          preferredPronoun: "Ele/Dele",
+          origin: "Instagram (Bio/Perfil)",
+        }),
       }));
     });
   });

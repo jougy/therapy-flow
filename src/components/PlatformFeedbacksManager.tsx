@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import { cn } from "@/lib/utils";
 
 export interface PlatformFeedbackItem {
@@ -278,9 +279,13 @@ export const PlatformFeedbacksManager: React.FC = () => {
             <MessageSquareHeart className="w-6 h-6 text-primary" />
             Central de Feedbacks & Avaliações
           </h2>
-          <p className="text-sm text-muted-foreground">
+          <DismissibleInfoTip
+            id="platform-feedbacks-header-tip"
+            variant="subtle"
+            className="mt-2"
+          >
             Acompanhe o que os profissionais e clínicas acham da plataforma, relatos de bugs e sugestões de melhoria.
-          </p>
+          </DismissibleInfoTip>
         </div>
 
         <div className="flex items-center gap-2">

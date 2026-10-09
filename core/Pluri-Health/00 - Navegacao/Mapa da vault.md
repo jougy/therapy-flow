@@ -56,7 +56,9 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Ambiente e operacao]]
 - [[Ambiente Mobile e Scrcpy]]
 - [[Deploy - Cloudflare Pages]]
+- [[Guia Mestre de Tracking, Analytics, SEO, AEO e Multi-Dominios]]
 - [[Backup do Supabase antes de deploy]]
+
 - [[Dicionario de Dados e Catalogo do Supabase]]
 - [[Plano Diretor de Modernizacao e Governanca do Banco de Dados]]
 - [[Roadmap Tecnico e Otimizacoes Avancadas do Banco de Dados]]

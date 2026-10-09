@@ -1,101 +1,79 @@
 import React from "react";
-import { Sparkles } from "lucide-react";
 import { BillingCycle } from "@/utils/subscriptionPricing";
 
-/**
- * Propriedades para o componente seletor de ciclo de faturamento.
- */
 export interface PlanBillingCycleSelectorProps {
-  /** Ciclo atualmente selecionado (mensal, trimestral, anual ou teste gratuito). */
-  selectedCycle: BillingCycle | "free";
+  /** Ciclo atualmente selecionado (mensal, trimestral ou anual). */
+  selectedCycle: BillingCycle;
   /** Callback acionado ao alternar o ciclo de faturamento. */
-  onSelectCycle: (cycle: BillingCycle | "free") => void;
-  /** Indica se a clínica já possui uma assinatura ativa/paga (ocultando a aba de teste gratuito). */
-  hasActiveSubscription: boolean;
-  /** Flag do sistema indicando se a modalidade de trial gratuito está habilitada. */
-  isFreeTrialEnabled: boolean;
+  onSelectCycle: (cycle: BillingCycle) => void;
 }
 
-/**
- * Seletor de Ciclos de Faturamento e Modalidade de Teste Gratuito.
- * 
- * Racional de Negócio / Efeito Ancoragem:
- * - O ciclo Anual (-25% OFF) é o default para incentivar LTV e retenção.
- * - Ciclo Trimestral oferece desconto intermediário (-10% OFF).
- * - O ciclo "Teste gratuito (7 dias)" permite ativação instantânea sem cartão quando elegível.
- *
- * Complexidade Assintótica: O(1) de tempo e memória.
- */
 export const PlanBillingCycleSelector: React.FC<PlanBillingCycleSelectorProps> = React.memo(({
   selectedCycle,
   onSelectCycle,
-  hasActiveSubscription,
-  isFreeTrialEnabled,
 }) => {
   return (
-    <div className="pt-1.5 sm:pt-2 flex justify-center">
-      <div 
-        role="tablist" 
-        aria-label="Ciclos de faturamento"
-        className="p-1 bg-muted/60 dark:bg-neutral-900/90 border border-border dark:border-neutral-800 rounded-xl inline-flex items-center gap-1 shadow-sm dark:shadow-xl backdrop-blur-md flex-wrap justify-center"
+    <div
+      role="group"
+      aria-label="Ciclos de faturamento"
+      className="inline-flex items-center gap-1 p-1 bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-full max-w-full shadow-xs backdrop-blur-md flex-wrap"
+    >
+      <button
+        type="button"
+        data-cycle="monthly"
+        onClick={() => onSelectCycle("monthly")}
+        className={`inline-flex items-center justify-center gap-1 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer min-h-[34px] ${
+          selectedCycle === "monthly"
+            ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs"
+            : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+        }`}
       >
-        {!hasActiveSubscription && isFreeTrialEnabled && (
-          <button
-            type="button"
-            onClick={() => onSelectCycle("free")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 min-h-[34px] ${
-              selectedCycle === "free"
-                ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Sparkles className="w-3 h-3 text-amber-300" />
-            <span>Teste gratuito (7 dias)</span>
-          </button>
-        )}
+        <span>Mensal</span>
+      </button>
 
-        <button
-          type="button"
-          onClick={() => onSelectCycle("monthly")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 min-h-[34px] ${
-            selectedCycle === "monthly"
-              ? "bg-primary text-primary-foreground shadow-md"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <span>Mensal</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onSelectCycle("quarterly")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 min-h-[34px] ${
+      <button
+        type="button"
+        data-cycle="quarterly"
+        onClick={() => onSelectCycle("quarterly")}
+        className={`inline-flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer min-h-[34px] ${
+          selectedCycle === "quarterly"
+            ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs"
+            : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+        }`}
+      >
+        <span>Trimestral</span>
+        <span
+          className={`text-[10px] font-extrabold ${
             selectedCycle === "quarterly"
-              ? "bg-primary text-primary-foreground shadow-md"
-              : "text-muted-foreground hover:text-foreground"
+              ? "text-sky-300 dark:text-blue-600"
+              : "text-blue-600 dark:text-sky-400"
           }`}
         >
-          <span>Trimestral</span>
-          <span className="px-1 py-0.5 rounded bg-blue-500/15 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 text-[9px] uppercase font-extrabold">
-            -10% OFF
-          </span>
-        </button>
+          -15%
+        </span>
+      </button>
 
-        <button
-          type="button"
-          onClick={() => onSelectCycle("annual")}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 min-h-[34px] ${
+      <button
+        type="button"
+        data-cycle="annual"
+        onClick={() => onSelectCycle("annual")}
+        className={`inline-flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer min-h-[34px] ${
+          selectedCycle === "annual"
+            ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs"
+            : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+        }`}
+      >
+        <span>Anual</span>
+        <span
+          className={`text-[10px] font-extrabold ${
             selectedCycle === "annual"
-              ? "bg-primary text-primary-foreground shadow-md"
-              : "text-muted-foreground hover:text-foreground"
+              ? "text-emerald-300 dark:text-emerald-700"
+              : "text-emerald-600 dark:text-emerald-400"
           }`}
         >
-          <span>Anual</span>
-          <span className="px-1 py-0.5 rounded bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[9px] uppercase font-extrabold">
-            -25% OFF
-          </span>
-        </button>
-      </div>
+          -35% OFF
+        </span>
+      </button>
     </div>
   );
 });

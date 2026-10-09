@@ -290,3 +290,109 @@ export function trackInitiateCheckout(
 
   return { eventId, payload };
 }
+
+export interface PurchaseParams {
+  planKey: string;
+  category: PlanCategory;
+  value: number;
+  valueCents?: number;
+  currency?: "BRL";
+  transactionId?: string;
+  userData?: CompleteRegistrationUserData;
+  eventId?: string;
+}
+
+
+export interface SubscribeParams {
+  planKey: string;
+  category: PlanCategory;
+  value: number;
+  valueCents?: number;
+  currency?: "BRL";
+  transactionId?: string;
+  userData?: CompleteRegistrationUserData;
+  eventId?: string;
+}
+
+/**
+ * Rastreia o evento Purchase (Compra Concluída no Asaas):
+ * - Envia `value`, `currency`, `content_ids`, `content_name`, `order_id`/`transaction_id`.
+ * - Suporta Advanced Matching e `event_id` para CAPI.
+ */
+export async function trackPurchase(
+  params: PurchaseParams
+): Promise<{ eventId: string; payload: Record<string, unknown> }> {
+  const eventId =
+    params.eventId ||
+    generateEventId("purch", params.transactionId || params.planKey);
+
+  const valueInReais =
+    typeof params.value === "number" && !Number.isNaN(params.value)
+      ? params.value
+      : 0;
+
+  const valueInCents =
+    typeof params.valueCents === "number" && !Number.isNaN(params.valueCents)
+      ? params.valueCents
+      : Math.round(valueInReais * 100);
+
+  const hashedUserData = await hashUserDataForAdvancedMatching(params.userData);
+
+  const payload: Record<string, unknown> = {
+    planKey: params.planKey,
+    category: params.category,
+    value: valueInReais,
+    value_cents: valueInCents,
+    currency: params.currency || "BRL",
+    content_type: "product",
+    content_ids: [params.planKey],
+    content_name: `Assinatura ${params.planKey} (${params.category})`,
+    order_id: params.transactionId || eventId,
+    ...hashedUserData,
+  };
+
+  sendPixelEvent("Purchase", payload, eventId);
+
+  return { eventId, payload };
+}
+
+/**
+ * Rastreia o evento Subscribe (Assinatura Recorrente Iniciada / Confirmada).
+ */
+export async function trackSubscribe(
+  params: SubscribeParams
+): Promise<{ eventId: string; payload: Record<string, unknown> }> {
+  const eventId =
+    params.eventId ||
+    generateEventId("sub", params.transactionId || params.planKey);
+
+  const valueInReais =
+    typeof params.value === "number" && !Number.isNaN(params.value)
+      ? params.value
+      : 0;
+
+  const valueInCents =
+    typeof params.valueCents === "number" && !Number.isNaN(params.valueCents)
+      ? params.valueCents
+      : Math.round(valueInReais * 100);
+
+  const hashedUserData = await hashUserDataForAdvancedMatching(params.userData);
+
+  const payload: Record<string, unknown> = {
+    planKey: params.planKey,
+    category: params.category,
+    value: valueInReais,
+    value_cents: valueInCents,
+    currency: params.currency || "BRL",
+    content_type: "product",
+    content_ids: [params.planKey],
+    content_name: `Assinatura ${params.planKey} (${params.category})`,
+    order_id: params.transactionId || eventId,
+    ...hashedUserData,
+  };
+
+  sendPixelEvent("Subscribe", payload, eventId);
+
+  return { eventId, payload };
+}
+

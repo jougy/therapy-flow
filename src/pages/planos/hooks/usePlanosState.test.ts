@@ -1,7 +1,7 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { usePlanosState } from "./usePlanosState";
-import * as metaPixel from "@/lib/meta-pixel";
+import * as analyticsTracker from "@/lib/analytics-tracker";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", () => ({
@@ -27,26 +27,29 @@ vi.mock("@/contexts/FeatureFlagsContext", () => ({
   }),
 }));
 
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-        }),
-      }),
-    }),
-    rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
-  },
-}));
+vi.mock("@/integrations/supabase/client", () => {
+  const queryMock: any = {};
+  queryMock.select = vi.fn().mockReturnValue(queryMock);
+  queryMock.eq = vi.fn().mockReturnValue(queryMock);
+  queryMock.order = vi.fn().mockReturnValue(queryMock);
+  queryMock.limit = vi.fn().mockReturnValue(queryMock);
+  queryMock.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+
+  return {
+    supabase: {
+      from: () => queryMock,
+      rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
+    },
+  };
+});
 
 describe("usePlanosState - Meta Pixel InitiateCheckout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("dispatches trackInitiateCheckout with category 'Solo' for solo plans", async () => {
-    const trackSpy = vi.spyOn(metaPixel, "trackInitiateCheckout").mockImplementation(async () => {});
+  it("dispatches trackBeginCheckoutEvent with category 'Solo' for solo plans", async () => {
+    const trackSpy = vi.spyOn(analyticsTracker, "trackBeginCheckoutEvent").mockImplementation(() => ({ eventId: "evt_123" }));
 
     const { result } = renderHook(() => usePlanosState());
 
@@ -63,15 +66,14 @@ describe("usePlanosState - Meta Pixel InitiateCheckout", () => {
       expect.objectContaining({
         planKey: "prof_medio",
         category: "Solo",
-        currency: "BRL",
         value: expect.any(Number),
         valueCents: expect.any(Number),
       })
     );
   });
 
-  it("dispatches trackInitiateCheckout with category 'Equipe' for clinic plans", async () => {
-    const trackSpy = vi.spyOn(metaPixel, "trackInitiateCheckout").mockImplementation(async () => {});
+  it("dispatches trackBeginCheckoutEvent with category 'Equipe' for clinic plans", async () => {
+    const trackSpy = vi.spyOn(analyticsTracker, "trackBeginCheckoutEvent").mockImplementation(() => ({ eventId: "evt_456" }));
 
     const { result } = renderHook(() => usePlanosState());
 
@@ -87,12 +89,12 @@ describe("usePlanosState - Meta Pixel InitiateCheckout", () => {
       expect.objectContaining({
         planKey: "clinica_medio",
         category: "Equipe",
-        currency: "BRL",
         value: expect.any(Number),
         valueCents: expect.any(Number),
       })
     );
   });
+
 
   it("redirects directly to Asaas checkout for solo plans without additional forms when solo clinic exists", async () => {
     mockAuthValues.clinic = { id: "clinic-solo-123", name: "Minha Clínica Solo" };

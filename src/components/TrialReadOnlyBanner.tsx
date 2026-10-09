@@ -57,8 +57,12 @@ export const TrialReadOnlyBanner: React.FC<TrialReadOnlyBannerProps> = React.mem
   const handleUpgradeClick = () => {
     if (onOpenUpgradeModal) {
       onOpenUpgradeModal();
-    } else {
+    } else if (isTrialExpired) {
       navigate(clinicId ? `/planos?clinicId=${clinicId}` : "/planos");
+    } else {
+      const plan = quota.planType || "clinic";
+      const cycle = quota.billingCycle ? quota.billingCycle.toLowerCase() : "monthly";
+      navigate(`/pagamento/${clinicId}?plan=${plan}&cycle=${cycle}`);
     }
   };
 
@@ -95,9 +99,9 @@ export const TrialReadOnlyBanner: React.FC<TrialReadOnlyBannerProps> = React.mem
       <Button
         size="sm"
         onClick={handleUpgradeClick}
-        className="h-8 px-3.5 text-xs font-bold rounded-lg shrink-0 shadow-md flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white min-h-[32px] transition-transform active:scale-95"
+        className="h-8 px-3.5 text-xs font-bold rounded-lg shrink-0 shadow-md flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white min-h-[32px] transition-transform active:scale-95 cursor-pointer"
       >
-        <span>Assinar Plano / Reativar Escrita</span>
+        <span>{isTrialExpired ? "Assinar Plano / Reativar Escrita" : "Renovar Assinatura Agora"}</span>
         <ArrowUpRight className="w-3.5 h-3.5" />
       </Button>
     </div>

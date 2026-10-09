@@ -6,6 +6,9 @@ import {
   buildPlanPurchaseMessage,
   formatSignupTelegramText,
   escapeTelegramHtml,
+  formatProfessionLabel,
+  formatIdentityLabel,
+  formatOriginLabel,
 } from "./telegram-notifications";
 
 describe("telegram-notifications utilitários", () => {
@@ -100,12 +103,57 @@ describe("telegram-notifications utilitários", () => {
     });
   });
 
+  describe("formatProfessionLabel & formatIdentityLabel & formatOriginLabel", () => {
+    it("deve formatar profissão com número de conselho", () => {
+      expect(formatProfessionLabel("fisioterapeuta", "123456-F", "CREFITO-3")).toBe(
+        "Fisioterapeuta (CREFITO-3: 123456-F)"
+      );
+      expect(formatProfessionLabel("nutricionista", "CRN-987", "CRN")).toBe(
+        "Nutricionista (CRN: CRN-987)"
+      );
+      expect(formatProfessionLabel("psicologo")).toBe("Psicólogo(a)");
+    });
+
+    it("deve formatar identidade de gênero e pronome", () => {
+      expect(formatIdentityLabel("Feminino", "Ela/Dela")).toBe("Feminino (Ela/Dela)");
+      expect(formatIdentityLabel("Masculino", "Ele/Dele")).toBe("Masculino (Ele/Dele)");
+      expect(formatIdentityLabel("Não-binário", "Elu/Delu")).toBe("Não-binário (Elu/Delu)");
+      expect(formatIdentityLabel("Feminino", "")).toBe("Feminino");
+      expect(formatIdentityLabel("", "Ela/Dela")).toBe("(Ela/Dela)");
+      expect(formatIdentityLabel(null, null)).toBe("");
+    });
+
+    it("deve formatar origem a partir de UTMs ou origem textual", () => {
+      expect(
+        formatOriginLabel(null, null, "instagram", "bio", "lancamento_outubro")
+      ).toBe("Instagram (lancamento_outubro)");
+
+      expect(
+        formatOriginLabel("Instagram (Bio/Campanha)")
+      ).toBe("Instagram (Bio/Campanha)");
+
+      expect(
+        formatOriginLabel(null, null, "google", "cpc", "search_sp")
+      ).toBe("Google Ads (Campanha: search_sp)");
+
+      expect(
+        formatOriginLabel("Convite de Clínica")
+      ).toBe("Convite de Clínica");
+    });
+  });
+
   describe("formatSignupTelegramText", () => {
-    it("deve formatar os dados do cadastro com link wa.me quando telefone estiver presente", () => {
+    it("deve formatar os dados do cadastro com link wa.me e novos campos quando presentes", () => {
       const text = formatSignupTelegramText({
         name: "Mariana Souza",
         email: "mariana@exemplo.com",
         phone: "(21) 99887-6655",
+        profession: "fisioterapeuta",
+        councilNumber: "123456-F",
+        councilName: "CREFITO-2",
+        gender: "Feminino",
+        preferredPronoun: "Ela/Dela",
+        origin: "Instagram (Bio/Campanha)",
         clinicName: "Clínica FisioLife",
         plan: "Degustação Gratuita (7 dias)",
         createdAt: "2026-10-02 16:30",
@@ -115,6 +163,9 @@ describe("telegram-notifications utilitários", () => {
       expect(text).toContain("👤 <b>Nome:</b> Mariana Souza");
       expect(text).toContain("📧 <b>E-mail:</b> mariana@exemplo.com");
       expect(text).toContain("📱 <b>Telefone:</b> (21) 99887-6655");
+      expect(text).toContain("🩺 <b>Profissão:</b> Fisioterapeuta (CREFITO-2: 123456-F)");
+      expect(text).toContain("⚧️ <b>Identidade:</b> Feminino (Ela/Dela)");
+      expect(text).toContain("🌐 <b>Origem:</b> Instagram (Bio/Campanha)");
       expect(text).toContain("🏥 <b>Clínica / Consultório:</b> Clínica FisioLife");
       expect(text).toContain("💬 <b>WhatsApp:</b> <a href=\"https://wa.me/5521998876655?text=");
     });
@@ -124,11 +175,18 @@ describe("telegram-notifications utilitários", () => {
         name: "<b>Hacker</b>",
         email: "hack<test>@exemplo.com",
         phone: "11988887777",
+        profession: "<script>alert('xss')</script>",
+        gender: "<b>Outro</b>",
+        preferredPronoun: "<test>",
+        origin: "Landing <Page>",
         clinicName: "Clínica <script>alert(1)</script>",
       });
 
       expect(text).toContain("👤 <b>Nome:</b> &lt;b&gt;Hacker&lt;/b&gt;");
       expect(text).toContain("📧 <b>E-mail:</b> hack&lt;test&gt;@exemplo.com");
+      expect(text).toContain("🩺 <b>Profissão:</b> &lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;");
+      expect(text).toContain("⚧️ <b>Identidade:</b> &lt;b&gt;Outro&lt;/b&gt; (&lt;test&gt;)");
+      expect(text).toContain("🌐 <b>Origem:</b> Landing &lt;Page&gt;");
       expect(text).toContain("🏥 <b>Clínica / Consultório:</b> Clínica &lt;script&gt;alert(1)&lt;/script&gt;");
     });
 

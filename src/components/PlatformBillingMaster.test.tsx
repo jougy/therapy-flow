@@ -33,8 +33,10 @@ describe("PlatformBillingMaster", () => {
             clinic_id: "clinic-alfa",
             plan_type: "clinic",
             status: "active",
-            subaccount_limit: 30,
-            concurrent_access_limit: 2,
+            base_subaccount_limit: 25,
+            purchased_subaccount_extra_count: 5,
+            base_concurrent_access_count: 1,
+            additional_concurrent_access_count: 1,
             coupon_code: "BETA50",
             total_recurring_monthly_price: 60.0,
             override_reason: null,
@@ -301,7 +303,7 @@ describe("PlatformBillingMaster", () => {
     render(<PlatformBillingMaster />);
 
     // Switch to Telegram Tab
-    const telegramTab = await screen.findByRole("tab", { name: /Alertas Telegram & Teste/i });
+    const telegramTab = await screen.findByRole("tab", { name: /Alertas Telegram/i });
     fireEvent.focus(telegramTab);
     fireEvent.keyDown(telegramTab, { key: "Enter" });
     fireEvent.click(telegramTab);
@@ -323,7 +325,7 @@ describe("PlatformBillingMaster", () => {
     // Verify invoke payload
     await waitFor(() => {
       expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", {
-        body: { action: "SEND_TEST_NOTIFICATION" },
+        body: expect.objectContaining({ action: "SEND_TEST_NOTIFICATION" }),
       });
     });
 
@@ -360,7 +362,7 @@ describe("PlatformBillingMaster", () => {
 
     render(<PlatformBillingMaster />);
 
-    const telegramTab = await screen.findByRole("tab", { name: /Alertas Telegram & Teste/i });
+    const telegramTab = await screen.findByRole("tab", { name: /Alertas Telegram/i });
     fireEvent.focus(telegramTab);
     fireEvent.keyDown(telegramTab, { key: "Enter" });
     fireEvent.click(telegramTab);
@@ -370,11 +372,67 @@ describe("PlatformBillingMaster", () => {
 
     await waitFor(() => {
       expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", {
-        body: { action: "SEND_TEST_NOTIFICATION" },
+        body: expect.objectContaining({ action: "SEND_TEST_NOTIFICATION" }),
       });
     });
 
     expect(await screen.findByText(/Falha no envio/i)).toBeInTheDocument();
     expect(screen.getByText(/TELEGRAM_BOT_TOKEN não configurado no Supabase Vault/i)).toBeInTheDocument();
+  });
+
+  it("renders whatsapp messaging tab, displays active commercial number and allows real-time test triggering", async () => {
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === "clinic_subscriptions") {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === "subscription_coupons") {
+        return { select: vi.fn().mockReturnValue({ order: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+      }
+      if (table === "subscription_invoices") {
+        return {
+          select: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      return { select: vi.fn() };
+    });
+
+    supabaseMocks.rpc.mockResolvedValue({ data: [], error: null });
+    supabaseMocks.invoke.mockResolvedValue({
+      data: { success: true, messageId: "wa_msg_987", message: "Mensagem enviada com sucesso ao WhatsApp!" },
+      error: null,
+    });
+
+    render(<PlatformBillingMaster />);
+
+    const whatsappTab = await screen.findByRole("tab", { name: /Mensageria WhatsApp/i });
+    fireEvent.focus(whatsappTab);
+    fireEvent.keyDown(whatsappTab, { key: "Enter" });
+    fireEvent.click(whatsappTab);
+
+    expect(await screen.findByText(/Mensageria WhatsApp \(Pluri Fisio\)/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/\+55 \(11\) 96047-4566/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/1\. Onboarding de Novos Cadastros/i)).toBeInTheDocument();
+    expect(screen.getByText(/2\. Agradecimento e Ativação de Plano/i)).toBeInTheDocument();
+    expect(screen.getByText(/📞 Agendar Introdução/i)).toBeInTheDocument();
+    expect(screen.getByText(/🚀 Seguir por conta própria/i)).toBeInTheDocument();
+
+    const triggerBtn = await screen.findByRole("button", { name: /Disparar Mensagem de Teste no WhatsApp/i });
+    fireEvent.click(triggerBtn);
+
+    await waitFor(() => {
+      expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", {
+        body: expect.objectContaining({
+          action: "SEND_TEST_WHATSAPP",
+          templateType: "welcome",
+        }),
+      });
+    });
+
+    expect(await screen.findByText(/Sucesso no disparo/i)).toBeInTheDocument();
+    expect(screen.getByText(/wa_msg_987/i)).toBeInTheDocument();
   });
 });

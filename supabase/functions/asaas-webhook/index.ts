@@ -5,6 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient } from '../_shared/asaas-client.ts';
 import { TelegramClient } from '../_shared/telegram-client.ts';
+import { WhatsAppClient } from '../_shared/whatsapp-client.ts';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -320,9 +321,25 @@ serve(async (req) => {
             await supabase.from('app_notifications').insert(notifications);
             console.log(`[asaas-webhook] ${notifications.length} notificações de pagamento inseridas em app_notifications para platform_admins.`);
           }
+
+          // Disparo de mensagem de agradecimento e confirmação de ativação no WhatsApp do Assinante
+          if (subscriberPhone) {
+            try {
+              const whatsAppClient = new WhatsAppClient();
+              const waResult = await whatsAppClient.sendPlanThankYouMessage({
+                name: subscriberName,
+                phone: subscriberPhone,
+                planName,
+                clinicName,
+              });
+              console.log(`[asaas-webhook] Mensagem de agradecimento WhatsApp enviada para ${subscriberPhone}:`, waResult);
+            } catch (waErr) {
+              console.error('[asaas-webhook] Erro ao enviar mensagem de agradecimento via WhatsApp (fail-safe ativado):', waErr);
+            }
+          }
         }
       } catch (telegramErr) {
-        console.error('[asaas-webhook] Erro ao notificar Telegram / app_notifications (fail-safe ativado):', telegramErr);
+        console.error('[asaas-webhook] Erro ao notificar Telegram / WhatsApp / app_notifications (fail-safe ativado):', telegramErr);
       }
     } else if (eventType === 'PAYMENT_OVERDUE') {
       if (payment.id) {

@@ -1743,14 +1743,16 @@
 }
 
 @media print {
-  body > *:not(#print-blank-kit-root):not(#print-clinic-stats-root):not(#print-patient-stats-root):not(#print-patient-registration-root) {
+  body > *:not(#print-blank-kit-root):not(#print-clinic-stats-root):not(#print-patient-stats-root):not(#print-patient-registration-root):not(#print-adult-consent-root):not(#print-guardian-consent-root) {
     display: none !important;
   }
 
   #print-blank-kit-root,
   #print-clinic-stats-root,
   #print-patient-stats-root,
-  #print-patient-registration-root {
+  #print-patient-registration-root,
+  #print-adult-consent-root,
+  #print-guardian-consent-root {
     display: block !important;
     position: static !important;
     width: 100% !important;
@@ -1768,7 +1770,13 @@
   #print-patient-stats-root [class*="card"],
   #print-patient-stats-root section,
   #print-patient-registration-root section,
-  #print-patient-registration-root footer {
+  #print-patient-registration-root footer,
+  #print-adult-consent-root section,
+  #print-adult-consent-root footer,
+  #print-adult-consent-root .avoid-break,
+  #print-guardian-consent-root section,
+  #print-guardian-consent-root footer,
+  #print-guardian-consent-root .avoid-break {
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -1784,7 +1792,13 @@
   #print-patient-stats-root *::after,
   #print-patient-registration-root *,
   #print-patient-registration-root *::before,
-  #print-patient-registration-root *::after {
+  #print-patient-registration-root *::after,
+  #print-adult-consent-root *,
+  #print-adult-consent-root *::before,
+  #print-adult-consent-root *::after,
+  #print-guardian-consent-root *,
+  #print-guardian-consent-root *::before,
+  #print-guardian-consent-root *::after {
     visibility: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;

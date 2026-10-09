@@ -160,7 +160,7 @@ export const PlanComparisonModal: React.FC<PlanComparisonModalProps> = ({ isOpen
         </div>
 
         <p className="text-[11px] text-muted-foreground text-center pt-1">
-          * Todos os planos contam com prontuário eletrônico completo, segurança LGPD, 7 dias de teste gratuito e descontos nos ciclos Trimestral (-10%) e Anual (Até 33% OFF).
+          * Todos os planos contam com prontuário eletrônico completo, segurança LGPD e descontos exclusivos nos ciclos Trimestral (-15%) e Anual (Até 35% OFF).
         </p>
 
         <div className="pt-3 border-t flex justify-end">
