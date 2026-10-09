@@ -98,7 +98,7 @@ export const PlatformClinicDetailPage = ({
       if (!loadedClinicId) throw new Error("Clínica não encontrada para esta rota mascarada.");
 
       const [auditRes, flagsRes, formsRes, tagsRes, subRes, invoicesRes] = await Promise.all([
-        callRpc("list_platform_audit_events", { _clinic_id: loadedClinicId, _limit: 80 }),
+        callRpc("list_platform_audit_events", { _clinic_id: loadedClinicId, _limit: 80 }, { silentError: true }),
         callRpc("list_feature_flags", { _clinic_id: loadedClinicId }),
         callRpc("get_platform_clinic_forms_summary_by_route_key", { _route_key: clinicKey }),
         supabase.from("clinic_tag_relations").select("clinic_tags(id, name, color)").eq("clinic_id", loadedClinicId),
@@ -106,14 +106,13 @@ export const PlatformClinicDetailPage = ({
         supabase.from("subscription_invoices").select("*").eq("clinic_id", loadedClinicId).order("created_at", { ascending: false }),
       ]);
 
-      if (auditRes.error) throw auditRes.error;
       if (flagsRes.error) throw flagsRes.error;
       if (formsRes.error) throw formsRes.error;
 
       setDetail(loadedDetail);
       setClinicSubscription(subRes.data ?? null);
       setClinicInvoices((invoicesRes.data ?? []) as SubscriptionInvoice[]);
-      setAuditEvents((auditRes.data ?? []) as PlatformAuditEvent[]);
+      setAuditEvents(!auditRes.error && auditRes.data ? ((auditRes.data ?? []) as PlatformAuditEvent[]) : []);
       setFeatureFlags((flagsRes.data ?? []) as FeatureFlag[]);
       setFormsSummary((formsRes.data ?? null) as PlatformClinicFormsSummary | null);
 

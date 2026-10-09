@@ -41,7 +41,13 @@ describe("PlatformTelegramAlerts", () => {
 
     await waitFor(() => {
       expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", {
-        body: { action: "SEND_TEST_NOTIFICATION" },
+        body: expect.objectContaining({
+          action: "SEND_TEST_NOTIFICATION",
+          profession: "fisioterapeuta",
+          gender: "Feminino",
+          preferredPronoun: "Ela/Dela",
+          origin: "Instagram (Bio/Campanha)",
+        }),
       });
     });
 
@@ -62,7 +68,9 @@ describe("PlatformTelegramAlerts", () => {
 
     await waitFor(() => {
       expect(supabaseMocks.invoke).toHaveBeenCalledWith("notify-admin-telegram", {
-        body: { action: "SEND_TEST_NOTIFICATION" },
+        body: expect.objectContaining({
+          action: "SEND_TEST_NOTIFICATION",
+        }),
       });
     });
 

@@ -25,7 +25,9 @@ import { CreditCardCheckoutTab, CardFormData } from "@/components/checkout/Credi
 import { BoletoCheckoutTab } from "@/components/checkout/BoletoCheckoutTab";
 import { PaymentSuccessView } from "@/components/checkout/PaymentSuccessView";
 import { PaymentRefusalAlert } from "@/components/checkout/PaymentRefusalAlert";
+import { trackPurchaseEvent, trackTrialStartEvent } from "@/lib/analytics-tracker";
 import { toast } from "sonner";
+
 
 interface SubscriptionDetails {
   id: string;
@@ -347,8 +349,22 @@ export default function PagamentoClinica() {
           ) {
             setPaymentConfirmed(true);
             setPaymentRefused(false);
+            void trackPurchaseEvent({
+              planKey: planParam,
+              category: isClinicFamily ? "Equipe" : "Solo",
+              value: Number(newRecord.value || pricing.pixDiscountTotal || pricing.periodTotal),
+              transactionId: newRecord.asaas_payment_id || newRecord.id,
+              paymentMethod: newRecord.billing_type || "PIX",
+              couponCode: couponParam || appliedCoupon?.code,
+              userData: {
+                email: clinicData?.email || user?.email || undefined,
+                phone: clinicData?.phone || profile?.phone || undefined,
+                name: clinicData?.name || undefined,
+              },
+            });
             toast.success("Pagamento confirmado com sucesso! Sua clínica está ativa.");
           } else if (newRecord.status === "REFUSED" || newRecord.status === "OVERDUE") {
+
             setPaymentRefused(true);
             setRefusalMessage("A cobrança foi recusada pela instituição financeira ou expirou.");
           }
@@ -480,10 +496,8 @@ export default function PagamentoClinica() {
           billing_type: "BOLETO",
           invoice_url: result.invoiceUrl || result.invoice?.invoice_url || null,
           bank_slip_url: result.bankSlipUrl || result.invoice?.bank_slip_url || null,
-          pix_qr_code: result.pixQrCode || result.invoice?.pix_qr_code || null,
-          pix_copy_paste: result.pixCopyPaste || result.invoice?.pix_copy_paste || null,
-          identification_field: result.invoice?.identification_field || result.rawResponse?.identificationField || null,
-          bar_code: result.invoice?.bar_code || result.rawResponse?.barCode || null,
+          identification_field: result.identificationField || result.invoice?.identification_field || (result.rawResponse as any)?.identificationField || null,
+          bar_code: result.barCode || result.invoice?.bar_code || (result.rawResponse as any)?.barCode || null,
         });
         toast.success("Boleto bancário gerado com sucesso!");
       }
@@ -559,6 +573,15 @@ export default function PagamentoClinica() {
         setPaymentConfirmed(true);
         setPaymentRefused(false);
 
+        void trackTrialStartEvent({
+          profession: profile?.profession || "fisioterapeuta",
+          userData: {
+            email: clinicData?.email || user?.email || undefined,
+            phone: cardForm.holderPhone || clinicData?.phone || profile?.phone || undefined,
+            name: cardForm.holderName || clinicData?.name || undefined,
+          },
+        });
+
         if (typeof refreshAuthState === "function") {
           await refreshAuthState();
         }
@@ -611,6 +634,21 @@ export default function PagamentoClinica() {
       toast.success("Pagamento no cartão aprovado com sucesso! Sua clínica está ativa.");
       setPaymentConfirmed(true);
       setPaymentRefused(false);
+
+      void trackPurchaseEvent({
+        planKey: planParam,
+        category: isClinicFamily ? "Equipe" : "Solo",
+        value: pricing.periodTotal,
+        transactionId: result.rawResponse?.id || invoice?.id,
+        paymentMethod: "CREDIT_CARD",
+        couponCode: couponParam || appliedCoupon?.code,
+        userData: {
+          email: clinicData?.email || user?.email || undefined,
+          phone: cardForm.holderPhone || clinicData?.phone || profile?.phone || undefined,
+          name: cardForm.holderName || clinicData?.name || undefined,
+        },
+      });
+
 
       if (typeof refreshAuthState === "function") {
         await refreshAuthState();
@@ -934,6 +972,7 @@ export default function PagamentoClinica() {
                         processing={processingCard}
                         onSubmit={handleProcessCreditCard}
                         invoiceUrl={invoice?.invoice_url}
+                        clinicId={clinicId}
                       />
                     </TabsContent>
 

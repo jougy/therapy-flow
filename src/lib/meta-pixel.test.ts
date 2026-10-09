@@ -12,7 +12,10 @@ import {
   trackCompleteRegistration,
   trackInitiateCheckout,
   trackStartTrial,
+  trackPurchase,
+  trackSubscribe,
 } from "./meta-pixel";
+
 
 describe("meta-pixel utils", () => {
   beforeEach(() => {
@@ -216,4 +219,62 @@ describe("meta-pixel utils", () => {
       expect(result.payload.value_cents).toBe(13900);
     });
   });
+
+  describe("trackPurchase and trackSubscribe", () => {
+    it("calls window.fbq with Purchase event payload and advanced matching", async () => {
+      const fbqMock = vi.fn();
+      window.fbq = fbqMock;
+
+      const res = await trackPurchase({
+        planKey: "prof_medio",
+        category: "Solo",
+        value: 87,
+        transactionId: "pay_xyz",
+        userData: { email: "fisio@clinica.com" },
+      });
+
+      expect(res.eventId).toBeDefined();
+      expect(fbqMock).toHaveBeenCalledWith(
+        "track",
+        "Purchase",
+        expect.objectContaining({
+          planKey: "prof_medio",
+          category: "Solo",
+          value: 87,
+          value_cents: 8700,
+          currency: "BRL",
+          order_id: "pay_xyz",
+          em: expect.any(String),
+        }),
+        expect.any(Object)
+      );
+    });
+
+    it("calls window.fbq with Subscribe event payload", async () => {
+      const fbqMock = vi.fn();
+      window.fbq = fbqMock;
+
+      const res = await trackSubscribe({
+        planKey: "clinica_top",
+        category: "Equipe",
+        value: 447,
+        transactionId: "sub_123",
+      });
+
+      expect(res.eventId).toBeDefined();
+      expect(fbqMock).toHaveBeenCalledWith(
+        "track",
+        "Subscribe",
+        expect.objectContaining({
+          planKey: "clinica_top",
+          category: "Equipe",
+          value: 447,
+          value_cents: 44700,
+          currency: "BRL",
+        }),
+        expect.any(Object)
+      );
+    });
+  });
 });
+

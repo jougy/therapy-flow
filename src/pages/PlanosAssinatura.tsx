@@ -1,52 +1,60 @@
 import React from "react";
-import { motion } from "framer-motion";
-import { Sparkles, Award, ArrowLeft, Table2, User, UserCheck, Shield, Building2 } from "lucide-react";
+import { ArrowLeft, Table2, Award, Sparkles } from "lucide-react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
 import { usePlanosState } from "./planos/hooks/usePlanosState";
-import { PlanType } from "@/utils/subscriptionPricing";
+import { PlanType, BillingCycle } from "@/utils/subscriptionPricing";
 import {
   PlanAudienceSelector,
   PlanBillingCycleSelector,
   PlanCouponInput,
-  PlanCardTier,
-  PlanEnterpriseBanner,
+  PlanStepper,
+  PlanStagePaid,
+  PlanStageEnterprise,
   PlanComparisonModal,
   PlanDetailsModal,
   PlanFAQModal,
-  PlanTrialExplanationModal,
+  AudienceType,
 } from "./planos/components";
 
 /**
- * Página Principal de Planos e Assinaturas (Orquestrador Declarativo).
+ * Página Principal de Planos e Assinaturas (Bento Interativo Pluri-Health).
  *
- * Arquitetura & Qualidade de Engenharia:
- * - Seletor de Perfil no Topo: [Para Profissional] vs [Para Clínica] (Fiel à Landing Page).
- * - Seletor de Ciclos: Teste gratuito (7 dias), Mensal, Trimestral (-10%), Anual (Até 33% OFF).
- * - Grid dinâmico dos 3 tiers do perfil ativo:
- *   - Profissional: Básico (R$ 57/mês), Médio ("Mais Popular", R$ 87/mês), Top ("Você + Apoio", R$ 127/mês).
- *   - Clínica: Básico (R$ 147/mês), Médio ("Recomendado", R$ 267/mês), Top (R$ 447/mês).
- * - Banner Enterprise inferior ("Redes de clínicas ou hospitais? Vamos conversar").
- * - Modal com a Tabela Comparativa Completa dos planos.
- * - Mobile-first rigoroso: overflow-y-auto funcional com suporte a telas 375px/390px.
+ * Arquitetura & UX:
+ * - Coluna Esquerda:
+ *   - Eyebrow com ícone ⚡
+ *   - Título e subtítulo dinâmico
+ *   - Seletor de Perfil (Profissional, Clínica, Enterprise)
+ *   - Seletor de Ciclos (Mensal, Trimestral -15%, Anual -35% OFF)
+ *   - Stepper / Slider tátil ("Porte do seu atendimento") com 3 botões de etapa
+ *   - Campo de Cupom Promocional
+ *   - Trust signals: "✔ Ativação imediata · PIX com 5% de desconto"
+ * - Coluna Direita (Palco Bento):
+ *   - Card do plano ativo com animações suaves (Framer Motion)
+ *   - Bloco de Bônus de Lançamento em gradiente âmbar
+ *   - Grid de features com destaque em negrito
+ *   - Ação de contratação direta (Solo pula onboarding e vai direto ao Asaas)
+ *   - Visão Enterprise dedicada com dark slate
  */
 export default function PlanosAssinatura() {
   const navigate = useNavigate();
   const [detailsPlanId, setDetailsPlanId] = React.useState<PlanType | null>(null);
   const [isFAQModalOpen, setIsFAQModalOpen] = React.useState(false);
-  const [isTrialModalOpen, setIsTrialModalOpen] = React.useState(false);
   const [isComparisonModalOpen, setIsComparisonModalOpen] = React.useState(false);
+
+  // Estado do Stepper (0 = Básico, 1 = Médio, 2 = Top)
+  const [stepIndex, setStepIndex] = React.useState(1);
 
   const {
     existingClinicName,
     hasActiveSubscription,
-    isFreeTrialEnabled,
+    activeSubscriptionPlan,
+    activeSubscriptionCycle,
     audience,
     setAudience,
     selectedCycle,
     setSelectedCycle,
-    isFreeCycle,
     selectedPlanId,
     activatingTrial,
     extraConcurrent,
@@ -71,9 +79,31 @@ export default function PlanosAssinatura() {
     isModuleEnabled,
   } = usePlanosState();
 
+  const [activeAudience, setActiveAudience] = React.useState<AudienceType>(audience);
+
+  // Sincroniza audience do hook com activeAudience local
+  React.useEffect(() => {
+    if (activeAudience !== "enterprise") {
+      setAudience(activeAudience);
+    }
+  }, [activeAudience, setAudience]);
+
+  React.useEffect(() => {
+    if (audience !== activeAudience && activeAudience !== "enterprise") {
+      setActiveAudience(audience);
+    }
+  }, [audience, activeAudience]);
+
   const handleOpenDetails = React.useCallback((p: PlanType) => {
     setDetailsPlanId(p);
   }, []);
+
+  const handleAudienceChange = React.useCallback((aud: AudienceType) => {
+    setActiveAudience(aud);
+    if (aud !== "enterprise") {
+      setAudience(aud);
+    }
+  }, [setAudience]);
 
   // Resolução O(1) de pricing indexado para o modal de detalhes
   const pricingByPlanMap: Record<PlanType, typeof profMedioPricing> = React.useMemo(() => ({
@@ -95,16 +125,183 @@ export default function PlanosAssinatura() {
     clinicaTopPricing,
   ]);
 
+  // Matriz de dados dos planos por perfil e step
+  const currentPlan = React.useMemo(() => {
+    if (activeAudience === "clinic") {
+      if (stepIndex === 0) {
+        return {
+          id: "clinica_basico" as PlanType,
+          name: "Básico",
+          tagline: "Consultórios e salas compartilhadas",
+          badge: undefined,
+          featured: false,
+          pricing: clinicaBasicoPricing,
+          allowExtraSeats: true,
+          baseSeatsLabel: "Base 2 acessos",
+          features: [
+            { text: "2 acessos simultâneos ao mesmo tempo", bold: true },
+            { text: "Profissionais e colaboradores ilimitados para cadastrar", bold: true },
+            { text: "Dono da clínica como administrador principal absoluto", bold: false },
+            { text: "Permissões de acesso padrão e seguras para cada função", bold: false },
+            { text: "Agendas compartilhadas por salas e macas", bold: false },
+            { text: "Digitalização das suas fichas de papel de graça", bold: true },
+          ],
+        };
+      }
+      if (stepIndex === 2) {
+        return {
+          id: "clinica_top" as PlanType,
+          name: "Top",
+          tagline: "Grandes clínicas e alta rotatividade",
+          badge: undefined,
+          featured: false,
+          pricing: clinicaTopPricing,
+          allowExtraSeats: true,
+          baseSeatsLabel: "Base 8 acessos",
+          features: [
+            { text: "8 acessos simultâneos ao mesmo tempo", bold: true },
+            { text: "Histórico completo e trilha de quem acessou cada prontuário", bold: true },
+            { text: "Gestão integrada de várias salas, macas e especialidades", bold: true },
+            { text: "Personalização total de níveis de hierarquia da equipe", bold: true },
+            { text: "Profissionais e colaboradores ilimitados para cadastrar", bold: false },
+            { text: "Controle total sobre toda a estrutura clínica", bold: false },
+          ],
+        };
+      }
+      return {
+        id: "clinica_medio" as PlanType,
+        name: "Médio",
+        tagline: "Clínicas consolidadas com equipe",
+        badge: "Recomendado",
+        featured: true,
+        pricing: clinicaMedioPricing,
+        allowExtraSeats: true,
+        baseSeatsLabel: "Base 4 acessos",
+        features: [
+          { text: "4 acessos simultâneos ao mesmo tempo", bold: true },
+          { text: "Controle automático de repasses e divisão de atendimentos", bold: true },
+          { text: "Permissões 100% editáveis por função e membro da equipe", bold: true },
+          { text: "Profissionais e colaboradores ilimitados para cadastrar", bold: false },
+          { text: "Formulários e fichas personalizáveis para toda a clínica", bold: false },
+          { text: "Dono no topo com controle total de segurança", bold: false },
+        ],
+      };
+    }
+
+    // Profissional
+    if (stepIndex === 0) {
+      return {
+        id: "prof_basico" as PlanType,
+        name: "Básico",
+        tagline: "Profissional autônomo iniciando consultório",
+        badge: undefined,
+        featured: false,
+        pricing: profBasicoPricing,
+        allowExtraSeats: false,
+        baseSeatsLabel: undefined,
+        features: [
+          { text: "1 acesso simultâneo individual", bold: true },
+          { text: "1 formulário universal + 1 ficha complementar", bold: true },
+          { text: "Pacientes e atendimentos ilimitados", bold: false },
+          { text: "Prontuário eletrônico & evolução rápida", bold: false },
+          { text: "Duplicação rápida: repete o atendimento anterior em 1 toque", bold: false },
+          { text: "Agenda com envio de mensagens no WhatsApp", bold: false },
+        ],
+      };
+    }
+    if (stepIndex === 2) {
+      return {
+        id: "prof_top" as PlanType,
+        name: "Top",
+        tagline: "Máxima autonomia e apoio de secretária",
+        badge: "Você + Apoio",
+        featured: false,
+        pricing: profTopPricing,
+        allowExtraSeats: false,
+        baseSeatsLabel: undefined,
+        features: [
+          { text: "2 acessos simultâneos (você + secretária ou assistente)", bold: true },
+          { text: "Lembretes automáticos de agendamento por WhatsApp", bold: true },
+          { text: "Recibos e relatórios de receitas automáticos", bold: true },
+          { text: "Suporte e atendimento prioritário direto", bold: true },
+          { text: "Pacientes e atendimentos ilimitados", bold: false },
+          { text: "Todos os recursos do plano Médio inclusos", bold: false },
+        ],
+      };
+    }
+    return {
+      id: "prof_medio" as PlanType,
+      name: "Médio",
+      tagline: "Alta demanda e fichas personalizadas",
+      badge: "Mais Popular",
+      featured: true,
+      pricing: profMedioPricing,
+      allowExtraSeats: false,
+      baseSeatsLabel: undefined,
+      features: [
+        { text: "1 acesso simultâneo individual", bold: false },
+        { text: "Formulários e fichas 100% ilimitadas e personalizáveis", bold: true },
+        { text: "Seu histórico vai com você mesmo se mudar de consultório", bold: true },
+        { text: "Controle financeiro de pagamentos e pacotes de sessões", bold: true },
+        { text: "Pacientes e atendimentos ilimitados", bold: false },
+        { text: "Todos os recursos clínicos e duplicação em 1 toque", bold: false },
+      ],
+    };
+  }, [
+    activeAudience,
+    stepIndex,
+    profBasicoPricing,
+    profMedioPricing,
+    profTopPricing,
+    clinicaBasicoPricing,
+    clinicaMedioPricing,
+    clinicaTopPricing,
+  ]);
+
+  const isCurrentActive = React.useMemo(() => {
+    if (!hasActiveSubscription || !activeSubscriptionPlan) return false;
+    const activeNormalized =
+      activeSubscriptionPlan === "solo" ? "prof_medio" :
+      activeSubscriptionPlan === "clinic" ? "clinica_medio" :
+      activeSubscriptionPlan === "enterprise" ? "clinica_top" :
+      activeSubscriptionPlan;
+    return currentPlan.id === activeNormalized;
+  }, [hasActiveSubscription, activeSubscriptionPlan, currentPlan.id]);
+
+  const activePlanDisplayName = React.useMemo(() => {
+    if (!activeSubscriptionPlan) return "";
+    switch (activeSubscriptionPlan) {
+      case "prof_basico": return "Profissional Básico";
+      case "prof_medio":
+      case "solo": return "Profissional Médio";
+      case "prof_top": return "Profissional Top";
+      case "clinica_basico": return "Clínica Básico";
+      case "clinica_medio":
+      case "clinic": return "Clínica Médio";
+      case "clinica_top":
+      case "enterprise": return "Clínica Top";
+      default: return "Plano Ilimitado";
+    }
+  }, [activeSubscriptionPlan]);
+
   if (!loading && !isModuleEnabled) {
     return <Navigate to="/espacopessoal" replace />;
   }
 
-  const currentDetailsPricing = detailsPlanId ? (pricingByPlanMap[detailsPlanId] || profMedioPricing) : profMedioPricing;
+  const currentDetailsPricing = detailsPlanId
+    ? pricingByPlanMap[detailsPlanId] || profMedioPricing
+    : profMedioPricing;
 
   return (
-    <div className="min-h-screen lg:h-[100dvh] bg-background text-foreground flex flex-col items-center justify-start lg:justify-between px-3 sm:px-6 lg:px-8 py-2 sm:py-3 lg:py-3 relative overflow-y-auto overflow-x-hidden">
-      {/* Botão de Retorno e Ações de Apoio no Topo */}
-      <div className="w-full max-w-7xl shrink-0 z-10 flex items-center justify-between h-8 sm:h-9 mb-1">
+    <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-between px-3 sm:px-6 lg:px-8 py-3 sm:py-4 relative overflow-y-auto overflow-x-hidden">
+      {/* Ambient background glow */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+        <div className="absolute -top-[10%] left-[8%] w-[42vw] h-[42vh] rounded-full blur-[100px] opacity-35 bg-radial from-blue-500/20 to-transparent" />
+        <div className="absolute -bottom-[12%] right-[8%] w-[38vw] h-[38vh] rounded-full blur-[100px] opacity-35 bg-radial from-sky-400/20 to-transparent" />
+      </div>
+
+      {/* Top bar de navegação e atalhos */}
+      <header className="w-full max-w-6xl shrink-0 z-10 flex items-center justify-between h-9 mb-2 sm:mb-3">
         <Button
           variant="ghost"
           size="sm"
@@ -112,323 +309,175 @@ export default function PlanosAssinatura() {
           className="text-muted-foreground hover:text-foreground -ml-2 gap-1.5 font-medium h-8 text-xs sm:text-sm min-h-[36px]"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          Voltar ao Espaço Pessoal
+          <span>Voltar ao Espaço Pessoal</span>
         </Button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={() => setIsComparisonModalOpen(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-500/20 text-xs font-semibold transition-colors min-h-[32px]"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-500/20 text-xs font-semibold transition-colors min-h-[32px] cursor-pointer"
           >
             <Table2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
             <span className="hidden sm:inline">Comparar Todos os Planos</span>
             <span className="sm:hidden">Comparativo</span>
           </button>
 
-          {!hasActiveSubscription && isFreeTrialEnabled && (
-            <button
-              type="button"
-              onClick={() => setIsTrialModalOpen(true)}
-              className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/20 text-xs font-semibold transition-colors min-h-[32px]"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Como funciona o teste gratuito?</span>
-            </button>
-          )}
-
           <button
             type="button"
             onClick={() => setIsFAQModalOpen(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary dark:text-blue-400 border border-primary/20 text-xs font-semibold transition-colors min-h-[32px]"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary dark:text-blue-400 border border-primary/20 text-xs font-semibold transition-colors min-h-[32px] cursor-pointer"
           >
             <Award className="w-3.5 h-3.5 text-primary" />
             <span className="hidden sm:inline">Dúvidas Frequentes & Garantias</span>
             <span className="sm:hidden">Dúvidas</span>
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Ambient Glow */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-primary/10 dark:bg-blue-500/15 rounded-full blur-[100px]" />
-        <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-emerald-500/10 dark:bg-emerald-500/10 rounded-full blur-[100px]" />
-      </div>
+      {/* Grid Bento Principal (2 Colunas) */}
+      <main className="w-full max-w-6xl z-10 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-center my-auto py-2">
+        {/* ================= Coluna Esquerda: Controles ================= */}
+        <section className="lg:col-span-5 flex flex-col items-start gap-3 sm:gap-4 min-w-0">
+          {hasActiveSubscription && activeSubscriptionPlan && (
+            <div className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-sky-500/10 to-emerald-500/10 border border-emerald-500/30 text-foreground flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                      Plano Ilimitado Ativo
+                    </span>
+                    <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                      {activePlanDisplayName}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {existingClinicName ? `Espaço: ${existingClinicName}` : "Seu espaço está com plano ilimitado ativo."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
-      {/* Header com Apresentação de Título Compacto */}
-      <motion.div
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="z-10 text-center shrink-0 mb-1 lg:mb-2 max-w-2xl space-y-1.5"
-      >
-        <div className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-[10px] font-bold tracking-widest uppercase">
-          Transparência Total
-        </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-extrabold tracking-wide">
+            <span aria-hidden="true">⚡</span> Planos interativos
+          </span>
 
-        <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-foreground leading-tight">
-          Planos que cabem no momento do seu trabalho.
-        </h1>
-        <p className="text-xs text-muted-foreground max-w-xl mx-auto line-clamp-1">
-          {existingClinicName
-            ? `Configurando o espaço: ${existingClinicName}`
-            : "Recursos clínicos essenciais sempre inclusos, sem limites de pacientes ou atendimentos."}
-        </p>
+          <div className="space-y-1">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-foreground tracking-tight leading-tight">
+              Um sistema que cresce com o seu atendimento.
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-md">
+              {existingClinicName
+                ? `Configurando espaço: ${existingClinicName}. Escolha o perfil e período.`
+                : "Escolha seu perfil, o porte da sua rotina e o período. O plano e o valor se ajustam na hora."}
+            </p>
+          </div>
 
-        {/* 1. Seletor de Perfil: [Para Profissional] vs [Para Clínica] */}
-        <PlanAudienceSelector
-          audience={audience}
-          onSelectAudience={setAudience}
-        />
-
-        {/* 2. Ciclos de Faturamento */}
-        <PlanBillingCycleSelector
-          selectedCycle={selectedCycle}
-          onSelectCycle={setSelectedCycle}
-          hasActiveSubscription={hasActiveSubscription}
-          isFreeTrialEnabled={isFreeTrialEnabled}
-        />
-      </motion.div>
-
-      {/* Caixa de Cupom (Planos Pagos) */}
-      {!isFreeCycle && (
-        <div className="z-10 shrink-0 mb-1 w-full max-w-md">
-          <PlanCouponInput
-            couponInput={couponInput}
-            onCouponInputChange={setCouponInput}
-            validatingCoupon={validatingCoupon}
-            onValidateCoupon={handleValidateCoupon}
-            appliedCoupon={appliedCoupon}
-            couponError={couponError}
-            onRemoveCoupon={handleRemoveCoupon}
+          {/* Seletor de Perfil */}
+          <PlanAudienceSelector
+            audience={activeAudience}
+            onSelectAudience={handleAudienceChange}
           />
-        </div>
-      )}
 
-      {/* Grid de Planos Principais: Opção Única no Teste Gratuito (Clínica Médio) ou 3 Tiers por Perfil */}
-      {isFreeCycle ? (
-        <div className="z-10 w-full max-w-xl flex-1 flex flex-col justify-center items-center my-1 mx-auto">
-          <div className="w-full">
-            <PlanCardTier
-              planId="clinica_medio"
-              name="Clínica Médio"
-              tagline="Clínicas consolidadas com equipe"
-              badge="Mais Escolhido"
-              featured={true}
-              icon={Building2}
-              colorTheme="blue"
-              features={[
-                "4 acessos simultâneos ao mesmo tempo",
-                "Profissionais e colaboradores ilimitados para cadastrar",
-                "Dono no topo com controle total de segurança",
-                "Permissões editáveis: defina exatamente o que cada pessoa vê",
-                "Atendimentos e pacientes 100% ilimitados",
-              ]}
-              pricing={clinicaMedioPricing}
-              isFreeCycle={true}
-              isSelected={true}
+          {/* Seletor de Ciclos */}
+          {activeAudience !== "enterprise" && (
+            <PlanBillingCycleSelector
+              selectedCycle={selectedCycle === "free" ? "annual" : selectedCycle}
+              onSelectCycle={setSelectedCycle}
+            />
+          )}
+
+          {/* Stepper / Slider de Porte */}
+          {activeAudience !== "enterprise" && (
+            <PlanStepper
+              stepIndex={stepIndex}
+              onChangeStep={setStepIndex}
+              audience={activeAudience}
+            />
+          )}
+
+          {/* Cupom Promocional */}
+          {activeAudience !== "enterprise" && (
+            <div className="w-full">
+              <PlanCouponInput
+                couponInput={couponInput}
+                onCouponInputChange={setCouponInput}
+                validatingCoupon={validatingCoupon}
+                onValidateCoupon={handleValidateCoupon}
+                appliedCoupon={appliedCoupon}
+                couponError={couponError}
+                onRemoveCoupon={handleRemoveCoupon}
+              />
+            </div>
+          )}
+
+          {/* Trust signals */}
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground font-medium pt-1">
+            <span className="text-emerald-600 dark:text-emerald-400 font-bold">✔ Ativação imediata</span>
+            <span>·</span>
+            <span>PIX com 5% de desconto</span>
+          </div>
+        </section>
+
+        {/* ================= Coluna Direita: Palco Dinâmico ================= */}
+        <section className="lg:col-span-7 flex flex-col justify-center min-w-0">
+          {activeAudience === "enterprise" ? (
+            <PlanStageEnterprise
+              key="enterprise"
+              onSelectEnterprise={handleSelectPlan}
+            />
+          ) : (
+            <PlanStagePaid
+              key={currentPlan.id + selectedCycle}
+              planId={currentPlan.id}
+              name={currentPlan.name}
+              tagline={currentPlan.tagline}
+              badge={currentPlan.badge}
+              featured={currentPlan.featured}
+              isCurrentActivePlan={isCurrentActive}
+              features={currentPlan.features}
+              pricing={currentPlan.pricing}
+              cycle={selectedCycle}
               onSelectPlan={handleSelectPlan}
               onOpenDetails={handleOpenDetails}
               activatingTrial={activatingTrial}
+              allowExtraSeats={currentPlan.allowExtraSeats}
+              extraSeatsCount={extraConcurrent}
+              onExtraSeatsChange={setExtraConcurrent}
+              baseSeatsLabel={currentPlan.baseSeatsLabel}
             />
-          </div>
-          <p className="text-[11px] text-muted-foreground text-center mt-2">
-            O teste gratuito concede acesso completo aos recursos do plano <strong>Clínica Médio</strong> com 4 acessos simultâneos durante 7 dias.
-          </p>
-        </div>
-      ) : audience === "prof" ? (
-        /* Grupo de Planos Profissionais (Básico, Médio e Top) */
-        <div className="z-10 grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4 xl:gap-5 w-full max-w-7xl flex-1 items-stretch min-h-0 my-1">
-          <PlanCardTier
-            planId="prof_basico"
-            name="Básico"
-            tagline="Profissional autônomo iniciando consultório"
-            icon={User}
-            colorTheme="emerald"
-            features={[
-              "1 acesso simultâneo individual",
-              "Pacientes e atendimentos ilimitados",
-              "Prontuário eletrônico & evolução rápida",
-              "Duplicação rápida: repete a conduta anterior em 30s",
-              "1 formulário universal + 1 ficha complementar",
-              "Agenda com envio de mensagens no WhatsApp",
-            ]}
-            pricing={profBasicoPricing}
-            isFreeCycle={false}
-            isSelected={selectedPlanId === "prof_basico"}
-            onSelectPlan={handleSelectPlan}
-            onOpenDetails={handleOpenDetails}
-            activatingTrial={activatingTrial}
-          />
+          )}
+        </section>
+      </main>
 
-          <PlanCardTier
-            planId="prof_medio"
-            name="Médio"
-            tagline="Alta demanda e fichas personalizadas"
-            badge="Mais Popular"
-            featured={true}
-            icon={UserCheck}
-            colorTheme="blue"
-            features={[
-              "1 acesso simultâneo individual",
-              "Pacientes e atendimentos ilimitados",
-              "Todos os recursos clínicos essenciais inclusos",
-              "Formulários e fichas de avaliação ilimitadas e customizáveis",
-              "Seu histórico vai com você mesmo se mudar de consultório",
-              "Controle de pagamentos e pacotes de sessões",
-            ]}
-            pricing={profMedioPricing}
-            isFreeCycle={false}
-            isSelected={selectedPlanId === "prof_medio"}
-            onSelectPlan={handleSelectPlan}
-            onOpenDetails={handleOpenDetails}
-            activatingTrial={activatingTrial}
-          />
-
-          <PlanCardTier
-            planId="prof_top"
-            name="Top"
-            tagline="Máxima autonomia e apoio de secretária"
-            badge="Você + Apoio"
-            icon={Shield}
-            colorTheme="purple"
-            features={[
-              "2 acessos simultâneos (você + secretária ou assistente)",
-              "Pacientes e atendimentos ilimitados",
-              "Todos os recursos do plano Médio inclusos",
-              "Recibos e relatórios de receitas automáticos",
-              "Lembretes automáticos de agendamento por WhatsApp",
-              "Atendimento e suporte prioritário",
-            ]}
-            pricing={profTopPricing}
-            isFreeCycle={false}
-            isSelected={selectedPlanId === "prof_top"}
-            onSelectPlan={handleSelectPlan}
-            onOpenDetails={handleOpenDetails}
-            activatingTrial={activatingTrial}
-          />
-        </div>
-      ) : (
-        /* Grupo de Planos Clínica (Básico, Médio e Top) */
-        <div className="z-10 grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4 xl:gap-5 w-full max-w-7xl flex-1 items-stretch min-h-0 my-1">
-          <PlanCardTier
-            planId="clinica_basico"
-            name="Básico"
-            tagline="Consultórios e salas compartilhadas"
-            icon={Building2}
-            colorTheme="purple"
-            features={[
-              "2 acessos simultâneos ao mesmo tempo",
-              "Profissionais e colaboradores ilimitados para cadastrar",
-              "Dono da clínica como administrador principal absoluto",
-              "Permissões de acesso padrão e seguras para cada função",
-              "Agendas compartilhadas por salas e macas",
-              "Passamos suas fichas de papel para o sistema de graça",
-            ]}
-            pricing={clinicaBasicoPricing}
-            isFreeCycle={false}
-            isSelected={selectedPlanId === "clinica_basico"}
-            onSelectPlan={handleSelectPlan}
-            onOpenDetails={handleOpenDetails}
-            activatingTrial={activatingTrial}
-            allowExtraSeats={true}
-            extraSeatsCount={extraConcurrent}
-            onExtraSeatsChange={setExtraConcurrent}
-            baseSeatsLabel="Base 2 acessos"
-          />
-
-          <PlanCardTier
-            planId="clinica_medio"
-            name="Médio"
-            tagline="Clínicas consolidadas com equipe"
-            badge="Recomendado"
-            featured={true}
-            icon={Building2}
-            colorTheme="blue"
-            features={[
-              "4 acessos simultâneos ao mesmo tempo",
-              "Profissionais e colaboradores ilimitados para cadastrar",
-              "Dono no topo com controle total de segurança",
-              "Permissões editáveis: defina o que cada membro pode ver",
-              "Controle automático de repasses e divisão de atendimentos",
-              "Formulários e fichas personalizáveis para toda a clínica",
-            ]}
-            pricing={clinicaMedioPricing}
-            isFreeCycle={false}
-            isSelected={selectedPlanId === "clinica_medio"}
-            onSelectPlan={handleSelectPlan}
-            onOpenDetails={handleOpenDetails}
-            activatingTrial={activatingTrial}
-            allowExtraSeats={true}
-            extraSeatsCount={extraConcurrent}
-            onExtraSeatsChange={setExtraConcurrent}
-            baseSeatsLabel="Base 4 acessos"
-          />
-
-          <PlanCardTier
-            planId="clinica_top"
-            name="Top"
-            tagline="Grandes clínicas e alta rotatividade"
-            icon={Sparkles}
-            colorTheme="purple"
-            features={[
-              "8 acessos simultâneos ao mesmo tempo",
-              "Profissionais e colaboradores ilimitados para cadastrar",
-              "Dono com controle total sobre toda a estrutura da clínica",
-              "Personalização total de cargos, níveis e regras de acesso",
-              "Gestão integrada de várias salas e especialidades",
-              "Histórico completo de auditoria em cada prontuário",
-            ]}
-            pricing={clinicaTopPricing}
-            isFreeCycle={false}
-            isSelected={selectedPlanId === "clinica_top"}
-            onSelectPlan={handleSelectPlan}
-            onOpenDetails={handleOpenDetails}
-            activatingTrial={activatingTrial}
-            allowExtraSeats={true}
-            extraSeatsCount={extraConcurrent}
-            onExtraSeatsChange={setExtraConcurrent}
-            baseSeatsLabel="Base 8 acessos"
-          />
-        </div>
-      )}
-
-      {/* Banner Enterprise Inferior ("Redes de clínicas ou hospitais? Vamos conversar") */}
-      <PlanEnterpriseBanner />
-
-      {/* Rodapé Compacto com Gatilhos de Modal e Garantia Ética */}
-      <div className="w-full max-w-7xl shrink-0 z-10 pt-2 pb-1 border-t border-border/40 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-muted-foreground">
+      {/* Rodapé Compacto */}
+      <footer className="w-full max-w-6xl shrink-0 z-10 pt-3 pb-1 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-muted-foreground">
         <div className="flex items-center gap-1.5 text-center sm:text-left">
-          <span className="font-semibold text-foreground">Pluri Fisio:</span>
-          <span>Pagamento no PIX com 5% de desconto · Cancele quando quiser · Sem fidelidade.</span>
+          <span className="font-bold text-foreground">Pluri Fisio:</span>
+          <span>Pagamento no PIX com 5% de desconto · Cancele quando quiser.</span>
         </div>
 
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setIsComparisonModalOpen(true)}
-            className="hover:text-foreground underline font-medium"
+            className="hover:text-foreground underline font-medium cursor-pointer"
           >
             Ver Tabela Comparativa Completa
           </button>
-          {!hasActiveSubscription && isFreeTrialEnabled && (
-            <button
-              type="button"
-              onClick={() => setIsTrialModalOpen(true)}
-              className="hover:text-foreground underline sm:hidden font-medium"
-            >
-              Regras do teste gratuito
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setIsFAQModalOpen(true)}
-            className="hover:text-foreground underline font-medium"
+            className="hover:text-foreground underline font-medium cursor-pointer"
           >
             Dúvidas & Perguntas Frequentes
           </button>
         </div>
-      </div>
+      </footer>
 
       {/* Modais de Suporte e Detalhamento */}
       <PlanDetailsModal
@@ -436,7 +485,7 @@ export default function PlanosAssinatura() {
         onClose={() => setDetailsPlanId(null)}
         planId={detailsPlanId}
         pricing={currentDetailsPricing}
-        isFreeCycle={isFreeCycle}
+        isFreeCycle={false}
         onSelectPlan={handleSelectPlan}
       />
 
@@ -448,12 +497,6 @@ export default function PlanosAssinatura() {
       <PlanFAQModal
         isOpen={isFAQModalOpen}
         onClose={() => setIsFAQModalOpen(false)}
-      />
-
-      <PlanTrialExplanationModal
-        isOpen={isTrialModalOpen}
-        onClose={() => setIsTrialModalOpen(false)}
-        onSelectPlan={handleSelectPlan}
       />
 
       <TermsOfServiceModal

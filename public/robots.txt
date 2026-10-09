@@ -1,14 +1,29 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
+# Robots.txt — Pluri Fisio & Pluri Health
+# Políticas de indexação seguras em estrita conformidade com CFM, CREFITO e LGPD (Art. 18)
 
 User-agent: *
-Allow: /
+# Páginas Públicas Permitidas para Indexação e Mecanismos de Busca / IA
+Allow: /$
+Allow: /auth$
+Allow: /auth/cadastro$
+Allow: /auth/redefinir-senha$
+Allow: /planos$
+Allow: /download$
+Allow: /baixar$
+Allow: /termos$
+
+# Áreas Clínicas Privadas e Protegidas (Sigilo Médico e Prontuários LGPD - Proibido Indexar)
+Disallow: /clinica/
+Disallow: /pacientes/
+Disallow: /espacopessoal/
+Disallow: /platform/
+Disallow: /configuracoes/
+Disallow: /pagamento/
+Disallow: /onboarding-clinica/
+Disallow: /convite/
+Disallow: /autorizacao-menor/
+
+# Sitemaps Oficiais para Google Search Console
+Sitemap: https://plurifisio.com.br/sitemap.xml
+Sitemap: https://app.plurifisio.com.br/sitemap.xml
+Sitemap: https://pluri.health/sitemap.xml

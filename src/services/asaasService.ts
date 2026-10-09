@@ -42,6 +42,8 @@ export interface AsaasServiceResult {
   bankSlipUrl?: string | null;
   pixQrCode?: string | null;
   pixCopyPaste?: string | null;
+  identificationField?: string | null;
+  barCode?: string | null;
   rawResponse?: unknown;
   source: "EDGE_FUNCTION";
 }
@@ -77,6 +79,8 @@ export async function processAsaasPayment(opts: ProcessPaymentOptions): Promise<
       bankSlipUrl: data.bankSlipUrl || data.invoice?.bank_slip_url || null,
       pixQrCode: data.pixQrCode || data.invoice?.pix_qr_code || null,
       pixCopyPaste: data.pixCopyPaste || data.invoice?.pix_copy_paste || null,
+      identificationField: data.identificationField || data.invoice?.identification_field || null,
+      barCode: data.barCode || data.invoice?.bar_code || null,
       rawResponse: data,
       source: "EDGE_FUNCTION",
     };

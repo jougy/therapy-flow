@@ -191,7 +191,7 @@ export const ChangePlanModal: React.FC<ChangePlanModalProps> = React.memo(({
             >
               <span>Trimestral</span>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">
-                -10%
+                -15% OFF
               </span>
             </button>
             <button
@@ -205,7 +205,7 @@ export const ChangePlanModal: React.FC<ChangePlanModalProps> = React.memo(({
             >
               <span>Anual</span>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">
-                -25% Economia
+                -35% OFF
               </span>
             </button>
           </div>

@@ -5162,14 +5162,15 @@ CREATE OR REPLACE FUNCTION "public"."get_user_active_governance"("_user_id" "uui
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
     AS $$
+#variable_conflict use_column
 BEGIN
   -- Auto-expire outdated punishments first
-  UPDATE public.user_punishments
+  UPDATE public.user_punishments up
   SET is_active = false
-  WHERE user_punishments.user_id = _user_id
-    AND user_punishments.is_active = true
-    AND user_punishments.expires_at IS NOT NULL
-    AND user_punishments.expires_at < now();
+  WHERE up.user_id = _user_id
+    AND up.is_active = true
+    AND up.expires_at IS NOT NULL
+    AND up.expires_at < now();
 
   RETURN QUERY
   SELECT 
@@ -11717,6 +11718,8 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_invoices" (
     "nfe_pdf_url" text,
     "nfe_xml_url" text,
     "nfe_error_message" text,
+    "identification_field" text,
+    "bar_code" text,
     CONSTRAINT "subscription_invoices_charge_type_check" CHECK (("charge_type" = ANY (ARRAY['RECURRING_SUBSCRIPTION'::"text", 'ONE_TIME_SUBACCOUNT_EXPANSION'::"text"]))),
     CONSTRAINT "subscription_invoices_status_check" CHECK (("status" = ANY (ARRAY['PENDING'::"text", 'RECEIVED'::"text", 'CONFIRMED'::"text", 'OVERDUE'::"text", 'REFUNDED'::"text", 'DELETED'::"text", 'DUNNING_RECEIVED'::"text", 'RECEIVED_IN_CASH'::"text", 'AWAITING_PAYMENT'::"text"])))
 );
@@ -15411,6 +15414,47 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
+
+-- ============================================================================
+-- Tabela: whatsapp_chat_sessions (Sessões do WhatsApp Bot do Pluri Fisio)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.whatsapp_chat_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone TEXT NOT NULL UNIQUE,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    clinic_id UUID REFERENCES public.clinics(id) ON DELETE SET NULL,
+    current_step TEXT NOT NULL DEFAULT 'initial',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_phone ON public.whatsapp_chat_sessions(phone);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_user_id ON public.whatsapp_chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_clinic_id ON public.whatsapp_chat_sessions(clinic_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_step ON public.whatsapp_chat_sessions(current_step);
+
+ALTER TABLE public.whatsapp_chat_sessions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role tem acesso total a whatsapp_chat_sessions"
+    ON public.whatsapp_chat_sessions
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+CREATE POLICY "Platform admins podem visualizar whatsapp_chat_sessions"
+    ON public.whatsapp_chat_sessions
+    FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.platform_admins pa
+            WHERE pa.user_id = auth.uid()
+              AND pa.is_active = true
+        )
+    );
 
 
 

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
-  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown
+  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown, Baby
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,6 +34,7 @@ import { GroupColorPaletteField, type ClinicGroupColorSlot } from "@/components/
 import { SessionShareDialog } from "@/components/SessionShareDialog";
 import AgendaWidget from "@/components/AgendaWidget";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import { PatientFilesPanel } from "@/components/PatientFilesPanel";
 import { PatientFilesProvider, usePatientFilesContext } from "@/contexts/PatientFilesContext";
 import { FileThumbnailCard } from "@/components/FileThumbnailCard";
@@ -41,6 +42,8 @@ import { PatientAnamnesisDashboardContent, PatientStatsPrintView } from "@/pages
 import { SharePatientRegistrationModal } from "@/components/patients/SharePatientRegistrationModal";
 import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
 import { PatientRegistrationPrintView } from "@/components/patients/PatientRegistrationPrintView";
+import { PrintAdultConsentModal } from "@/components/patients/PrintAdultConsentModal";
+import { PrintGuardianConsentModal } from "@/components/patients/PrintGuardianConsentModal";
 import { buildPatientExportData, downloadPatientDataJson } from "@/lib/patient-export";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -1219,6 +1222,8 @@ const PacienteDetalhe = () => {
   const [patientInfoDialogOpen, setPatientInfoDialogOpen] = useState(false);
   const [showPrintRegistrationModal, setShowPrintRegistrationModal] = useState(false);
   const [isPrintingRegistration, setIsPrintingRegistration] = useState(false);
+  const [showPrintAdultConsentModal, setShowPrintAdultConsentModal] = useState(false);
+  const [showPrintGuardianConsentModal, setShowPrintGuardianConsentModal] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [agendaDate, setAgendaDate] = useState(() => getDefaultAgendaInputs().date);
   const [agendaTime, setAgendaTime] = useState(() => getDefaultAgendaInputs().time);
@@ -2966,8 +2971,41 @@ const PacienteDetalhe = () => {
                   disabled={!canPrint}
                   className="cursor-pointer"
                 >
-                  <Printer className="mr-2 h-4 w-4" />
-                  <span>Imprimir cadastro (PDF)</span>
+                  <Printer className="mr-2 h-4 w-4 text-primary" />
+                  <div className="flex flex-col">
+                    <span>Imprimir cadastro (PDF)</span>
+                    <span className="text-[11px] text-muted-foreground">Dossiê cadastral diagramado A4</span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setShowPrintAdultConsentModal(true);
+                  }}
+                  onClick={() => setShowPrintAdultConsentModal(true)}
+                  disabled={!canPrint}
+                  className="cursor-pointer"
+                >
+                  <FileText className="mr-2 h-4 w-4 text-emerald-600" />
+                  <div className="flex flex-col">
+                    <span>Imprimir Termo de Consentimento (Adulto)</span>
+                    <span className="text-[11px] text-muted-foreground">TCLE A4 para assinatura física</span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setShowPrintGuardianConsentModal(true);
+                  }}
+                  onClick={() => setShowPrintGuardianConsentModal(true)}
+                  disabled={!canPrint}
+                  className="cursor-pointer"
+                >
+                  <Baby className="mr-2 h-4 w-4 text-amber-600" />
+                  <div className="flex flex-col">
+                    <span>Imprimir Termo do Responsável (Menor)</span>
+                    <span className="text-[11px] text-muted-foreground">LGPD Art. 14 / Pais e Tutores</span>
+                  </div>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => handleExportPatientJson()}
@@ -3127,27 +3165,31 @@ const PacienteDetalhe = () => {
           <>
         {/* Banner de Rascunhos Pendentes */}
         {sessions.filter((s) => s.status === "rascunho").length > 0 && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200 animate-in fade-in">
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+          <DismissibleInfoTip
+            id="patient-detail-drafts-warning-tip"
+            variant="subtle"
+            icon={<AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />}
+            className="border-amber-500/30 bg-amber-500/10"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="font-semibold text-sm">
+                <p className="font-semibold text-sm text-foreground">
                   {sessions.filter((s) => s.status === "rascunho").length} atendimento(s) em rascunho pendente(s)
                 </p>
-                <p className="text-xs text-muted-foreground dark:text-amber-300/80">
+                <p className="text-xs text-muted-foreground">
                   Revisar e concluir atendimentos em andamento mantém o prontuário clínico protegido e atualizado.
                 </p>
               </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-amber-500/40 bg-background/80 hover:bg-background text-xs gap-1 self-start sm:self-auto shrink-0"
+                onClick={() => setSessionStatusFilter("rascunho")}
+              >
+                Ver Rascunhos
+              </Button>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-amber-500/40 bg-background/80 hover:bg-background text-xs gap-1 self-start sm:self-auto shrink-0"
-              onClick={() => setSessionStatusFilter("rascunho")}
-            >
-              Ver Rascunhos
-            </Button>
-          </div>
+          </DismissibleInfoTip>
         )}
 
         {/* Mobile Filters Trigger & Compact Search */}
@@ -4697,6 +4739,27 @@ const PacienteDetalhe = () => {
           documentTitle={`cadastro completo do paciente ${patient.name}`}
         />
       )}
+
+      {/* Modal de Impressão do Termo de Consentimento Adulto (TCLE) */}
+      <PrintAdultConsentModal
+        open={showPrintAdultConsentModal}
+        onOpenChange={setShowPrintAdultConsentModal}
+        patient={patient}
+        clinicId={clinicId}
+        clinicName={clinic?.name}
+      />
+
+      {/* Modal de Impressão da Permissão dos Pais (Menor de Idade) */}
+      <PrintGuardianConsentModal
+        open={showPrintGuardianConsentModal}
+        onOpenChange={setShowPrintGuardianConsentModal}
+        patient={patient}
+        clinicId={clinicId}
+        clinicName={clinic?.name}
+        onPrinted={() => {
+          if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["patient"]);
+        }}
+      />
       </motion.div>
     </PatientFilesProvider>
   );

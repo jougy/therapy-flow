@@ -43,6 +43,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { generateGlobalUserId } from "@/lib/user-identity";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import {
   SUPPORTED_PROFESSIONS,
   getProfessionOption,
@@ -118,6 +119,10 @@ export const PersonalProfileSection = () => {
   const [cpf, setCpf] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState("");
+  const [customGender, setCustomGender] = useState("");
+  const [preferredPronoun, setPreferredPronoun] = useState("");
+  const [customPronoun, setCustomPronoun] = useState("");
   const [profession, setProfession] = useState("");
   const [councilName, setCouncilName] = useState("CREFITO");
   const [professionalLicense, setProfessionalLicense] = useState("");
@@ -141,17 +146,59 @@ export const PersonalProfileSection = () => {
   }, [user?.id, user?.email, profile?.public_code]);
 
   const loadProfileIntoForm = () => {
-    if (!profile) return;
-    setFullName(profile.full_name || "");
-    setSocialName(profile.social_name || "");
-    setCpf(profile.cpf ? formatCpf(profile.cpf) : "");
-    setBirthDate(profile.birth_date || "");
-    setPhone(profile.phone ? formatPhone(profile.phone) : "");
-    setProfession(profile.profession || "");
-    setCouncilName(profile.council_name || "CREFITO");
-    setProfessionalLicense(profile.professional_license || "");
+    if (!profile && !user) return;
+    setFullName(profile?.full_name || "");
+    setSocialName(profile?.social_name || "");
+    setCpf(profile?.cpf ? formatCpf(profile.cpf) : "");
+    setBirthDate(profile?.birth_date || "");
+    setPhone(profile?.phone ? formatPhone(profile.phone) : "");
+    setProfession(profile?.profession || "");
+    setCouncilName(profile?.council_name || "CREFITO");
+    setProfessionalLicense(profile?.professional_license || "");
 
-    const rawAddr = profile.address && typeof profile.address === "object" ? (profile.address as Record<string, unknown>) : {};
+    // Gênero
+    const rawGender = (
+      (profile as Record<string, unknown>)?.gender ||
+      user?.user_metadata?.gender ||
+      ""
+    ).toString().trim();
+    if (rawGender.toLowerCase() === "masculino") {
+      setGender("masculino");
+      setCustomGender("");
+    } else if (rawGender.toLowerCase() === "feminino") {
+      setGender("feminino");
+      setCustomGender("");
+    } else if (rawGender) {
+      setGender("outro");
+      setCustomGender(rawGender);
+    } else {
+      setGender("");
+      setCustomGender("");
+    }
+
+    // Pronome de preferência
+    const rawPronoun = (
+      (profile as Record<string, unknown>)?.preferred_pronoun ||
+      (profile as Record<string, unknown>)?.pronoun ||
+      user?.user_metadata?.preferred_pronoun ||
+      user?.user_metadata?.pronoun ||
+      ""
+    ).toString().trim();
+    if (rawPronoun.toLowerCase() === "ele/dele" || rawPronoun.toLowerCase() === "ele") {
+      setPreferredPronoun("ele/dele");
+      setCustomPronoun("");
+    } else if (rawPronoun.toLowerCase() === "ela/dela" || rawPronoun.toLowerCase() === "ela") {
+      setPreferredPronoun("ela/dela");
+      setCustomPronoun("");
+    } else if (rawPronoun) {
+      setPreferredPronoun("outros");
+      setCustomPronoun(rawPronoun);
+    } else {
+      setPreferredPronoun("");
+      setCustomPronoun("");
+    }
+
+    const rawAddr = profile?.address && typeof profile.address === "object" ? (profile.address as Record<string, unknown>) : {};
     setAddress({
       cep: typeof rawAddr.cep === "string" ? formatCep(rawAddr.cep) : "",
       street: typeof rawAddr.street === "string" ? rawAddr.street : "",
@@ -193,6 +240,24 @@ export const PersonalProfileSection = () => {
     setSaving(true);
 
     try {
+      const finalGender =
+        gender === "outro"
+          ? customGender.trim()
+          : gender === "masculino"
+          ? "Masculino"
+          : gender === "feminino"
+          ? "Feminino"
+          : gender.trim();
+
+      const finalPronoun =
+        preferredPronoun === "outros"
+          ? customPronoun.trim()
+          : preferredPronoun === "ele/dele"
+          ? "Ele/Dele"
+          : preferredPronoun === "ela/dela"
+          ? "Ela/Dela"
+          : preferredPronoun.trim();
+
       // 1. Identifica alterações sensíveis em dados previamente preenchidos
       const sensitiveChanges: Record<string, { from: unknown; to: unknown }> = {};
 
@@ -211,6 +276,8 @@ export const PersonalProfileSection = () => {
       checkChange("profession", profile?.profession, profession);
       checkChange("professional_license", profile?.professional_license, professionalLicense);
       checkChange("birth_date", profile?.birth_date, birthDate);
+      checkChange("gender", (profile as Record<string, unknown>)?.gender as string, finalGender);
+      checkChange("preferred_pronoun", (profile as Record<string, unknown>)?.preferred_pronoun as string, finalPronoun);
 
       // 2. Atualiza os dados no profiles
       const { error } = await supabase
@@ -221,6 +288,9 @@ export const PersonalProfileSection = () => {
           cpf: cpf.replace(/\D/g, "") || null,
           birth_date: birthDate || null,
           phone: phone.replace(/\D/g, "") || null,
+          gender: finalGender || null,
+          pronoun: finalPronoun || null,
+          preferred_pronoun: finalPronoun || null,
           profession: profession.trim() || null,
           council_name: councilName.trim() || "CREFITO",
           professional_license: professionalLicense.trim() || null,
@@ -234,10 +304,21 @@ export const PersonalProfileSection = () => {
             state: address.state.trim(),
           },
           updated_at: new Date().toISOString(),
-        })
+        } as any)
         .eq("id", user.id);
 
       if (error) throw error;
+
+      // Sincroniza metadados no Supabase Auth em segundo plano
+      void supabase.auth.updateUser({
+        data: {
+          gender: finalGender || null,
+          pronoun: finalPronoun || null,
+          preferred_pronoun: finalPronoun || null,
+        },
+      }).catch((authMetaErr) => {
+        console.warn("[PersonalProfileSection] Falha ao sincronizar auth metadata:", authMetaErr);
+      });
 
       // 3. Se houve alterações sensíveis em campos preenchidos, registra evento de auditoria
       if (Object.keys(sensitiveChanges).length > 0) {
@@ -392,11 +473,15 @@ export const PersonalProfileSection = () => {
             </div>
 
             {/* Banner LGPD / Posse dos Dados Pessoais */}
-            <div className="rounded-xl border border-sky-200/80 bg-sky-50/70 p-4 text-xs leading-relaxed text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-200">
+            <DismissibleInfoTip
+              id="personal-profile-lgpd-tip"
+              variant="subtle"
+              icon={<Shield className="h-4 w-4" />}
+            >
               Estes dados pertencem à sua conta pessoal. A clínica pode criar o primeiro acesso e manter dados
               operacionais do vínculo, mas alterações nos seus dados pessoais e de segurança ficam sob seu controle.
               Compartilhamentos mais sensíveis com clínicas são protegidos por consentimento explícito e conformidade LGPD.
-            </div>
+            </DismissibleInfoTip>
 
             {/* Toggle de Tema Noturno Animado */}
             <div data-tutorial="settings-profile-theme" className="rounded-xl border p-4 bg-card transition-colors hover:bg-muted/20">
@@ -487,6 +572,30 @@ export const PersonalProfileSection = () => {
                     <p className="text-sm font-semibold text-foreground">{phone || "Não informado"}</p>
                   </div>
                   <div className="rounded-lg border bg-muted/15 p-3 space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">Gênero</span>
+                    <p className="text-sm font-semibold text-foreground">
+                      {gender === "masculino"
+                        ? "Masculino"
+                        : gender === "feminino"
+                        ? "Feminino"
+                        : gender === "outro"
+                        ? customGender || "Outro"
+                        : "Não informado"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/15 p-3 space-y-1">
+                    <span className="text-[11px] font-medium text-muted-foreground">Pronome de preferência</span>
+                    <p className="text-sm font-semibold text-foreground">
+                      {preferredPronoun === "ele/dele"
+                        ? "Ele/Dele"
+                        : preferredPronoun === "ela/dela"
+                        ? "Ela/Dela"
+                        : preferredPronoun === "outros"
+                        ? customPronoun || "Outros"
+                        : "Não informado"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/15 p-3 space-y-1">
                     <span className="text-[11px] font-medium text-muted-foreground">Profissão</span>
                     <p className="text-sm font-semibold text-foreground">
                       {getProfessionOption(profession)?.label || profession || "Não informada"}
@@ -552,6 +661,62 @@ export const PersonalProfileSection = () => {
                         placeholder="(11) 99999-9999"
                         maxLength={15}
                       />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Gênero (opcional)</Label>
+                      <Select
+                        value={gender}
+                        onValueChange={(val) => {
+                          setGender(val);
+                          if (val !== "outro") setCustomGender("");
+                        }}
+                      >
+                        <SelectTrigger className="w-full bg-background text-xs">
+                          <SelectValue placeholder="Selecione seu gênero" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="masculino">Masculino</SelectItem>
+                          <SelectItem value="feminino">Feminino</SelectItem>
+                          <SelectItem value="outro">Outro (escrever)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {gender === "outro" && (
+                        <Input
+                          value={customGender}
+                          onChange={(e) => setCustomGender(e.target.value)}
+                          placeholder="Especifique seu gênero"
+                          className="mt-1.5 text-xs"
+                          maxLength={50}
+                        />
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Pronome de preferência (opcional)</Label>
+                      <Select
+                        value={preferredPronoun}
+                        onValueChange={(val) => {
+                          setPreferredPronoun(val);
+                          if (val !== "outros") setCustomPronoun("");
+                        }}
+                      >
+                        <SelectTrigger className="w-full bg-background text-xs">
+                          <SelectValue placeholder="Selecione seu pronome" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ele/dele">Ele/Dele</SelectItem>
+                          <SelectItem value="ela/dela">Ela/Dela</SelectItem>
+                          <SelectItem value="outros">Outros (escrever)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {preferredPronoun === "outros" && (
+                        <Input
+                          value={customPronoun}
+                          onChange={(e) => setCustomPronoun(e.target.value)}
+                          placeholder="Especifique seus pronomes"
+                          className="mt-1.5 text-xs"
+                          maxLength={50}
+                        />
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-semibold">Profissão</Label>

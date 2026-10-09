@@ -26,6 +26,7 @@ import { ResetRegistrationDialog } from "@/components/platform/ResetRegistration
 import { PlatformAuditList } from "@/components/platform/PlatformAuditList";
 import { DirectoryCard, DirectoryPill } from "@/components/platform/DirectoryCard";
 import { consolidateDirectoryItems } from "@/components/platform/directory-utils";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import type {
   ClinicCategory,
   DetailKind,
@@ -165,8 +166,8 @@ export const PlatformDirectoryPage = () => {
 
   const loadAuditEvents = useCallback(async () => {
     try {
-      const { data, error } = await callRpc("list_platform_audit_events", { _limit: 30 });
-      if (error) throw error;
+      const { data, error } = await callRpc("list_platform_audit_events", { _limit: 30 }, { silentError: true });
+      if (error) return;
       setAuditEvents((data ?? []) as PlatformAuditEvent[]);
     } catch {
       // Falha silenciosa de auditoria não impede uso do diretório
@@ -417,9 +418,13 @@ export const PlatformDirectoryPage = () => {
               <Sparkles className="h-6 w-6" />
             </div>
             <h3 className="text-base font-semibold">Busca do Diretório Sob Demanda</h3>
-            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            <DismissibleInfoTip
+              id="platform-directory-demand-tip"
+              variant="subtle"
+              className="mt-3 max-w-lg text-left"
+            >
               Para otimizar o consumo de dados e o tempo de carregamento, escolha os filtros acima ou utilize um dos atalhos rápidos para listar registros específicos.
-            </p>
+            </DismissibleInfoTip>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "solo")}>
                 Listar Clínicas Solo

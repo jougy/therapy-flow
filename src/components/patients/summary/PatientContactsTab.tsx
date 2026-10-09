@@ -7,6 +7,7 @@ import type { PatientEmergencyContact } from "@/lib/patient-clinical-profile";
 import { cleanDigits } from "@/lib/patient-formatting";
 import { formatPatientPhone } from "@/lib/patient-registration";
 import { SummaryBlock } from "@/components/patients/SummaryBlock";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 
@@ -47,16 +48,19 @@ export const PatientContactsTab: React.FC<PatientContactsTabProps> = ({
   return (
     <div className="space-y-5">
       {/* Banner de Sigilo Assistencial */}
-      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex items-start gap-3">
-        <ShieldCheck className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-        <div className="space-y-0.5 text-xs leading-relaxed">
+      <DismissibleInfoTip
+        id="patient-contacts-lgpd-tip"
+        variant="subtle"
+        icon={<ShieldCheck className="h-4 w-4" />}
+      >
+        <div className="space-y-0.5">
           <p className="font-semibold text-foreground">Sigilo Assistencial e Proteção de Dados (LGPD)</p>
           <p className="text-muted-foreground">
             Estes canais de contato são de natureza estritamente assistencial e confidencial. O uso é
             restrito ao cuidado clínico, agendamentos e suporte ao paciente.
           </p>
         </div>
-      </div>
+      </DismissibleInfoTip>
 
       {canViewContacts ? (
         <>

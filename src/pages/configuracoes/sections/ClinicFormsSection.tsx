@@ -38,6 +38,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -652,13 +653,14 @@ export const ClinicFormsSection = () => {
           {/* ==================== ABA: BLOCO PADRÃO ==================== */}
           <TabsContent value="base" className="space-y-6">
             {/* Description */}
-            <div className="rounded-xl border bg-muted/30 p-4">
-              <p className="text-sm text-muted-foreground">
-                <span className="font-semibold text-foreground">Bloco padrão universal</span> — Esta é a
-                primeira parte obrigatória da anamnese, aplicada em{" "}
-                <em>todas</em> as fichas da clínica antes de qualquer ficha complementar.
-              </p>
-            </div>
+            <DismissibleInfoTip
+              id="clinic-forms-universal-block-tip"
+              variant="muted"
+            >
+              <span className="font-semibold text-foreground">Bloco padrão universal</span> — Esta é a
+              primeira parte obrigatória da anamnese, aplicada em{" "}
+              <em>todas</em> as fichas da clínica antes de qualquer ficha complementar.
+            </DismissibleInfoTip>
 
             {/* KPIs - Carrossel no mobile, grid no desktop */}
             <div className="flex gap-3 overflow-x-auto pb-1.5 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:overflow-visible sm:pb-0">

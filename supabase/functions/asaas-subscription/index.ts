@@ -1197,6 +1197,8 @@ serve(async (req) => {
       let firstBankSlipUrl: string | null = null;
       let firstPixQrCode: string | null = null;
       let firstPixCopyPaste: string | null = null;
+      let firstIdentificationField: string | null = null;
+      let firstBarCode: string | null = null;
       let isPaymentConfirmed = false;
 
       try {
@@ -1226,6 +1228,20 @@ serve(async (req) => {
             }
           }
 
+          if (billing_type === 'BOLETO' || firstBankSlipUrl) {
+            try {
+              const boletoData = await asaas.getPaymentIdentificationField(firstPayment.id);
+              if (boletoData?.identificationField) {
+                firstIdentificationField = boletoData.identificationField;
+              }
+              if (boletoData?.barCode) {
+                firstBarCode = boletoData.barCode;
+              }
+            } catch (boletoErr) {
+              console.warn('[asaas-subscription] Aviso ao obter linha digitável do Boleto:', boletoErr);
+            }
+          }
+
           // Salvar fatura em subscription_invoices
           await supabase.from('subscription_invoices').upsert({
             clinic_id: clinic_id,
@@ -1240,6 +1256,8 @@ serve(async (req) => {
             bank_slip_url: firstBankSlipUrl,
             pix_qr_code: firstPixQrCode,
             pix_copy_paste: firstPixCopyPaste,
+            identification_field: firstIdentificationField,
+            bar_code: firstBarCode,
             installment_number: firstPayment.installmentNumber || 1,
             total_installments: parsedInstallments,
           }, { onConflict: 'asaas_payment_id' });
@@ -1277,6 +1295,8 @@ serve(async (req) => {
         bankSlipUrl: firstBankSlipUrl,
         pixQrCode: firstPixQrCode,
         pixCopyPaste: firstPixCopyPaste,
+        identificationField: firstIdentificationField,
+        barCode: firstBarCode,
         couponApplied: !!appliedCouponCode,
       }), {
         status: 200,

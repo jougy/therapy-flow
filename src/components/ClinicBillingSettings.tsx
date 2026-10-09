@@ -468,6 +468,31 @@ export function ClinicBillingSettings({
   const isSolo = planInfo.category === "prof";
   const isEnterprise = activePlan === "clinica_top" || activePlan === "enterprise";
   const isTrial = summary?.status === "TRIAL" || summary?.is_free_trial === true || quota.isFreeTrial;
+
+  const isTrialExpired = useMemo(() => {
+    if (!isTrial) return false;
+    return Boolean(
+      summary?.is_expired ||
+      quota.isTrialExpired ||
+      quota.subscriptionStatus === "TRIAL_EXPIRED" ||
+      (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0) ||
+      (summary?.expires_at && new Date(summary.expires_at).getTime() < Date.now()) ||
+      (summary?.trial_ends_at && new Date(summary.trial_ends_at).getTime() < Date.now())
+    );
+  }, [summary, isTrial, quota]);
+
+  const isPlanExpired = useMemo(() => {
+    if (isTrial) return isTrialExpired;
+    return Boolean(
+      summary?.is_expired ||
+      quota.isExpired ||
+      quota.subscriptionStatus === "EXPIRED" ||
+      (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0) ||
+      (summary?.expires_at && new Date(summary.expires_at).getTime() < Date.now()) ||
+      (summary?.next_due_date && summary?.status !== "ACTIVE" && new Date(summary.next_due_date).getTime() < Date.now())
+    );
+  }, [summary, isTrial, isTrialExpired, quota]);
+
   const activeCycle = parseBillingCycle(summary?.billing_cycle);
   const extraConcurrent = summary?.additional_concurrent_access_count ?? 0;
   const defaultBase = planInfo.baseSeats;
@@ -530,7 +555,7 @@ export function ClinicBillingSettings({
         <div
           data-testid="trial-status-banner"
           className={`p-4 sm:p-5 rounded-2xl border backdrop-blur-md shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${
-            summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0)
+            isTrialExpired
               ? "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400"
               : "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300"
           }`}
@@ -538,12 +563,12 @@ export function ClinicBillingSettings({
           <div className="flex items-start gap-3">
             <div
               className={`p-2.5 rounded-xl border shrink-0 mt-0.5 ${
-                summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0)
+                isTrialExpired
                   ? "bg-red-500/20 border-red-500/30 text-red-500"
                   : "bg-amber-500/20 border-amber-500/30 text-amber-500"
               }`}
             >
-              {summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0) ? (
+              {isTrialExpired ? (
                 <AlertTriangle className="w-5 h-5" />
               ) : (
                 <Clock className="w-5 h-5" />
@@ -551,29 +576,29 @@ export function ClinicBillingSettings({
             </div>
             <div className="space-y-1">
               <h4 className="font-semibold text-sm sm:text-base text-foreground flex items-center gap-2">
-                {summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0)
+                {isTrialExpired
                   ? "Período de Teste Gratuito Encerrado"
                   : "Período de Teste Gratuito Ativo"}
                 <Badge
                   variant="outline"
                   className={
-                    summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0)
+                    isTrialExpired
                       ? "border-red-500/40 text-red-600 dark:text-red-400 bg-red-500/10 text-[10px]"
                       : "border-amber-500/40 text-amber-700 dark:text-amber-300 bg-amber-500/10 text-[10px]"
                   }
                 >
-                  {summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0)
+                  {isTrialExpired
                     ? "Modo Leitura"
-                    : `${summary?.days_remaining ?? 7} dias restantes`}
+                    : `${summary?.days_remaining ?? quota.daysRemaining ?? 7} dias restantes`}
                 </Badge>
               </h4>
               <p className="text-xs sm:text-sm text-muted-foreground">
-                {summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0)
+                {isTrialExpired
                   ? "Seu período de testes de 7 dias encerrou. Sua clínica está em modo leitura. Reative agora para continuar emitindo prontuários e gerenciar atendimentos."
                   : `Seu período de testes de 7 dias está ativo. Faltam ${
                       summary?.days_remaining !== undefined && summary?.days_remaining !== null
                         ? summary.days_remaining
-                        : 7
+                        : quota.daysRemaining ?? 7
                     } dias (ou até 20 atendimentos). Escolha um plano para garantir acesso ilimitado sem interrupções.`}
               </p>
             </div>
@@ -583,13 +608,13 @@ export function ClinicBillingSettings({
             <Button
               onClick={() => navigate(`/planos?clinicId=${clinicId}`)}
               className={`rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold shadow-md whitespace-nowrap shrink-0 min-h-[44px] ${
-                summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0)
+                isTrialExpired
                   ? "bg-red-600 hover:bg-red-700 text-white"
                   : "bg-primary hover:bg-primary/90 text-primary-foreground"
               }`}
             >
               <ArrowUpRight className="w-4 h-4 mr-1.5" />
-              {summary?.is_expired || (summary?.days_remaining !== undefined && summary?.days_remaining !== null && summary.days_remaining <= 0)
+              {isTrialExpired
                 ? "Reativar Clínica Agora"
                 : "Comprar um Plano"}
             </Button>
@@ -617,12 +642,26 @@ export function ClinicBillingSettings({
                   <h3 className="text-xl font-bold text-foreground">
                     {planInfo.name}
                   </h3>
-                  <Badge variant="outline" className={`border-emerald-500/30 text-xs font-semibold ${isTrial ? "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30" : "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"}`}>
+                  <Badge variant="outline" className={`text-xs font-semibold ${
+                    isPlanExpired && !isTrial
+                      ? "text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30"
+                      : isTrial
+                      ? isTrialExpired
+                        ? "text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/30"
+                        : "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/30"
+                      : "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30"
+                  }`}>
                     <Sparkles className="w-3 h-3 mr-1" />
-                    {isTrial ? "Plano Gratuito / Teste Gratuito" : "Assinatura Ativa"}
+                    {isPlanExpired && !isTrial
+                      ? "Assinatura Expirada (Modo Leitura)"
+                      : isTrial
+                      ? isTrialExpired
+                        ? "Teste Gratuito Expirado"
+                        : "Plano Gratuito / Teste Gratuito"
+                      : "Plano Ilimitado Ativo"}
                   </Badge>
 
-                  {summary?.coupon_code && !isTrial && (
+                  {summary?.coupon_code && !isTrial && !isPlanExpired && (
                     <Badge variant="outline" className="border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/10 text-xs font-semibold">
                       <Tag className="w-3 h-3 mr-1" />
                       Cupom: {summary.coupon_code}
@@ -630,16 +669,53 @@ export function ClinicBillingSettings({
                   )}
                 </div>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  {isTrial
+                  {isPlanExpired && !isTrial
+                    ? "O período contratado encerrou. Renove sua assinatura para reativar novos atendimentos e permissões de escrita."
+                    : isTrial
                     ? "Espaço em período de teste gratuito com limites volumétricos."
-                    : planInfo.description}
+                    : `${planInfo.description} (${totalConcurrent} ${totalConcurrent === 1 ? "acesso simultâneo" : "acessos simultâneos"})`}
                 </p>
               </div>
             </div>
 
             {isOwner && (
               <div className="flex items-center gap-2 flex-wrap">
-                {isTrial ? (
+                {isPlanExpired && !isTrial ? (
+                  <>
+                    <Button
+                      onClick={() => {
+                        const baseConcurrentParam =
+                          activePlan === "clinica_top" ? 8 :
+                          activePlan === "enterprise" ? 10 :
+                          activePlan === "clinica_medio" || activePlan === "clinic" ? 4 :
+                          activePlan === "clinica_basico" || activePlan === "prof_top" ? 2 : 1;
+                        const isIndividual =
+                          activePlan === "prof_basico" ||
+                          activePlan === "prof_medio" ||
+                          activePlan === "prof_top" ||
+                          activePlan === "solo";
+                        navigate(`/pagamento/${clinicId}?plan=${activePlan}&cycle=${activeCycle}${!isIndividual && extraConcurrent > 0 ? `&concurrent=${baseConcurrentParam + extraConcurrent}` : ""}`);
+                      }}
+                      className="bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl px-4 py-2 text-sm shadow-md transition-all min-h-[44px] cursor-pointer"
+                    >
+                      <RotateCw className="w-4 h-4 mr-1.5" />
+                      Renovar Assinatura Agora
+                    </Button>
+
+                    <Button
+                      onClick={() => {
+                        setTargetPlan(activePlan);
+                        setTargetCycle(activeCycle);
+                        setIsPlanModalOpen(true);
+                      }}
+                      variant="outline"
+                      className="rounded-xl px-4 py-2 text-sm font-medium transition-all min-h-[44px]"
+                    >
+                      <Layers className="w-4 h-4 mr-2 text-blue-500" />
+                      Mudar de Plano
+                    </Button>
+                  </>
+                ) : isTrial ? (
                   <Button
                     onClick={() => navigate(`/planos?clinicId=${clinicId}`)}
                     className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-4 py-2 text-sm shadow-md transition-all min-h-[44px]"
@@ -680,20 +756,7 @@ export function ClinicBillingSettings({
           </div>
         </CardHeader>
 
-        {/* Banner de Aviso de Assinatura Expirada (Modo Somente Leitura) */}
-        {summary?.is_expired && !isTrial && (
-          <div className="mx-6 mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="font-bold text-sm text-red-200">Assinatura Expirada - Modo Somente Leitura Ativo</p>
-              <p className="text-neutral-300">
-                O período contratado terminou. O acesso à clínica está restrito apenas para leitura de dados e prontuários existentes. Renove o plano para restabelecer o direito de escrita e novos atendimentos.
-              </p>
-            </div>
-          </div>
-        )}
-
-        <CardContent className="p-6 pt-2 grid gap-4 sm:grid-cols-3 border-t border-border mt-4">
+        <CardContent className="p-6 pt-2 grid gap-4 sm:grid-cols-3 border-t border-border mt-2">
           <div className="rounded-xl border bg-muted/40 p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mensalidade Equivalente</p>
             <div className="flex items-baseline gap-1.5 mt-1">
@@ -710,7 +773,7 @@ export function ClinicBillingSettings({
           <div className="rounded-xl border bg-muted/40 p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status do Faturamento</p>
             <div className="flex items-center gap-2 mt-1">
-              {summary?.is_expired && !isTrial ? (
+              {isPlanExpired && !isTrial ? (
                 <>
                   <AlertTriangle className="w-5 h-5 text-red-500" />
                   <span className="text-base font-semibold text-red-400">Expirado (Leitura)</span>
@@ -719,14 +782,14 @@ export function ClinicBillingSettings({
                 <>
                   <Sparkles className="w-5 h-5 text-amber-500" />
                   <span className="text-base font-semibold text-amber-600 dark:text-amber-400">
-                    Teste Gratuito
+                    {isTrialExpired ? "Teste Expirado (Leitura)" : "Teste Gratuito"}
                   </span>
                 </>
               ) : (
                 <>
                   <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                   <span className="text-base font-semibold text-foreground">
-                    {summary?.status === "ACTIVE" ? "Ativo (Regular)" : "Ativo"}
+                    {summary?.status === "ACTIVE" ? "Plano Ilimitado Ativo" : "Ativo (Regular)"}
                   </span>
                 </>
               )}
@@ -743,9 +806,13 @@ export function ClinicBillingSettings({
                 <CalendarClock className="w-4 h-4 text-blue-500 shrink-0" />
                 <span className="text-sm font-bold text-foreground">
                   {isTrial
-                    ? summary?.days_remaining !== undefined && summary?.days_remaining !== null
+                    ? isTrialExpired
+                      ? "Período Encerrado"
+                      : summary?.days_remaining !== undefined && summary?.days_remaining !== null
                       ? `${summary.days_remaining} dia(s) restantes (ou até 20 atendimentos)`
-                      : "Teste gratuito de 7 dias ou até 20 atendimentos"
+                      : `${quota.daysRemaining ?? 7} dia(s) restantes`
+                    : isPlanExpired
+                    ? "Período Encerrado"
                     : summary?.days_remaining !== undefined && summary?.days_remaining !== null
                     ? summary.days_remaining > 0
                       ? `${summary.days_remaining} dia(s) restantes`
@@ -756,8 +823,10 @@ export function ClinicBillingSettings({
               <p className="text-xs text-muted-foreground mt-0.5">
                 {isTrial
                   ? summary?.expires_at
-                    ? `Vence em ${new Date(summary.expires_at).toLocaleDateString("pt-BR")} ou ao atingir 20 atendimentos`
+                    ? `Venceu em ${new Date(summary.expires_at).toLocaleDateString("pt-BR")} ou ao atingir 20 atendimentos`
                     : "Teste gratuito de 7 dias ou até 20 atendimentos"
+                  : isPlanExpired && summary?.expires_at
+                  ? `Venceu em ${new Date(summary.expires_at).toLocaleDateString("pt-BR")}`
                   : summary?.expires_at
                   ? `Vence em ${new Date(summary.expires_at).toLocaleDateString("pt-BR")}`
                   : summary?.next_due_date

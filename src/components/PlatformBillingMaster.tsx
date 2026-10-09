@@ -13,7 +13,8 @@ import {
   SlidersHorizontal,
   ExternalLink,
   FileCheck,
-  BellRing
+  BellRing,
+  Smartphone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,8 +29,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { PlatformCouponsManager, type SubscriptionCouponItem } from "@/components/platform/PlatformCouponsManager";
 import { PlatformTelegramAlerts } from "@/components/platform/PlatformTelegramAlerts";
+import { PlatformWhatsAppAlerts } from "@/components/platform/PlatformWhatsAppAlerts";
 import { planLabels, getPlanDefaultLimits, planOptionGroups } from "@/components/platform/platform-api";
 import type { PlanType } from "@/utils/subscriptionPricing";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
 export type { SubscriptionCouponItem };
 
@@ -38,8 +41,10 @@ interface ClinicSubscriptionRawRow {
   clinic_id: string;
   plan_type: PlanType | string;
   status: string;
-  subaccount_limit: number | null;
-  concurrent_access_limit: number | null;
+  base_subaccount_limit?: number | null;
+  purchased_subaccount_extra_count?: number | null;
+  base_concurrent_access_count?: number | null;
+  additional_concurrent_access_count?: number | null;
   coupon_code?: string | null;
   total_recurring_monthly_price?: number;
   override_reason?: string | null;
@@ -129,8 +134,10 @@ export function PlatformBillingMaster() {
           clinic_id,
           plan_type,
           status,
-          subaccount_limit,
-          concurrent_access_limit,
+          base_subaccount_limit,
+          purchased_subaccount_extra_count,
+          base_concurrent_access_count,
+          additional_concurrent_access_count,
           coupon_code,
           total_recurring_monthly_price,
           override_reason,
@@ -148,8 +155,8 @@ export function PlatformBillingMaster() {
           clinic_name: item.clinics?.name || "Clínica Desconhecida",
           plan_type: item.plan_type,
           status: item.status,
-          subaccount_limit: item.subaccount_limit || 0,
-          concurrent_access_limit: item.concurrent_access_limit || 0,
+          subaccount_limit: (item.base_subaccount_limit ?? 0) + (item.purchased_subaccount_extra_count ?? 0),
+          concurrent_access_limit: (item.base_concurrent_access_count ?? 0) + (item.additional_concurrent_access_count ?? 0),
           coupon_code: item.coupon_code,
           total_recurring_monthly_price: item.total_recurring_monthly_price,
           override_reason: item.override_reason,
@@ -373,9 +380,13 @@ export function PlatformBillingMaster() {
             Backoffice Master: Faturamento & Webhooks Asaas
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Gestão de Assinaturas e Auditoria de Webhooks</h2>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+          <DismissibleInfoTip
+            id="platform-billing-master-tip"
+            variant="subtle"
+            className="mt-2"
+          >
             Gerencie planos de clínicas, execute overrides auditados e inspecione eventos do gateway Asaas.
-          </p>
+          </DismissibleInfoTip>
         </div>
 
         <Button
@@ -407,7 +418,10 @@ export function PlatformBillingMaster() {
             <Receipt className="w-4 h-4 mr-2" /> Logs de Webhooks Asaas ({webhookLogs.length})
           </TabsTrigger>
           <TabsTrigger value="telegram" className="rounded-lg text-xs font-semibold">
-            <BellRing className="w-4 h-4 mr-2" /> Alertas Telegram & Teste
+            <BellRing className="w-4 h-4 mr-2" /> Alertas Telegram
+          </TabsTrigger>
+          <TabsTrigger value="whatsapp" className="rounded-lg text-xs font-semibold">
+            <Smartphone className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" /> Mensageria WhatsApp
           </TabsTrigger>
         </TabsList>
 
@@ -794,6 +808,11 @@ export function PlatformBillingMaster() {
         {/* Tab 5: Alertas Telegram & Notificações */}
         <TabsContent value="telegram" className="space-y-6">
           <PlatformTelegramAlerts />
+        </TabsContent>
+
+        {/* Tab 6: Mensageria WhatsApp (Pluri Fisio) */}
+        <TabsContent value="whatsapp" className="space-y-6">
+          <PlatformWhatsAppAlerts />
         </TabsContent>
       </Tabs>
 

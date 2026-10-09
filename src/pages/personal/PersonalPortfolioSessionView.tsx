@@ -13,6 +13,7 @@ import { getLegacyGroupHex, getReadableTextColor } from "@/lib/group-colors";
 import { getSessionPreviewIndicators } from "@/lib/session-preview";
 import { SessionPrintDocumentsModal } from "@/components/sessions/SessionPrintDocumentsModal";
 import { printSessionDocument, type SessionDocumentKind, type SessionDocumentData } from "@/lib/session-documents";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
 const statusColors: Record<string, string> = {
   concluído: "bg-success/15 text-success border-success/20",
@@ -253,16 +254,19 @@ export const PersonalPortfolioSessionView: React.FC = () => {
       {/* Main Content Area */}
       <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 space-y-6">
         {/* Compliance Banner */}
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-start gap-3">
-          <Shield className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-          <div className="space-y-1 text-xs">
-            <h2 className="font-semibold text-foreground">Visualização de Acervo Técnico Profissional (LGPD)</h2>
-            <p className="text-muted-foreground leading-relaxed">
+        <DismissibleInfoTip
+          id="personal-portfolio-lgpd-tip"
+          variant="default"
+          icon={<Shield className="h-4 w-4" />}
+        >
+          <div className="space-y-0.5">
+            <p className="font-semibold text-foreground">Visualização de Acervo Técnico Profissional (LGPD)</p>
+            <p className="text-muted-foreground">
               Este registro é uma cópia técnica imutável dos atendimentos prestados sob sua responsabilidade profissional.
               Os dados comerciais, financeiros e configurações internas da clínica são estritamente isolados.
             </p>
           </div>
-        </div>
+        </DismissibleInfoTip>
 
         {/* Patient & Clinic Info Header Card */}
         <Card className="shadow-xs">

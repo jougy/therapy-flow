@@ -4,6 +4,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { TelegramClient, escapeHtml } from '../_shared/telegram-client.ts';
+import { WhatsAppClient, sanitizeWhatsAppNumber } from '../_shared/whatsapp-client.ts';
 
 // Map de rate limiting em memória por chave (IP ou e-mail): máximo 5 disparos por minuto
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -71,6 +72,7 @@ serve(async (req) => {
     interface NotifyAdminTelegramPayload {
       action?: string;
       event?: string;
+      templateType?: 'welcome' | 'plan_thank_you' | string;
       userId?: string;
       user_id?: string;
       email?: string;
@@ -80,10 +82,30 @@ serve(async (req) => {
       clinicName?: string;
       plan?: string;
       createdAt?: string;
+      profession?: string;
+      councilNumber?: string;
+      council_number?: string;
+      councilName?: string;
+      council_name?: string;
+      gender?: string;
+      preferredPronoun?: string;
+      preferred_pronoun?: string;
+      origin?: string;
+      signupOrigin?: string;
+      signup_origin?: string;
+      utmSource?: string;
+      utm_source?: string;
+      utmMedium?: string;
+      utm_medium?: string;
+      utmCampaign?: string;
+      utm_campaign?: string;
+      utm?: Record<string, unknown>;
+      signup_utm?: Record<string, unknown>;
     }
 
     const payload: NotifyAdminTelegramPayload = await req.json();
     const action = payload.action || payload.event || '';
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown-ip';
 
     console.log(`[notify-admin-telegram] Requisição recebida. Ação: "${action}" | User Auth: ${authenticatedUser?.id || 'anon'}`);
 
@@ -92,10 +114,23 @@ serve(async (req) => {
       return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id.trim());
     };
 
+    const sanitizeField = (val?: string | null, max = 150): string => {
+      if (!val) return '';
+      return String(val).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim().slice(0, max);
+    };
+
     // ==========================================
     // AÇÃO 1: TEST_TELEGRAM_NOTIFICATION / SEND_TEST_NOTIFICATION
     // ==========================================
     if (action === 'SEND_TEST_NOTIFICATION' || action === 'TEST_TELEGRAM_NOTIFICATION') {
+      const rateKey = `test_tg:${authenticatedUser?.id || clientIp}`;
+      if (!checkRateLimit(rateKey, 5, 60_000)) {
+        return new Response(JSON.stringify({ error: 'Muitos testes de notificação em curto intervalo. Aguarde um minuto.' }), {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       let isPlatformAdmin = false;
       let adminUserId: string | null = null;
       let adminName = 'Platform Admin';
@@ -145,8 +180,8 @@ serve(async (req) => {
         }
       }
 
-      if (payload.name && adminName === 'Platform Admin') adminName = String(payload.name).slice(0, 100);
-      if (payload.email && !adminEmail) adminEmail = String(payload.email).slice(0, 150);
+      if (payload.name && adminName === 'Platform Admin') adminName = sanitizeField(payload.name, 100);
+      if (payload.email && !adminEmail) adminEmail = sanitizeField(payload.email, 150);
 
       const dataHora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
@@ -230,6 +265,102 @@ serve(async (req) => {
     }
 
     // ==========================================
+    // AÇÃO 2: SEND_TEST_WHATSAPP / TEST_WHATSAPP_MESSAGE
+    // ==========================================
+    if (action === 'SEND_TEST_WHATSAPP' || action === 'TEST_WHATSAPP_MESSAGE') {
+      const rateKey = `test_wa:${authenticatedUser?.id || clientIp}`;
+      if (!checkRateLimit(rateKey, 5, 60_000)) {
+        return new Response(JSON.stringify({ error: 'Muitos testes de WhatsApp em curto intervalo. Aguarde um minuto.' }), {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      let isPlatformAdmin = false;
+      let adminUserId: string | null = null;
+      let adminName = 'Platform Admin';
+      let adminEmail = authenticatedUser?.email || '';
+
+      if (authenticatedUser?.id === 'service_role') {
+        isPlatformAdmin = true;
+        if (payload.userId && isValidUuid(payload.userId)) {
+          adminUserId = payload.userId;
+        }
+      } else if (authenticatedUser?.id && isValidUuid(authenticatedUser.id)) {
+        const { data: paData, error: paErr } = await adminSupabase
+          .from('platform_admins')
+          .select('user_id, role, is_active')
+          .eq('user_id', authenticatedUser.id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (!paErr && paData) {
+          isPlatformAdmin = true;
+          adminUserId = authenticatedUser.id;
+        }
+      }
+
+      if (!isPlatformAdmin) {
+        console.warn(`[notify-admin-telegram] Acesso negado para ação ${action}. Usuário não autenticado como platform admin.`);
+        return new Response(
+          JSON.stringify({ error: 'Acesso não autorizado. Apenas administradores da plataforma podem disparar testes de WhatsApp.' }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      const whatsAppClient = new WhatsAppClient();
+      const targetPhone = String(payload.phone || whatsAppClient.getBusinessPhone()).trim();
+      const cleanPhone = sanitizeWhatsAppNumber(targetPhone);
+
+      if (!cleanPhone) {
+        return new Response(
+          JSON.stringify({ error: 'Número de telefone de destino inválido para teste.' }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      const templateType = payload.templateType || 'welcome';
+      const targetName = sanitizeField(payload.name || adminName, 100);
+      const targetClinic = sanitizeField(payload.clinicName || 'Consultório Fisio Saúde', 100);
+      const targetPlan = sanitizeField(payload.plan || (templateType === 'plan_thank_you' ? 'Pluri Fisio Pro' : 'Degustação Gratuita (7 dias)'), 80);
+
+      let testResult;
+      if (templateType === 'plan_thank_you') {
+        testResult = await whatsAppClient.sendPlanThankYouMessage({
+          phone: cleanPhone,
+          name: targetName,
+          planName: targetPlan,
+          clinicName: targetClinic,
+        });
+      } else {
+        testResult = await whatsAppClient.sendWelcomeSequence({
+          phone: cleanPhone,
+          name: targetName,
+          plan: targetPlan,
+          clinicName: targetClinic,
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: testResult.success,
+          phone: cleanPhone,
+          whatsapp: testResult,
+        }),
+        {
+          status: testResult.success || testResult.skipped ? 200 : 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // ==========================================
     // AÇÃO 2: NOTIFY_NEW_SIGNUP / SIGNUP_COMPLETED
     // ==========================================
     if (action === 'NOTIFY_NEW_SIGNUP' || action === 'SIGNUP_COMPLETED') {
@@ -256,18 +387,30 @@ serve(async (req) => {
 
       // 2. Proteção contra requisições forjadas: Verificar se o usuário REALMENTE existe no banco
       let verifiedUserId: string | null = null;
-      let profile: { full_name?: string; email?: string; phone?: string; created_at?: string } | null = null;
+      let profile: {
+        full_name?: string;
+        email?: string;
+        phone?: string;
+        created_at?: string;
+        profession?: string;
+        council_name?: string;
+        professional_license?: string;
+        gender?: string;
+        preferred_pronoun?: string;
+        signup_origin?: string;
+        signup_utm?: Record<string, unknown>;
+      } | null = null;
 
       if (targetUserId && isValidUuid(targetUserId)) {
         const { data: pData } = await adminSupabase
           .from('profiles')
-          .select('full_name, email, phone, created_at')
+          .select('full_name, email, phone, created_at, profession, council_name, professional_license, gender, preferred_pronoun, signup_origin, signup_utm')
           .eq('id', targetUserId)
           .maybeSingle();
 
         if (pData) {
           verifiedUserId = targetUserId;
-          profile = pData;
+          profile = pData as typeof profile;
         } else {
           // Fallback seguro: verifica existência no auth.users
           const { data: authData } = await adminSupabase.auth.admin.getUserById(targetUserId);
@@ -278,6 +421,11 @@ serve(async (req) => {
               full_name: (authData.user.user_metadata?.full_name as string) || (authData.user.user_metadata?.name as string) || undefined,
               phone: (authData.user.user_metadata?.phone as string) || authData.user.phone || undefined,
               created_at: authData.user.created_at,
+              profession: (authData.user.user_metadata?.profession as string) || undefined,
+              gender: (authData.user.user_metadata?.gender as string) || undefined,
+              preferred_pronoun: (authData.user.user_metadata?.preferred_pronoun as string) || (authData.user.user_metadata?.preferredPronoun as string) || undefined,
+              signup_origin: (authData.user.user_metadata?.signup_origin as string) || (authData.user.user_metadata?.origin as string) || undefined,
+              signup_utm: (authData.user.user_metadata?.signup_utm as Record<string, unknown>) || undefined,
             };
           }
         }
@@ -287,12 +435,12 @@ serve(async (req) => {
       if (!verifiedUserId && targetEmail) {
         const { data: pByEmail } = await adminSupabase
           .from('profiles')
-          .select('full_name, email, phone, created_at')
+          .select('full_name, email, phone, created_at, profession, council_name, professional_license, gender, preferred_pronoun, signup_origin, signup_utm')
           .eq('email', targetEmail)
           .maybeSingle();
 
         if (pByEmail) {
-          profile = pByEmail;
+          profile = pByEmail as typeof profile;
           verifiedUserId = 'verified_by_profile';
         }
       }
@@ -310,6 +458,20 @@ serve(async (req) => {
       const name = String(payload.name || payload.fullName || profile?.full_name || '').trim().slice(0, 100);
       const phone = String(payload.phone || profile?.phone || '').trim().slice(0, 30);
       const createdAt = payload.createdAt || profile?.created_at || new Date().toISOString();
+
+      const profession = payload.profession || profile?.profession || '';
+      const councilNumber = payload.councilNumber || payload.council_number || profile?.professional_license || '';
+      const councilName = payload.councilName || payload.council_name || profile?.council_name || 'CREFITO';
+
+      const gender = payload.gender || profile?.gender || '';
+      const preferredPronoun = payload.preferredPronoun || payload.preferred_pronoun || profile?.preferred_pronoun || '';
+
+      const utmObj = (payload.signup_utm || payload.utm || profile?.signup_utm || {}) as Record<string, unknown>;
+      const utmSource = String(payload.utmSource || payload.utm_source || utmObj.utm_source || utmObj.source || '').trim();
+      const utmMedium = String(payload.utmMedium || payload.utm_medium || utmObj.utm_medium || utmObj.medium || '').trim();
+      const utmCampaign = String(payload.utmCampaign || payload.utm_campaign || utmObj.utm_campaign || utmObj.campaign || '').trim();
+
+      const origin = payload.origin || payload.signupOrigin || payload.signup_origin || profile?.signup_origin || '';
 
       // REGRA: Verificar se o cadastro veio por convite (não é orgânico)
       let isInvited = false;
@@ -372,6 +534,16 @@ serve(async (req) => {
         name,
         email,
         phone,
+        profession,
+        councilNumber,
+        councilName,
+        gender,
+        preferredPronoun,
+        origin,
+        signupOrigin: origin,
+        utmSource,
+        utmMedium,
+        utmCampaign,
         clinicName,
         plan,
         createdAt,
@@ -400,6 +572,16 @@ serve(async (req) => {
               clinicName: clinicName || 'Consultório Solo',
               plan,
               createdAt,
+              profession: profession || null,
+              councilNumber: councilNumber || null,
+              councilName: councilName || null,
+              gender: gender || null,
+              preferred_pronoun: preferredPronoun || null,
+              signup_origin: origin || null,
+              utm_source: utmSource || null,
+              utm_medium: utmMedium || null,
+              utm_campaign: utmCampaign || null,
+              signup_utm: Object.keys(utmObj).length > 0 ? utmObj : null,
             },
           }));
 
@@ -410,10 +592,56 @@ serve(async (req) => {
         console.error('[notify-admin-telegram] Erro ao inserir app_notifications de novo cadastro (fail-safe):', appNotifErr);
       }
 
-      return new Response(JSON.stringify({ success: sendResult.success, telegram: sendResult }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      // Disparo da sequência de boas-vindas pelo WhatsApp com fail-safe estrito
+      let whatsappResult: { success: boolean; skipped?: boolean; error?: string } = { success: false, skipped: true };
+      const cleanPhone = sanitizeWhatsAppNumber(phone);
+
+      if (cleanPhone) {
+        try {
+          const whatsAppClient = new WhatsAppClient();
+          whatsappResult = await whatsAppClient.sendWelcomeSequence({
+            phone: cleanPhone,
+            name,
+            plan,
+            clinicName: clinicName || 'Consultório Solo',
+          });
+          console.log(`[notify-admin-telegram] Disparo da Welcome Sequence WhatsApp para ${cleanPhone}:`, whatsappResult);
+
+          // Criar ou atualizar a sessão interativa em whatsapp_chat_sessions
+          if (whatsappResult.success || whatsappResult.skipped) {
+            const userIdForSession = (verifiedUserId && isValidUuid(verifiedUserId)) ? verifiedUserId : null;
+            await adminSupabase.from('whatsapp_chat_sessions').upsert(
+              {
+                phone: cleanPhone,
+                user_id: userIdForSession,
+                current_step: 'initial',
+                metadata: {
+                  user_name: name,
+                  clinic_name: clinicName || 'Consultório Solo',
+                  plan_name: plan,
+                  welcome_sent_at: new Date().toISOString(),
+                },
+                last_message_at: new Date().toISOString(),
+              },
+              { onConflict: 'phone' }
+            );
+          }
+        } catch (waErr) {
+          console.error('[notify-admin-telegram] Erro ao disparar WhatsApp Welcome Sequence (fail-safe ativado):', waErr);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: sendResult.success,
+          telegram: sendResult,
+          whatsapp: whatsappResult,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
     return new Response(JSON.stringify({ error: `Ação desconhecida: ${action}` }), {

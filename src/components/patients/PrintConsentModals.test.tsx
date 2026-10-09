@@ -55,6 +55,13 @@ describe("Print Consent Modals", () => {
     expect(await screen.findByText("Clínica Exemplo")).toBeInTheDocument();
     expect(screen.getAllByText("Ana Pereira Santos").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("button", { name: /Imprimir Termo Físico/i })).toBeInTheDocument();
+
+    // Verify print portal root is attached to document.body
+    const printRoot = document.getElementById("print-adult-consent-root");
+    expect(printRoot).not.toBeNull();
+    expect(printRoot).toHaveClass("hidden", "print:block");
+    expect(printRoot?.textContent).toContain("Ana Pereira Santos");
+    expect(printRoot?.textContent).toContain("PAT-001");
   });
 
   it("renders PrintGuardianConsentModal with minor and guardian information", async () => {
@@ -72,5 +79,13 @@ describe("Print Consent Modals", () => {
     expect(screen.getAllByText("Lucas Pereira Santos").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Mariana Pereira").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("button", { name: /Imprimir Termo Físico/i })).toBeInTheDocument();
+
+    // Verify print portal root is attached to document.body
+    const printRoot = document.getElementById("print-guardian-consent-root");
+    expect(printRoot).not.toBeNull();
+    expect(printRoot).toHaveClass("hidden", "print:block");
+    expect(printRoot?.textContent).toContain("Lucas Pereira Santos");
+    expect(printRoot?.textContent).toContain("Mariana Pereira");
+    expect(printRoot?.textContent).toContain("PAT-002");
   });
 });

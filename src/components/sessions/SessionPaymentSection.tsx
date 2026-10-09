@@ -11,6 +11,7 @@ import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { Calendar, Clock, Clock3, CheckCircle2, CreditCard, Gift, Info, Package, Sparkles, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
+import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import {
   PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH,
   PAYMENT_INSTALLMENT_OPTIONS,
@@ -333,15 +334,17 @@ export const SessionPaymentSection = ({
       {currentMode === "pacote" && !activePaymentPlan && (
         <div className="space-y-4 rounded-xl border border-primary/20 bg-card p-4 sm:p-5 shadow-sm transition-all">
           {/* Informational Banner */}
-          <div className="flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-primary">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <DismissibleInfoTip
+            id="session-payment-package-helper"
+            variant="subtle"
+          >
             <div>
-              <p className="font-semibold">Pacote de Sessões com Crédito Antecipado</p>
+              <p className="font-semibold text-foreground">Pacote de Sessões com Crédito Antecipado</p>
               <p className="mt-0.5 text-muted-foreground">
                 Ao salvar o atendimento nesta modalidade, o pacote será gerado, esta sessão será a 1ª utilizada e os créditos/agendamentos das demais ficarão vinculados ao paciente.
               </p>
             </div>
-          </div>
+          </DismissibleInfoTip>
 
           {/* Alerta Preventivo de Cota de Teste Grátis */}
           {quota.isFreeTrial && (quota.attendances.current + (parseInt(String(paymentPlanForm.totalSessions), 10) || 1)) > quota.attendances.max && (

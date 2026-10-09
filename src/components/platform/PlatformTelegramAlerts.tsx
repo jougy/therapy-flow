@@ -32,7 +32,15 @@ export function PlatformTelegramAlerts() {
     setTestingTelegram(true);
     try {
       const { data, error } = await supabase.functions.invoke("notify-admin-telegram", {
-        body: { action: "SEND_TEST_NOTIFICATION" },
+        body: {
+          action: "SEND_TEST_NOTIFICATION",
+          profession: "fisioterapeuta",
+          councilNumber: "123456-F",
+          councilName: "CREFITO-3",
+          gender: "Feminino",
+          preferredPronoun: "Ela/Dela",
+          origin: "Instagram (Bio/Campanha)",
+        },
       });
 
       if (error) {
@@ -245,7 +253,16 @@ export function PlatformTelegramAlerts() {
                     <strong>📱 WhatsApp:</strong> +55 11 98765-4321
                   </div>
                   <div>
+                    <strong>🩺 Profissão:</strong> Fisioterapeuta (CREFITO-3: 123456-F)
+                  </div>
+                  <div>
+                    <strong>⚧️ Identidade:</strong> Feminino (Ela/Dela)
+                  </div>
+                  <div>
                     <strong>🏢 Clínica:</strong> Consultório Dra. Ana
+                  </div>
+                  <div>
+                    <strong>🌐 Origem:</strong> Instagram (Bio/Campanha)
                   </div>
                   <div>
                     <strong>📅 Horário:</strong> 02/10/2026 21:22

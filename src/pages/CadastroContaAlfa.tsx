@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   Briefcase,
@@ -8,16 +8,19 @@ import {
   Eye,
   EyeOff,
   FileBadge,
+  HeartHandshake,
   IdCard,
   Loader2,
   LockKeyhole,
   Mail,
   MailCheck,
   Phone,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { saveSignupIntent } from "@/lib/signup-intent";
+import { captureSignupOrigin, resolveFriendlyOrigin } from "@/lib/signup-origin";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +49,11 @@ import {
   trackStartTrial,
   type PixelProfession,
 } from "@/lib/meta-pixel";
+import {
+  trackRegistrationEvent,
+  trackTrialStartEvent,
+} from "@/lib/analytics-tracker";
+
 
 const onlyDigits = (value: string) => value.replace(/\D/g, "");
 
@@ -128,8 +136,10 @@ const CadastroContaAlfa = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Capturar e persistir intenção de plano vinda da Landing Page (plurifisio.com.br)
+  // Capturar e persistir silenciosamente origem e intenção de plano
   useEffect(() => {
+    captureSignupOrigin(searchParams);
+
     const planParam = searchParams.get("plan");
     const cycleParam = searchParams.get("cycle");
     const trialParam = searchParams.get("trial");
@@ -167,6 +177,10 @@ const CadastroContaAlfa = () => {
   const [phone, setPhone] = useState("");
   const [profession, setProfession] = useState<string>("");
   const [councilNumber, setCouncilNumber] = useState("");
+  const [gender, setGender] = useState<string>("");
+  const [customGender, setCustomGender] = useState<string>("");
+  const [preferredPronoun, setPreferredPronoun] = useState<string>("");
+  const [customPronoun, setCustomPronoun] = useState<string>("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
@@ -243,6 +257,26 @@ const CadastroContaAlfa = () => {
       const nextOwnerName = normalizeName(ownerName).trim();
       const acceptedAt = new Date().toISOString();
 
+      const finalGender =
+        gender === "outro"
+          ? customGender.trim()
+          : gender === "masculino"
+          ? "Masculino"
+          : gender === "feminino"
+          ? "Feminino"
+          : gender.trim();
+
+      const finalPronoun =
+        preferredPronoun === "outros"
+          ? customPronoun.trim()
+          : preferredPronoun === "ele/dele"
+          ? "Ele/Dele"
+          : preferredPronoun === "ela/dela"
+          ? "Ela/Dela"
+          : preferredPronoun.trim();
+
+      const friendlyOrigin = resolveFriendlyOrigin();
+
       const { data: signupData, error: signupError } = await supabase.auth.signUp({
         email: nextEmail,
         password,
@@ -253,6 +287,10 @@ const CadastroContaAlfa = () => {
             cpf: cleanCpf,
             full_name: nextOwnerName,
             phone: cleanPhone,
+            gender: finalGender || null,
+            pronoun: finalPronoun || null,
+            preferred_pronoun: finalPronoun || null,
+            origin: friendlyOrigin,
             signup_source: "web_signup",
             terms_accepted_at: acceptedAt,
             privacy_policy_accepted: true,
@@ -312,32 +350,51 @@ const CadastroContaAlfa = () => {
 
       if (rpcError) throw rpcError;
 
-      const pixelProfession: PixelProfession =
-        profession === "terapeuta_ocupacional"
-          ? "occupational_therapist"
-          : "physiotherapist";
+      // Atualizar dados de gênero e pronome no perfil com fallback gracioso
+      try {
+        const updatePromise = supabase
+          .from("profiles")
+          .update({
+            gender: finalGender || null,
+            pronoun: finalPronoun || null,
+            preferred_pronoun: finalPronoun || null,
+          } as any)
+          .eq("id", userId);
+
+        if (updatePromise && typeof (updatePromise as any).catch === "function") {
+          void (updatePromise as any).catch((profErr: unknown) => {
+            console.warn("[CadastroContaAlfa] Falha ao atualizar gênero/pronome em profiles:", profErr);
+          });
+        }
+      } catch (profErr) {
+        console.warn("[CadastroContaAlfa] Falha ao atualizar perfil:", profErr);
+      }
+
       const registrationEventId = generateEventId("reg");
       const trialEventId = generateEventId("trial");
 
-      void trackCompleteRegistration({
-        profession: pixelProfession,
+      void trackRegistrationEvent({
+        profession: profession || "fisioterapeuta",
         userData: {
           email: nextEmail,
           phone: cleanPhone,
           name: nextOwnerName,
+          externalId: userId,
         },
         eventId: registrationEventId,
       });
 
-      void trackStartTrial({
-        profession: pixelProfession,
+      void trackTrialStartEvent({
+        profession: profession || "fisioterapeuta",
         userData: {
           email: nextEmail,
           phone: cleanPhone,
           name: nextOwnerName,
+          externalId: userId,
         },
         eventId: trialEventId,
       });
+
 
       // Disparar notificação para o Telegram via Edge Function (assíncrono e fail-safe)
       void supabase.functions.invoke("notify-admin-telegram", {
@@ -348,6 +405,12 @@ const CadastroContaAlfa = () => {
           name: nextOwnerName,
           phone: cleanPhone,
           plan: "Degustação Gratuita (7 dias)",
+          profession: profession || null,
+          councilNumber: councilNumber.trim() || null,
+          councilName: getProfessionOption(profession)?.councilName || "CREFITO",
+          gender: finalGender || null,
+          preferredPronoun: finalPronoun || null,
+          origin: friendlyOrigin || null,
         },
       }).catch((notifyErr) => {
         console.warn("[CadastroContaAlfa] Notificação do Telegram ignorada por erro:", notifyErr);
@@ -634,6 +697,94 @@ const CadastroContaAlfa = () => {
                         placeholder={getProfessionOption(profession)?.councilPlaceholder || "Ex: 123456-F"}
                       />
                     </div>
+                  </div>
+
+                  {/* Gênero (opcional) */}
+                  <div className="space-y-2">
+                    <Label htmlFor="gender-select">Gênero (opcional)</Label>
+                    <Select
+                      value={gender}
+                      onValueChange={(val) => {
+                        setGender(val);
+                        if (val !== "outro") setCustomGender("");
+                      }}
+                    >
+                      <SelectTrigger id="gender-select" className="w-full bg-background">
+                        <div className="flex items-center gap-2">
+                          <UserRound className="h-4 w-4 text-muted-foreground" />
+                          <SelectValue placeholder="Selecione (opcional)" />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="masculino">Masculino</SelectItem>
+                        <SelectItem value="feminino">Feminino</SelectItem>
+                        <SelectItem value="outro">Outro (escrever)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <AnimatePresence>
+                      {gender === "outro" && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                          animate={{ opacity: 1, height: "auto", marginTop: 8 }}
+                          exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <Input
+                            id="custom-gender-input"
+                            value={customGender}
+                            onChange={(e) => setCustomGender(e.target.value)}
+                            placeholder="Especifique seu gênero (ex: Não-binário)"
+                            maxLength={50}
+                            className="bg-background"
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Pronome de preferência (opcional) */}
+                  <div className="space-y-2">
+                    <Label htmlFor="pronoun-select">Pronome de preferência (opcional)</Label>
+                    <Select
+                      value={preferredPronoun}
+                      onValueChange={(val) => {
+                        setPreferredPronoun(val);
+                        if (val !== "outros") setCustomPronoun("");
+                      }}
+                    >
+                      <SelectTrigger id="pronoun-select" className="w-full bg-background">
+                        <div className="flex items-center gap-2">
+                          <HeartHandshake className="h-4 w-4 text-muted-foreground" />
+                          <SelectValue placeholder="Selecione (opcional)" />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ele/dele">Ele/Dele</SelectItem>
+                        <SelectItem value="ela/dela">Ela/Dela</SelectItem>
+                        <SelectItem value="outros">Outros (escrever)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <AnimatePresence>
+                      {preferredPronoun === "outros" && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                          animate={{ opacity: 1, height: "auto", marginTop: 8 }}
+                          exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <Input
+                            id="custom-pronoun-input"
+                            value={customPronoun}
+                            onChange={(e) => setCustomPronoun(e.target.value)}
+                            placeholder="Especifique seus pronomes (ex: Elu/Delu)"
+                            maxLength={50}
+                            className="bg-background"
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
 
                   {/* Senha */}
