@@ -103,6 +103,8 @@ interface WebhookPayload {
       };
     };
   };
+}
+
 interface ProfileLookupRecord {
   id: string;
   full_name?: string | null;
