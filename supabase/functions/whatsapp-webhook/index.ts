@@ -1,4 +1,3 @@
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { WhatsAppClient, sanitizeWhatsAppNumber, sanitizeMessageInput } from '../_shared/whatsapp-client.ts';
@@ -191,7 +190,7 @@ function maskEmailLgpd(email?: string | null): string {
   return `${maskedUser}@${domain}`;
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // 1. Handshake de Verificação da Meta WhatsApp Business API (GET)
   if (req.method === 'GET') {
     const url = new URL(req.url);
