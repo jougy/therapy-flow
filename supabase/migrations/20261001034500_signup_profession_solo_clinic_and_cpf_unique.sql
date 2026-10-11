@@ -207,7 +207,7 @@ BEGIN
     )
     RETURNING id INTO v_clinic_id;
 
-    -- Inserir assinatura em degustação trial (7 dias, 20 atendimentos, 1 acesso)
+    -- Inserir assinatura em teste gratuito (7 dias, 20 atendimentos, 1 acesso)
     INSERT INTO public.clinic_subscriptions (
       clinic_id,
       account_owner_user_id,

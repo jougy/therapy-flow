@@ -1,14 +1,19 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { localTelemetryManager } from "@/lib/telemetry-local-store";
+import { localTelemetryManager, type TelemetryActionType, type TelemetryTriggerReason } from "@/lib/telemetry-local-store";
 
-export type TelemetryEventType = 
-  | 'print_screen'
-  | 'document_print'
-  | 'page_view'
-  | 'export_pdf'
-  | 'export_json';
+export type TelemetryEventType =
+  | "print_screen"
+  | "document_print"
+  | "page_view"
+  | "export_pdf"
+  | "export_json"
+  | "clinical_records_saved"
+  | "forms_completed"
+  | "upgrade_views"
+  | "form_validation_errors"
+  | "error_event";
 
 export interface TrackEventOptions {
   eventType: TelemetryEventType;
@@ -26,6 +31,25 @@ export function useTelemetry() {
   const entryTimeRef = useRef<number>(Date.now());
 
   const userName = profile?.full_name || profile?.email || user?.email || "Usuário Desconhecido";
+  const lastSyncedUserLoginRef = useRef<string | null>(null);
+
+  // Keep local telemetry store context updated with active clinic & user
+  useEffect(() => {
+    localTelemetryManager.setContext(clinicId, userName);
+  }, [clinicId, userName]);
+
+  // Sync on Login / User Identification
+  useEffect(() => {
+    if (user?.id && lastSyncedUserLoginRef.current !== user.id) {
+      lastSyncedUserLoginRef.current = user.id;
+      void localTelemetryManager.syncToServer({
+        clinicId,
+        userName,
+        force: true,
+        triggerReason: "login",
+      });
+    }
+  }, [user?.id, clinicId, userName]);
 
   const trackEvent = useCallback(
     ({
@@ -35,12 +59,12 @@ export function useTelemetry() {
     }: TrackEventOptions) => {
       const targetPath = pathname || location.pathname;
 
-      // Record in local store (zero immediate database calls)
-      localTelemetryManager.recordAction(eventType, targetPath, {
+      // Record in local store (zero immediate database calls, batches up to 15 actions)
+      localTelemetryManager.recordAction(eventType as TelemetryActionType, targetPath, {
         dwell_time_seconds: Number(metadata.dwell_time_seconds || 0),
       });
 
-      // If anti-print or critical event, attempt a sync pass
+      // If anti-print or critical event, attempt an immediate sync pass
       if (eventType === "print_screen") {
         void localTelemetryManager.syncToServer({
           clinicId,
@@ -65,22 +89,46 @@ export function useTelemetry() {
     [clinicId, userName]
   );
 
-  // 5-Minute Periodic Cooldown Check Sync
+  // Explicit Flush on Logout
+  const flushOnLogout = useCallback(async () => {
+    return localTelemetryManager.syncToServer({
+      clinicId,
+      userName,
+      force: true,
+      triggerReason: "logout",
+    });
+  }, [clinicId, userName]);
+
+  // General Sync Trigger helper
+  const syncToServer = useCallback(
+    (options?: { force?: boolean; triggerReason?: TelemetryTriggerReason }) => {
+      return localTelemetryManager.syncToServer({
+        clinicId,
+        userName,
+        ...options,
+      });
+    },
+    [clinicId, userName]
+  );
+
+  // Sync on Online connection restore (flush backlog on reconnection)
   useEffect(() => {
-    const interval = setInterval(() => {
+    const handleOnline = () => {
       void localTelemetryManager.syncToServer({
         clinicId,
         userName,
-        triggerReason: "periodic",
+        force: true,
+        triggerReason: "online",
       });
-    }, 5 * 60 * 1000); // 5 minutes
+    };
 
+    window.addEventListener("online", handleOnline);
     return () => {
-      clearInterval(interval);
+      window.removeEventListener("online", handleOnline);
     };
   }, [clinicId, userName]);
 
-  // Sync on App Exit / PWA tab close
+  // Sync on App Exit / PWA tab close / beforeunload / visibility change
   useEffect(() => {
     const handleExit = () => {
       void localTelemetryManager.syncToServer({
@@ -91,15 +139,20 @@ export function useTelemetry() {
       });
     };
 
-    window.addEventListener("pagehide", handleExit);
-    document.addEventListener("visibilitychange", () => {
+    const handleVisibilityChange = () => {
       if (document.hidden) {
         handleExit();
       }
-    });
+    };
+
+    window.addEventListener("pagehide", handleExit);
+    window.addEventListener("beforeunload", handleExit);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("pagehide", handleExit);
+      window.removeEventListener("beforeunload", handleExit);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [clinicId, userName]);
 
@@ -193,11 +246,88 @@ export function useTelemetry() {
     [trackEvent]
   );
 
+  const trackClinicalRecordSaved = useCallback(
+    (resourceType?: string, resourceId?: string, metadata?: Record<string, unknown>) => {
+      trackEvent({
+        eventType: "clinical_records_saved",
+        resourceType,
+        resourceId,
+        metadata: {
+          trigger: "clinical_record_saved",
+          ...metadata,
+        },
+      });
+      // High-value clinical action: domain event sync
+      void localTelemetryManager.syncToServer({
+        clinicId,
+        userName,
+        force: true,
+        triggerReason: "domain_event",
+      });
+    },
+    [clinicId, userName, trackEvent]
+  );
+
+  const trackFormCompleted = useCallback(
+    (templateId?: string, metadata?: Record<string, unknown>) => {
+      trackEvent({
+        eventType: "forms_completed",
+        resourceId: templateId,
+        metadata: {
+          trigger: "form_completion",
+          ...metadata,
+        },
+      });
+    },
+    [trackEvent]
+  );
+
+  const trackUpgradeView = useCallback(
+    (planOrFeature?: string, metadata?: Record<string, unknown>) => {
+      trackEvent({
+        eventType: "upgrade_views",
+        metadata: {
+          planOrFeature,
+          ...metadata,
+        },
+      });
+    },
+    [trackEvent]
+  );
+
+  const trackFormValidationError = useCallback(
+    (formIdOrStep?: string, errorsCount?: number, metadata?: Record<string, unknown>) => {
+      trackEvent({
+        eventType: "form_validation_errors",
+        metadata: {
+          formIdOrStep,
+          errorsCount,
+          ...metadata,
+        },
+      });
+    },
+    [trackEvent]
+  );
+
+  const trackError = useCallback(
+    (errorInfo: { scope?: string; message: string; stack?: string; context?: unknown }) => {
+      localTelemetryManager.recordError(errorInfo);
+    },
+    []
+  );
+
   return {
     trackEvent,
     trackDocumentPrint,
     trackExportPdf,
     trackExportJson,
+    trackClinicalRecordSaved,
+    trackFormCompleted,
+    trackUpgradeView,
+    trackFormValidationError,
+    trackError,
     triggerDomainSync,
+    flushOnLogout,
+    syncToServer,
   };
 }

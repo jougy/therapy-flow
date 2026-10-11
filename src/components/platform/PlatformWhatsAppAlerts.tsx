@@ -42,31 +42,47 @@ export interface WhatsAppTestResult {
 export function PlatformWhatsAppAlerts() {
   const [testingWhatsApp, setTestingWhatsApp] = useState(false);
   const [lastTestResult, setLastTestResult] = useState<WhatsAppTestResult | null>(null);
-  const [copiedPhone, setCopiedPhone] = useState(false);
-
   // Form State
-  const [recipientPhone, setRecipientPhone] = useState("(11) 96047-4566");
+  const [recipientPhone, setRecipientPhone] = useState("(11) 98011-3936");
   const [templateType, setTemplateType] = useState<"welcome" | "plan_thank_you">("welcome");
   const [recipientName, setRecipientName] = useState("Dra. Patrícia Lima");
   const [clinicName, setClinicName] = useState("Consultório Fisio Saúde");
-  const [planName, setPlanName] = useState("Degustação Gratuita (7 dias)");
+  const [planName, setPlanName] = useState("Teste Gratuito (7 dias)");
 
   // Preview tab state
   const [previewTemplate, setPreviewTemplate] = useState<"welcome" | "plan_thank_you">("welcome");
 
-  const businessPhoneFormatted = "+55 (11) 96047-4566";
-  const businessPhoneDigits = "5511960474566";
+  // Numbers
+  const botPhoneFormatted = "+55 (11) 96047-4566";
+  const botPhoneDigits = "5511960474566";
 
-  const handleCopyBusinessPhone = useCallback(async () => {
+  const commercialPhoneFormatted = "+55 (11) 98011-3936";
+  const commercialPhoneDigits = "5511980113936";
+
+  const [copiedBotPhone, setCopiedBotPhone] = useState(false);
+  const [copiedCommercialPhone, setCopiedCommercialPhone] = useState(false);
+
+  const handleCopyBotPhone = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(businessPhoneFormatted);
-      setCopiedPhone(true);
-      toast.success("Número comercial copiado com sucesso!");
-      setTimeout(() => setCopiedPhone(false), 2000);
+      await navigator.clipboard.writeText(botPhoneFormatted);
+      setCopiedBotPhone(true);
+      toast.success("Número do bot copiado com sucesso!");
+      setTimeout(() => setCopiedBotPhone(false), 2000);
     } catch {
       toast.error("Falha ao copiar número.");
     }
-  }, [businessPhoneFormatted]);
+  }, [botPhoneFormatted]);
+
+  const handleCopyCommercialPhone = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(commercialPhoneFormatted);
+      setCopiedCommercialPhone(true);
+      toast.success("Número comercial de transbordo copiado com sucesso!");
+      setTimeout(() => setCopiedCommercialPhone(false), 2000);
+    } catch {
+      toast.error("Falha ao copiar número.");
+    }
+  }, [commercialPhoneFormatted]);
 
   const handleSendWhatsAppTest = useCallback(async () => {
     const rawDigits = recipientPhone.replace(/\D/g, "");
@@ -154,34 +170,68 @@ export function PlatformWhatsAppAlerts() {
             </CardDescription>
           </div>
 
-          {/* Destaque do Número Comercial Ativo */}
-          <div className="flex flex-col sm:items-end gap-1.5 p-3 rounded-xl bg-background/80 border border-emerald-500/20 shadow-sm shrink-0">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3 text-emerald-600" /> Número Comercial Oficial
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm sm:text-base font-bold text-foreground">
-                {businessPhoneFormatted}
+          {/* Cards com os Números Oficiais */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+            {/* 1. Bot Oficial (Meta Cloud API) */}
+            <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-background/80 border border-emerald-500/20 shadow-sm">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3 text-emerald-600" /> Bot Meta Cloud API
               </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleCopyBusinessPhone}
-                className="h-7 w-7 rounded-lg hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-600"
-                title="Copiar número"
-                aria-label="Copiar número comercial"
-              >
-                {copiedPhone ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </Button>
-              <a
-                href={`https://wa.me/${businessPhoneDigits}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center h-7 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold gap-1 transition-colors"
-              >
-                <ExternalLink className="w-3 h-3" />
-                Abrir Chat
-              </a>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs sm:text-sm font-bold text-foreground">
+                  {botPhoneFormatted}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCopyBotPhone}
+                  className="h-7 w-7 rounded-lg hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-600"
+                  title="Copiar número do bot"
+                  aria-label="Copiar número do bot"
+                >
+                  {copiedBotPhone ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                </Button>
+                <a
+                  href={`https://wa.me/${botPhoneDigits}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center h-7 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold gap-1 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Bot
+                </a>
+              </div>
+            </div>
+
+            {/* 2. Comercial Humano / Transbordo & Suporte */}
+            <div className="flex flex-col gap-1.5 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/30 shadow-sm">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                <Smartphone className="w-3 h-3 text-emerald-600" /> Transbordo & Suporte Humano
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs sm:text-sm font-bold text-foreground">
+                  {commercialPhoneFormatted}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCopyCommercialPhone}
+                  className="h-7 w-7 rounded-lg hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-600"
+                  title="Copiar número comercial de suporte"
+                  aria-label="Copiar número comercial de suporte"
+                >
+                  {copiedCommercialPhone ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                </Button>
+                <a
+                  href={`https://wa.me/${commercialPhoneDigits}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center h-7 px-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-semibold gap-1 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  WhatsApp Comercial
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -327,7 +377,7 @@ export function PlatformWhatsAppAlerts() {
                 </div>
               </div>
               <div className="text-[11px] text-emerald-200/70 font-mono hidden sm:block">
-                {businessPhoneFormatted}
+                {botPhoneFormatted}
               </div>
             </div>
 
@@ -348,7 +398,7 @@ export function PlatformWhatsAppAlerts() {
                       Olá <strong className="text-emerald-300">Dra. Patrícia</strong>, tudo bem? Sou seu assistente da <strong className="text-emerald-300">PluriFisio</strong>! 👋
                     </p>
                     <p>
-                      Vimos que você criou sua conta no plano <strong className="text-emerald-300">Degustação Gratuita (7 dias)</strong>. Seja muito bem-vinda!
+                      Vimos que você criou sua conta no plano <strong className="text-emerald-300">Teste Gratuito (7 dias)</strong>. Seja muito bem-vinda!
                     </p>
                     <p className="text-slate-300 text-xs">
                       Sei que o dia a dia na clínica é corrido, então passei para me colocar 100% à sua disposição.
@@ -504,7 +554,7 @@ export function PlatformWhatsAppAlerts() {
               </Label>
               <Input
                 id="whatsapp-test-plan"
-                placeholder="Pluri Fisio Pro ou Degustação Gratuita (7 dias)"
+                placeholder="Pluri Fisio Pro ou Teste Gratuito (7 dias)"
                 value={planName}
                 onChange={(e) => setPlanName(e.target.value)}
                 maxLength={80}
@@ -516,7 +566,7 @@ export function PlatformWhatsAppAlerts() {
           <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span className="text-[11px] text-muted-foreground flex items-center gap-1">
               <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
-              Disparo realizado a partir da Meta Cloud API Oficial ({businessPhoneFormatted})
+              Disparo realizado a partir da Meta Cloud API Oficial ({botPhoneFormatted}) para WhatsApp de teste ou transbordo ({commercialPhoneFormatted})
             </span>
 
             <Button

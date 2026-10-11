@@ -900,7 +900,7 @@ export function FeatureConfigModal({ featureKey, isOpen, onClose, onSave, initia
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs text-muted-foreground">
             <div className="flex items-center gap-2 mb-1 text-emerald-700 dark:text-emerald-400 font-semibold text-sm">
               <Sparkles className="w-4 h-4" />
-              Degustação Gratuita (Trial Volumétrico / Free Tier)
+              Teste Gratuito (7 dias) (Trial Volumétrico / Free Tier)
             </div>
             <p>
               Permite que novos profissionais e clínicas experimentem a plataforma sem fornecer cartão de crédito durante o onboarding.

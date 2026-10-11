@@ -1,6 +1,6 @@
 import * as React from "react";
-
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
+import { localTelemetryManager } from "@/lib/telemetry-local-store";
 
 const TOAST_LIMIT = 1;
 const TOAST_REMOVE_DELAY = 1000000;
@@ -136,6 +136,29 @@ type Toast = Omit<ToasterToast, "id">;
 
 function toast({ ...props }: Toast) {
   const id = genId();
+
+  if (props.variant === "destructive") {
+    try {
+      const titleStr = typeof props.title === "string" ? props.title : "";
+      const descStr = typeof props.description === "string" ? props.description : "";
+      const message = titleStr
+        ? descStr
+          ? `${titleStr}: ${descStr}`
+          : titleStr
+        : descStr || "Toast destrutivo (erro na interface)";
+
+      localTelemetryManager.recordError({
+        scope: "ui.toast.destructive",
+        message,
+        context: {
+          title: typeof props.title === "string" ? props.title : undefined,
+          description: typeof props.description === "string" ? props.description : undefined,
+        },
+      });
+    } catch {
+      // Safe fallback
+    }
+  }
 
   const update = (props: ToasterToast) =>
     dispatch({

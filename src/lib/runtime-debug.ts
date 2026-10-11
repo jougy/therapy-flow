@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { localTelemetryManager } from "@/lib/telemetry-local-store";
 
 const RUNTIME_DEBUG_PREFIX = "[Pluri-Health runtime]";
 const GLOBAL_RUNTIME_DEBUG_FLAG = "__PRONTO_RUNTIME_DEBUG_INSTALLED__";
@@ -122,12 +123,25 @@ let isInternalLogging = false;
 
 export const logRuntimeError = (scope: string, error: unknown, context?: RuntimeDebugContext) => {
   const errorLike = toErrorLike(error);
+  const stack = "stack" in errorLike && typeof errorLike.stack === "string" ? errorLike.stack : undefined;
+  const name = "name" in errorLike && typeof errorLike.name === "string" ? errorLike.name : undefined;
 
   addDebugEvent("error", scope, errorLike.message, context, {
     message: errorLike.message,
-    name: "name" in errorLike && typeof errorLike.name === "string" ? errorLike.name : undefined,
-    stack: "stack" in errorLike && typeof errorLike.stack === "string" ? errorLike.stack : undefined,
+    name,
+    stack,
   });
+
+  try {
+    localTelemetryManager.recordError({
+      scope,
+      message: errorLike.message,
+      stack,
+      context,
+    });
+  } catch {
+    // Graceful fallback
+  }
 
   isInternalLogging = true;
   try {

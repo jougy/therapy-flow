@@ -581,7 +581,7 @@ export function CreditCardCheckoutTab({
             <>
               <Lock className="w-4 h-4 mr-2" />
               {rawTotal <= 0.01
-                ? "Validar Cartão e Ativar Degustação Grátis (R$ 0,01)"
+                ? "Validar Cartão e Ativar Teste Gratuito (7 dias) (R$ 0,01)"
                 : `Pagar em ${installments}x de R$ ${installmentValue} e Ativar Espaço`}
             </>
           )}

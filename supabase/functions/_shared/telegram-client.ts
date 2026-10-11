@@ -317,7 +317,7 @@ export class TelegramClient {
       const email = params.email.trim();
       const phoneRaw = params.phone || '';
       const clinicName = params.clinicName?.trim() || 'Consultório Solo';
-      const plan = params.plan?.trim() || 'Degustação Gratuita (7 dias)';
+      const plan = params.plan?.trim() || 'Teste Gratuito (7 dias)';
       const createdAt = params.createdAt
         ? new Date(params.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
         : new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });

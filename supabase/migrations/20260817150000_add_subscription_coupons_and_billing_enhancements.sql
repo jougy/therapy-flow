@@ -29,7 +29,7 @@ values
   ('PRIMEIROMES100', '100% de desconto no primeiro mês de assinatura', 'PERCENTAGE', 100.00, null, true),
   ('BETA50', '50% de desconto promocional Beta', 'PERCENTAGE', 50.00, null, true),
   ('DESCONTO10', 'Desconto fixo de R$ 10,00 na mensalidade', 'FIXED_AMOUNT', 10.00, null, true),
-  ('DEGUSTACAO30', '30 dias de degustação gratuita sem cobrança imediata', 'TRIAL_DAYS', 30.00, null, true)
+  ('TRIAL30', '30 dias de teste gratuito sem cobrança imediata', 'TRIAL_DAYS', 30.00, null, true)
 on conflict (code) do update
 set
   description = EXCLUDED.description,

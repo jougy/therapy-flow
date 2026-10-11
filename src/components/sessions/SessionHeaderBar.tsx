@@ -130,13 +130,13 @@ export const SessionHeaderBar = ({
       {/* Action Bar */}
       <div className="flex gap-2 flex-wrap items-center w-full min-w-0">
         {(isNew || isEditing) && !locked && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
             <Button
               data-tutorial="session-finish-btn"
               size="sm"
               onClick={() => void onSave("concluído")}
               disabled={saving}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-semibold gap-1.5"
+              className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-semibold gap-1.5 min-w-[140px]"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               <span>Concluir Atendimento</span>
@@ -146,7 +146,7 @@ export const SessionHeaderBar = ({
               variant="outline"
               onClick={() => void onSave("rascunho")}
               disabled={saving}
-              className="gap-1.5"
+              className="flex-1 sm:flex-initial gap-1.5 min-w-[140px]"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               <span>Salvar como Rascunho</span>
@@ -186,7 +186,7 @@ export const SessionHeaderBar = ({
         )}
         {(isNew || isEditing) && (
           <Select value={status} onValueChange={onStatusChange} disabled={locked}>
-            <SelectTrigger className="w-[140px] h-9 text-sm">
+            <SelectTrigger className="w-full sm:w-[140px] h-9 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -160,6 +160,10 @@ const supabaseMocks = vi.hoisted(() => {
       return createQueryResult({ clinic_id: "clinic-1" });
     }
 
+    if (fn === "upsert_user_telemetry_summary") {
+      return createQueryResult({ success: true });
+    }
+
     throw new Error(`Unexpected rpc "${fn}"`);
   }),
     signOut: vi.fn(() => createQueryResult(null)),
@@ -255,8 +259,8 @@ describe("useAuth runtime resilience", () => {
   });
 
   it("populates role_key in membership and respects effectiveRoleKey in capabilities", async () => {
-    let currentMembership: any = null;
-    let canFn: any = null;
+    let currentMembership: Membership | null = null;
+    let canFn: ((capability: AccessCapability) => boolean) | null = null;
 
     const MembershipProbe = () => {
       const { can, membership, selectClinic } = useAuth();
@@ -291,8 +295,65 @@ describe("useAuth runtime resilience", () => {
 
     expect(currentMembership?.role_key).toBeNull();
     expect(currentMembership?.operational_role).toBe("owner");
-    expect(canFn("patients.read")).toBe(true);
+    expect(canFn?.("patients.read")).toBe(true);
+  });
+
+  it("persists active clinic in localStorage on selectClinic and clears both localStorage and sessionStorage on signOut", async () => {
+    let selectClinicFn: (id: string) => Promise<void> = async () => {};
+    let signOutFn: () => Promise<void> = async () => {};
+
+    const PersistenceProbe = () => {
+      const { selectClinic, signOut } = useAuth();
+      selectClinicFn = selectClinic;
+      signOutFn = signOut;
+
+      return <div>Persistence Test Probe</div>;
+    };
+
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+
+    render(
+      <AuthProvider>
+        <PersistenceProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(async () => {
+      await selectClinicFn("clinic-1");
+    });
+
+    expect(window.localStorage.getItem("therapy-flow.activeClinicId")).toBe("clinic-1");
+    expect(window.sessionStorage.getItem("therapy-flow.activeClinicId")).toBeNull();
+
+    await signOutFn();
+
+    expect(window.localStorage.getItem("therapy-flow.activeClinicId")).toBeNull();
+    expect(window.sessionStorage.getItem("therapy-flow.activeClinicId")).toBeNull();
+  });
+
+  it("flushes telemetry and signs out user on signOut", async () => {
+    let signOutFn: () => Promise<void> = async () => {};
+
+    const SignOutProbe = () => {
+      const { signOut } = useAuth();
+      signOutFn = signOut;
+
+      return <button onClick={() => void signOut()} data-testid="sign-out">Sign Out</button>;
+    };
+
+    render(
+      <AuthProvider>
+        <SignOutProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sign-out")).toBeInTheDocument();
+    });
+
+    await signOutFn();
+
+    expect(supabaseMocks.signOut).toHaveBeenCalledTimes(1);
   });
 });
-
-

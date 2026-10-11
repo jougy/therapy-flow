@@ -281,7 +281,7 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
             <Activity className="w-5 h-5 text-primary" /> Estatísticas Resumidas do Usuário (Cliente-first Idempotente)
           </h2>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            Resumo acumulado no cliente com sincronização a cada 5 minutos e proteção contra looping/spam.
+            Resumo acumulado no cliente com sincronização contínua a cada 5 minutos, no login e no logout, além de proteção anti-spam.
           </p>
         </div>
         <Button

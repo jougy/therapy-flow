@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { PlanPriceCalculation } from "@/utils/subscriptionPricing";
 
 export interface PlanCardEnterpriseProps {
-  /** Indica se o ciclo selecionado é o de degustação gratuita. */
+  /** Indica se o ciclo selecionado é o de teste gratuito (7 dias). */
   isFreeCycle: boolean;
   /** Objeto de precificação calculada centralizada para o plano Enterprise. */
   pricing: PlanPriceCalculation;
@@ -16,7 +16,7 @@ export interface PlanCardEnterpriseProps {
   onSelectPlan: (planId: "enterprise") => void;
   /** Callback para abrir modal com especificações detalhadas do plano. */
   onOpenDetails?: (planId: "enterprise") => void;
-  /** Indica estado de ativação de degustação em andamento (spinner). */
+  /** Indica estado de ativação de teste gratuito em andamento (spinner). */
   activatingTrial: boolean;
   /** Quantidade de acessos concorrentes adicionais além dos 10 da base. */
   extraConcurrentEnterprise: number;

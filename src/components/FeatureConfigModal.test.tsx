@@ -93,7 +93,7 @@ describe("FeatureConfigModal - Assinaturas", () => {
       />
     );
 
-    expect(screen.getByText(/Degustação Gratuita \(Trial Volumétrico \/ Free Tier\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Teste Gratuito \(7 dias\) \(Trial Volumétrico \/ Free Tier\)/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue("14")).toBeInTheDocument();
     expect(screen.getByDisplayValue("10")).toBeInTheDocument();
 

@@ -121,16 +121,17 @@ export const SessionQuickEditModals = ({
   return (
     <>
       <Dialog open={presenceDialogOpen} onOpenChange={(open) => !savingPresence && onPresenceDialogOpenChange(open)}>
-        <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-lg max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar presença</DialogTitle>
             <DialogDescription>Atualize o horário agendado, chegada e início do atendimento.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4">
-            <div className="space-y-2">
+          <div className="grid gap-4 min-w-0">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="quick-scheduled-start">Horário agendado</Label>
               <Input
                 id="quick-scheduled-start"
+                className="w-full min-w-0"
                 max="2100-12-31T23:59"
                 min="2000-01-01T00:00"
                 type="datetime-local"
@@ -139,62 +140,64 @@ export const SessionQuickEditModals = ({
                 disabled={savingPresence}
               />
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
+            <div className="space-y-2 min-w-0">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <Label htmlFor="quick-patient-arrived">Horário de chegada</Label>
-                {draftArrivalDeltaLabel ? (
-                  <span
-                    className={`text-xs font-semibold ${draftArrivalDeltaMinutes && draftArrivalDeltaMinutes > 0 ? "text-destructive" : "text-success"}`}
+                <div className="flex items-center gap-2">
+                  {draftArrivalDeltaLabel ? (
+                    <span
+                      className={`text-xs font-semibold ${draftArrivalDeltaMinutes && draftArrivalDeltaMinutes > 0 ? "text-destructive" : "text-success"}`}
+                    >
+                      {draftArrivalDeltaLabel}
+                    </span>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    className="h-6 px-2 text-[11px] font-medium"
+                    onClick={() => onDraftPatientArrivedAtChange(getCurrentDateTimeInputValue())}
+                    disabled={savingPresence}
                   >
-                    {draftArrivalDeltaLabel}
-                  </span>
-                ) : null}
+                    Agora
+                  </Button>
+                </div>
               </div>
-              <div className="relative">
-                <Input
-                  id="quick-patient-arrived"
-                  className="pr-20"
-                  max="2100-12-31T23:59"
-                  min="2000-01-01T00:00"
-                  type="datetime-local"
-                  value={draftPatientArrivedAt}
-                  onChange={(event) => onDraftPatientArrivedAtChange(event.target.value)}
-                  disabled={savingPresence}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="absolute right-1 top-1/2 h-8 -translate-y-1/2 px-3 text-xs"
-                  onClick={() => onDraftPatientArrivedAtChange(getCurrentDateTimeInputValue())}
-                  disabled={savingPresence}
-                >
-                  Agora
-                </Button>
-              </div>
+              <Input
+                id="quick-patient-arrived"
+                className="w-full min-w-0"
+                max="2100-12-31T23:59"
+                min="2000-01-01T00:00"
+                type="datetime-local"
+                value={draftPatientArrivedAt}
+                onChange={(event) => onDraftPatientArrivedAtChange(event.target.value)}
+                disabled={savingPresence}
+              />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="quick-session-date">Data e hora do início do atendimento</Label>
-              <div className="relative">
-                <Input
-                  id="quick-session-date"
-                  className="pr-20"
-                  max="2100-12-31T23:59"
-                  min="2000-01-01T00:00"
-                  type="datetime-local"
-                  value={draftSessionDate}
-                  onChange={(event) => onDraftSessionDateChange(event.target.value)}
-                  disabled={savingPresence}
-                />
+            <div className="space-y-2 min-w-0">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <Label htmlFor="quick-session-date">Data e hora do início do atendimento</Label>
                 <Button
                   type="button"
-                  variant="ghost"
-                  className="absolute right-1 top-1/2 h-8 -translate-y-1/2 px-3 text-xs"
+                  variant="outline"
+                  size="xs"
+                  className="h-6 px-2 text-[11px] font-medium"
                   onClick={() => onDraftSessionDateChange(getCurrentDateTimeInputValue())}
                   disabled={savingPresence}
                 >
                   Agora
                 </Button>
               </div>
+              <Input
+                id="quick-session-date"
+                className="w-full min-w-0"
+                max="2100-12-31T23:59"
+                min="2000-01-01T00:00"
+                type="datetime-local"
+                value={draftSessionDate}
+                onChange={(event) => onDraftSessionDateChange(event.target.value)}
+                disabled={savingPresence}
+              />
             </div>
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

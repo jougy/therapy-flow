@@ -69,7 +69,7 @@ cross join (
     ('changed', 'Transição Oficial para a Fase Beta da Plataforma', 'Consolidação de toda a jornada principal de atendimento: cadastro, agendamento, prontuários, evoluções de sessões, pacotes e faturamento integrado.', 10),
     ('changed', 'Diretório de Pacientes com Busca e Filtros Otimizados', 'Aprimoramento na navegação e busca rápida por nome, CPF e status, com visualização moderna em cards adaptáveis para telas móveis e desktop.', 20),
     ('changed', 'Laudos e Estatísticas de Pacientes Formatados para Impressão', 'Layout institucional padronizado para impressão limpa de relatórios clínicos e gráficos de evolução do paciente.', 30),
-    ('changed', 'Precificação Solo Otimizada e Consolidação do Período de Testes (Trial)', 'Ajuste no valor do plano individual e ativação simplificada de degustação gratuita com validação segura de cotas.', 40),
+    ('changed', 'Precificação Solo Otimizada e Consolidação do Período de Testes (Trial)', 'Ajuste no valor do plano individual e ativação simplificada de teste gratuito com validação segura de cotas.', 40),
 
     ('fixed', 'Isolamento de Status de Usuário em Múltiplas Clínicas', 'Blindagem nas permissões para colaboradores que atuam em diferentes clínicas, garantindo total isolamento de dados e perfis operacionais.', 10),
     ('fixed', 'Reenvio de Convites e Resolução de Códigos Públicos', 'Tratamento de concorrência no aceite de convites de equipe e geração rápida de códigos públicos para novos profissionais.', 20),

@@ -2,9 +2,19 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
 const STORAGE_KEY = "therapy-flow.clientTelemetryStore";
-const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const SPAM_BLOCK_DURATION_MS = 15 * 60 * 1000;
 const MAX_ACTIONS_PER_5_MINUTES = 80; // Rate limit threshold
+const ACTION_SYNC_THRESHOLD = 15; // Auto-sync batch threshold
+
+export interface ErrorLogEntry {
+  id: string;
+  timestamp: number;
+  timeString?: string;
+  scope: string;
+  message: string;
+  stack?: string;
+  context?: unknown;
+}
 
 export interface ClientTelemetryData {
   pageViews: number;
@@ -12,30 +22,60 @@ export interface ClientTelemetryData {
   docsPrinted: number;
   pdfExported: number;
   jsonExported: number;
+  clinicalRecordsSaved: number;
+  formsCompleted: number;
+  upgradeViews: number;
+  formValidationErrors: number;
+  errorEventsCount: number;
   dwellTimeSeconds: number;
   routes: Record<string, number>;
   actionHistory: number[]; // timestamps
   lastSyncTime: number;
+  unsyncedActionsCount: number;
+  recentErrors: ErrorLogEntry[];
   isSpamBlocked: boolean;
   spamBlockedUntil: number | null;
   spamReason: string | null;
 }
 
+export type TelemetryActionType =
+  | "page_view"
+  | "print_screen"
+  | "document_print"
+  | "export_pdf"
+  | "export_json"
+  | "clinical_records_saved"
+  | "clinical_record_saved"
+  | "forms_completed"
+  | "form_completed"
+  | "upgrade_views"
+  | "upgrade_view"
+  | "form_validation_errors"
+  | "form_validation_error"
+  | "error_event";
+
 const getInitialStore = (): ClientTelemetryData => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as ClientTelemetryData;
+      const parsed = JSON.parse(raw) as Partial<ClientTelemetryData>;
       return {
         pageViews: parsed.pageViews || 0,
         printsDetected: parsed.printsDetected || 0,
         docsPrinted: parsed.docsPrinted || 0,
         pdfExported: parsed.pdfExported || 0,
         jsonExported: parsed.jsonExported || 0,
+        clinicalRecordsSaved: parsed.clinicalRecordsSaved || 0,
+        formsCompleted: parsed.formsCompleted || 0,
+        upgradeViews: parsed.upgradeViews || 0,
+        formValidationErrors: parsed.formValidationErrors || 0,
+        errorEventsCount: parsed.errorEventsCount || 0,
         dwellTimeSeconds: parsed.dwellTimeSeconds || 0,
         routes: parsed.routes || {},
         actionHistory: Array.isArray(parsed.actionHistory) ? parsed.actionHistory : [],
         lastSyncTime: parsed.lastSyncTime || 0,
+        unsyncedActionsCount: parsed.unsyncedActionsCount || 0,
+        recentErrors: Array.isArray(parsed.recentErrors) ? parsed.recentErrors : [],
         isSpamBlocked: parsed.isSpamBlocked || false,
         spamBlockedUntil: parsed.spamBlockedUntil || null,
         spamReason: parsed.spamReason || null,
@@ -51,18 +91,61 @@ const getInitialStore = (): ClientTelemetryData => {
     docsPrinted: 0,
     pdfExported: 0,
     jsonExported: 0,
+    clinicalRecordsSaved: 0,
+    formsCompleted: 0,
+    upgradeViews: 0,
+    formValidationErrors: 0,
+    errorEventsCount: 0,
     dwellTimeSeconds: 0,
     routes: {},
     actionHistory: [],
     lastSyncTime: 0,
+    unsyncedActionsCount: 0,
+    recentErrors: [],
     isSpamBlocked: false,
     spamBlockedUntil: null,
     spamReason: null,
   };
 };
 
+export type TelemetryTriggerReason =
+  | "login"
+  | "logout"
+  | "app_exit"
+  | "periodic"
+  | "domain_event"
+  | "manual"
+  | "threshold_batch"
+  | "online"
+  | "error_occurred";
+
+export interface TelemetrySyncOptions {
+  clinicId?: string | null;
+  userName?: string;
+  force?: boolean;
+  isSpamAlert?: boolean;
+  triggerReason?: TelemetryTriggerReason;
+  keepalive?: boolean;
+}
+
+export const sanitizeTelemetryRoute = (path: string): string => {
+  if (!path) return "/";
+  // Remove query params and hash fragments
+  const cleanPath = path.split("?")[0].split("#")[0].trim();
+  if (!cleanPath) return "/";
+
+  return cleanPath
+    // Replace UUIDs with :id to prevent PHI exposure / table bloating
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ":id")
+    // Replace numeric IDs in path segments
+    .replace(/\/\d+(?=\/|$)/g, "/:id");
+};
+
 class ClientTelemetryManager {
   private store: ClientTelemetryData;
+  private inFlightSyncPromise: Promise<void> | null = null;
+  private cachedClinicId: string | null = null;
+  private cachedUserName: string = "Usuário";
 
   constructor() {
     this.store = getInitialStore();
@@ -73,6 +156,15 @@ class ClientTelemetryManager {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.store));
     } catch (e) {
       console.warn("[LocalTelemetry] Error saving to localStorage:", e);
+    }
+  }
+
+  public setContext(clinicId?: string | null, userName?: string) {
+    if (clinicId !== undefined) {
+      this.cachedClinicId = clinicId;
+    }
+    if (userName) {
+      this.cachedUserName = userName;
     }
   }
 
@@ -93,7 +185,7 @@ class ClientTelemetryManager {
 
   // Accumulate local action
   public recordAction(
-    type: "page_view" | "print_screen" | "document_print" | "export_pdf" | "export_json",
+    type: TelemetryActionType,
     pathname: string,
     metadata: { dwell_time_seconds?: number } = {}
   ) {
@@ -110,11 +202,13 @@ class ClientTelemetryManager {
     this.store.actionHistory = this.store.actionHistory.filter((t) => t >= tenMinsAgo);
     this.store.actionHistory.push(now);
 
+    const safeRoute = sanitizeTelemetryRoute(pathname);
+
     // Increment specific counters
     if (type === "page_view") {
       this.store.pageViews += 1;
-      const currentRouteCount = this.store.routes[pathname] || 0;
-      this.store.routes[pathname] = currentRouteCount + 1;
+      const currentRouteCount = this.store.routes[safeRoute] || 0;
+      this.store.routes[safeRoute] = currentRouteCount + 1;
 
       if (metadata.dwell_time_seconds) {
         this.store.dwellTimeSeconds += metadata.dwell_time_seconds;
@@ -127,10 +221,22 @@ class ClientTelemetryManager {
       this.store.pdfExported += 1;
     } else if (type === "export_json") {
       this.store.jsonExported += 1;
+    } else if (type === "clinical_records_saved" || type === "clinical_record_saved") {
+      this.store.clinicalRecordsSaved += 1;
+    } else if (type === "forms_completed" || type === "form_completed") {
+      this.store.formsCompleted += 1;
+    } else if (type === "upgrade_views" || type === "upgrade_view") {
+      this.store.upgradeViews += 1;
+    } else if (type === "form_validation_errors" || type === "form_validation_error") {
+      this.store.formValidationErrors += 1;
+    } else if (type === "error_event") {
+      this.store.errorEventsCount += 1;
     }
 
+    this.store.unsyncedActionsCount = (this.store.unsyncedActionsCount || 0) + 1;
+
     // Anti-Spam Defense Check (actions in last 5 minutes)
-    const fiveMinsAgo = now - FIVE_MINUTES_MS;
+    const fiveMinsAgo = now - 5 * 60 * 1000;
     const recentActionsIn5Mins = this.store.actionHistory.filter((t) => t >= fiveMinsAgo).length;
 
     if (recentActionsIn5Mins >= MAX_ACTIONS_PER_5_MINUTES && !this.store.isSpamBlocked) {
@@ -140,11 +246,15 @@ class ClientTelemetryManager {
       this.store.spamReason = `Rate limit excedido: ${recentActionsIn5Mins} ações em 5 minutos. Conexão pausada por 15 minutos.`;
       this.save();
 
-      toast({
-        title: "Alerta de Segurança Pluri-Health",
-        description: "Frequência anormal de ações por minuto detectada. Sua sincronização foi pausada temporariamente por 15 minutos.",
-        variant: "destructive",
-      });
+      try {
+        toast({
+          title: "Alerta de Segurança Pluri-Health",
+          description: "Frequência anormal de ações por minuto detectada. Sua sincronização foi pausada temporariamente por 15 minutos.",
+          variant: "destructive",
+        });
+      } catch {
+        // Safe fallback
+      }
 
       // Dispatch emergency single RPC alert to Backoffice
       void this.syncToServer({ isSpamAlert: true });
@@ -152,98 +262,239 @@ class ClientTelemetryManager {
     }
 
     this.save();
+
+    // Auto-sync threshold trigger (15 actions batch)
+    if (this.store.unsyncedActionsCount >= ACTION_SYNC_THRESHOLD) {
+      void this.syncToServer({
+        clinicId: this.cachedClinicId,
+        userName: this.cachedUserName,
+        force: true,
+        triggerReason: "threshold_batch",
+      });
+    }
   }
 
-  // Idempotent Sync to Server via single RPC upsert
+  // Record an error event and immediately trigger telemetry synchronization
+  public recordError(errorInfo: {
+    scope?: string;
+    message: string;
+    stack?: string;
+    context?: unknown;
+  }) {
+    const now = Date.now();
+    const date = new Date(now);
+    const timeString = `${date.getHours().toString().padStart(2, "0")}:${date
+      .getMinutes()
+      .toString()
+      .padStart(2, "0")}:${date.getSeconds().toString().padStart(2, "0")}`;
+
+    const errorItem: ErrorLogEntry = {
+      id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: now,
+      timeString,
+      scope: errorInfo.scope || "runtime",
+      message: errorInfo.message || "Erro desconhecido",
+      stack: errorInfo.stack,
+      context: errorInfo.context,
+    };
+
+    this.store.errorEventsCount = (this.store.errorEventsCount || 0) + 1;
+    this.store.unsyncedActionsCount = (this.store.unsyncedActionsCount || 0) + 1;
+    const currentRecent = Array.isArray(this.store.recentErrors) ? this.store.recentErrors : [];
+    this.store.recentErrors = [errorItem, ...currentRecent.slice(0, 49)];
+    this.save();
+
+    void this.syncToServer({
+      clinicId: this.cachedClinicId,
+      userName: this.cachedUserName,
+      force: true,
+      triggerReason: "error_occurred",
+    });
+  }
+
+  // Idempotent & Concurrency-Safe Sync to Server via single RPC upsert
   public async syncToServer({
     clinicId,
     userName,
     force = false,
     isSpamAlert = false,
-    triggerReason = "periodic",
-  }: {
-    clinicId?: string | null;
-    userName?: string;
-    force?: boolean;
-    isSpamAlert?: boolean;
-    triggerReason?: "domain_event" | "app_exit" | "periodic" | "manual";
-  } = {}) {
-    const now = Date.now();
+    triggerReason = "domain_event",
+  }: TelemetrySyncOptions = {}): Promise<void> {
+    const activeClinicId = clinicId !== undefined ? clinicId : this.cachedClinicId;
+    const activeUserName = userName || this.cachedUserName || "Usuário";
 
-    // Check if spam block is active and not an emergency spam alert
-    if (!isSpamAlert && this.checkSpamBlockStatus()) {
-      console.warn("[LocalTelemetry] Sync skipped because user is currently rate-limited.");
-      return;
+    // If a sync is already in flight, wait for it before evaluating next sync pass
+    if (this.inFlightSyncPromise) {
+      await this.inFlightSyncPromise;
     }
 
-    // Check 5-minute cooldown unless force is true or it's a domain event / app exit / spam alert
-    const timeSinceLastSync = now - this.store.lastSyncTime;
-    if (!force && !isSpamAlert && triggerReason === "periodic" && timeSinceLastSync < FIVE_MINUTES_MS) {
-      return; // Respect 5-minute cooldown
-    }
+    const syncExecution = async () => {
+      const now = Date.now();
 
-    // Check if there is anything to sync
-    const hasDataToSync =
-      this.store.pageViews > 0 ||
-      this.store.printsDetected > 0 ||
-      this.store.docsPrinted > 0 ||
-      this.store.pdfExported > 0 ||
-      this.store.jsonExported > 0 ||
-      this.store.isSpamBlocked;
-
-    if (!hasDataToSync && !isSpamAlert) {
-      return;
-    }
-
-    // Copy snapshot data
-    const snapshot = {
-      pageViews: this.store.pageViews,
-      printsDetected: this.store.printsDetected,
-      docsPrinted: this.store.docsPrinted,
-      pdfExported: this.store.pdfExported,
-      jsonExported: this.store.jsonExported,
-      dwellTimeSeconds: this.store.dwellTimeSeconds,
-      routes: { ...this.store.routes },
-      isSpamFlagged: this.store.isSpamBlocked,
-      spamReason: this.store.spamReason,
-    };
-
-    try {
-      const { error } = await supabase.rpc("upsert_user_telemetry_summary", {
-        _clinic_id: clinicId || null,
-        _user_name: userName || "Usuário",
-        _page_views: snapshot.pageViews,
-        _prints_detected: snapshot.printsDetected,
-        _docs_printed: snapshot.docsPrinted,
-        _pdf_exported: snapshot.pdfExported,
-        _dwell_seconds: snapshot.dwellTimeSeconds,
-        _top_routes: snapshot.routes,
-        _is_spam_flagged: snapshot.isSpamFlagged,
-        _spam_reason: snapshot.spamReason,
-      });
-
-      if (error) {
-        console.warn("[LocalTelemetry] Sync RPC failed:", error.message);
+      // Check if spam block is active and not an emergency spam alert
+      if (!isSpamAlert && this.checkSpamBlockStatus()) {
+        console.warn("[LocalTelemetry] Sync skipped because user is currently rate-limited.");
         return;
       }
 
-      // Reset local counters after successful idempotent UPSERT
-      this.store.pageViews = 0;
-      this.store.printsDetected = 0;
-      this.store.docsPrinted = 0;
-      this.store.pdfExported = 0;
-      this.store.jsonExported = 0;
-      this.store.dwellTimeSeconds = 0;
+      // Check if there is anything to sync
+      const hasDataToSync =
+        this.store.pageViews > 0 ||
+        this.store.printsDetected > 0 ||
+        this.store.docsPrinted > 0 ||
+        this.store.pdfExported > 0 ||
+        this.store.jsonExported > 0 ||
+        this.store.clinicalRecordsSaved > 0 ||
+        this.store.formsCompleted > 0 ||
+        this.store.upgradeViews > 0 ||
+        this.store.formValidationErrors > 0 ||
+        this.store.errorEventsCount > 0 ||
+        this.store.isSpamBlocked;
+
+      if (!hasDataToSync && !isSpamAlert && triggerReason !== "login") {
+        return;
+      }
+
+      // Extract delta snapshot and immediately subtract to allow new concurrent actions
+      const delta = {
+        pageViews: this.store.pageViews,
+        printsDetected: this.store.printsDetected,
+        docsPrinted: this.store.docsPrinted,
+        pdfExported: this.store.pdfExported,
+        jsonExported: this.store.jsonExported,
+        clinicalRecordsSaved: this.store.clinicalRecordsSaved,
+        formsCompleted: this.store.formsCompleted,
+        upgradeViews: this.store.upgradeViews,
+        formValidationErrors: this.store.formValidationErrors,
+        errorEventsCount: this.store.errorEventsCount,
+        dwellTimeSeconds: this.store.dwellTimeSeconds,
+        unsyncedActionsCount: this.store.unsyncedActionsCount,
+        routes: { ...this.store.routes },
+        isSpamFlagged: this.store.isSpamBlocked,
+        spamReason: this.store.spamReason,
+      };
+
+      this.store.pageViews -= delta.pageViews;
+      this.store.printsDetected -= delta.printsDetected;
+      this.store.docsPrinted -= delta.docsPrinted;
+      this.store.pdfExported -= delta.pdfExported;
+      this.store.jsonExported -= delta.jsonExported;
+      this.store.clinicalRecordsSaved -= delta.clinicalRecordsSaved;
+      this.store.formsCompleted -= delta.formsCompleted;
+      this.store.upgradeViews -= delta.upgradeViews;
+      this.store.formValidationErrors -= delta.formValidationErrors;
+      this.store.errorEventsCount -= delta.errorEventsCount;
+      this.store.dwellTimeSeconds -= delta.dwellTimeSeconds;
+      this.store.unsyncedActionsCount = Math.max(0, (this.store.unsyncedActionsCount || 0) - delta.unsyncedActionsCount);
       this.store.routes = {};
       this.store.lastSyncTime = now;
       this.save();
-    } catch (err) {
-      console.warn("[LocalTelemetry] Error calling sync RPC:", err);
+
+      try {
+        const { error } = await supabase.rpc("upsert_user_telemetry_summary", {
+          _clinic_id: activeClinicId || null,
+          _user_name: activeUserName || "Usuário",
+          _page_views: delta.pageViews,
+          _prints_detected: delta.printsDetected,
+          _docs_printed: delta.docsPrinted,
+          _pdf_exported: delta.pdfExported,
+          _dwell_seconds: delta.dwellTimeSeconds,
+          _top_routes: delta.routes,
+          _is_spam_flagged: delta.isSpamFlagged,
+          _spam_reason: delta.spamReason,
+        });
+
+        if (error) {
+          console.warn("[LocalTelemetry] Sync RPC failed:", error.message);
+          // Rollback delta counters back into store on RPC error
+          this.rollbackDelta(delta);
+        }
+      } catch (err) {
+        console.warn("[LocalTelemetry] Error calling sync RPC:", err);
+        this.rollbackDelta(delta);
+      }
+    };
+
+    this.inFlightSyncPromise = syncExecution().finally(() => {
+      this.inFlightSyncPromise = null;
+    });
+
+    return this.inFlightSyncPromise;
+  }
+
+  private rollbackDelta(delta: {
+    pageViews: number;
+    printsDetected: number;
+    docsPrinted: number;
+    pdfExported: number;
+    jsonExported: number;
+    clinicalRecordsSaved: number;
+    formsCompleted: number;
+    upgradeViews: number;
+    formValidationErrors: number;
+    errorEventsCount: number;
+    dwellTimeSeconds: number;
+    unsyncedActionsCount: number;
+    routes: Record<string, number>;
+  }) {
+    this.store.pageViews += delta.pageViews;
+    this.store.printsDetected += delta.printsDetected;
+    this.store.docsPrinted += delta.docsPrinted;
+    this.store.pdfExported += delta.pdfExported;
+    this.store.jsonExported += delta.jsonExported;
+    this.store.clinicalRecordsSaved += delta.clinicalRecordsSaved;
+    this.store.formsCompleted += delta.formsCompleted;
+    this.store.upgradeViews += delta.upgradeViews;
+    this.store.formValidationErrors += delta.formValidationErrors;
+    this.store.errorEventsCount += delta.errorEventsCount;
+    this.store.dwellTimeSeconds += delta.dwellTimeSeconds;
+    this.store.unsyncedActionsCount = (this.store.unsyncedActionsCount || 0) + delta.unsyncedActionsCount;
+    for (const [r, c] of Object.entries(delta.routes)) {
+      this.store.routes[r] = (this.store.routes[r] || 0) + c;
     }
+    this.save();
+  }
+
+  public flushImmediate(options?: Omit<TelemetrySyncOptions, "force">) {
+    return this.syncToServer({ ...options, force: true });
+  }
+
+  public resetLocalStore() {
+    this.store = {
+      pageViews: 0,
+      printsDetected: 0,
+      docsPrinted: 0,
+      pdfExported: 0,
+      jsonExported: 0,
+      clinicalRecordsSaved: 0,
+      formsCompleted: 0,
+      upgradeViews: 0,
+      formValidationErrors: 0,
+      errorEventsCount: 0,
+      dwellTimeSeconds: 0,
+      routes: {},
+      actionHistory: [],
+      lastSyncTime: 0,
+      unsyncedActionsCount: 0,
+      recentErrors: [],
+      isSpamBlocked: false,
+      spamBlockedUntil: null,
+      spamReason: null,
+    };
+    this.save();
   }
 
   public getStore(): ClientTelemetryData {
     return { ...this.store };
+  }
+
+  public getRecentErrors(): ErrorLogEntry[] {
+    return Array.isArray(this.store.recentErrors) ? [...this.store.recentErrors] : [];
+  }
+
+  public clearRecentErrors() {
+    this.store.recentErrors = [];
+    this.save();
   }
 }
 

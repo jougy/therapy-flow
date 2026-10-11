@@ -404,7 +404,7 @@ const CadastroContaAlfa = () => {
           email: nextEmail,
           name: nextOwnerName,
           phone: cleanPhone,
-          plan: "Degustação Gratuita (7 dias)",
+          plan: "Teste Gratuito (7 dias)",
           profession: profession || null,
           councilNumber: councilNumber.trim() || null,
           councilName: getProfessionOption(profession)?.councilName || "CREFITO",

@@ -16,6 +16,7 @@ import {
   type OperationalRole,
   type SubscriptionPlan,
 } from "@/lib/rbac";
+import { localTelemetryManager } from "@/lib/telemetry-local-store";
 
 type Profile = Pick<
   Database["public"]["Tables"]["profiles"]["Row"],
@@ -261,7 +262,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return null;
     }
 
-    return window.sessionStorage.getItem(ACTIVE_CLINIC_STORAGE_KEY);
+    try {
+      return (
+        window.localStorage.getItem(ACTIVE_CLINIC_STORAGE_KEY) ||
+        window.sessionStorage.getItem(ACTIVE_CLINIC_STORAGE_KEY)
+      );
+    } catch {
+      try {
+        return window.sessionStorage.getItem(ACTIVE_CLINIC_STORAGE_KEY);
+      } catch {
+        return null;
+      }
+    }
   };
 
   const setStoredActiveClinicId = (clinicId: string | null) => {
@@ -269,12 +281,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    if (clinicId) {
-      window.sessionStorage.setItem(ACTIVE_CLINIC_STORAGE_KEY, clinicId);
-      return;
-    }
+    try {
+      if (clinicId) {
+        window.localStorage.setItem(ACTIVE_CLINIC_STORAGE_KEY, clinicId);
+        window.sessionStorage.removeItem(ACTIVE_CLINIC_STORAGE_KEY);
+        return;
+      }
 
-    window.sessionStorage.removeItem(ACTIVE_CLINIC_STORAGE_KEY);
+      window.localStorage.removeItem(ACTIVE_CLINIC_STORAGE_KEY);
+      window.sessionStorage.removeItem(ACTIVE_CLINIC_STORAGE_KEY);
+    } catch {
+      try {
+        if (clinicId) {
+          window.sessionStorage.setItem(ACTIVE_CLINIC_STORAGE_KEY, clinicId);
+          return;
+        }
+        window.sessionStorage.removeItem(ACTIVE_CLINIC_STORAGE_KEY);
+      } catch {
+        // Safe fallback in restricted environments
+      }
+    }
   };
 
   const endCurrentSecuritySession = useCallback(async (options?: { keepalive?: boolean; session?: Session | null }) => {
@@ -503,6 +529,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         return null;
       });
+
+      const activeClinicId =
+        clinicRef.current?.id ||
+        getStoredActiveClinicId() ||
+        clinicOptions[0]?.clinic.id ||
+        nextProfile?.clinic_id ||
+        null;
+      const resolvedUserName =
+        nextProfile?.full_name ||
+        nextProfile?.email ||
+        nextSession?.user?.email ||
+        "Usuário";
+
+      void localTelemetryManager.syncToServer({
+        force: true,
+        triggerReason: "login",
+        clinicId: activeClinicId,
+        userName: resolvedUserName,
+      }).catch(() => undefined);
     })().finally(() => {
       if (inFlightAuthPromiseRef.current?.userId === userId) {
         inFlightAuthPromiseRef.current = null;
@@ -713,6 +758,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signOut = async () => {
+    try {
+      await localTelemetryManager.syncToServer({
+        force: true,
+        triggerReason: "logout",
+        clinicId: clinic?.id ?? null,
+        userName: profile?.full_name || profile?.email || session?.user?.email || "Usuário",
+      });
+    } catch {
+      // Best-effort telemetry sync on logout
+    }
     await endCurrentSecuritySession({ session });
     setStoredActiveClinicId(null);
     setPlatformAccess(null);

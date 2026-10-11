@@ -1,10 +1,18 @@
-// supabase/functions/whatsapp-webhook/index.ts
-
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { WhatsAppClient, sanitizeWhatsAppNumber, sanitizeMessageInput } from '../_shared/whatsapp-client.ts';
 import { TelegramClient, escapeHtml } from '../_shared/telegram-client.ts';
+import {
+  getNextBusinessDays,
+  getAvailableWindowsForDay,
+  formatAvailableWindowsText,
+  validateSelectedTime,
+  parseTimeToMinutes,
+  generateGoogleCalendarUrl,
+  ExistingMeeting,
+  fetchGoogleCalendarBusySlots,
+} from '../_shared/calendar-utils.ts';
 
 /**
  * Interface unificada para payloads do Webhook da Meta WhatsApp Cloud API e Evolution API
@@ -96,18 +104,32 @@ interface WebhookPayload {
       };
     };
   };
+interface ProfileLookupRecord {
+  id: string;
+  full_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  profession?: string | null;
+  council_name?: string | null;
+  professional_license?: string | null;
 }
 
 // Map de rate limiting em memória por chave (IP ou Telefone): máximo 15 requisições por minuto
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const MAX_RATE_LIMIT_MAP_SIZE = 2000;
 
 function checkRateLimit(key: string, limit = 15, windowMs = 60_000): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(key);
 
-  if (rateLimitMap.size > 1000) {
+  if (rateLimitMap.size > 500) {
     for (const [k, v] of rateLimitMap.entries()) {
       if (now > v.resetAt) rateLimitMap.delete(k);
+    }
+    // Se ainda exceder o limite de proteção de memória
+    if (rateLimitMap.size > MAX_RATE_LIMIT_MAP_SIZE) {
+      const firstKeys = Array.from(rateLimitMap.keys()).slice(0, 500);
+      for (const k of firstKeys) rateLimitMap.delete(k);
     }
   }
 
@@ -145,6 +167,28 @@ async function timingSafeEqualString(a: string, b: string): Promise<boolean> {
 
 function sanitizeInput(text?: string | null, maxLen = 500): string {
   return sanitizeMessageInput(text, maxLen);
+}
+
+function isValidEmail(email?: string | null): boolean {
+  if (!email) return false;
+  return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim());
+}
+
+/**
+ * Mascaramento de dados pessoais para conformidade com LGPD nos logs da aplicação
+ */
+function maskPhoneLgpd(phone?: string | null): string {
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 8) return '***';
+  return `${digits.slice(0, 4)}****${digits.slice(-4)}`;
+}
+
+function maskEmailLgpd(email?: string | null): string {
+  if (!email || !email.includes('@')) return '***';
+  const [user, domain] = email.split('@');
+  const maskedUser = user.length > 2 ? `${user[0]}***${user[user.length - 1]}` : '***';
+  return `${maskedUser}@${domain}`;
 }
 
 serve(async (req) => {
@@ -341,7 +385,7 @@ serve(async (req) => {
 
     // Rate limiting por número de telefone de origem (máx 15 mensagens/minuto)
     if (!checkRateLimit(`phone:${phone}`, 15, 60_000)) {
-      console.warn(`[whatsapp-webhook] Rate limit excedido para o telefone ${phone}`);
+      console.warn(`[whatsapp-webhook] Rate limit excedido para o telefone ${maskPhoneLgpd(phone)}`);
       return new Response(JSON.stringify({ success: false, error: 'Rate limit excedido para este número.' }), {
         status: 429,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -353,12 +397,24 @@ serve(async (req) => {
     const userTextLower = userText.toLowerCase();
 
     console.log(
-      `[whatsapp-webhook] Mensagem recebida de ${phone}: "${userText.slice(0, 100)}" (ButtonId: "${cleanSelectedButtonId}")`
+      `[whatsapp-webhook] Mensagem recebida de ${maskPhoneLgpd(phone)}: "${userText.slice(0, 100)}" (ButtonId: "${cleanSelectedButtonId}")`
     );
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const whatsAppClient = new WhatsAppClient();
     const telegramClient = new TelegramClient();
+    const adminCommercialPhone = whatsAppClient.getAdminCommercialPhone();
+
+    // 0. SEGURANÇA & ANTI-LOOP:
+    // Se a mensagem originou do próprio número comercial do admin (+55 11 98011-3936) ou do Bot (+55 11 96047-4566),
+    // encerra a execução imediatamente com 200 OK para prevenir loops recursivos de auto-notificação/transbordo.
+    if (whatsAppClient.isInternalPlatformPhone(phone)) {
+      console.log(`[whatsapp-webhook] Mensagem originada de número interno da plataforma (${phone}). Execução encerrada para mitigar loop recursivo.`);
+      return new Response(JSON.stringify({ success: true, ignored: true, reason: 'internal_phone_anti_loop' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // 1. Recuperar ou criar a sessão do usuário no banco de dados
     const { data: existingSession, error: sessionErr } = await supabase
@@ -373,56 +429,94 @@ serve(async (req) => {
 
     let session = existingSession;
 
-    // Se a sessão ainda não existir, tenta associar a um perfil de usuário existente
-    if (!session) {
-      let linkedUserId: string | null = null;
-      let linkedClinicId: string | null = null;
-      let userName = sanitizeInput(pushName, 100) || '';
-      let clinicName = '';
-      let planName = 'Pluri Fisio';
+    // Helper para buscar dados detalhados do cliente/profissional
+    const customer = await (async () => {
+      let userId = session?.user_id || null;
+      let clinicId: string | null = session?.clinic_id || null;
+      let userName = sanitizeInput(pushName, 100) || 'Doutor(a)';
+      let userEmail = 'Não cadastrado';
+      let clinicName = 'Consultório Solo';
+      let planName = 'Teste Gratuito (7 dias)';
+      let professionInfo = 'Não informada';
 
-      // Otimização Big-O O(1): Busca perfil por telefone exato ou formato sem DDI
       const digitsOnly = phone.replace(/\D/g, '');
       const nationalPhone = digitsOnly.startsWith('55') ? digitsOnly.slice(2) : digitsOnly;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, phone')
-        .or(`phone.eq.${phone},phone.eq.${nationalPhone}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      let profileData: ProfileLookupRecord | null = null;
 
-      if (profile) {
-        linkedUserId = profile.id;
-        userName = sanitizeInput(profile.full_name, 100) || userName;
+      if (userId) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone, profession, council_name, professional_license')
+          .eq('id', userId)
+          .maybeSingle();
+        profileData = data as ProfileLookupRecord | null;
+      }
+
+      if (!profileData) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone, profession, council_name, professional_license')
+          .or(`phone.eq.${phone},phone.eq.${nationalPhone}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        profileData = data as ProfileLookupRecord | null;
+      }
+
+      if (profileData) {
+        userId = profileData.id;
+        if (profileData.full_name) userName = sanitizeInput(profileData.full_name, 100);
+        if (profileData.email) userEmail = sanitizeInput(profileData.email, 150);
+
+        const profParts = [profileData.profession, profileData.council_name, profileData.professional_license]
+          .filter(Boolean)
+          .map((p: unknown) => String(p).trim());
+        if (profParts.length > 0) {
+          professionInfo = sanitizeInput(profParts.join(' - '), 150);
+        }
 
         const { data: clinic } = await supabase
           .from('clinics')
           .select('id, name, subscription_plan')
-          .eq('account_owner_user_id', profile.id)
+          .eq('account_owner_user_id', profileData.id)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
         if (clinic) {
-          linkedClinicId = clinic.id;
-          clinicName = sanitizeInput(clinic.name, 100) || '';
+          clinicId = clinic.id;
+          if (clinic.name) clinicName = sanitizeInput(clinic.name, 100);
           if (clinic.subscription_plan) planName = sanitizeInput(clinic.subscription_plan, 80);
         }
       }
 
+      return {
+        userId,
+        clinicId,
+        userName,
+        userEmail,
+        clinicName,
+        planName,
+        professionInfo,
+      };
+    })();
+
+    // Se a sessão ainda não existir, cria com os dados cadastrais encontrados
+    if (!session) {
       const { data: newSession, error: insertErr } = await supabase
         .from('whatsapp_chat_sessions')
         .insert({
           phone,
-          user_id: linkedUserId,
-          clinic_id: linkedClinicId,
+          user_id: customer.userId,
+          clinic_id: customer.clinicId,
           current_step: 'initial',
           metadata: {
-            user_name: userName,
-            clinic_name: clinicName,
-            plan_name: planName,
+            user_name: customer.userName,
+            clinic_name: customer.clinicName,
+            plan_name: customer.planName,
+            profession_info: customer.professionInfo,
+            user_email: customer.userEmail,
           },
         })
         .select()
@@ -437,30 +531,74 @@ serve(async (req) => {
 
     const currentStep = session?.current_step || 'initial';
     const metadata = (session?.metadata || {}) as Record<string, unknown>;
-    const userName = sanitizeInput((metadata.user_name as string) || pushName || 'Doutor(a)', 80);
-    const clinicName = sanitizeInput((metadata.clinic_name as string) || 'Consultório Solo', 80);
-    const planName = sanitizeInput((metadata.plan_name as string) || 'Pluri Fisio', 60);
+    const userName = customer.userName || sanitizeInput((metadata.user_name as string) || pushName || 'Doutor(a)', 80);
+    const clinicName = customer.clinicName || sanitizeInput((metadata.clinic_name as string) || 'Consultório Solo', 80);
+    const planName = customer.planName || sanitizeInput((metadata.plan_name as string) || 'Teste Gratuito (7 dias)', 60);
+    const userEmail = customer.userEmail || (metadata.user_email as string) || 'Não cadastrado';
+    const professionInfo = customer.professionInfo || (metadata.profession_info as string) || 'Não informada';
+
+    // Detecção de intenção de atendimento humano explícito
+    const isHumanSupportIntent =
+      userTextLower.includes('humano') ||
+      userTextLower.includes('humana') ||
+      userTextLower.includes('atendente') ||
+      userTextLower.includes('suporte') ||
+      userTextLower.includes('ajuda') ||
+      userTextLower.includes('especialista') ||
+      userTextLower.includes('falar com');
 
     // 2. MÁQUINA DE ESTADOS DO ONBOARDING
     // -------------------------------------------------------------
     // GATILHO A: Usuário quer Agendar Introdução
     const isScheduleTrigger =
-      cleanSelectedButtonId === 'btn_schedule_intro' ||
-      userTextLower === '1' ||
-      userTextLower.includes('agendar') ||
-      userTextLower.includes('introdução') ||
-      userTextLower.includes('introducao');
+      !isHumanSupportIntent &&
+      (cleanSelectedButtonId === 'btn_schedule_intro' ||
+        (currentStep === 'initial' && userTextLower === '1') ||
+        userTextLower.includes('agendar') ||
+        userTextLower.includes('introdução') ||
+        userTextLower.includes('introducao'));
 
     // GATILHO B: Usuário quer Seguir por conta própria
     const isSelfExploreTrigger =
-      cleanSelectedButtonId === 'btn_self_explore' ||
-      userTextLower === '2' ||
-      userTextLower.includes('conta própria') ||
-      userTextLower.includes('conta propria') ||
-      userTextLower.includes('sozinho') ||
-      userTextLower.includes('explorar');
+      !isHumanSupportIntent &&
+      (cleanSelectedButtonId === 'btn_self_explore' ||
+        (currentStep === 'initial' && userTextLower === '2') ||
+        userTextLower.includes('conta própria') ||
+        userTextLower.includes('conta propria') ||
+        userTextLower.includes('sozinho') ||
+        userTextLower.includes('explorar'));
+
+    // GATILHO C: Usuário selecionou um dia da lista interativa ou digitou o dia
+    const isDaySelectionTrigger =
+      !isHumanSupportIntent &&
+      !isScheduleTrigger &&
+      !isSelfExploreTrigger &&
+      (cleanSelectedButtonId.startsWith('day_') ||
+        (currentStep === 'waiting_day' && parseTimeToMinutes(userText) === null));
+
+    // GATILHO D: Usuário digitou o horário
+    const isTimeSelectionTrigger =
+      !isHumanSupportIntent &&
+      !isScheduleTrigger &&
+      !isSelfExploreTrigger &&
+      !cleanSelectedButtonId.startsWith('day_') &&
+      (currentStep === 'waiting_time' || parseTimeToMinutes(userText) !== null);
 
     if (isScheduleTrigger) {
+      const nextDays = getNextBusinessDays(5);
+      const rows = nextDays.map((d) => ({
+        id: `day_${d.dateIso}`,
+        title: d.fullLabel.slice(0, 24),
+        description: 'Disponível 09h às 18h',
+      }));
+
+      const sections = [
+        {
+          title: 'Próximos dias úteis',
+          rows,
+        },
+      ];
+
       // Avança para o estado 'waiting_day'
       await supabase
         .from('whatsapp_chat_sessions')
@@ -470,16 +608,20 @@ serve(async (req) => {
           metadata: {
             ...metadata,
             scheduled_intent_at: new Date().toISOString(),
+            available_days: nextDays,
           },
         })
         .eq('phone', phone);
 
-      const replyText =
+      const introBody =
         `Perfeito, ${userName}! 📅\n\n` +
-        `Nossas chamadas de introdução ocorrem de *segunda a sexta-feira*, entre *9h e 18h* (duração de 15 minutos).\n\n` +
-        `Qual o melhor *dia da semana* ou data para você? (Ex: Segunda-feira, Amanhã, 15/10)`;
+        `Nossa chamada de introdução tem duração de *15 minutos* para você tirar dúvidas e conhecer o *PluriFisio*.\n\n` +
+        `Por favor, *selecione abaixo o melhor dia* para o seu atendimento:`;
 
-      await whatsAppClient.sendTextMessage(phone, replyText);
+      await whatsAppClient.sendListMessage(phone, introBody, 'Escolher dia', sections, {
+        title: 'PluriFisio - Agendamento',
+        footer: 'Atendimento Seg a Sex (09h-18h)',
+      });
 
       return new Response(JSON.stringify({ success: true, step: 'waiting_day' }), {
         status: 200,
@@ -515,9 +657,66 @@ serve(async (req) => {
       });
     }
 
-    // PASSO: Usuário está no estado 'waiting_day' (esperando o dia escolhido)
-    if (currentStep === 'waiting_day') {
-      const scheduledDay = sanitizeInput(userText, 60);
+    // PASSO: Usuário selecionou ou digitou o dia
+    if (isDaySelectionTrigger) {
+      const nextDays = getNextBusinessDays(5);
+      let selectedDayIso = '';
+      let dayLabel = '';
+
+      if (cleanSelectedButtonId.startsWith('day_')) {
+        selectedDayIso = cleanSelectedButtonId.replace('day_', '').trim();
+        const found = nextDays.find((d) => d.dateIso === selectedDayIso);
+        dayLabel = found ? found.fullLabel : selectedDayIso;
+      } else {
+        // Tenta mapear o texto digitado pelo usuário (número 1-5, dia da semana ou data)
+        const trimmed = userText.trim().toLowerCase();
+        const numOption = parseInt(trimmed, 10);
+        if (!isNaN(numOption) && numOption >= 1 && numOption <= nextDays.length) {
+          selectedDayIso = nextDays[numOption - 1].dateIso;
+          dayLabel = nextDays[numOption - 1].fullLabel;
+        } else {
+          const matchDay = nextDays.find(
+            (d) =>
+              trimmed.includes(d.displayDayOfWeek.toLowerCase()) ||
+              trimmed.includes(d.displayDate.toLowerCase()) ||
+              trimmed.includes(d.dateIso)
+          );
+          if (matchDay) {
+            selectedDayIso = matchDay.dateIso;
+            dayLabel = matchDay.fullLabel;
+          } else {
+            // Default: Primeiro dia útil disponível
+            selectedDayIso = nextDays[0].dateIso;
+            dayLabel = nextDays[0].fullLabel;
+          }
+        }
+      }
+
+      // Consulta reuniões já marcadas no banco e no Google Calendar (feed iCal privado em tempo real)
+      const startOfDayUtc = new Date(`${selectedDayIso}T00:00:00-03:00`).toISOString();
+      const endOfDayUtc = new Date(`${selectedDayIso}T23:59:59-03:00`).toISOString();
+      const gcalUrl = (Deno.env.get('GOOGLE_CALENDAR_ICAL_URL') || '').trim();
+
+      const [dbMeetingsRes, gcalBusySlots] = await Promise.all([
+        supabase
+          .from('platform_onboarding_meetings')
+          .select('scheduled_at, duration_minutes, status')
+          .gte('scheduled_at', startOfDayUtc)
+          .lte('scheduled_at', endOfDayUtc)
+          .neq('status', 'canceled'),
+        gcalUrl ? fetchGoogleCalendarBusySlots(gcalUrl, selectedDayIso) : Promise.resolve([]),
+      ]);
+
+      const allExistingMeetings: ExistingMeeting[] = [
+        ...((dbMeetingsRes.data as ExistingMeeting[]) || []),
+        ...gcalBusySlots,
+      ];
+
+      const { availableWindows } = getAvailableWindowsForDay(
+        selectedDayIso,
+        allExistingMeetings
+      );
+      const windowsText = formatAvailableWindowsText(availableWindows);
 
       await supabase
         .from('whatsapp_chat_sessions')
@@ -526,28 +725,118 @@ serve(async (req) => {
           last_message_at: new Date().toISOString(),
           metadata: {
             ...metadata,
-            scheduled_day: scheduledDay,
+            selected_day_iso: selectedDayIso,
+            selected_day_label: dayLabel,
           },
         })
         .eq('phone', phone);
 
       const replyText =
-        `Ótimo! Anotei o dia *${scheduledDay}*.\n\n` +
-        `E qual *horário* fica melhor para você entre 9h e 18h? (Ex: 10:00, 14h30, 16h)`;
+        `Excelente! Para *${dayLabel}*, temos as seguintes janelas disponíveis:\n\n` +
+        `📅 ${windowsText}\n\n` +
+        `👉 Por favor, *digite o horário* exato que prefere no formato *HH:MM* (Ex: 10:00, 14:30, 16:00).`;
 
       await whatsAppClient.sendTextMessage(phone, replyText);
 
-      return new Response(JSON.stringify({ success: true, step: 'waiting_time' }), {
+      return new Response(JSON.stringify({ success: true, step: 'waiting_time', day: selectedDayIso }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // PASSO: Usuário está no estado 'waiting_time' (esperando o horário)
-    if (currentStep === 'waiting_time') {
-      const scheduledTime = sanitizeInput(userText, 60);
-      const scheduledDay = sanitizeInput(metadata.scheduled_day as string, 60) || 'Dia a combinar';
+    // PASSO: Usuário digitou o horário da reunião
+    if (isTimeSelectionTrigger) {
+      const selectedDayIso =
+        (metadata.selected_day_iso as string) || getNextBusinessDays(1)[0].dateIso;
+      const dayLabel = (metadata.selected_day_label as string) || selectedDayIso;
 
+      // Consulta reuniões existentes no banco e no Google Calendar
+      const startOfDayUtc = new Date(`${selectedDayIso}T00:00:00-03:00`).toISOString();
+      const endOfDayUtc = new Date(`${selectedDayIso}T23:59:59-03:00`).toISOString();
+      const gcalUrl = (Deno.env.get('GOOGLE_CALENDAR_ICAL_URL') || '').trim();
+
+      const [dbMeetingsRes, gcalBusySlots] = await Promise.all([
+        supabase
+          .from('platform_onboarding_meetings')
+          .select('scheduled_at, duration_minutes, status')
+          .gte('scheduled_at', startOfDayUtc)
+          .lte('scheduled_at', endOfDayUtc)
+          .neq('status', 'canceled'),
+        gcalUrl ? fetchGoogleCalendarBusySlots(gcalUrl, selectedDayIso) : Promise.resolve([]),
+      ]);
+
+      const allExistingMeetings: ExistingMeeting[] = [
+        ...((dbMeetingsRes.data as ExistingMeeting[]) || []),
+        ...gcalBusySlots,
+      ];
+
+      const validation = validateSelectedTime(
+        selectedDayIso,
+        userText,
+        allExistingMeetings
+      );
+
+      if (!validation.isValid || !validation.dateObj) {
+        const { availableWindows } = getAvailableWindowsForDay(
+          selectedDayIso,
+          allExistingMeetings
+        );
+        const windowsText = formatAvailableWindowsText(availableWindows);
+
+        const errorReply =
+          `⚠️ ${validation.errorMessage || 'Horário inválido.'}\n\n` +
+          `Janelas disponíveis para *${dayLabel}*:\n📅 ${windowsText}\n\n` +
+          `Por favor, digite outro horário (Ex: 10:00, 14:30, 16:00).`;
+
+        await whatsAppClient.sendTextMessage(phone, errorReply);
+
+        return new Response(JSON.stringify({ success: false, step: 'waiting_time', error: validation.errorMessage }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Horário válido: gera link do Google Calendar
+      const gCalUrl = generateGoogleCalendarUrl({
+        title: `Introdução PluriFisio - ${userName} (${clinicName})`,
+        details: `Reunião de introdução e primeiros passos (15 min) na plataforma PluriFisio.\nProfissional: ${userName}\nWhatsApp: +${phone}\nE-mail: ${isValidEmail(userEmail) ? userEmail : 'Não informado'}\nClínica: ${clinicName}\nPlano: ${planName}`,
+        location: `Online / WhatsApp: https://wa.me/${phone}`,
+        startDate: validation.dateObj,
+        durationMinutes: 15,
+      });
+
+      // Proteção contra duplicação/concorrência (idempotência):
+      // Verifica se já foi criada uma reunião recente para este telefone neste mesmo horário
+      const { data: duplicateMeeting } = await supabase
+        .from('platform_onboarding_meetings')
+        .select('id')
+        .eq('phone', phone)
+        .eq('scheduled_at', validation.dateObj.toISOString())
+        .neq('status', 'canceled')
+        .maybeSingle();
+
+      if (!duplicateMeeting) {
+        // Salva no banco em platform_onboarding_meetings
+        const validLeadEmail = isValidEmail(userEmail) ? userEmail.trim().toLowerCase() : null;
+        const { error: meetErr } = await supabase.from('platform_onboarding_meetings').insert({
+          lead_name: userName,
+          email: validLeadEmail,
+          phone: phone,
+          clinic_name: clinicName,
+          scheduled_at: validation.dateObj.toISOString(),
+          duration_minutes: 15,
+          status: 'scheduled',
+          google_calendar_url: gCalUrl,
+          notes: `Agendado via WhatsApp Bot. Profissão: ${professionInfo}. Plano: ${planName}.`,
+          created_by: customer.userId || null,
+        });
+
+        if (meetErr) {
+          console.error('[whatsapp-webhook] Erro ao salvar platform_onboarding_meetings:', meetErr);
+        }
+      }
+
+      // Atualiza sessão do chat
       await supabase
         .from('whatsapp_chat_sessions')
         .update({
@@ -555,39 +844,68 @@ serve(async (req) => {
           last_message_at: new Date().toISOString(),
           metadata: {
             ...metadata,
-            scheduled_time: scheduledTime,
+            scheduled_time: validation.normalizedTime,
+            scheduled_at: validation.dateObj.toISOString(),
+            google_calendar_url: gCalUrl,
             scheduled_confirmed_at: new Date().toISOString(),
           },
         })
         .eq('phone', phone);
 
-      // 1. Mensagem de confirmação ao usuário no WhatsApp
+      // 1. Mensagem de confirmação calorosa ao usuário no WhatsApp com link da Agenda
       const confirmationText =
-        `Combinado! 🎉\n\n` +
-        `Agendamos sua introdução para *${scheduledDay}* às *${scheduledTime}*.\n\n` +
-        `Nossa equipe entrará em contato com você por este número para realizar a chamada de 15 minutos e te apresentar tudo.\n\n` +
-        `Até breve e seja muito bem-vindo(a) ao PluriFisio!`;
+        `Combinado e confirmado, ${userName}! 🎉\n\n` +
+        `📅 *Data:* ${dayLabel}\n` +
+        `⏰ *Horário:* ${validation.normalizedTime} (Horário de Brasília)\n` +
+        `⏱️ *Duração:* 15 minutos\n\n` +
+        `Nossa equipe entrará em contato pontualmente com você por este número para realizar a apresentação.\n\n` +
+        `🗓️ *Adicionar ao Google Agenda:*\n${gCalUrl}\n\n` +
+        `Seja muito bem-vindo(a) ao PluriFisio! 🚀`;
 
-      await whatsAppClient.sendTextMessage(phone, confirmationText);
+      await whatsAppClient.sendTextMessage(phone, confirmationText, { linkPreview: true });
 
-      // 2. Notificação rica no Telegram do Admin com deep link para o WhatsApp do usuário
+      // 2. Disparo de WhatsApp rico para o Administrador Comercial (+55 11 98011-3936)
+      try {
+        const waLink = `https://wa.me/${phone}`;
+        const adminWaScheduleMsg =
+          `📅 *NOVO AGENDAMENTO DE ONBOARDING (15 MIN)*\n\n` +
+          `👤 *Profissional:* ${userName}\n` +
+          `📧 *E-mail:* ${userEmail}\n` +
+          `📱 *WhatsApp:* +${phone}\n` +
+          `🏥 *Clínica:* ${clinicName}\n` +
+          `🩺 *Profissão:* ${professionInfo}\n` +
+          `🗓️ *Data & Horário:* ${dayLabel} às ${validation.normalizedTime}\n\n` +
+          `🔗 *Google Agenda:* ${gCalUrl}\n` +
+          `👉 *Chamar no WhatsApp:* ${waLink}`;
+
+        await whatsAppClient.sendTextMessage(adminCommercialPhone, adminWaScheduleMsg, { linkPreview: true });
+      } catch (adminWaErr) {
+        console.error('[whatsapp-webhook] Erro ao enviar agendamento de onboarding para WhatsApp do admin comercial:', adminWaErr);
+      }
+
+      // 3. Notificação rica no Telegram do Admin com deep link para o WhatsApp do usuário
       try {
         const waLink = `https://wa.me/${phone}`;
         const telegramAlert =
           `📅 <b>Novo Agendamento de Introdução (WhatsApp Bot)!</b>\n\n` +
           `👤 <b>Profissional:</b> ${escapeHtml(userName)}\n` +
+          `📧 <b>E-mail:</b> ${escapeHtml(userEmail)}\n` +
           `📱 <b>Telefone:</b> ${escapeHtml(phone)}\n` +
-          `🗓️ <b>Dia Escolhido:</b> <b>${escapeHtml(scheduledDay)}</b>\n` +
-          `⏰ <b>Horário Escolhido:</b> <b>${escapeHtml(scheduledTime)}</b>\n` +
+          `🗓️ <b>Dia & Horário:</b> <b>${escapeHtml(dayLabel)} às ${escapeHtml(validation.normalizedTime)}</b>\n` +
           `🏥 <b>Clínica:</b> ${escapeHtml(clinicName)}\n` +
           `📦 <b>Plano:</b> ${escapeHtml(planName)}\n\n` +
-          `💬 <b>WhatsApp:</b> <a href="${waLink}">Abrir Conversa Direta</a>`;
+          `🔗 <a href="${gCalUrl}">Abrir no Google Calendar</a>\n` +
+          `💬 <a href="${waLink}">Chamar no WhatsApp</a>`;
 
         await telegramClient.sendMessage(telegramAlert, {
           parseMode: 'HTML',
           replyMarkup: {
             inline_keyboard: [
               [
+                {
+                  text: '📅 Google Calendar',
+                  url: gCalUrl,
+                },
                 {
                   text: '💬 Chamar no WhatsApp',
                   url: waLink,
@@ -597,7 +915,7 @@ serve(async (req) => {
           },
         });
 
-        // 3. Inserir notificação in-app em app_notifications para platform_admins
+        // 4. Inserir notificação in-app em app_notifications para platform_admins
         const { data: activeAdmins } = await supabase
           .from('platform_admins')
           .select('user_id')
@@ -609,16 +927,17 @@ serve(async (req) => {
             category: 'system',
             event_type: 'whatsapp_intro_scheduled',
             title: `Introdução Agendada: ${userName}`,
-            body: `Agendou introdução para ${scheduledDay} às ${scheduledTime} (${phone}).`,
+            body: `Agendou introdução para ${dayLabel} às ${validation.normalizedTime} (${phone}).`,
             action_label: 'Ver Diretório',
             action_url: '/platform/diretorio',
             payload: {
               phone,
               userName,
               clinicName,
-              scheduledDay,
-              scheduledTime,
-              scheduled_at: new Date().toISOString(),
+              dayLabel,
+              scheduledTime: validation.normalizedTime,
+              scheduled_at: validation.dateObj!.toISOString(),
+              google_calendar_url: gCalUrl,
             },
           }));
 
@@ -634,7 +953,8 @@ serve(async (req) => {
       });
     }
 
-    // PASSO: Mensagem recebida fora do fluxo ativo de onboarding (Dúvida / Atendimento Humano)
+
+    // PASSO: Mensagem recebida fora do fluxo ativo de onboarding ou Solicitação de Atendimento Humano (Transbordo)
     if (userText) {
       const sanitizedUserMsg = sanitizeInput(userText, 500);
       await supabase
@@ -649,13 +969,47 @@ serve(async (req) => {
         })
         .eq('phone', phone);
 
-      // Notificar Admin no Telegram sobre mensagem do usuário para atendimento humano
+      const waLink = `https://wa.me/${phone}`;
+
+      // 1. Disparo de WhatsApp para o Administrador Comercial (+55 11 98011-3936)
       try {
-        const waLink = `https://wa.me/${phone}`;
+        const adminWaSupportMsg =
+          `🚨 *SOLICITAÇÃO DE SUPORTE / ATENDIMENTO HUMANO*\n\n` +
+          `👤 *Nome:* ${userName}\n` +
+          `📧 *E-mail:* ${userEmail}\n` +
+          `📱 *WhatsApp:* +${phone}\n` +
+          `🏥 *Clínica:* ${clinicName}\n` +
+          `🩺 *Profissão:* ${professionInfo}\n` +
+          `📦 *Plano:* ${planName}\n` +
+          `💬 *Mensagem do Cliente:* "${sanitizedUserMsg}"\n\n` +
+          `👉 *Iniciar conversa direta:* ${waLink}`;
+
+        await whatsAppClient.sendTextMessage(adminCommercialPhone, adminWaSupportMsg);
+      } catch (adminWaErr) {
+        console.error('[whatsapp-webhook] Erro ao enviar solicitação de suporte para WhatsApp do admin comercial:', adminWaErr);
+      }
+
+      // 2. Resposta acolhedora ao cliente no WhatsApp
+      try {
+        const userAckText =
+          `Entendido! Já repassei sua mensagem para o nosso especialista humano. ` +
+          `Entraremos em contato com você em instantes por aqui ou pelo nosso canal comercial. ` +
+          `Se preferir, você também pode nos chamar diretamente no WhatsApp comercial: https://wa.me/${adminCommercialPhone}`;
+
+        await whatsAppClient.sendTextMessage(phone, userAckText);
+      } catch (ackErr) {
+        console.error('[whatsapp-webhook] Erro ao enviar confirmação de atendimento humano para o cliente:', ackErr);
+      }
+
+      // 3. Notificar Admin no Telegram sobre mensagem do usuário para atendimento humano
+      try {
         const telegramMessage =
           `💬 <b>Nova Mensagem no WhatsApp da PluriFisio!</b>\n\n` +
           `👤 <b>De:</b> ${escapeHtml(userName)} (${escapeHtml(phone)})\n` +
+          `📧 <b>E-mail:</b> ${escapeHtml(userEmail)}\n` +
           `🏥 <b>Clínica:</b> ${escapeHtml(clinicName)}\n` +
+          `🩺 <b>Profissão:</b> ${escapeHtml(professionInfo)}\n` +
+          `📦 <b>Plano:</b> ${escapeHtml(planName)}\n` +
           `📩 <b>Mensagem:</b> <i>"${escapeHtml(sanitizedUserMsg)}"</i>\n\n` +
           `👉 <a href="${waLink}">Responder no WhatsApp</a>`;
 
