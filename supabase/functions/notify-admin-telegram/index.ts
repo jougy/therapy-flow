@@ -1,6 +1,3 @@
-// supabase/functions/notify-admin-telegram/index.ts
-
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { TelegramClient, escapeHtml } from '../_shared/telegram-client.ts';
@@ -33,7 +30,7 @@ function checkRateLimit(key: string, limit = 5, windowMs = 60_000): boolean {
   return true;
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

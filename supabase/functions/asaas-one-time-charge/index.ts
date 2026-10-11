@@ -1,11 +1,8 @@
-// supabase/functions/asaas-one-time-charge/index.ts
-
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient } from '../_shared/asaas-client.ts';
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
