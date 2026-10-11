@@ -17,7 +17,7 @@ export interface TrialReadOnlyBannerProps {
  *
  * Racional de Negócio & Salvaguarda Ética:
  * 1. Conformidade Regulamentar (CFM / CFP / LGPD):
- *    - Quando uma degustação atinge os limites volumétricos (20 atendimentos ou 5 pacientes)
+ *    - Quando um período de teste gratuito (7 dias) atinge os limites volumétricos (20 atendimentos ou 5 pacientes)
  *      ou o prazo de 7 dias expira, a plataforma NÃO exclui dados clínicos nem bloqueia o acesso
  *      aos registros existentes.
  *    - Resolução CFM nº 1.821/2007: O prontuário médico deve ser preservado por no mínimo 20 anos.
@@ -85,7 +85,7 @@ export const TrialReadOnlyBanner: React.FC<TrialReadOnlyBannerProps> = React.mem
           <span>
             {isTrialExpired ? (
               <>
-                <strong>Período de teste degustação encerrado.</strong> Seu espaço está no modo somente leitura. Todos os prontuários e pacientes continuam salvos e acessíveis.
+                <strong>Período de teste gratuito (7 dias) encerrado.</strong> Seu espaço está no modo somente leitura. Todos os prontuários e pacientes continuam salvos e acessíveis.
               </>
             ) : (
               <>

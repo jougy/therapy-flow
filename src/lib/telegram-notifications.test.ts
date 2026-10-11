@@ -155,7 +155,7 @@ describe("telegram-notifications utilitários", () => {
         preferredPronoun: "Ela/Dela",
         origin: "Instagram (Bio/Campanha)",
         clinicName: "Clínica FisioLife",
-        plan: "Degustação Gratuita (7 dias)",
+        plan: "Teste Gratuito (7 dias)",
         createdAt: "2026-10-02 16:30",
       });
 

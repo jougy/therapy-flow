@@ -8,6 +8,8 @@
 
 export type WhatsAppProvider = 'meta_cloud' | 'evolution';
 
+export const DEFAULT_ADMIN_COMMERCIAL_PHONE = '5511980113936';
+
 export interface WhatsAppClientConfig {
   provider?: WhatsAppProvider;
   apiUrl?: string;
@@ -16,6 +18,7 @@ export interface WhatsAppClientConfig {
   graphApiVersion?: string;
   instanceName?: string;
   businessPhone?: string;
+  adminCommercialPhone?: string;
 }
 
 export interface SendTextMessageOptions {
@@ -26,6 +29,22 @@ export interface SendTextMessageOptions {
 export interface WhatsAppButton {
   id: string;
   label: string;
+}
+
+export interface WhatsAppListRow {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+export interface WhatsAppListSection {
+  title?: string;
+  rows: WhatsAppListRow[];
+}
+
+export interface SendListOptions {
+  title?: string;
+  footer?: string;
 }
 
 export interface SendButtonsOptions {
@@ -106,12 +125,13 @@ export function sanitizeWhatsAppNumber(rawPhone?: string | null): string {
 }
 
 /**
- * Remove caracteres de controle perigosos (ex: null bytes, escape codes) e limita comprimento máximo.
+ * Remove caracteres de controle perigosos, zero-width, bidi overrides e limita comprimento máximo.
  */
 export function sanitizeMessageInput(input?: string | null, maxLength = 2000): string {
   if (!input) return '';
   return String(input)
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // remove ASCII control characters
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '') // remove zero-width & bidi control overrides
     .trim()
     .slice(0, maxLength);
 }
@@ -127,6 +147,7 @@ export class WhatsAppClient {
   private readonly graphApiVersion: string;
   private readonly instanceName: string;
   private readonly businessPhone: string;
+  private readonly adminCommercialPhone: string;
 
   constructor(config?: WhatsAppClientConfig) {
     // Determinação do Provedor (Meta Cloud API por padrão, compatível com Evolution)
@@ -187,6 +208,13 @@ export class WhatsAppClient {
       Deno.env.get('WHATSAPP_BUSINESS_PHONE') ||
       '5511960474566'
     ) || '5511960474566';
+
+    this.adminCommercialPhone = sanitizeWhatsAppNumber(
+      config?.adminCommercialPhone ||
+      Deno.env.get('ADMIN_COMMERCIAL_PHONE') ||
+      Deno.env.get('WHATSAPP_ADMIN_RECIPIENT_PHONE') ||
+      DEFAULT_ADMIN_COMMERCIAL_PHONE
+    ) || DEFAULT_ADMIN_COMMERCIAL_PHONE;
   }
 
   /**
@@ -204,6 +232,36 @@ export class WhatsAppClient {
    */
   public getBusinessPhone(): string {
     return this.businessPhone;
+  }
+
+  /**
+   * Obtém o número de WhatsApp comercial do administrador/especialista humano para transbordo.
+   */
+  public getAdminCommercialPhone(): string {
+    return this.adminCommercialPhone;
+  }
+
+  /**
+   * Verifica se determinado número corresponde ao WhatsApp comercial de transbordo (Anti-Loop).
+   */
+  public isAdminCommercialPhone(phone?: string | null): boolean {
+    const clean = sanitizeWhatsAppNumber(phone);
+    return Boolean(clean && clean === this.adminCommercialPhone);
+  }
+
+  /**
+   * Verifica se determinado número corresponde ao WhatsApp do próprio Bot/Plataforma (Anti-Loop).
+   */
+  public isBotBusinessPhone(phone?: string | null): boolean {
+    const clean = sanitizeWhatsAppNumber(phone);
+    return Boolean(clean && clean === this.businessPhone);
+  }
+
+  /**
+   * Verifica se o número de telefone é interno da plataforma (Admin Comercial ou Bot) para prevenir loops.
+   */
+  public isInternalPlatformPhone(phone?: string | null): boolean {
+    return this.isAdminCommercialPhone(phone) || this.isBotBusinessPhone(phone);
   }
 
   /**
@@ -499,6 +557,182 @@ export class WhatsAppClient {
   }
 
   /**
+   * Envia uma mensagem com lista interativa de opções (Menu / List Message da Meta Cloud API).
+   * Se o envio da lista falhar ou não for suportado, aciona fallback resiliente enviando texto formatado com numeração.
+   */
+  async sendListMessage(
+    to: string,
+    bodyText: string,
+    buttonText: string,
+    sections: WhatsAppListSection[],
+    options?: SendListOptions
+  ): Promise<WhatsAppResponse> {
+    const cleanNumber = sanitizeWhatsAppNumber(to);
+    if (!cleanNumber) {
+      return { success: false, error: 'Número de telefone inválido ou fora dos padrões E.164.' };
+    }
+
+    const cleanBody = sanitizeMessageInput(bodyText, 1024);
+    if (!cleanBody) {
+      return { success: false, error: 'Corpo da mensagem não pode ser vazio.' };
+    }
+
+    const cleanButtonText = sanitizeMessageInput(buttonText, 20) || 'Ver opções';
+
+    if (!this.isConfigured()) {
+      console.warn(
+        `[whatsapp-client] Credenciais de WhatsApp (${this.provider}) não configuradas. Envio de lista para ${cleanNumber} ignorado com fail-safe.`
+      );
+      return { success: false, skipped: true, error: 'Credenciais de WhatsApp não configuradas.' };
+    }
+
+    // 1. Envio de Lista na Meta Cloud API
+    if (this.provider === 'meta_cloud') {
+      try {
+        const url = `${this.apiUrl}/${encodeURIComponent(this.phoneNumberId)}/messages`;
+
+        // Higieniza e formata seções (Meta suporta até 10 seções e 10 itens no total)
+        const formattedSections = (sections || []).slice(0, 10).map((sec, idx) => ({
+          title: sanitizeMessageInput(sec.title || `Opções ${idx + 1}`, 24),
+          rows: (sec.rows || []).slice(0, 10).map((r) => ({
+            id: sanitizeMessageInput(r.id, 200),
+            title: sanitizeMessageInput(r.title, 24),
+            ...(r.description ? { description: sanitizeMessageInput(r.description, 72) } : {}),
+          })),
+        }));
+
+        const interactivePayload: Record<string, unknown> = {
+          type: 'list',
+          body: {
+            text: cleanBody,
+          },
+          action: {
+            button: cleanButtonText,
+            sections: formattedSections,
+          },
+        };
+
+        if (options?.title) {
+          interactivePayload.header = {
+            type: 'text',
+            text: sanitizeMessageInput(options.title, 60),
+          };
+        }
+
+        if (options?.footer) {
+          interactivePayload.footer = {
+            text: sanitizeMessageInput(options.footer, 60),
+          };
+        }
+
+        const payload = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: cleanNumber,
+          type: 'interactive',
+          interactive: interactivePayload,
+        };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(8000),
+        });
+
+        const responseData = await response.json().catch(() => null);
+
+        if (response.ok && responseData?.messages?.[0]?.id) {
+          return {
+            success: true,
+            messageId: responseData.messages[0].id,
+            data: responseData,
+          };
+        }
+
+        console.warn(
+          `[whatsapp-client] Envio de lista Meta Cloud API falhou (${response.status}):`,
+          responseData?.error?.message || 'Erro desconhecido. Ativando fallback para texto...'
+        );
+      } catch (metaListErr) {
+        console.warn('[whatsapp-client] Exceção no envio de lista Meta Cloud API. Ativando fallback:', metaListErr);
+      }
+    } else {
+      // Provedor Evolution API
+      try {
+        const url = `${this.apiUrl}/message/sendList/${encodeURIComponent(this.instanceName)}`;
+        const evolutionSections = (sections || []).map((sec, idx) => ({
+          title: sanitizeMessageInput(sec.title || `Opções ${idx + 1}`, 24),
+          rows: (sec.rows || []).map((r) => ({
+            title: sanitizeMessageInput(r.title, 24),
+            description: r.description ? sanitizeMessageInput(r.description, 72) : '',
+            rowId: sanitizeMessageInput(r.id, 200),
+          })),
+        }));
+
+        const payload = {
+          number: cleanNumber,
+          title: sanitizeMessageInput(options?.title || 'Pluri Fisio', 100),
+          description: cleanBody,
+          buttonText: cleanButtonText,
+          footerText: sanitizeMessageInput(options?.footer || '', 100),
+          sections: evolutionSections,
+        };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: this.apiKey,
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(8000),
+        });
+
+        const responseData = await response.json().catch(() => null);
+
+        if (response.ok && (responseData?.key?.id || responseData?.status === 'SUCCESS' || responseData?.id)) {
+          return {
+            success: true,
+            messageId: responseData?.key?.id || responseData?.id,
+            data: responseData,
+          };
+        }
+
+        console.warn(
+          `[whatsapp-client] Envio de lista Evolution não respondeu com sucesso (${response.status}). Aplicando fallback de texto...`
+        );
+      } catch (listErr) {
+        console.warn('[whatsapp-client] Exceção no envio de lista Evolution. Ativando fallback para texto formatado:', listErr);
+      }
+    }
+
+    // 2. Fallback Resiliente Universal: Mensagem de Texto com Numeração de Opções
+    let fallbackText = cleanBody + '\n\n';
+    let optionCounter = 1;
+    for (const section of sections || []) {
+      if (section.title && (sections || []).length > 1) {
+        fallbackText += `*${sanitizeMessageInput(section.title, 50)}:*\n`;
+      }
+      for (const row of section.rows || []) {
+        fallbackText += `*${optionCounter}* - ${sanitizeMessageInput(row.title, 50)}`;
+        if (row.description) {
+          fallbackText += ` _(${sanitizeMessageInput(row.description, 70)})_`;
+        }
+        fallbackText += '\n';
+        optionCounter++;
+      }
+      fallbackText += '\n';
+    }
+    fallbackText += '_(Responda digitando o número ou o dia desejado)_';
+
+    return await this.sendTextMessage(cleanNumber, fallbackText.trim());
+  }
+
+  /**
    * Envia uma mensagem baseada em Template pré-aprovado da Meta WhatsApp Business API.
    */
   async sendTemplateMessage(
@@ -595,7 +829,7 @@ export class WhatsAppClient {
     const rawName = sanitizeMessageInput(params.name, 100);
     const firstName = rawName.split(' ')[0] || '';
     const displayName = firstName ? ` ${firstName}` : '';
-    const planName = sanitizeMessageInput(params.plan, 80) || 'Gratuito (Degustação 7 dias)';
+    const planName = sanitizeMessageInput(params.plan, 80) || 'Teste Gratuito (7 dias)';
 
     // Mensagem de acolhimento e introdução estruturada do Pluri Fisio
     const welcomeText =

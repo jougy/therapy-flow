@@ -678,7 +678,7 @@ DECLARE
   v_expires_at timestamptz := now() + interval '7 days';
 BEGIN
   IF _clinic_id IS NULL THEN
-    RAISE EXCEPTION 'clinic_id é obrigatório para ativar a degustação grátis.';
+    RAISE EXCEPTION 'clinic_id é obrigatório para ativar o teste gratuito.';
   END IF;
 
   -- Validação e coerção do plano
@@ -810,7 +810,7 @@ BEGIN
     'concurrent_access_limit', 4,
     'trial_max_custom_forms', 2,
     'expires_at', v_expires_at,
-    'message', 'Degustação grátis de 7 dias ativada com sucesso.'
+    'message', 'Teste gratuito (7 dias) ativado com sucesso.'
   );
 END;
 $$;

@@ -328,7 +328,7 @@ serve(async (req) => {
       const templateType = payload.templateType || 'welcome';
       const targetName = sanitizeField(payload.name || adminName, 100);
       const targetClinic = sanitizeField(payload.clinicName || 'Consultório Fisio Saúde', 100);
-      const targetPlan = sanitizeField(payload.plan || (templateType === 'plan_thank_you' ? 'Pluri Fisio Pro' : 'Degustação Gratuita (7 dias)'), 80);
+      const targetPlan = sanitizeField(payload.plan || (templateType === 'plan_thank_you' ? 'Pluri Fisio Pro' : 'Teste Gratuito (7 dias)'), 80);
 
       let testResult;
       if (templateType === 'plan_thank_you') {
@@ -510,7 +510,7 @@ serve(async (req) => {
 
       // Buscar nome da clínica criada para o usuário (se houver)
       let clinicName = payload.clinicName ? String(payload.clinicName).slice(0, 120) : '';
-      let plan = payload.plan ? String(payload.plan).slice(0, 80) : 'Degustação Gratuita (7 dias)';
+      let plan = payload.plan ? String(payload.plan).slice(0, 80) : 'Teste Gratuito (7 dias)';
 
       if (!clinicName && targetUserId && isValidUuid(targetUserId)) {
         const { data: clinicData } = await adminSupabase
@@ -524,7 +524,7 @@ serve(async (req) => {
         if (clinicData) {
           clinicName = clinicData.name;
           if (clinicData.subscription_plan) {
-            plan = `Degustação Gratuita (7 dias) - ${clinicData.subscription_plan}`;
+            plan = `Teste Gratuito (7 dias) - ${clinicData.subscription_plan}`;
           }
         }
       }

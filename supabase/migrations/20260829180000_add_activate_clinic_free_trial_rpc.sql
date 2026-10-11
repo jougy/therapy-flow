@@ -1,5 +1,5 @@
 -- Migration: 20260829180000_add_activate_clinic_free_trial_rpc.sql
--- Descrição: RPC atômica activate_clinic_free_trial para ativação segura de planos de degustação grátis (TRIAL) para Solo e Clínica.
+-- Descrição: RPC atômica activate_clinic_free_trial para ativação segura de planos de teste gratuito (TRIAL) para Solo e Clínica.
 
 CREATE OR REPLACE FUNCTION public.activate_clinic_free_trial(
   _clinic_id uuid,
@@ -16,7 +16,7 @@ DECLARE
   v_is_authorized boolean := false;
 BEGIN
   IF _clinic_id IS NULL THEN
-    RAISE EXCEPTION 'clinic_id é obrigatório para ativar a degustação grátis.';
+    RAISE EXCEPTION 'clinic_id é obrigatório para ativar o teste gratuito.';
   END IF;
 
   -- 1. Buscar o account_owner_user_id da clínica
@@ -127,7 +127,7 @@ BEGIN
     'plan_type', _plan_type,
     'status', 'TRIAL',
     'is_free_trial', true,
-    'message', 'Degustação grátis ativada com sucesso.'
+    'message', 'Teste gratuito ativado com sucesso.'
   );
 END;
 $$;

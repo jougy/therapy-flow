@@ -11,6 +11,8 @@ import { PlatformClinicTags } from "@/components/PlatformClinicTags";
 import { PlatformFeatureFlags } from "@/components/PlatformFeatureFlags";
 import { PlatformGovernanceSettings } from "@/components/PlatformGovernanceSettings";
 import { PlatformBillingMaster } from "@/components/PlatformBillingMaster";
+import { PlatformErrorsLogsPage } from "@/pages/platform/PlatformErrorsLogsPage";
+import { PlatformAgendaMaster } from "@/pages/platform/PlatformAgendaMaster";
 import FormularioEditor from "@/pages/FormularioEditor";
 import { readStoredPlatformClinicKey } from "@/components/platform/platform-api";
 
@@ -61,6 +63,17 @@ const PlatformAdmin = () => {
         element={
           <PlatformLayout>
             <PlatformDirectoryPage />
+          </PlatformLayout>
+        }
+      />
+      <Route
+        path="agenda"
+        element={
+          <PlatformLayout
+            title="Agenda Master"
+            subtitle="Gestão centralizada de reuniões de onboarding, demonstrações e chamadas com clínicas"
+          >
+            <PlatformAgendaMaster />
           </PlatformLayout>
         }
       />
@@ -129,6 +142,17 @@ const PlatformAdmin = () => {
         element={
           <PlatformLayout title="Faturamento & Webhooks" subtitle="Gestão master de cobranças, assinaturas Asaas e webhooks">
             <PlatformBillingMaster />
+          </PlatformLayout>
+        }
+      />
+      <Route
+        path="erros-logs"
+        element={
+          <PlatformLayout
+            title="Erros & Logs de Diagnóstico"
+            subtitle="Monitoramento em tempo real de falhas de runtime, alertas do sistema e auditoria de erros"
+          >
+            <PlatformErrorsLogsPage />
           </PlatformLayout>
         }
       />

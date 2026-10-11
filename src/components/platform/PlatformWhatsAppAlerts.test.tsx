@@ -26,7 +26,12 @@ describe("PlatformWhatsAppAlerts", () => {
     expect(screen.getByText(/Meta Cloud API Oficial \(Graph API\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Conexão Meta WhatsApp Business Cloud API Ativa/i)).toBeInTheDocument();
     expect(screen.getByText(/Infraestrutura direta da Meta/i)).toBeInTheDocument();
+    // Bot e Comercial Oficial
     expect(screen.getAllByText(/\+55 \(11\) 96047-4566/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/\+55 \(11\) 98011-3936/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Transbordo & Suporte Humano/i)).toBeInTheDocument();
+    expect(screen.getByText(/Bot Meta Cloud API/i)).toBeInTheDocument();
+
     expect(screen.getByText(/1\. Onboarding de Novos Cadastros/i)).toBeInTheDocument();
     expect(screen.getByText(/2\. Agradecimento e Ativação de Plano/i)).toBeInTheDocument();
     expect(screen.getByText(/Pré-visualização Interativa dos Templates/i)).toBeInTheDocument();
@@ -71,7 +76,7 @@ describe("PlatformWhatsAppAlerts", () => {
         body: expect.objectContaining({
           action: "SEND_TEST_WHATSAPP",
           templateType: "welcome",
-          phone: "(11) 96047-4566",
+          phone: "(11) 98011-3936",
         }),
       });
     });

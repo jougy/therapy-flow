@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PlanPriceCalculation } from "@/utils/subscriptionPricing";
 
 export interface PlanCardSoloProps {
-  /** Indica se o ciclo selecionado é o de degustação gratuita. */
+  /** Indica se o ciclo selecionado é o de teste gratuito (7 dias). */
   isFreeCycle: boolean;
   /** Objeto de precificação calculada centralizada para o plano Solo. */
   pricing: PlanPriceCalculation;
@@ -15,7 +15,7 @@ export interface PlanCardSoloProps {
   onSelectPlan: (planId: "solo") => void;
   /** Callback para abrir modal com especificações detalhadas do plano. */
   onOpenDetails?: (planId: "solo") => void;
-  /** Indica estado de ativação de degustação em andamento (spinner). */
+  /** Indica estado de ativação de teste gratuito em andamento (spinner). */
   activatingTrial: boolean;
 }
 

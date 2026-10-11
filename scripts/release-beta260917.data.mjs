@@ -60,7 +60,7 @@ export const RELEASE_BETA_26_09_17_01 = {
     {
       category: "changed",
       title: "Precificação Solo Otimizada e Consolidação do Período de Testes (Trial)",
-      body: "Ajuste no valor do plano individual e ativação simplificada de degustação gratuita com validação segura de cotas.",
+      body: "Ajuste no valor do plano individual e ativação simplificada de teste gratuito com validação segura de cotas.",
       sort_order: 40,
     },
     {

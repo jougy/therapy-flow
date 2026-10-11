@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   BookOpen,
+  Bug,
+  CalendarDays,
   CreditCard,
   FlaskConical,
   Loader2,
@@ -38,6 +40,12 @@ export const PLATFORM_NAV_ITEMS: PlatformNavItem[] = [
     path: "/platform/diretorio",
     label: "Diretório Mestre",
     icon: UsersRound,
+  },
+  {
+    id: "agenda",
+    path: "/platform/agenda",
+    label: "Agenda de Reuniões",
+    icon: CalendarDays,
   },
   {
     id: "forms",
@@ -80,6 +88,12 @@ export const PLATFORM_NAV_ITEMS: PlatformNavItem[] = [
     path: "/platform/faturamento",
     label: "Faturamento & Webhooks",
     icon: CreditCard,
+  },
+  {
+    id: "errors",
+    path: "/platform/erros-logs",
+    label: "Erros & Logs",
+    icon: Bug,
   },
 ];
 
@@ -140,13 +154,10 @@ export const PlatformLayout = ({
   // Resolve current active tab ID from current pathname
   const currentTabId = useMemo(() => {
     const pathname = location.pathname;
-    if (pathname.includes("/platform/feedbacks")) return "feedbacks";
-    if (pathname.includes("/platform/novidades")) return "news";
-    if (pathname.includes("/platform/tags")) return "tags";
-    if (pathname.includes("/platform/flags")) return "flags";
-    if (pathname.includes("/platform/governanca")) return "governance";
-    if (pathname.includes("/platform/faturamento")) return "billing";
-    return "directory";
+    const match = PLATFORM_NAV_ITEMS.find(
+      (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
+    );
+    return match ? match.id : "directory";
   }, [location.pathname]);
 
   const handleDockTabChange = (tabId: string) => {

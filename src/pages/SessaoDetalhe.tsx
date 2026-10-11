@@ -1945,10 +1945,11 @@ const SessaoDetalhe = () => {
                   <ComponentHelpButton helpId="session-timer" size="xs" />
                 </div>
                 <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(260px,1.2fr)_minmax(280px,1.2fr)]">
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 min-w-0">
                     <Label htmlFor="scheduled-start">Horário agendado</Label>
                     <Input
                       id="scheduled-start"
+                      className="w-full min-w-0"
                       max="2100-12-31T23:59"
                       min="2000-01-01T00:00"
                       type="datetime-local"
@@ -1957,60 +1958,64 @@ const SessaoDetalhe = () => {
                       disabled={locked}
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <Label htmlFor="patient-arrived">Horário de chegada</Label>
-                      {arrivalDeltaLabel ? (
-                        <span className={`text-xs font-semibold ${arrivalDelayMinutes && arrivalDelayMinutes > 0 ? "text-destructive" : "text-success"}`}>
-                          {arrivalDeltaLabel}
-                        </span>
-                      ) : null}
+                      <div className="flex items-center gap-1.5">
+                        {arrivalDeltaLabel ? (
+                          <span className={`text-xs font-semibold ${arrivalDelayMinutes && arrivalDelayMinutes > 0 ? "text-destructive" : "text-success"}`}>
+                            {arrivalDeltaLabel}
+                          </span>
+                        ) : null}
+                        {!locked && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="xs"
+                            className="h-6 px-2 text-[11px] font-medium"
+                            onClick={() => setPatientArrivedAt(getCurrentDateTimeInputValue())}
+                          >
+                            Agora
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="relative">
-                      <Input
-                        id="patient-arrived"
-                        className="pr-20"
-                        max="2100-12-31T23:59"
-                        min="2000-01-01T00:00"
-                        type="datetime-local"
-                        value={patientArrivedAt}
-                        onChange={(event) => setPatientArrivedAt(event.target.value)}
-                        disabled={locked}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="absolute right-1 top-1/2 h-8 -translate-y-1/2 px-3 text-xs"
-                        onClick={() => setPatientArrivedAt(getCurrentDateTimeInputValue())}
-                        disabled={locked}
-                      >
-                        Agora
-                      </Button>
-                    </div>
+                    <Input
+                      id="patient-arrived"
+                      className="w-full min-w-0"
+                      max="2100-12-31T23:59"
+                      min="2000-01-01T00:00"
+                      type="datetime-local"
+                      value={patientArrivedAt}
+                      onChange={(event) => setPatientArrivedAt(event.target.value)}
+                      disabled={locked}
+                    />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="session-date">Data e hora do início do atendimento</Label>
-                    <div className="relative">
-                      <Input
-                        id="session-date"
-                        className="pr-20"
-                        max="2100-12-31T23:59"
-                        min="2000-01-01T00:00"
-                        type="datetime-local"
-                        value={sessionDate}
-                        onChange={(event) => setSessionDate(event.target.value)}
-                        disabled={locked}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="absolute right-1 top-1/2 h-8 -translate-y-1/2 px-3 text-xs"
-                        onClick={() => setSessionDate(getCurrentDateTimeInputValue())}
-                        disabled={locked}
-                      >
-                        Agora
-                      </Button>
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <Label htmlFor="session-date">Data e hora do início do atendimento</Label>
+                      {!locked && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="xs"
+                          className="h-6 px-2 text-[11px] font-medium"
+                          onClick={() => setSessionDate(getCurrentDateTimeInputValue())}
+                        >
+                          Agora
+                        </Button>
+                      )}
                     </div>
+                    <Input
+                      id="session-date"
+                      className="w-full min-w-0"
+                      max="2100-12-31T23:59"
+                      min="2000-01-01T00:00"
+                      type="datetime-local"
+                      value={sessionDate}
+                      onChange={(event) => setSessionDate(event.target.value)}
+                      disabled={locked}
+                    />
                   </div>
                 </div>
               </CardContent>

@@ -2,6 +2,7 @@ import React from "react";
 import { motion } from "framer-motion";
 import {
   UsersRound,
+  CalendarDays,
   MessageSquareHeart,
   Sparkles,
   Tags,
@@ -25,6 +26,12 @@ export const BACKOFFICE_DOCK_TABS: BackofficeDockTabItem[] = [
     label: "Diretório Mestre",
     shortLabel: "Diretório",
     icon: UsersRound,
+  },
+  {
+    id: "agenda",
+    label: "Agenda de Reuniões",
+    shortLabel: "Agenda",
+    icon: CalendarDays,
   },
   {
     id: "feedbacks",

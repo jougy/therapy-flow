@@ -87,7 +87,7 @@ async function main() {
       release_id: releaseData.id,
       category: "added",
       title: "Período de Teste Gratuito (Free Trial) com Indicadores de Quota",
-      body: "Ativação de período de degustação gratuita para novas clínicas explorarem todos os recursos da plataforma, com exibição visual dos dias restantes e do consumo de cotas de profissionais e pacientes em tempo real.",
+      body: "Ativação de período de teste gratuito para novas clínicas explorarem todos os recursos da plataforma, com exibição visual dos dias restantes e do consumo de cotas de profissionais e pacientes em tempo real.",
       sort_order: 30,
     },
     {

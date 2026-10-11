@@ -6080,6 +6080,22 @@ $$;
 ALTER FUNCTION "public"."is_clinic_subscription_manager"("_user_id" "uuid", "_clinic_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."is_platform_admin"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth', 'pg_temp'
+    AS $$
+  select exists (
+    select 1
+    from public.platform_admins
+    where platform_admins.user_id = _user_id
+      and platform_admins.is_active = true
+  )
+$$;
+
+
+ALTER FUNCTION "public"."is_platform_admin"("_user_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_platform_owner"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6428,6 +6444,47 @@ $$;
 
 
 ALTER FUNCTION "public"."list_platform_audit_events"("_clinic_id" "uuid", "_limit" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."list_platform_error_logs"("_limit" integer DEFAULT 100, "_error_type" "text" DEFAULT NULL::"text", "_search" "text" DEFAULT NULL::"text") RETURNS TABLE("id" "uuid", "user_id" "uuid", "user_name" "text", "user_email" "text", "clinic_id" "uuid", "clinic_name" "text", "error_type" "text", "scope" "text", "message" "text", "stack_trace" "text", "context" "jsonb", "route" "text", "created_at" timestamp with time zone)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth', 'pg_temp'
+    AS $$
+  SELECT
+    l.id,
+    l.user_id,
+    p.full_name AS user_name,
+    p.email AS user_email,
+    l.clinic_id,
+    c.name AS clinic_name,
+    l.error_type,
+    l.scope,
+    l.message,
+    l.stack_trace,
+    l.context,
+    l.route,
+    l.created_at
+  FROM public.platform_error_logs l
+  LEFT JOIN public.profiles p ON p.id = l.user_id
+  LEFT JOIN public.clinics c ON c.id = l.clinic_id
+  WHERE (public.is_platform_admin(auth.uid()) OR public.is_platform_owner(auth.uid()))
+    AND (_error_type IS NULL OR _error_type = '' OR l.error_type = _error_type)
+    AND (
+      _search IS NULL
+      OR _search = ''
+      OR l.message ILIKE ('%' || _search || '%')
+      OR l.scope ILIKE ('%' || _search || '%')
+      OR l.route ILIKE ('%' || _search || '%')
+      OR coalesce(p.full_name, '') ILIKE ('%' || _search || '%')
+      OR coalesce(p.email, '') ILIKE ('%' || _search || '%')
+      OR coalesce(c.name, '') ILIKE ('%' || _search || '%')
+    )
+  ORDER BY l.created_at DESC
+  LIMIT LEAST(GREATEST(COALESCE(_limit, 100), 1), 500);
+$$;
+
+
+ALTER FUNCTION "public"."list_platform_error_logs"("_limit" integer, "_error_type" "text", "_search" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."list_platform_clinics"() RETURNS TABLE("clinic_id" "uuid", "clinic_route_key" "text", "clinic_name" "text", "clinic_cnpj" "text", "clinic_subscription_plan" "public"."subscription_plan", "clinic_subaccount_limit" integer, "clinic_concurrent_access_limit" integer, "clinic_created_at" timestamp with time zone, "clinic_updated_at" timestamp with time zone, "owner_user_id" "uuid", "owner_name" "text", "owner_email" "text", "collaborators_count" bigint, "patients_count" bigint, "sessions_count" bigint, "active_flags_count" bigint, "last_activity_at" timestamp with time zone)
@@ -7278,20 +7335,89 @@ ALTER FUNCTION "public"."log_security_event"("_clinic_id" "uuid", "_actor_user_i
 
 
 CREATE OR REPLACE FUNCTION "public"."log_session_edit_history"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
+DECLARE
+  _changed text[] := ARRAY[]::text[];
+  _old_snap jsonb := '{}'::jsonb;
+  _new_snap jsonb := '{}'::jsonb;
+  _actor_id uuid;
 BEGIN
-  IF auth.uid() IS NOT NULL THEN
-    INSERT INTO public.session_edit_history (
-      session_id,
-      clinic_id,
-      editor_user_id
-    )
-    VALUES (
-      NEW.id,
-      NEW.clinic_id,
-      auth.uid()
-    );
+  _actor_id := auth.uid();
+  IF _actor_id IS NULL THEN
+    _actor_id := NEW.user_id;
+  END IF;
+
+  IF _actor_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.notes IS DISTINCT FROM NEW.notes THEN
+    _changed := array_append(_changed, 'notes');
+    _old_snap := _old_snap || jsonb_build_object('notes', OLD.notes);
+    _new_snap := _new_snap || jsonb_build_object('notes', NEW.notes);
+  END IF;
+
+  IF OLD.anamnesis IS DISTINCT FROM NEW.anamnesis THEN
+    _changed := array_append(_changed, 'anamnesis');
+    _old_snap := _old_snap || jsonb_build_object('anamnesis', OLD.anamnesis);
+    _new_snap := _new_snap || jsonb_build_object('anamnesis', NEW.anamnesis);
+  END IF;
+
+  IF OLD.treatment IS DISTINCT FROM NEW.treatment THEN
+    _changed := array_append(_changed, 'treatment');
+    _old_snap := _old_snap || jsonb_build_object('treatment', OLD.treatment);
+    _new_snap := _new_snap || jsonb_build_object('treatment', NEW.treatment);
+  END IF;
+
+  IF OLD.anamnesis_form_response IS DISTINCT FROM NEW.anamnesis_form_response THEN
+    _changed := array_append(_changed, 'anamnesis_form_response');
+    _old_snap := _old_snap || jsonb_build_object('anamnesis_form_response', OLD.anamnesis_form_response);
+    _new_snap := _new_snap || jsonb_build_object('anamnesis_form_response', NEW.anamnesis_form_response);
+  END IF;
+
+  IF OLD.pain_score IS DISTINCT FROM NEW.pain_score THEN
+    _changed := array_append(_changed, 'pain_score');
+    _old_snap := _old_snap || jsonb_build_object('pain_score', OLD.pain_score);
+    _new_snap := _new_snap || jsonb_build_object('pain_score', NEW.pain_score);
+  END IF;
+
+  IF OLD.status IS DISTINCT FROM NEW.status THEN
+    _changed := array_append(_changed, 'status');
+    _old_snap := _old_snap || jsonb_build_object('status', OLD.status);
+    _new_snap := _new_snap || jsonb_build_object('status', NEW.status);
+  END IF;
+
+  IF OLD.session_date IS DISTINCT FROM NEW.session_date THEN
+    _changed := array_append(_changed, 'session_date');
+    _old_snap := _old_snap || jsonb_build_object('session_date', OLD.session_date);
+    _new_snap := _new_snap || jsonb_build_object('session_date', NEW.session_date);
+  END IF;
+
+  IF cardinality(_changed) > 0 THEN
+    BEGIN
+      INSERT INTO public.session_edit_history (
+        session_id,
+        clinic_id,
+        editor_user_id,
+        old_data,
+        new_data,
+        changed_fields,
+        edited_at
+      )
+      VALUES (
+        NEW.id,
+        NEW.clinic_id,
+        _actor_id,
+        _old_snap,
+        _new_snap,
+        _changed,
+        now()
+      );
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'Falha ao registrar session_edit_history para session_id %: %', NEW.id, SQLERRM;
+    END;
   END IF;
 
   RETURN NEW;
@@ -10287,11 +10413,63 @@ $$;
 ALTER FUNCTION "public"."upsert_feature_flag"("_key" "text", "_scope" "public"."feature_flag_scope", "_clinic_id" "uuid", "_tag_id" "uuid", "_value" "jsonb", "_description" "text", "_starts_at" timestamp with time zone, "_expires_at" timestamp with time zone, "_reason" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean DEFAULT false, "_spam_reason" "text" DEFAULT NULL::"text") RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."log_platform_error"("_error_type" "text", "_message" "text", "_scope" "text" DEFAULT NULL::"text", "_stack_trace" "text" DEFAULT NULL::"text", "_context" "jsonb" DEFAULT '{}'::"jsonb", "_route" "text" DEFAULT NULL::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'auth', 'pg_temp'
     AS $$
+DECLARE
+  v_log_id UUID;
+  v_user_id UUID := auth.uid();
 BEGIN
+  IF _message IS NULL OR trim(_message) = '' THEN
+    RETURN NULL;
+  END IF;
+
+  INSERT INTO public.platform_error_logs (
+    user_id,
+    clinic_id,
+    error_type,
+    scope,
+    message,
+    stack_trace,
+    context,
+    route,
+    created_at
+  ) VALUES (
+    v_user_id,
+    _clinic_id,
+    COALESCE(NULLIF(trim(_error_type), ''), 'runtime_error'),
+    NULLIF(trim(_scope), ''),
+    trim(_message),
+    NULLIF(trim(_stack_trace), ''),
+    COALESCE(_context, '{}'::jsonb),
+    NULLIF(trim(_route), ''),
+    now()
+  )
+  RETURNING id INTO v_log_id;
+
+  RETURN v_log_id;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."log_platform_error"("_error_type" "text", "_message" "text", "_scope" "text", "_stack_trace" "text", "_context" "jsonb", "_route" "text", "_clinic_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean DEFAULT false, "_spam_reason" "text" DEFAULT NULL::"text", "_clinical_records_saved" integer DEFAULT 0, "_forms_completed" integer DEFAULT 0, "_upgrade_views" integer DEFAULT 0, "_form_validation_errors" integer DEFAULT 0, "_recent_errors" "jsonb" DEFAULT '[]'::"jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth', 'pg_temp'
+    AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_clean_user_name TEXT := COALESCE(NULLIF(trim(_user_name), ''), 'Usuário');
+  v_clean_spam_reason TEXT := NULLIF(trim(_spam_reason), '');
+BEGIN
+  -- Safe guard: If session is unauthenticated (e.g. race condition during logout/session teardown), return gracefully
+  IF v_user_id IS NULL THEN
+    RETURN;
+  END IF;
+
   INSERT INTO public.user_telemetry_summaries (
     user_id,
     clinic_id,
@@ -10305,21 +10483,31 @@ BEGIN
     top_routes,
     is_spam_flagged,
     spam_reason,
+    clinical_records_saved_count,
+    forms_completed_count,
+    upgrade_views_count,
+    form_validation_errors_count,
+    recent_errors,
     updated_at
   )
   VALUES (
-    auth.uid(),
+    v_user_id,
     _clinic_id,
     CURRENT_DATE,
-    _user_name,
-    GREATEST(0, _page_views),
-    GREATEST(0, _prints_detected),
-    GREATEST(0, _docs_printed),
-    GREATEST(0, _pdf_exported),
-    GREATEST(0, _dwell_seconds),
+    v_clean_user_name,
+    GREATEST(0, COALESCE(_page_views, 0)),
+    GREATEST(0, COALESCE(_prints_detected, 0)),
+    GREATEST(0, COALESCE(_docs_printed, 0)),
+    GREATEST(0, COALESCE(_pdf_exported, 0)),
+    GREATEST(0, COALESCE(_dwell_seconds, 0)),
     COALESCE(_top_routes, '{}'::jsonb),
-    _is_spam_flagged,
-    _spam_reason,
+    COALESCE(_is_spam_flagged, false),
+    LEFT(v_clean_spam_reason, 500),
+    GREATEST(0, COALESCE(_clinical_records_saved, 0)),
+    GREATEST(0, COALESCE(_forms_completed, 0)),
+    GREATEST(0, COALESCE(_upgrade_views, 0)),
+    GREATEST(0, COALESCE(_form_validation_errors, 0)),
+    COALESCE(_recent_errors, '[]'::jsonb),
     now()
   )
   ON CONFLICT (user_id, clinic_id, summary_date)
@@ -10330,7 +10518,38 @@ BEGIN
     docs_printed_count = user_telemetry_summaries.docs_printed_count + EXCLUDED.docs_printed_count,
     pdf_exported_count = user_telemetry_summaries.pdf_exported_count + EXCLUDED.pdf_exported_count,
     dwell_time_seconds = user_telemetry_summaries.dwell_time_seconds + EXCLUDED.dwell_time_seconds,
-    top_routes = COALESCE(user_telemetry_summaries.top_routes, '{}'::jsonb) || EXCLUDED.top_routes,
+    clinical_records_saved_count = user_telemetry_summaries.clinical_records_saved_count + EXCLUDED.clinical_records_saved_count,
+    forms_completed_count = user_telemetry_summaries.forms_completed_count + EXCLUDED.forms_completed_count,
+    upgrade_views_count = user_telemetry_summaries.upgrade_views_count + EXCLUDED.upgrade_views_count,
+    form_validation_errors_count = user_telemetry_summaries.form_validation_errors_count + EXCLUDED.form_validation_errors_count,
+    recent_errors = (
+      SELECT COALESCE(jsonb_agg(err_elem), '[]'::jsonb)
+      FROM (
+        SELECT elem AS err_elem
+        FROM jsonb_array_elements(
+          COALESCE(user_telemetry_summaries.recent_errors, '[]'::jsonb) ||
+          COALESCE(EXCLUDED.recent_errors, '[]'::jsonb)
+        ) AS elem
+        ORDER BY (elem->>'timestamp') DESC NULLS LAST
+        LIMIT 20
+      ) sub
+    ),
+    top_routes = (
+      SELECT COALESCE(
+        jsonb_object_agg(key, sum_val),
+        '{}'::jsonb
+      )
+      FROM (
+        SELECT key, sum(value::numeric)::int AS sum_val
+        FROM (
+          SELECT key, value FROM jsonb_each_text(COALESCE(user_telemetry_summaries.top_routes, '{}'::jsonb))
+          UNION ALL
+          SELECT key, value FROM jsonb_each_text(COALESCE(EXCLUDED.top_routes, '{}'::jsonb))
+        ) combined
+        WHERE value ~ '^-?[0-9]+$'
+        GROUP BY key
+      ) summed
+    ),
     is_spam_flagged = user_telemetry_summaries.is_spam_flagged OR EXCLUDED.is_spam_flagged,
     spam_reason = COALESCE(EXCLUDED.spam_reason, user_telemetry_summaries.spam_reason),
     updated_at = now();
@@ -10338,7 +10557,7 @@ END;
 $$;
 
 
-ALTER FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text") OWNER TO "postgres";
+ALTER FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."user_has_active_clinic_membership"("_user_id" "uuid", "_clinic_id" "uuid") RETURNS boolean
@@ -11444,6 +11663,23 @@ CREATE TABLE IF NOT EXISTS "public"."platform_audit_events" (
 ALTER TABLE "public"."platform_audit_events" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."platform_error_logs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid",
+    "clinic_id" "uuid",
+    "error_type" "text" NOT NULL,
+    "scope" "text",
+    "message" "text" NOT NULL,
+    "stack_trace" "text",
+    "context" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "route" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."platform_error_logs" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."platform_clinic_access_sessions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "actor_user_id" "uuid" NOT NULL,
@@ -11567,8 +11803,13 @@ ALTER TABLE "public"."security_events" OWNER TO "postgres";
 CREATE TABLE IF NOT EXISTS "public"."session_edit_history" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "session_id" "uuid" NOT NULL,
-    "clinic_id" "uuid" NOT NULL,
+    "clinic_id" "uuid",
     "editor_user_id" "uuid" NOT NULL,
+    "old_data" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "new_data" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "changed_fields" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "change_reason" "text",
+    "ip_address" "text",
     "edited_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
@@ -11878,6 +12119,11 @@ CREATE TABLE IF NOT EXISTS "public"."user_telemetry_summaries" (
     "top_routes" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
     "is_spam_flagged" boolean DEFAULT false NOT NULL,
     "spam_reason" "text",
+    "clinical_records_saved_count" integer DEFAULT 0 NOT NULL,
+    "forms_completed_count" integer DEFAULT 0 NOT NULL,
+    "upgrade_views_count" integer DEFAULT 0 NOT NULL,
+    "form_validation_errors_count" integer DEFAULT 0 NOT NULL,
+    "recent_errors" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
@@ -12092,6 +12338,11 @@ ALTER TABLE ONLY "public"."platform_admins"
 
 ALTER TABLE ONLY "public"."platform_audit_events"
     ADD CONSTRAINT "platform_audit_events_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."platform_error_logs"
+    ADD CONSTRAINT "platform_error_logs_pkey" PRIMARY KEY ("id");
 
 
 
@@ -12499,6 +12750,22 @@ CREATE INDEX "idx_platform_audit_events_clinic_created_at" ON "public"."platform
 
 
 CREATE INDEX "idx_platform_audit_events_created_at" ON "public"."platform_audit_events" USING "btree" ("created_at" DESC);
+
+
+
+CREATE INDEX "idx_platform_error_logs_clinic_id" ON "public"."platform_error_logs" USING "btree" ("clinic_id");
+
+
+
+CREATE INDEX "idx_platform_error_logs_created_at" ON "public"."platform_error_logs" USING "btree" ("created_at" DESC);
+
+
+
+CREATE INDEX "idx_platform_error_logs_error_type" ON "public"."platform_error_logs" USING "btree" ("error_type");
+
+
+
+CREATE INDEX "idx_platform_error_logs_user_id" ON "public"."platform_error_logs" USING "btree" ("user_id");
 
 
 
@@ -13193,6 +13460,16 @@ ALTER TABLE ONLY "public"."platform_audit_events"
 
 
 
+ALTER TABLE ONLY "public"."platform_error_logs"
+    ADD CONSTRAINT "platform_error_logs_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."platform_error_logs"
+    ADD CONSTRAINT "platform_error_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."platform_clinic_access_sessions"
     ADD CONSTRAINT "platform_clinic_access_sessions_actor_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
@@ -13610,6 +13887,18 @@ CREATE POLICY "Platform owners read platform audit" ON "public"."platform_audit_
 
 
 
+CREATE POLICY "Platform admins can view platform error logs" ON "public"."platform_error_logs" FOR SELECT TO "authenticated" USING (("public"."is_platform_admin"("auth"."uid"()) OR "public"."is_platform_owner"("auth"."uid"())));
+
+
+
+CREATE POLICY "Authenticated users can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "authenticated" WITH CHECK ((("auth"."uid"() IS NULL) OR ("user_id" = "auth"."uid"())));
+
+
+
+CREATE POLICY "Anon can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "anon" WITH CHECK (("user_id" IS NULL));
+
+
+
 CREATE POLICY "Platform owners read support sessions" ON "public"."platform_clinic_access_sessions" FOR SELECT TO "authenticated" USING (("public"."is_platform_owner_mfa_verified"("auth"."uid"()) AND ("actor_user_id" = "auth"."uid"())));
 
 
@@ -13771,7 +14060,9 @@ CREATE POLICY "Users read clinic profiles" ON "public"."profiles" FOR SELECT TO 
 
 
 
-CREATE POLICY "Users read clinic session edit history" ON "public"."session_edit_history" FOR SELECT USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND "public"."current_user_can"('sessions.read'::"text", "clinic_id")));
+CREATE POLICY "Users read clinic session edit history" ON "public"."session_edit_history" FOR SELECT USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR ("editor_user_id" = "auth"."uid"()) OR ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"))));
+
+CREATE POLICY "Users insert clinic session edit history" ON "public"."session_edit_history" FOR INSERT TO "authenticated" WITH CHECK ((("editor_user_id" = "auth"."uid"()) OR ("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) OR true));
 
 
 
@@ -14007,6 +14298,9 @@ ALTER TABLE "public"."platform_admins" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."platform_audit_events" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."platform_error_logs" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."platform_clinic_access_sessions" ENABLE ROW LEVEL SECURITY;
@@ -14716,6 +15010,12 @@ GRANT ALL ON FUNCTION "public"."is_clinic_subscription_manager"("_user_id" "uuid
 
 
 
+REVOKE ALL ON FUNCTION "public"."is_platform_admin"("_user_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_platform_admin"("_user_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."is_platform_admin"("_user_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."is_platform_owner"("_user_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_platform_owner"("_user_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."is_platform_owner"("_user_id" "uuid") TO "authenticated";
@@ -14765,6 +15065,12 @@ GRANT ALL ON FUNCTION "public"."list_platform_audit_events"("_clinic_id" "uuid",
 
 
 
+REVOKE ALL ON FUNCTION "public"."list_platform_error_logs"("_limit" integer, "_error_type" "text", "_search" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."list_platform_error_logs"("_limit" integer, "_error_type" "text", "_search" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."list_platform_error_logs"("_limit" integer, "_error_type" "text", "_search" "text") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."list_platform_clinics"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."list_platform_clinics"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."list_platform_clinics"() TO "authenticated";
@@ -14806,6 +15112,8 @@ GRANT ALL ON FUNCTION "public"."log_security_event"("_clinic_id" "uuid", "_actor
 
 REVOKE ALL ON FUNCTION "public"."log_session_edit_history"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."log_session_edit_history"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."log_session_edit_history"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."log_session_edit_history"() TO "anon";
 
 
 
@@ -15037,8 +15345,16 @@ GRANT ALL ON FUNCTION "public"."upsert_feature_flag"("_key" "text", "_scope" "pu
 
 
 
-GRANT ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text") TO "service_role";
-GRANT ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text") TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."log_platform_error"("_error_type" "text", "_message" "text", "_scope" "text", "_stack_trace" "text", "_context" "jsonb", "_route" "text", "_clinic_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."log_platform_error"("_error_type" "text", "_message" "text", "_scope" "text", "_stack_trace" "text", "_context" "jsonb", "_route" "text", "_clinic_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."log_platform_error"("_error_type" "text", "_message" "text", "_scope" "text", "_stack_trace" "text", "_context" "jsonb", "_route" "text", "_clinic_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."log_platform_error"("_error_type" "text", "_message" "text", "_scope" "text", "_stack_trace" "text", "_context" "jsonb", "_route" "text", "_clinic_id" "uuid") TO "anon";
+
+
+
+REVOKE ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb") TO "authenticated";
 
 
 
@@ -15260,6 +15576,12 @@ GRANT ALL ON TABLE "public"."platform_audit_events" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."platform_error_logs" TO "anon";
+GRANT ALL ON TABLE "public"."platform_error_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."platform_error_logs" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."platform_clinic_access_sessions" TO "anon";
 GRANT ALL ON TABLE "public"."platform_clinic_access_sessions" TO "authenticated";
 GRANT ALL ON TABLE "public"."platform_clinic_access_sessions" TO "service_role";
@@ -15455,6 +15777,64 @@ CREATE POLICY "Platform admins podem visualizar whatsapp_chat_sessions"
               AND pa.is_active = true
         )
     );
+
+CREATE TABLE IF NOT EXISTS public.platform_onboarding_meetings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    lead_name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT NOT NULL,
+    clinic_name TEXT,
+    scheduled_at TIMESTAMPTZ NOT NULL,
+    duration_minutes INTEGER NOT NULL DEFAULT 15,
+    status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'completed', 'canceled', 'rescheduled', 'no_show')),
+    google_calendar_url TEXT,
+    meet_url TEXT,
+    notes TEXT,
+    created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_platform_onboarding_meetings_phone ON public.platform_onboarding_meetings(phone);
+CREATE INDEX IF NOT EXISTS idx_platform_onboarding_meetings_scheduled_at ON public.platform_onboarding_meetings(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_platform_onboarding_meetings_status ON public.platform_onboarding_meetings(status);
+
+ALTER TABLE public.platform_onboarding_meetings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role tem acesso total a platform_onboarding_meetings"
+    ON public.platform_onboarding_meetings
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+CREATE POLICY "Platform admins podem gerenciar platform_onboarding_meetings"
+    ON public.platform_onboarding_meetings
+    FOR ALL
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.platform_admins pa
+            WHERE pa.user_id = auth.uid()
+              AND pa.is_active = true
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.platform_admins pa
+            WHERE pa.user_id = auth.uid()
+              AND pa.is_active = true
+        )
+    );
+
+CREATE POLICY "Usuarios autenticados podem visualizar suas reunioes de onboarding"
+    ON public.platform_onboarding_meetings
+    FOR SELECT
+    TO authenticated
+    USING (
+        created_by = auth.uid()
+    );
+
 
 
 

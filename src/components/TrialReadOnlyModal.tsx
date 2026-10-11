@@ -30,7 +30,7 @@ export interface TrialReadOnlyModalProps {
  * Racional de Negócio & Salvaguarda Ética:
  * 1. Interceptação Preventiva de Mutação:
  *    - Quando o usuário tenta criar ou editar dados clínicos essenciais (pacientes, sessões, formulários)
- *      em um espaço com degustação esgotada ou assinatura vencida, este modal é acionado.
+ *      em um espaço com período de teste gratuito encerrado ou assinatura vencida, este modal é acionado.
  * 2. Garantia de Inviolabilidade de Dados:
  *    - Tranquiliza o profissional de saúde de que seu histórico está 100% íntegro e preservado,
  *      reafirmando a conformidade legal do sistema com CFM e LGPD.
@@ -79,7 +79,7 @@ export const TrialReadOnlyModal: React.FC<TrialReadOnlyModalProps> = React.memo(
           </div>
 
           <DialogDescription className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-            Seu período de teste ou degustação gratuita foi concluído. Não é permitido {actionAttempted} enquanto o espaço estiver no modo somente leitura.
+            Seu período de teste gratuito (7 dias) foi concluído. Não é permitido {actionAttempted} enquanto o espaço estiver no modo somente leitura.
           </DialogDescription>
         </DialogHeader>
 

@@ -261,7 +261,7 @@ export function formatSignupTelegramText(params: TelegramAdminNotificationParams
   const email = params.email.trim();
   const phoneRaw = params.phone || "";
   const clinicName = params.clinicName?.trim() || "Consultório Solo";
-  const plan = params.plan?.trim() || "Degustação Gratuita (7 dias)";
+  const plan = params.plan?.trim() || "Teste Gratuito (7 dias)";
   const createdAt = params.createdAt || new Date().toISOString();
 
   const professionFormatted = formatProfessionLabel(params.profession, params.councilNumber, params.councilName);
