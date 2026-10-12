@@ -14,6 +14,8 @@ export interface OnboardingMeeting {
   google_calendar_url?: string | null;
   meet_url?: string | null;
   notes?: string | null;
+  origin?: string | null;
+  confirmation_channel?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;

@@ -15,6 +15,41 @@ export const getWhatsAppLink = (phone: string, leadName?: string): string => {
 };
 
 /**
+ * Gera link de disparo rápido de lembrete da reunião via WhatsApp
+ */
+export const getWhatsAppReminderLink = (meeting: OnboardingMeeting): string => {
+  const digits = (meeting.phone || "").replace(/\D/g, "");
+  if (!digits) return "#";
+  const fullDigits = digits.startsWith("55") ? digits : `55${digits}`;
+  const formattedDate = formatMeetingDateTimeFull(meeting.scheduled_at);
+  const leadGreeting = meeting.lead_name ? `Olá, ${meeting.lead_name}!` : "Olá!";
+  const meetInfo = meeting.meet_url ? `\n\nLink da sala: ${meeting.meet_url}` : "";
+
+  const reminderText =
+    `${leadGreeting} 👋\n\n` +
+    `Lembramos da nossa reunião de onboarding e introdução da plataforma *Pluri-Health* agendada para:\n` +
+    `🗓️ *${formattedDate}* (Duração: ${meeting.duration_minutes || 15} min)${meetInfo}\n\n` +
+    `Podemos confirmar a sua presença? Responda com *1 para Confirmar* ou *2 para Remarcar*.`;
+
+  return `https://wa.me/${fullDigits}?text=${encodeURIComponent(reminderText)}`;
+};
+
+/**
+ * Identifica se a reunião foi originada ou confirmada via WhatsApp Copilot
+ */
+export const isWhatsAppCopilotOrigin = (meeting: OnboardingMeeting): boolean => {
+  if (meeting.origin === "whatsapp_copilot" || meeting.origin === "whatsapp") return true;
+  if (meeting.confirmation_channel === "whatsapp") return true;
+  const notesLower = (meeting.notes || "").toLowerCase();
+  return (
+    notesLower.includes("whatsapp") ||
+    notesLower.includes("copilot") ||
+    notesLower.includes("wa bot") ||
+    notesLower.includes("agendado via whatsapp")
+  );
+};
+
+/**
  * Formata telefone amigavelmente: (11) 99999-9999
  */
 export const formatPhoneDisplay = (phone: string): string => {

@@ -1,0 +1,114 @@
+{
+  "version": "3.1",
+  "screens": [
+    {
+      "id": "SCREEN_PATIENT_INFO",
+      "title": "Pré-Cadastro de Paciente",
+      "data": {},
+      "terminal": true,
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "patient_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Pré-Cadastro de Paciente"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Preencha os dados do paciente para agilizar o atendimento na clínica."
+              },
+              {
+                "type": "TextInput",
+                "name": "name",
+                "label": "Nome Completo",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "Nome completo do paciente (sem abreviações)"
+              },
+              {
+                "type": "DatePicker",
+                "name": "birth_date",
+                "label": "Data de Nascimento",
+                "required": true,
+                "helper-text": "Data de nascimento do paciente"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "doc_type",
+                "label": "Tipo de Documento",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "CPF",
+                    "title": "CPF"
+                  },
+                  {
+                    "id": "RG",
+                    "title": "RG"
+                  },
+                  {
+                    "id": "Passaporte",
+                    "title": "Passaporte"
+                  }
+                ],
+                "default-value": "CPF"
+              },
+              {
+                "type": "TextInput",
+                "name": "doc_number",
+                "label": "Número do Documento",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "Número do CPF, RG ou Passaporte selecionado"
+              },
+              {
+                "type": "TextInput",
+                "name": "parent_cpf",
+                "label": "CPF do Responsável (se menor de 18 anos)",
+                "required": false,
+                "input-type": "text",
+                "helper-text": "Obrigatório se o paciente for menor de 18 anos"
+              },
+              {
+                "type": "TextInput",
+                "name": "phone",
+                "label": "Telefone / WhatsApp (digite 0 se não possuir)",
+                "required": true,
+                "input-type": "text",
+                "helper-text": "DDD + Telefone ou 0 se não possuir"
+              },
+              {
+                "type": "TextInput",
+                "name": "email",
+                "label": "E-mail (digite 0 se não possuir)",
+                "required": true,
+                "input-type": "email",
+                "helper-text": "E-mail válido ou 0 se não possuir"
+              },
+              {
+                "type": "Footer",
+                "label": "Salvar Paciente",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "name": "${form.name}",
+                    "birth_date": "${form.birth_date}",
+                    "doc_type": "${form.doc_type}",
+                    "doc_number": "${form.doc_number}",
+                    "parent_cpf": "${form.parent_cpf}",
+                    "phone": "${form.phone}",
+                    "email": "${form.email}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

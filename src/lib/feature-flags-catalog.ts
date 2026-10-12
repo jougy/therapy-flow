@@ -54,6 +54,38 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasConfiguration: false,
     hasToggle: true,
   },
+  {
+    key: 'agenda_master_onboarding',
+    label: 'Agenda Master de Onboarding (Backoffice)',
+    description: 'Agendamentos estratégicos de demonstração, onboarding e alinhamento de clínicas com a equipe Pluri Health.',
+    category: 'Agenda',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'agenda_whatsapp_booking_flow',
+    label: 'Agendamento Interativo via Bot WhatsApp',
+    description: 'Fluxo interativo conversacional no WhatsApp para marcação automatizada de consultas e reuniões.',
+    category: 'Agenda',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'agenda_google_calendar_sync',
+    label: 'Sincronização em Tempo Real com Google Calendar (iCal)',
+    description: 'Integração bidirecional e feed iCal com o Google Calendar e calendários externos.',
+    category: 'Agenda',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'agenda_smart_blocks_buffers',
+    label: 'Bloqueios Inteligentes & Margem de Segurança (Buffers)',
+    description: 'Intervalos automáticos de respiro entre atendimentos, bloqueio de almoço e descansos programados.',
+    category: 'Agenda',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
   // Assinaturas & Financeiro
   {
     key: 'subscriptions_module',
@@ -103,6 +135,54 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita o envio de lembretes e notificações transacionais aos pacientes via Email e SMS.',
     category: 'Notificações',
     hasConfiguration: true,
+  },
+  {
+    key: 'notifications_whatsapp_onboarding',
+    label: 'WhatsApp: Boas-Vindas & Onboarding Automático',
+    description: 'Disparo automático de boas-vindas, orientações iniciais e link de primeiro acesso para novos usuários via WhatsApp.',
+    category: 'Notificações',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'notifications_whatsapp_transbordo',
+    label: 'WhatsApp: Transbordo para Comercial Humano',
+    description: 'Roteamento inteligente e transbordo de leads e clientes com dúvidas para o atendimento comercial humano oficial.',
+    category: 'Notificações',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'notifications_whatsapp_billing',
+    label: 'WhatsApp: Confirmação de Assinaturas & Upgrade (Asaas)',
+    description: 'Notificações automáticas de confirmação de pagamento, liberação de planos e avisos de renovação/upgrade via Asaas.',
+    category: 'Notificações',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'notifications_telegram_admin',
+    label: 'Telegram: Alertas em Tempo Real do Administrador',
+    description: 'Canal de telemetria e bot do Telegram para a diretoria receber eventos críticos (novos cadastros, pagamentos e incidentes).',
+    category: 'Notificações',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'whatsapp_flows_enabled',
+    label: 'WhatsApp Flows (Formulários Nativos Deslizantes)',
+    description: 'Ativa o preenchimento interativo de fichas e triagem via WhatsApp Flows nativo deslizante da Meta, com fallback inteligente para chat.',
+    category: 'Notificações',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
+    key: 'notifications_patient_reminders',
+    label: 'Lembretes de Consultas e Atendimentos (WhatsApp/SMS)',
+    description: 'Envio programado de confirmação e lembretes de sessões para pacientes com antecedência configurável.',
+    category: 'Notificações',
+    hasConfiguration: true,
+    hasToggle: true,
   },
 
   // Dashboards
@@ -425,4 +505,207 @@ export const DEFAULT_AGENDA_FLAG_CONFIG: AgendaFlagConfig = {
   showSpanningBadges: true,
   maintenanceMessage: "",
 };
+
+// --- NOVAS FLAGS: NOTIFICAÇÕES ---
+
+export interface WhatsAppOnboardingFlagConfig {
+  enabled?: boolean;
+  delaySeconds: number;
+  botPhoneNumber: string;
+  welcomeMessageTemplate: string;
+  sendFirstAccessLink: boolean;
+  notifyOnWeekend: boolean;
+}
+
+export const DEFAULT_WHATSAPP_ONBOARDING_FLAG_CONFIG: WhatsAppOnboardingFlagConfig = {
+  enabled: true,
+  delaySeconds: 15,
+  botPhoneNumber: "5511980113936",
+  welcomeMessageTemplate: "Olá {{nome}}! Seja muito bem-vindo(a) ao Pluri Health. Seu espaço clínico seguro já está pronto para uso: {{link_acesso}}",
+  sendFirstAccessLink: true,
+  notifyOnWeekend: false,
+};
+
+export interface WhatsAppTransbordoFlagConfig {
+  enabled?: boolean;
+  destinationPhoneNumber: string;
+  alertTypes: {
+    suporte: boolean;
+    novos_agendamentos: boolean;
+    duvidas_planos: boolean;
+    reclamacoes: boolean;
+  };
+  officeHoursOnly: boolean;
+  fallbackMessage: string;
+}
+
+export const DEFAULT_WHATSAPP_TRANSBORDO_FLAG_CONFIG: WhatsAppTransbordoFlagConfig = {
+  enabled: true,
+  destinationPhoneNumber: "5511980113936",
+  alertTypes: {
+    suporte: true,
+    novos_agendamentos: true,
+    duvidas_planos: true,
+    reclamacoes: true,
+  },
+  officeHoursOnly: false,
+  fallbackMessage: "Entendido! Estou transferindo seu atendimento para o nosso especialista humano. Em instantes você será atendido.",
+};
+
+export interface WhatsAppBillingFlagConfig {
+  enabled?: boolean;
+  thankYouMessageTemplate: string;
+  systemLoginLink: string;
+  notifyUpgrade: boolean;
+  notifySubscriptionRenew: boolean;
+  notifyPaymentFailed: boolean;
+}
+
+export const DEFAULT_WHATSAPP_BILLING_FLAG_CONFIG: WhatsAppBillingFlagConfig = {
+  enabled: true,
+  thankYouMessageTemplate: "Olá {{nome}}, confirmamos com sucesso a sua assinatura do plano {{plano}} via Asaas! Obrigado por confiar no Pluri Health.",
+  systemLoginLink: "https://plurihealth.com.br/login",
+  notifyUpgrade: true,
+  notifySubscriptionRenew: true,
+  notifyPaymentFailed: true,
+};
+
+export interface TelegramAdminFlagConfig {
+  enabled?: boolean;
+  botTokenConfigured?: boolean;
+  chatId: string;
+  events: {
+    newRegistrations: boolean;
+    newBookings: boolean;
+    asaasPayments: boolean;
+    errorAlerts: boolean;
+  };
+  silentNotifications: boolean;
+}
+
+export const DEFAULT_TELEGRAM_ADMIN_FLAG_CONFIG: TelegramAdminFlagConfig = {
+  enabled: true,
+  botTokenConfigured: true,
+  chatId: "-100234567890",
+  events: {
+    newRegistrations: true,
+    newBookings: true,
+    asaasPayments: true,
+    errorAlerts: true,
+  },
+  silentNotifications: false,
+};
+
+export interface PatientRemindersFlagConfig {
+  enabled?: boolean;
+  channels: {
+    whatsapp: boolean;
+    sms: boolean;
+    email: boolean;
+  };
+  remind24hBefore: boolean;
+  remind2hBefore: boolean;
+  allowPatientConfirmation: boolean;
+  reminderMessageTemplate: string;
+}
+
+export const DEFAULT_PATIENT_REMINDERS_FLAG_CONFIG: PatientRemindersFlagConfig = {
+  enabled: true,
+  channels: {
+    whatsapp: true,
+    sms: false,
+    email: true,
+  },
+  remind24hBefore: true,
+  remind2hBefore: true,
+  allowPatientConfirmation: true,
+  reminderMessageTemplate: "Olá {{paciente}}, lembramos de sua consulta agendada para {{data_hora}} com {{profissional}}. Responda 1 para confirmar ou 2 para remarcar.",
+};
+
+export interface WhatsAppFlowsConfig {
+  enabled: boolean;
+  flow_id: string;
+  fallback_to_chat: boolean;
+  mode: 'draft' | 'published';
+}
+
+export const DEFAULT_WHATSAPP_FLOWS_CONFIG: WhatsAppFlowsConfig = {
+  enabled: false,
+  flow_id: '',
+  fallback_to_chat: true,
+  mode: 'draft',
+};
+
+// --- NOVAS FLAGS: AGENDA ---
+
+export interface AgendaMasterFlagConfig {
+  enabled?: boolean;
+  defaultDurationMinutes: number;
+  meetingRoomUrl: string;
+  allowLeadReschedule: boolean;
+  sendCalendarInvite: boolean;
+  sendWhatsAppConfirmation: boolean;
+}
+
+export const DEFAULT_AGENDA_MASTER_FLAG_CONFIG: AgendaMasterFlagConfig = {
+  enabled: true,
+  defaultDurationMinutes: 15,
+  meetingRoomUrl: "https://meet.google.com/pluri-onboarding",
+  allowLeadReschedule: true,
+  sendCalendarInvite: true,
+  sendWhatsAppConfirmation: true,
+};
+
+export interface AgendaWhatsAppBookingFlagConfig {
+  enabled?: boolean;
+  startHour: string;
+  endHour: string;
+  workDays: ("seg" | "ter" | "qua" | "qui" | "sex" | "sab" | "dom")[];
+  intervalMinutes: number;
+  autoConfirmBooking: boolean;
+}
+
+export const DEFAULT_AGENDA_WHATSAPP_BOOKING_FLAG_CONFIG: AgendaWhatsAppBookingFlagConfig = {
+  enabled: true,
+  startHour: "08:00",
+  endHour: "18:00",
+  workDays: ["seg", "ter", "qua", "qui", "sex"],
+  intervalMinutes: 30,
+  autoConfirmBooking: true,
+};
+
+export interface AgendaGoogleCalendarSyncFlagConfig {
+  enabled?: boolean;
+  iCalFeedUrl: string;
+  cacheDurationMinutes: number;
+  syncReminders: boolean;
+  autoSyncIntervalMinutes: number;
+}
+
+export const DEFAULT_AGENDA_GOOGLE_CALENDAR_SYNC_FLAG_CONFIG: AgendaGoogleCalendarSyncFlagConfig = {
+  enabled: true,
+  iCalFeedUrl: "https://calendar.google.com/calendar/ical/plurihealth/public/basic.ics",
+  cacheDurationMinutes: 15,
+  syncReminders: true,
+  autoSyncIntervalMinutes: 30,
+};
+
+export interface AgendaSmartBlocksBuffersFlagConfig {
+  enabled?: boolean;
+  defaultBufferMinutes: number;
+  blockThursdayMorning: boolean;
+  lunchBreakStart: string;
+  lunchBreakEnd: string;
+  enforceBreakBetweenPatients: boolean;
+}
+
+export const DEFAULT_AGENDA_SMART_BLOCKS_BUFFERS_FLAG_CONFIG: AgendaSmartBlocksBuffersFlagConfig = {
+  enabled: true,
+  defaultBufferMinutes: 30,
+  blockThursdayMorning: true,
+  lunchBreakStart: "12:00",
+  lunchBreakEnd: "13:00",
+  enforceBreakBetweenPatients: true,
+};
+
 

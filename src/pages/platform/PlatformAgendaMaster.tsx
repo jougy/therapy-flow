@@ -87,6 +87,49 @@ export const PlatformAgendaMaster: React.FC = () => {
     void loadMeetings();
   }, [loadMeetings]);
 
+  // Supabase Realtime: Refletir instantaneamente inserções, confirmações, cancelamentos e reagendamentos
+  useEffect(() => {
+    if (!supabase || typeof supabase.channel !== "function") return;
+
+    const channel = supabase
+      .channel("platform-onboarding-meetings-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "platform_onboarding_meetings",
+        },
+        (payload: { eventType: string; new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
+          if (payload.eventType === "INSERT" && payload.new) {
+            const newMeeting = payload.new as unknown as OnboardingMeeting;
+            setMeetings((prev) => {
+              const exists = prev.some((m) => m.id === newMeeting.id);
+              if (exists) return prev;
+              return [newMeeting, ...prev];
+            });
+          } else if (payload.eventType === "UPDATE" && payload.new) {
+            const updatedMeeting = payload.new as unknown as OnboardingMeeting;
+            setMeetings((prev) =>
+              prev.map((m) => (m.id === updatedMeeting.id ? { ...m, ...updatedMeeting } : m))
+            );
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            const oldId = (payload.old as { id?: string }).id;
+            if (oldId) {
+              setMeetings((prev) => prev.filter((m) => m.id !== oldId));
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (typeof supabase.removeChannel === "function") {
+        void supabase.removeChannel(channel);
+      }
+    };
+  }, []);
+
   // Handle Status Update
   const handleStatusChange = useCallback(async (meetingId: string, newStatus: MeetingStatus) => {
     // Optimistic update
@@ -207,6 +250,14 @@ export const PlatformAgendaMaster: React.FC = () => {
       });
     }
   }, [loadMeetings]);
+
+  // Handle 1-click WhatsApp Reminder
+  const handleSendReminder = useCallback((meeting: OnboardingMeeting) => {
+    toast({
+      title: "Lembrete WhatsApp iniciado",
+      description: `Disparando lembrete de confirmação de reunião para ${meeting.lead_name}.`,
+    });
+  }, []);
 
   // Handle Create Meeting
   const handleCreateMeeting = useCallback(async (payload: {
@@ -477,6 +528,7 @@ export const PlatformAgendaMaster: React.FC = () => {
                           setRescheduleMeeting(m);
                           setRescheduleDialogOpen(true);
                         }}
+                        onSendReminder={handleSendReminder}
                       />
                     ))}
                   </div>
@@ -507,6 +559,7 @@ export const PlatformAgendaMaster: React.FC = () => {
                           setRescheduleMeeting(m);
                           setRescheduleDialogOpen(true);
                         }}
+                        onSendReminder={handleSendReminder}
                       />
                     ))}
                   </div>
