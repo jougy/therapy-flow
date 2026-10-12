@@ -5,17 +5,21 @@ import {
   CheckCircle2,
   Copy,
   Download,
+  ExternalLink,
   Filter,
   Flame,
   Info,
   Layers,
+  MessageSquare,
   Play,
   RefreshCw,
   Search,
   ShieldCheck,
   Terminal,
   Trash2,
+  User,
   Zap,
+  ZoomIn,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +38,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import {
   useRuntimeDebugEvents,
@@ -41,15 +51,87 @@ import {
   logRuntimeError,
   logRuntimeRpc,
   type DebugEventType,
+  type RuntimeDebugEvent,
 } from "@/lib/runtime-debug";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
+
+/**
+ * Interface com os campos esperados no contexto para bugs reportados via WhatsApp
+ */
+export interface WhatsAppBugContext {
+  source?: string;
+  leadName?: string;
+  userName?: string;
+  clinicName?: string;
+  phone?: string;
+  message?: string;
+  imageUrl?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Helper para verificar se um evento tem origem no WhatsApp
+ */
+export const isWhatsAppBugReport = (ev: RuntimeDebugEvent): boolean => {
+  if (ev.context?.source === "whatsapp_bug_report") return true;
+  if (ev.scope === "whatsapp_bug_report" || ev.scope.includes("whatsapp")) return true;
+  return false;
+};
+
+/**
+ * Formata telefone brasileiro amigavelmente: (11) 99999-9999
+ */
+export const formatWhatsAppPhone = (phone?: string): string => {
+  if (!phone) return "Telefone não informado";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 13 && digits.startsWith("55")) {
+    const ddd = digits.slice(2, 4);
+    const num = digits.slice(4);
+    return `+55 (${ddd}) ${num.slice(0, 5)}-${num.slice(5)}`;
+  }
+  return phone;
+};
+
+/**
+ * Valida se uma URL é HTTP ou HTTPS legítima, prevenindo esquemas perigosos como javascript: ou data:
+ */
+export const isSafeHttpUrl = (url?: string | null): boolean => {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Gera URL direta do WhatsApp (wa.me/55...)
+ */
+export const getWhatsAppDeepLink = (phone?: string, leadName?: string): string => {
+  if (!phone) return "#";
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return "#";
+  const fullDigits = digits.startsWith("55") ? digits : `55${digits}`;
+  const greeting = leadName ? `Olá ${leadName}, tudo bem?` : "Olá, tudo bem?";
+  const text = `${greeting} Vi o seu relato de suporte/erro no Pluri-Health e estou entrando em contato para te ajudar.`;
+  return `https://wa.me/${fullDigits}?text=${encodeURIComponent(text)}`;
+};
 
 export const PlatformErrorsLogsPage: React.FC = () => {
   const runtimeEvents = useRuntimeDebugEvents();
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "app_errors" | "whatsapp">("all");
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<{ url: string; alt: string } | null>(null);
 
   // Read telemetry local store state
   const telemetryStore = localTelemetryManager.getStore();
@@ -57,6 +139,15 @@ export const PlatformErrorsLogsPage: React.FC = () => {
   // Filtered events
   const filteredEvents = useMemo(() => {
     return runtimeEvents.filter((ev) => {
+      // Category quick filter
+      const isWa = isWhatsAppBugReport(ev);
+      if (categoryFilter === "whatsapp" && !isWa) {
+        return false;
+      }
+      if (categoryFilter === "app_errors" && isWa) {
+        return false;
+      }
+
       // Type filtering
       if (typeFilter !== "all" && ev.type !== typeFilter) {
         return false;
@@ -77,7 +168,7 @@ export const PlatformErrorsLogsPage: React.FC = () => {
 
       return true;
     });
-  }, [runtimeEvents, typeFilter, searchTerm]);
+  }, [runtimeEvents, typeFilter, categoryFilter, searchTerm]);
 
   // Statistics counters
   const stats = useMemo(() => {
@@ -86,8 +177,12 @@ export const PlatformErrorsLogsPage: React.FC = () => {
     let rpcCount = 0;
     let toastDestructiveCount = 0;
     let infoCount = 0;
+    let whatsappBugCount = 0;
 
     for (const ev of runtimeEvents) {
+      if (isWhatsAppBugReport(ev)) {
+        whatsappBugCount += 1;
+      }
       if (ev.type === "error") {
         errorCount += 1;
         if (ev.scope.includes("toast") || ev.scope.includes("ui.toast")) {
@@ -109,6 +204,7 @@ export const PlatformErrorsLogsPage: React.FC = () => {
       rpcCount,
       toastDestructiveCount,
       infoCount,
+      whatsappBugCount,
     };
   }, [runtimeEvents]);
 
@@ -187,8 +283,27 @@ export const PlatformErrorsLogsPage: React.FC = () => {
   };
 
   // Test simulation actions
-  const simulateError = (type: "runtime" | "unhandled" | "toast_destructive" | "rpc_fail") => {
+  const simulateError = (type: "runtime" | "unhandled" | "toast_destructive" | "rpc_fail" | "whatsapp_report") => {
     switch (type) {
+      case "whatsapp_report":
+        logRuntimeError(
+          "whatsapp.client_report",
+          new Error("Não consigo emitir recibo para o paciente João da Silva, botão fica desabilitado"),
+          {
+            source: "whatsapp_bug_report",
+            leadName: "Dra. Carolina Mendes",
+            userName: "Dra. Carolina Mendes",
+            clinicName: "Clínica FisioLife Pilates",
+            phone: "11987654321",
+            message: "Olá equipe, estou tentando emitir um recibo para a consulta de ontem mas o botão salvar permanece cinza. Segue o print da tela do erro.",
+            imageUrl: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop&q=60",
+          }
+        );
+        toast({
+          title: "Relato de WhatsApp Simulado",
+          description: "Relato de bug de cliente via WhatsApp registrado no feed.",
+        });
+        break;
       case "runtime":
         logRuntimeError("test.simulation", new Error("Erro simulado para validação de telemetria e captura"), {
           simulationTime: new Date().toISOString(),
@@ -257,7 +372,7 @@ export const PlatformErrorsLogsPage: React.FC = () => {
             Erros & Logs de Diagnóstico
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Monitoramento em tempo real de falhas de runtime, alertas do sistema, auditoria de exceções e telemetria.
+            Monitoramento em tempo real de falhas de runtime, relatos de bugs via WhatsApp, alertas do sistema e telemetria.
           </p>
         </div>
 
@@ -270,6 +385,9 @@ export const PlatformErrorsLogsPage: React.FC = () => {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => simulateError("whatsapp_report")}>
+                <MessageSquare className="w-4 h-4 mr-2 text-emerald-600" /> Relato WhatsApp (Cliente)
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => simulateError("runtime")}>
                 <Bug className="w-4 h-4 mr-2 text-rose-600" /> Erro de Runtime (Console/Error)
               </DropdownMenuItem>
@@ -298,13 +416,29 @@ export const PlatformErrorsLogsPage: React.FC = () => {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
           <CardHeader className="p-3 pb-1">
             <CardDescription className="text-xs font-medium">Total de Eventos</CardDescription>
             <CardTitle className="text-xl font-bold flex items-center justify-between">
               {stats.total}
               <Layers className="w-4 h-4 text-slate-400" />
+            </CardTitle>
+          </CardHeader>
+        </Card>
+
+        {/* WhatsApp Reports Counter */}
+        <Card
+          className="border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10 shadow-sm cursor-pointer hover:border-emerald-300"
+          onClick={() => setCategoryFilter(categoryFilter === "whatsapp" ? "all" : "whatsapp")}
+        >
+          <CardHeader className="p-3 pb-1">
+            <CardDescription className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+              Relatos WhatsApp
+            </CardDescription>
+            <CardTitle className="text-xl font-bold text-emerald-700 dark:text-emerald-400 flex items-center justify-between">
+              {stats.whatsappBugCount}
+              <MessageSquare className="w-4 h-4 text-emerald-600" />
             </CardTitle>
           </CardHeader>
         </Card>
@@ -339,12 +473,12 @@ export const PlatformErrorsLogsPage: React.FC = () => {
           </CardHeader>
         </Card>
 
-        <Card className="border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10 shadow-sm">
+        <Card className="border-sky-200 dark:border-sky-900/40 bg-sky-50/20 dark:bg-sky-950/10 shadow-sm">
           <CardHeader className="p-3 pb-1">
-            <CardDescription className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Avisos & Info</CardDescription>
-            <CardTitle className="text-xl font-bold text-emerald-700 dark:text-emerald-400 flex items-center justify-between">
+            <CardDescription className="text-xs font-medium text-sky-700 dark:text-sky-300">Avisos & Info</CardDescription>
+            <CardTitle className="text-xl font-bold text-sky-700 dark:text-sky-400 flex items-center justify-between">
               {stats.warnCount + stats.infoCount}
-              <Info className="w-4 h-4 text-emerald-500" />
+              <Info className="w-4 h-4 text-sky-500" />
             </CardTitle>
           </CardHeader>
         </Card>
@@ -391,14 +525,49 @@ export const PlatformErrorsLogsPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Filters and Search Bar */}
+      {/* Quick Category Filter Bar + Search Bar */}
       <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
-        <CardContent className="p-3.5">
+        <CardContent className="p-3.5 space-y-3">
+          {/* Quick Filters Pill Selector */}
+          <div className="flex flex-wrap items-center gap-2 pb-1 border-b border-slate-100 dark:border-slate-800/80">
+            <span className="text-xs font-medium text-muted-foreground mr-1">Filtrar Origem:</span>
+            <Button
+              variant={categoryFilter === "all" ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs font-medium"
+              onClick={() => setCategoryFilter("all")}
+            >
+              Todos ({runtimeEvents.length})
+            </Button>
+            <Button
+              variant={categoryFilter === "app_errors" ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs font-medium gap-1.5"
+              onClick={() => setCategoryFilter("app_errors")}
+            >
+              <Bug className="w-3 h-3 text-rose-500" />
+              Erros de Aplicação (JS/Crash) ({runtimeEvents.length - stats.whatsappBugCount})
+            </Button>
+            <Button
+              variant={categoryFilter === "whatsapp" ? "default" : "outline"}
+              size="sm"
+              className={`h-7 text-xs font-medium gap-1.5 ${
+                categoryFilter === "whatsapp"
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "text-emerald-700 border-emerald-200 hover:bg-emerald-50 dark:text-emerald-300 dark:border-emerald-800"
+              }`}
+              onClick={() => setCategoryFilter("whatsapp")}
+            >
+              <MessageSquare className="w-3 h-3 text-emerald-500" />
+              Relatos de Clientes (WhatsApp) ({stats.whatsappBugCount})
+            </Button>
+          </div>
+
           <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
             <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Filtrar por mensagem, escopo ou stack..."
+                placeholder="Filtrar por mensagem, escopo, lead ou telefone..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9 h-9 text-sm"
@@ -425,15 +594,15 @@ export const PlatformErrorsLogsPage: React.FC = () => {
       </Card>
 
       {/* Logs Feed List */}
-      <div className="space-y-2.5">
+      <div className="space-y-3">
         {filteredEvents.length === 0 ? (
           <Card className="border-dashed border-slate-200 dark:border-slate-800 p-8 text-center">
             <div className="max-w-sm mx-auto space-y-2">
               <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
               <h3 className="font-semibold text-slate-900 dark:text-slate-100">Nenhum evento encontrado</h3>
               <p className="text-xs text-muted-foreground">
-                {searchTerm || typeFilter !== "all"
-                  ? "Nenhum log corresponde aos filtros informados. Tente ajustar o termo de busca."
+                {searchTerm || typeFilter !== "all" || categoryFilter !== "all"
+                  ? "Nenhum log corresponde aos filtros informados. Tente ajustar o termo de busca ou alternar o filtro de origem."
                   : "Nenhum erro de runtime ou exceção registrada nesta sessão. O sistema está estável."}
               </p>
             </div>
@@ -441,8 +610,151 @@ export const PlatformErrorsLogsPage: React.FC = () => {
         ) : (
           filteredEvents.map((ev) => {
             const isExpanded = expandedEventId === ev.id;
+            const isWa = isWhatsAppBugReport(ev);
+            const ctx = (ev.context || {}) as WhatsAppBugContext;
             const hasExtraDetails = !!(ev.errorDetails?.stack || ev.context);
 
+            const leadName = ctx.leadName || ctx.userName || "Cliente WhatsApp";
+            const clinicName = ctx.clinicName || "Consultório";
+            const phone = ctx.phone;
+            const clientMessage = ctx.message || ev.message;
+            const imageUrl = ctx.imageUrl;
+            const waDeepLink = phone ? getWhatsAppDeepLink(phone, leadName) : null;
+
+            // SPECIAL CARD FOR WHATSAPP BUG REPORTS
+            if (isWa) {
+              return (
+                <Card
+                  key={ev.id}
+                  className="border-2 border-emerald-300 dark:border-emerald-800/80 bg-gradient-to-br from-emerald-50/50 via-white to-emerald-50/20 dark:from-emerald-950/30 dark:via-slate-900 dark:to-emerald-950/10 shadow-sm transition-all hover:border-emerald-400"
+                >
+                  <CardContent className="p-4 space-y-3">
+                    {/* Header: WhatsApp Badge + Identification */}
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Green WhatsApp Badge with MessageSquare icon */}
+                        <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-2.5 py-1 text-xs gap-1.5 shadow-sm">
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          Relato de Bug (WhatsApp)
+                        </Badge>
+
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 font-mono">
+                          {ev.timeString}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {waDeepLink && (
+                          <Button
+                            asChild
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 h-8 text-xs font-medium shadow-sm"
+                          >
+                            <a href={waDeepLink} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              Chamar no WhatsApp (+55...)
+                            </a>
+                          </Button>
+                        )}
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2 text-xs"
+                          onClick={() => copyToClipboard(clientMessage, "Mensagem do cliente")}
+                        >
+                          <Copy className="w-3 h-3 mr-1" /> Copiar Mensagem
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Customer Identification */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-900/80 p-2.5 rounded-md border border-emerald-100 dark:border-emerald-900/40">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <User className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Titular: <strong>{leadName}</strong></span>
+                      </div>
+                      <div className="text-slate-400 dark:text-slate-600">•</div>
+                      <div>
+                        Clínica: <strong>{clinicName}</strong>
+                      </div>
+                      <div className="text-slate-400 dark:text-slate-600">•</div>
+                      <div>
+                        Telefone: <strong>{formatWhatsAppPhone(phone)}</strong>
+                      </div>
+                    </div>
+
+                    {/* Message Detailed View */}
+                    <div className="space-y-1.5">
+                      <span className="text-xs font-semibold text-emerald-900 dark:text-emerald-300 flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3" />
+                        Mensagem relatada pelo cliente:
+                      </span>
+                      <div className="p-3 rounded-md bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/50 text-sm text-slate-900 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
+                        {clientMessage}
+                      </div>
+                    </div>
+
+                    {/* Image Attachment Preview with Zoom */}
+                    {imageUrl && isSafeHttpUrl(imageUrl) && (
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Print/Imagem anexada pelo cliente:
+                        </span>
+                        <div className="relative group w-fit">
+                          <button
+                            type="button"
+                            onClick={() => setZoomedImage({ url: imageUrl, alt: `Print anexado por ${leadName}` })}
+                            className="relative block rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 hover:border-emerald-500 transition-all focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          >
+                            <img
+                              src={imageUrl}
+                              alt={`Print anexado por ${leadName}`}
+                              className="max-h-48 max-w-xs object-cover rounded-md group-hover:scale-105 transition-transform duration-200"
+                            />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-medium gap-1">
+                              <ZoomIn className="w-4 h-4" />
+                              Ampliar Imagem
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Collapsible raw context / stack */}
+                    {hasExtraDetails && (
+                      <div className="pt-2 border-t border-emerald-100 dark:border-emerald-900/40">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-xs font-medium text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/50"
+                          onClick={() => setExpandedEventId(isExpanded ? null : ev.id)}
+                        >
+                          {isExpanded ? "Ocultar Dados Técnicos" : "Ver Dados Técnicos / Contexto"}
+                        </Button>
+
+                        {isExpanded && (
+                          <div className="mt-2 space-y-2">
+                            {ev.errorDetails?.stack && (
+                              <pre className="p-2 rounded bg-slate-950 text-slate-100 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap max-h-40">
+                                {ev.errorDetails.stack}
+                              </pre>
+                            )}
+                            {ev.context && (
+                              <pre className="p-2 rounded bg-slate-900 text-emerald-300 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap max-h-40">
+                                {JSON.stringify(ev.context, null, 2)}
+                              </pre>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            }
+
+            // STANDARD SYSTEM ERROR/EVENT CARD
             return (
               <Card
                 key={ev.id}
@@ -542,6 +854,27 @@ export const PlatformErrorsLogsPage: React.FC = () => {
           })
         )}
       </div>
+
+      {/* Modal / Dialog de Zoom para Prints anexados */}
+      <Dialog open={!!zoomedImage} onOpenChange={(open) => !open && setZoomedImage(null)}>
+        <DialogContent className="max-w-3xl p-3 bg-slate-950 text-white border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-semibold text-slate-200 flex items-center justify-between pr-6">
+              <span>{zoomedImage?.alt || "Visualização de Imagem"}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center p-2 max-h-[80vh] overflow-auto">
+            {zoomedImage && (
+              <img
+                src={zoomedImage.url}
+                alt={zoomedImage.alt}
+                className="max-h-[75vh] w-auto object-contain rounded-md"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+

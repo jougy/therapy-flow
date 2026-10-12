@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { TelegramClient, escapeHtml } from '../_shared/telegram-client.ts';
 import { WhatsAppClient, sanitizeWhatsAppNumber } from '../_shared/whatsapp-client.ts';
+import { getGlobalFeatureFlag } from '../_shared/feature-flags-client.ts';
 
 // Map de rate limiting em memória por chave (IP ou e-mail): máximo 5 disparos por minuto
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -526,25 +527,42 @@ Deno.serve(async (req) => {
         }
       }
 
-      const telegramClient = new TelegramClient();
-      const sendResult = await telegramClient.notifyNewSignup({
-        name,
-        email,
-        phone,
-        profession,
-        councilNumber,
-        councilName,
-        gender,
-        preferredPronoun,
-        origin,
-        signupOrigin: origin,
-        utmSource,
-        utmMedium,
-        utmCampaign,
-        clinicName,
-        plan,
-        createdAt,
-      });
+      // 1. Notificação Telegram do Admin
+      const telegramAdminEnabled = await getGlobalFeatureFlag(
+        adminSupabase,
+        'notifications_telegram_admin',
+        true
+      );
+
+      let sendResult: { success: boolean; skipped?: boolean; error?: string; messageId?: number } = {
+        success: false,
+        skipped: true,
+      };
+
+      if (telegramAdminEnabled) {
+        const telegramClient = new TelegramClient();
+        sendResult = await telegramClient.notifyNewSignup({
+          name,
+          email,
+          phone,
+          profession,
+          councilNumber,
+          councilName,
+          gender,
+          preferredPronoun,
+          origin,
+          signupOrigin: origin,
+          utmSource,
+          utmMedium,
+          utmCampaign,
+          clinicName,
+          plan,
+          createdAt,
+        });
+      } else {
+        console.log('[notify-admin-telegram] Notificação Telegram do Admin ignorada: flag "notifications_telegram_admin" desativada.');
+        sendResult = { success: true, skipped: true };
+      }
 
       // Inserir notificação in-app em lote (O(1) round-trip) em app_notifications para todos os platform_admins ativos
       try {
@@ -593,7 +611,13 @@ Deno.serve(async (req) => {
       let whatsappResult: { success: boolean; skipped?: boolean; error?: string } = { success: false, skipped: true };
       const cleanPhone = sanitizeWhatsAppNumber(phone);
 
-      if (cleanPhone) {
+      const whatsappOnboardingEnabled = await getGlobalFeatureFlag(
+        adminSupabase,
+        'notifications_whatsapp_onboarding',
+        true
+      );
+
+      if (cleanPhone && whatsappOnboardingEnabled) {
         try {
           const whatsAppClient = new WhatsAppClient();
           whatsappResult = await whatsAppClient.sendWelcomeSequence({
@@ -626,6 +650,8 @@ Deno.serve(async (req) => {
         } catch (waErr) {
           console.error('[notify-admin-telegram] Erro ao disparar WhatsApp Welcome Sequence (fail-safe ativado):', waErr);
         }
+      } else if (cleanPhone && !whatsappOnboardingEnabled) {
+        console.log(`[notify-admin-telegram] Welcome Sequence do WhatsApp ignorada: flag "notifications_whatsapp_onboarding" desativada.`);
       }
 
       return new Response(

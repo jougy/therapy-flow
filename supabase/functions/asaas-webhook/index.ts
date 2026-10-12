@@ -3,6 +3,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient } from '../_shared/asaas-client.ts';
 import { TelegramClient } from '../_shared/telegram-client.ts';
 import { WhatsAppClient } from '../_shared/whatsapp-client.ts';
+import { getGlobalFeatureFlag } from '../_shared/feature-flags-client.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -322,14 +323,24 @@ Deno.serve(async (req) => {
           // Disparo de mensagem de agradecimento e confirmação de ativação no WhatsApp do Assinante
           if (subscriberPhone) {
             try {
-              const whatsAppClient = new WhatsAppClient();
-              const waResult = await whatsAppClient.sendPlanThankYouMessage({
-                name: subscriberName,
-                phone: subscriberPhone,
-                planName,
-                clinicName,
-              });
-              console.log(`[asaas-webhook] Mensagem de agradecimento WhatsApp enviada para ${subscriberPhone}:`, waResult);
+              const billingWhatsAppEnabled = await getGlobalFeatureFlag(
+                supabase,
+                'notifications_whatsapp_billing',
+                true
+              );
+
+              if (billingWhatsAppEnabled) {
+                const whatsAppClient = new WhatsAppClient();
+                const waResult = await whatsAppClient.sendPlanThankYouMessage({
+                  name: subscriberName,
+                  phone: subscriberPhone,
+                  planName,
+                  clinicName,
+                });
+                console.log(`[asaas-webhook] Mensagem de agradecimento WhatsApp enviada para ${subscriberPhone}:`, waResult);
+              } else {
+                console.log(`[asaas-webhook] Disparo de WhatsApp de faturamento ignorado: flag "notifications_whatsapp_billing" desativada.`);
+              }
             } catch (waErr) {
               console.error('[asaas-webhook] Erro ao enviar mensagem de agradecimento via WhatsApp (fail-safe ativado):', waErr);
             }

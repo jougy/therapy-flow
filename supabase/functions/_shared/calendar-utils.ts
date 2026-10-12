@@ -164,14 +164,29 @@ export function getNextBusinessDays(count = 5, fromDate?: Date): DayOption[] {
  * - Buffer de segurança: 30 minutos antes e depois de reuniões existentes ativas
  * Complexidade algorítmica: O(K log K) no número de reuniões (K) através de merge de intervalos ordenados.
  */
+export interface AvailabilityOptions {
+  applyThursdayBlock?: boolean;
+  bufferMinutes?: number;
+}
+
 export function getAvailableWindowsForDay(
   dateIso: string,
   existingMeetings: ExistingMeeting[] = [],
-  slotDurationMinutes = 15
+  slotDurationMinutesOrOptions: number | AvailabilityOptions = 15,
+  options?: AvailabilityOptions
 ): { availableWindows: TimeWindow[]; availableSlots: TimeSlot[] } {
   if (!dateIso || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
     return { availableWindows: [], availableSlots: [] };
   }
+
+  const slotDurationMinutes =
+    typeof slotDurationMinutesOrOptions === 'number' ? slotDurationMinutesOrOptions : 15;
+  const resolvedOptions: AvailabilityOptions =
+    typeof slotDurationMinutesOrOptions === 'object' && slotDurationMinutesOrOptions !== null
+      ? slotDurationMinutesOrOptions
+      : options || {};
+
+  const { applyThursdayBlock = true, bufferMinutes = 30 } = resolvedOptions;
 
   const [year, month, day] = dateIso.split('-').map(Number);
   const targetDateUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
@@ -192,15 +207,15 @@ export function getAvailableWindowsForDay(
   // 1. Coleta e normalização de intervalos bloqueados
   const rawBlockedIntervals: Array<{ start: number; end: number }> = [];
 
-  // Bloqueio de Quinta-feira de manhã (até 12:00)
-  if (dayOfWeek === 4) {
+  // Bloqueio de Quinta-feira de manhã (até 12:00) se habilitado
+  if (dayOfWeek === 4 && applyThursdayBlock) {
     rawBlockedIntervals.push({ start: startOfDayMinutes, end: 12 * 60 });
   }
 
   // Almoço diário: 13:00 às 14:00 (780m a 840m)
   rawBlockedIntervals.push({ start: 13 * 60, end: 14 * 60 });
 
-  // Reuniões já agendadas + Buffer de 30min antes e depois
+  // Reuniões já agendadas + Buffer antes e depois (se configurado)
   for (const meeting of existingMeetings) {
     if (!meeting || meeting.status === 'canceled') continue;
 
@@ -210,9 +225,9 @@ export function getAvailableWindowsForDay(
     const duration = Math.max(5, Math.min(meeting.duration_minutes || 15, 240));
     const meetingEndMinutes = meetingStartMinutes + duration;
 
-    // Buffer defensivo de 30min antes e 30min depois
-    const bufferBefore = 30;
-    const bufferAfter = 30;
+    // Buffer defensivo configurável antes e depois
+    const bufferBefore = Math.max(0, bufferMinutes);
+    const bufferAfter = Math.max(0, bufferMinutes);
 
     const blockStart = Math.max(startOfDayMinutes, meetingStartMinutes - bufferBefore);
     const blockEnd = Math.min(endOfDayMinutes, meetingEndMinutes + bufferAfter);
@@ -322,7 +337,8 @@ export function validateSelectedTime(
   dateIso: string,
   userTimeInput: string,
   existingMeetings: ExistingMeeting[] = [],
-  slotDurationMinutes = 15
+  slotDurationMinutesOrOptions: number | AvailabilityOptions = 15,
+  options?: AvailabilityOptions
 ): { isValid: boolean; normalizedTime: string; dateObj?: Date; errorMessage?: string } {
   const minutes = parseTimeToMinutes(userTimeInput);
   if (minutes === null) {
@@ -333,7 +349,19 @@ export function validateSelectedTime(
     };
   }
 
-  const { availableSlots } = getAvailableWindowsForDay(dateIso, existingMeetings, slotDurationMinutes);
+  const slotDurationMinutes =
+    typeof slotDurationMinutesOrOptions === 'number' ? slotDurationMinutesOrOptions : 15;
+  const resolvedOptions: AvailabilityOptions =
+    typeof slotDurationMinutesOrOptions === 'object' && slotDurationMinutesOrOptions !== null
+      ? slotDurationMinutesOrOptions
+      : options || {};
+
+  const { availableSlots } = getAvailableWindowsForDay(
+    dateIso,
+    existingMeetings,
+    slotDurationMinutes,
+    resolvedOptions
+  );
   const normalizedTime = formatMinutesToTime(minutes);
 
   // Verifica se o slot exato ou compatível está disponível

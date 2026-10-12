@@ -8,6 +8,8 @@ import {
   formatPhoneDisplay,
   getGoogleCalendarUrl,
   getWhatsAppLink,
+  getWhatsAppReminderLink,
+  isWhatsAppCopilotOrigin,
 } from "@/components/platform/agenda/agenda-utils";
 import type { OnboardingMeeting } from "@/components/platform/agenda/types";
 
@@ -27,7 +29,9 @@ const mockMeetings: OnboardingMeeting[] = [
     duration_minutes: 15,
     status: "scheduled",
     meet_url: "https://meet.google.com/abc-defg-hij",
-    notes: "Lead interessado em prontuário eletrônico e plano com 3 fisioterapeutas.",
+    notes: "Agendado via WhatsApp Bot. Lead interessado em prontuário eletrônico e plano com 3 fisioterapeutas.",
+    origin: "whatsapp_copilot",
+    confirmation_channel: "whatsapp",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -165,6 +169,26 @@ describe("Agenda Master Utilities", () => {
     expect(rel.isToday).toBe(true);
     expect(rel.label).toContain("Hoje às");
   });
+
+  it("generates WhatsApp reminder link with formatted date and confirmation prompt", () => {
+    const meeting = mockMeetings[0];
+    const reminderUrl = getWhatsAppReminderLink(meeting);
+    expect(reminderUrl).toContain("https://wa.me/5511987654321");
+    expect(decodeURIComponent(reminderUrl)).toContain("Lembramos da nossa reunião de onboarding");
+    expect(decodeURIComponent(reminderUrl)).toContain("1 para Confirmar");
+  });
+
+  it("detects WhatsApp Copilot origin correctly from origin property or notes", () => {
+    expect(isWhatsAppCopilotOrigin(mockMeetings[0])).toBe(true);
+    expect(isWhatsAppCopilotOrigin(mockMeetings[1])).toBe(false);
+
+    const meetingWithNotesOrigin: OnboardingMeeting = {
+      ...mockMeetings[1],
+      origin: null,
+      notes: "Criado automaticamente pelo WhatsApp Copilot.",
+    };
+    expect(isWhatsAppCopilotOrigin(meetingWithNotesOrigin)).toBe(true);
+  });
 });
 
 describe("PlatformAgendaMaster Component", () => {
@@ -197,8 +221,20 @@ describe("PlatformAgendaMaster Component", () => {
       const waButtons = screen.getAllByText("Chamar no WhatsApp");
       expect(waButtons.length).toBeGreaterThan(0);
 
+      const reminderButtons = screen.getAllByText("Disparar Lembrete");
+      expect(reminderButtons.length).toBeGreaterThan(0);
+
       const gcalButtons = screen.getAllByText("Abrir no Google Calendar");
       expect(gcalButtons.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("renders WhatsApp Copilot origin badge for meetings scheduled/confirmed via WhatsApp", async () => {
+    render(<PlatformAgendaMaster />);
+
+    await waitFor(() => {
+      const copilotBadges = screen.getAllByText("origem: WhatsApp Copilot");
+      expect(copilotBadges.length).toBeGreaterThan(0);
     });
   });
 
@@ -249,3 +285,4 @@ describe("PlatformAgendaMaster Component", () => {
     });
   });
 });
+

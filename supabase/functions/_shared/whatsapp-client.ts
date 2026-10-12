@@ -53,6 +53,17 @@ export interface SendButtonsOptions {
   buttons: WhatsAppButton[];
 }
 
+export interface SendFlowMessageOptions {
+  flowId?: string;
+  flowToken?: string;
+  buttonText?: string; // ex: "⚡ Abrir Formulário" (máx 20 chars para Meta)
+  screenId?: string; // default "SCREEN_PATIENT_INFO"
+  flowActionPayload?: Record<string, unknown>;
+  title?: string;
+  footer?: string;
+  includeFallbackNotice?: boolean;
+}
+
 export interface WhatsAppTemplateComponent {
   type: 'header' | 'body' | 'button';
   sub_type?: 'quick_reply' | 'url';
@@ -730,6 +741,136 @@ export class WhatsAppClient {
     fallbackText += '_(Responda digitando o número ou o dia desejado)_';
 
     return await this.sendTextMessage(cleanNumber, fallbackText.trim());
+  }
+
+  /**
+   * Envia uma mensagem com WhatsApp Flow interativo (Meta WhatsApp Cloud API v19.0+ Flows v3.0 / v3.1)
+   * Suporta modelo híbrido: texto já inclui instrução de fallback para o chat.
+   * Se o envio do Flow falhar ou o provedor for Evolution, dispara fallback automático
+   * com botões ou texto guiado.
+   */
+  async sendFlowMessage(
+    to: string,
+    messageText: string,
+    options?: SendFlowMessageOptions
+  ): Promise<WhatsAppResponse> {
+    const cleanNumber = sanitizeWhatsAppNumber(to);
+    if (!cleanNumber) {
+      return { success: false, error: 'Número de telefone inválido ou fora dos padrões E.164.' };
+    }
+
+    const flowId =
+      options?.flowId ||
+      Deno.env.get('META_WHATSAPP_FLOW_ID') ||
+      Deno.env.get('WHATSAPP_FLOW_ID') ||
+      '';
+
+    const flowToken =
+      options?.flowToken ||
+      `flow_token_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    const buttonText = sanitizeMessageInput(options?.buttonText || '⚡ Abrir Formulário', 20);
+    const screenId = options?.screenId || 'SCREEN_PATIENT_INFO';
+    const flowActionPayload = options?.flowActionPayload || { screen: screenId };
+
+    // Modelo Híbrido: instrução clara de fallback no corpo da mensagem
+    let finalBodyText = sanitizeMessageInput(messageText, 4000);
+    const fallbackNotice =
+      '\n\n💡 _Se o formulário não abrir no seu WhatsApp, toque no botão abaixo ou responda *1* para preencher conversando diretamente no chat!_';
+
+    if (options?.includeFallbackNotice !== false && !finalBodyText.includes('não abrir no seu WhatsApp')) {
+      finalBodyText += fallbackNotice;
+    }
+
+    if (!this.isConfigured()) {
+      console.warn(
+        `[whatsapp-client] Credenciais de WhatsApp (${this.provider}) não configuradas. Envio de Flow para ${cleanNumber} ignorado com fail-safe.`
+      );
+      return { success: false, skipped: true, error: 'Credenciais de WhatsApp não configuradas.' };
+    }
+
+    // 1. Envio de Flow nativo na Meta Cloud API
+    if (this.provider === 'meta_cloud' && flowId) {
+      try {
+        const url = `${this.apiUrl}/${encodeURIComponent(this.phoneNumberId)}/messages`;
+
+        const interactivePayload: Record<string, unknown> = {
+          type: 'flow',
+          body: {
+            text: finalBodyText,
+          },
+          action: {
+            name: 'flow',
+            parameters: {
+              flow_message_version: '3',
+              flow_token: flowToken,
+              flow_id: flowId,
+              flow_cta: buttonText,
+              flow_action: 'navigate',
+              flow_action_payload: flowActionPayload,
+            },
+          },
+        };
+
+        if (options?.title) {
+          interactivePayload.header = {
+            type: 'text',
+            text: sanitizeMessageInput(options.title, 60),
+          };
+        }
+
+        if (options?.footer) {
+          interactivePayload.footer = {
+            text: sanitizeMessageInput(options.footer, 60),
+          };
+        }
+
+        const payload = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: cleanNumber,
+          type: 'interactive',
+          interactive: interactivePayload,
+        };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(8000),
+        });
+
+        const responseData = await response.json().catch(() => null);
+
+        if (response.ok && responseData?.messages?.[0]?.id) {
+          return {
+            success: true,
+            messageId: responseData.messages[0].id,
+            data: responseData,
+          };
+        }
+
+        console.warn(
+          `[whatsapp-client] Envio de WhatsApp Flow falhou (${response.status}):`,
+          responseData?.error?.message || 'Erro desconhecido. Ativando fallback para chat...'
+        );
+      } catch (flowErr) {
+        console.warn('[whatsapp-client] Exceção ao enviar Flow da Meta. Ativando fallback conversacional:', flowErr);
+      }
+    }
+
+    // 2. Fallback Híbrido Resiliente: Se Flow não estiver configurado ou falhar, envia botões de contingência
+    return await this.sendButtonsMessage(cleanNumber, finalBodyText, {
+      title: options?.title || 'Pré-Cadastro de Paciente',
+      footer: options?.footer || 'PluriFisio',
+      buttons: [
+        { id: 'btn_flow_fallback_chat', label: '💬 Preencher no Chat' },
+        { id: 'btn_owner_menu', label: '🏠 Menu Principal' },
+      ],
+    });
   }
 
   /**

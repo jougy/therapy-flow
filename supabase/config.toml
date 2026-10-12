@@ -50,3 +50,5 @@ verify_jwt = false
 [functions.send-auth-confirmation]
 verify_jwt = false
 
+[functions.whatsapp-webhook]
+verify_jwt = false

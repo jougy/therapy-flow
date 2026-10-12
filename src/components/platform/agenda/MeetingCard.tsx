@@ -16,6 +16,8 @@ import {
   UserX,
   Edit,
   Sparkles,
+  Bell,
+  Bot,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +38,8 @@ import {
   formatPhoneDisplay,
   getGoogleCalendarUrl,
   getWhatsAppLink,
+  getWhatsAppReminderLink,
+  isWhatsAppCopilotOrigin,
 } from "./agenda-utils";
 
 interface MeetingCardProps {
@@ -43,6 +47,7 @@ interface MeetingCardProps {
   onStatusChange: (meetingId: string, newStatus: MeetingStatus) => Promise<void>;
   onEditNotes: (meeting: OnboardingMeeting) => void;
   onReschedule: (meeting: OnboardingMeeting) => void;
+  onSendReminder?: (meeting: OnboardingMeeting) => void;
 }
 
 export const MeetingCard: React.FC<MeetingCardProps> = ({
@@ -50,13 +55,16 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({
   onStatusChange,
   onEditNotes,
   onReschedule,
+  onSendReminder,
 }) => {
   const statusCfg = MEETING_STATUS_CONFIG[meeting.status] || MEETING_STATUS_CONFIG.scheduled;
   const StatusIcon = statusCfg.icon;
   const formattedFullDate = formatMeetingDateTimeFull(meeting.scheduled_at);
   const relativeDate = formatMeetingRelative(meeting.scheduled_at);
   const waUrl = getWhatsAppLink(meeting.phone, meeting.lead_name);
+  const reminderUrl = getWhatsAppReminderLink(meeting);
   const gcalUrl = getGoogleCalendarUrl(meeting);
+  const isWhatsAppOrigin = isWhatsAppCopilotOrigin(meeting);
 
   return (
     <Card
@@ -76,6 +84,16 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({
               {relativeDate.isToday && (
                 <Badge className="bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-300/50 text-[11px] font-bold animate-pulse">
                   Hoje
+                </Badge>
+              )}
+              {isWhatsAppOrigin && (
+                <Badge
+                  variant="outline"
+                  className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-300/60 dark:border-emerald-800/80 text-[11px] font-semibold gap-1 shadow-2xs"
+                  title="Atendimento com origem e confirmação feitas via WhatsApp Copilot"
+                >
+                  <Bot className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>origem: WhatsApp Copilot</span>
                 </Badge>
               )}
             </div>
@@ -218,6 +236,27 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({
             <a href={waUrl} target="_blank" rel="noopener noreferrer">
               <MessageCircle className="h-3.5 w-3.5 text-emerald-600 fill-emerald-500/20 shrink-0" />
               <span>Chamar no WhatsApp</span>
+            </a>
+          </Button>
+
+          {/* Quick Reminder via WhatsApp (1-click) */}
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="border-teal-300 dark:border-teal-800/80 bg-teal-50/50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-950/40 text-xs font-semibold gap-1.5 shadow-2xs"
+            title="Disparar lembrete de confirmação via WhatsApp para o lead/paciente em 1 clique"
+          >
+            <a
+              href={reminderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                if (onSendReminder) onSendReminder(meeting);
+              }}
+            >
+              <Bell className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+              <span>Disparar Lembrete</span>
             </a>
           </Button>
 
