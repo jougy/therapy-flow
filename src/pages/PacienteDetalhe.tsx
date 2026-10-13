@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
-  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown, Baby
+  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown, Baby, Activity, FileCheck2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -54,6 +54,7 @@ import { toast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { createTrashToastAction } from "@/lib/trashUtils";
 import { logRuntimeError } from "@/lib/runtime-debug";
+import { cn } from "@/lib/utils";
 import { fetchPatientByRef, getPatientRouteKey, getClinicPatientPath, getPatientPath, getPatientSessionPath } from "@/lib/patient-routing";
 import {
   usePatientDetailQuery,
@@ -1305,6 +1306,57 @@ const PacienteDetalhe = () => {
   const [mobileStatusSheetOpen, setMobileStatusSheetOpen] = useState(false);
   const [mobileTermsSheetOpen, setMobileTermsSheetOpen] = useState(false);
   const [mobileFilterDrawerOpen, setMobileFilterDrawerOpen] = useState(false);
+
+  const handleStartAttendanceNow = async () => {
+    if (!patient || !user) return;
+
+    if (upcomingAgendaEvent) {
+      navigate(getPatientSessionPath(patient || id, "novo"), {
+        state: {
+          agendaEventId: upcomingAgendaEvent.id,
+          scheduledFor: upcomingAgendaEvent.scheduled_for,
+        },
+      });
+      return;
+    }
+
+    const effectiveClinicId = clinicId || patient.clinic_id;
+
+    try {
+      const now = new Date();
+      const { data, error } = await supabase
+        .from("agenda_events")
+        .insert({
+          clinic_id: effectiveClinicId,
+          event_type: "atendimento",
+          patient_id: patient.id,
+          scheduled_for: now.toISOString(),
+          status: "confirmado",
+          title: patient.name,
+          user_id: user.id,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      notifyAgendaEventsUpdated();
+
+      navigate(getPatientSessionPath(patient || id, "novo"), {
+        state: {
+          agendaEventId: data.id,
+          scheduledFor: data.scheduled_for,
+        },
+      });
+    } catch (err) {
+      logRuntimeError("patient_detail.start_attendance_now_agenda_fallback", err);
+      // Resiliência clínica: se o registro na agenda falhar (permissão de colaborador, RLS ou offline),
+      // não bloqueia o início do atendimento médico/fisioterapêutico
+      navigate(getPatientSessionPath(patient || id, "novo"));
+    }
+  };
 
   const handleMobileTabChange = useCallback((tab: PatientMobileTab) => {
     setMobileTab(tab);
@@ -2812,57 +2864,6 @@ const PacienteDetalhe = () => {
     });
   };
 
-  const handleStartAttendanceNow = async () => {
-    if (!patient || !user) return;
-
-    if (upcomingAgendaEvent) {
-      navigate(getPatientSessionPath(patient || id, "novo"), {
-        state: {
-          agendaEventId: upcomingAgendaEvent.id,
-          scheduledFor: upcomingAgendaEvent.scheduled_for,
-        },
-      });
-      return;
-    }
-
-    const effectiveClinicId = clinicId || patient.clinic_id;
-
-    try {
-      const now = new Date();
-      const { data, error } = await supabase
-        .from("agenda_events")
-        .insert({
-          clinic_id: effectiveClinicId,
-          event_type: "atendimento",
-          patient_id: patient.id,
-          scheduled_for: now.toISOString(),
-          status: "confirmado",
-          title: patient.name,
-          user_id: user.id,
-        })
-        .select("*")
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      notifyAgendaEventsUpdated();
-
-      navigate(getPatientSessionPath(patient || id, "novo"), {
-        state: {
-          agendaEventId: data.id,
-          scheduledFor: data.scheduled_for,
-        },
-      });
-    } catch (err) {
-      logRuntimeError("patient_detail.start_attendance_now_agenda_fallback", err);
-      // Resiliência clínica: se o registro na agenda falhar (permissão de colaborador, RLS ou offline),
-      // não bloqueia o início do atendimento médico/fisioterapêutico
-      navigate(getPatientSessionPath(patient || id, "novo"));
-    }
-  };
-
   return (
     <PatientFilesProvider patientId={patient?.id || id!} clinicId={clinicId}>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-4 sm:space-y-6 pb-24 md:pb-6">
@@ -2882,9 +2883,9 @@ const PacienteDetalhe = () => {
             </Button>
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground leading-none">Paciente</p>
-              <h1 className="text-base font-bold tracking-tight text-foreground truncate max-w-[200px] xs:max-w-[240px] mt-0.5">
+              <p className="text-base font-bold tracking-tight text-foreground truncate max-w-[200px] xs:max-w-[240px] mt-0.5">
                 {patient.name}
-              </h1>
+              </p>
             </div>
           </div>
 
@@ -2906,7 +2907,7 @@ const PacienteDetalhe = () => {
                 <Button
                   variant="outline"
                   size="icon"
-                  aria-label="Mais opções"
+                  aria-label="Mais opções mobile"
                   className="h-8 w-8 rounded-lg border-border/80 bg-background text-foreground shrink-0"
                 >
                   <MoreHorizontal className="h-4 w-4" />
