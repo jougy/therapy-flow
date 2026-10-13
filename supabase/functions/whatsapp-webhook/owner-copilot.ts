@@ -1,6 +1,6 @@
 // supabase/functions/whatsapp-webhook/owner-copilot.ts
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
-import { WhatsAppClient, WhatsAppListSection, sanitizeMessageInput, sanitizeWhatsAppNumber } from '../_shared/whatsapp-client.ts';
+import { WhatsAppClient, WhatsAppListSection, WhatsAppListRow, sanitizeMessageInput, sanitizeWhatsAppNumber } from '../_shared/whatsapp-client.ts';
 import { TelegramClient, escapeHtml } from '../_shared/telegram-client.ts';
 import {
   getNextBusinessDays,
@@ -32,6 +32,83 @@ export const RESTRICTED_NON_OWNER_MESSAGE =
   'Olá! O copiloto de gestão via WhatsApp é uma ferramenta exclusiva para titulares e responsáveis pelas clínicas no PluriFisio.\n\n' +
   'Para acessar seus atendimentos, prontuários e agenda, acesse a plataforma web: https://app.plurifisio.com.br\n\n' +
   'Se você precisa de ajuda com seu acesso, entre em contato com o responsável pela sua clínica.';
+
+const MAX_COMMAND_LENGTH = 60;
+
+/**
+ * Conjunto estático de comandos de cancelamento e escape (alocado uma única vez na inicialização do módulo).
+ */
+const GLOBAL_CANCEL_COMMANDS = new Set([
+  'cancelar',
+  'cancela',
+  'cancel',
+  'desistir',
+  'desisto',
+  'sair',
+  'parar',
+  'interromper',
+  'abortar',
+  'menu',
+  'inicio',
+  'comecar',
+  'opcoes',
+]);
+
+/**
+ * Conjunto estático de comandos de retorno (alocado uma única vez na inicialização do módulo).
+ */
+const GLOBAL_BACK_COMMANDS = new Set([
+  'voltar',
+  'volta',
+  'anterior',
+  'retornar',
+  'passo anterior',
+  'voltar atras',
+]);
+
+/**
+ * Normaliza texto removendo acentos, pontuação, múltiplos espaços e convertendo para minúsculas.
+ * Executa em O(M) estrito com limitador de tamanho contra ReDoS / buffer abuse.
+ */
+export function normalizeCommandText(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  // Se o texto for maior que o tamanho máximo esperado para um comando curto, não normaliza além do limite
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_COMMAND_LENGTH) {
+    return '';
+  }
+
+  return trimmed
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .toLowerCase()
+    .replace(/[^\w\s]/gi, ' ') // remove pontuações mantendo palavras e espaços
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Reconhece comandos globais de cancelamento e escape:
+ * 'cancelar', 'cancela', 'cancel', 'desistir', 'desisto', 'sair', 'parar', 'interromper', 'abortar',
+ * 'menu', 'inicio', 'início', 'comecar', 'começar', 'opcoes', 'opções'.
+ * Complexidade: O(M) com busca em Set estático O(1).
+ */
+export function isGlobalCancelCommand(text: string): boolean {
+  const normalized = normalizeCommandText(text);
+  if (!normalized) return false;
+  return GLOBAL_CANCEL_COMMANDS.has(normalized);
+}
+
+/**
+ * Reconhece comandos globais de retorno:
+ * 'voltar', 'volta', 'anterior', 'retornar', 'passo anterior', 'voltar atras', 'voltar atrás'.
+ * Complexidade: O(M) com busca em Set estático O(1).
+ */
+export function isGlobalBackCommand(text: string): boolean {
+  const normalized = normalizeCommandText(text);
+  if (!normalized) return false;
+  return GLOBAL_BACK_COMMANDS.has(normalized);
+}
 
 /**
  * Envia o Menu Principal Interativo do Copiloto do Titular (Meta List Message)
@@ -964,6 +1041,79 @@ export async function handleQuickPatientPreRegistrationFlow(
 ): Promise<{ nextStep: string; updatedStateData: PreRegistrationStateData; handled: boolean }> {
   const stateData: PreRegistrationStateData = { ...existingStateData };
   const trimmedText = (userText || '').trim();
+  const hasButtonReply = Boolean(selectedButtonId && selectedButtonId.trim().length > 0);
+
+  // Anti-conflito: só processa cancelamento/retorno por texto se NÃO foi clique de botão
+  if (!hasButtonReply && trimmedText) {
+    // 1. Comando Global de Cancelamento
+    if (isGlobalCancelCommand(trimmedText)) {
+      await whatsAppClient.sendButtonsMessage(
+        phone,
+        'Pré-cadastro cancelado. O que deseja fazer agora?',
+        {
+          buttons: [
+            { id: 'btn_menu_records', label: '🩺 Prontuário' },
+            { id: 'btn_owner_menu', label: '🏠 Menu Principal' },
+          ],
+        }
+      );
+      return { nextStep: 'initial', updatedStateData: {}, handled: true };
+    }
+
+    // 2. Comando Global de Voltar
+    if (isGlobalBackCommand(trimmedText)) {
+      // Se estiver em precad_waiting_email -> Volta para precad_waiting_phone
+      if (currentStep === 'precad_waiting_email') {
+        const phonePrompt = `Digite o *Telefone/WhatsApp de Contato* do paciente (ou digite *0* se não possuir):`;
+        await whatsAppClient.sendTextMessage(phone, phonePrompt);
+        return { nextStep: 'precad_waiting_phone', updatedStateData: stateData, handled: true };
+      }
+
+      // Se estiver em precad_waiting_phone -> Volta para documento
+      if (currentStep === 'precad_waiting_phone') {
+        if (stateData.isMinor) {
+          const minorPrompt =
+            `👶 *Paciente menor de 18 anos*.\n\n` +
+            `Por favor, digite o *CPF do Responsável Legal* (somente números ou com pontos e traço):`;
+          await whatsAppClient.sendTextMessage(phone, minorPrompt);
+          return { nextStep: 'precad_waiting_minor_parent_cpf', updatedStateData: stateData, handled: true };
+        } else {
+          const docType = stateData.documentType || 'CPF';
+          const askDocNum = `Por favor, digite o *Número do ${docType}* do paciente:`;
+          await whatsAppClient.sendTextMessage(phone, askDocNum);
+          return { nextStep: 'precad_waiting_doc_number', updatedStateData: stateData, handled: true };
+        }
+      }
+
+      // Se estiver em precad_waiting_doc_number ou precad_waiting_minor_parent_cpf ou precad_waiting_doc_type -> Volta para precad_waiting_birthdate
+      if (
+        currentStep === 'precad_waiting_doc_number' ||
+        currentStep === 'precad_waiting_minor_parent_cpf' ||
+        currentStep === 'precad_waiting_doc_type'
+      ) {
+        const askBirth =
+          `Paciente: *${stateData.patientName || 'Não informado'}*.\n\n` +
+          `Digite a *Data de Nascimento* no formato *DD/MM/AAAA* (exemplo: 15/04/1995):`;
+        await whatsAppClient.sendTextMessage(phone, askBirth);
+        return { nextStep: 'precad_waiting_birthdate', updatedStateData: stateData, handled: true };
+      }
+
+      // Se estiver em precad_waiting_birthdate -> Volta para precad_waiting_name
+      if (currentStep === 'precad_waiting_birthdate') {
+        const prompt =
+          `⚡ *Pré-Cadastro Rápido de Paciente*\n\n` +
+          `Por favor, digite o *Nome Completo* do paciente:`;
+        await whatsAppClient.sendTextMessage(phone, prompt);
+        return { nextStep: 'precad_waiting_name', updatedStateData: stateData, handled: true };
+      }
+
+      // Se estiver em precad_waiting_name -> Volta para o menu de Prontuários (sendRecordsMenu)
+      if (currentStep === 'precad_waiting_name' || currentStep === 'records_quick_patient') {
+        await sendRecordsMenu(whatsAppClient, phone, context);
+        return { nextStep: 'initial', updatedStateData: {}, handled: true };
+      }
+    }
+  }
 
   // Início do fluxo: precad_waiting_name
   if (currentStep === 'records_quick_patient' || currentStep === 'precad_waiting_name') {
@@ -1404,6 +1554,8 @@ export interface AgendaStateData {
   time?: string;
   collaborators?: string;
   durationMinutes?: number;
+  editingEventId?: string;
+  editingField?: 'date' | 'time' | 'collaborators';
 }
 
 /**
@@ -1497,7 +1649,8 @@ export async function sendNewAppointmentTypeMenu(
 export async function loadExistingMeetingsForClinicDay(
   supabase: SupabaseClient,
   clinicId: string,
-  dateIso: string
+  dateIso: string,
+  excludeEventId?: string
 ): Promise<ExistingMeeting[]> {
   const [year, month, day] = dateIso.split('-').map(Number);
   const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0)).toISOString();
@@ -1505,13 +1658,18 @@ export async function loadExistingMeetingsForClinicDay(
 
   const { data: events } = await supabase
     .from('agenda_events')
-    .select('scheduled_for, duration_minutes, status')
+    .select('id, scheduled_for, duration_minutes, status')
     .eq('clinic_id', clinicId)
     .gte('scheduled_for', startOfDay)
     .lte('scheduled_for', endOfDay)
     .neq('status', 'cancelado');
 
-  const meetings: ExistingMeeting[] = (events || []).map((e) => ({
+  const filteredEvents = (events || []).filter((e) => {
+    if (excludeEventId && e.id === excludeEventId) return false;
+    return true;
+  });
+
+  const meetings: ExistingMeeting[] = filteredEvents.map((e) => ({
     scheduled_at: e.scheduled_for,
     duration_minutes: e.duration_minutes || 60,
     status: e.status,
@@ -1569,8 +1727,10 @@ export async function handleAgendaCreationFlow(
   const updatedData: AgendaStateData = { ...stateData };
   const trimmedText = userText.trim();
 
-  // Cancelamento ou saída imediata
-  if (selectedButtonId === 'agenda_cancel_flow' || trimmedText.toLowerCase() === 'cancelar') {
+  const hasButtonReply = Boolean(selectedButtonId && selectedButtonId.trim().length > 0);
+
+  // 1. Cancelamento explícito via botão ou comando global de cancelamento por texto
+  if (selectedButtonId === 'agenda_cancel_flow' || (!hasButtonReply && trimmedText && isGlobalCancelCommand(trimmedText))) {
     await whatsAppClient.sendButtonsMessage(
       phone,
       'Operação de agendamento cancelada. O que você gostaria de fazer agora?',
@@ -1582,6 +1742,45 @@ export async function handleAgendaCreationFlow(
       }
     );
     return { handled: true, nextStep: 'initial', updatedStateData: {} };
+  }
+
+  // 2. Comando Global de Retorno ('voltar') por texto (sem conflito com botões)
+  if (!hasButtonReply && trimmedText && isGlobalBackCommand(trimmedText)) {
+    // Se estiver em agenda_waiting_collab -> Volta para a digitação de Horário (agenda_waiting_time)
+    if (currentStep === 'agenda_waiting_collab' || currentStep === 'agenda_waiting_collab_text') {
+      const dateDisplay = updatedData.dateDisplay || updatedData.dateIso || '';
+      const promptHorario =
+        `📅 *Data Selecionada:* ${dateDisplay}\n\n` +
+        `👉 Por favor, *digite o horário desejado* no formato *hh:mm* (ex: 09:30, 14:00, 16:30):`;
+      await whatsAppClient.sendTextMessage(phone, promptHorario);
+      return { handled: true, nextStep: 'agenda_waiting_time', updatedStateData: updatedData };
+    }
+
+    // Se estiver em agenda_waiting_time -> Volta para a seleção de Data (agenda_waiting_date), limpando o horário anterior
+    if (currentStep === 'agenda_waiting_time') {
+      delete updatedData.time;
+      await sendAgendaDateSelectionList(whatsAppClient, phone, 'Data do Agendamento');
+      return { handled: true, nextStep: 'agenda_waiting_date', updatedStateData: updatedData };
+    }
+
+    // Se estiver em agenda_waiting_date -> Volta para a seleção de tipo de agendamento (agenda_select_type)
+    if (currentStep === 'agenda_waiting_date') {
+      delete updatedData.dateIso;
+      delete updatedData.dateDisplay;
+      delete updatedData.time;
+      await sendNewAppointmentTypeMenu(whatsAppClient, phone, userName);
+      return { handled: true, nextStep: 'agenda_select_type', updatedStateData: updatedData };
+    }
+
+    // Se estiver em agenda_waiting_patient_cpf ou agenda_waiting_event_title -> Cancela o fluxo e volta para o menu de Agenda (sendAgendaMenu)
+    if (
+      currentStep === 'agenda_waiting_patient_cpf' ||
+      currentStep === 'agenda_waiting_event_title' ||
+      currentStep === 'agenda_select_type'
+    ) {
+      await sendAgendaMenu(whatsAppClient, phone, context);
+      return { handled: true, nextStep: 'initial', updatedStateData: {} };
+    }
   }
 
   // -------------------------------------------------------------
@@ -1717,17 +1916,22 @@ export async function handleAgendaCreationFlow(
       : [];
 
     const { availableWindows } = getAvailableWindowsForDay(dateIso, existingMeetings, 30, {
-      applyThursdayBlock: true,
-      bufferMinutes: 15,
+      mode: 'clinic_owner',
+      applyThursdayBlock: false,
+      applyLunchBlock: false,
+      allowWeekends: true,
+      bufferMinutes: 0,
     });
 
-    const windowsText = formatAvailableWindowsText(availableWindows);
+    const windowsText = existingMeetings.length === 0
+      ? 'Agenda 100% livre! Você pode agendar em qualquer horário (06:00 às 22:00).'
+      : formatAvailableWindowsText(availableWindows);
 
     const promptHorario =
       `📅 *Data Selecionada:* ${dateDisplay} (${dateIso})\n\n` +
       `🕒 *Horários disponíveis nesta data:*\n` +
       `${windowsText}\n\n` +
-      `👉 Por favor, *digite o horário desejado* no formato *hh:mm* (ex: 09:30, 14:00, 16:30):`;
+      `👉 Por favor, *digite o horário desejado* no formato *hh:mm* (ex: 09:30, 13:00, 14:00, 16:30):`;
 
     await whatsAppClient.sendTextMessage(phone, promptHorario);
     return { handled: true, nextStep: 'agenda_waiting_time', updatedStateData: updatedData };
@@ -1748,8 +1952,11 @@ export async function handleAgendaCreationFlow(
       : [];
 
     const timeValidation = validateSelectedTime(dateIso, trimmedText, existingMeetings, 30, {
-      applyThursdayBlock: true,
-      bufferMinutes: 15,
+      mode: 'clinic_owner',
+      applyThursdayBlock: false,
+      applyLunchBlock: false,
+      allowWeekends: true,
+      bufferMinutes: 0,
     });
 
     if (!timeValidation.isValid) {
@@ -2073,6 +2280,7 @@ export async function handleAgendaNext(
       .from('patients')
       .select('name, phone')
       .eq('id', event.patient_id)
+      .eq('clinic_id', clinicId)
       .maybeSingle();
 
     if (pat) {
@@ -2093,32 +2301,104 @@ export async function handleAgendaNext(
     `🗓️ *Data:* ${dateStr}\n` +
     `🕒 *Horário:* ${timeStr} (${event.duration_minutes || 60} min)\n` +
     `📊 *Status Atual:* ${event.status.toUpperCase()}\n\n` +
-    `O que você deseja fazer com este compromisso?`;
+    `Selecione uma ação rápida abaixo para gerenciar ou atualizar este compromisso:`;
 
-  // 3 Botões interativos de ação rápida com ID do evento
-  await whatsAppClient.sendButtonsMessage(phone, cardText, {
-    title: 'Ações Rápidas do Atendimento',
-    footer: 'PluriFisio',
-    buttons: [
-      { id: `appt_confirm_${event.id}`, label: '✅ Confirmar' },
-      { id: `appt_cancel_${event.id}`, label: '❌ Cancelar' },
-      { id: `appt_resched_${event.id}`, label: '🔄 Remarcar' },
-    ],
+  const editRows: WhatsAppListRow[] = [
+    {
+      id: `appt_edit_date_${event.id}`,
+      title: '📅 Alterar Data',
+      description: 'Escolher nova data para este agendamento',
+    },
+    {
+      id: `appt_edit_time_${event.id}`,
+      title: '🕒 Alterar Horário',
+      description: 'Ver horários livres e alterar horário',
+    },
+  ];
+
+  // Se plano Clínica com Equipe (isClinicPlan), incluir Colaboradores
+  if (context.isClinicPlan) {
+    editRows.push({
+      id: `appt_edit_collab_${event.id}`,
+      title: '👥 Colaboradores',
+      description: 'Adicionar ou alterar equipe participante',
+    });
+  }
+
+  editRows.push({
+    id: `appt_back_menu_${event.id}`,
+    title: '↩️ Voltar',
+    description: 'Retornar ao submenu da agenda',
+  });
+
+  const sections: WhatsAppListSection[] = [
+    {
+      title: 'Mudar Status',
+      rows: [
+        {
+          id: `appt_status_confirm_${event.id}`,
+          title: '🟢 Confirmar',
+          description: 'Atualizar status para confirmado',
+        },
+        {
+          id: `appt_status_cancel_${event.id}`,
+          title: '🔴 Cancelar',
+          description: 'Desmarcar e liberar o horário',
+        },
+        {
+          id: `appt_status_complete_${event.id}`,
+          title: '✅ Concluir',
+          description: 'Marcar atendimento como concluído',
+        },
+        {
+          id: `appt_status_awaiting_${event.id}`,
+          title: '⏳ Aguardando',
+          description: 'Marcar como aguardando confirmação',
+        },
+        {
+          id: `appt_status_delete_${event.id}`,
+          title: '🗑️ Excluir',
+          description: 'Remover agendamento permanentemente',
+        },
+      ],
+    },
+    {
+      title: 'Editar Informação',
+      rows: editRows,
+    },
+  ];
+
+  await whatsAppClient.sendListMessage(phone, cardText, 'Ações Rápidas', sections, {
+    title: 'Ações Rápidas',
+    footer: 'PluriFisio Agenda',
   });
 }
 
+export type AppointmentActionType =
+  | 'confirm'
+  | 'cancel'
+  | 'reschedule'
+  | 'complete'
+  | 'awaiting'
+  | 'delete';
+
 /**
- * Ações Rápidas no Atendimento: Confirmar, Cancelar, Remarcar
+ * Ações Rápidas no Atendimento: Confirmar, Cancelar, Concluir, Aguardando, Excluir, Remarcar
  */
 export async function handleAppointmentAction(
   supabase: SupabaseClient,
   whatsAppClient: WhatsAppClient,
   phone: string,
   context: OwnerCustomerContext,
-  action: 'confirm' | 'cancel' | 'reschedule',
+  action: AppointmentActionType,
   eventId: string
 ): Promise<{ success: boolean; message?: string }> {
   const { clinicId, userName } = context;
+
+  if (!clinicId) {
+    await whatsAppClient.sendTextMessage(phone, '⚠️ Clínica não identificada para executar esta ação.');
+    return { success: false, message: 'Clínica não identificada' };
+  }
 
   const { data: event, error: fetchErr } = await supabase
     .from('agenda_events')
@@ -2136,7 +2416,8 @@ export async function handleAppointmentAction(
     const { error: updErr } = await supabase
       .from('agenda_events')
       .update({ status: 'confirmado', updated_at: new Date().toISOString() })
-      .eq('id', eventId);
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId);
 
     if (updErr) {
       await whatsAppClient.sendTextMessage(phone, '⚠️ Falha ao atualizar status do agendamento.');
@@ -2156,24 +2437,126 @@ export async function handleAppointmentAction(
     return { success: true };
   }
 
+  if (action === 'complete') {
+    const { error: updErr } = await supabase
+      .from('agenda_events')
+      .update({ status: 'concluido', updated_at: new Date().toISOString() })
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId);
+
+    if (updErr) {
+      await whatsAppClient.sendTextMessage(phone, '⚠️ Falha ao concluir o agendamento.');
+      return { success: false };
+    }
+
+    if (event.patient_id) {
+      // Atualiza apenas sessões não canceladas vinculadas à clínica e ao paciente
+      await supabase
+        .from('sessions')
+        .update({ status: 'concluido', updated_at: new Date().toISOString() })
+        .eq('clinic_id', clinicId)
+        .eq('patient_id', event.patient_id)
+        .eq('scheduled_start_at', event.scheduled_for)
+        .neq('status', 'cancelado');
+    }
+
+    await whatsAppClient.sendButtonsMessage(
+      phone,
+      `🏁 *Atendimento Concluído!*\n\nO atendimento "*${event.title}*" foi marcado como *concluído*.`,
+      {
+        buttons: [
+          { id: 'agenda_next', label: '⏰ Próximo Agendamento' },
+          { id: 'btn_menu_agenda', label: '📅 Agenda' },
+        ],
+      }
+    );
+    return { success: true };
+  }
+
+  if (action === 'awaiting') {
+    const { error: updErr } = await supabase
+      .from('agenda_events')
+      .update({ status: 'aguardando_confirmacao', updated_at: new Date().toISOString() })
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId);
+
+    if (updErr) {
+      await whatsAppClient.sendTextMessage(phone, '⚠️ Falha ao atualizar status para aguardando confirmação.');
+      return { success: false };
+    }
+
+    await whatsAppClient.sendButtonsMessage(
+      phone,
+      `⏳ *Status Atualizado!*\n\nO compromisso "*${event.title}*" está marcado como *aguardando confirmação*.`,
+      {
+        buttons: [
+          { id: 'agenda_next', label: '⏰ Próximo Agendamento' },
+          { id: 'btn_menu_agenda', label: '📅 Agenda' },
+        ],
+      }
+    );
+    return { success: true };
+  }
+
+  if (action === 'delete') {
+    const { error: delErr } = await supabase
+      .from('agenda_events')
+      .delete()
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId);
+
+    if (delErr) {
+      await whatsAppClient.sendTextMessage(phone, '⚠️ Falha ao excluir agendamento.');
+      return { success: false };
+    }
+
+    // Integridade Clínica e Conformidade Legal CFM 1.821 / LGPD:
+    // Nunca cancelar ou deletar sessões finalizadas ou em atendimento que contenham evolução clínica.
+    // Apenas marca rascunhos como cancelados, preservando histórico e evitando perda indevida de dados.
+    if (event.patient_id) {
+      await supabase
+        .from('sessions')
+        .update({ status: 'cancelado', updated_at: new Date().toISOString() })
+        .eq('clinic_id', clinicId)
+        .eq('patient_id', event.patient_id)
+        .eq('scheduled_start_at', event.scheduled_for)
+        .eq('status', 'rascunho');
+    }
+
+    await whatsAppClient.sendButtonsMessage(
+      phone,
+      `🗑️ *Agendamento Excluído!*\n\nO compromisso "*${event.title}*" foi removido da sua agenda e o horário está livre.`,
+      {
+        buttons: [
+          { id: 'agenda_next', label: '⏰ Próximo Agendamento' },
+          { id: 'btn_menu_agenda', label: '📅 Agenda' },
+        ],
+      }
+    );
+    return { success: true };
+  }
+
   if (action === 'cancel') {
     const { error: updErr } = await supabase
       .from('agenda_events')
       .update({ status: 'cancelado', updated_at: new Date().toISOString() })
-      .eq('id', eventId);
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId);
 
     if (updErr) {
       await whatsAppClient.sendTextMessage(phone, '⚠️ Falha ao cancelar agendamento.');
       return { success: false };
     }
 
-    // Se houver sessão rascunho correspondente no mesmo horário, cancela também
+    // Integridade Clínica: cancela somente sessões agendadas ou rascunho, preservando sessões já concluídas
     if (event.patient_id) {
       await supabase
         .from('sessions')
         .update({ status: 'cancelado', updated_at: new Date().toISOString() })
+        .eq('clinic_id', clinicId)
         .eq('patient_id', event.patient_id)
-        .eq('scheduled_start_at', event.scheduled_for);
+        .eq('scheduled_start_at', event.scheduled_for)
+        .in('status', ['agendado', 'rascunho', 'pendente']);
     }
 
     await whatsAppClient.sendButtonsMessage(
@@ -2181,7 +2564,7 @@ export async function handleAppointmentAction(
       `❌ *Agendamento Cancelado!*\n\nO horário foi desmarcado e está liberado na sua agenda para novos atendimentos.`,
       {
         buttons: [
-          { id: 'agenda_new', label: '⚡ Novo Agendamento' },
+          { id: 'agenda_next', label: '⏰ Próximo Agendamento' },
           { id: 'btn_menu_agenda', label: '📅 Agenda' },
         ],
       }
@@ -2200,4 +2583,649 @@ export async function handleAppointmentAction(
   }
 
   return { success: false };
+}
+
+/**
+ * 5. Fluxos de Edição de Agendamento Existente:
+ * - appt_edit_date_*: Inicia escolha de nova data e atualiza scheduled_for
+ * - appt_edit_time_*: Solicita novo horário e atualiza scheduled_for mantendo a data
+ * - appt_edit_collab_*: Solicita colaboradores e atualiza agenda_events/sessions
+ * - appt_back_menu_*: Retorna para o menu da agenda
+ */
+export async function handleAppointmentEditFlow(
+  supabase: SupabaseClient,
+  whatsAppClient: WhatsAppClient,
+  phone: string,
+  context: OwnerCustomerContext,
+  currentStep: string,
+  userText: string,
+  selectedButtonId: string,
+  stateData: AgendaStateData
+): Promise<{ handled: boolean; nextStep: string; updatedStateData: AgendaStateData }> {
+  const { clinicId } = context;
+  if (!clinicId) {
+    await whatsAppClient.sendTextMessage(phone, '⚠️ Clínica não identificada para editar este agendamento.');
+    return { handled: true, nextStep: 'initial', updatedStateData: {} };
+  }
+  const updatedData: AgendaStateData = { ...stateData };
+  const trimmedText = userText.trim();
+  const hasButtonReply = Boolean(selectedButtonId && selectedButtonId.trim().length > 0);
+
+  // Comandos Globais de Cancelamento / Escape ('cancelar', 'menu', etc.)
+  if (!hasButtonReply && trimmedText && isGlobalCancelCommand(trimmedText)) {
+    await whatsAppClient.sendButtonsMessage(
+      phone,
+      'Edição de agendamento cancelada. O que você gostaria de fazer agora?',
+      {
+        buttons: [
+          { id: 'btn_menu_agenda', label: '📅 Agenda' },
+          { id: 'btn_owner_menu', label: '🏠 Menu Principal' },
+        ],
+      }
+    );
+    return { handled: true, nextStep: 'initial', updatedStateData: {} };
+  }
+
+  // Comandos Globais de Retorno ('voltar', etc.)
+  if (!hasButtonReply && trimmedText && isGlobalBackCommand(trimmedText)) {
+    await sendAgendaMenu(whatsAppClient, phone, context);
+    return { handled: true, nextStep: 'initial', updatedStateData: {} };
+  }
+
+  // A. Ação de retorno: appt_back_menu_*
+  if (selectedButtonId && selectedButtonId.startsWith('appt_back_menu_')) {
+    await sendAgendaMenu(whatsAppClient, phone, context);
+    return { handled: true, nextStep: 'initial', updatedStateData: {} };
+  }
+
+  // B. Início da Edição de Data: appt_edit_date_*
+  if (selectedButtonId && selectedButtonId.startsWith('appt_edit_date_')) {
+    const eventId = selectedButtonId.replace('appt_edit_date_', '').trim();
+    updatedData.editingEventId = eventId;
+    updatedData.editingField = 'date';
+
+    await whatsAppClient.sendTextMessage(
+      phone,
+      `📅 *Alterar Data do Atendimento*\n\nPor favor, escolha a nova data na lista abaixo:`
+    );
+    await sendAgendaDateSelectionList(whatsAppClient, phone, 'Nova Data');
+    return { handled: true, nextStep: 'appt_edit_waiting_date', updatedStateData: updatedData };
+  }
+
+  // B1. Resposta de data para edição (appt_edit_waiting_date)
+  if (currentStep === 'appt_edit_waiting_date' || (selectedButtonId && selectedButtonId.startsWith('agenda_date_') && stateData.editingField === 'date')) {
+    let dateIso = '';
+    if (selectedButtonId && selectedButtonId.startsWith('agenda_date_')) {
+      dateIso = selectedButtonId.replace('agenda_date_', '').trim();
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedText)) {
+      dateIso = trimmedText;
+    } else {
+      const brDate = trimmedText.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+      if (brDate) {
+        const d = String(brDate[1]).padStart(2, '0');
+        const m = String(brDate[2]).padStart(2, '0');
+        const y = brDate[3] || String(new Date().getFullYear());
+        dateIso = `${y}-${m}-${d}`;
+      }
+    }
+
+    if (!dateIso || !/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
+      await whatsAppClient.sendTextMessage(phone, '⚠️ Data não reconhecida. Por favor, selecione uma das opções da lista de dias.');
+      return { handled: true, nextStep: 'appt_edit_waiting_date', updatedStateData: updatedData };
+    }
+
+    const [y, m, d] = dateIso.split('-');
+    const dateDisplay = `${d}/${m}`;
+    updatedData.dateIso = dateIso;
+    updatedData.dateDisplay = dateDisplay;
+
+    // Se estiver editando apenas a data de um evento existente:
+    // Carrega o horário atual do evento para manter se válido, ou solicita confirmação de horário
+    const eventId = updatedData.editingEventId;
+    if (eventId) {
+      const { data: existingEvent } = await supabase
+        .from('agenda_events')
+        .select('id, title, scheduled_for, duration_minutes, patient_id')
+        .eq('id', eventId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+
+      if (existingEvent) {
+        const prevMinutes = getBrasiliaMinutesOfDay(existingEvent.scheduled_for);
+        const prevTimeStr = formatMinutesToTime(prevMinutes);
+        const newScheduledDateUtc = createBrasiliaDate(dateIso, prevTimeStr);
+        const newScheduledIso = newScheduledDateUtc.toISOString();
+
+        // Atualiza a data no agenda_events mantendo o mesmo horário
+        await supabase
+          .from('agenda_events')
+          .update({
+            scheduled_for: newScheduledIso,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', eventId)
+          .eq('clinic_id', clinicId);
+
+        // Se houver sessão de paciente vinculada, atualiza também
+        if (existingEvent.patient_id) {
+          await supabase
+            .from('sessions')
+            .update({
+              scheduled_start_at: newScheduledIso,
+              session_date: newScheduledIso,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('clinic_id', clinicId)
+            .eq('patient_id', existingEvent.patient_id)
+            .eq('scheduled_start_at', existingEvent.scheduled_for);
+        }
+
+        await whatsAppClient.sendButtonsMessage(
+          phone,
+          `✅ *Data Atualizada!*\n\nO compromisso "*${existingEvent.title}*" foi remarcado para *${dateDisplay} às ${prevTimeStr}*.`,
+          {
+            buttons: [
+              { id: 'agenda_next', label: '⏰ Próximo Agendamento' },
+              { id: 'btn_menu_agenda', label: '📅 Agenda' },
+            ],
+          }
+        );
+        return { handled: true, nextStep: 'initial', updatedStateData: {} };
+      }
+    }
+
+    return { handled: true, nextStep: 'initial', updatedStateData: {} };
+  }
+
+  // C. Início da Edição de Horário: appt_edit_time_*
+  if (selectedButtonId && selectedButtonId.startsWith('appt_edit_time_')) {
+    const eventId = selectedButtonId.replace('appt_edit_time_', '').trim();
+    updatedData.editingEventId = eventId;
+    updatedData.editingField = 'time';
+
+    const { data: existingEvent } = await supabase
+      .from('agenda_events')
+      .select('id, title, scheduled_for')
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId)
+      .maybeSingle();
+
+    if (!existingEvent) {
+      await whatsAppClient.sendTextMessage(phone, '⚠️ Agendamento não encontrado.');
+      return { handled: true, nextStep: 'initial', updatedStateData: {} };
+    }
+
+    const currentMinutes = getBrasiliaMinutesOfDay(existingEvent.scheduled_for);
+    const currentTimeStr = formatMinutesToTime(currentMinutes);
+    const dateIso = new Date(existingEvent.scheduled_for).toISOString().slice(0, 10);
+    updatedData.dateIso = dateIso;
+
+    // Calcula janelas livres da data atual do compromisso (excluindo o próprio evento em edição)
+    const existingMeetings = clinicId
+      ? await loadExistingMeetingsForClinicDay(supabase, clinicId, dateIso, eventId)
+      : [];
+
+    const { availableWindows } = getAvailableWindowsForDay(dateIso, existingMeetings, 30, {
+      mode: 'clinic_owner',
+      applyThursdayBlock: false,
+      applyLunchBlock: false,
+      allowWeekends: true,
+      bufferMinutes: 0,
+    });
+
+    const windowsText = existingMeetings.length === 0
+      ? 'Agenda 100% livre! Você pode agendar em qualquer horário (06:00 às 22:00).'
+      : formatAvailableWindowsText(availableWindows);
+
+    await whatsAppClient.sendTextMessage(
+      phone,
+      `🕒 *Alterar Horário do Atendimento*\n\n` +
+      `Compromisso: *${existingEvent.title}*\n` +
+      `Horário atual: *${currentTimeStr}*\n\n` +
+      `*Janelas livres nesta data:*\n` +
+      `${windowsText}\n\n` +
+      `👉 Por favor, digite o *novo horário* desejado no formato *hh:mm* (ex: 10:00, 13:00, 14:30):`
+    );
+    return { handled: true, nextStep: 'appt_edit_waiting_time', updatedStateData: updatedData };
+  }
+
+  // C1. Resposta de horário para edição (appt_edit_waiting_time)
+  if (currentStep === 'appt_edit_waiting_time') {
+    const eventId = updatedData.editingEventId;
+    if (!eventId) {
+      return { handled: true, nextStep: 'initial', updatedStateData: {} };
+    }
+
+    const { data: existingEvent } = await supabase
+      .from('agenda_events')
+      .select('id, title, scheduled_for, patient_id')
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId)
+      .maybeSingle();
+
+    if (!existingEvent) {
+      await whatsAppClient.sendTextMessage(phone, '⚠️ Agendamento não encontrado.');
+      return { handled: true, nextStep: 'initial', updatedStateData: {} };
+    }
+
+    const d = new Date(existingEvent.scheduled_for);
+    const dateIso = d.toISOString().slice(0, 10);
+
+    const existingMeetings = clinicId
+      ? await loadExistingMeetingsForClinicDay(supabase, clinicId, dateIso, eventId)
+      : [];
+
+    const timeValidation = validateSelectedTime(dateIso, trimmedText, existingMeetings, 30, {
+      mode: 'clinic_owner',
+      applyThursdayBlock: false,
+      applyLunchBlock: false,
+      allowWeekends: true,
+      bufferMinutes: 0,
+    });
+
+    if (!timeValidation.isValid) {
+      await whatsAppClient.sendTextMessage(
+        phone,
+        `⚠️ ${timeValidation.errorMessage || 'Horário inválido ou indisponível.'}\n\nPor favor, digite outro horário no formato hh:mm:`
+      );
+      return { handled: true, nextStep: 'appt_edit_waiting_time', updatedStateData: updatedData };
+    }
+
+    const newTimeStr = timeValidation.normalizedTime;
+    const newScheduledDateUtc = createBrasiliaDate(dateIso, newTimeStr);
+    const newScheduledIso = newScheduledDateUtc.toISOString();
+
+    await supabase
+      .from('agenda_events')
+      .update({
+        scheduled_for: newScheduledIso,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId);
+
+    if (existingEvent.patient_id) {
+      await supabase
+        .from('sessions')
+        .update({
+          scheduled_start_at: newScheduledIso,
+          session_date: newScheduledIso,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('clinic_id', clinicId)
+        .eq('patient_id', existingEvent.patient_id)
+        .eq('scheduled_start_at', existingEvent.scheduled_for);
+    }
+
+    await whatsAppClient.sendButtonsMessage(
+      phone,
+      `✅ *Horário Atualizado!*\n\nO atendimento "*${existingEvent.title}*" foi alterado para *${newTimeStr}*.`,
+      {
+        buttons: [
+          { id: 'agenda_next', label: '⏰ Próximo Agendamento' },
+          { id: 'btn_menu_agenda', label: '📅 Agenda' },
+        ],
+      }
+    );
+    return { handled: true, nextStep: 'initial', updatedStateData: {} };
+  }
+
+  // D. Início da Edição de Colaboradores: appt_edit_collab_*
+  if (selectedButtonId && selectedButtonId.startsWith('appt_edit_collab_')) {
+    // Governança de Planos: Gestão de múltiplos colaboradores é recurso exclusivo do Plano Clínica
+    if (!context.isClinicPlan) {
+      await whatsAppClient.sendTextMessage(
+        phone,
+        '⚠️ A gestão de múltiplos colaboradores na equipe é exclusiva do *Plano Clínica*.\n\nPara fazer upgrade ou saber mais, acesse o painel web: https://app.plurifisio.com.br'
+      );
+      return { handled: true, nextStep: 'initial', updatedStateData: {} };
+    }
+
+    const eventId = selectedButtonId.replace('appt_edit_collab_', '').trim();
+    updatedData.editingEventId = eventId;
+    updatedData.editingField = 'collaborators';
+
+    await whatsAppClient.sendTextMessage(
+      phone,
+      `👥 *Atualizar Colaboradores da Equipe*\n\n` +
+      `Por favor, digite o nome ou telefone dos colaboradores que irão participar deste atendimento:`
+    );
+    return { handled: true, nextStep: 'appt_edit_waiting_collab', updatedStateData: updatedData };
+  }
+
+  // D1. Resposta de colaboradores para edição (appt_edit_waiting_collab)
+  if (currentStep === 'appt_edit_waiting_collab') {
+    // Governança de Planos: Fail-safe caso receba input de colaboração em plano Solo
+    if (!context.isClinicPlan) {
+      await whatsAppClient.sendTextMessage(
+        phone,
+        '⚠️ A gestão de múltiplos colaboradores na equipe é exclusiva do *Plano Clínica*.'
+      );
+      return { handled: true, nextStep: 'initial', updatedStateData: {} };
+    }
+
+    const eventId = updatedData.editingEventId;
+    if (!eventId) {
+      return { handled: true, nextStep: 'initial', updatedStateData: {} };
+    }
+
+    const { data: existingEvent } = await supabase
+      .from('agenda_events')
+      .select('id, title, scheduled_for, patient_id')
+      .eq('id', eventId)
+      .eq('clinic_id', clinicId)
+      .maybeSingle();
+
+    if (!existingEvent) {
+      await whatsAppClient.sendTextMessage(phone, '⚠️ Agendamento não encontrado.');
+      return { handled: true, nextStep: 'initial', updatedStateData: {} };
+    }
+
+    const collabs = sanitizeMessageInput(trimmedText, 100);
+
+    // Atualiza notas da sessão associada se houver paciente, isolada estritamente por clinic_id
+    if (existingEvent.patient_id) {
+      await supabase
+        .from('sessions')
+        .update({
+          notes: collabs ? `Colaboradores: ${collabs}` : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('clinic_id', clinicId)
+        .eq('patient_id', existingEvent.patient_id)
+        .eq('scheduled_start_at', existingEvent.scheduled_for);
+    }
+
+    await whatsAppClient.sendButtonsMessage(
+      phone,
+      `✅ *Equipe Atualizada!*\n\nOs colaboradores do atendimento "*${existingEvent.title}*" foram atualizados para:\n*${collabs}*`,
+      {
+        buttons: [
+          { id: 'agenda_next', label: '⏰ Próximo Agendamento' },
+          { id: 'btn_menu_agenda', label: '📅 Agenda' },
+        ],
+      }
+    );
+    return { handled: true, nextStep: 'initial', updatedStateData: {} };
+  }
+
+  return { handled: false, nextStep: currentStep, updatedStateData };
+}
+
+/**
+ * Helper de roteamento: detecta se a mensagem de texto ou botão é um gatilho para o Menu Principal do Titular.
+ */
+export function isOwnerMenuTriggerCommand(textOrButtonId?: string | null): boolean {
+  if (!textOrButtonId) return false;
+  const lower = textOrButtonId.trim().toLowerCase();
+  return (
+    lower === 'btn_owner_menu' ||
+    lower === 'menu' ||
+    lower === 'ajuda' ||
+    lower === 'opcoes' ||
+    lower === 'opções' ||
+    lower === 'iniciar' ||
+    lower === 'ola' ||
+    lower === 'olá' ||
+    lower === 'oi'
+  );
+}
+
+/**
+ * Função de resolução e reconhecimento de contexto do cliente/profissional no webhook,
+ * incluindo detecção de Titular Mestre através do WhatsApp comercial oficial,
+ * variantes de telefone brasileiro e fallback gracioso de clínica.
+ */
+export async function resolveCustomerContext(
+  supabase: any,
+  whatsAppClient: WhatsAppClient,
+  phone: string,
+  pushName?: string,
+  session?: { user_id?: string | null; clinic_id?: string | null } | null
+): Promise<OwnerCustomerContext> {
+  let userId = session?.user_id || null;
+  let clinicId: string | null = session?.clinic_id || null;
+  let userName = sanitizeMessageInput(pushName, 100) || 'Doutor(a)';
+  let userEmail = 'Não cadastrado';
+  let clinicName = 'Consultório Solo';
+  let planName = 'Teste Gratuito (7 dias)';
+  let professionInfo = 'Não informada';
+  let isOwnerOrAdmin = false;
+  let activeRole = 'guest';
+
+  const isMasterCommercial = whatsAppClient.isAdminCommercialPhone(phone);
+  if (isMasterCommercial) {
+    isOwnerOrAdmin = true;
+    activeRole = 'platform_admin';
+  }
+
+  // Geração abrangente de variantes numéricas e com máscara para busca no Brasil
+  const digitsOnly = phone.replace(/\D/g, '');
+  const nationalPhone = digitsOnly.startsWith('55') ? digitsOnly.slice(2) : digitsOnly;
+  const last8Digits = digitsOnly.length >= 8 ? digitsOnly.slice(-8) : digitsOnly;
+
+  const phoneVariants = new Set<string>();
+  if (phone) phoneVariants.add(phone);
+  if (digitsOnly) phoneVariants.add(digitsOnly);
+  if (nationalPhone) phoneVariants.add(nationalPhone);
+
+  if (nationalPhone.length === 11 && nationalPhone.charAt(2) === '9') {
+    const ddd = nationalPhone.slice(0, 2);
+    const numWithout9 = ddd + nationalPhone.slice(3); // 10 dígitos (sem o 9º)
+    phoneVariants.add(numWithout9);
+    phoneVariants.add(`55${numWithout9}`);
+    phoneVariants.add(`+55${nationalPhone}`);
+    phoneVariants.add(`+55${numWithout9}`);
+    const p1 = nationalPhone.slice(2, 7);
+    const p2 = nationalPhone.slice(7);
+    phoneVariants.add(`(${ddd}) ${nationalPhone.slice(2, 7)}-${p2}`);
+    phoneVariants.add(`(${ddd}) ${nationalPhone.slice(2)}`);
+    phoneVariants.add(`+55 (${ddd}) ${p1}-${p2}`);
+    phoneVariants.add(`+55 ${ddd} ${p1}-${p2}`);
+    phoneVariants.add(`+55 ${ddd} ${nationalPhone.slice(2)}`);
+  } else if (nationalPhone.length === 10) {
+    const ddd = nationalPhone.slice(0, 2);
+    const numWith9 = ddd + '9' + nationalPhone.slice(2); // 11 dígitos
+    phoneVariants.add(numWith9);
+    phoneVariants.add(`55${numWith9}`);
+    phoneVariants.add(`+55${nationalPhone}`);
+    phoneVariants.add(`+55${numWith9}`);
+    const p1 = nationalPhone.slice(2, 6);
+    const p2 = nationalPhone.slice(6);
+    phoneVariants.add(`(${ddd}) ${p1}-${p2}`);
+    phoneVariants.add(`+55 (${ddd}) ${p1}-${p2}`);
+    phoneVariants.add(`+55 ${ddd} ${p1}-${p2}`);
+  }
+
+  let profileData: any = null;
+
+  if (userId) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, phone, profession, council_name, professional_license')
+      .eq('id', userId)
+      .maybeSingle();
+    profileData = data;
+  }
+
+  if (!profileData && phoneVariants.size > 0) {
+    const variantsList = Array.from(phoneVariants);
+    const inClause = `(${variantsList.map((v) => `"${v.replace(/"/g, '')}"`).join(',')})`;
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, phone, profession, council_name, professional_license')
+      .filter('phone', 'in', inClause)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    profileData = data;
+  }
+
+  if (!profileData && last8Digits.length >= 8) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, email, phone, profession, council_name, professional_license')
+      .ilike('phone', `%${last8Digits}`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    profileData = data;
+  }
+
+  if (!profileData && isMasterCommercial) {
+    const { data: firstAdmin } = await supabase
+      .from('platform_admins')
+      .select('user_id')
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (firstAdmin?.user_id) {
+      const { data: adminProf } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, phone, profession, council_name, professional_license')
+        .eq('id', firstAdmin.user_id)
+        .maybeSingle();
+      if (adminProf) {
+        profileData = adminProf;
+      }
+    }
+  }
+
+  if (profileData) {
+    userId = profileData.id;
+    if (profileData.full_name) userName = sanitizeMessageInput(profileData.full_name, 100);
+    if (profileData.email) userEmail = sanitizeMessageInput(profileData.email, 150);
+
+    const profParts = [profileData.profession, profileData.council_name, profileData.professional_license]
+      .filter(Boolean)
+      .map((p: unknown) => String(p).trim());
+    if (profParts.length > 0) {
+      professionInfo = sanitizeMessageInput(profParts.join(' - '), 150);
+    }
+
+    // 1. Checar se é platform_admin
+    const { data: adminRecord } = await supabase
+      .from('platform_admins')
+      .select('id, is_active')
+      .eq('user_id', profileData.id)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (adminRecord || isMasterCommercial) {
+      isOwnerOrAdmin = true;
+      activeRole = 'platform_admin';
+    }
+
+    // 2. Checar clinic_memberships (operational_role = 'owner')
+    const { data: memberships } = await supabase
+      .from('clinic_memberships')
+      .select('id, clinic_id, operational_role, role_key, is_active')
+      .eq('user_id', profileData.id)
+      .eq('is_active', true);
+
+    const ownerMembership = (memberships || []).find(
+      (m: any) => m.operational_role === 'owner' || m.role_key === 'owner'
+    );
+
+    if (ownerMembership) {
+      isOwnerOrAdmin = true;
+      if (activeRole !== 'platform_admin') activeRole = 'owner';
+      clinicId = ownerMembership.clinic_id;
+    } else if (!isOwnerOrAdmin && memberships && memberships.length > 0) {
+      activeRole = memberships[0].operational_role || memberships[0].role_key || 'member';
+      clinicId = memberships[0].clinic_id;
+    }
+
+    // 3. Checar se é titular direto na tabela clinics (account_owner_user_id)
+    const { data: clinic } = await supabase
+      .from('clinics')
+      .select('id, name, subscription_plan')
+      .eq('account_owner_user_id', profileData.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (clinic) {
+      isOwnerOrAdmin = true;
+      if (activeRole !== 'platform_admin') activeRole = 'owner';
+      clinicId = clinic.id;
+      if (clinic.name) clinicName = sanitizeMessageInput(clinic.name, 100);
+      if (clinic.subscription_plan) planName = sanitizeMessageInput(clinic.subscription_plan, 80);
+    } else if (clinicId) {
+      const { data: foundClinic } = await supabase
+        .from('clinics')
+        .select('id, name, subscription_plan')
+        .eq('id', clinicId)
+        .maybeSingle();
+      if (foundClinic) {
+        if (foundClinic.name) clinicName = sanitizeMessageInput(foundClinic.name, 100);
+        if (foundClinic.subscription_plan) planName = sanitizeMessageInput(foundClinic.subscription_plan, 80);
+      }
+    }
+  }
+
+  // Fallback gracioso de clínica para o platform_admin caso não tenha clínica vinculada diretamente
+  if ((isMasterCommercial || activeRole === 'platform_admin') && !clinicId) {
+    const { data: defaultClinic } = await supabase
+      .from('clinics')
+      .select('id, name, subscription_plan')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (defaultClinic) {
+      clinicId = defaultClinic.id;
+      if (defaultClinic.name) clinicName = sanitizeMessageInput(defaultClinic.name, 100);
+      if (defaultClinic.subscription_plan) planName = sanitizeMessageInput(defaultClinic.subscription_plan, 80);
+    }
+  }
+
+  // 4. Buscar plano mais recente em clinic_subscriptions
+  if (clinicId) {
+    const { data: subData } = await supabase
+      .from('clinic_subscriptions')
+      .select('plan_type, status, total_recurring_monthly_price')
+      .eq('clinic_id', clinicId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (subData?.plan_type) {
+      planName = sanitizeMessageInput(subData.plan_type, 80);
+    }
+  }
+
+  // 5. Garantia final para admin comercial oficial
+  if (isMasterCommercial) {
+    isOwnerOrAdmin = true;
+    activeRole = 'platform_admin';
+    if (!userName || userName === 'Doutor(a)') {
+      userName = 'Administrador Master';
+    }
+  }
+
+  const planLower = planName.toLowerCase();
+  const isSoloPlan =
+    planLower === 'prof_basico' ||
+    planLower === 'prof_medio' ||
+    planLower === 'prof_top' ||
+    planLower.includes('solo') ||
+    planLower.includes('prof');
+  const isClinicPlan = !isSoloPlan;
+
+  return {
+    userId,
+    clinicId,
+    userName,
+    userEmail,
+    clinicName,
+    planName,
+    professionInfo,
+    isOwnerOrAdmin,
+    isSoloPlan,
+    isClinicPlan,
+    activeRole,
+  };
 }

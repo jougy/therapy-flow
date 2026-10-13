@@ -43,10 +43,33 @@ Quando o usuário mandar capturas de tela (screenshots) ou vídeos editados, sig
 - **Azul**: Conteúdo a ser transformado em popup, modal ou expansível.
 - **Rosa**: Lógica interativa, tornar a área clicável ou engatilhar evento Javascript.
 
-## 6. Verificação Obrigatória de Scroll Mobile
-Sempre que criar ou modificar qualquer componente visual, tela, formulário, modal ou layout:
-- **Revisão de CSS/Layout:** Certifique-se de que contêineres filhos usam `overflow-y-auto` corretamente e que contêineres pai não bloqueiam a rolagem com `overflow: hidden` indevido ou alturas fixas (`h-screen` vs `min-h-screen` / `dvh`). Modais e drawers de navegação em mobile **devem** ter rolagem vertical funcional quando o conteúdo ultrapassar a tela.
-- **Validação com `browser_subagent`:** Testar obrigatoriamente a interface simulando tela mobile (larguras pequenas como 375px–390px) e realizando o scroll até o final do fluxo antes de declarar a tarefa concluída.
+## 6. Heurísticas Estritas de Mobile-First, Mínimo Scroll e Responsividade Widescreen
+A plataforma Pluri-Health é concebida como **Mobile-First nativa**. Profissionais de saúde utilizam smartphones em atendimento clínico dinâmico, mas donos e secretárias utilizam desktops com monitores ultra-wide. O layout **nunca** deve quebrar em nenhum dos dois extremos.
+
+### 6.1. Filosofia de Mínimo Scroll & Densidade de Informação
+- **Anti-Scroll Infinito:** Em telas mobile, evite empilhar páginas gigantescas sem segmentação. Prefira o uso inteligente de abas com scroll horizontal suave (`tabs`), etapas/steppers, painéis expansíveis (accordions) ou gavetas inferiores (**Bottom Sheets** com `vaul`) em vez de modais desktop centralizados.
+- **Scrolls Internos Independentes:** Quando houver conteúdo extenso em gavetas, modais ou painéis laterais, use `flex-1 overflow-y-auto overscroll-contain` no container filho. **Nunca** permita que o scroll do componente trave ou arraste o fundo da aplicação (body lock).
+- **Adequação ao Teclado e Barras do Navegador:** Utilize alturas dinâmicas (`h-[100dvh]` ou `max-h-[88dvh]`) em vez de `h-screen` rígido para evitar que a barra de endereços do Safari/Chrome mobile corte botões de ação e rodapés.
+- **Ações Críticas Sempre Acessíveis:** Botões principais de submissão ou salvamento devem permanecer visíveis ou fixados (`sticky bottom-0 pb-safe z-10`) com espaçamento de segurança para home indicators de iOS/Android.
+
+### 6.2. Tolerância Zero a Overflow Horizontal (Anti-Horizontal-Scroll)
+- **Causa Raiz de Quebras:** Quase 100% dos bugs visuais em mobile decorrem de elementos com largura fixa (`w-[500px]`), tabelas sem wrapper ou flex containers sem quebra de linha (`flex-nowrap`).
+- **Blindagem Obrigatória:**
+  - Containers principais devem sempre ter `w-full max-w-full min-w-0 overflow-x-hidden`.
+  - Tabelas de dados e telemetria **devem** ser envelopadas em `<div className="w-full overflow-x-auto touch-pan-x">` com indicação visual ou sombra de rolagem.
+  - Textos longos, identificadores de sistema (IDs, hashes, URLs) e códigos `<pre>` devem usar `truncate`, `break-all` ou `overflow-x-auto max-w-full`.
+  - Áreas de toque (touch targets) de botões e links devem ter no mínimo **44x44px** para ergonomia tátil sem provocar cliques acidentais.
+
+### 6.3. Expansão Progressiva para Widescreen (Desktop 1440px+)
+- **Mobile-First não significa Mobile-Only:** O design nasce em mobile (375px/390px) e ganha colunas e densidade progressivamente com `md:` e `lg:`.
+- **Prevenção de Esticamento Indesejado:** Formulários e campos de texto não devem esticar infinitamente em monitores ultra-wide. Utilize contenção ergonômica centralizada (`max-w-xl`, `max-w-2xl` ou `max-w-4xl mx-auto`).
+- Grids de dashboards devem se desdobrar de 1 coluna em mobile (`grid-cols-1`) para 2 em tablets (`sm:grid-cols-2`) e até 4 em monitores widescreen (`lg:grid-cols-4`).
+
+### 6.4. Testes de Responsividade com Custo Mínimo de Tokens
+Para não onerar o contexto nem gastar tokens excessivos com prints e sessões longas de browser:
+1. **Auditoria de Overflow via Script/Playwright Headless:** Rode scripts de inspeção no terminal via Node/Playwright que abrem o componente no viewport móvel (`390x844`) e retornam **apenas um JSON/CLI sucinto** reportando `document.body.scrollWidth > window.innerWidth` ou elementos que ultrapassam a tela. Custo: < 50 tokens de texto.
+2. **Inspeção de CSS Estático:** Conferir ausência de classes de risco (`w-[...px]` estáticos sem breakpoints, `h-screen`, `nowrap` sem `overflow-x-auto`).
+3. **Validação Visual Final Seletiva:** Usar o `browser_subagent` apenas na etapa final de fechamento para checar o fluxo de interação e o scroll mobile pontual, sem abusar de capturas intermediárias.
 
 ## 7. Gestão e Atualização Obrigatória do Kanban
 Todo agente que receber uma demanda, iniciar uma nova tarefa, propor uma melhoria, corrigir um bug ou finalizar uma funcionalidade **DEVE obrigatoriamente** refletir essa ação no Kanban do projeto:
@@ -60,31 +83,57 @@ Todo agente que receber uma demanda, iniciar uma nova tarefa, propor uma melhori
 - **Se cancelada ou adiada:** Mover para `## Canceladas` e incluir o motivo em `🛑 Motivo:`.
 - **Nenhum agente deve considerar uma demanda finalizada sem atualizar o Kanban.**
 
-## 8. Arquitetura de Conversação e Execução em Subagentes (Orquestrador & 4 Subagentes)
+## 8. Arquitetura Dinâmica de Subagentes por Perfil de Complexidade
 
 ### 8.1. Papel do Agente Principal no Chat: Planejador Estratégico e Arquiteto
-- **Postura:** O agente principal conversando diretamente com o usuário atua estritamente como **Planejador Estratégico, Arquiteto e Tech Lead**.
-- **Não codificar de imediato:** Não saia alterando código apressadamente. Discuta as ideias, aprofunde o problema, analise os impactos arquiteturais e **faça todas as perguntas necessárias ao usuário** para esclarecer decisões, ambiguidades, regras de negócio e preferências de design antes de qualquer execução.
-- **Desenho do Plano:** Elabore o plano detalhado de implementação, registre a tarefa no Kanban e obtenha a validação/alinhamento com o usuário.
+- **Postura:** O agente principal atua estritamente como **Planejador Estratégico, Arquiteto e Tech Lead**.
+- **Não codificar de imediato:** Discuta as ideias, analise o impacto, faça perguntas ao usuário para alinhar regras e layout, e **classifique a demanda em um dos 3 Perfis de Execução** descritos abaixo.
+- **Desenho do Plano:** Elabore o plano com escopo cirúrgico, registre a tarefa no Kanban e obtenha a validação antes de instanciar subagentes.
 
-### 8.2. Execução da Tarefa — Fase 1: Construção Concorrente (2 Subagentes)
-Na etapa de execução do plano, o orquestrador deve instanciar simultaneamente **2 threads de subagentes especializados**:
-1. **Subagente de Frontend & UI/UX:**
-   - Responsável pela estrutura lógica de tela, componentes visuais, interações, formulários, rotas, formulários dinâmicos e gerenciamento de estado do client.
-   - Aplica rigorosamente mobile-first, prevenção de quebras visuais e validações com `browser_subagent`.
-2. **Subagente de Backend & Banco de Dados:**
-   - Responsável pela modelagem do Supabase/Postgres, migrations incrementais seguras (sem reset destrutivo), regras de Row Level Security (RLS), RPCs, Edge Functions e integridade referencial.
+### 8.2. Perfis de Execução e Alocação Seletiva de Subagentes
 
-### 8.3. Execução da Tarefa — Fase 2: Sanitização, Refatoração e Hardening (2 Subagentes)
-Obrigatória e disparada **imediatamente após a conclusão bem-sucedida dos dois subagentes da Fase 1**. O orquestrador aciona mais **2 subagentes especializados**:
-3. **Subagente de Arquitetura, Modularização & Clean Code:**
-   - Quebra de monolitos gigantes em submódulos e componentes menores, reutilizáveis e coesos.
-   - Elimina qualquer trecho mal feito, precário, improvisado, gambiarras temporárias ou que aparente estar inacabado.
-   - Garante conformidade com convenções do projeto, tipagem TypeScript estrita e legibilidade.
-4. **Subagente de Eficiência, Big-O & Segurança:**
-   - Análise de performance algorítmica: otimização de complexidade de tempo/espaço (Big-O), redução de loops aninhados desnecessários, re-renderizações excessivas e gargalos de memória.
-   - Otimização de queries SQL e chamadas assíncronas.
-   - Blindagem de segurança: sanitização rigorosa de inputs, proteção contra vazamentos de dados de pacientes/clínicas (LGPD), validação de permissões e mitigação de vulnerabilidades.
+Para economizar tokens, evitar ruído e dar foco total à qualidade sem desperdiçar recursos, o orquestrador seleciona **apenas** o perfil necessário:
 
+---
 
+#### 📱 Perfil A: UI / Layout / Mobile-First Exclusivo (Frontend Only)
+*Aplicável para:* Ajustes de tela, responsividade mobile, modais, formulários de UI, alinhamento CSS, componentes React, refatoração visual e correções de viewport.
+- **Subagentes Ativados:**
+  1. **Subagente Especialista em Frontend Mobile-First:** Focado 100% em layouts fluidos, ergonomia tátil (mínimo scroll, bottom sheets `vaul`, tabs), prevenção de overflow horizontal e adaptação widescreen (`sm:`, `md:`, `lg:`).
+  2. *(Opcional / Sob Demanda)* **Subagente de Validação Visual & QA:** Roda checagem de overflow (scripts CLI de viewport ou validação mobile via browser).
+- **Explicitamente Dispensados:** Backend/Supabase e Big-O de banco/algoritmos (zero desperdício de tokens).
 
+---
+
+#### ⚡ Perfil B: Fullstack Padrão (Mudanças Completas)
+*Aplicável para:* Novas funcionalidades completas (telas novas com novas tabelas, migrations, RLS, regras de negócio complexas, fluxos ponta a ponta).
+- **Fase 1 (Construção Concorrente - 2 Subagentes):**
+  1. **Subagente de Frontend & UI/UX:** Telas, formulários, hooks e responsividade mobile-first.
+  2. **Subagente de Backend & Banco de Dados:** Migrations incrementais, RLS, RPCs, Edge Functions e integridade referencial.
+- **Fase 2 (Refatoração & Hardening - 2 Subagentes):**
+  3. **Subagente de Arquitetura, Modularização & Clean Code:** Quebra de componentes gigantes, tipagem TypeScript estrita e eliminação de gambiarras.
+  4. **Subagente de Eficiência, Big-O & Segurança:** Otimização de complexidade de queries/loops, mitigação de vulnerabilidades e conformidade LGPD.
+
+---
+
+#### 🛡️ Perfil C: Backend, Segurança & Dados Exclusivo (Backend Only)
+*Aplicável para:* Migrations, RPCs, Webhooks, integrações (WhatsApp, Asaas, Backblaze), Edge Functions, RLS, sanitização e segurança.
+- **Subagentes Ativados:**
+  1. **Subagente de Backend & Modelagem de Dados:** Banco de dados, RPCs e regras no Supabase.
+  2. **Subagente de Eficiência, Big-O & Hardening de Segurança:** Queries SQL eficientes, proteção LGPD e integridade de transações.
+- **Explicitamente Dispensados:** Subagente de Frontend e ferramentas visuais de browser.
+
+## 9. Diretrizes de Alta Economia e Eficiência de Tokens
+
+Para manter a janela de contexto limpa, rápida e evitar estouro de tokens em threads longas:
+1. **Auditoria Headless e Checkers Determinísticos Locais (< 50 tokens):** Em vez de despejar logs gigantescos ou capturas de tela no contexto, use a suíte de verificação rápida:
+   - `npm run check:quick`: Roda validação em cadeia de ESLint/tipagem, regras do Supabase e Mobile-First.
+   - `npm run check:lint -- <arquivo>`: Filtra apenas erros bloqueantes de código.
+   - `npm run check:supabase`: Audita prevenção de `PGRST203`, padrão monetário (`_cents`) e SSOT de migrations.
+   - `npm run check:responsive -- <arquivo>`: Inspeciona classes de risco mobile e conformidade com `can(capability)`.
+   - Se houver falha, o script aciona automaticamente o sintetizador local (`prompt-synthesizer.mjs` via Ollama `gemma4:cloud` ou OpenCode `mimo`) para devolver **apenas 1 parágrafo Markdown cirúrgico** com o que deve ser corrigido, economizando mais de 90% dos tokens do Gemini.
+2. **Subagentes Estritamente Leves no Gemini 3.7 Flash Low:** Subagentes disparados via `invoke_subagent` devem utilizar **obrigatoriamente** `Model: "flash"` ou `Model: "flash_lite"`, garantindo custo mínimo de tokens e respostas ultra-rápidas. O uso de `pro` é expressamente proibido sem consentimento prévio do usuário.
+3. **Leitura Cirúrgica com `view_file`:** Nunca leia arquivos grandes (mais de 200 linhas) inteiros de uma vez. Use `grep_search` prévio e restrinja `StartLine` e `EndLine` no `view_file` para blocos de 50 a 100 linhas.
+4. **Isolamento e Resumos Curtos em Subagentes:** Os prompts de subagentes devem ser autocontidos (arquivos exatos, 3 a 5 requisitos pontuais e critérios de aceite claros). Ao terminar, o subagente deve responder apenas com um resumo conciso das linhas alteradas e status de testes, sem despejar o arquivo completo de volta no chat.
+5. **Silenciamento de Logs e Testes Focados:** Execute testes do Vitest restritos ao arquivo sendo modificado (ex: `npx vitest run src/.../component.test.tsx`), evitando suítes completas de 2000 testes durante o desenvolvimento iterativo.
+6. **Arquivamento Periódico de Concluídos:** Respeite a política de manter a coluna `## Finalizados` do Kanban enxuta (últimos 10 cards), garantindo leituras ultra-rápidas e com custo mínimo de tokens.

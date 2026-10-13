@@ -87,7 +87,7 @@ export const ComponentHelpButton = ({
             <HelpCircle className="h-3 w-3 stroke-[2.2]" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs max-w-xs font-normal">
+        <TooltipContent side="bottom" align="start" className="z-[100] text-xs max-w-xs font-normal shadow-lg">
           <p>O que é isto? Clique para ver explicação</p>
         </TooltipContent>
       </Tooltip>

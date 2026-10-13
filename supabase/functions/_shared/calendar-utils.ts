@@ -165,8 +165,13 @@ export function getNextBusinessDays(count = 5, fromDate?: Date): DayOption[] {
  * Complexidade algorítmica: O(K log K) no número de reuniões (K) através de merge de intervalos ordenados.
  */
 export interface AvailabilityOptions {
+  mode?: 'master_onboarding' | 'clinic_owner';
   applyThursdayBlock?: boolean;
+  applyLunchBlock?: boolean;
+  allowWeekends?: boolean;
   bufferMinutes?: number;
+  startHour?: number;
+  endHour?: number;
 }
 
 export function getAvailableWindowsForDay(
@@ -186,7 +191,16 @@ export function getAvailableWindowsForDay(
       ? slotDurationMinutesOrOptions
       : options || {};
 
-  const { applyThursdayBlock = true, bufferMinutes = 30 } = resolvedOptions;
+  const isClinicOwner = resolvedOptions.mode === 'clinic_owner';
+
+  const {
+    applyThursdayBlock = isClinicOwner ? false : true,
+    applyLunchBlock = isClinicOwner ? false : true,
+    allowWeekends = isClinicOwner ? true : false,
+    bufferMinutes = isClinicOwner ? (resolvedOptions.bufferMinutes ?? 0) : (resolvedOptions.bufferMinutes ?? 30),
+    startHour = isClinicOwner ? 6 : 9,
+    endHour = isClinicOwner ? 22 : 18,
+  } = resolvedOptions;
 
   const [year, month, day] = dateIso.split('-').map(Number);
   const targetDateUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
@@ -196,24 +210,26 @@ export function getAvailableWindowsForDay(
 
   const dayOfWeek = targetDateUtc.getUTCDay(); // 0=Sun, 1=Mon, ..., 4=Thu, 5=Fri, 6=Sat
 
-  // Finais de semana não têm atendimento
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
+  // Finais de semana não têm atendimento para Onboarding do Master, mas são permitidos para Clínicas
+  if (!allowWeekends && (dayOfWeek === 0 || dayOfWeek === 6)) {
     return { availableWindows: [], availableSlots: [] };
   }
 
-  const startOfDayMinutes = 9 * 60; // 09:00 (540 min)
-  const endOfDayMinutes = 18 * 60;   // 18:00 (1080 min)
+  const startOfDayMinutes = Math.max(0, startHour * 60);
+  const endOfDayMinutes = Math.min(24 * 60, endHour * 60);
 
   // 1. Coleta e normalização de intervalos bloqueados
   const rawBlockedIntervals: Array<{ start: number; end: number }> = [];
 
-  // Bloqueio de Quinta-feira de manhã (até 12:00) se habilitado
+  // Bloqueio de Quinta-feira de manhã (até 12:00) se habilitado (Onboarding Master)
   if (dayOfWeek === 4 && applyThursdayBlock) {
     rawBlockedIntervals.push({ start: startOfDayMinutes, end: 12 * 60 });
   }
 
-  // Almoço diário: 13:00 às 14:00 (780m a 840m)
-  rawBlockedIntervals.push({ start: 13 * 60, end: 14 * 60 });
+  // Almoço diário: 13:00 às 14:00 (se habilitado)
+  if (applyLunchBlock) {
+    rawBlockedIntervals.push({ start: 13 * 60, end: 14 * 60 });
+  }
 
   // Reuniões já agendadas + Buffer antes e depois (se configurado)
   for (const meeting of existingMeetings) {
@@ -364,15 +380,47 @@ export function validateSelectedTime(
   );
   const normalizedTime = formatMinutesToTime(minutes);
 
-  // Verifica se o slot exato ou compatível está disponível
-  const slotExists = availableSlots.some((s) => s.startMinutes === minutes);
+  const isClinicOwner = resolvedOptions.mode === 'clinic_owner';
+  const startOfDayMinutes = Math.max(0, (resolvedOptions.startHour ?? (isClinicOwner ? 6 : 9)) * 60);
+  const endOfDayMinutes = Math.min(24 * 60, (resolvedOptions.endHour ?? (isClinicOwner ? 22 : 18)) * 60);
 
-  if (!slotExists) {
-    return {
-      isValid: false,
-      normalizedTime,
-      errorMessage: `O horário ${normalizedTime} não está disponível ou coincide com um intervalo bloqueado/reservado.`,
-    };
+  // Para donos de clínica com autonomia: se a agenda do dia estiver vazia ou se o horário não colidir com nenhuma reunião existente
+  if (isClinicOwner) {
+    if (minutes < startOfDayMinutes || minutes >= endOfDayMinutes) {
+      return {
+        isValid: false,
+        normalizedTime,
+        errorMessage: `O horário ${normalizedTime} está fora do expediente da clínica (${formatMinutesToTime(startOfDayMinutes)} às ${formatMinutesToTime(endOfDayMinutes)}).`,
+      };
+    }
+
+    // Checar colisão direta com reuniões existentes
+    for (const meeting of existingMeetings) {
+      if (!meeting || meeting.status === 'canceled') continue;
+      const mStart = getBrasiliaMinutesOfDay(meeting.scheduled_at);
+      if (isNaN(mStart)) continue;
+      const mDuration = Math.max(5, meeting.duration_minutes || 15);
+      const mEnd = mStart + mDuration;
+
+      // Se houver sobreposição com o slot desejado
+      if (minutes < mEnd && (minutes + slotDurationMinutes) > mStart) {
+        return {
+          isValid: false,
+          normalizedTime,
+          errorMessage: `O horário ${normalizedTime} coincide com outro compromisso já agendado (${formatMinutesToTime(mStart)} às ${formatMinutesToTime(mEnd)}).`,
+        };
+      }
+    }
+  } else {
+    // Para Lead/Master Onboarding: estrita verificação dos slots pré-calculados
+    const slotExists = availableSlots.some((s) => s.startMinutes === minutes);
+    if (!slotExists) {
+      return {
+        isValid: false,
+        normalizedTime,
+        errorMessage: `O horário ${normalizedTime} não está disponível ou coincide com um intervalo bloqueado/reservado.`,
+      };
+    }
   }
 
   const dateObj = createBrasiliaDate(dateIso, normalizedTime);

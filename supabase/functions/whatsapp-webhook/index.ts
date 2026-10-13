@@ -35,7 +35,11 @@ import {
   handleAgendaFull,
   handleAgendaNext,
   handleAppointmentAction,
+  handleAppointmentEditFlow,
+  AppointmentActionType,
   AgendaStateData,
+  isGlobalCancelCommand,
+  isGlobalBackCommand,
 } from './owner-copilot.ts';
 
 /**
@@ -524,8 +528,52 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       let isOwnerOrAdmin = false;
       let activeRole = 'guest';
 
+      const isMasterCommercial = whatsAppClient.isAdminCommercialPhone(phone);
+      if (isMasterCommercial) {
+        isOwnerOrAdmin = true;
+        activeRole = 'platform_admin';
+      }
+
+      // Geração abrangente de variantes numéricas e com máscara para busca no Brasil
       const digitsOnly = phone.replace(/\D/g, '');
       const nationalPhone = digitsOnly.startsWith('55') ? digitsOnly.slice(2) : digitsOnly;
+      const last8Digits = digitsOnly.length >= 8 ? digitsOnly.slice(-8) : digitsOnly;
+
+      const phoneVariants = new Set<string>();
+      if (phone) phoneVariants.add(phone);
+      if (digitsOnly) phoneVariants.add(digitsOnly);
+      if (nationalPhone) phoneVariants.add(nationalPhone);
+
+      // Se for celular com DDD (2 dígitos) + 9 dígitos (ex: 11980113936)
+      if (nationalPhone.length === 11 && nationalPhone.charAt(2) === '9') {
+        const ddd = nationalPhone.slice(0, 2);
+        const numWithout9 = ddd + nationalPhone.slice(3); // 10 dígitos (sem o 9º)
+        phoneVariants.add(numWithout9);
+        phoneVariants.add(`55${numWithout9}`);
+        phoneVariants.add(`+55${nationalPhone}`);
+        phoneVariants.add(`+55${numWithout9}`);
+        // Formatações com máscara comuns
+        const p1 = nationalPhone.slice(2, 7);
+        const p2 = nationalPhone.slice(7);
+        phoneVariants.add(`(${ddd}) ${nationalPhone.slice(2, 7)}-${p2}`);
+        phoneVariants.add(`(${ddd}) ${nationalPhone.slice(2)}`);
+        phoneVariants.add(`+55 (${ddd}) ${p1}-${p2}`);
+        phoneVariants.add(`+55 ${ddd} ${p1}-${p2}`);
+        phoneVariants.add(`+55 ${ddd} ${nationalPhone.slice(2)}`);
+      } else if (nationalPhone.length === 10) {
+        // Celular ou fixo com 10 dígitos (DDD + 8 dígitos) -> gerar variante com 9º dígito se celular
+        const ddd = nationalPhone.slice(0, 2);
+        const numWith9 = ddd + '9' + nationalPhone.slice(2); // 11 dígitos
+        phoneVariants.add(numWith9);
+        phoneVariants.add(`55${numWith9}`);
+        phoneVariants.add(`+55${nationalPhone}`);
+        phoneVariants.add(`+55${numWith9}`);
+        const p1 = nationalPhone.slice(2, 6);
+        const p2 = nationalPhone.slice(6);
+        phoneVariants.add(`(${ddd}) ${p1}-${p2}`);
+        phoneVariants.add(`+55 (${ddd}) ${p1}-${p2}`);
+        phoneVariants.add(`+55 ${ddd} ${p1}-${p2}`);
+      }
 
       let profileData: ProfileLookupRecord | null = null;
 
@@ -538,15 +586,53 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         profileData = data as ProfileLookupRecord | null;
       }
 
-      if (!profileData) {
+      // Se não encontrou por userId, busca na tabela profiles testando todas as variantes de telefone
+      if (!profileData && phoneVariants.size > 0) {
+        const variantsList = Array.from(phoneVariants);
+        // Supabase PostgREST in list: in.(v1,v2,...)
+        const inClause = `(${variantsList.map((v) => `"${v.replace(/"/g, '')}"`).join(',')})`;
         const { data } = await supabase
           .from('profiles')
           .select('id, full_name, email, phone, profession, council_name, professional_license')
-          .or(`phone.eq.${phone},phone.eq.${nationalPhone}`)
+          .filter('phone', 'in', inClause)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
         profileData = data as ProfileLookupRecord | null;
+      }
+
+      // Se ainda não encontrou e temos ao menos 8 dígitos finais, tenta ilike defensivo
+      if (!profileData && last8Digits.length >= 8) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone, profession, council_name, professional_license')
+          .ilike('phone', `%${last8Digits}`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        profileData = data as ProfileLookupRecord | null;
+      }
+
+      // Se ainda não encontrou profile e for o admin comercial oficial, carrega o primeiro platform_admin ativo
+      if (!profileData && isMasterCommercial) {
+        const { data: firstAdmin } = await supabase
+          .from('platform_admins')
+          .select('user_id')
+          .eq('is_active', true)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (firstAdmin?.user_id) {
+          const { data: adminProf } = await supabase
+            .from('profiles')
+            .select('id, full_name, email, phone, profession, council_name, professional_license')
+            .eq('id', firstAdmin.user_id)
+            .maybeSingle();
+          if (adminProf) {
+            profileData = adminProf as ProfileLookupRecord;
+          }
+        }
       }
 
       if (profileData) {
@@ -569,7 +655,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           .eq('is_active', true)
           .maybeSingle();
 
-        if (adminRecord) {
+        if (adminRecord || isMasterCommercial) {
           isOwnerOrAdmin = true;
           activeRole = 'platform_admin';
         }
@@ -587,7 +673,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
         if (ownerMembership) {
           isOwnerOrAdmin = true;
-          activeRole = 'owner';
+          if (activeRole !== 'platform_admin') activeRole = 'owner';
           clinicId = ownerMembership.clinic_id;
         } else if (!isOwnerOrAdmin && memberships && memberships.length > 0) {
           // Possui membership mas NÃO é owner
@@ -606,7 +692,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
         if (clinic) {
           isOwnerOrAdmin = true;
-          activeRole = 'owner';
+          if (activeRole !== 'platform_admin') activeRole = 'owner';
           clinicId = clinic.id;
           if (clinic.name) clinicName = sanitizeInput(clinic.name, 100);
           if (clinic.subscription_plan) planName = sanitizeInput(clinic.subscription_plan, 80);
@@ -622,20 +708,46 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
             if (foundClinic.subscription_plan) planName = sanitizeInput(foundClinic.subscription_plan, 80);
           }
         }
+      }
 
-        // 4. Buscar plano mais recente em clinic_subscriptions
-        if (clinicId) {
-          const { data: subData } = await supabase
-            .from('clinic_subscriptions')
-            .select('plan_type, status, total_recurring_monthly_price')
-            .eq('clinic_id', clinicId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+      // Se for admin comercial ou platform_admin e ainda não tiver clinicId:
+      // Busca a clínica mestre mais recente ativa no sistema como fallback defensivo
+      if ((isMasterCommercial || activeRole === 'platform_admin') && !clinicId) {
+        const { data: defaultClinic } = await supabase
+          .from('clinics')
+          .select('id, name, subscription_plan')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-          if (subData?.plan_type) {
-            planName = sanitizeInput(subData.plan_type, 80);
-          }
+        if (defaultClinic) {
+          clinicId = defaultClinic.id;
+          if (defaultClinic.name) clinicName = sanitizeInput(defaultClinic.name, 100);
+          if (defaultClinic.subscription_plan) planName = sanitizeInput(defaultClinic.subscription_plan, 80);
+        }
+      }
+
+      // 4. Buscar plano mais recente em clinic_subscriptions
+      if (clinicId) {
+        const { data: subData } = await supabase
+          .from('clinic_subscriptions')
+          .select('plan_type, status, total_recurring_monthly_price')
+          .eq('clinic_id', clinicId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (subData?.plan_type) {
+          planName = sanitizeInput(subData.plan_type, 80);
+        }
+      }
+
+      // 5. Garantia final para admin comercial oficial
+      if (isMasterCommercial) {
+        isOwnerOrAdmin = true;
+        activeRole = 'platform_admin';
+        if (!userName || userName === 'Doutor(a)') {
+          userName = 'Administrador Master';
         }
       }
 
@@ -759,7 +871,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       userTextLower === 'opções' ||
       userTextLower === 'iniciar' ||
       userTextLower === 'ola' ||
-      userTextLower === 'olá';
+      userTextLower === 'olá' ||
+      userTextLower === 'oi';
 
     if (customer.isOwnerOrAdmin && isOwnerMenuTrigger) {
       await supabase
@@ -1115,15 +1228,21 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       );
 
       if (preCadResult.handled) {
+        // LGPD e Segurança: se o fluxo foi concluído ou cancelado (nextStep === 'initial'),
+        // limpa de forma atômica o precad_data do metadata da sessão para evitar vazamento em mensagens futuras
+        const updatedMetadata = { ...metadata };
+        if (preCadResult.nextStep === 'initial') {
+          delete updatedMetadata.precad_data;
+        } else {
+          updatedMetadata.precad_data = preCadResult.updatedStateData;
+        }
+
         await supabase
           .from('whatsapp_chat_sessions')
           .update({
             current_step: preCadResult.nextStep,
             last_message_at: new Date().toISOString(),
-            metadata: {
-              ...metadata,
-              precad_data: preCadResult.updatedStateData,
-            },
+            metadata: updatedMetadata,
           })
           .eq('phone', phone);
 
@@ -1199,13 +1318,14 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       });
     }
 
-    // E5. Ações Rápidas no Atendimento (Confirmar, Cancelar, Remarcar)
+    // E5. Ações Rápidas no Atendimento (Mudar Status e Editar)
     if (
       cleanSelectedButtonId.startsWith('appt_confirm_') ||
       cleanSelectedButtonId.startsWith('appt_cancel_') ||
-      cleanSelectedButtonId.startsWith('appt_resched_')
+      cleanSelectedButtonId.startsWith('appt_resched_') ||
+      cleanSelectedButtonId.startsWith('appt_status_')
     ) {
-      let action: 'confirm' | 'cancel' | 'reschedule' = 'confirm';
+      let action: AppointmentActionType = 'confirm';
       let eventId = '';
 
       if (cleanSelectedButtonId.startsWith('appt_confirm_')) {
@@ -1217,6 +1337,21 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       } else if (cleanSelectedButtonId.startsWith('appt_resched_')) {
         action = 'reschedule';
         eventId = cleanSelectedButtonId.replace('appt_resched_', '');
+      } else if (cleanSelectedButtonId.startsWith('appt_status_confirm_')) {
+        action = 'confirm';
+        eventId = cleanSelectedButtonId.replace('appt_status_confirm_', '');
+      } else if (cleanSelectedButtonId.startsWith('appt_status_cancel_')) {
+        action = 'cancel';
+        eventId = cleanSelectedButtonId.replace('appt_status_cancel_', '');
+      } else if (cleanSelectedButtonId.startsWith('appt_status_complete_')) {
+        action = 'complete';
+        eventId = cleanSelectedButtonId.replace('appt_status_complete_', '');
+      } else if (cleanSelectedButtonId.startsWith('appt_status_awaiting_')) {
+        action = 'awaiting';
+        eventId = cleanSelectedButtonId.replace('appt_status_awaiting_', '');
+      } else if (cleanSelectedButtonId.startsWith('appt_status_delete_')) {
+        action = 'delete';
+        eventId = cleanSelectedButtonId.replace('appt_status_delete_', '');
       }
 
       const actionRes = await handleAppointmentAction(supabase, whatsAppClient, phone, ownerContext, action, eventId);
@@ -1243,6 +1378,56 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       });
     }
 
+    // E5.1. Fluxos de Edição de Agendamento Existente (appt_edit_*, appt_back_menu_*)
+    const isApptEditTrigger =
+      cleanSelectedButtonId.startsWith('appt_edit_') ||
+      cleanSelectedButtonId.startsWith('appt_back_menu_') ||
+      currentStep.startsWith('appt_edit_');
+
+    if (isApptEditTrigger) {
+      const existingAgendaData = (metadata?.agenda_data || {}) as AgendaStateData;
+      const editResult = await handleAppointmentEditFlow(
+        supabase,
+        whatsAppClient,
+        phone,
+        ownerContext,
+        currentStep,
+        userText,
+        cleanSelectedButtonId,
+        existingAgendaData
+      );
+
+      if (editResult.handled) {
+        const updatedMetadata = { ...metadata };
+        if (editResult.nextStep === 'initial') {
+          delete updatedMetadata.agenda_data;
+        } else {
+          updatedMetadata.agenda_data = editResult.updatedStateData;
+        }
+
+        await supabase
+          .from('whatsapp_chat_sessions')
+          .update({
+            current_step: editResult.nextStep,
+            last_message_at: new Date().toISOString(),
+            metadata: updatedMetadata,
+          })
+          .eq('phone', phone);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            step: editResult.nextStep,
+            appt_edit_handled: true,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+    }
+
     // E6. Fluxo Interativo de Criação de Agendamento (Passos da Máquina de Estados)
     const isAgendaTrigger =
       cleanSelectedButtonId === 'agenda_new_patient' ||
@@ -1267,15 +1452,21 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       );
 
       if (agendaResult.handled) {
+        // LGPD e Segurança: se o fluxo de agendamento foi concluído ou cancelado (nextStep === 'initial'),
+        // limpa de forma atômica o agenda_data do metadata da sessão para evitar vazamento de dados de pacientes/horários
+        const updatedMetadata = { ...metadata };
+        if (agendaResult.nextStep === 'initial') {
+          delete updatedMetadata.agenda_data;
+        } else {
+          updatedMetadata.agenda_data = agendaResult.updatedStateData;
+        }
+
         await supabase
           .from('whatsapp_chat_sessions')
           .update({
             current_step: agendaResult.nextStep,
             last_message_at: new Date().toISOString(),
-            metadata: {
-              ...metadata,
-              agenda_data: agendaResult.updatedStateData,
-            },
+            metadata: updatedMetadata,
           })
           .eq('phone', phone);
 
@@ -1295,6 +1486,34 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
     // E. Submissão ativa de Bug Report (recebimento de texto ou imagem no passo 'waiting_bug_report')
     if (currentStep === 'waiting_bug_report' && (userText || imageUrl)) {
+      // Se for comando de cancelamento ou retorno por texto (sem botão e sem print de imagem anexado)
+      const hasButton = Boolean(cleanSelectedButtonId && cleanSelectedButtonId.trim().length > 0);
+      if (!hasButton && !imageUrl && userText && (isGlobalCancelCommand(userText) || isGlobalBackCommand(userText))) {
+        await supabase
+          .from('whatsapp_chat_sessions')
+          .update({
+            current_step: 'initial',
+            last_message_at: new Date().toISOString(),
+          })
+          .eq('phone', phone);
+
+        await whatsAppClient.sendButtonsMessage(
+          phone,
+          'Relato de erro cancelado. O que você gostaria de fazer agora?',
+          {
+            buttons: [
+              { id: 'btn_menu_support', label: '🛟 Suporte' },
+              { id: 'btn_owner_menu', label: '🏠 Menu Principal' },
+            ],
+          }
+        );
+
+        return new Response(JSON.stringify({ success: true, step: 'initial', cancelled: true }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       await supabase
         .from('whatsapp_chat_sessions')
         .update({

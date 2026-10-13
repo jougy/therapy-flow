@@ -252,22 +252,22 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
   }, [userName, metrics]);
 
   return (
-    <div className="space-y-6">
+    <div className="w-full max-w-full min-w-0 space-y-6">
       
       {/* Anti-Spam / Rate Limit Alert Banner */}
       {spamAlert && (
-        <Card className="border-red-300 bg-red-500/10 dark:bg-red-950/40 dark:border-red-800 shadow-md animate-pulse">
+        <Card className="w-full max-w-full min-w-0 border-red-300 bg-red-500/10 dark:bg-red-950/40 dark:border-red-800 shadow-md animate-pulse">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2 text-red-900 dark:text-red-200">
-              <AlertOctagon className="w-5 h-5 text-red-600 dark:text-red-400" />
-              🚨 Alerta Backoffice: Notificação de Anti-Spam / Bloqueio Temporário
+              <AlertOctagon className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
+              <span>🚨 Alerta Backoffice: Notificação de Anti-Spam / Bloqueio Temporário</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1">
-            <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+            <p className="text-sm font-semibold text-red-800 dark:text-red-300 break-words">
               {spamAlert.reason}
             </p>
-            <p className="text-xs text-red-700/80 dark:text-red-400 font-mono">
+            <p className="text-xs text-red-700/80 dark:text-red-400 font-mono break-words">
               Sincronização pausada automaticamente no cliente para proteger o servidor contra alta escrita/looping.
             </p>
           </CardContent>
@@ -275,12 +275,13 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
       )}
 
       {/* Top Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200/80 dark:border-neutral-800 shadow-sm">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200/80 dark:border-neutral-800 shadow-sm w-full max-w-full min-w-0">
+        <div className="min-w-0">
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-primary" /> Estatísticas Resumidas do Usuário (Cliente-first Idempotente)
+            <Activity className="w-5 h-5 text-primary shrink-0" />
+            <span className="break-words">Estatísticas Resumidas do Usuário</span>
           </h2>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
             Resumo acumulado no cliente com sincronização contínua a cada 5 minutos, no login e no logout, além de proteção anti-spam.
           </p>
         </div>
@@ -289,61 +290,61 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
           size="sm"
           onClick={() => void loadTelemetry()}
           disabled={loading}
-          className="h-9 px-3 shrink-0"
+          className="h-9 px-3 shrink-0 w-full sm:w-auto"
         >
           <RefreshCw className={`w-3.5 h-3.5 mr-2 ${loading ? "animate-spin" : ""}`} /> Atualizar Dados
         </Button>
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border-neutral-200/70 shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-full min-w-0">
+        <Card className="w-full max-w-full min-w-0 border-neutral-200/70 shadow-sm">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Telas Navegadas</p>
               <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">{metrics.totalPageViews}</p>
               <p className="text-xs text-neutral-500">Resumo no cliente</p>
             </div>
-            <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 flex items-center justify-center shrink-0">
               <Eye className="w-5 h-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-neutral-200/70 shadow-sm">
+        <Card className="w-full max-w-full min-w-0 border-neutral-200/70 shadow-sm">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Permanência Média</p>
               <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">~{metrics.avgDwellSeconds}s</p>
               <p className="text-xs text-neutral-500">Dwell time acumulado</p>
             </div>
-            <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center shrink-0">
               <Clock className="w-5 h-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-neutral-200/70 shadow-sm">
+        <Card className="w-full max-w-full min-w-0 border-neutral-200/70 shadow-sm">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Prints Tentados</p>
               <p className="text-2xl font-bold text-red-600 dark:text-red-400">{metrics.printsDetected}</p>
               <p className="text-xs text-neutral-500">Contado localmente</p>
             </div>
-            <div className="h-10 w-10 rounded-xl bg-red-50 dark:bg-red-950 text-red-600 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-red-50 dark:bg-red-950 text-red-600 flex items-center justify-center shrink-0">
               <Camera className="w-5 h-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-neutral-200/70 shadow-sm">
+        <Card className="w-full max-w-full min-w-0 border-neutral-200/70 shadow-sm">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Impressões & PDFs</p>
               <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{metrics.docsPrinted + metrics.pdfExported}</p>
               <p className="text-xs text-neutral-500">{metrics.docsPrinted} impr. | {metrics.pdfExported} PDF</p>
             </div>
-            <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center shrink-0">
               <Printer className="w-5 h-5" />
             </div>
           </CardContent>
@@ -351,24 +352,26 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
       </div>
 
       {/* Intelligent Narrative Report */}
-      <Card className="border-amber-200/80 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-900/50">
+      <Card className="w-full max-w-full min-w-0 border-amber-200/80 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-900/50">
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2 text-amber-900 dark:text-amber-300">
-            <Sparkles className="w-4 h-4 text-amber-600" /> Relatório Narrativo da Conta do Usuário
+            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Relatório Narrativo da Conta do Usuário</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-amber-950 dark:text-amber-200 leading-relaxed font-medium">
+          <p className="text-sm text-amber-950 dark:text-amber-200 leading-relaxed font-medium break-words">
             {narrativeReport}
           </p>
         </CardContent>
       </Card>
 
       {/* Most Visited Pages */}
-      <Card className="shadow-sm border-neutral-200/80">
+      <Card className="w-full max-w-full min-w-0 shadow-sm border-neutral-200/80">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="w-4 h-4 text-primary" /> Páginas Mais Acessadas por Este Usuário
+            <Clock className="w-4 h-4 text-primary shrink-0" />
+            <span>Páginas Mais Acessadas por Este Usuário</span>
           </CardTitle>
           <CardDescription>Top 5 rotas com maior acúmulo de uso pelo colaborador.</CardDescription>
         </CardHeader>
@@ -380,14 +383,14 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
           ) : (
             <div className="space-y-3">
               {metrics.topPages.map((page, idx) => (
-                <div key={page.path} className="flex items-center justify-between p-3 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-100 dark:border-neutral-800">
-                  <div className="space-y-0.5 min-w-0">
-                    <p className="font-mono text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate">
+                <div key={page.path} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-100 dark:border-neutral-800 gap-2">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <p className="font-mono text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate" title={page.path}>
                       {idx + 1}. {page.path}
                     </p>
                     <p className="text-xs text-muted-foreground">{page.views} visualização(ões) acumuladas</p>
                   </div>
-                  <Badge variant="secondary" className="shrink-0 font-mono text-xs">
+                  <Badge variant="secondary" className="self-start sm:self-auto shrink-0 font-mono text-xs">
                     ~{page.avgDwellSeconds}s por sessão
                   </Badge>
                 </div>
@@ -398,23 +401,24 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
       </Card>
 
       {/* Real-time Telemetry & Audit Table for User */}
-      <Card className="shadow-sm border-neutral-200/80">
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+      <Card className="w-full max-w-full min-w-0 shadow-sm border-neutral-200/80">
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="text-base flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" /> Log de Telemetria e Auditoria Desta Conta
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Log de Telemetria e Auditoria Desta Conta</span>
             </CardTitle>
             <CardDescription>
               Eventos instantâneos e resumos de auditoria do colaborador.
             </CardDescription>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-3">
+          <div className="flex w-full flex-col sm:w-auto sm:flex-row items-center gap-3">
             <div className="relative w-full sm:w-[220px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 placeholder="Filtrar por rota..."
-                className="h-9 pl-8 text-xs bg-neutral-50"
+                className="h-9 pl-8 text-xs bg-neutral-50 w-full"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -434,7 +438,7 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
           </div>
         </CardHeader>
         
-        <CardContent>
+        <CardContent className="w-full max-w-full min-w-0 px-2 sm:px-6">
           {loading ? (
             <div className="py-12 text-center text-muted-foreground text-sm animate-pulse">
               Carregando eventos do usuário...
@@ -444,8 +448,8 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
               Nenhum evento individual instantâneo registrado. Os dados acumulados continuam visíveis no sumário acima.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="w-full max-w-full min-w-0 overflow-x-auto touch-pan-x rounded-lg border border-neutral-100 dark:border-neutral-800">
+              <table className="w-full min-w-[600px] text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-800/40 text-neutral-500 dark:text-neutral-400 font-semibold">
                     <th className="py-3 px-4">Selo Data / Hora (Preciso)</th>
@@ -463,10 +467,10 @@ export const PlatformUserStatistics: React.FC<PlatformUserStatisticsProps> = ({
                       <td className="py-3 px-4 whitespace-nowrap">
                         {getEventBadge(ev.event_type)}
                       </td>
-                      <td className="py-3 px-4 font-mono text-neutral-600 dark:text-neutral-400">
+                      <td className="py-3 px-4 font-mono text-neutral-600 dark:text-neutral-400 break-all max-w-[200px]">
                         {ev.pathname}
                       </td>
-                      <td className="py-3 px-4 text-neutral-500 font-mono text-[11px] max-w-[320px] truncate" title={JSON.stringify(ev.metadata)}>
+                      <td className="py-3 px-4 text-neutral-500 font-mono text-[11px] max-w-[240px] truncate" title={JSON.stringify(ev.metadata)}>
                         {JSON.stringify(ev.metadata)}
                       </td>
                     </tr>

@@ -71,9 +71,10 @@ export function initGlobalAnalytics(subproductOverride?: SubproductConfig): Subp
       window.dataLayer?.push(arguments);
     };
     window.gtag("js", new Date());
+    const isPluriFisioHost = typeof window !== "undefined" && window.location.hostname.includes("plurifisio.com.br");
     window.gtag("config", subproduct.gaMeasurementId, {
       send_page_view: false, // Controlado manualmente pelas rotas do React
-      cookie_domain: "auto",
+      cookie_domain: isPluriFisioHost ? ".plurifisio.com.br" : "auto",
       cookie_flags: "SameSite=None;Secure",
     });
 

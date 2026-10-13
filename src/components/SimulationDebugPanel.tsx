@@ -4,20 +4,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertCircle,
-  Bug,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Clock,
   Copy,
   Database,
-  ExternalLink,
+  FileCode,
   KeyRound,
   Play,
   RefreshCw,
   Search,
   Shield,
   SlidersHorizontal,
+  Sparkles,
   Terminal,
   Trash2,
   UserCheck,
@@ -31,6 +32,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -62,8 +71,6 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
     clinic,
     clinicId,
     isPlatformOwner,
-    isSuperAdmin,
-    membership,
     operationalRole,
     platformAccess,
     platformMfaVerified,
@@ -131,12 +138,12 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
 
   const analyticsData = analyticsQueryState?.state?.data as ClinicDashboardAnalytics | undefined;
 
-  // Executar teste manual da RPC
+  // Executar teste manual da RPC com timeout e resiliência
   const handleTestRpc = async () => {
     if (!clinicId) {
       toast({
         title: "Clínica não selecionada",
-        description: "Não há um ID de clínica ativo no contexto.",
+        description: "Não há um ID de clínica ativo no contexto da simulação.",
         variant: "destructive",
       });
       return;
@@ -144,11 +151,18 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
 
     setRpcTesting(true);
     const startTime = performance.now();
+
     try {
-      const { data, error } = await supabase.rpc("get_clinic_dashboard_analytics", {
+      const rpcPromise = supabase.rpc("get_clinic_dashboard_analytics", {
         _clinic_id: clinicId,
         _year: currentYear,
       });
+
+      const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout de 10s excedido ao executar RPC no Supabase")), 10000)
+      );
+
+      const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
       const durationMs = Math.round(performance.now() - startTime);
 
       if (error) {
@@ -177,13 +191,25 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
           description: `Retornou em ${durationMs}ms com dados consolidados.`,
         });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       const durationMs = Math.round(performance.now() - startTime);
+      const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("abort"));
+      const displayError = isAbort
+        ? { message: "Tempo limite excedido (timeout de 10s ao executar a RPC no Supabase)." }
+        : err;
+
       setRpcTestResult({
         status: "error",
         durationMs,
-        error: err,
+        error: displayError,
         timestamp: new Date().toLocaleTimeString(),
+      });
+      toast({
+        title: isAbort ? "Timeout na RPC" : "Erro inesperado",
+        description: isAbort
+          ? "A execução da RPC excedeu o tempo limite de 10 segundos."
+          : "Falha de rede ou exceção ao invocar a função.",
+        variant: "destructive",
       });
     } finally {
       setRpcTesting(false);
@@ -199,9 +225,95 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
     });
   };
 
-  // Copiar relatório completo de diagnóstico
-  const handleCopyReport = () => {
-    const report = {
+  // Estado para feedback de cópia individual nos cards
+  const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
+
+  // Helper para sanitizar contexto e truncar payloads massivos
+  const sanitizeLogContext = (context: unknown, isFullSample = false) => {
+    if (!context || typeof context !== "object") return context;
+    const { token, access_token, refresh_token, secret, apiKey, ...safe } = context as Record<string, unknown>;
+
+    // Truncar responses volumosas (como listas de 30 eventos de auditoria)
+    if ("response" in safe && safe.response) {
+      const resp = safe.response;
+      if (Array.isArray(resp)) {
+        safe.response = isFullSample
+          ? { _itemCount: resp.length, sample: resp.slice(0, 2) }
+          : { _itemCount: resp.length, sample: resp.slice(0, 1) };
+      }
+    }
+
+    return safe;
+  };
+
+  // 1. Copiar Resumo Estruturado para IA (Markdown Sintético e Direto)
+  const handleCopyMarkdownForAI = () => {
+    const errorLogs = debugEvents.filter((e) => e.type === "error");
+    const rpcLogs = debugEvents.filter((e) => e.type === "rpc");
+    const otherLogs = debugEvents.filter((e) => e.type !== "error" && e.type !== "rpc");
+
+    const lines: string[] = [
+      `### 🔍 Relatório de Diagnóstico & Runtime (Pluri-Health)`,
+      `- **Data/Hora:** ${new Date().toLocaleString("pt-BR")}`,
+      `- **Rota Atual:** \`${location.pathname}${location.search}\``,
+      `- **Usuário / Sessão:** ${user?.email || "Anônimo"} (\`${user?.id || "N/A"}\`)`,
+      `- **Papel Operacional:** \`${operationalRole || "nenhum"}\` | Platform Owner: \`${isPlatformOwner ? "Sim" : "Não"}\` | Simulação: \`${platformAccess?.isSimulation ? "Sim" : "Não"}\``,
+      `- **Clínica:** ${clinic?.name || "Nenhuma selecionada"} (\`${clinicId || "null"}\`) | Plano: \`${subscriptionPlan || "N/A"}\``,
+      `- **TanStack Query Cache:** ${cacheQueries.length} queries no cache (${cacheQueries.filter((q) => q.state.status === "error").length} com erro)`,
+      "",
+    ];
+
+    if (errorLogs.length > 0) {
+      lines.push(`#### ⚠️ Erros Recentes (${errorLogs.length}):`);
+      errorLogs.slice(0, 5).forEach((err) => {
+        lines.push(`- **[${err.timeString}] \`${err.scope}\`**: ${err.message}`);
+        if (err.errorDetails?.message) {
+          lines.push(`  - *Detalhe:* ${err.errorDetails.message}`);
+        }
+      });
+      lines.push("");
+    } else {
+      lines.push(`- **Status de Erros:** ✅ Nenhum erro recente registrado no buffer de runtime.`);
+      lines.push("");
+    }
+
+    if (rpcLogs.length > 0) {
+      lines.push(`#### ⚡ Últimas RPCs Executadas:`);
+      rpcLogs.slice(0, 5).forEach((rpc) => {
+        const dur = (rpc.context as Record<string, unknown> | undefined)?.durationMs;
+        const durStr = dur ? ` (${dur}ms)` : "";
+        lines.push(`- **[${rpc.timeString}] \`${rpc.scope}\`**${durStr}: ${rpc.message}`);
+      });
+      lines.push("");
+    }
+
+    if (otherLogs.length > 0) {
+      lines.push(`#### 📝 Outros Eventos Relevantes:`);
+      otherLogs.slice(0, 3).forEach((item) => {
+        lines.push(`- **[${item.timeString}] \`[${item.type}]\` \`${item.scope}\`**: ${item.message}`);
+      });
+      lines.push("");
+    }
+
+    const markdownText = lines.join("\n");
+    navigator.clipboard.writeText(markdownText);
+    toast({
+      title: "Resumo para IA copiado!",
+      description: "Diagnóstico conciso em Markdown copiado. Perfeito para colar direto no chat da IA sem estourar tokens.",
+    });
+  };
+
+  // 2. Copiar JSON Compacto Sanitizado
+  const handleCopyCompactJson = () => {
+    const sanitizeQueryData = (data: unknown) => {
+      if (!data || typeof data !== "object") return data;
+      if (Array.isArray(data)) {
+        return { _itemCount: data.length, sample: data.slice(0, 1) };
+      }
+      return data;
+    };
+
+    const compactReport = {
       timestamp: new Date().toISOString(),
       route: location.pathname,
       search: location.search,
@@ -225,21 +337,58 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
         status: analyticsQueryState?.state?.status,
         isFetching: analyticsQueryState?.state?.fetchStatus === "fetching",
         hasData: Boolean(analyticsData),
-        data: analyticsData,
+        data: sanitizeQueryData(analyticsData),
         error: analyticsQueryState?.state?.error,
       },
-      activeQueries: cacheQueries.map((q) => ({
-        key: q.queryKey,
-        status: q.state.status,
-        updatedAt: q.state.dataUpdatedAt ? new Date(q.state.dataUpdatedAt).toISOString() : null,
+      activeQueriesSummary: {
+        total: cacheQueries.length,
+        queries: cacheQueries.slice(0, 10).map((q) => ({
+          key: q.queryKey,
+          status: q.state.status,
+          updatedAt: q.state.dataUpdatedAt ? new Date(q.state.dataUpdatedAt).toISOString() : null,
+        })),
+      },
+      recentLogs: debugEvents.slice(0, 10).map((log) => ({
+        id: log.id,
+        timestamp: log.timestamp,
+        timeString: log.timeString,
+        type: log.type,
+        scope: log.scope,
+        message: log.message,
+        context: sanitizeLogContext(log.context, false),
+        errorDetails: log.errorDetails,
       })),
-      recentLogs: debugEvents.slice(0, 15),
     };
 
-    navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+    navigator.clipboard.writeText(JSON.stringify(compactReport, null, 2));
     toast({
-      title: "Relatório copiado!",
-      description: "Os dados de diagnóstico foram copiados para a área de transferência.",
+      title: "JSON compacto copiado!",
+      description: "Relatório JSON sanitizado e com respostas truncadas copiado para a área de transferência.",
+    });
+  };
+
+  // 3. Copiar Detalhe de Log Individual
+  const handleCopySingleLog = (event: RuntimeDebugEvent) => {
+    const singleLogData = {
+      id: event.id,
+      timestamp: event.timestamp,
+      timeString: event.timeString,
+      type: event.type,
+      scope: event.scope,
+      message: event.message,
+      context: sanitizeLogContext(event.context, true),
+      errorDetails: event.errorDetails,
+    };
+
+    navigator.clipboard.writeText(JSON.stringify(singleLogData, null, 2));
+    setCopiedLogId(event.id);
+    setTimeout(() => {
+      setCopiedLogId((curr) => (curr === event.id ? null : curr));
+    }, 2000);
+
+    toast({
+      title: "Log copiado!",
+      description: `Evento [${event.scope}] copiado com contexto sanitizado.`,
     });
   };
 
@@ -257,48 +406,95 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden sm:rounded-2xl bg-neutral-950 border-neutral-800 text-neutral-100 shadow-2xl">
+      <DialogContent className="w-[calc(100vw-16px)] sm:w-full sm:max-w-4xl h-[92dvh] sm:h-auto sm:max-h-[88vh] flex flex-col p-0 overflow-hidden rounded-2xl bg-neutral-950 border-neutral-800 text-neutral-100 shadow-2xl">
         {/* Header do Painel */}
-        <DialogHeader className="p-4 sm:p-5 border-b border-neutral-800 bg-neutral-900/90 shrink-0">
-          <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                <Zap className="h-5 w-5 animate-pulse" />
+        <DialogHeader className="p-3.5 sm:p-5 pr-10 sm:pr-12 border-b border-neutral-800 bg-neutral-900/90 shrink-0 text-left">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="p-2 sm:p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+                <Zap className="h-4 w-4 sm:h-5 sm:w-5 animate-pulse" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <DialogTitle className="text-base sm:text-lg font-bold tracking-tight text-white">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <DialogTitle className="text-sm sm:text-lg font-bold tracking-tight text-white truncate">
                     Painel de Debug & Diagnóstico em Tempo Real
                   </DialogTitle>
-                  <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] uppercase font-bold tracking-wider">
+                  <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] uppercase font-bold tracking-wider shrink-0">
                     Backoffice
                   </Badge>
                 </div>
-                <DialogDescription className="text-xs text-neutral-400 mt-0.5">
+                <DialogDescription className="text-[11px] sm:text-xs text-neutral-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
                   Análise e inspeção profunda de queries, RPCs, permissões e estado da página.
                 </DialogDescription>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2 sm:px-2.5 text-xs bg-neutral-900 border-neutral-700 hover:bg-neutral-800 text-neutral-200 gap-1.5 shrink-0 focus-visible:ring-1 focus-visible:ring-amber-400"
+                    title="Opções de cópia de diagnóstico"
+                    aria-label="Opções de cópia de diagnóstico"
+                  >
+                    <Copy className="h-3.5 w-3.5 text-amber-400" />
+                    <span className="hidden sm:inline font-medium">Copiar Diagnóstico</span>
+                    <ChevronDown className="h-3 w-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-64 bg-neutral-900 border border-neutral-800 text-neutral-100 p-1.5 shadow-xl rounded-xl z-50"
+                >
+                  <DropdownMenuLabel className="text-[11px] font-semibold text-neutral-400 px-2 py-1">
+                    Exportação de Diagnóstico
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={handleCopyMarkdownForAI}
+                    className="flex items-start gap-2.5 p-2 rounded-lg text-xs hover:bg-neutral-800 focus:bg-neutral-800 cursor-pointer text-neutral-200 group"
+                  >
+                    <div className="p-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 mt-0.5 shrink-0">
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-white group-hover:text-amber-300">
+                        Copiar para IA (Markdown)
+                      </div>
+                      <div className="text-[10px] text-neutral-400 line-clamp-2">
+                        Resumo limpo sem inchaço de dados. Ideal para colar no chat de IA.
+                      </div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-neutral-800 my-1" />
+                  <DropdownMenuItem
+                    onClick={handleCopyCompactJson}
+                    className="flex items-start gap-2.5 p-2 rounded-lg text-xs hover:bg-neutral-800 focus:bg-neutral-800 cursor-pointer text-neutral-200 group"
+                  >
+                    <div className="p-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 mt-0.5 shrink-0">
+                      <FileCode className="h-3.5 w-3.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-white group-hover:text-blue-300">
+                        Copiar JSON Compacto
+                      </div>
+                      <div className="text-[10px] text-neutral-400 line-clamp-2">
+                        JSON sanitizado com respostas truncadas e contadores de itens.
+                      </div>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 px-2.5 text-xs bg-neutral-900 border-neutral-700 hover:bg-neutral-800 text-neutral-200 gap-1.5"
-                onClick={handleCopyReport}
-                title="Copiar relatório estruturado em JSON"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Copiar Relatório</span>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 px-2.5 text-xs bg-neutral-900 border-neutral-700 hover:bg-neutral-800 text-neutral-200 gap-1.5"
+                className="h-8 px-2 sm:px-2.5 text-xs bg-neutral-900 border-neutral-700 hover:bg-neutral-800 text-neutral-200 gap-1.5 shrink-0"
                 onClick={handleInvalidateAll}
-                title="Limpar e sincronizar todo o cache TanStack Query"
+                title="Recarregar e sincronizar todo o cache TanStack Query"
+                aria-label="Recarregar e sincronizar todo o cache TanStack Query"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Recarregar Cache</span>
@@ -309,12 +505,12 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
 
         {/* Tabs de Navegação */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-          <div className="px-4 sm:px-5 pt-3 border-b border-neutral-800/80 bg-neutral-900/40 shrink-0">
-            <TabsList className="bg-neutral-900 border border-neutral-800 h-9 p-0.5 gap-1">
+          <div className="px-3 sm:px-5 pt-2.5 sm:pt-3 border-b border-neutral-800/80 bg-neutral-900/40 shrink-0 w-full overflow-x-auto no-scrollbar scroll-smooth flex items-center">
+            <TabsList className="bg-neutral-900 border border-neutral-800 h-9 p-0.5 gap-1 shrink-0">
               <TabsTrigger
                 value="diagnostico"
                 onClick={() => setActiveTab("diagnostico")}
-                className="data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-3 py-1.5 gap-1.5"
+                className="whitespace-nowrap shrink-0 data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-2.5 sm:px-3 py-1.5 gap-1.5"
               >
                 <Activity className="h-3.5 w-3.5" />
                 <span>Diagnóstico & Estatísticas</span>
@@ -322,7 +518,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
               <TabsTrigger
                 value="permissoes"
                 onClick={() => setActiveTab("permissoes")}
-                className="data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-3 py-1.5 gap-1.5"
+                className="whitespace-nowrap shrink-0 data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-2.5 sm:px-3 py-1.5 gap-1.5"
               >
                 <KeyRound className="h-3.5 w-3.5" />
                 <span>Papel & Permissões</span>
@@ -330,7 +526,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
               <TabsTrigger
                 value="queries"
                 onClick={() => setActiveTab("queries")}
-                className="data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-3 py-1.5 gap-1.5"
+                className="whitespace-nowrap shrink-0 data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-2.5 sm:px-3 py-1.5 gap-1.5"
               >
                 <Database className="h-3.5 w-3.5" />
                 <span>React Query ({cacheQueries.length})</span>
@@ -338,7 +534,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
               <TabsTrigger
                 value="flags"
                 onClick={() => setActiveTab("flags")}
-                className="data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-3 py-1.5 gap-1.5"
+                className="whitespace-nowrap shrink-0 data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-2.5 sm:px-3 py-1.5 gap-1.5"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
                 <span>Flags</span>
@@ -346,7 +542,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
               <TabsTrigger
                 value="logs"
                 onClick={() => setActiveTab("logs")}
-                className="data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-3 py-1.5 gap-1.5"
+                className="whitespace-nowrap shrink-0 data-[state=active]:bg-neutral-800 data-[state=active]:text-amber-400 text-xs px-2.5 sm:px-3 py-1.5 gap-1.5"
               >
                 <Terminal className="h-3.5 w-3.5" />
                 <span>Logs em Tempo Real</span>
@@ -360,7 +556,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
           </div>
 
           {/* ABA 1: Diagnóstico da Página & Estatísticas */}
-          <TabsContent value="diagnostico" className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
+          <TabsContent value="diagnostico" className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
             {/* Bloco de Contexto da Página Atual */}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-1">
@@ -562,7 +758,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                     <span className="text-[10px] text-neutral-500">{rpcTestResult.timestamp}</span>
                   </div>
 
-                  <pre className="p-3 rounded-md bg-neutral-900 text-[11px] font-mono text-neutral-300 overflow-x-auto max-h-56 border border-neutral-800/80">
+                  <pre className="p-3 rounded-md bg-neutral-900 text-[10px] sm:text-[11px] font-mono text-neutral-300 overflow-x-auto max-w-full max-h-56 border border-neutral-800/80">
                     {JSON.stringify(rpcTestResult.data || rpcTestResult.error, null, 2)}
                   </pre>
                 </div>
@@ -571,7 +767,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
           </TabsContent>
 
           {/* ABA 2: Sessão, Papel & Permissões */}
-          <TabsContent value="permissoes" className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
+          <TabsContent value="permissoes" className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="p-4 rounded-xl bg-neutral-900/70 border border-neutral-800 space-y-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
@@ -592,9 +788,9 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                   <Shield className="h-4 w-4 text-blue-400" />
                   Configuração da Simulação
                 </h4>
-                <div className="space-y-1 text-xs text-neutral-300">
-                  <p><span className="text-neutral-500">Papel Simulado:</span> <Badge variant="outline" className="ml-1 border-amber-400/30 text-amber-300 text-[10px] uppercase font-bold">{operationalRole ?? "owner"}</Badge></p>
-                  <p><span className="text-neutral-500">Plano Simulado:</span> <Badge variant="outline" className="ml-1 border-blue-400/30 text-blue-300 text-[10px] uppercase font-bold">{subscriptionPlan ?? "clinic"}</Badge></p>
+                <div className="space-y-1.5 text-xs text-neutral-300">
+                  <div className="flex items-center"><span className="text-neutral-500 mr-1.5">Papel Simulado:</span> <Badge variant="outline" className="border-amber-400/30 text-amber-300 text-[10px] uppercase font-bold">{operationalRole ?? "owner"}</Badge></div>
+                  <div className="flex items-center"><span className="text-neutral-500 mr-1.5">Plano Simulado:</span> <Badge variant="outline" className="border-blue-400/30 text-blue-300 text-[10px] uppercase font-bold">{subscriptionPlan ?? "clinic"}</Badge></div>
                   <p><span className="text-neutral-500">Overrides de Permissão:</span> {Object.keys(simulatedRoleCapabilityOverrides).length} ativos</p>
                   <p><span className="text-neutral-500">Acesso Mestre Ativo:</span> {platformAccess ? "Sim (Sessão Registrada)" : "Não"}</p>
                 </div>
@@ -651,8 +847,8 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
           </TabsContent>
 
           {/* ABA 3: React Query & Cache */}
-          <TabsContent value="queries" className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
-            <div className="flex items-center justify-between gap-2 border-b border-neutral-800 pb-3">
+          <TabsContent value="queries" className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3">
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-white">
                   Cache TanStack Query ({cacheQueries.length} queries)
@@ -666,7 +862,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                 size="sm"
                 variant="outline"
                 onClick={() => setCacheQueries(queryClient.getQueryCache().getAll())}
-                className="h-7 text-xs bg-neutral-900 border-neutral-700 hover:bg-neutral-800 text-neutral-200 gap-1.5"
+                className="h-7 text-xs bg-neutral-900 border-neutral-700 hover:bg-neutral-800 text-neutral-200 gap-1.5 shrink-0"
               >
                 <RefreshCw className="h-3 w-3" />
                 Atualizar Lista
@@ -736,7 +932,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                             Refazer Fetch Agora
                           </Button>
                         </div>
-                        <pre className="p-2.5 rounded bg-neutral-950 font-mono text-[11px] text-neutral-300 overflow-x-auto max-h-56 border border-neutral-800/80">
+                        <pre className="p-2.5 rounded bg-neutral-950 font-mono text-[10px] sm:text-[11px] text-neutral-300 overflow-x-auto max-w-full max-h-56 border border-neutral-800/80">
                           {JSON.stringify(query.state.data ?? query.state.error, null, 2)}
                         </pre>
                       </div>
@@ -748,8 +944,8 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
           </TabsContent>
 
           {/* ABA 4: Feature Flags */}
-          <TabsContent value="flags" className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
-            <div className="flex items-center justify-between gap-2 border-b border-neutral-800 pb-3">
+          <TabsContent value="flags" className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3">
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-white">
                   Feature Flags da Sessão
@@ -758,7 +954,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                   Estado das funcionalidades ativadas para esta clínica e simulação.
                 </p>
               </div>
-              <Badge variant="outline" className="border-amber-400/30 bg-amber-400/10 text-amber-300 text-xs">
+              <Badge variant="outline" className="border-amber-400/30 bg-amber-400/10 text-amber-300 text-xs shrink-0">
                 {Object.keys(flagOverrides).length} overrides manuais
               </Badge>
             </div>
@@ -775,7 +971,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-mono text-neutral-200 truncate">{flagKey}</span>
                         {isOverridden && (
-                          <Badge variant="outline" className="border-amber-400/40 text-amber-300 text-[9px] px-1 py-0">
+                          <Badge variant="outline" className="border-amber-400/40 text-amber-300 text-[9px] px-1 py-0 shrink-0">
                             Override
                           </Badge>
                         )}
@@ -785,8 +981,8 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                     <Badge
                       className={
                         isEnabled
-                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px]"
-                          : "bg-neutral-800 text-neutral-400 border border-neutral-700 text-[10px]"
+                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] shrink-0"
+                          : "bg-neutral-800 text-neutral-400 border border-neutral-700 text-[10px] shrink-0"
                       }
                     >
                       {isEnabled ? "Ativo" : "Inativo"}
@@ -798,7 +994,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
           </TabsContent>
 
           {/* ABA 5: Logs em Tempo Real */}
-          <TabsContent value="logs" className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
+          <TabsContent value="logs" className="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 space-y-4 m-0 focus-visible:outline-none">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-neutral-900 p-0.5 rounded-lg border border-neutral-800">
@@ -833,7 +1029,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="relative w-40 sm:w-52">
+                <div className="relative w-36 sm:w-52">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-500" />
                   <Input
                     type="text"
@@ -848,8 +1044,9 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                   size="sm"
                   variant="ghost"
                   onClick={clearDebugEvents}
-                  className="h-7 px-2 text-neutral-400 hover:text-rose-400 hover:bg-neutral-900 gap-1 text-xs"
+                  className="h-7 px-2 text-neutral-400 hover:text-rose-400 hover:bg-neutral-900 gap-1 text-xs shrink-0"
                   title="Limpar todos os logs da memória"
+                  aria-label="Limpar todos os logs da memória"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Limpar</span>
@@ -890,10 +1087,10 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                               variant="outline"
                               className={`text-[9px] uppercase font-bold px-1.5 py-0 ${
                                 isErr
-                                  ? "border-rose-500/40 bg-rose-500/10 text-rose-300"
-                                  : isRpc
-                                  ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                                  : "border-neutral-700 bg-neutral-800 text-neutral-300"
+                                   ? "border-rose-500/40 bg-rose-500/10 text-rose-300"
+                                   : isRpc
+                                   ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                                   : "border-neutral-700 bg-neutral-800 text-neutral-300"
                               }`}
                             >
                               {event.type}
@@ -903,22 +1100,42 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                           <p className="text-xs leading-relaxed text-neutral-300 break-words">{event.message}</p>
                         </div>
 
-                        {(event.context || event.errorDetails) && (
-                          <span className="text-[10px] text-neutral-500 shrink-0">
-                            {isExpanded ? "Fechar ▲" : "Detalhes ▼"}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopySingleLog(event);
+                            }}
+                            title="Copiar apenas este log com contexto sanitizado"
+                            aria-label="Copiar apenas este log com contexto sanitizado"
+                          >
+                            {copiedLogId === event.id ? (
+                              <Check className="h-3 w-3 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </Button>
+                          {(event.context || event.errorDetails) && (
+                            <span className="text-[10px] text-neutral-500 shrink-0">
+                              {isExpanded ? "Fechar ▲" : "Detalhes ▼"}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {isExpanded && (event.context || event.errorDetails) && (
                         <div className="mt-2.5 pt-2 border-t border-neutral-800 space-y-2">
                           {event.errorDetails?.stack && (
-                            <pre className="p-2 rounded bg-neutral-950 text-[10px] text-rose-300/80 overflow-x-auto max-h-36">
+                            <pre className="p-2 rounded bg-neutral-950 text-[10px] text-rose-300/80 overflow-x-auto max-w-full max-h-36">
                               {event.errorDetails.stack}
                             </pre>
                           )}
                           {event.context && (
-                            <pre className="p-2 rounded bg-neutral-950 text-[10px] text-neutral-400 overflow-x-auto max-h-48">
+                            <pre className="p-2 rounded bg-neutral-950 text-[10px] text-neutral-400 overflow-x-auto max-w-full max-h-48">
                               {JSON.stringify(event.context, null, 2)}
                             </pre>
                           )}

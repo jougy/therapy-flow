@@ -24,7 +24,13 @@ import {
   handleAgendaFull,
   handleAgendaNext,
   handleAppointmentAction,
+  handleAppointmentEditFlow,
+  AppointmentActionType,
   AgendaStateData,
+  isGlobalCancelCommand,
+  isGlobalBackCommand,
+  resolveCustomerContext,
+  isOwnerMenuTriggerCommand,
 } from "../../supabase/functions/whatsapp-webhook/owner-copilot.ts";
 import { TelegramClient } from "../../supabase/functions/_shared/telegram-client.ts";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
@@ -673,6 +679,200 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
 
       // Se quem enviou foi um lead / cliente externo: MANDA mensagem de alerta para o WhatsApp comercial do admin!
       expect(shouldSendWaToAdmin("5511999998888")).toBe(true);
+    });
+
+    it("evaluates customer.isOwnerOrAdmin as true and activeRole as 'platform_admin' when message comes from adminCommercialPhone", async () => {
+      const client = new WhatsAppClient({
+        adminCommercialPhone: "5511980113936",
+      });
+
+      // Mock do cliente Supabase simulando ambiente sem profile prévio vinculado
+      const mockSupabase = {
+        from: vi.fn((table: string) => ({
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          filter: vi.fn().mockReturnThis(),
+          ilike: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        })),
+      };
+
+      // Teste com o número canônico E.164
+      const customer = await resolveCustomerContext(
+        mockSupabase,
+        client,
+        "5511980113936",
+        "Jougy Admin"
+      );
+
+      expect(customer.isOwnerOrAdmin).toBe(true);
+      expect(customer.activeRole).toBe("platform_admin");
+      expect(customer.userName).toBe("Jougy Admin");
+
+      // Teste com formatação brasileira: +55 (11) 98011-3936
+      const customerFormatted = await resolveCustomerContext(
+        mockSupabase,
+        client,
+        "+55 (11) 98011-3936"
+      );
+
+      expect(customerFormatted.isOwnerOrAdmin).toBe(true);
+      expect(customerFormatted.activeRole).toBe("platform_admin");
+      expect(customerFormatted.userName).toBe("Administrador Master");
+    });
+
+    it("recognizes command 'Menu' and 'Oi' as triggers to open the Owner Main Menu (sendOwnerMainMenu) instead of human handoff", async () => {
+      const client = new WhatsAppClient({
+        adminCommercialPhone: "5511980113936",
+      });
+
+      // Validação dos gatilhos de comando
+      expect(isOwnerMenuTriggerCommand("Menu")).toBe(true);
+      expect(isOwnerMenuTriggerCommand("menu")).toBe(true);
+      expect(isOwnerMenuTriggerCommand("Oi")).toBe(true);
+      expect(isOwnerMenuTriggerCommand("oi")).toBe(true);
+      expect(isOwnerMenuTriggerCommand("Olá")).toBe(true);
+      expect(isOwnerMenuTriggerCommand("ola")).toBe(true);
+      expect(isOwnerMenuTriggerCommand("btn_owner_menu")).toBe(true);
+
+      // Garante que mensagens aleatórias não disparam o menu direto
+      expect(isOwnerMenuTriggerCommand("Quero falar sobre dores na coluna")).toBe(false);
+
+      // Simulação do envio do Menu Principal do Titular
+      const sendListSpy = vi.spyOn(client, "sendListMessage").mockResolvedValue({
+        success: true,
+        provider: "meta_cloud",
+        messageId: "wamid.MENU_TEST_123",
+      });
+
+      const masterContext: OwnerCustomerContext = {
+        userId: "usr-admin-master",
+        clinicId: "clinic-master-123",
+        userName: "Administrador Master",
+        userEmail: "admin@plurifisio.com.br",
+        clinicName: "Clínica Matriz Pluri",
+        planName: "Plano Clínica",
+        professionInfo: "Fisioterapeuta - CREFITO-3",
+        isOwnerOrAdmin: true,
+        isSoloPlan: false,
+        isClinicPlan: true,
+        activeRole: "platform_admin",
+      };
+
+      // Quando o Titular Mestre envia 'Oi' ou 'Menu', o menu principal do Titular deve ser chamado
+      await sendOwnerMainMenu(client, "5511980113936", masterContext);
+
+      expect(sendListSpy).toHaveBeenCalledTimes(1);
+      const [calledPhone, calledBody, calledButtonText, calledSections] = sendListSpy.mock.calls[0];
+      expect(calledPhone).toBe("5511980113936");
+      expect(calledBody).toContain("Copiloto de Gestão PluriFisio");
+      expect(calledBody).toContain("Clínica Matriz Pluri");
+      expect(calledButtonText).toBe("Ver Opções");
+      expect(calledSections.some((s) => s.rows.some((r) => r.id === "btn_menu_records"))).toBe(true);
+      expect(calledSections.some((s) => s.rows.some((r) => r.id === "btn_menu_agenda"))).toBe(true);
+    });
+
+    it("resolves phone number variations across Brazilian formats (with/without 55, with/without 9th digit, formatted)", () => {
+      const client = new WhatsAppClient({
+        adminCommercialPhone: "5511980113936",
+      });
+
+      // 1. Canônico completo (55 + DDD + 9 dígitos)
+      expect(client.isAdminCommercialPhone("5511980113936")).toBe(true);
+
+      // 2. Sem 55 (DDD + 9 dígitos)
+      expect(client.isAdminCommercialPhone("11980113936")).toBe(true);
+
+      // 3. Com formatação internacional: +55 (11) 98011-3936
+      expect(client.isAdminCommercialPhone("+55 (11) 98011-3936")).toBe(true);
+
+      // 4. Com formatação nacional: (11) 98011-3936
+      expect(client.isAdminCommercialPhone("(11) 98011-3936")).toBe(true);
+
+      // 5. Sem o 9º dígito: 1180113936 e 551180113936
+      expect(client.isAdminCommercialPhone("1180113936")).toBe(true);
+      expect(client.isAdminCommercialPhone("551180113936")).toBe(true);
+      expect(client.isAdminCommercialPhone("(11) 8011-3936")).toBe(true);
+      expect(client.isAdminCommercialPhone("+55 11 8011-3936")).toBe(true);
+
+      // 6. Números diferentes NÃO devem casar
+      expect(client.isAdminCommercialPhone("5511999998888")).toBe(false);
+      expect(client.isAdminCommercialPhone("5511960474566")).toBe(false);
+      expect(client.isAdminCommercialPhone("11999998888")).toBe(false);
+      expect(client.isAdminCommercialPhone("")).toBe(false);
+      expect(client.isAdminCommercialPhone(null)).toBe(false);
+    });
+
+    it("gracefully falls back to default active clinic for platform admin when not directly linked to a clinic", async () => {
+      const client = new WhatsAppClient({
+        adminCommercialPhone: "5511980113936",
+      });
+
+      // Mock do Supabase simulando ausência de vínculo direto, mas existência de clínica default no sistema
+      const mockSupabase = {
+        from: vi.fn((table: string) => {
+          if (table === "clinics") {
+            return {
+              select: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: "clinic-fallback-default-999",
+                  name: "Pluri Health Matriz Fallback",
+                  subscription_plan: "clinica_pro",
+                },
+                error: null,
+              }),
+            };
+          }
+
+          if (table === "clinic_subscriptions") {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  plan_type: "clinica_enterprise",
+                  status: "ACTIVE",
+                  total_recurring_monthly_price: 39900,
+                },
+                error: null,
+              }),
+            };
+          }
+
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            filter: vi.fn().mockReturnThis(),
+            ilike: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          };
+        }),
+      };
+
+      const customer = await resolveCustomerContext(
+        mockSupabase,
+        client,
+        "5511980113936",
+        "Jougy"
+      );
+
+      // Verificação de integridade do fallback
+      expect(customer.isOwnerOrAdmin).toBe(true);
+      expect(customer.activeRole).toBe("platform_admin");
+      expect(customer.clinicId).toBe("clinic-fallback-default-999");
+      expect(customer.clinicName).toBe("Pluri Health Matriz Fallback");
+      expect(customer.planName).toBe("clinica_enterprise");
+      expect(customer.isClinicPlan).toBe(true);
+      expect(customer.isSoloPlan).toBe(false);
     });
   });
 
@@ -2020,6 +2220,97 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
         expect(sentConfirmationCard.body).toContain("calendar.google.com");
       });
 
+      it("guarantees clinic owner full autonomy: allows scheduling on Thursday morning, lunch time and custom hours when schedule is free", async () => {
+        let sentConfirmationCard: any;
+        const mockClient = {
+          sendTextMessage: vi.fn(async () => ({ success: true })),
+          sendButtonsMessage: vi.fn(async (_phone, body, options) => {
+            sentConfirmationCard = { body, options };
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        let insertedAgendaEvent: any;
+
+        const mockSupabase = {
+          from: vi.fn((table: string) => {
+            if (table === "agenda_events") {
+              return {
+                select: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    gte: vi.fn(() => ({
+                      lte: vi.fn(() => ({
+                        neq: vi.fn(async () => ({ data: [], error: null })),
+                      })),
+                    })),
+                  })),
+                })),
+                insert: vi.fn((payload) => {
+                  insertedAgendaEvent = payload;
+                  return {
+                    select: vi.fn(() => ({
+                      single: vi.fn(async () => ({ data: { id: "evt_owner_lunch_01" }, error: null })),
+                    })),
+                  };
+                }),
+              };
+            }
+            if (table === "sessions") {
+              return {
+                insert: vi.fn(async () => ({ error: null })),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        // 1. Agendamento exatamente no horário de almoço (13:30) em uma quinta-feira (2026-10-15)
+        const resLunchThursday = await handleAgendaCreationFlow(
+          mockSupabase,
+          mockClient,
+          "5511999998888",
+          mockContextSolo,
+          "agenda_waiting_time",
+          "13:30",
+          undefined,
+          {
+            subType: "patient",
+            patientId: "pat_123",
+            patientName: "Carlos Eduardo",
+            dateIso: "2026-10-15", // Quinta-feira
+            dateDisplay: "15/10",
+          }
+        );
+
+        expect(resLunchThursday.handled).toBe(true);
+        expect(resLunchThursday.nextStep).toBe("initial");
+        expect(insertedAgendaEvent).toBeDefined();
+        expect(insertedAgendaEvent.scheduled_for).toContain("16:30:00.000Z"); // 13:30 Brasília = 16:30 UTC
+        expect(sentConfirmationCard.body).toContain("AGENDAMENTO CONFIRMADO");
+
+        // 2. Agendamento em quinta-feira de manhã (10:00) - que seria bloqueado para Lead/Master, mas é livre para Owner
+        const resMorningThursday = await handleAgendaCreationFlow(
+          mockSupabase,
+          mockClient,
+          "5511999998888",
+          mockContextSolo,
+          "agenda_waiting_time",
+          "10:00",
+          undefined,
+          {
+            subType: "patient",
+            patientId: "pat_123",
+            patientName: "Carlos Eduardo",
+            dateIso: "2026-10-15", // Quinta-feira
+            dateDisplay: "15/10",
+          }
+        );
+
+        expect(resMorningThursday.handled).toBe(true);
+        expect(resMorningThursday.nextStep).toBe("initial");
+        expect(sentConfirmationCard.body).toContain("AGENDAMENTO CONFIRMADO");
+      });
+
       it("handles Clinic Plan: asks for collaborators and records team in notes", async () => {
         let sentButtonsMessage: any;
         const mockClient = {
@@ -2229,12 +2520,13 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
         expect(btnIds).toContain("agenda_new");
       });
 
-      it("displays rich card with 3 action buttons (confirm, cancel, reschedule) when appointment exists", async () => {
-        let sentCard: any;
+      it("displays Meta List Message with 'Mudar Status' and 'Editar Informação' sections when appointment exists", async () => {
+        let capturedList: any;
         const mockClient = {
           sendTextMessage: vi.fn(async () => ({ success: true })),
-          sendButtonsMessage: vi.fn(async (_phone, body, options) => {
-            sentCard = { body, options };
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+          sendListMessage: vi.fn(async (_phone, body, buttonText, sections, options) => {
+            capturedList = { body, buttonText, sections, options };
             return { success: true };
           }),
         } as unknown as WhatsAppClient;
@@ -2272,15 +2564,88 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
               };
             }
             if (table === "patients") {
+              const patientChain: any = {
+                eq: vi.fn(() => patientChain),
+                maybeSingle: vi.fn(async () => ({
+                  data: {
+                    name: "Roberto Carlos",
+                    phone: "11977776666",
+                  },
+                  error: null,
+                })),
+              };
+              return {
+                select: vi.fn(() => patientChain),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        await handleAgendaNext(mockSupabase, mockClient, "5511999998888", mockContextClinic);
+
+        expect(capturedList.body).toContain("PRÓXIMO AGENDAMENTO");
+        expect(capturedList.body).toContain("Roberto Carlos");
+        expect(capturedList.body).toContain("11977776666");
+        expect(capturedList.buttonText).toBe("Ações Rápidas");
+
+        // Verifica duas seções: Mudar Status e Editar Informação
+        expect(capturedList.sections).toHaveLength(2);
+        const [statusSection, editSection] = capturedList.sections;
+
+        expect(statusSection.title).toBe("Mudar Status");
+        const statusRowIds = statusSection.rows.map((r: any) => r.id);
+        expect(statusRowIds).toEqual([
+          "appt_status_confirm_evt_next_88",
+          "appt_status_cancel_evt_next_88",
+          "appt_status_complete_evt_next_88",
+          "appt_status_awaiting_evt_next_88",
+          "appt_status_delete_evt_next_88",
+        ]);
+
+        expect(editSection.title).toBe("Editar Informação");
+        const editRowIds = editSection.rows.map((r: any) => r.id);
+        expect(editRowIds).toContain("appt_edit_date_evt_next_88");
+        expect(editRowIds).toContain("appt_edit_time_evt_next_88");
+        expect(editRowIds).toContain("appt_back_menu_evt_next_88");
+      });
+
+      it("respects plan condition: excludes 'Colaboradores' row for Solo Plan", async () => {
+        let capturedList: any;
+        const mockClient = {
+          sendTextMessage: vi.fn(async () => ({ success: true })),
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+          sendListMessage: vi.fn(async (_phone, body, buttonText, sections, options) => {
+            capturedList = { body, buttonText, sections, options };
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+        const mockSupabase = {
+          from: vi.fn((table: string) => {
+            if (table === "agenda_events") {
               return {
                 select: vi.fn(() => ({
                   eq: vi.fn(() => ({
-                    maybeSingle: vi.fn(async () => ({
-                      data: {
-                        name: "Roberto Carlos",
-                        phone: "11977776666",
-                      },
-                      error: null,
+                    gte: vi.fn(() => ({
+                      neq: vi.fn(() => ({
+                        order: vi.fn(() => ({
+                          limit: vi.fn(() => ({
+                            maybeSingle: vi.fn(async () => ({
+                              data: {
+                                id: "evt_solo_123",
+                                title: "Sessão Lucas",
+                                scheduled_for: nextHour.toISOString(),
+                                duration_minutes: 50,
+                                status: "confirmado",
+                                event_type: "atendimento",
+                              },
+                              error: null,
+                            })),
+                          })),
+                        })),
+                      })),
                     })),
                   })),
                 })),
@@ -2290,18 +2655,74 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
           }),
         } as any;
 
+        // Contexto com isSoloPlan = true, isClinicPlan = false
         await handleAgendaNext(mockSupabase, mockClient, "5511999998888", mockContextSolo);
 
-        expect(sentCard.body).toContain("PRÓXIMO AGENDAMENTO");
-        expect(sentCard.body).toContain("Roberto Carlos");
-        expect(sentCard.body).toContain("11977776666");
-        const btnIds = sentCard.options.buttons.map((b: any) => b.id);
-        expect(btnIds).toContain("appt_confirm_evt_next_88");
-        expect(btnIds).toContain("appt_cancel_evt_next_88");
-        expect(btnIds).toContain("appt_resched_evt_next_88");
+        const editSection = capturedList.sections.find((s: any) => s.title === "Editar Informação");
+        const rowIds = editSection.rows.map((r: any) => r.id);
+        const rowTitles = editSection.rows.map((r: any) => r.title);
+
+        expect(rowIds).not.toContain("appt_edit_collab_evt_solo_123");
+        expect(rowTitles.some((t: string) => t.includes("Colaboradores"))).toBe(false);
       });
 
-      it("executes appointment action: confirm", async () => {
+      it("respects plan condition: includes 'Colaboradores' row for Clinic Plan", async () => {
+        let capturedList: any;
+        const mockClient = {
+          sendTextMessage: vi.fn(async () => ({ success: true })),
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+          sendListMessage: vi.fn(async (_phone, body, buttonText, sections, options) => {
+            capturedList = { body, buttonText, sections, options };
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+        const mockSupabase = {
+          from: vi.fn((table: string) => {
+            if (table === "agenda_events") {
+              return {
+                select: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    gte: vi.fn(() => ({
+                      neq: vi.fn(() => ({
+                        order: vi.fn(() => ({
+                          limit: vi.fn(() => ({
+                            maybeSingle: vi.fn(async () => ({
+                              data: {
+                                id: "evt_clinic_456",
+                                title: "Sessão Marina",
+                                scheduled_for: nextHour.toISOString(),
+                                duration_minutes: 50,
+                                status: "confirmado",
+                                event_type: "atendimento",
+                              },
+                              error: null,
+                            })),
+                          })),
+                        })),
+                      })),
+                    })),
+                  })),
+                })),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        // Contexto com isClinicPlan = true
+        await handleAgendaNext(mockSupabase, mockClient, "5511999998888", mockContextClinic);
+
+        const editSection = capturedList.sections.find((s: any) => s.title === "Editar Informação");
+        const rowIds = editSection.rows.map((r: any) => r.id);
+        const rowTitles = editSection.rows.map((r: any) => r.title);
+
+        expect(rowIds).toContain("appt_edit_collab_evt_clinic_456");
+        expect(rowTitles.some((t: string) => t.includes("Colaboradores"))).toBe(true);
+      });
+
+      it("executes appointment action: appt_status_confirm_* updates status to 'confirmado'", async () => {
         const mockClient = {
           sendTextMessage: vi.fn(async () => ({ success: true })),
           sendButtonsMessage: vi.fn(async () => ({ success: true })),
@@ -2322,9 +2743,10 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
             })),
             update: vi.fn((payload) => {
               updatedStatus = payload.status;
-              return {
-                eq: vi.fn(async () => ({ error: null })),
+              const chain: any = {
+                eq: vi.fn(() => chain),
               };
+              return chain;
             }),
           })),
         } as any;
@@ -2342,7 +2764,7 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
         expect(updatedStatus).toBe("confirmado");
       });
 
-      it("executes appointment action: cancel and frees slot", async () => {
+      it("executes appointment action: appt_status_cancel_* updates status to 'cancelado' and frees slot", async () => {
         const mockClient = {
           sendTextMessage: vi.fn(async () => ({ success: true })),
           sendButtonsMessage: vi.fn(async () => ({ success: true })),
@@ -2369,11 +2791,12 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
             })),
             update: vi.fn((payload) => {
               updatedStatus = payload.status;
-              return {
-                eq: vi.fn(() => ({
-                  eq: vi.fn(async () => ({ error: null })),
-                })),
+              const chain: any = {
+                eq: vi.fn(() => chain),
+                in: vi.fn(async () => ({ error: null })),
+                neq: vi.fn(async () => ({ error: null })),
               };
+              return chain;
             }),
           })),
         } as any;
@@ -2389,6 +2812,164 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
 
         expect(res.success).toBe(true);
         expect(updatedStatus).toBe("cancelado");
+      });
+
+      it("executes appointment action: appt_status_complete_* updates status to 'concluido'", async () => {
+        const mockClient = {
+          sendTextMessage: vi.fn(async () => ({ success: true })),
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+        } as unknown as WhatsAppClient;
+
+        let updatedStatus = "";
+        const mockSupabase = {
+          from: vi.fn(() => ({
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({
+                    data: {
+                      id: "evt_comp_1",
+                      title: "Sessão Fisioterapia",
+                      status: "confirmado",
+                      scheduled_for: new Date().toISOString(),
+                      patient_id: "pat_comp_1",
+                    },
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+            update: vi.fn((payload) => {
+              updatedStatus = payload.status;
+              const chain: any = {
+                eq: vi.fn(() => chain),
+                neq: vi.fn(async () => ({ error: null })),
+              };
+              return chain;
+            }),
+          })),
+        } as any;
+
+        const res = await handleAppointmentAction(
+          mockSupabase,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "complete",
+          "evt_comp_1"
+        );
+
+        expect(res.success).toBe(true);
+        expect(updatedStatus).toBe("concluido");
+      });
+
+      it("executes appointment action: appt_status_awaiting_* updates status to 'aguardando_confirmacao'", async () => {
+        const mockClient = {
+          sendTextMessage: vi.fn(async () => ({ success: true })),
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+        } as unknown as WhatsAppClient;
+
+        let updatedStatus = "";
+        const mockSupabase = {
+          from: vi.fn(() => ({
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({
+                    data: {
+                      id: "evt_await_1",
+                      title: "Atendimento Rogério",
+                      status: "confirmado",
+                    },
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+            update: vi.fn((payload) => {
+              updatedStatus = payload.status;
+              const chain: any = {
+                eq: vi.fn(() => chain),
+              };
+              return chain;
+            }),
+          })),
+        } as any;
+
+        const res = await handleAppointmentAction(
+          mockSupabase,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "awaiting",
+          "evt_await_1"
+        );
+
+        expect(res.success).toBe(true);
+        expect(updatedStatus).toBe("aguardando_confirmacao");
+      });
+
+
+      it("executes appointment action: appt_status_delete_* deletes event from database", async () => {
+        const mockClient = {
+          sendTextMessage: vi.fn(async () => ({ success: true })),
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+        } as unknown as WhatsAppClient;
+
+        let deleteCalled = false;
+        const mockSupabase = {
+          from: vi.fn((table: string) => {
+            if (table === "agenda_events") {
+              return {
+                select: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({
+                        data: {
+                          id: "evt_del_1",
+                          title: "Consulta Teste",
+                          status: "confirmado",
+                          scheduled_for: new Date().toISOString(),
+                          patient_id: "pat_del_1",
+                        },
+                        error: null,
+                      })),
+                    })),
+                  })),
+                })),
+                delete: vi.fn(() => {
+                  deleteCalled = true;
+                  return {
+                    eq: vi.fn(() => ({
+                      eq: vi.fn(async () => ({ error: null })),
+                    })),
+                  };
+                }),
+              };
+            }
+            if (table === "sessions") {
+              const sessionChain: any = {
+                eq: vi.fn(() => sessionChain),
+              };
+              return {
+                update: vi.fn(() => sessionChain),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        const res = await handleAppointmentAction(
+          mockSupabase,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "delete",
+          "evt_del_1"
+        );
+
+        expect(res.success).toBe(true);
+        expect(deleteCalled).toBe(true);
       });
 
       it("executes appointment action: reschedule initiating interactive date selection", async () => {
@@ -2438,7 +3019,735 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
         expect(sentTexts.some((t) => t.includes("Remarcar Atendimento"))).toBe(true);
         expect(listCapturedTitle).toBe("Nova Data");
       });
+
+      it("handles edit date flow: appt_edit_date_* initiates date selection and updates scheduled_for", async () => {
+        const sentTexts: string[] = [];
+        let listTitle = "";
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_p: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+          sendListMessage: vi.fn(async (_p: string, _b: string, _btn: string, _s: any, options: any) => {
+            listTitle = options?.title || "";
+            return { success: true };
+          }),
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+        } as unknown as WhatsAppClient;
+
+        const mockSupabase = {} as any;
+
+        // Passo 1: Disparo de appt_edit_date_evt_10
+        const step1 = await handleAppointmentEditFlow(
+          mockSupabase,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "initial",
+          "",
+          "appt_edit_date_evt_10",
+          {}
+        );
+
+        expect(step1.handled).toBe(true);
+        expect(step1.nextStep).toBe("appt_edit_waiting_date");
+        expect(step1.updatedStateData.editingEventId).toBe("evt_10");
+        expect(step1.updatedStateData.editingField).toBe("date");
+        expect(sentTexts.some((t) => t.includes("Alterar Data do Atendimento"))).toBe(true);
+        expect(listTitle).toBe("Nova Data");
+
+        // Passo 2: Usuário seleciona a nova data (agenda_date_2026-10-25)
+        let updatedScheduledFor = "";
+        const mockSupabaseStep2 = {
+          from: vi.fn((table: string) => {
+            if (table === "agenda_events") {
+              return {
+                select: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({
+                        data: {
+                          id: "evt_10",
+                          title: "Atendimento Mariana",
+                          scheduled_for: "2026-10-20T14:00:00.000Z",
+                          patient_id: "pat_10",
+                        },
+                        error: null,
+                      })),
+                    })),
+                  })),
+                })),
+                update: vi.fn((payload) => {
+                  updatedScheduledFor = payload.scheduled_for;
+                  return {
+                    eq: vi.fn(() => ({
+                      eq: vi.fn(async () => ({ error: null })),
+                    })),
+                  };
+                }),
+              };
+            }
+            if (table === "sessions") {
+              const sessionChain: any = {
+                eq: vi.fn(() => sessionChain),
+              };
+              return {
+                update: vi.fn(() => sessionChain),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        const step2 = await handleAppointmentEditFlow(
+          mockSupabaseStep2,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "appt_edit_waiting_date",
+          "",
+          "agenda_date_2026-10-25",
+          step1.updatedStateData
+        );
+
+        expect(step2.handled).toBe(true);
+        expect(step2.nextStep).toBe("initial");
+        expect(updatedScheduledFor).toBeDefined();
+        expect(updatedScheduledFor).toContain("2026-10-25");
+      });
+
+      it("handles edit time flow: appt_edit_time_* requests new time and updates scheduled_for", async () => {
+        const sentTexts: string[] = [];
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_p: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+        } as unknown as WhatsAppClient;
+
+        const mockSupabase = {
+          from: vi.fn(() => ({
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({
+                    data: {
+                      id: "evt_time_20",
+                      title: "Sessão Reabilitação",
+                      scheduled_for: "2026-10-26T14:00:00.000Z",
+                      patient_id: "pat_time_20",
+                    },
+                    error: null,
+                  })),
+                })),
+                gte: vi.fn(() => ({
+                  lte: vi.fn(() => ({
+                    neq: vi.fn(async () => ({ data: [], error: null })),
+                  })),
+                })),
+              })),
+            })),
+          })),
+        } as any;
+
+        // Passo 1: Início
+        const step1 = await handleAppointmentEditFlow(
+          mockSupabase,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "initial",
+          "",
+          "appt_edit_time_evt_time_20",
+          {}
+        );
+
+        expect(step1.handled).toBe(true);
+        expect(step1.nextStep).toBe("appt_edit_waiting_time");
+        expect(step1.updatedStateData.editingEventId).toBe("evt_time_20");
+        expect(sentTexts.some((t) => t.includes("Alterar Horário do Atendimento"))).toBe(true);
+
+        // Passo 2: Digita novo horário "10:30"
+        let updatedTimeScheduled = "";
+        const mockSupabaseStep2 = {
+          from: vi.fn((table: string) => {
+            if (table === "agenda_events") {
+              return {
+                select: vi.fn((fields: string) => ({
+                  eq: vi.fn((col: string, val: string) => {
+                    return {
+                      eq: vi.fn(() => ({
+                        maybeSingle: vi.fn(async () => ({
+                          data: {
+                            id: "evt_time_20",
+                            title: "Sessão Reabilitação",
+                            scheduled_for: "2026-10-26T14:00:00.000Z",
+                            patient_id: "pat_time_20",
+                          },
+                          error: null,
+                        })),
+                      })),
+                      gte: vi.fn(() => ({
+                        lte: vi.fn(() => ({
+                          neq: vi.fn(async () => ({ data: [], error: null })),
+                        })),
+                      })),
+                    };
+                  }),
+                })),
+                update: vi.fn((payload) => {
+                  updatedTimeScheduled = payload.scheduled_for;
+                  return {
+                    eq: vi.fn(() => ({
+                      eq: vi.fn(async () => ({ error: null })),
+                    })),
+                  };
+                }),
+              };
+            }
+            if (table === "sessions") {
+              const sessionChain: any = {
+                eq: vi.fn(() => sessionChain),
+              };
+              return {
+                update: vi.fn(() => sessionChain),
+              };
+            }
+            return {};
+          }),
+        } as any;
+
+        const step2 = await handleAppointmentEditFlow(
+          mockSupabaseStep2,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "appt_edit_waiting_time",
+          "10:30",
+          "",
+          step1.updatedStateData
+        );
+
+        expect(step2.handled).toBe(true);
+        expect(step2.nextStep).toBe("initial");
+        expect(updatedTimeScheduled).toBeDefined();
+        expect(new Date(updatedTimeScheduled).toISOString()).toBe(updatedTimeScheduled);
+      });
+
+      it("handles edit collaborators flow (clinic plan): appt_edit_collab_* updates collaborators/notes", async () => {
+        const sentTexts: string[] = [];
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_p: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+          sendButtonsMessage: vi.fn(async () => ({ success: true })),
+        } as unknown as WhatsAppClient;
+
+        // Passo 1: Início
+        const step1 = await handleAppointmentEditFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "initial",
+          "",
+          "appt_edit_collab_evt_collab_30",
+          {}
+        );
+
+        expect(step1.handled).toBe(true);
+        expect(step1.nextStep).toBe("appt_edit_waiting_collab");
+        expect(step1.updatedStateData.editingEventId).toBe("evt_collab_30");
+        expect(sentTexts.some((t) => t.includes("Atualizar Colaboradores da Equipe"))).toBe(true);
+
+        // Passo 2: Digita os colaboradores
+        let updatedNotes = "";
+        const mockSupabaseStep2 = {
+          from: vi.fn(() => ({
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({
+                    data: {
+                      id: "evt_collab_30",
+                      title: "Atendimento Equipe",
+                      scheduled_for: "2026-10-25T14:00:00.000Z",
+                      patient_id: "pat_collab_30",
+                    },
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+            update: vi.fn((payload) => {
+              updatedNotes = payload.notes;
+              const sessionChain: any = {
+                eq: vi.fn(() => sessionChain),
+              };
+              return sessionChain;
+            }),
+          })),
+        } as any;
+
+        const step2 = await handleAppointmentEditFlow(
+          mockSupabaseStep2,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "appt_edit_waiting_collab",
+          "Dr. Marcos e Dra. Carla",
+          "",
+          step1.updatedStateData
+        );
+
+        expect(step2.handled).toBe(true);
+        expect(step2.nextStep).toBe("initial");
+        expect(updatedNotes).toContain("Dr. Marcos e Dra. Carla");
+      });
+
+      it("handles back to agenda menu: appt_back_menu_* returns to agenda submenu", async () => {
+        let sentListTitle = "";
+        const mockClient = {
+          sendTextMessage: vi.fn(async () => ({ success: true })),
+          sendListMessage: vi.fn(async (_p: string, _b: string, _btn: string, _s: any, options: any) => {
+            sentListTitle = options?.title || "";
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const res = await handleAppointmentEditFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContextClinic,
+          "initial",
+          "",
+          "appt_back_menu_evt_99",
+          {}
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("initial");
+        expect(sentListTitle).toBe("Agenda & Atendimentos");
+      });
+    });
+  });
+
+  describe("WhatsApp Conversational UX - Escape, Cancel and Back Commands", () => {
+    const mockContext: OwnerCustomerContext = {
+      userId: "usr_owner_ux",
+      clinicId: "clinic_ux_01",
+      userName: "Dra. Helena",
+      userEmail: "helena@fisio.com.br",
+      clinicName: "Clínica Pluri UX",
+      planName: "Pluri Clínica",
+      professionInfo: "Fisioterapeuta",
+      isOwnerOrAdmin: true,
+      isSoloPlan: false,
+      isClinicPlan: true,
+      activeRole: "owner",
+    };
+
+    describe("Utility Functions: isGlobalCancelCommand & isGlobalBackCommand", () => {
+      it("correctly identifies global cancellation commands in various cases and accents", () => {
+        const cancelInputs = [
+          "cancelar",
+          "Cancelar",
+          "CANCELAR",
+          "cancela",
+          "Cancela",
+          "cancel",
+          "CANCEL",
+          "desistir",
+          "Desistir",
+          "DESISTIR",
+          "desisto",
+          "sair",
+          "Sair",
+          "SAIR",
+          "parar",
+          "interromper",
+          "abortar",
+          "menu",
+          "Menu",
+          "MENU",
+          "inicio",
+          "início",
+          "Início",
+          "comecar",
+          "começar",
+          "opcoes",
+          "opções",
+          "Opções",
+        ];
+
+        for (const input of cancelInputs) {
+          expect(isGlobalCancelCommand(input)).toBe(true);
+        }
+      });
+
+      it("correctly identifies global back/return commands in various cases and accents", () => {
+        const backInputs = [
+          "voltar",
+          "Voltar",
+          "VOLTAR",
+          "volta",
+          "Volta",
+          "anterior",
+          "Anterior",
+          "ANTERIOR",
+          "retornar",
+          "Retornar",
+          "RETORNAR",
+          "passo anterior",
+          "Passo Anterior",
+          "voltar atras",
+          "voltar atrás",
+          "Voltar Atrás",
+        ];
+
+        for (const input of backInputs) {
+          expect(isGlobalBackCommand(input)).toBe(true);
+        }
+      });
+
+      it("ensures normal clinical inputs DO NOT trigger false positive cancel or back", () => {
+        const normalInputs = [
+          "Carlos Antônio",
+          "Maria das Dores",
+          "12345678901",
+          "52998224725",
+          "Reunião de Equipe",
+          "Avaliação Postural",
+          "14:30",
+          "09:00",
+          "16:45",
+          "15/04/1990",
+          "paciente@email.com",
+          "11999998888",
+          "Rua das Palmeiras, 100",
+          "Sim",
+          "Não",
+          "Apenas Eu",
+        ];
+
+        for (const input of normalInputs) {
+          expect(isGlobalCancelCommand(input)).toBe(false);
+          expect(isGlobalBackCommand(input)).toBe(false);
+        }
+      });
+    });
+
+    describe("Agenda Creation Flow - Escape, Cancel and Back Navigation", () => {
+      it("typing 'cancelar' or 'menu' at time selection step (agenda_waiting_time) aborts flow, clears data and sends option buttons", async () => {
+        let sentButtonsText = "";
+        let sentButtonsList: any[] = [];
+        const mockClient = {
+          sendButtonsMessage: vi.fn(async (_phone: string, text: string, options: any) => {
+            sentButtonsText = text;
+            sentButtonsList = options?.buttons || [];
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const resCancel = await handleAgendaCreationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "agenda_waiting_time",
+          "cancelar",
+          undefined,
+          { dateIso: "2026-10-15", subType: "patient" }
+        );
+
+        expect(resCancel.handled).toBe(true);
+        expect(resCancel.nextStep).toBe("initial");
+        expect(resCancel.updatedStateData).toEqual({});
+        expect(sentButtonsText).toContain("cancelada");
+        expect(sentButtonsList.some((b) => b.id === "btn_menu_agenda")).toBe(true);
+
+        // Test with 'menu'
+        const resMenu = await handleAgendaCreationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "agenda_waiting_time",
+          "menu",
+          undefined,
+          { dateIso: "2026-10-15", subType: "patient" }
+        );
+
+        expect(resMenu.handled).toBe(true);
+        expect(resMenu.nextStep).toBe("initial");
+        expect(resMenu.updatedStateData).toEqual({});
+      });
+
+      it("typing 'voltar' at time selection step (agenda_waiting_time) returns to date selection without time format validation error", async () => {
+        let listTitle = "";
+        const sentTexts: string[] = [];
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_phone: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+          sendListMessage: vi.fn(async (_phone: string, _body: string, _btn: string, _sections: any, options: any) => {
+            listTitle = options?.title || "";
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const res = await handleAgendaCreationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "agenda_waiting_time",
+          "voltar",
+          undefined,
+          { dateIso: "2026-10-15", dateDisplay: "15/10", subType: "patient", time: "14:00" }
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("agenda_waiting_date");
+        expect(res.updatedStateData.time).toBeUndefined();
+        expect(listTitle).toBe("Data do Agendamento");
+        // Must NOT output validation error for time
+        expect(sentTexts.some((t) => t.includes("Horário inválido"))).toBe(false);
+      });
+
+      it("typing 'voltar' at date selection step (agenda_waiting_date) returns to appointment type menu", async () => {
+        let listTitle = "";
+        const mockClient = {
+          sendListMessage: vi.fn(async (_phone: string, _body: string, _btn: string, _sections: any, options: any) => {
+            listTitle = options?.title || "";
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const res = await handleAgendaCreationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "agenda_waiting_date",
+          "voltar",
+          undefined,
+          { dateIso: "2026-10-15", subType: "event", title: "Reunião Clínica" }
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("agenda_select_type");
+        expect(res.updatedStateData.dateIso).toBeUndefined();
+        expect(listTitle).toBe("Novo Agendamento");
+      });
+
+      it("typing 'voltar' at patient CPF step (agenda_waiting_patient_cpf) returns to agenda submenu", async () => {
+        let listTitle = "";
+        const mockClient = {
+          sendListMessage: vi.fn(async (_phone: string, _body: string, _btn: string, _sections: any, options: any) => {
+            listTitle = options?.title || "";
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const res = await handleAgendaCreationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "agenda_waiting_patient_cpf",
+          "voltar",
+          undefined,
+          { subType: "patient" }
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("initial");
+        expect(res.updatedStateData).toEqual({});
+        expect(listTitle).toBe("Agenda & Atendimentos");
+      });
+    });
+
+    describe("Pre-Registration Flow - Escape, Cancel and Back Navigation", () => {
+      it("typing 'cancelar' in any pre-registration step cancels flow and returns to records menu options", async () => {
+        let sentButtonsText = "";
+        const mockClient = {
+          sendButtonsMessage: vi.fn(async (_phone: string, text: string) => {
+            sentButtonsText = text;
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const res = await handleQuickPatientPreRegistrationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "precad_waiting_birthdate",
+          "cancelar",
+          "",
+          { patientName: "Carlos Antônio" }
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("initial");
+        expect(res.updatedStateData).toEqual({});
+        expect(sentButtonsText).toContain("cancelado");
+      });
+
+      it("typing 'voltar' at birthdate step (precad_waiting_birthdate) returns to asking patient name", async () => {
+        const sentTexts: string[] = [];
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_phone: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const res = await handleQuickPatientPreRegistrationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "precad_waiting_birthdate",
+          "voltar",
+          "",
+          { patientName: "Beatriz Miranda" }
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("precad_waiting_name");
+        expect(sentTexts[0]).toContain("Nome Completo");
+        expect(sentTexts.some((t) => t.includes("Data inválida"))).toBe(false);
+      });
+
+      it("typing 'voltar' at phone step (precad_waiting_phone) returns to document step", async () => {
+        const sentTexts: string[] = [];
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_phone: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        // Caso Adulto
+        const resAdult = await handleQuickPatientPreRegistrationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "precad_waiting_phone",
+          "voltar",
+          "",
+          { patientName: "Beatriz Miranda", isMinor: false, documentType: "CPF" }
+        );
+
+        expect(resAdult.handled).toBe(true);
+        expect(resAdult.nextStep).toBe("precad_waiting_doc_number");
+        expect(sentTexts[0]).toContain("Número do CPF");
+
+        // Caso Menor de Idade
+        const resMinor = await handleQuickPatientPreRegistrationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "precad_waiting_phone",
+          "voltar",
+          "",
+          { patientName: "Pedro Miranda", isMinor: true }
+        );
+
+        expect(resMinor.handled).toBe(true);
+        expect(resMinor.nextStep).toBe("precad_waiting_minor_parent_cpf");
+        expect(sentTexts[1]).toContain("CPF do Responsável Legal");
+      });
+
+      it("typing 'voltar' at email step (precad_waiting_email) returns to phone step", async () => {
+        const sentTexts: string[] = [];
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_phone: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const res = await handleQuickPatientPreRegistrationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "precad_waiting_email",
+          "voltar",
+          "",
+          { patientName: "Beatriz Miranda", phone: "11988887777" }
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("precad_waiting_phone");
+        expect(sentTexts[0]).toContain("Telefone/WhatsApp");
+        expect(sentTexts.some((t) => t.includes("E-mail em formato inválido"))).toBe(false);
+      });
+    });
+
+    describe("Button Protection Against Text Interception", () => {
+      it("guarantees real button clicks (btn_menu_agenda, agenda_new_patient, etc.) are processed without being intercepted as cancel/back", async () => {
+        const sentTexts: string[] = [];
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_phone: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        // Even if userText contains 'voltar' or 'cancelar' along with button payload, button click has priority
+        const res = await handleAgendaCreationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "initial",
+          "voltar",
+          "agenda_new_patient",
+          {}
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("agenda_waiting_patient_cpf");
+        expect(sentTexts[0]).toContain("CPF do Paciente");
+      });
+
+      it("guarantees document selection buttons in pre-registration advance properly without being blocked", async () => {
+        const sentTexts: string[] = [];
+        const mockClient = {
+          sendTextMessage: vi.fn(async (_phone: string, text: string) => {
+            sentTexts.push(text);
+            return { success: true };
+          }),
+        } as unknown as WhatsAppClient;
+
+        const res = await handleQuickPatientPreRegistrationFlow(
+          {} as any,
+          mockClient,
+          "5511999998888",
+          mockContext,
+          "precad_waiting_doc_type",
+          "cancelar",
+          "precad_doc_rg",
+          { patientName: "Mariana Souza", isMinor: false }
+        );
+
+        expect(res.handled).toBe(true);
+        expect(res.nextStep).toBe("precad_waiting_doc_number");
+        expect(res.updatedStateData.documentType).toBe("RG");
+        expect(sentTexts[0]).toContain("Número do RG");
+      });
     });
   });
 });
+
 
