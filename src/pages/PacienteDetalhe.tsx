@@ -134,6 +134,7 @@ import {
   sanitizeColorSlotId,
 } from "@/lib/group-colors";
 import { LiquidTabs } from "@/components/ui/liquid-tabs";
+import { PatientMobileDock, type PatientMobileTab } from "@/components/patients/PatientMobileDock";
 import { getDesignLabButtonClass, designLabLabelClass, designLabIconClass } from "@/lib/design-animations";
 import {
   getFunctionalIndependenceLabel,
@@ -251,22 +252,22 @@ const PatientHeaderAlert = ({ icon, items, tone, title }: PatientHeaderAlertProp
       : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-300";
 
   return (
-    <HoverCard openDelay={80} closeDelay={150}>
-      <HoverCardTrigger asChild>
+    <Popover>
+      <PopoverTrigger asChild>
         <button
           type="button"
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium shadow-sm transition hover:-translate-y-0.5 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer select-none ${toneClassName}`}
+          className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-full border px-2 py-0.5 sm:px-3 sm:py-1.5 text-[10px] sm:text-xs font-medium shadow-xs transition hover:-translate-y-0.5 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer select-none max-w-full shrink-0 ${toneClassName}`}
           aria-label={title}
         >
-          {icon}
-          <span>{title}</span>
-          <Badge variant="secondary" className="ml-0.5 h-5 min-w-5 justify-center rounded-full px-1 text-[11px]">
+          <span className="shrink-0 scale-90 sm:scale-100">{icon}</span>
+          <span className="truncate max-w-[80px] xs:max-w-[110px] sm:max-w-none">{title}</span>
+          <Badge variant="secondary" className="ml-0.5 h-4 sm:h-5 min-w-4 sm:min-w-5 justify-center rounded-full px-1 text-[9px] sm:text-[11px] shrink-0">
             {items.length}
           </Badge>
         </button>
-      </HoverCardTrigger>
-      <HoverCardContent
-        align="start"
+      </PopoverTrigger>
+      <PopoverContent
+        align="center"
         sideOffset={6}
         className="w-72 p-3 shadow-lg z-50 pointer-events-auto"
       >
@@ -283,8 +284,8 @@ const PatientHeaderAlert = ({ icon, items, tone, title }: PatientHeaderAlertProp
             ))}
           </ul>
         </div>
-      </HoverCardContent>
-    </HoverCard>
+      </PopoverContent>
+    </Popover>
   );
 };
 
@@ -1300,7 +1301,61 @@ const PacienteDetalhe = () => {
   };
 
   const [recordsView, setRecordsView] = useState<PatientRecordsView>("list");
+  const [mobileTab, setMobileTab] = useState<PatientMobileTab>("inicio");
+  const [mobileStatusSheetOpen, setMobileStatusSheetOpen] = useState(false);
+  const [mobileTermsSheetOpen, setMobileTermsSheetOpen] = useState(false);
   const [mobileFilterDrawerOpen, setMobileFilterDrawerOpen] = useState(false);
+
+  const handleMobileTabChange = useCallback((tab: PatientMobileTab) => {
+    setMobileTab(tab);
+
+    if (tab === "inicio") {
+      setRecordsView("list");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (tab === "resumo") {
+      setPatientInfoDialogOpen(true);
+      return;
+    }
+
+    if (tab === "agendar") {
+      // Exibe a agenda widget dedicada
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (tab === "atender") {
+      void handleStartAttendanceNow();
+      return;
+    }
+
+    if (tab === "historico") {
+      setRecordsView("list");
+      return;
+    }
+
+    if (tab === "arquivos") {
+      setRecordsView("files");
+      return;
+    }
+
+    if (tab === "estatisticas") {
+      setRecordsView("dashboard");
+      return;
+    }
+
+    if (tab === "termos") {
+      setMobileTermsSheetOpen(true);
+      return;
+    }
+
+    if (tab === "status") {
+      setMobileStatusSheetOpen(true);
+      return;
+    }
+  }, [handleStartAttendanceNow]);
   const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState("all");
   const [dashboardChartPreferences, setDashboardChartPreferences] = useState<Record<string, PatientAnamnesisChartType>>({});
   const [showDashboardPrintModal, setShowDashboardPrintModal] = useState(false);
@@ -2810,9 +2865,213 @@ const PacienteDetalhe = () => {
 
   return (
     <PatientFilesProvider patientId={patient?.id || id!} clinicId={clinicId}>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
-      {/* Header */}
-      <div data-tutorial="patient-profile-header" className="overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 px-4 py-4 shadow-sm sm:px-5">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-4 sm:space-y-6 pb-24 md:pb-6">
+      {/* Header Mobile Otimizado (Filosofia Mínimo Scroll & Linha Única) */}
+      <div data-tutorial="patient-profile-header-mobile" className="block md:hidden overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 p-3 shadow-xs">
+        {/* Linha 1: Botão Voltar + Nome do Paciente no topo mobile (no lugar da clínica) + Ações rápidas */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate(clinicHomePath)}
+              aria-label="Voltar para clínicas"
+              className="h-8 w-8 shrink-0 rounded-full bg-background/80"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground leading-none">Paciente</p>
+              <h1 className="text-base font-bold tracking-tight text-foreground truncate max-w-[200px] xs:max-w-[240px] mt-0.5">
+                {patient.name}
+              </h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {canViewPatientContact && patientWhatsAppHref ? (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => window.open(patientWhatsAppHref, "_blank", "noopener,noreferrer")}
+                aria-label="Abrir WhatsApp"
+                title="Abrir WhatsApp"
+                className="h-8 w-8 rounded-lg border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success shrink-0"
+              >
+                <WhatsAppLogo className="h-4 w-4" />
+              </Button>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Mais opções"
+                  className="h-8 w-8 rounded-lg border-border/80 bg-background text-foreground shrink-0"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                  Opções do paciente
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setMobileStatusSheetOpen(true)} className="cursor-pointer">
+                  <Activity className="mr-2 h-4 w-4 text-primary" />
+                  <span>Gerenciar Status do Paciente</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setPatientInfoDialogOpen(true)} className="cursor-pointer">
+                  <FileText className="mr-2 h-4 w-4 text-primary" />
+                  <span>Resumo clínico completo</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(getPatientPath(patient, "cadastro"))} className="cursor-pointer">
+                  <ClipboardEdit className="mr-2 h-4 w-4" />
+                  <span>Editar cadastro completo</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleOpenShareDialog()} className="cursor-pointer">
+                  <Share2 className="mr-2 h-4 w-4 text-primary" />
+                  <span>Compartilhar cadastro para preencher</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => setShowPrintRegistrationModal(true)}
+                  disabled={!canPrint}
+                  className="cursor-pointer"
+                >
+                  <Printer className="mr-2 h-4 w-4 text-primary" />
+                  <span>Imprimir cadastro (PDF)</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setShowPrintAdultConsentModal(true)}
+                  disabled={!canPrint}
+                  className="cursor-pointer"
+                >
+                  <FileText className="mr-2 h-4 w-4 text-emerald-600" />
+                  <span>Imprimir Termo Adulto (TCLE)</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setShowPrintGuardianConsentModal(true)}
+                  disabled={!canPrint}
+                  className="cursor-pointer"
+                >
+                  <Baby className="mr-2 h-4 w-4 text-amber-600" />
+                  <span>Imprimir Termo do Responsável (Menor)</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExportPatientJson()}
+                  disabled={!canExport}
+                  className="cursor-pointer"
+                >
+                  <FileDown className="mr-2 h-4 w-4" />
+                  <span>Exportar dados (JSON)</span>
+                </DropdownMenuItem>
+                {canDeletePatient && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setDeletePatientDialogOpen(true)}
+                      className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      <span>Excluir paciente</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Linha 2: Faixa de Uma Linha Estrita (Status Bolinha à Esquerda, Alertas no Centro, Idade à Direita) */}
+        <div className="mt-2.5 flex items-center justify-between gap-1.5 rounded-xl border bg-background/80 px-2.5 py-1.5 shadow-2xs">
+          {/* Esquerda: Bolinha colorida de status de atividade */}
+          <button
+            type="button"
+            onClick={() => setMobileStatusSheetOpen(true)}
+            aria-label={`Status: ${patient.status}. Tocar para alterar.`}
+            className="flex items-center gap-1.5 shrink-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg px-1 py-0.5"
+          >
+            <span
+              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                patient.status === "ativo"
+                  ? "bg-success animate-pulse ring-2 ring-success/20"
+                  : patient.status === "alta"
+                    ? "bg-primary"
+                    : patient.status === "arquivado"
+                      ? "bg-muted-foreground"
+                      : "bg-warning"
+              }`}
+            />
+            <span className="text-[11px] font-semibold capitalize text-foreground">
+              {patient.status}
+            </span>
+          </button>
+
+          {/* Centro: Alertas do Paciente com Popover em toque */}
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-hidden px-1">
+            {allAllergyAlertItems.length > 0 && (
+              <PatientHeaderAlert
+                icon={<AlertTriangle className="h-3 w-3" />}
+                items={allAllergyAlertItems}
+                title="Alergias"
+                tone="rose"
+              />
+            )}
+            {fallRiskAlertItems.length > 0 && (
+              <PatientHeaderAlert
+                icon={<AlertTriangle className="h-3 w-3" />}
+                items={fallRiskAlertItems}
+                title="Queda"
+                tone="amber"
+              />
+            )}
+            {structuredRiskAlertItems.length > 0 && (
+              <PatientHeaderAlert
+                icon={<AlertTriangle className="h-3 w-3" />}
+                items={structuredRiskAlertItems}
+                title="Riscos"
+                tone="amber"
+              />
+            )}
+            {allAllergyAlertItems.length === 0 && fallRiskAlertItems.length === 0 && structuredRiskAlertItems.length === 0 && (
+              <span className="text-[10px] text-muted-foreground/80 truncate">Sem alertas</span>
+            )}
+          </div>
+
+          {/* Direita: Idade do Paciente com ajuste de fonte dinâmico */}
+          <div className="shrink-0 text-right">
+            {patient.age ? (
+              <span className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] sm:text-xs font-semibold text-muted-foreground">
+                <Calendar className="h-2.5 w-2.5" />
+                {patient.age} anos
+              </span>
+            ) : (
+              <span className="text-[10px] text-muted-foreground">Idade N/A</span>
+            )}
+          </div>
+        </div>
+
+        {/* Linha 3: Agenda e Último Atendimento Compacto */}
+        <div className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-[11px]">
+          <div className="min-w-0 flex items-center gap-1.5 truncate">
+            <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="font-medium text-foreground truncate">
+              Último atendimento: {formatSessionMetaDate(latestSession?.session_date ?? null)}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileTab("agendar")}
+            className="shrink-0 font-semibold text-primary underline-offset-2 hover:underline text-[10px]"
+          >
+            Ver agenda
+          </button>
+        </div>
+      </div>
+
+      {/* Header Desktop (Preservado 100% Widescreen para >= md) */}
+      <div data-tutorial="patient-profile-header" className="hidden md:block overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 px-4 py-4 shadow-sm sm:px-5">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-start gap-4">
             <Button
@@ -2884,6 +3143,7 @@ const PacienteDetalhe = () => {
               tone="amber"
             />
           </div>
+
 
           <div className="flex items-center gap-2 rounded-2xl border bg-background/70 p-2 shadow-sm backdrop-blur w-full sm:w-auto justify-between sm:justify-start xl:shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
@@ -3034,9 +3294,17 @@ const PacienteDetalhe = () => {
       </div>
       </div>
 
-      <div className="w-full min-w-0 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]">
+      {/* Conteúdo Principal Desktop: Grid de Métricas + Agenda */}
+      <div className={cn(
+        "w-full min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]",
+        "hidden md:grid",
+        mobileTab === "agendar" && "max-md:grid max-md:grid-cols-1"
+      )}>
         {/* Compact Metrics Carousel (Horizontal snap scroll on mobile, grid on desktop) */}
-        <div data-tutorial="patient-metrics-panel" className="w-full min-w-0 flex overflow-x-auto snap-x snap-mandatory gap-3 p-3 sm:p-4 rounded-2xl border bg-card shadow-sm relative [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 lg:grid-cols-3">
+        <div data-tutorial="patient-metrics-panel" className={cn(
+          "w-full min-w-0 flex overflow-x-auto snap-x snap-mandatory gap-3 p-3 sm:p-4 rounded-2xl border bg-card shadow-sm relative [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 lg:grid-cols-3",
+          mobileTab === "agendar" && "max-md:hidden"
+        )}>
           <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Último Atendimento</span>
@@ -3105,7 +3373,11 @@ const PacienteDetalhe = () => {
       </div>
 
       {/* Group management toolbar */}
-      <div className="space-y-4">
+      <div className={cn(
+        "space-y-4",
+        mobileTab === "agendar" && "max-md:hidden",
+        mobileTab === "inicio" && recordsView !== "list" && "max-md:hidden"
+      )}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <LiquidTabs
             tabs={[
@@ -3115,7 +3387,7 @@ const PacienteDetalhe = () => {
             ]}
             activeTab={recordsView}
             onChange={(val) => setRecordsView(val as "list" | "files" | "dashboard")}
-            className="w-full sm:w-auto"
+            className="w-full sm:w-auto hidden md:flex"
             tabClassName="flex-1 sm:flex-none"
           />
           {recordsView === "dashboard" && !isIntern && (
@@ -4760,6 +5032,137 @@ const PacienteDetalhe = () => {
           if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["patient"]);
         }}
       />
+
+      {/* Dock Inferior Mobile com Scroll Horizontal e Gestos Touch DesignLab */}
+      <PatientMobileDock
+        activeTab={mobileTab}
+        onTabChange={handleMobileTabChange}
+        showFiles={isFeatureEnabled("storage_s3_integration")}
+        showStats={isFeatureEnabled("dashboards_patient")}
+      />
+
+      {/* Bottom Sheet Mobile: Gerenciar Status do Paciente */}
+      <Sheet open={mobileStatusSheetOpen} onOpenChange={setMobileStatusSheetOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl pb-safe">
+          <SheetHeader className="text-left">
+            <SheetTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              <span>Status do Paciente</span>
+            </SheetTitle>
+            <SheetDescription className="text-xs">
+              Selecione o estado operacional de {patient.name}.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-2 py-4">
+            {EDITABLE_PATIENT_STATUS_OPTIONS.map((statusOption) => {
+              const isCurrent = patient.status === statusOption.value;
+              return (
+                <button
+                  key={statusOption.value}
+                  type="button"
+                  onClick={() => {
+                    void handlePatientStatusChange(statusOption.value as PatientStatusSelectValue);
+                    setMobileStatusSheetOpen(false);
+                  }}
+                  className={cn(
+                    "w-full flex items-center justify-between p-3 rounded-xl border text-sm font-medium transition-colors",
+                    isCurrent
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border/70 bg-card hover:bg-muted/50 text-foreground"
+                  )}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={cn(
+                        "h-2.5 w-2.5 rounded-full shrink-0",
+                        statusOption.value === "ativo" && "bg-success",
+                        statusOption.value === "alta" && "bg-primary",
+                        statusOption.value === "arquivado" && "bg-muted-foreground",
+                        statusOption.value !== "ativo" && statusOption.value !== "alta" && statusOption.value !== "arquivado" && "bg-warning"
+                      )}
+                    />
+                    <span>{statusOption.label}</span>
+                  </div>
+                  {isCurrent && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                </button>
+              );
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Bottom Sheet Mobile: Termos & Documentos */}
+      <Sheet open={mobileTermsSheetOpen} onOpenChange={setMobileTermsSheetOpen}>
+        <SheetContent side="bottom" className="rounded-t-2xl pb-safe">
+          <SheetHeader className="text-left">
+            <SheetTitle className="text-base flex items-center gap-2">
+              <FileCheck2 className="h-4 w-4 text-primary" />
+              <span>Termos & Documentos</span>
+            </SheetTitle>
+            <SheetDescription className="text-xs">
+              Gere ou imprima termos de consentimento e documentação de {patient.name}.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-2 py-4">
+            <button
+              type="button"
+              disabled={!canPrint}
+              onClick={() => {
+                setMobileTermsSheetOpen(false);
+                setShowPrintAdultConsentModal(true);
+              }}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-border/70 bg-card hover:bg-muted/50 text-foreground text-sm font-medium transition-colors disabled:opacity-50 text-left"
+            >
+              <div className="flex items-center gap-3">
+                <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
+                <div>
+                  <p className="font-semibold text-xs">Termo de Consentimento Adulto (TCLE)</p>
+                  <p className="text-[11px] text-muted-foreground">TCLE A4 diagramado para assinatura física</p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              disabled={!canPrint}
+              onClick={() => {
+                setMobileTermsSheetOpen(false);
+                setShowPrintGuardianConsentModal(true);
+              }}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-border/70 bg-card hover:bg-muted/50 text-foreground text-sm font-medium transition-colors disabled:opacity-50 text-left"
+            >
+              <div className="flex items-center gap-3">
+                <Baby className="h-4 w-4 text-amber-600 shrink-0" />
+                <div>
+                  <p className="font-semibold text-xs">Termo do Responsável (Menor)</p>
+                  <p className="text-[11px] text-muted-foreground">LGPD Art. 14 / Pais e Tutores legais</p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              disabled={!canPrint}
+              onClick={() => {
+                setMobileTermsSheetOpen(false);
+                setShowPrintRegistrationModal(true);
+              }}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-border/70 bg-card hover:bg-muted/50 text-foreground text-sm font-medium transition-colors disabled:opacity-50 text-left"
+            >
+              <div className="flex items-center gap-3">
+                <Printer className="h-4 w-4 text-primary shrink-0" />
+                <div>
+                  <p className="font-semibold text-xs">Imprimir Dossiê do Cadastro (PDF)</p>
+                  <p className="text-[11px] text-muted-foreground">Ficha completa e histórico de saúde</p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
       </motion.div>
     </PatientFilesProvider>
   );

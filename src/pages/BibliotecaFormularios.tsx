@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   UserCheck,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -65,9 +66,10 @@ import {
   PublishFormTemplateModal,
   type AvailableClinicTemplateOption,
 } from "@/components/community-forms/PublishFormTemplateModal";
+import { mapProfessionToFormCategory } from "@/lib/professions";
 
 export const BibliotecaFormularios = () => {
-  const { clinic, clinicId, user, can } = useAuth();
+  const { clinic, clinicId, user, profile, can } = useAuth();
   const quota = useClinicPlanQuota(clinicId);
   const navigate = useNavigate();
   const canManage = can("forms.manage");
@@ -75,6 +77,32 @@ export const BibliotecaFormularios = () => {
   const clinicKey = clinic?.route_key ?? "";
   const clinicBasePath = clinicKey ? `/clinica/${clinicKey}` : "";
   const formsManagerPath = `${clinicBasePath}/configuracoes/formularios`;
+
+  // Identificação de Governança Multidisciplinar vs Monodisciplinar
+  const isEnterprise = useMemo(() => {
+    const rawPlan = String(clinic?.subscription_plan ?? quota?.planType ?? "").toLowerCase();
+    return rawPlan === "enterprise";
+  }, [clinic?.subscription_plan, quota?.planType]);
+
+  // Categoria vinculada à profissão do profissional logado
+  const userProfessionCategory = useMemo(() => {
+    return mapProfessionToFormCategory(profile?.profession);
+  }, [profile?.profession]);
+
+  // Categorias permitidas para este usuário nesta clínica:
+  // - Se clínica Enterprise: todas as categorias liberadas
+  // - Se clínica Monodisciplinar: apenas a categoria da profissão dele + "Geral"
+  // (Caso a profissão ainda não tenha sido preenchida no perfil, permite explorar com indicação de foco)
+  const allowedCategories = useMemo<string[]>(() => {
+    if (isEnterprise) {
+      return [...COMMUNITY_FORM_CATEGORIES];
+    }
+    if (userProfessionCategory) {
+      return [userProfessionCategory, "Geral"];
+    }
+    // Fallback se não informou profissão: categorias visíveis padrão
+    return [...COMMUNITY_FORM_CATEGORIES];
+  }, [isEnterprise, userProfessionCategory]);
 
   // State
   const [loading, setLoading] = useState(true);
@@ -85,7 +113,12 @@ export const BibliotecaFormularios = () => {
 
   // Filters & search
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("Todas");
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
+    if (!isEnterprise && userProfessionCategory) {
+      return userProfessionCategory;
+    }
+    return "Todas";
+  });
   const [sortBy, setSortBy] = useState<"popular" | "imports" | "recent">("popular");
   const [activeTab, setActiveTab] = useState<"community" | "my-templates">("community");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -189,9 +222,21 @@ export const BibliotecaFormularios = () => {
     void loadClinicTemplates();
   }, [loadCommunityData, loadClinicTemplates]);
 
+  // Sincroniza a categoria inicial caso mude a profissão ou seletor
+  useEffect(() => {
+    if (!isEnterprise && userProfessionCategory) {
+      setSelectedCategory((prev) => (allowedCategories.includes(prev) ? prev : userProfessionCategory));
+    }
+  }, [isEnterprise, userProfessionCategory, allowedCategories]);
+
   // Filtered and sorted community templates
   const filteredTemplates = useMemo(() => {
     let result = [...templates];
+
+    // Isolamento disciplinar: clínicas monodisciplinares só enxergam formulários da sua área e da categoria Geral
+    if (!isEnterprise && allowedCategories.length > 0) {
+      result = result.filter((t) => allowedCategories.includes(t.category));
+    }
 
     if (selectedCategory && selectedCategory !== "Todas") {
       result = result.filter((t) => t.category === selectedCategory);
@@ -220,7 +265,7 @@ export const BibliotecaFormularios = () => {
     });
 
     return result;
-  }, [templates, selectedCategory, searchQuery, sortBy]);
+  }, [templates, selectedCategory, searchQuery, sortBy, isEnterprise, allowedCategories]);
 
   // Actions
   const handleOpenPreview = (template: CommunityFormTemplate) => {
@@ -610,33 +655,45 @@ export const BibliotecaFormularios = () => {
 
         {/* ================= ABA 1: EXPLORAR COMUNIDADE ================= */}
         <TabsContent value="community" className="space-y-6 mt-0">
-          {/* Category Chips Filter */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-            <button
-              type="button"
-              onClick={() => setSelectedCategory("Todas")}
-              className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-all ${
-                selectedCategory === "Todas"
-                  ? "bg-primary text-primary-foreground border-primary font-semibold shadow-xs"
-                  : "bg-background text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              Todas as Áreas
-            </button>
-            {COMMUNITY_FORM_CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setSelectedCategory(cat)}
-                className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-all ${
-                  selectedCategory === cat
-                    ? "bg-primary text-primary-foreground border-primary font-semibold shadow-xs"
-                    : "bg-background text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
+          {/* Category Chips Filter & Disciplinar Badge */}
+          <div className="space-y-2">
+            {!isEnterprise && userProfessionCategory && (
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground px-0.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span>
+                  Visualizando modelos exclusivos para <strong>{userProfessionCategory}</strong> e formulários gerais.
+                </span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+              {(isEnterprise || !userProfessionCategory) && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory("Todas")}
+                  className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-all ${
+                    selectedCategory === "Todas"
+                      ? "bg-primary text-primary-foreground border-primary font-semibold shadow-xs"
+                      : "bg-background text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  Todas as Áreas
+                </button>
+              )}
+              {allowedCategories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-all ${
+                    selectedCategory === cat
+                      ? "bg-primary text-primary-foreground border-primary font-semibold shadow-xs"
+                      : "bg-background text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Grid or List of Templates */}
