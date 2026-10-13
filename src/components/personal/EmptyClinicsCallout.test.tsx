@@ -14,32 +14,18 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
-describe("EmptyClinicsCallout (Security & Big-O Hardening)", () => {
-  it("renders with sanitized email and prevents control characters injection", () => {
-    const dirtyEmail = "\u0000\u001Duser@clinic.com";
+describe("EmptyClinicsCallout (Enterprise Flow)", () => {
+  it("renders enterprise empty callout heading and action", () => {
     render(
       <MemoryRouter>
-        <EmptyClinicsCallout userEmail={dirtyEmail} />
+        <EmptyClinicsCallout />
       </MemoryRouter>
     );
 
     expect(screen.getByTestId("empty-clinics-callout")).toBeInTheDocument();
-    expect(screen.getByText("user@clinic.com", { exact: false })).toBeInTheDocument();
-    expect(screen.getByText("Nenhuma clínica ativa no momento")).toBeInTheDocument();
-  });
-
-  it("limits email display length to 100 characters to prevent DOM layout abuse", () => {
-    const excessiveEmail = "a".repeat(120) + "@clinic.com";
-    render(
-      <MemoryRouter>
-        <EmptyClinicsCallout userEmail={excessiveEmail} />
-      </MemoryRouter>
-    );
-
-    const emailStrong = screen.getByText((content, element) => {
-      return element?.tagName === "STRONG" && content.includes("a".repeat(50));
-    });
-    expect(emailStrong.textContent?.length).toBeLessThanOrEqual(104); // "(...)" wrapped
+    expect(screen.getByText("Nenhuma clínica vinculada")).toBeInTheDocument();
+    expect(screen.getByText("Criar novo espaço")).toBeInTheDocument();
+    expect(screen.queryByText(/Aguardando convite de uma clínica/i)).not.toBeInTheDocument();
   });
 
   it("triggers custom onCreateClinic callback when provided", () => {

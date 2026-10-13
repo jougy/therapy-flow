@@ -757,12 +757,13 @@ describe("SelecionarClinica", () => {
     expect(screen.queryByText("0 acessos")).not.toBeInTheDocument();
   });
 
-  it("renders EmptyClinicsCallout when accessibleClinics is empty and auth loading is false", () => {
+  it("does not render any empty callout or create clinic options for regular users without clinics", () => {
     localStorage.setItem("pluri_welcome_seen_user-1", new Date().toISOString());
 
     vi.mocked(useAuth).mockReturnValue(
       buildAuthMock({
         accessibleClinics: [],
+        isPlatformOwner: false,
         loading: false,
         user: { id: "user-1", email: "newuser@example.com" },
       }) as ReturnType<typeof useAuth>
@@ -775,20 +776,64 @@ describe("SelecionarClinica", () => {
     );
 
     expect(screen.queryByTestId("clinics-loading-skeleton")).not.toBeInTheDocument();
-    expect(screen.getByTestId("empty-clinics-callout")).toBeInTheDocument();
-    expect(screen.getByText("Nenhuma clínica ativa no momento")).toBeInTheDocument();
-    expect(screen.getByText("Criar meu próprio espaço")).toBeInTheDocument();
-    expect(screen.getByText(/Aguardando convite de uma clínica\?/i)).toBeInTheDocument();
-    expect(screen.getByText(/\(newuser@example\.com\)/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("empty-clinics-callout")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nenhuma clínica ativa no momento")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Aguardando convite de uma clínica/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("enterprise-create-clinic-btn")).not.toBeInTheDocument();
+  });
 
-    const createBtn = screen.getByTestId("empty-clinics-create-btn");
+  it("renders enterprise create button in header when user has enterprise clinic subscription", () => {
+    vi.mocked(useAuth).mockReturnValue(
+      buildAuthMock({
+        accessibleClinics: [
+          {
+            activeAccessCount: 1,
+            activeAccessUsers: [],
+            clinic: {
+              account_owner_user_id: "user-ent",
+              concurrent_access_limit: 10,
+              id: "clinic-enterprise-1",
+              logo_url: null,
+              name: "Hospital Central",
+              route_key: "hospital-central",
+              subaccount_limit: 20,
+              subscription_plan: "enterprise",
+            },
+            membership: {
+              account_role: "account_owner",
+              clinic_id: "clinic-enterprise-1",
+              created_at: "2026-05-29T00:00:00.000Z",
+              ended_at: null,
+              id: "membership-ent",
+              invited_by: null,
+              is_active: true,
+              joined_at: "2026-05-29T00:00:00.000Z",
+              membership_status: "active",
+              operational_role: "owner",
+              updated_at: "2026-05-29T00:00:00.000Z",
+              user_id: "user-ent",
+            },
+          },
+        ],
+        isPlatformOwner: false,
+        loading: false,
+      }) as ReturnType<typeof useAuth>
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/espacopessoal"]}>
+        <SelecionarClinica />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId("enterprise-create-clinic-btn")).toBeInTheDocument();
+    const createBtn = screen.getByTestId("enterprise-create-clinic-btn");
     fireEvent.click(createBtn);
-
     expect(navigateMock).toHaveBeenCalledWith("/onboarding-clinica?mode=create");
   });
 
-  it("does not render 'Comprar meu próprio espaço' button in the CardHeader", () => {
-    vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
+  it("does not render 'Comprar meu próprio espaço' or 'Novo espaço' button for regular users with clinics", () => {
+    vi.mocked(useAuth).mockReturnValue(buildAuthMock({ isPlatformOwner: false }) as ReturnType<typeof useAuth>);
 
     render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
@@ -797,6 +842,7 @@ describe("SelecionarClinica", () => {
     );
 
     expect(screen.queryByRole("button", { name: /comprar meu próprio espaço/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("enterprise-create-clinic-btn")).not.toBeInTheDocument();
     expect(screen.getByText("Escolha a clínica")).toBeInTheDocument();
   });
 

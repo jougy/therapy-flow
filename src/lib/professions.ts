@@ -37,3 +37,38 @@ export function getCouncilNameForProfession(value: string | null | undefined): s
   const opt = getProfessionOption(value);
   return opt ? opt.councilName : "CREFITO";
 }
+
+/**
+ * Mapeia a profissão do usuário para a categoria correspondente de formulários comunitários.
+ */
+export function mapProfessionToFormCategory(profession: string | null | undefined): string | null {
+  if (!profession) return null;
+  const normalized = profession.toLowerCase().trim();
+
+  if (normalized.includes("fisioterap") || normalized === "fisioterapia") {
+    return "Fisioterapia";
+  }
+  if (normalized.includes("ocupacional") || normalized === "terapia ocupacional") {
+    return "Terapia Ocupacional";
+  }
+  if (normalized.includes("psicolog") || normalized === "psicologia") {
+    return "Psicologia";
+  }
+  if (normalized.includes("fono") || normalized === "fonoaudiologia") {
+    return "Fonoaudiologia";
+  }
+  if (normalized.includes("nutri") || normalized === "nutrição" || normalized === "nutricao") {
+    return "Nutrição";
+  }
+  if (normalized.includes("psiquiatr") || normalized === "psiquiatria") {
+    return "Psiquiatria";
+  }
+  if (normalized.includes("neuropsicolog") || normalized === "neuropsicologia") {
+    return "Neuropsicologia";
+  }
+  if (normalized.includes("pediatr") || normalized === "pediatria") {
+    return "Pediatria";
+  }
+
+  return null;
+}

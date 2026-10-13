@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { Activity, Award, Building2, CalendarDays, CheckCircle2, Clock, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, PlusCircle, RefreshCw, Settings, ShieldCheck, Sparkles, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
+import { Activity, Award, Building2, CalendarDays, CheckCircle2, Clock, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, Plus, PlusCircle, RefreshCw, Settings, ShieldCheck, Sparkles, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
 import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
 import {
   AlertDialog,
@@ -228,6 +228,9 @@ const SelecionarClinica = () => {
   const { accessibleClinics, isPlatformOwner, loading: authLoading, profile, refreshAuthState, selectClinic, signOut, user } = useAuth();
   const { isFeatureEnabled } = useFeatureFlags();
   const isPortfolioEnabled = isFeatureEnabled("clinical_portfolio_enabled");
+  const hasEnterpriseAccess = Boolean(
+    isPlatformOwner || accessibleClinics.some((c) => c.clinic.subscription_plan === "enterprise")
+  );
   const location = useLocation();
   const navigate = useNavigate();
   const isDesignLabRoute = location.pathname.startsWith("/designlab") || location.pathname.startsWith("/designlabs");
@@ -1474,11 +1477,26 @@ const SelecionarClinica = () => {
 
           <Card className="overflow-hidden">
             <CardHeader className="px-4 sm:px-6">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-base">Escolha a clínica</CardTitle>
-                <ComponentHelpButton helpId="personal-clinics-block" size="xs" />
-                {!authLoading && (
-                  <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Escolha a clínica</CardTitle>
+                  <ComponentHelpButton helpId="personal-clinics-block" size="xs" />
+                  {!authLoading && (
+                    <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
+                  )}
+                </div>
+                {hasEnterpriseAccess && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs font-medium"
+                    data-testid="enterprise-create-clinic-btn"
+                    onClick={handleCreateClinicFromEmpty}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Novo espaço</span>
+                  </Button>
                 )}
               </div>
             </CardHeader>
@@ -1500,10 +1518,12 @@ const SelecionarClinica = () => {
                   ))}
                 </div>
               ) : accessibleClinics.length === 0 ? (
-                <EmptyClinicsCallout
-                  userEmail={user?.email || profile?.email}
-                  onCreateClinic={handleCreateClinicFromEmpty}
-                />
+                hasEnterpriseAccess ? (
+                  <EmptyClinicsCallout
+                    userEmail={user?.email || profile?.email}
+                    onCreateClinic={handleCreateClinicFromEmpty}
+                  />
+                ) : null
               ) : (
                 <div className="grid gap-3">
                   {sortedAccessibleClinics.map((clinicOption, index) => {
