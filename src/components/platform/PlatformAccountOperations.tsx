@@ -370,7 +370,7 @@ export const PlatformAccountOperations = ({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+    <div className="w-full max-w-full min-w-0 space-y-3 rounded-lg border bg-muted/20 p-3 overflow-hidden">
       <div>
         <p className="font-medium text-foreground">{title}</p>
         <p className="text-sm text-muted-foreground">Espelha o Gerenciamento de Contas do script operacional, com MFA, backend seguro e motivo obrigatório.</p>

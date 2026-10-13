@@ -214,6 +214,15 @@ export async function trackCompleteRegistration(
 
   const hashedUserData = await hashUserDataForAdvancedMatching(params.userData);
 
+  // Atualizar Advanced Matching no contexto da instância do Pixel
+  if (typeof window !== "undefined" && typeof window.fbq === "function" && Object.keys(hashedUserData).length > 0) {
+    try {
+      window.fbq("init", "1073846021935349", hashedUserData);
+    } catch (err) {
+      void err; // intentionally ignore initialization errors (e.g. fbq not available)
+    }
+  }
+
   const eventMetadata: Record<string, unknown> = {
     profession: params.profession,
     status: true,
@@ -241,6 +250,14 @@ export async function trackStartTrial(
     generateEventId("trial", params.userData?.email || params.profession);
 
   const hashedUserData = await hashUserDataForAdvancedMatching(params.userData);
+
+  if (typeof window !== "undefined" && typeof window.fbq === "function" && Object.keys(hashedUserData).length > 0) {
+    try {
+      window.fbq("init", "1073846021935349", hashedUserData);
+    } catch (err) {
+      void err; // intentionally ignore initialization errors (e.g. fbq not available)
+    }
+  }
 
   const eventMetadata: Record<string, unknown> = {
     profession: params.profession,

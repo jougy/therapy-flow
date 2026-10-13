@@ -28,6 +28,25 @@ vi.mock("@/hooks/use-toast", () => ({
   }),
 }));
 
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuSeparator: () => <hr />,
+  DropdownMenuItem: ({
+    children,
+    onClick,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+  }) => (
+    <button role="menuitem" onClick={onClick} type="button">
+      {children}
+    </button>
+  ),
+}));
+
 describe("SimulationDebugPanel", () => {
   let queryClient: QueryClient;
 
@@ -162,4 +181,72 @@ describe("SimulationDebugPanel", () => {
 
     expect(screen.getByText(/Nenhum log ou evento capturado/i)).toBeInTheDocument();
   });
+
+  it("handles copy options (Markdown for AI and Compact JSON)", async () => {
+    const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextSpy,
+      },
+    });
+
+    addDebugEvent("rpc", "rpc.list_test", "RPC executada", {
+      response: [{ id: 1 }, { id: 2 }],
+      durationMs: 120,
+    });
+
+    renderComponent();
+
+    const dropdownTrigger = screen.getByRole("button", { name: /Opções de cópia de diagnóstico/i });
+    fireEvent.click(dropdownTrigger);
+
+    // 1. Testar Copiar para IA (Markdown)
+    const copyAiItem = screen.getByText(/Copiar para IA \(Markdown\)/i);
+    fireEvent.click(copyAiItem);
+
+    expect(writeTextSpy).toHaveBeenCalled();
+    const copiedAiText = writeTextSpy.mock.calls[0][0];
+    expect(copiedAiText).toContain("### 🔍 Relatório de Diagnóstico & Runtime (Pluri-Health)");
+    expect(copiedAiText).toContain("rpc.list_test");
+
+    // 2. Testar Copiar JSON Compacto
+    fireEvent.click(dropdownTrigger);
+    const copyJsonItem = screen.getByText(/Copiar JSON Compacto/i);
+    fireEvent.click(copyJsonItem);
+
+    const copiedJsonText = writeTextSpy.mock.calls[1][0];
+    const parsedJson = JSON.parse(copiedJsonText);
+    expect(parsedJson).toHaveProperty("timestamp");
+    expect(parsedJson).toHaveProperty("session");
+    expect(parsedJson.recentLogs[0].context.response).toHaveProperty("_itemCount", 2);
+  });
+
+  it("copies individual log entry when clicking copy button on log row", async () => {
+    const writeTextSpy = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextSpy,
+      },
+    });
+
+    addDebugEvent("rpc", "rpc.single_test", "Chamada de teste pontual", {
+      durationMs: 45,
+      response: [{ item: "audit_1" }, { item: "audit_2" }],
+    });
+
+    renderComponent();
+
+    const logsTab = screen.getByRole("tab", { name: /Logs em Tempo Real/i });
+    fireEvent.click(logsTab);
+
+    const singleCopyBtn = screen.getByTitle(/Copiar apenas este log com contexto sanitizado/i);
+    fireEvent.click(singleCopyBtn);
+
+    expect(writeTextSpy).toHaveBeenCalled();
+    const copiedText = writeTextSpy.mock.calls[0][0];
+    const parsed = JSON.parse(copiedText);
+    expect(parsed.scope).toBe("rpc.single_test");
+    expect(parsed.context.response._itemCount).toBe(2);
+  });
 });
+

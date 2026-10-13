@@ -694,7 +694,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             errorMessage.includes("closed") ||
             errorMessage.includes("unsubscribed") ||
             errorMessage.includes("websocket") ||
-            errorMessage.includes("network error");
+            errorMessage.includes("network error") ||
+            errorMessage.includes("transport failure") ||
+            (status === "CHANNEL_ERROR" && errorMessage.includes("transport"));
 
           if (!isNormalClosureOrReconnect) {
             logRuntimeError("auth.clinic_operational_role_capabilities.realtime", error, {

@@ -183,43 +183,45 @@ export const PlatformLayout = ({
               {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PersonalNotificationsButton />
-            <Badge className="bg-primary/10 text-primary hover:bg-primary/10">platform_owner</Badge>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <div className="flex items-center gap-2">
+              <PersonalNotificationsButton />
+              <Badge className="bg-primary/10 text-primary hover:bg-primary/10 shrink-0">platform_owner</Badge>
+            </div>
 
             {/* Painel de Debug em Tempo Real */}
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs"
+              className="border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs flex-1 sm:flex-initial"
               onClick={() => setDebugModalOpen(true)}
               title="Abrir Painel de Diagnóstico e Debug em Tempo Real (Atalho: Cmd+Ctrl+D / Ctrl+Alt+D)"
             >
-              <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse" />
+              <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse shrink-0" />
               <span>Debug</span>
               {errorCount > 0 ? (
                 <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
                   {errorCount}
                 </span>
               ) : (
-                <span className="h-2 w-2 rounded-full bg-emerald-500" title="Sistema saudável" />
+                <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" title="Sistema saudável" />
               )}
             </Button>
 
             <Button
               type="button"
               disabled={startingSim}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-medium gap-1.5 shadow-sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-medium gap-1.5 shadow-sm flex-1 sm:flex-initial text-xs sm:text-sm"
               onClick={() => void handleStartSimulation()}
             >
-              {startingSim ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
-              <span>Simulação (Preview)</span>
+              {startingSim ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : <FlaskConical className="h-4 w-4 shrink-0" />}
+              <span className="truncate">Simulação (Preview)</span>
             </Button>
-            <Button variant="outline" onClick={() => navigate("/platform/diretorio")}>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-initial text-xs sm:text-sm" onClick={() => navigate("/platform/diretorio")}>
               Painel mestre
             </Button>
-            <Button variant="outline" onClick={() => navigate("/espacopessoal")}>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-initial text-xs sm:text-sm" onClick={() => navigate("/espacopessoal")}>
               Espaço pessoal
             </Button>
           </div>

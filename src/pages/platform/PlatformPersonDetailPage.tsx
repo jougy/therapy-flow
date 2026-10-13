@@ -497,29 +497,29 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
   };
 
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-full min-w-0 space-y-4 overflow-x-hidden">
       <Button variant="ghost" className="w-fit" onClick={() => navigate("/platform/diretorio")}>
         <ArrowLeft className="mr-2 h-4 w-4" />
         Voltar ao diretório
       </Button>
 
       {isPending && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-950 dark:text-amber-200 shadow-sm space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Clock3 className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-              <div>
+        <div className="w-full max-w-full min-w-0 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-950 dark:text-amber-200 shadow-sm space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <Clock3 className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <div className="min-w-0">
                 <p className="font-semibold text-sm sm:text-base">Conta com Pendência de Cadastro</p>
-                <p className="text-xs text-amber-800 dark:text-amber-300">
+                <p className="text-xs text-amber-800 dark:text-amber-300 break-words">
                   {String(entity?.status ?? "Aguardando confirmação de e-mail ou conclusão do cadastro.")}
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-1.5 border-amber-400 bg-background text-foreground text-xs"
+                className="gap-1.5 border-amber-400 bg-background text-foreground text-xs flex-1 sm:flex-initial"
                 disabled={resendCooldown > 0 || actionLoading}
                 onClick={() => void handleResendPending()}
               >
@@ -529,7 +529,7 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-1.5 border-amber-400 bg-background text-foreground text-xs"
+                className="gap-1.5 border-amber-400 bg-background text-foreground text-xs flex-1 sm:flex-initial"
                 onClick={() => void handleCopyLink()}
               >
                 <Copy className="h-3.5 w-3.5" />
@@ -538,21 +538,21 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-1.5 border-emerald-500 text-emerald-700 dark:text-emerald-300 bg-background hover:bg-emerald-50 dark:hover:bg-emerald-950 text-xs"
+                className="gap-1.5 border-emerald-500 text-emerald-700 dark:text-emerald-300 bg-background hover:bg-emerald-50 dark:hover:bg-emerald-950 text-xs w-full sm:w-auto"
                 disabled={actionLoading}
                 onClick={() => void handleManualEmailConfirm()}
               >
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                 Confirmar e-mail manualmente
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-1.5 border-destructive text-destructive hover:bg-destructive/10 text-xs"
+                className="gap-1.5 border-destructive text-destructive hover:bg-destructive/10 text-xs w-full sm:w-auto"
                 disabled={actionLoading}
                 onClick={() => void handleDeleteAttempt()}
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="h-3.5 w-3.5 shrink-0" />
                 Excluir tentativa / resetar
               </Button>
             </div>
@@ -565,19 +565,19 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <div className="grid w-full max-w-full min-w-0 gap-4 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Card className="w-full max-w-full min-w-0">
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between space-y-0 pb-3">
               <CardTitle>Dados principais</CardTitle>
               {hasUnconfirmedEmail && (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-1.5 border-emerald-500 text-emerald-700 dark:text-emerald-300 bg-background hover:bg-emerald-50 dark:hover:bg-emerald-950 text-xs shadow-sm"
+                  className="gap-1.5 border-emerald-500 text-emerald-700 dark:text-emerald-300 bg-background hover:bg-emerald-50 dark:hover:bg-emerald-950 text-xs shadow-sm w-full sm:w-auto"
                   disabled={actionLoading}
                   onClick={() => void handleManualEmailConfirm()}
                 >
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                   Confirmar e-mail manualmente
                 </Button>
               )}
@@ -597,7 +597,7 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
               />
             </CardContent>
           </Card>
-          <Card>
+          <Card className="w-full max-w-full min-w-0">
             <CardHeader><CardTitle>Contexto</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {itemType === "patient" ? (
@@ -706,7 +706,7 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
               )}
             </CardContent>
           </Card>
-          <div className="lg:col-span-2">
+          <div className="w-full max-w-full min-w-0 lg:col-span-2">
             <PlatformAccountOperations
               allowedOperations={itemType === "account" ? getMembershipOperationScope(memberships, isPending) : ["update_patient", "delete_patient"]}
               clinicId={String(detail?.clinic?.id ?? entity?.clinic_id ?? memberships[0]?.clinic_id ?? "") || undefined}
@@ -722,10 +722,10 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
           </div>
           {itemType === "account" && (
             <>
-              <div className="lg:col-span-2 mt-2">
+              <div className="w-full max-w-full min-w-0 lg:col-span-2 mt-2">
                 <PlatformUserGovernancePanel userId={itemId} userName={title} />
               </div>
-              <div className="lg:col-span-2 mt-2">
+              <div className="w-full max-w-full min-w-0 lg:col-span-2 mt-2">
                 <PlatformUserStatistics userId={itemId} userName={title} />
               </div>
             </>

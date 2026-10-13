@@ -179,23 +179,24 @@ export const PlatformUserGovernancePanel: React.FC<PlatformUserGovernancePanelPr
   };
 
   return (
-    <Card className="shadow-sm border-neutral-200/80">
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
+    <Card className="w-full max-w-full min-w-0 shadow-sm border-neutral-200/80">
+      <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <CardTitle className="text-base flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-primary" /> Governança & Punições da Conta
+            <ShieldAlert className="w-5 h-5 text-primary shrink-0" />
+            <span>Governança & Punições da Conta</span>
           </CardTitle>
           <CardDescription>
             Controle mestre de punições ativas, restrições e limites customizados para {userName || "este usuário"}.
           </CardDescription>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => setOverrideModalOpen(true)} className="gap-1.5 text-xs">
-            <Sliders className="w-3.5 h-3.5" /> Limite VIP ({userOverride ? `${userOverride.max_actions} ac/5m` : "Padrão"})
+        <div className="flex w-full flex-wrap sm:w-auto items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => setOverrideModalOpen(true)} className="gap-1.5 text-xs flex-1 sm:flex-initial">
+            <Sliders className="w-3.5 h-3.5 shrink-0" /> Limite VIP ({userOverride ? `${userOverride.max_actions} ac/5m` : "Padrão"})
           </Button>
-          <Button size="sm" onClick={() => setPunishModalOpen(true)} className="gap-1.5 text-xs bg-red-600 hover:bg-red-700 text-white">
-            <UserX className="w-3.5 h-3.5" /> Aplicar Punição Manual
+          <Button size="sm" onClick={() => setPunishModalOpen(true)} className="gap-1.5 text-xs bg-red-600 hover:bg-red-700 text-white flex-1 sm:flex-initial">
+            <UserX className="w-3.5 h-3.5 shrink-0" /> Aplicar Punição Manual
           </Button>
         </div>
       </CardHeader>

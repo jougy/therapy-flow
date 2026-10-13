@@ -345,22 +345,22 @@ export const HomeMobileDock = memo(function HomeMobileDock({
 
       {/* Mobile Settings Action Sheet */}
       <Sheet open={settingsSheetOpen} onOpenChange={setSettingsSheetOpen}>
-        <SheetContent side="bottom" className="rounded-t-2xl px-4 pb-8 pt-5">
-          <SheetHeader className="text-left pb-3">
+        <SheetContent side="bottom" className="w-full max-w-full rounded-t-2xl px-4 pt-5 pb-8 sm:pb-6 overscroll-contain">
+          <SheetHeader className="text-left pb-2 pr-6">
             <SheetTitle className="text-lg font-bold flex items-center gap-2">
-              <Settings className="h-5 w-5 text-primary" />
-              Configurações
+              <Settings className="h-5 w-5 text-primary shrink-0" />
+              <span>Configurações</span>
             </SheetTitle>
             <SheetDescription className="text-xs text-muted-foreground">
               Escolha qual área de configuração você deseja gerenciar.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="grid gap-3 pt-2">
+          <div className="grid gap-2.5 pt-2">
             {/* Opção 1: Configurações da Clínica */}
             <button
               type="button"
-              className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-card/80 hover:bg-muted/50 active:scale-[0.99] transition-all text-left group"
+              className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-card/90 hover:bg-muted/50 active:scale-[0.99] transition-all text-left group w-full min-w-0"
               onClick={() => {
                 setSettingsSheetOpen(false);
                 const target = clinicHomePath
@@ -369,13 +369,13 @@ export const HomeMobileDock = memo(function HomeMobileDock({
                 navigate(target);
               }}
             >
-              <div className="flex items-center gap-3.5 min-w-0">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
                   <Building2 className="h-5 w-5" />
                 </div>
-                <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-foreground">Configurações da clínica</h4>
-                  <p className="text-xs text-muted-foreground truncate">
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-sm font-semibold text-foreground leading-snug">Configurações da clínica</h4>
+                  <p className="text-xs text-muted-foreground leading-normal mt-0.5 line-clamp-2 sm:line-clamp-1">
                     Perfil da clínica, logo, equipe, planos e preferências
                   </p>
                 </div>
@@ -386,7 +386,7 @@ export const HomeMobileDock = memo(function HomeMobileDock({
             {/* Opção 2: Configurações Pessoais */}
             <button
               type="button"
-              className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-card/80 hover:bg-muted/50 active:scale-[0.99] transition-all text-left group"
+              className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-card/90 hover:bg-muted/50 active:scale-[0.99] transition-all text-left group w-full min-w-0"
               onClick={() => {
                 setSettingsSheetOpen(false);
                 const target = clinicHomePath
@@ -395,13 +395,13 @@ export const HomeMobileDock = memo(function HomeMobileDock({
                 navigate(target);
               }}
             >
-              <div className="flex items-center gap-3.5 min-w-0">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:bg-blue-500/20 transition-colors">
                   <UserCog className="h-5 w-5" />
                 </div>
-                <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-foreground">Configurações da sua conta pessoal</h4>
-                  <p className="text-xs text-muted-foreground truncate">
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-sm font-semibold text-foreground leading-snug">Configurações da sua conta pessoal</h4>
+                  <p className="text-xs text-muted-foreground leading-normal mt-0.5 line-clamp-2 sm:line-clamp-1">
                     Seu perfil, segurança, e-mail, senha e notificações
                   </p>
                 </div>

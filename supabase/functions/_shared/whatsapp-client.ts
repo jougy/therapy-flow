@@ -253,19 +253,47 @@ export class WhatsAppClient {
   }
 
   /**
+   * Helper interno para verificar se dois números brasileiros são equivalentes,
+   * tolerando DDI 55 e presença/ausência do nono dígito em celulares (8 vs 9 dígitos).
+   */
+  private areBrazilianPhonesEquivalent(phoneA?: string | null, phoneB?: string | null): boolean {
+    const cleanA = sanitizeWhatsAppNumber(phoneA);
+    const cleanB = sanitizeWhatsAppNumber(phoneB);
+    if (!cleanA || !cleanB) return false;
+    if (cleanA === cleanB) return true;
+
+    // Remove DDI 55 se houver
+    const natA = cleanA.startsWith('55') ? cleanA.slice(2) : cleanA;
+    const natB = cleanB.startsWith('55') ? cleanB.slice(2) : cleanB;
+    if (natA === natB) return true;
+
+    // Se ambos tiverem mesmo DDD (primeiros 2 dígitos) e um tiver 10 e o outro 11 dígitos
+    if (natA.length === 11 && natB.length === 10 && natA.startsWith(natB.slice(0, 2))) {
+      // natA tem 9 na frente dos 8 dígitos?
+      if (natA.slice(0, 2) === natB.slice(0, 2) && natA.slice(3) === natB.slice(2)) {
+        return true;
+      }
+    } else if (natA.length === 10 && natB.length === 11 && natB.startsWith(natA.slice(0, 2))) {
+      if (natB.slice(0, 2) === natA.slice(0, 2) && natB.slice(3) === natA.slice(2)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Verifica se determinado número corresponde ao WhatsApp comercial de transbordo (Anti-Loop).
    */
   public isAdminCommercialPhone(phone?: string | null): boolean {
-    const clean = sanitizeWhatsAppNumber(phone);
-    return Boolean(clean && clean === this.adminCommercialPhone);
+    return this.areBrazilianPhonesEquivalent(phone, this.adminCommercialPhone);
   }
 
   /**
    * Verifica se determinado número corresponde ao WhatsApp do próprio Bot/Plataforma (Anti-Loop).
    */
   public isBotBusinessPhone(phone?: string | null): boolean {
-    const clean = sanitizeWhatsAppNumber(phone);
-    return Boolean(clean && clean === this.businessPhone);
+    return this.areBrazilianPhonesEquivalent(phone, this.businessPhone);
   }
 
   /**
