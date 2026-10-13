@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Children, isValidElement, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -388,6 +388,18 @@ const renderPage = (client = createTestQueryClient()) =>
   );
 
 describe("PacienteDetalhe", () => {
+  const findVisibleButtonByName = async (name: RegExp | string) => {
+    const buttons = await screen.findAllByRole("button", { name });
+    const visible = buttons.find((btn) => {
+      if (btn.getAttribute("aria-hidden") === "true") return false;
+      const style = btn.getAttribute("style") || "";
+      if (/display:\s*none|visibility:\s*hidden/.test(style)) return false;
+      if (/opacity:\s*0/.test(style)) return false;
+      return true;
+    });
+    return visible ?? buttons[0];
+  };
+
   beforeEach(() => {
     if (!HTMLElement.prototype.hasPointerCapture) {
       HTMLElement.prototype.hasPointerCapture = () => false;
@@ -522,7 +534,8 @@ describe("PacienteDetalhe", () => {
 
     expect(await screen.findByText("Sem eventos")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^agendar$/i }));
+    const agendarBtn = await findVisibleButtonByName(/^agendar$/i);
+    fireEvent.click(agendarBtn);
 
     const dialog = await screen.findByRole("dialog", { name: /novo (agendamento|evento)/i });
     expect(dialog).toBeInTheDocument();
@@ -662,7 +675,8 @@ describe("PacienteDetalhe", () => {
     // Check that "Cadastrado:" badge was removed from header
     expect(screen.queryByText(/^Cadastrado:/i)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /resumo clínico/i }));
+    const resumoBtn = await findVisibleButtonByName(/resumo clínico/i);
+    fireEvent.click(resumoBtn);
 
     expect(await screen.findByRole("heading", { name: "Resumo do paciente" })).toBeInTheDocument();
     expect(screen.getByText("Data de cadastro")).toBeInTheDocument();
@@ -708,7 +722,8 @@ describe("PacienteDetalhe", () => {
 
     await screen.findByRole("heading", { name: "Maria Silva" });
 
-    fireEvent.click(screen.getByRole("button", { name: /mais opções/i }));
+    const maisOpcoesBtn = await findVisibleButtonByName(/mais opções/i);
+    fireEvent.click(maisOpcoesBtn);
 
     await waitFor(() => {
       expect(screen.queryByText(/excluir paciente/i)).not.toBeInTheDocument();
@@ -716,13 +731,47 @@ describe("PacienteDetalhe", () => {
   });
 
   it("confirms deletion, moves the patient to trash, and redirects to the homepage", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      accountRole: "account_owner",
+      can: () => true,
+      capabilities: {} as never,
+      clinic: {
+        account_owner_user_id: "owner-1",
+        concurrent_access_limit: 4,
+        id: "clinic-1",
+        logo_url: null,
+        name: "Clinica Aurora",
+        route_key: "clinic-route-1",
+        subaccount_limit: 4,
+        subscription_plan: "clinic",
+      },
+      clinicId: "clinic-1",
+      isSuperAdmin: false,
+      loading: false,
+      membership: null,
+      membershipStatus: "active",
+      operationalRole: "owner",
+      profile: null,
+      refreshAuthState: vi.fn(async () => {}),
+      selectClinicByRouteKey: vi.fn(async () => {}),
+      session: null,
+      signOut: vi.fn(async () => {}),
+      subscriptionPlan: "clinic",
+      user: {
+        id: "owner-1",
+      } as never,
+    });
+
     renderPage();
 
     await screen.findByRole("heading", { name: "Maria Silva" });
 
-    fireEvent.click(screen.getByRole("button", { name: /mais opções/i }));
+    const header = document.querySelector("[data-tutorial='patient-profile-header']")!;
+    const headerQueries = within(header as HTMLElement);
+    const maisOpcoesBtn = headerQueries.getByRole("button", { name: /mais opções/i });
+    fireEvent.click(maisOpcoesBtn);
 
-    const deleteOption = await screen.findByText(/excluir paciente/i);
+    const deleteOption = headerQueries.getByText(/excluir paciente/i);
     fireEvent.click(deleteOption);
 
     expect(await screen.findByRole("heading", { name: /mover paciente para a lixeira\?/i })).toBeInTheDocument();
@@ -756,26 +805,30 @@ describe("PacienteDetalhe", () => {
 
     await screen.findByRole("heading", { name: "Maria Silva" });
 
-    fireEvent.click(screen.getByRole("button", { name: /mais opções/i }));
+    const header = document.querySelector("[data-tutorial='patient-profile-header']")!;
+    const headerQueries = within(header as HTMLElement);
+
+    const maisOpcoesBtn = headerQueries.getByRole("button", { name: /mais opções/i });
+    fireEvent.click(maisOpcoesBtn);
 
     // Menu label & header
-    expect(screen.getByText("Opções do paciente")).toBeInTheDocument();
+    expect(headerQueries.getByText("Opções do paciente")).toBeInTheDocument();
 
     // Renamed share option
-    expect(screen.getByText("Compartilhar cadastro para o paciente preencher")).toBeInTheDocument();
+    expect(headerQueries.getByText("Compartilhar cadastro para o paciente preencher")).toBeInTheDocument();
 
     // Recurrence should NOT be in the dropdown
-    expect(screen.queryByRole("menuitem", { name: /configurar recorrência/i })).not.toBeInTheDocument();
+    expect(headerQueries.queryByRole("menuitem", { name: /configurar recorrência/i })).not.toBeInTheDocument();
 
     // Separate full registration view option
-    const viewFullRegistrationOption = screen.getByText("Ver cadastro completo");
+    const viewFullRegistrationOption = headerQueries.getByText("Ver cadastro completo");
     expect(viewFullRegistrationOption).toBeInTheDocument();
 
     // Print & Export separate options
-    const printOption = screen.getByText("Imprimir cadastro (PDF)");
-    const printAdultOption = screen.getByText("Imprimir Termo de Consentimento (Adulto)");
-    const printGuardianOption = screen.getByText("Imprimir Termo do Responsável (Menor)");
-    const exportOption = screen.getByText("Exportar dados (JSON)");
+    const printOption = headerQueries.getByText("Imprimir cadastro (PDF)");
+    const printAdultOption = headerQueries.getByText("Imprimir Termo de Consentimento (Adulto)");
+    const printGuardianOption = headerQueries.getByText("Imprimir Termo do Responsável (Menor)");
+    const exportOption = headerQueries.getByText("Exportar dados (JSON)");
     expect(printOption).toBeInTheDocument();
     expect(printAdultOption).toBeInTheDocument();
     expect(printGuardianOption).toBeInTheDocument();
