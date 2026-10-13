@@ -218,7 +218,9 @@ export async function trackCompleteRegistration(
   if (typeof window !== "undefined" && typeof window.fbq === "function" && Object.keys(hashedUserData).length > 0) {
     try {
       window.fbq("init", "1073846021935349", hashedUserData);
-    } catch (_) {}
+    } catch (err) {
+      void err; // intentionally ignore initialization errors (e.g. fbq not available)
+    }
   }
 
   const eventMetadata: Record<string, unknown> = {
@@ -252,7 +254,9 @@ export async function trackStartTrial(
   if (typeof window !== "undefined" && typeof window.fbq === "function" && Object.keys(hashedUserData).length > 0) {
     try {
       window.fbq("init", "1073846021935349", hashedUserData);
-    } catch (_) {}
+    } catch (err) {
+      void err; // intentionally ignore initialization errors (e.g. fbq not available)
+    }
   }
 
   const eventMetadata: Record<string, unknown> = {
