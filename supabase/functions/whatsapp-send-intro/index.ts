@@ -86,6 +86,15 @@ Deno.serve(async (req: Request) => {
 
     const sendRes = await whatsAppClient.sendTextMessage(cleanPhone, introMessage);
 
+    if (!sendRes.success) {
+      console.error("[whatsapp-send-intro] Falha no envio da mensagem via WhatsApp:", sendRes);
+      return json({
+        success: false,
+        error: sendRes.error || "Não foi possível entregar a mensagem no WhatsApp. Verifique as credenciais ou a conexão da instância.",
+        detail: sendRes,
+      }, 502);
+    }
+
     // Registra evento de auditoria
     await adminSupabase.from("platform_audit_events").insert({
       actor_user_id: user.id,
