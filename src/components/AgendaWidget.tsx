@@ -149,7 +149,7 @@ const AgendaWidget = ({
   const effectiveClinicKey = clinicKey || clinic?.route_key;
   const fixedPatientId = fixedPatient?.id ?? null;
   const fixedPatientName = fixedPatient?.name ?? null;
-  const canExpand = (showExpandButton ?? true) && !fixedPatientId;
+  const canExpand = showExpandButton ?? true;
   const fullAgendaPath = effectiveClinicKey
     ? isDesignLab
       ? `/designlab/clinica/${effectiveClinicKey}/agenda`
@@ -731,27 +731,6 @@ const AgendaWidget = ({
 
               {/* Botões de Ação no Mobile (com alvos confortáveis) */}
               <div className="flex shrink-0 items-center gap-1 sm:hidden">
-                {event.eventType === "atendimento" && event.patientId && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 min-h-[36px] px-2 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 gap-1 shrink-0"
-                    onClick={(eventClick) => {
-                      eventClick.stopPropagation();
-                      navigate(getPatientSessionPath(event.patientId!, "novo"), {
-                        state: {
-                          agendaEventId: event.id,
-                          scheduledFor: event.scheduledFor,
-                        },
-                      });
-                    }}
-                    title="Iniciar atendimento a partir deste agendamento"
-                  >
-                    <Play className="h-3.5 w-3.5 fill-primary text-primary" />
-                    <span>Iniciar</span>
-                  </Button>
-                )}
                 {can("agenda.delete_events") && (
                   <button
                     type="button"
@@ -780,27 +759,6 @@ const AgendaWidget = ({
             </div>
 
             {/* Ações Desktop (sm:) */}
-            {event.eventType === "atendimento" && event.patientId && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="hidden sm:inline-flex h-7 px-2 text-xs font-medium text-primary hover:text-primary hover:bg-primary/10 gap-1 shrink-0"
-                onClick={(eventClick) => {
-                  eventClick.stopPropagation();
-                  navigate(getPatientSessionPath(event.patientId!, "novo"), {
-                    state: {
-                      agendaEventId: event.id,
-                      scheduledFor: event.scheduledFor,
-                    },
-                  });
-                }}
-                title="Iniciar atendimento a partir deste agendamento"
-              >
-                <Play className="h-3 w-3 fill-primary text-primary shrink-0" />
-                <span className="hidden min-[520px]:inline">Iniciar</span>
-              </Button>
-            )}
             {can("agenda.delete_events") && (
               <button
                 type="button"

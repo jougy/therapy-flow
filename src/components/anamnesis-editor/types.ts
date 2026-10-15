@@ -19,6 +19,7 @@ import {
   ToggleLeft,
   Type,
   Calculator,
+  ImagePlus,
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import {
@@ -119,6 +120,7 @@ export const COMPONENT_CATEGORIES = [
       { type: "table" as const, label: "Tabela", icon: Table, description: "Grade de colunas personalizadas" },
       { type: "address_block" as const, label: "Bloco de Endereço", icon: MapPin, description: "CEP, logradouro e GPS" },
       { type: "calculated" as const, label: "Campos calculados", icon: Calculator, description: "Fórmulas matemáticas e classificações clínicas" },
+      { type: "image_annotation" as const, label: "Anotador de Imagem", icon: ImagePlus, description: "Desenho e pontos clínicos com tags interativas" },
     ],
   },
 ];

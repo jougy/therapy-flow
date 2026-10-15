@@ -13,6 +13,14 @@ import {
   fetchGoogleCalendarBusySlots,
 } from '../_shared/calendar-utils.ts';
 import { getGlobalFeatureFlag } from '../_shared/feature-flags-client.ts';
+import { verifyTotpCode } from '../_shared/totp-utils.ts';
+import {
+  TUTORIAL_ENTE_AUTH_NO_2FA,
+  TUTORIAL_ENTE_AUTH_HOW_TO_USE,
+  TUTORIAL_ACCOUNT_NOT_FOUND,
+  isSessionAuthenticated,
+  getNewAuthExpiresAt,
+} from '../_shared/whatsapp-auth-helper.ts';
 import {
   OwnerCustomerContext,
   RESTRICTED_NON_OWNER_MESSAGE,
@@ -158,6 +166,8 @@ interface ProfileLookupRecord {
   profession?: string | null;
   council_name?: string | null;
   professional_license?: string | null;
+  totp_secret?: string | null;
+  totp_enabled?: boolean | null;
 }
 
 // Map de rate limiting em memória por chave (IP ou Telefone): máximo 15 requisições por minuto
@@ -506,7 +516,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
     // 1. Recuperar ou criar a sessão do usuário no banco de dados
     const { data: existingSession, error: sessionErr } = await supabase
       .from('whatsapp_chat_sessions')
-      .select('id, phone, user_id, clinic_id, current_step, metadata')
+      .select('id, phone, user_id, clinic_id, current_step, metadata, is_authenticated, auth_expires_at, authenticated_at')
       .eq('phone', phone)
       .maybeSingle();
 
@@ -580,7 +590,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       if (userId) {
         const { data } = await supabase
           .from('profiles')
-          .select('id, full_name, email, phone, profession, council_name, professional_license')
+          .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
           .eq('id', userId)
           .maybeSingle();
         profileData = data as ProfileLookupRecord | null;
@@ -593,7 +603,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         const inClause = `(${variantsList.map((v) => `"${v.replace(/"/g, '')}"`).join(',')})`;
         const { data } = await supabase
           .from('profiles')
-          .select('id, full_name, email, phone, profession, council_name, professional_license')
+          .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
           .filter('phone', 'in', inClause)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -605,7 +615,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       if (!profileData && last8Digits.length >= 8) {
         const { data } = await supabase
           .from('profiles')
-          .select('id, full_name, email, phone, profession, council_name, professional_license')
+          .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
           .ilike('phone', `%${last8Digits}`)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -626,7 +636,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         if (firstAdmin?.user_id) {
           const { data: adminProf } = await supabase
             .from('profiles')
-            .select('id, full_name, email, phone, profession, council_name, professional_license')
+            .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
             .eq('id', firstAdmin.user_id)
             .maybeSingle();
           if (adminProf) {
@@ -772,6 +782,9 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         isSoloPlan,
         isClinicPlan,
         activeRole,
+        totpEnabled: !!profileData?.totp_enabled,
+        totpSecret: profileData?.totp_secret || null,
+        memberships: memberships || [],
       };
     })();
 
@@ -840,6 +853,369 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       isClinicPlan: customer.isClinicPlan,
       activeRole: customer.activeRole,
     };
+
+    // ---------------------------------------------------------------------------------
+    // 0. FLUXO DE AUTENTICAÇÃO VIA NÚMERO DE CELULAR E 2FA (ENTE AUTH)
+    // ---------------------------------------------------------------------------------
+    const isLoginCommand =
+      userTextLower === 'login' ||
+      userTextLower === 'entrar' ||
+      cleanSelectedButtonId === 'btn_auth_login';
+
+    const isLogoutCommand =
+      userTextLower === 'sair' ||
+      cleanSelectedButtonId === 'btn_auth_logout';
+
+    const isSwitchClinicCommand =
+      userTextLower === 'trocar clinica' ||
+      userTextLower === 'trocar clínica' ||
+      cleanSelectedButtonId === 'btn_switch_clinic';
+
+    const isHelpCommand =
+      userTextLower === 'ajuda' ||
+      userTextLower === 'help';
+
+    // A. Comando explícito de LOGOUT / SAIR
+    if (isLogoutCommand) {
+      await supabase
+        .from('whatsapp_chat_sessions')
+        .update({
+          is_authenticated: false,
+          authenticated_at: null,
+          auth_expires_at: null,
+          current_step: 'initial',
+          last_message_at: new Date().toISOString(),
+          metadata: { ...metadata, logged_out_at: new Date().toISOString() },
+        })
+        .eq('phone', phone);
+
+      await whatsAppClient.sendTextMessage(
+        phone,
+        `👋 *Sessão encerrada com sucesso!*\n\nVocê foi desconectado do Bot PluriFisio.\nSeus lembretes e alertas automáticos de consulta continuarão chegando normalmente por aqui.\n\nPara interagir novamente com os comandos, basta digitar *login* ou *entrar*.`
+      );
+
+      return new Response(JSON.stringify({ success: true, step: 'logged_out' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // B. Comando explícito de LOGIN ou ENTRAR
+    if (isLoginCommand) {
+      // 1. Número não encontrado
+      if (!customer.userId) {
+        await whatsAppClient.sendTextMessage(phone, TUTORIAL_ACCOUNT_NOT_FOUND);
+        return new Response(JSON.stringify({ success: true, step: 'auth_account_not_found' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // 2. Número encontrado mas 2FA não está ativado
+      if (!customer.totpEnabled || !customer.totpSecret) {
+        await whatsAppClient.sendTextMessage(phone, TUTORIAL_ENTE_AUTH_NO_2FA);
+        return new Response(JSON.stringify({ success: true, step: 'auth_2fa_not_enabled' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // 3. Número encontrado com 2FA ativo -> solicitar token
+      await supabase
+        .from('whatsapp_chat_sessions')
+        .update({
+          current_step: 'waiting_2fa_token',
+          last_message_at: new Date().toISOString(),
+          metadata: { ...metadata, auth_requested_at: new Date().toISOString() },
+        })
+        .eq('phone', phone);
+
+      await whatsAppClient.sendTextMessage(
+        phone,
+        `🔐 *Identificação confirmada, ${userName}!* 👋\n\n` +
+        `Para liberar o seu acesso seguro, digite o *código de 6 dígitos* gerado no seu aplicativo autenticador (*Ente Auth*).\n\n` +
+        `💡 _Se tiver dúvidas de como localizar ou usar o código, digite *ajuda*._`
+      );
+
+      return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // C. Usuário está na etapa de validação do token 2FA
+    if (currentStep === 'waiting_2fa_token') {
+      // Se usuário digitou ajuda durante a etapa do token
+      if (isHelpCommand) {
+        await whatsAppClient.sendTextMessage(phone, TUTORIAL_ENTE_AUTH_HOW_TO_USE);
+        return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token_help' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const cleanDigits = userText.replace(/\D/g, '');
+      if (cleanDigits.length === 6 && customer.totpSecret) {
+        const isValid = await verifyTotpCode(customer.totpSecret, cleanDigits);
+        if (isValid) {
+          // Token correto! Buscar clínicas do usuário
+          const { data: userMemberships } = await supabase
+            .from('clinic_memberships')
+            .select('clinic_id, clinics(id, name, subscription_plan)')
+            .eq('user_id', customer.userId)
+            .eq('is_active', true);
+
+          const clinicsList = (userMemberships || [])
+            .map((m: any) => m.clinics)
+            .filter(Boolean);
+
+          const newExpiresAt = getNewAuthExpiresAt();
+
+          if (clinicsList.length > 1) {
+            // Múltiplas clínicas: pedir para selecionar
+            await supabase
+              .from('whatsapp_chat_sessions')
+              .update({
+                is_authenticated: true,
+                authenticated_at: new Date().toISOString(),
+                auth_expires_at: newExpiresAt,
+                current_step: 'waiting_clinic_selection',
+                last_message_at: new Date().toISOString(),
+                metadata: {
+                  ...metadata,
+                  available_clinics: clinicsList.map((c: any) => ({ id: c.id, name: c.name })),
+                },
+              })
+              .eq('phone', phone);
+
+            let clinicSelectionText =
+              `✅ *Código verificado com sucesso!*\n\n` +
+              `Você possui acesso a mais de uma clínica. Digite o número correspondente para selecionar:\n\n`;
+
+            clinicsList.forEach((c: any, index: number) => {
+              clinicSelectionText += `*${index + 1}* - ${c.name}\n`;
+            });
+
+            await whatsAppClient.sendTextMessage(phone, clinicSelectionText);
+            return new Response(JSON.stringify({ success: true, step: 'waiting_clinic_selection' }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          } else {
+            // Apenas 1 clínica (ou consultório solo)
+            const singleClinic = clinicsList[0];
+            const activeClinicId = singleClinic?.id || customer.clinicId;
+            const activeClinicName = singleClinic?.name || customer.clinicName;
+
+            await supabase
+              .from('whatsapp_chat_sessions')
+              .update({
+                is_authenticated: true,
+                authenticated_at: new Date().toISOString(),
+                auth_expires_at: newExpiresAt,
+                clinic_id: activeClinicId,
+                current_step: 'owner_menu',
+                last_message_at: new Date().toISOString(),
+                metadata: {
+                  ...metadata,
+                  clinic_name: activeClinicName,
+                },
+              })
+              .eq('phone', phone);
+
+            await whatsAppClient.sendTextMessage(
+              phone,
+              `🎉 *Acesso liberado com sucesso para a clínica ${activeClinicName}!*\nSua sessão permanecerá ativa pelas próximas 5 horas de inatividade.`
+            );
+
+            await sendOwnerMainMenu(whatsAppClient, phone, {
+              ...ownerContext,
+              clinicId: activeClinicId,
+              clinicName: activeClinicName,
+            });
+
+            return new Response(JSON.stringify({ success: true, step: 'auth_complete_single_clinic' }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        } else {
+          // Token inválido ou expirado
+          await whatsAppClient.sendTextMessage(
+            phone,
+            `❌ *Código incorreto ou expirado.*\n\nO código do Ente Auth muda a cada 30 segundos. Por favor, confira o código mais recente no app e tente novamente.\n\n💡 _Dica: Digite *ajuda* para ver o tutorial passo a passo._`
+          );
+          return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token_invalid' }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      } else {
+        await whatsAppClient.sendTextMessage(
+          phone,
+          `⚠️ Por favor, envie os *6 números* do código gerado no aplicativo Ente Auth (ex: 123456).\nSe precisar de instruções, digite *ajuda*.`
+        );
+        return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token_non_digits' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // D. Usuário está na etapa de seleção de clínica
+    if (currentStep === 'waiting_clinic_selection') {
+      const availableClinics = (metadata.available_clinics || []) as Array<{ id: string; name: string }>;
+      const selectedIndex = parseInt(userText.trim(), 10) - 1;
+
+      if (!isNaN(selectedIndex) && availableClinics[selectedIndex]) {
+        const chosenClinic = availableClinics[selectedIndex];
+        const newExpiresAt = getNewAuthExpiresAt();
+
+        await supabase
+          .from('whatsapp_chat_sessions')
+          .update({
+            clinic_id: chosenClinic.id,
+            current_step: 'owner_menu',
+            auth_expires_at: newExpiresAt,
+            last_message_at: new Date().toISOString(),
+            metadata: {
+              ...metadata,
+              clinic_name: chosenClinic.name,
+            },
+          })
+          .eq('phone', phone);
+
+        await whatsAppClient.sendTextMessage(
+          phone,
+          `🏥 *Clínica selecionada: ${chosenClinic.name}!*\nContexto atualizado com sucesso.`
+        );
+
+        await sendOwnerMainMenu(whatsAppClient, phone, {
+          ...ownerContext,
+          clinicId: chosenClinic.id,
+          clinicName: chosenClinic.name,
+        });
+
+        return new Response(JSON.stringify({ success: true, step: 'clinic_selected' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } else {
+        let clinicSelectionText =
+          `⚠️ Opção inválida. Por favor, digite o *número* correspondente à clínica desejada:\n\n`;
+        availableClinics.forEach((c, index) => {
+          clinicSelectionText += `*${index + 1}* - ${c.name}\n`;
+        });
+
+        await whatsAppClient.sendTextMessage(phone, clinicSelectionText);
+        return new Response(JSON.stringify({ success: true, step: 'waiting_clinic_selection_retry' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // E. Comando TROCAR CLÍNICA (quando autenticado)
+    if (isSwitchClinicCommand) {
+      if (customer.userId) {
+        const { data: userMemberships } = await supabase
+          .from('clinic_memberships')
+          .select('clinic_id, clinics(id, name, subscription_plan)')
+          .eq('user_id', customer.userId)
+          .eq('is_active', true);
+
+        const clinicsList = (userMemberships || [])
+          .map((m: any) => m.clinics)
+          .filter(Boolean);
+
+        if (clinicsList.length > 1) {
+          const newExpiresAt = getNewAuthExpiresAt();
+          await supabase
+            .from('whatsapp_chat_sessions')
+            .update({
+              current_step: 'waiting_clinic_selection',
+              auth_expires_at: newExpiresAt,
+              last_message_at: new Date().toISOString(),
+              metadata: {
+                ...metadata,
+                available_clinics: clinicsList.map((c: any) => ({ id: c.id, name: c.name })),
+              },
+            })
+            .eq('phone', phone);
+
+          let clinicSelectionText =
+            `🔄 *Troca de Clínica*\n\nSelecione o número da clínica que deseja gerenciar agora:\n\n`;
+          clinicsList.forEach((c: any, index: number) => {
+            clinicSelectionText += `*${index + 1}* - ${c.name}\n`;
+          });
+
+          await whatsAppClient.sendTextMessage(phone, clinicSelectionText);
+          return new Response(JSON.stringify({ success: true, step: 'waiting_clinic_selection' }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        } else {
+          await whatsAppClient.sendTextMessage(
+            phone,
+            `🏥 Você possui apenas a clínica *${customer.clinicName}* vinculada à sua conta.`
+          );
+          return new Response(JSON.stringify({ success: true, step: 'single_clinic_no_switch' }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+    }
+
+    // F. VERIFICAÇÃO DE SESSÃO ATIVA (Timeout de 5 horas de inatividade)
+    const isSessionActive = isSessionAuthenticated(session);
+
+    // Se o usuário tentar enviar comandos sem estar autenticado (ou com sessão expirada):
+    if (!isSessionActive) {
+      // Se não for comando de agendamento de lead/onboarding (Gatilhos do Onboarding público)
+      const isPublicOnboardingFlow =
+        cleanSelectedButtonId.startsWith('onboarding_') ||
+        cleanSelectedButtonId.startsWith('slot_') ||
+        cleanSelectedButtonId.startsWith('time_') ||
+        currentStep.startsWith('onboarding_');
+
+      if (!isPublicOnboardingFlow) {
+        // Encerra sessão caso estivesse marcada como autenticada anteriormente mas expirou
+        if (session?.is_authenticated) {
+          await supabase
+            .from('whatsapp_chat_sessions')
+            .update({
+              is_authenticated: false,
+              authenticated_at: null,
+              auth_expires_at: null,
+              current_step: 'initial',
+              last_message_at: new Date().toISOString(),
+            })
+            .eq('phone', phone);
+        }
+
+        const expiredOrNotLoggedText =
+          `🔒 *Sessão não autenticada no WhatsApp*\n\n` +
+          `Para acessar os dados e comandos da sua clínica, é necessário se autenticar.\n\n` +
+          `👉 Digite *login* ou *entrar* para iniciar a identificação com seu número e código do Ente Auth.`;
+
+        await whatsAppClient.sendTextMessage(phone, expiredOrNotLoggedText);
+        return new Response(JSON.stringify({ success: true, step: 'auth_required' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      // Sessão autenticada ativa! Renova o timeout para mais 5 horas a cada comando executado
+      const renewedExpiresAt = getNewAuthExpiresAt();
+      await supabase
+        .from('whatsapp_chat_sessions')
+        .update({
+          auth_expires_at: renewedExpiresAt,
+          last_message_at: new Date().toISOString(),
+        })
+        .eq('phone', phone);
+    }
 
     // ---------------------------------------------------------------------------------
     // 1. GOVERNANÇA ESTRITA DE ACESSO: Restrição para não-titulares

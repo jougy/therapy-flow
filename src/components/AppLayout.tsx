@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { LogOut, ShieldCheck, Settings, FlaskConical, SlidersHorizontal, Smartphone, Monitor, UserCog, UserPlus, Star, Zap } from "lucide-react";
+import { LogOut, ShieldCheck, Settings, FlaskConical, SlidersHorizontal, Smartphone, Monitor, UserCog, UserPlus, Star, Zap, ArrowLeft, User } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
@@ -105,6 +105,26 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     (location.pathname.startsWith("/configuracoes") && !location.pathname.startsWith("/clinica")) ||
     new URLSearchParams(location.search).get("origem") === "pessoal";
 
+  const [patientTopBarTitle, setPatientTopBarTitle] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleSetPatientTitle = (event: any) => {
+      setPatientTopBarTitle(event.detail?.title ?? null);
+    };
+
+    window.addEventListener("pluri:set-patient-title", handleSetPatientTitle);
+    return () => {
+      window.removeEventListener("pluri:set-patient-title", handleSetPatientTitle);
+    };
+  }, []);
+
+  useEffect(() => {
+    const isPatientRoute = location.pathname.includes("/pacientes/");
+    if (!isPatientRoute && patientTopBarTitle) {
+      setPatientTopBarTitle(null);
+    }
+  }, [location.pathname, patientTopBarTitle]);
+
   const displayName = profile?.full_name || profile?.email || "Usuário";
   const initials = displayName
     .split(" ")
@@ -160,31 +180,53 @@ const AppLayout = ({ children }: AppLayoutProps) => {
       {!isPreviewIframe && (
         <header className="border-b bg-card shrink-0">
           <div className="mx-auto flex h-14 w-full max-w-screen-2xl items-center justify-between px-4 sm:px-6 lg:px-8">
-            <button
-              type="button"
-              className="flex items-center gap-3 text-left min-w-0"
-              onClick={() => navigate(isPersonalOriginSettings ? "/espacopessoal" : clinicHomePath)}
-              aria-label={isPersonalOriginSettings ? "Ir para o espaço pessoal" : `Ir para a página inicial da clínica ${clinicBrandName}`}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                {clinic?.logo_url && !isPersonalOriginSettings ? (
-                  <img
-                    src={clinic.logo_url}
-                    alt={`Logo da ${clinicBrandName}`}
-                    className="h-8 w-8 shrink-0 rounded-md object-contain border bg-card/60 p-0.5 shadow-2xs"
-                  />
-                ) : (
-                  <img
-                    src="/branding/logo/pluri_health_icon_gradient.svg"
-                    alt="Pluri-Health"
-                    className="h-8 w-8 shrink-0 drop-shadow-xs"
-                  />
-                )}
-                <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
-                  {isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}
-                </span>
+            {patientTopBarTitle ? (
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => navigate(clinicHomePath)}
+                  aria-label="Voltar para a página inicial"
+                  className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 rounded-full hover:bg-muted"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary border border-primary/20">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <h1 className="text-base sm:text-lg font-bold text-foreground tracking-tight truncate max-w-[170px] xs:max-w-[220px] sm:max-w-[340px] md:max-w-none">
+                    {patientTopBarTitle}
+                  </h1>
+                </div>
               </div>
-            </button>
+            ) : (
+              <button
+                type="button"
+                className="flex items-center gap-3 text-left min-w-0"
+                onClick={() => navigate(isPersonalOriginSettings ? "/espacopessoal" : clinicHomePath)}
+                aria-label={isPersonalOriginSettings ? "Ir para o espaço pessoal" : `Ir para a página inicial da clínica ${clinicBrandName}`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {clinic?.logo_url && !isPersonalOriginSettings ? (
+                    <img
+                      src={clinic.logo_url}
+                      alt={`Logo da ${clinicBrandName}`}
+                      className="h-8 w-8 shrink-0 rounded-md object-contain border bg-card/60 p-0.5 shadow-2xs"
+                    />
+                  ) : (
+                    <img
+                      src="/branding/logo/pluri_health_icon_gradient.svg"
+                      alt="Pluri-Health"
+                      className="h-8 w-8 shrink-0 drop-shadow-xs"
+                    />
+                  )}
+                  <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
+                    {isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}
+                  </span>
+                </div>
+              </button>
+            )}
 
             {/* Ações do Header: No mobile (< sm), estritamente Notificações. Tutorial, Feedback, Perfil, Configurações e Logout são ocultados no mobile */}
             <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">

@@ -141,7 +141,7 @@ const SessaoDetalhe = () => {
   const quota = useClinicPlanQuota(clinicId);
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const isNew = sessionId === "novo";
-  const newSessionState = location.state as { agendaEventId?: string; scheduledFor?: string } | null;
+  const newSessionState = location.state as { agendaEventId?: string; scheduledFor?: string; autoArrival?: boolean } | null;
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -526,7 +526,7 @@ const SessaoDetalhe = () => {
       const initialScheduled = scheduledFor ? formatDateTimeForInput(scheduledFor) : "";
       setSessionDate(initialDate);
       setScheduledStartAt(initialScheduled);
-      setPatientArrivedAt("");
+      setPatientArrivedAt(newSessionState?.autoArrival || newSessionState?.agendaEventId ? getCurrentDateTimeInputValue() : "");
       setPaymentStatus("nao_cobrado");
       setAmountCharged("");
       setAmountOriginal("");
@@ -2068,6 +2068,9 @@ const SessaoDetalhe = () => {
                     suggestedCareLine={suggestedCareLine}
                     clinicColorSlots={resolvedClinicColorSlots}
                     groupSuggestions={groupSuggestions}
+                    clinicId={clinicId}
+                    patientId={patientId}
+                    sessionId={sessionId}
                     onAnamnesisFormResponseChange={setAnamnesisFormResponse}
                     onComplexityScoreChange={setComplexityScore}
                     onObservacoesChange={setObservacoes}
@@ -2229,6 +2232,9 @@ const SessaoDetalhe = () => {
                           suggestedCareLine={suggestedCareLine}
                           clinicColorSlots={resolvedClinicColorSlots}
                           groupSuggestions={groupSuggestions}
+                          clinicId={clinicId}
+                          patientId={patientId}
+                          sessionId={sessionId}
                           onAnamnesisFormResponseChange={setAnamnesisFormResponse}
                           onComplexityScoreChange={setComplexityScore}
                           onObservacoesChange={setObservacoes}

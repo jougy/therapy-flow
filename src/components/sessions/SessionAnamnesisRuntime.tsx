@@ -16,6 +16,8 @@ import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
 import { SimpleListFieldInput } from "@/components/anamnesis/SimpleListFieldInput";
 import { CalculatedFieldRuntimeInput } from "@/components/anamnesis/CalculatedFieldRuntimeInput";
+import { ImageAnnotationRuntimeInput } from "@/components/anamnesis/image-annotator/ImageAnnotationRuntimeInput";
+import type { ClinicalImageAnnotationValue } from "@/lib/image-annotation-vector";
 import type { ClinicGroupColorSlot } from "@/components/GroupColorPaletteField";
 import type { GroupSuggestion } from "./types";
 import { Badge } from "@/components/ui/badge";
@@ -184,6 +186,9 @@ export interface SessionAnamnesisRuntimeProps {
   suggestedCareLine: SuggestedCareLine | null;
   clinicColorSlots?: ClinicGroupColorSlot[];
   groupSuggestions?: GroupSuggestion[];
+  clinicId?: string | null;
+  patientId?: string | null;
+  sessionId?: string | null;
   onAnamnesisFormResponseChange: React.Dispatch<React.SetStateAction<AnamnesisFormResponse>>;
   onComplexityScoreChange: (val: number[]) => void;
   onObservacoesChange: (val: string) => void;
@@ -214,6 +219,9 @@ export const SessionAnamnesisRuntime = ({
   suggestedCareLine,
   clinicColorSlots,
   groupSuggestions,
+  clinicId,
+  patientId,
+  sessionId,
   onAnamnesisFormResponseChange,
   onComplexityScoreChange,
   onObservacoesChange,
@@ -717,6 +725,23 @@ export const SessionAnamnesisRuntime = ({
             onChange={(next) => updateFormResponse(field.id, next as AnamnesisFormValue)}
             allFormValues={anamnesisFormResponse}
             disabled={locked}
+          />
+        </div>
+      );
+    }
+
+    if (field.type === "image_annotation") {
+      return (
+        <div key={field.id} className="min-w-0 space-y-2">
+          <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
+          <ImageAnnotationRuntimeInput
+            fieldLabel={field.label}
+            value={value as ClinicalImageAnnotationValue | null}
+            onChange={(next) => updateFormResponse(field.id, next as AnamnesisFormValue)}
+            disabled={locked}
+            clinicId={clinicId}
+            patientId={patientId}
+            sessionId={sessionId}
           />
         </div>
       );

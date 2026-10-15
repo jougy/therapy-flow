@@ -237,7 +237,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
   const dockItems: PatientMobileDockItem[] = [
     { id: "inicio", label: "Início", icon: Home },
     { id: "resumo", label: "Resumo clínico", icon: FileText },
-    { id: "agendar", label: "Agendar", icon: CalendarDays },
+    { id: "agendar", label: "Novo Agendamento", icon: CalendarDays },
     { id: "atender", label: "Atender", icon: PlayCircle, primary: true },
     { id: "historico", label: "Histórico", icon: History },
     ...(showFiles ? [{ id: "arquivos" as const, label: "Arquivos", icon: FolderOpen }] : []),

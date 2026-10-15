@@ -1,5 +1,9 @@
 import { INPUT_LIMITS, sanitizeMultilineInput, sanitizeSingleLineInput } from "@/lib/input-security";
 import { isPluriformBuffer, unpackPluriform } from "@/lib/pluriform/pluriform";
+import type {
+  ClinicalAnnotationShape,
+  ClinicalImageAnnotationValue,
+} from "@/lib/image-annotation-vector";
 
 export type AnamnesisFieldType =
   | "short_text"
@@ -18,7 +22,8 @@ export type AnamnesisFieldType =
   | "section_selector"
   | "radar_section"
   | "address_block"
-  | "calculated";
+  | "calculated"
+  | "image_annotation";
 
 export interface CalculatedFieldVariable {
   id: string;
@@ -137,6 +142,7 @@ export type AnamnesisFormValue =
   | AddressBlockValue
   | AnamnesisTagItem[]
   | CalculatedFieldResponseValue
+  | ClinicalImageAnnotationValue
   | null;
 export type AnamnesisFormResponse = Record<string, AnamnesisFormValue>;
 
@@ -341,6 +347,7 @@ export const ANAMNESIS_FIELD_LIBRARY: Array<{ type: AnamnesisFieldType; label: s
   { type: "section_selector", label: "Seletor de seções" },
   { type: "radar_section", label: "Polígono de Status" },
   { type: "calculated", label: "Campos calculados" },
+  { type: "image_annotation", label: "Anotador de Imagem" },
 ];
 
 export const ANAMNESIS_FIELD_TYPES = new Set<AnamnesisFieldType>(ANAMNESIS_FIELD_LIBRARY.map((field) => field.type));
@@ -698,6 +705,77 @@ export const sanitizeAnamnesisFormResponse = (response: AnamnesisFormResponse): 
             }
 
             return [safeFieldId, { inputs: sanitizedInputs, outputs: sanitizedOutputs }];
+          }
+
+          // Image annotation field response ({ baseImageUrl, annotations, ... })
+          if ("baseImageUrl" in rec || "annotations" in rec) {
+            const rawBaseImageUrl = typeof rec.baseImageUrl === "string" ? rec.baseImageUrl.trim() : "";
+            const rawAnnotations = Array.isArray(rec.annotations) ? rec.annotations : [];
+
+            const sanitizedAnnotations: ClinicalAnnotationShape[] = rawAnnotations
+              .slice(0, 100)
+              .map((shapeItem, shapeIdx): ClinicalAnnotationShape | null => {
+                if (!shapeItem || typeof shapeItem !== "object") return null;
+                const s = shapeItem as Record<string, unknown>;
+                const rawType = String(s.type || "pin");
+                const validTypes = new Set([
+                  "freehand",
+                  "highlighter",
+                  "arrow",
+                  "line",
+                  "rect",
+                  "circle",
+                  "triangle",
+                  "cross",
+                  "text",
+                  "pin",
+                ]);
+                const type = (validTypes.has(rawType) ? rawType : "pin") as ClinicalAnnotationShape["type"];
+
+                const rawPoints = Array.isArray(s.points) ? s.points : undefined;
+                const sanitizedPoints: [number, number][] | undefined = rawPoints
+                  ? rawPoints
+                      .slice(0, 500)
+                      .map((pt): [number, number] | null =>
+                        Array.isArray(pt) && pt.length >= 2 && typeof pt[0] === "number" && typeof pt[1] === "number"
+                          ? [Math.max(0, Math.min(1000, Math.round(pt[0]))), Math.max(0, Math.min(1000, Math.round(pt[1])))]
+                          : null
+                      )
+                      .filter((pt): pt is [number, number] => pt !== null)
+                  : undefined;
+
+                return {
+                  id: sanitizeId(String(s.id || `shape_${shapeIdx + 1}`), `shape_${shapeIdx + 1}`),
+                  type,
+                  x: typeof s.x === "number" && Number.isFinite(s.x) ? Math.max(0, Math.min(1000, Math.round(s.x))) : 0,
+                  y: typeof s.y === "number" && Number.isFinite(s.y) ? Math.max(0, Math.min(1000, Math.round(s.y))) : 0,
+                  width: typeof s.width === "number" && Number.isFinite(s.width) ? Math.max(0, Math.min(1000, Math.round(s.width))) : undefined,
+                  height: typeof s.height === "number" && Number.isFinite(s.height) ? Math.max(0, Math.min(1000, Math.round(s.height))) : undefined,
+                  points: sanitizedPoints,
+                  strokeColor: typeof s.strokeColor === "string" ? sanitizeSingleLineInput(s.strokeColor, 25).trim() : "#EF4444",
+                  fillColor: typeof s.fillColor === "string" ? sanitizeSingleLineInput(s.fillColor, 25).trim() : undefined,
+                  strokeWidth: typeof s.strokeWidth === "number" && Number.isFinite(s.strokeWidth) ? Math.max(1, Math.min(100, Math.round(s.strokeWidth))) : 4,
+                  strokeStyle: s.strokeStyle === "dashed" || s.strokeStyle === "dotted" ? s.strokeStyle : "solid",
+                  text: typeof s.text === "string" ? sanitizeSingleLineInput(s.text, 200).trim() : undefined,
+                  pinNumber: typeof s.pinNumber === "number" && Number.isFinite(s.pinNumber) ? Math.max(1, Math.round(s.pinNumber)) : undefined,
+                  label: typeof s.label === "string" ? sanitizeSingleLineInput(s.label, 120).trim() : undefined,
+                  comment: typeof s.comment === "string" ? sanitizeMultilineInput(s.comment, 500).trim() : undefined,
+                  severity: s.severity === "low" || s.severity === "medium" || s.severity === "high" ? s.severity : undefined,
+                };
+              })
+              .filter((shape): shape is ClinicalAnnotationShape => shape !== null);
+
+            const sanitizedAnnotationValue: ClinicalImageAnnotationValue = {
+              baseImageId: typeof rec.baseImageId === "string" ? sanitizeId(rec.baseImageId, "") : undefined,
+              baseImageUrl: rawBaseImageUrl,
+              baseImageWidth: typeof rec.baseImageWidth === "number" && Number.isFinite(rec.baseImageWidth) ? rec.baseImageWidth : 1920,
+              baseImageHeight: typeof rec.baseImageHeight === "number" && Number.isFinite(rec.baseImageHeight) ? rec.baseImageHeight : 1080,
+              annotations: sanitizedAnnotations,
+              updatedAt: typeof rec.updatedAt === "string" ? sanitizeSingleLineInput(rec.updatedAt, 50).trim() : undefined,
+              sourceSessionId: typeof rec.sourceSessionId === "string" ? sanitizeId(rec.sourceSessionId, "") : undefined,
+            };
+
+            return [safeFieldId, sanitizedAnnotationValue];
           }
 
           const addrRec = value as AddressBlockValue;
@@ -1071,6 +1149,14 @@ export const createAnamnesisField = (type: AnamnesisFieldType, index: number): A
         ],
         ranges: [],
       },
+    };
+  }
+
+  if (type === "image_annotation") {
+    return {
+      ...baseField,
+      label: "Anotação de Imagem",
+      helpText: "Carregue uma imagem ou foto para desenhar, marcar setas, regiões e pontos interativos.",
     };
   }
 

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Activity,
   BookOpen,
+  Bot,
   Calendar,
   ClipboardList,
   Clock,
@@ -51,6 +52,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ClinicFormAnalyticsDashboard, type SessionDataForAnalytics } from "@/components/anamnesis/ClinicFormAnalyticsDashboard";
 import { PrintBlankKitModal } from "@/components/PrintBlankKitModal";
+import { AiReferenceModal } from "@/components/anamnesis/AiReferenceModal";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -257,6 +259,7 @@ export const ClinicFormsSection = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
   const [importingTemplate, setImportingTemplate] = useState(false);
 
   const templateImportRef = useRef<HTMLInputElement | null>(null);
@@ -552,6 +555,12 @@ export const ClinicFormsSection = () => {
         defaultTemplateId={selectedTemplateId}
       />
 
+      {/* AI Reference Guide modal */}
+      <AiReferenceModal
+        open={aiModalOpen}
+        onOpenChange={setAiModalOpen}
+      />
+
       {/* Delete confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
@@ -606,6 +615,15 @@ export const ClinicFormsSection = () => {
               <Printer className="h-4 w-4" />
               <span className="hidden sm:inline">Imprimir ficha em branco</span>
               <span className="sm:hidden">Imprimir</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 bg-primary/5 hover:bg-primary/10 border-primary/30 text-primary"
+              onClick={() => setAiModalOpen(true)}
+            >
+              <Bot className="h-4 w-4 text-primary" />
+              <span>Criar com IA</span>
             </Button>
             <Button
               variant="outline"

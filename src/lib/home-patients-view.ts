@@ -379,15 +379,30 @@ const formatAgendaDateTimeLabel = (value: string) =>
 
 const getAgendaEventTime = (event: HomeAgendaEventRecord) => new Date(event.scheduled_for).getTime();
 
+const isEventToday = (eventTime: number, now: number) => {
+  const eventDate = new Date(eventTime);
+  const nowDate = new Date(now);
+  return (
+    eventDate.getFullYear() === nowDate.getFullYear() &&
+    eventDate.getMonth() === nowDate.getMonth() &&
+    eventDate.getDate() === nowDate.getDate()
+  );
+};
+
 const getRelevantAgendaEvent = (agendaEvents: HomeAgendaEventRecord[], now: number) => {
   const activeEvents = agendaEvents
     .filter((event) => event.patient_id && event.status !== "cancelado" && !Number.isNaN(getAgendaEventTime(event)))
     .sort((left, right) => getAgendaEventTime(left) - getAgendaEventTime(right));
-  const lateEvents = activeEvents
-    .filter((event) => getAgendaEventTime(event) < now)
+
+  // Atrasos só são considerados relevantes se o agendamento for do dia de hoje (após 23h59 do dia marcado, o relógio não fica atrasado)
+  const lateEventsToday = activeEvents
+    .filter((event) => {
+      const time = getAgendaEventTime(event);
+      return time < now && isEventToday(time, now);
+    })
     .sort((left, right) => getAgendaEventTime(right) - getAgendaEventTime(left));
 
-  return lateEvents[0] ?? activeEvents.find((event) => getAgendaEventTime(event) >= now) ?? null;
+  return lateEventsToday[0] ?? activeEvents.find((event) => getAgendaEventTime(event) >= now) ?? null;
 };
 
 const getNextGlobalAgendaEventId = (agendaEvents: HomeAgendaEventRecord[], now: number) =>
@@ -396,7 +411,8 @@ const getNextGlobalAgendaEventId = (agendaEvents: HomeAgendaEventRecord[], now: 
     .sort((left, right) => getAgendaEventTime(left) - getAgendaEventTime(right))[0]?.id ?? null;
 
 const getAgendaSummaryTone = (event: HomeAgendaEventRecord, nextGlobalAgendaEventId: string | null, now: number): HomePatientAgendaSummary["tone"] => {
-  if (getAgendaEventTime(event) < now) {
+  const eventTime = getAgendaEventTime(event);
+  if (eventTime < now && isEventToday(eventTime, now)) {
     return "late";
   }
 
