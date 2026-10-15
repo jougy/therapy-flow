@@ -1,6 +1,6 @@
 {
-  "name": "Pluri-Health - Gestão Clínica",
-  "short_name": "Pluri-Health",
+  "name": "Pluri Health — Gestão Clínica",
+  "short_name": "Pluri Health",
   "description": "Gestão clínica, prontuário eletrônico e agenda para profissionais e equipes de saúde.",
   "start_url": "/",
   "scope": "/",
@@ -12,25 +12,25 @@
   "categories": ["medical", "health", "productivity", "business"],
   "icons": [
     {
-      "src": "/brand/plurihealth-icon.png",
+      "src": "/brand/plurihealth-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/brand/plurihealth.png",
+      "src": "/brand/plurihealth-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/brand/plurihealth-icon.png",
+      "src": "/brand/plurihealth-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/brand/plurihealth.png",
+      "src": "/brand/plurihealth-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

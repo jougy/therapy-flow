@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef, memo, type ReactNode
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { isSameDay } from "date-fns";
 import {
-  AlertTriangle, ArrowLeft, Plus, Phone, Calendar, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
+  AlertTriangle, ArrowLeft, Plus, Phone, Calendar, CalendarDays, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
   Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown, Baby, Activity, FileCheck2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1097,6 +1098,25 @@ const PacienteDetalhe = () => {
     }
   }, [clinic?.route_key, clinicKey, id, location.search, navigate, patient]);
 
+  // Sincroniza o nome do paciente com a barra superior (AppLayout Header)
+  useEffect(() => {
+    if (patient?.name) {
+      window.dispatchEvent(
+        new CustomEvent("pluri:set-patient-title", {
+          detail: { title: patient.name },
+        })
+      );
+    }
+
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent("pluri:set-patient-title", {
+          detail: { title: null },
+        })
+      );
+    };
+  }, [patient?.name]);
+
   // Barreira de segurança: Bloqueia acesso à ficha do paciente se o usuário não possuir permissão
   useEffect(() => {
     if (user && operationalRole) {
@@ -1306,17 +1326,41 @@ const PacienteDetalhe = () => {
   const [mobileStatusSheetOpen, setMobileStatusSheetOpen] = useState(false);
   const [mobileTermsSheetOpen, setMobileTermsSheetOpen] = useState(false);
   const [mobileFilterDrawerOpen, setMobileFilterDrawerOpen] = useState(false);
+  const [attendanceConfirmDialogOpen, setAttendanceConfirmDialogOpen] = useState(false);
+  const [pendingAttendanceAgendaEvent, setPendingAttendanceAgendaEvent] = useState<AgendaEvent | null>(null);
+
+  const startSessionWithEvent = (event: AgendaEvent) => {
+    if (!patient) return;
+    navigate(getPatientSessionPath(patient || id, "novo"), {
+      state: {
+        agendaEventId: event.id,
+        scheduledFor: event.scheduled_for,
+        autoArrival: true,
+      },
+    });
+  };
 
   const handleStartAttendanceNow = async () => {
     if (!patient || !user) return;
 
     if (upcomingAgendaEvent) {
-      navigate(getPatientSessionPath(patient || id, "novo"), {
-        state: {
-          agendaEventId: upcomingAgendaEvent.id,
-          scheduledFor: upcomingAgendaEvent.scheduled_for,
-        },
-      });
+      const scheduledTime = new Date(upcomingAgendaEvent.scheduled_for).getTime();
+      const nowMs = Date.now();
+      const diffMinutes = Math.round((nowMs - scheduledTime) / 60000);
+
+      // Se o agendamento estiver na janela de tolerância de atendimento de hoje (-30 min a +45 min)
+      if (diffMinutes >= -30 && diffMinutes <= 45) {
+        toast({
+          title: "Agendamento vinculado",
+          description: `Vinculado automaticamente ao agendamento de ${formatAgendaEventDateTime(upcomingAgendaEvent.scheduled_for)}.`,
+        });
+        startSessionWithEvent(upcomingAgendaEvent);
+        return;
+      }
+
+      // Se estiver fora da janela (ex: agendamento futuro em outro horário/dia ou muito atrasado), abre confirmação inteligente
+      setPendingAttendanceAgendaEvent(upcomingAgendaEvent);
+      setAttendanceConfirmDialogOpen(true);
       return;
     }
 
@@ -1348,6 +1392,7 @@ const PacienteDetalhe = () => {
         state: {
           agendaEventId: data.id,
           scheduledFor: data.scheduled_for,
+          autoArrival: true,
         },
       });
     } catch (err) {
@@ -1355,6 +1400,66 @@ const PacienteDetalhe = () => {
       // Resiliência clínica: se o registro na agenda falhar (permissão de colaborador, RLS ou offline),
       // não bloqueia o início do atendimento médico/fisioterapêutico
       navigate(getPatientSessionPath(patient || id, "novo"));
+    }
+  };
+
+  const handleConfirmAttendanceWithPendingEvent = () => {
+    if (!pendingAttendanceAgendaEvent) return;
+    const event = pendingAttendanceAgendaEvent;
+    setAttendanceConfirmDialogOpen(false);
+    setPendingAttendanceAgendaEvent(null);
+    startSessionWithEvent(event);
+  };
+
+  const handleCancelPendingAgendaEvent = async () => {
+    if (!pendingAttendanceAgendaEvent || !patient || !user) return;
+    const event = pendingAttendanceAgendaEvent;
+    setAttendanceConfirmDialogOpen(false);
+    setPendingAttendanceAgendaEvent(null);
+
+    try {
+      optimisticUpdateAgendaEvent({ ...event, status: "cancelado" });
+      const { error: updateError } = await supabase
+        .from("agenda_events")
+        .update({ status: "cancelado" })
+        .eq("id", event.id);
+
+      if (updateError) throw updateError;
+
+      const canceledGroup = groups.find((group) => getPatientGroupKind(group) === "cancelados") ?? null;
+      const { data: canceledSession, error: sessionError } = await supabase
+        .from("sessions")
+        .insert({
+          clinic_id: clinicId,
+          group_id: canceledGroup?.id ?? null,
+          notes: "Atendimento cancelado / Paciente faltou.",
+          patient_id: patient.id,
+          provider_id: user.id,
+          session_date: event.scheduled_for,
+          status: "cancelado",
+          user_id: user.id,
+        })
+        .select("*")
+        .single();
+
+      if (sessionError) throw sessionError;
+
+      if (canceledSession && realPatientId) {
+        void invalidatePatientData(realPatientId, clinicId, ["sessions"]);
+      }
+
+      notifyAgendaEventsUpdated();
+      toast({
+        title: "Agendamento cancelado",
+        description: "Falta/cancelamento registrado com sucesso no prontuário.",
+      });
+    } catch (err) {
+      logRuntimeError("patient_detail.cancel_pending_agenda_event", err);
+      toast({
+        title: "Erro ao cancelar agendamento",
+        description: "Não foi possível cancelar o agendamento.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1373,8 +1478,8 @@ const PacienteDetalhe = () => {
     }
 
     if (tab === "agendar") {
-      // Exibe a agenda widget dedicada
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      // Abre o diálogo de novo agendamento para o paciente
+      handleOpenPatientAgendaDialog();
       return;
     }
 
@@ -2537,9 +2642,13 @@ const PacienteDetalhe = () => {
     ...allergyAlertItems,
   ];
   const activeAgendaEvents = agendaEvents.filter((event) => getAgendaEventStatus(event) !== "cancelado");
-  const nowTimestamp = Date.now();
+  const now = new Date();
+  const nowTimestamp = now.getTime();
   const overdueAgendaEvents = activeAgendaEvents
-    .filter((event) => new Date(event.scheduled_for).getTime() < nowTimestamp)
+    .filter((event) => {
+      const eventDate = new Date(event.scheduled_for);
+      return eventDate.getTime() < nowTimestamp && isSameDay(eventDate, now);
+    })
     .sort((left, right) => right.scheduled_for.localeCompare(left.scheduled_for));
   const futureAgendaEvents = activeAgendaEvents
     .filter((event) => new Date(event.scheduled_for).getTime() >= nowTimestamp)
@@ -2851,245 +2960,42 @@ const PacienteDetalhe = () => {
       setSavingAgendaDetails(false);
     }
   };
-  const handleStartAgendaAttendance = () => {
-    if (!selectedAgendaEvent) {
-      return;
-    }
-
-    navigate(getPatientSessionPath(patient || id, "novo"), {
-      state: {
-        agendaEventId: selectedAgendaEvent.id,
-        scheduledFor: selectedAgendaEvent.scheduled_for,
-      },
-    });
-  };
 
   return (
     <PatientFilesProvider patientId={patient?.id || id!} clinicId={clinicId}>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-4 sm:space-y-6 pb-24 md:pb-6">
-      {/* Header Mobile Otimizado (Filosofia Mínimo Scroll & Linha Única) */}
-      <div data-tutorial="patient-profile-header-mobile" className="block md:hidden overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 p-3 shadow-xs">
-        {/* Linha 1: Botão Voltar + Nome do Paciente no topo mobile (no lugar da clínica) + Ações rápidas */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate(clinicHomePath)}
-              aria-label="Voltar para clínicas"
-              className="h-8 w-8 shrink-0 rounded-full bg-background/80"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground leading-none">Paciente</p>
-              <p className="text-base font-bold tracking-tight text-foreground truncate max-w-[200px] xs:max-w-[240px] mt-0.5">
+
+
+      {/* Header Unificado de Linha Única (Mobile & Desktop) */}
+      <div data-tutorial="patient-profile-header" className="overflow-hidden rounded-2xl border bg-gradient-to-r from-card via-card to-primary/5 p-2.5 sm:px-4 sm:py-3 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground truncate max-w-[140px] xs:max-w-[180px] sm:max-w-[260px] md:max-w-[340px]">
                 {patient.name}
-              </p>
-            </div>
-          </div>
+              </h1>
 
-          <div className="flex items-center gap-1 shrink-0">
-            {canViewPatientContact && patientWhatsAppHref ? (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => window.open(patientWhatsAppHref, "_blank", "noopener,noreferrer")}
-                aria-label="Abrir WhatsApp"
-                title="Abrir WhatsApp"
-                className="h-8 w-8 rounded-lg border-success/30 bg-success/10 text-success hover:bg-success/15 hover:text-success shrink-0"
+              {/* Status Bolinha no Mobile */}
+              <button
+                type="button"
+                onClick={() => setMobileStatusSheetOpen(true)}
+                aria-label={`Status: ${patient.status}. Tocar para alterar.`}
+                className="flex md:hidden items-center gap-1 shrink-0 rounded-full border bg-background/80 px-2 py-0.5 text-[10px] font-semibold capitalize text-foreground"
               >
-                <WhatsAppLogo className="h-4 w-4" />
-              </Button>
-            ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label="Mais opções mobile"
-                  className="h-8 w-8 rounded-lg border-border/80 bg-background text-foreground shrink-0"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-                  Opções do paciente
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setMobileStatusSheetOpen(true)} className="cursor-pointer">
-                  <Activity className="mr-2 h-4 w-4 text-primary" />
-                  <span>Gerenciar Status do Paciente</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setPatientInfoDialogOpen(true)} className="cursor-pointer">
-                  <FileText className="mr-2 h-4 w-4 text-primary" />
-                  <span>Resumo clínico completo</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate(getPatientPath(patient, "cadastro"))} className="cursor-pointer">
-                  <ClipboardEdit className="mr-2 h-4 w-4" />
-                  <span>Editar cadastro completo</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleOpenShareDialog()} className="cursor-pointer">
-                  <Share2 className="mr-2 h-4 w-4 text-primary" />
-                  <span>Compartilhar cadastro para preencher</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => setShowPrintRegistrationModal(true)}
-                  disabled={!canPrint}
-                  className="cursor-pointer"
-                >
-                  <Printer className="mr-2 h-4 w-4 text-primary" />
-                  <span>Imprimir cadastro (PDF)</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setShowPrintAdultConsentModal(true)}
-                  disabled={!canPrint}
-                  className="cursor-pointer"
-                >
-                  <FileText className="mr-2 h-4 w-4 text-emerald-600" />
-                  <span>Imprimir Termo Adulto (TCLE)</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setShowPrintGuardianConsentModal(true)}
-                  disabled={!canPrint}
-                  className="cursor-pointer"
-                >
-                  <Baby className="mr-2 h-4 w-4 text-amber-600" />
-                  <span>Imprimir Termo do Responsável (Menor)</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handleExportPatientJson()}
-                  disabled={!canExport}
-                  className="cursor-pointer"
-                >
-                  <FileDown className="mr-2 h-4 w-4" />
-                  <span>Exportar dados (JSON)</span>
-                </DropdownMenuItem>
-                {canDeletePatient && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => setDeletePatientDialogOpen(true)}
-                      className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      <span>Excluir paciente</span>
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+                <span
+                  className={`h-2 w-2 rounded-full shrink-0 ${
+                    patient.status === "ativo"
+                      ? "bg-success animate-pulse ring-2 ring-success/20"
+                      : patient.status === "alta"
+                        ? "bg-primary"
+                        : patient.status === "arquivado"
+                          ? "bg-muted-foreground"
+                          : "bg-warning"
+                  }`}
+                />
+                <span>{patient.status}</span>
+              </button>
 
-        {/* Linha 2: Faixa de Uma Linha Estrita (Status Bolinha à Esquerda, Alertas no Centro, Idade à Direita) */}
-        <div className="mt-2.5 flex items-center justify-between gap-1.5 rounded-xl border bg-background/80 px-2.5 py-1.5 shadow-2xs">
-          {/* Esquerda: Bolinha colorida de status de atividade */}
-          <button
-            type="button"
-            onClick={() => setMobileStatusSheetOpen(true)}
-            aria-label={`Status: ${patient.status}. Tocar para alterar.`}
-            className="flex items-center gap-1.5 shrink-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg px-1 py-0.5"
-          >
-            <span
-              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                patient.status === "ativo"
-                  ? "bg-success animate-pulse ring-2 ring-success/20"
-                  : patient.status === "alta"
-                    ? "bg-primary"
-                    : patient.status === "arquivado"
-                      ? "bg-muted-foreground"
-                      : "bg-warning"
-              }`}
-            />
-            <span className="text-[11px] font-semibold capitalize text-foreground">
-              {patient.status}
-            </span>
-          </button>
-
-          {/* Centro: Alertas do Paciente com Popover em toque */}
-          <div className="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-hidden px-1">
-            {allAllergyAlertItems.length > 0 && (
-              <PatientHeaderAlert
-                icon={<AlertTriangle className="h-3 w-3" />}
-                items={allAllergyAlertItems}
-                title="Alergias"
-                tone="rose"
-              />
-            )}
-            {fallRiskAlertItems.length > 0 && (
-              <PatientHeaderAlert
-                icon={<AlertTriangle className="h-3 w-3" />}
-                items={fallRiskAlertItems}
-                title="Queda"
-                tone="amber"
-              />
-            )}
-            {structuredRiskAlertItems.length > 0 && (
-              <PatientHeaderAlert
-                icon={<AlertTriangle className="h-3 w-3" />}
-                items={structuredRiskAlertItems}
-                title="Riscos"
-                tone="amber"
-              />
-            )}
-            {allAllergyAlertItems.length === 0 && fallRiskAlertItems.length === 0 && structuredRiskAlertItems.length === 0 && (
-              <span className="text-[10px] text-muted-foreground/80 truncate">Sem alertas</span>
-            )}
-          </div>
-
-          {/* Direita: Idade do Paciente com ajuste de fonte dinâmico */}
-          <div className="shrink-0 text-right">
-            {patient.age ? (
-              <span className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-[10px] sm:text-xs font-semibold text-muted-foreground">
-                <Calendar className="h-2.5 w-2.5" />
-                {patient.age} anos
-              </span>
-            ) : (
-              <span className="text-[10px] text-muted-foreground">Idade N/A</span>
-            )}
-          </div>
-        </div>
-
-        {/* Linha 3: Agenda e Último Atendimento Compacto */}
-        <div className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-[11px]">
-          <div className="min-w-0 flex items-center gap-1.5 truncate">
-            <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
-            <span className="font-medium text-foreground truncate">
-              Último atendimento: {formatSessionMetaDate(latestSession?.session_date ?? null)}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setMobileTab("agendar")}
-            className="shrink-0 font-semibold text-primary underline-offset-2 hover:underline text-[10px]"
-          >
-            Ver agenda
-          </button>
-        </div>
-      </div>
-
-      {/* Header Desktop (Preservado 100% Widescreen para >= md) */}
-      <div data-tutorial="patient-profile-header" className="hidden md:block overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-primary/5 px-4 py-4 shadow-sm sm:px-5">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate(clinicHomePath)}
-              aria-label="Voltar"
-              className="mt-1 shrink-0 rounded-full bg-background/80"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <div className="min-w-0 space-y-1.5 sm:space-y-2">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Paciente</p>
-                <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl md:text-3xl break-words line-clamp-2">{patient.name}</h1>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
+              <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
                 {patient.age ? (
                   <span className="inline-flex items-center gap-1 rounded-full border bg-background/80 px-2.5 py-0.5 sm:px-3 sm:py-1">
                     <Calendar className="h-3 sm:h-3.5 w-3 sm:w-3.5" />
@@ -3116,13 +3022,7 @@ const PacienteDetalhe = () => {
                   {patientRegistrationStatus}
                 </button>
               </div>
-              <p className="hidden sm:block max-w-2xl text-xs sm:text-sm text-muted-foreground">
-                {canViewPatientContact
-                  ? "Acesse rapidamente contato, cadastro, status e novo atendimento sem sair da ficha do paciente."
-                  : "Acesse rapidamente cadastro, status e novo atendimento sem sair da ficha do paciente."}
-              </p>
             </div>
-          </div>
 
           <div className="flex flex-wrap items-center gap-2 xl:flex-1 xl:justify-center">
             <PatientHeaderAlert
@@ -3290,67 +3190,80 @@ const PacienteDetalhe = () => {
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+            </div>
           </div>
         </div>
       </div>
-      </div>
+      {/* Dica Informativa Fechável (Substitui texto descritivo estático) */}
+      <DismissibleInfoTip
+        id="patient-detail-quick-actions-tip"
+        variant="subtle"
+        className="text-xs"
+      >
+        Acesse rapidamente contato, cadastro, status e novo atendimento sem sair da ficha do paciente.
+      </DismissibleInfoTip>
 
-      {/* Conteúdo Principal Desktop: Grid de Métricas + Agenda */}
+      {/* Bento Grid Integrado: Métricas Rápidas + Agenda Dinâmica */}
       <div className={cn(
-        "w-full min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr),minmax(360px,0.65fr)]",
-        "hidden md:grid",
-        mobileTab === "agendar" && "max-md:grid max-md:grid-cols-1"
+        "w-full min-w-0 space-y-3.5",
+        "hidden md:block",
+        mobileTab === "agendar" && "max-md:block"
       )}>
-        {/* Compact Metrics Carousel (Horizontal snap scroll on mobile, grid on desktop) */}
+        {/* Faixa Bento de Métricas Rápidas (3 Colunas fluidas sem espaço em branco ocioso) */}
         <div data-tutorial="patient-metrics-panel" className={cn(
-          "w-full min-w-0 flex overflow-x-auto snap-x snap-mandatory gap-3 p-3 sm:p-4 rounded-2xl border bg-card shadow-sm relative [-webkit-overflow-scrolling:touch] sm:grid sm:grid-cols-2 lg:grid-cols-3",
+          "w-full grid grid-cols-1 sm:grid-cols-3 gap-3",
           mobileTab === "agendar" && "max-md:hidden"
         )}>
-          <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
+          {/* Card 1: Último Atendimento */}
+          <div className="rounded-2xl border bg-card/80 p-3.5 shadow-2xs flex flex-col justify-between hover:border-primary/30 transition-colors">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Último Atendimento</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Último Atendimento</span>
               <ComponentHelpButton helpId="patient-metrics-panel" size="xs" />
             </div>
-            <div className="mt-2">
-              <p className="text-base sm:text-lg font-bold text-foreground">{formatSessionMetaDate(latestSession?.session_date ?? null)}</p>
-              <p className="text-xs text-muted-foreground capitalize mt-0.5">{latestSession ? `Status: ${latestSession.status}` : "Sem atendimentos anteriores"}</p>
+            <div className="mt-2.5">
+              <p className="text-base sm:text-lg font-bold text-foreground tracking-tight">{formatSessionMetaDate(latestSession?.session_date ?? null)}</p>
+              <p className="text-xs text-muted-foreground capitalize mt-0.5 truncate">{latestSession ? `Status: ${latestSession.status}` : "Sem atendimentos anteriores"}</p>
             </div>
           </div>
-          <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Presença & Histórico</span>
-            <div className="mt-2">
-              <p className="text-base sm:text-lg font-bold text-foreground">{totalSessionsCount} atendimento{totalSessionsCount !== 1 ? "s" : ""}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {completedSessionsCount} concluído{completedSessionsCount !== 1 ? "s" : ""} · {canceledSessionsCount} cancelado{canceledSessionsCount !== 1 ? "s" : ""}
-                {operationalSummary.averageDelayMinutes > 0 ? ` · média ${operationalSummary.averageDelayMinutes}min` : ""}
+
+          {/* Card 2: Presença & Histórico */}
+          <div className="rounded-2xl border bg-card/80 p-3.5 shadow-2xs flex flex-col justify-between hover:border-primary/30 transition-colors">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Presença & Histórico</span>
+            <div className="mt-2.5">
+              <p className="text-base sm:text-lg font-bold text-foreground tracking-tight">{totalSessionsCount} atendimento{totalSessionsCount !== 1 ? "s" : ""}</p>
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                {completedSessionsCount} conc. · {canceledSessionsCount} canc.
+                {operationalSummary.averageDelayMinutes > 0 ? ` · ${operationalSummary.averageDelayMinutes}m méd.` : ""}
               </p>
             </div>
           </div>
+
+          {/* Card 3: Financeiro / Agendamentos */}
           {canViewFinancialData ? (
-            <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Financeiro do Paciente</span>
-              <div className="mt-2">
-                <p className="text-base sm:text-lg font-bold text-foreground">{formatMoneyCents(settledPaymentCents)}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Cobrado: {formatMoneyCents(operationalSummary.chargedCents)}
-                  {operationalSummary.openBalanceCents > 0 ? ` · Aberto: ${formatMoneyCents(operationalSummary.openBalanceCents)}` : " · Em dia"}
+            <div className="rounded-2xl border bg-card/80 p-3.5 shadow-2xs flex flex-col justify-between hover:border-primary/30 transition-colors">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Financeiro do Paciente</span>
+              <div className="mt-2.5">
+                <p className="text-base sm:text-lg font-bold text-foreground tracking-tight">{formatMoneyCents(settledPaymentCents)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {operationalSummary.openBalanceCents > 0 ? `Aberto: ${formatMoneyCents(operationalSummary.openBalanceCents)}` : "Em dia"}
                 </p>
               </div>
             </div>
           ) : (
-            <div className="w-[82vw] max-w-[310px] sm:w-auto sm:max-w-none shrink-0 snap-start rounded-xl border bg-muted/20 p-3 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agendamentos</span>
-              <div className="mt-2">
-                <p className="text-base sm:text-lg font-bold text-foreground">{futureAgendaCount} agendado{futureAgendaCount !== 1 ? "s" : ""}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {upcomingAgendaEvent ? `Próximo: ${formatAgendaEventDateTime(upcomingAgendaEvent.scheduled_for)}` : "Nenhum agendamento futuro"}
+            <div className="rounded-2xl border bg-card/80 p-3.5 shadow-2xs flex flex-col justify-between hover:border-primary/30 transition-colors">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Agendamentos</span>
+              <div className="mt-2.5">
+                <p className="text-base sm:text-lg font-bold text-foreground tracking-tight">{futureAgendaCount} agendado{futureAgendaCount !== 1 ? "s" : ""}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {upcomingAgendaEvent ? `Próximo: ${formatAgendaEventDateTime(upcomingAgendaEvent.scheduled_for)}` : "Nenhum futuro"}
                 </p>
               </div>
             </div>
           )}
         </div>
 
-        <div data-tutorial="patient-internal-agenda">
+        {/* Agenda Dinâmica Integrada (Largura Completa com Altura Otimizada) */}
+        <div data-tutorial="patient-internal-agenda" className="w-full">
           <AgendaWidget
             fixedPatient={{ id: patient.id, name: patient.name }}
             onStartAttendance={() => void handleStartAttendanceNow()}
@@ -3465,8 +3378,109 @@ const PacienteDetalhe = () => {
           </DismissibleInfoTip>
         )}
 
-        {/* Mobile Filters Trigger & Compact Search */}
-        <div className="flex items-center gap-2 md:hidden">
+        {/* Visão Exclusiva Mobile Início: Bloco Resumido da Agenda + Apenas Último Atendimento */}
+        {mobileTab === "inicio" && (
+          <div className="md:hidden space-y-4">
+            {/* Bloco Resumido de Agenda */}
+            <div className="rounded-2xl border bg-card/90 p-3.5 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-primary" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-foreground">Agenda do Paciente</span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs px-2.5 gap-1 rounded-lg border-primary/30 text-primary hover:bg-primary/5"
+                  onClick={handleOpenPatientAgendaDialog}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Novo</span>
+                </Button>
+              </div>
+
+              {upcomingAgendaEvent ? (
+                <div className="flex items-center justify-between rounded-xl bg-muted/40 p-2.5 text-xs">
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-foreground">Próximo agendamento</p>
+                    <p className="text-muted-foreground">{formatAgendaEventDateTime(upcomingAgendaEvent.scheduled_for)}</p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] capitalize bg-background">
+                    {upcomingAgendaEvent.status === "aguardando_confirmacao" ? "Pendente confirmação" : upcomingAgendaEvent.status}
+                  </Badge>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground py-1">
+                  Nenhum agendamento futuro para este paciente.
+                </p>
+              )}
+            </div>
+
+            {/* Apenas o Último Atendimento no padrão dos cards do histórico */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Atendimento Mais Recente</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[11px] text-primary px-1.5"
+                  onClick={() => handleMobileTabChange("historico")}
+                >
+                  Ver histórico completo →
+                </Button>
+              </div>
+
+              {latestSession ? (
+                (() => {
+                  const careLineIds = getSessionCareLineIds(latestSession);
+                  const sessionGroups = careLineIds
+                    .map((groupId) => patientGroupsMap.get(groupId))
+                    .filter(Boolean) as PatientGroup[];
+                  const primaryColor = sessionGroups[0]?.color ? getLegacyGroupHex(sessionGroups[0].color) : undefined;
+
+                  return (
+                    <SessionCard
+                      key={`mobile-latest-${latestSession.id}`}
+                      baseSchema={baseSchema}
+                      canViewFinancialData={canViewFinancialData}
+                      creatorName={getSessionPersonLabel(profileMap.get(latestSession.user_id))}
+                      creatorIsIntern={shouldShowSessionCreatorInternBadge(profileMap.get(latestSession.user_id)?.job_title)}
+                      session={latestSession}
+                      sessionGroups={sessionGroups}
+                      shareSummary={sessionShareSummaries[latestSession.id]}
+                      isSelected={false}
+                      selectionMode={false}
+                      borderColor={primaryColor}
+                      isCompact={sessionViewMode === "compact"}
+                      isExpanded={expandedSessionIds.includes(latestSession.id)}
+                      onToggleExpand={() => toggleSessionExpansion(latestSession.id)}
+                      onEvolve={() => setSessionToEvolve(latestSession)}
+                      onLinkGroup={() => setSessionToLinkGroup(latestSession)}
+                      isEvolving={evolvingSessionId === latestSession.id}
+                      onPressStart={() => handleSessionPressStart(latestSession.id)}
+                      onPressCancel={handleSessionPressCancel}
+                      onToggleSelect={() => toggleSessionSelection(latestSession.id)}
+                      onViewShareRecipients={() => setShareRecipientsSessionId(latestSession.id)}
+                      navigateTo={() => handleSessionNavigate(latestSession.id)}
+                    />
+                  );
+                })()
+              ) : (
+                <Card className="p-6 text-center border-dashed">
+                  <Calendar className="mx-auto h-8 w-8 text-muted-foreground/60" />
+                  <p className="mt-2 text-xs font-medium text-muted-foreground">
+                    Este paciente ainda não possui atendimentos registrados.
+                  </p>
+                </Card>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Filters Trigger & Compact Search (Exibido no Histórico) */}
+        <div className={cn("items-center gap-2 md:hidden", mobileTab === "inicio" ? "hidden" : "flex")}>
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -3764,7 +3778,8 @@ const PacienteDetalhe = () => {
             </CardContent>
           </Card>
         )}
-        {/* Barra de Filtros por Sintomas / Tags e Histórico */}
+        {/* Barra de Filtros por Sintomas / Tags e Histórico (Ocultado no mobile se estiver na aba início) */}
+        <div className={cn("space-y-4", mobileTab === "inicio" && "max-md:hidden")}>
         <div className="space-y-3 pt-1">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
@@ -4253,6 +4268,7 @@ const PacienteDetalhe = () => {
             )}
           </Card>
         )}
+        </div>
           </>
         )}
       </div>
@@ -4687,10 +4703,10 @@ const PacienteDetalhe = () => {
             </div>
           ) : null}
 
-          <DialogFooter className="grid shrink-0 grid-cols-2 gap-2 border-t bg-background px-5 py-4 sm:grid-cols-3">
+          <DialogFooter className="grid shrink-0 grid-cols-2 gap-2 border-t bg-background px-5 py-4 sm:flex sm:justify-end">
             <Button
               type="button"
-              className="col-span-2 sm:col-span-1"
+              className="w-full sm:w-auto"
               onClick={() => void handleApplyAgendaStatus()}
               disabled={savingAgendaDetails}
               variant={selectedAgendaStatusAction === "delete" ? "destructive" : "default"}
@@ -4698,12 +4714,56 @@ const PacienteDetalhe = () => {
               {savingAgendaDetails ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Aplicar status
             </Button>
-            <Button type="button" variant="outline" onClick={handleStartAgendaAttendance} disabled={savingAgendaDetails}>
-              Iniciar atendimento
-            </Button>
             <DialogClose asChild>
-              <Button type="button" variant="outline" disabled={savingAgendaDetails}>Fechar</Button>
+              <Button type="button" variant="outline" className="w-full sm:w-auto" disabled={savingAgendaDetails}>Fechar</Button>
             </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Inteligente de Confirmação de Agendamento */}
+      <Dialog open={attendanceConfirmDialogOpen} onOpenChange={setAttendanceConfirmDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Atendimento Agendado</DialogTitle>
+            <DialogDescription>
+              {pendingAttendanceAgendaEvent ? (
+                <>
+                  Existe um atendimento agendado para{" "}
+                  <strong className="text-foreground">
+                    {formatAgendaEventDateTime(pendingAttendanceAgendaEvent.scheduled_for)}
+                  </strong>
+                  . O que deseja fazer?
+                </>
+              ) : (
+                "Existe um atendimento agendado para este paciente."
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setAttendanceConfirmDialogOpen(false);
+                setPendingAttendanceAgendaEvent(null);
+              }}
+            >
+              Voltar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleCancelPendingAgendaEvent()}
+            >
+              Cancelar agendamento / Falta
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmAttendanceWithPendingEvent}
+            >
+              Confirmar presença e iniciar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

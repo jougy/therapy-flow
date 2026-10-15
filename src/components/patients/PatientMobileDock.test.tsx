@@ -16,7 +16,7 @@ describe("PatientMobileDock", () => {
 
     expect(screen.getByText("Início")).toBeInTheDocument();
     expect(screen.getByText("Resumo clínico")).toBeInTheDocument();
-    expect(screen.getByText("Agendar")).toBeInTheDocument();
+    expect(screen.getByText("Novo Agendamento")).toBeInTheDocument();
     expect(screen.getByText("Atender")).toBeInTheDocument();
     expect(screen.getByText("Histórico")).toBeInTheDocument();
     expect(screen.getByText("Arquivos")).toBeInTheDocument();

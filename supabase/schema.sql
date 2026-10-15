@@ -11777,7 +11777,10 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "password_temporary" boolean DEFAULT false NOT NULL,
     "owner_terms_accepted_at" timestamp with time zone,
     "profession" "text",
-    "council_name" "text" DEFAULT 'CREFITO'::"text"
+    "council_name" "text" DEFAULT 'CREFITO'::"text",
+    "totp_secret" "text",
+    "totp_enabled" boolean DEFAULT false NOT NULL,
+    "totp_enabled_at" timestamp with time zone
 );
 
 
@@ -15748,6 +15751,9 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_chat_sessions (
     current_step TEXT NOT NULL DEFAULT 'initial',
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    authenticated_at TIMESTAMPTZ DEFAULT NULL,
+    auth_expires_at TIMESTAMPTZ DEFAULT NULL,
+    is_authenticated BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -15756,6 +15762,7 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_phone ON public.whatsapp_c
 CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_user_id ON public.whatsapp_chat_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_clinic_id ON public.whatsapp_chat_sessions(clinic_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_step ON public.whatsapp_chat_sessions(current_step);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_sessions_auth ON public.whatsapp_chat_sessions(phone, is_authenticated, auth_expires_at);
 
 ALTER TABLE public.whatsapp_chat_sessions ENABLE ROW LEVEL SECURITY;
 

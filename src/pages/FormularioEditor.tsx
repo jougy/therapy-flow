@@ -1,9 +1,10 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { BookOpen, Download, Loader2, Save, Upload } from "lucide-react";
+import { BookOpen, Bot, Download, Loader2, Save, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { AiReferenceModal } from "@/components/anamnesis/AiReferenceModal";
 import {
   FormEditorBatchActionBar,
   FormEditorCanvas,
@@ -17,6 +18,7 @@ import {
 
 const FormularioEditor = () => {
   const state = useFormEditorState();
+  const [aiModalOpen, setAiModalOpen] = React.useState(false);
 
   if (state.loading) {
     return (
@@ -109,6 +111,15 @@ const FormularioEditor = () => {
               >
                 <Upload className="h-3.5 w-3.5 mr-2" />
                 Importar arquivo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full text-xs bg-primary/5 hover:bg-primary/10 border-primary/30 text-primary"
+                onClick={() => setAiModalOpen(true)}
+              >
+                <Bot className="h-3.5 w-3.5 mr-2 text-primary" />
+                Criar com IA
               </Button>
               <Button
                 type="button"
@@ -257,9 +268,27 @@ const FormularioEditor = () => {
               <Upload className="h-3.5 w-3.5 mr-2" />
               Importar modelo
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full text-xs bg-primary/5 hover:bg-primary/10 border-primary/30 text-primary"
+              onClick={() => {
+                setAiModalOpen(true);
+                state.setMobileInspectorOpen(false);
+              }}
+            >
+              <Bot className="h-3.5 w-3.5 mr-2 text-primary" />
+              Criar com IA
+            </Button>
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* AI Reference Guide Modal */}
+      <AiReferenceModal
+        open={aiModalOpen}
+        onOpenChange={setAiModalOpen}
+      />
     </motion.div>
   );
 };

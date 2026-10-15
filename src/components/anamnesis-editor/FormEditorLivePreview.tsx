@@ -4,6 +4,8 @@ import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
 import { TagFieldInput } from "@/components/anamnesis/TagFieldInput";
 import { SimpleListFieldInput } from "@/components/anamnesis/SimpleListFieldInput";
 import { CalculatedFieldRuntimeInput } from "@/components/anamnesis/CalculatedFieldRuntimeInput";
+import { ImageAnnotationRuntimeInput } from "@/components/anamnesis/image-annotator/ImageAnnotationRuntimeInput";
+import type { ClinicalImageAnnotationValue } from "@/lib/image-annotation-vector";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -401,6 +403,23 @@ export const FormEditorLivePreview: React.FC<FormEditorLivePreviewProps> = ({
           disabled={false}
           isEditorMode={isEditorMode}
           onReorderVariables={handleReorderVariables}
+        />
+      </div>
+    );
+  }
+
+  if (field.type === "image_annotation") {
+    return (
+      <div className="min-w-0 space-y-2">
+        <FieldLabelWithHelp label={field.label} helpText={field.helpText} required={field.required} />
+        <ImageAnnotationRuntimeInput
+          fieldLabel={field.label}
+          value={(testAnswers[field.id] as ClinicalImageAnnotationValue | null) ?? null}
+          onChange={(val) => {
+            triggerFocus();
+            setFieldTestAnswer(field.id, val);
+          }}
+          disabled={false}
         />
       </div>
     );

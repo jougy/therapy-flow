@@ -461,7 +461,7 @@ describe("PacienteDetalhe", () => {
     await screen.findByRole("heading", { name: "Maria Silva" });
 
     expect(screen.getAllByRole("button", { name: /iniciar atendimento/i }).length).toBe(1);
-    expect(screen.getByText("Último Atendimento")).toBeInTheDocument();
+    expect(screen.getAllByText("Último Atendimento").length).toBeGreaterThan(0);
     expect(screen.getByText("Presença & Histórico")).toBeInTheDocument();
   });
 
@@ -470,7 +470,7 @@ describe("PacienteDetalhe", () => {
 
     const matches = await screen.findAllByText(/Lombalgia/i);
     expect(matches.length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Dor lombar")).toBeInTheDocument();
+    expect(screen.getAllByText("Dor lombar").length).toBeGreaterThanOrEqual(1);
   });
 
   it("displays patient summary metrics in a single compact grid", async () => {
@@ -642,6 +642,7 @@ describe("PacienteDetalhe", () => {
 
     expect(await screen.findByText(/Aguardando/i)).toBeInTheDocument();
     expect(screen.queryByText("Sem eventos")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /expandir agenda para tela cheia/i })).toBeInTheDocument();
   });
 
   it("jumps to future patient agenda events with the same agenda controls", async () => {

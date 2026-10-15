@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangle, Copy, Info, RotateCcw, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logRuntimeError } from "@/lib/runtime-debug";
+import { isChunkLoadError, reloadForNewVersion } from "@/lib/chunk-reload";
 
 type AppErrorBoundaryProps = {
   children: ReactNode;
@@ -46,6 +47,13 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     logRuntimeError("react.error_boundary", error, {
       componentStack: errorInfo.componentStack,
     });
+
+    if (isChunkLoadError(error)) {
+      const reloaded = reloadForNewVersion();
+      if (reloaded) {
+        return;
+      }
+    }
   }
 
   handleReload = () => {
@@ -101,10 +109,15 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
               <AlertTriangle className="h-6 w-6" />
             </div>
-            <h1 className="mt-4 text-2xl font-semibold text-slate-900">Algo deu errado nesta tela</h1>
+            <h1 className="mt-4 text-2xl font-semibold text-slate-900">
+              {isChunkLoadError(this.state.errorMessage)
+                ? "Nova versão disponível"
+                : "Algo deu errado nesta tela"}
+            </h1>
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              O erro foi registrado no console do navegador com detalhes para depuração. Você pode recarregar a
-              aplicação para tentar novamente.
+              {isChunkLoadError(this.state.errorMessage)
+                ? "Uma nova versão do Pluri-Health foi publicada. Recarregue a página para continuar utilizando normalmente."
+                : "O erro foi registrado no console do navegador com detalhes para depuração. Você pode recarregar a aplicação para tentar novamente."}
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-2">
               <Button className="gap-2" onClick={this.handleReload} type="button">

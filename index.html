@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google" content="notranslate" />
-    <title>Pluri-Health</title>
-    <meta name="description" content="Pluri-Health - gestao clinica, prontuario e agenda para equipes de saude.">
-    <meta name="author" content="Pluri-Health" />
+    <title>Pluri Health — Sistema de Gestão para Clínicas e Equipes de Saúde</title>
+    <meta name="description" content="Pluri Health: plataforma brasileira de prontuário eletrônico, governança clínica, agendamento por salas e faturamento para clínicas e profissionais de saúde.">
+    <meta name="author" content="Pluri Health" />
 
     <!-- Webmaster Verification Tags (Google Search Console & Bing Webmaster Tools) -->
     <meta name="google-site-verification" content="google-site-verification-token" />
@@ -16,23 +16,114 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pluri Health" />
     <meta property="og:image" content="/brand/plurihealth.png">
+    <meta property="og:title" content="Pluri Health — Sistema de Gestão para Clínicas e Equipes de Saúde">
+    <meta property="og:description" content="Plataforma completa de prontuário eletrônico, governança clínica, agendas por salas e faturamento para clínicas de saúde.">
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@plurihealth" />
+    <meta name="twitter:title" content="Pluri Health — Sistema de Gestão para Clínicas e Equipes de Saúde">
+    <meta name="twitter:description" content="Plataforma completa de prontuário eletrônico, governança clínica, agendas por salas e faturamento para clínicas de saúde.">
     <meta name="twitter:image" content="/brand/plurihealth.png">
-    <meta property="og:title" content="Pluri-Health">
-  <meta name="twitter:title" content="Pluri-Health">
-  <meta property="og:description" content="Gestao clinica, prontuario e agenda para equipes de saude.">
-  <meta name="twitter:description" content="Gestao clinica, prontuario e agenda para equipes de saude.">
-    <link rel="icon" type="image/png" href="/brand/plurihealth-icon.png">
-    <link rel="apple-touch-icon" href="/brand/plurihealth-icon.png">
+
+    <!-- Favicons Oficiais Pluri Health (Compatibilidade Total com Google Search, PWA e Browsers) -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="manifest" href="/manifest.webmanifest">
     <meta name="theme-color" content="#0284c7" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Pluri-Health" />
+    <meta name="apple-mobile-web-app-title" content="Pluri Health" />
     <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Schema.org JSON-LD para SEO, AEO e Desambiguação de Marca (Google Knowledge Graph & Gemini) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://pluri.health/#organization",
+          "name": "Pluri Health",
+          "alternateName": [
+            "PluriHealth",
+            "Pluri-Health",
+            "Pluri Health Brasil",
+            "PluriHealth Tecnologia em Saúde"
+          ],
+          "legalName": "JOAO PAULO TADDEO DO VAL",
+          "taxID": "59.955.007/0001-00",
+          "url": "https://pluri.health",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://pluri.health/brand/plurihealth.png",
+            "width": 512,
+            "height": 512
+          },
+          "image": "https://pluri.health/brand/plurihealth.png",
+          "description": "Healthtech brasileira desenvolvedora de software médico e ecossistema de gestão clínica, prontuário eletrônico e verticais em saúde como a Pluri Fisio.",
+          "address": {
+            "@type": "PostalAddress",
+            "addressCountry": "BR"
+          },
+          "areaServed": {
+            "@type": "Country",
+            "name": "Brasil"
+          },
+          "knowsLanguage": ["pt-BR"],
+          "sameAs": [
+            "https://plurihealth.com.br",
+            "https://plurifisio.com.br",
+            "https://app.plurifisio.com.br"
+          ]
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://pluri.health/#software",
+          "name": "Pluri Health",
+          "alternateName": "Sistema Pluri Health de Gestão Clínica",
+          "applicationCategory": "HealthApplication, BusinessApplication",
+          "operatingSystem": "Web, iOS, Android, Windows, macOS, Linux",
+          "url": "https://pluri.health",
+          "description": "Plataforma completa de prontuário eletrônico, governança, agendas por salas e faturamento integrada para clínicas de saúde no Brasil.",
+          "publisher": {
+            "@id": "https://pluri.health/#organization"
+          },
+          "provider": {
+            "@id": "https://pluri.health/#organization"
+          },
+          "offers": {
+            "@type": "Offer",
+            "price": "0.00",
+            "priceCurrency": "BRL",
+            "description": "Degustação gratuita e planos acessíveis para profissionais de saúde e clínicas."
+          }
+        }
+      ]
+    }
+    </script>
+    <!-- Meta Pixel Code -->
+    <script>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '1073846021935349');
+      fbq('track', 'PageView');
+    </script>
+    <noscript>
+      <img height="1" width="1" style="display:none"
+        src="https://www.facebook.com/tr?id=1073846021935349&ev=PageView&noscript=1"
+      />
+    </noscript>
+    <!-- End Meta Pixel Code -->
   </head>
 
   <body translate="no" class="notranslate">

@@ -298,6 +298,39 @@ describe("home patients view", () => {
     expect(result.find((patient) => patient.id === "patient-3")?.nextAgendaSummary?.tone).toBe("confirmed");
   });
 
+  it("does not show late tone for appointments from previous days after 23:59", () => {
+    const result = buildHomePatientViews({
+      agendaEvents: [
+        {
+          event_type: "atendimento",
+          id: "past-day-event",
+          patient_id: "patient-1",
+          scheduled_for: "2099-04-13T14:00:00.000Z", // Ontem (sistema em 2099-04-14)
+          status: "confirmado",
+          title: "Alice agendada ontem",
+        },
+        {
+          event_type: "atendimento",
+          id: "future-event",
+          patient_id: "patient-1",
+          scheduled_for: "2099-04-15T10:00:00.000Z", // Amanhã
+          status: "confirmado",
+          title: "Alice agendada amanhã",
+        },
+      ],
+      filters: defaultFilters,
+      patientGroups,
+      patients,
+      sessions,
+      sortKey: "name_asc",
+    });
+
+    const alice = result.find((patient) => patient.id === "patient-1");
+    // O evento de ontem não deve gerar 'late'. O resumo deve apontar para o evento futuro!
+    expect(alice?.nextAgendaSummary?.tone).not.toBe("late");
+    expect(alice?.nextAgendaSummary?.title).toBe("Alice agendada amanhã");
+  });
+
   it("filters by group, color and collaborator with OR inside each block", () => {
     const result = buildHomePatientViews({
       filters: {
