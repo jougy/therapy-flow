@@ -599,12 +599,10 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       // Se não encontrou por userId, busca na tabela profiles testando todas as variantes de telefone
       if (!profileData && phoneVariants.size > 0) {
         const variantsList = Array.from(phoneVariants);
-        // Supabase PostgREST in list: in.(v1,v2,...)
-        const inClause = `(${variantsList.map((v) => `"${v.replace(/"/g, '')}"`).join(',')})`;
         const { data } = await supabase
           .from('profiles')
           .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
-          .filter('phone', 'in', inClause)
+          .in('phone', variantsList)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -621,6 +619,32 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           .limit(1)
           .maybeSingle();
         profileData = data as ProfileLookupRecord | null;
+      }
+
+      // Se ainda não encontrou por variantes normais, busca todos os profiles com phone preenchido e compara dígitos puros
+      if (!profileData && digitsOnly.length >= 8) {
+        const { data: allPhones } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
+          .not('phone', 'is', null)
+          .limit(100);
+
+        if (allPhones && allPhones.length > 0) {
+          const matched = allPhones.find((p) => {
+            if (!p.phone) return false;
+            const pDigits = p.phone.replace(/\D/g, '');
+            const pNational = pDigits.startsWith('55') ? pDigits.slice(2) : pDigits;
+            return (
+              pDigits === digitsOnly ||
+              pNational === nationalPhone ||
+              (pDigits.length >= 8 && digitsOnly.endsWith(pDigits.slice(-8))) ||
+              (pDigits.length >= 8 && pDigits.endsWith(last8Digits))
+            );
+          });
+          if (matched) {
+            profileData = matched as ProfileLookupRecord;
+          }
+        }
       }
 
       // Se ainda não encontrou profile e for o admin comercial oficial, carrega o primeiro platform_admin ativo
@@ -815,6 +839,17 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       } else {
         session = newSession;
       }
+    } else if (customer.userId && (!session.user_id || !session.clinic_id)) {
+      // Se a sessão já existia sem vínculo de usuário e agora foi identificado pelo telefone
+      await supabase
+        .from('whatsapp_chat_sessions')
+        .update({
+          user_id: customer.userId,
+          clinic_id: customer.clinicId || session.clinic_id,
+        })
+        .eq('phone', phone);
+      session.user_id = customer.userId;
+      if (customer.clinicId) session.clinic_id = customer.clinicId;
     }
 
     const currentStep = session?.current_step || 'initial';
@@ -860,6 +895,11 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
     const isLoginCommand =
       userTextLower === 'login' ||
       userTextLower === 'entrar' ||
+      userTextLower === 'oi' ||
+      userTextLower === 'ola' ||
+      userTextLower === 'olá' ||
+      userTextLower === 'iniciar' ||
+      userTextLower === 'começar' ||
       cleanSelectedButtonId === 'btn_auth_login';
 
     const isLogoutCommand =
