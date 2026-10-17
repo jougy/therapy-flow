@@ -14,15 +14,19 @@ echo "▶️  Etapa 1/4: Executando verificações de qualidade com zero tokens.
 npm run check:quick
 
 # 2. Scanner de Saúde dos Testes em Python
-echo "▶️  Etapa 2/4: Executando auditoria profunda de saúde dos testes em Python..."
+echo "▶️  Etapa 2/5: Executando auditoria profunda de saúde dos testes em Python..."
 python3 scripts/dev/audit_tests_health.py
 
-# 3. Build de Produção
-echo "▶️  Etapa 3/4: Compilando bundle de produção (Vite)..."
+# 3. Execução da Suíte Completa de Testes Automatizados (Vitest)
+echo "▶️  Etapa 3/5: Executando suíte de testes unitários e de regressão (Vitest)..."
+npm run test
+
+# 4. Build de Produção
+echo "▶️  Etapa 4/5: Compilando bundle de produção (Vite)..."
 npm run build
 
-# 4. Smoke Test Headless do Bundle Compilado
-echo "▶️  Etapa 4/4: Executando Smoke Test Headless no bundle compilado..."
+# 5. Smoke Test Headless do Bundle Compilado
+echo "▶️  Etapa 5/5: Executando Smoke Test Headless no bundle compilado..."
 node scripts/dev/test_build_smoke.mjs
 
 echo "----------------------------------------------------------------------"

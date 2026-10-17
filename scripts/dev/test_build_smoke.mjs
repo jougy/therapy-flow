@@ -80,7 +80,10 @@ async function runSmokeTest() {
 
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    });
     const context = await browser.newContext();
     const page = await context.newPage();
 

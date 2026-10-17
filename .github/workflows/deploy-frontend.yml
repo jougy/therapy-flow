@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright Browsers (for Smoke Test)
+        run: npx playwright install --with-deps chromium
+
       - name: Run Pre-Deploy Quality Gate & Smoke Test
         run: bash scripts/dev/pre-deploy-guard.sh
         env:
