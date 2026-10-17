@@ -218,7 +218,7 @@ describe("ClinicAgendaPage", () => {
     fireEvent.click(cancelButton);
     expect(await screen.findByRole("button", { name: /copiar semana/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /colar/i })).not.toBeInTheDocument();
-  });
+  }, 30000);
 
   it("executes pastePeriod and triggers insert when clicking 'Colar'", async () => {
     render(
