@@ -50,6 +50,10 @@ async function main() {
   const codeLogs = await runScript('scripts/dev/check-clean-logs.mjs');
   if (codeLogs !== 0) process.exit(codeLogs);
 
+  // 6. HTML5 & Parse5 Structure Protection
+  const codeHtml = await runScript('scripts/dev/check-html.mjs');
+  if (codeHtml !== 0) process.exit(codeHtml);
+
   console.log('\n🚀 [check:quick] Todas as verificações passaram com 100% de sucesso!');
   process.exit(0);
 }

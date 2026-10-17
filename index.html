@@ -118,15 +118,17 @@
       fbq('init', '1073846021935349');
       fbq('track', 'PageView');
     </script>
-    <noscript>
-      <img height="1" width="1" style="display:none"
-        src="https://www.facebook.com/tr?id=1073846021935349&ev=PageView&noscript=1"
-      />
-    </noscript>
     <!-- End Meta Pixel Code -->
   </head>
 
   <body translate="no" class="notranslate">
+    <!-- Meta Pixel NoScript Fallback (Válido exclusivamente no body) -->
+    <noscript>
+      <img height="1" width="1" style="display:none"
+        src="https://www.facebook.com/tr?id=1073846021935349&ev=PageView&noscript=1"
+        alt=""
+      />
+    </noscript>
     <div id="root" translate="no" class="notranslate"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

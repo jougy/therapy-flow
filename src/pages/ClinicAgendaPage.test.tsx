@@ -1,7 +1,11 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ClinicAgendaPage from "./ClinicAgendaPage";
+
+if (typeof window !== "undefined" && !window.HTMLElement.prototype.scrollIntoView) {
+  window.HTMLElement.prototype.scrollIntoView = vi.fn();
+}
 
 const mockUser = { id: "user-test" };
 const mockClinic = { route_key: "testesteseqsadqwdas", name: "Clínica Teste" };
@@ -243,6 +247,95 @@ describe("ClinicAgendaPage", () => {
 
     await waitFor(() => {
       expect(mockInsert).toHaveBeenCalled();
+    });
+  });
+
+  it("renders immediately from cache on remount without getting stuck in loading", async () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
+        <Routes>
+          <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/Agenda da Clínica/i)).toBeInTheDocument();
+    unmount();
+
+    // Segundo mount: deve utilizar o cache em memória sincronizado
+    render(
+      <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
+        <Routes>
+          <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Header e elementos da tela disponíveis sem bloqueio
+    expect(screen.getByText(/Agenda da Clínica/i)).toBeInTheDocument();
+  });
+
+  it("handles Expand and Contract fallback when notified_colleague_ids or schema cache error occurs", async () => {
+    let callCount = 0;
+    mockInsert.mockImplementation((payload: any) => ({
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockImplementation(async () => {
+          callCount++;
+          if (callCount === 1) {
+            return {
+              data: null,
+              error: {
+                code: "PGRST204",
+                message: "Could not find the 'notified_colleague_ids' column of 'agenda_events' in the schema cache",
+              },
+            };
+          }
+          return {
+            data: {
+              id: "ev-fallback-1",
+              event_type: payload.event_type || "atendimento",
+              patient_id: payload.patient_id,
+              scheduled_for: payload.scheduled_for,
+              status: "aguardando_confirmacao",
+              title: payload.title,
+            },
+            error: null,
+          };
+        }),
+      }),
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
+        <Routes>
+          <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Aguardar carregamento da página e dos pacientes
+    expect(await screen.findByText(/Agenda da Clínica/i)).toBeInTheDocument();
+
+    const newAppointmentButton = await screen.findByRole("button", { name: /novo agendamento/i });
+    fireEvent.click(newAppointmentButton);
+
+    // Aguardar o modal abrir
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: /novo agendamento/i })).toBeInTheDocument();
+
+    // Selecionar paciente João da Silva no combobox
+    const patientComboboxButton = within(dialog).getByText(/selecionar paciente/i);
+    fireEvent.click(patientComboboxButton);
+
+    const patientOption = await screen.findByText("João da Silva");
+    fireEvent.click(patientOption);
+
+    const submitButton = within(dialog).getByRole("button", { name: /^agendar$/i });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      // Primeira tentativa falhou com erro de schema cache e segunda funcionou com fallback Expand & Contract
+      expect(callCount).toBe(2);
     });
   });
 });
