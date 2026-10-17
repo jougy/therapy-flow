@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
@@ -59,6 +59,7 @@ export const useTeamInvitations = ({
 }: UseTeamInvitationsParams) => {
   const [pendingInvitations, setPendingInvitations] = useState<PendingCollaboratorInvitation[]>([]);
   const [sendingInvite, setSendingInvite] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [lastGeneratedInviteUrl, setLastGeneratedInviteUrl] = useState("");
   const [lastGeneratedInviteEmail, setLastGeneratedInviteEmail] = useState("");
   const [resendingId, setResendingId] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export const useTeamInvitations = ({
     roleKey?: string;
     baseOperationalRole?: string;
   }) => {
+    if (sendingInvite || isSubmittingRef.current) return;
     if (!clinicId || !payload.email.trim()) return;
 
     const selectedRoleDef = operationalRoleDefinitions.find(
@@ -106,84 +108,107 @@ export const useTeamInvitations = ({
       }
     }
 
+    isSubmittingRef.current = true;
     setSendingInvite(true);
-    const rpcStart = performance.now();
+    try {
+      const rpcStart = performance.now();
 
-    let { data, error } = await supabase.rpc("invite_clinic_collaborator", {
-      _clinic_id: clinicId,
-      _email: payload.email.trim(),
-      _operational_role: baseOperationalRole,
-      _role_key: roleKey,
-      _job_title: payload.jobTitle.trim() || undefined,
-      _specialty: payload.specialty.trim() || undefined,
-    } as any);
-
-    // Fallback Expand & Contract caso o banco remoto ainda não tenha aplicado a nova assinatura da RPC
-    if (error && (error.message?.includes("_role_key") || error.code === "PGRST202")) {
-      const fallback = await supabase.rpc("invite_clinic_collaborator", {
+      let { data, error } = await supabase.rpc("invite_clinic_collaborator", {
         _clinic_id: clinicId,
         _email: payload.email.trim(),
         _operational_role: baseOperationalRole,
+        _role_key: roleKey,
         _job_title: payload.jobTitle.trim() || undefined,
         _specialty: payload.specialty.trim() || undefined,
       } as any);
-      data = fallback.data;
-      error = fallback.error;
-    }
-    const rpcDuration = Math.round(performance.now() - rpcStart);
 
-    if (error) {
-      logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: payload.email }, "error", rpcDuration, null, error);
-      logRuntimeError("team.invite_clinic_collaborator", error, { clinicId, email: payload.email });
-      toast({ title: "Erro ao emitir convite", description: error.message, variant: "destructive" });
+      // Fallback Expand & Contract caso o banco remoto ainda não tenha aplicado a nova assinatura da RPC
+      if (error && (error.message?.includes("_role_key") || error.code === "PGRST202")) {
+        const fallback = await supabase.rpc("invite_clinic_collaborator", {
+          _clinic_id: clinicId,
+          _email: payload.email.trim(),
+          _operational_role: baseOperationalRole,
+          _job_title: payload.jobTitle.trim() || undefined,
+          _specialty: payload.specialty.trim() || undefined,
+        } as any);
+        data = fallback.data;
+        error = fallback.error;
+      }
+      const rpcDuration = Math.round(performance.now() - rpcStart);
+
+      if (error) {
+        logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: payload.email }, "error", rpcDuration, null, error);
+        logRuntimeError("team.invite_clinic_collaborator", error, { clinicId, email: payload.email });
+        toast({ title: "Erro ao emitir convite", description: error.message, variant: "destructive" });
+        return;
+      }
+
+      logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: payload.email }, "success", rpcDuration, data);
+
+      const resData = data as Record<string, unknown> | null;
+      const token = resData?.token ? String(resData.token) : "";
+      const inviteUrl = buildPublicAppUrl(`/convite/clinica/${token}`);
+
+      setLastGeneratedInviteUrl(inviteUrl);
+      setLastGeneratedInviteEmail(payload.email.trim());
+
+      const fnStart = performance.now();
+      const { data: sendResult, error: emailError } = await supabase.functions.invoke<{
+        sent?: boolean;
+        canShareLink?: boolean;
+        error?: string;
+        destinationUrl?: string;
+      }>("send-clinic-invitation", {
+        body: { inviteUrl, token },
+      });
+      const fnDuration = Math.round(performance.now() - fnStart);
+
+      const hasError = Boolean(emailError || sendResult?.sent === false);
+      const canShare = Boolean(sendResult?.canShareLink || inviteUrl);
+
+      if (hasError) {
+        const reason = emailError
+          ? await extractEdgeFunctionErrorMessage(
+              emailError,
+              "Não foi possível despachar o e-mail automaticamente."
+            )
+          : (sendResult?.error || "Não foi possível despachar o e-mail automaticamente.");
+        logRuntimeFunction("send-clinic-invitation", "error", fnDuration, { inviteUrl, reason }, emailError);
+        logRuntimeError("team.send-clinic-invitation", `Falha ao despachar e-mail via Resend: ${reason}`, {
+          inviteUrl,
+          token,
+          emailError,
+          email: payload.email,
+        });
+        console.warn("[useTeamInvitations] Falha ao enviar e-mail de convite:", reason, emailError);
+
+        if (canShare) {
+          toast({
+            title: "Convite gerado!",
+            description:
+              "Convite gerado! O e-mail automático não pôde ser despachado agora, mas o link está pronto para envio via WhatsApp ou cópia.",
+          });
+        } else {
+          toast({
+            title: "Convite gerado (aviso de envio)",
+            description: `O link foi criado com sucesso, mas o e-mail não pôde ser despachado: ${reason}. Você pode copiar o link ou enviar no WhatsApp.`,
+            variant: "destructive",
+          });
+        }
+      } else if (sendResult?.sent === true) {
+        logRuntimeFunction("send-clinic-invitation", "success", fnDuration, { email: payload.email });
+        logRuntimeInfo("team.send-clinic-invitation", `Convite enviado com sucesso para ${payload.email}`);
+        toast({
+          title: "Convite enviado com sucesso!",
+          description: "Convite enviado com sucesso para o e-mail informado!",
+        });
+      }
+
+      void onTeamDataChanged();
+    } finally {
+      isSubmittingRef.current = false;
       setSendingInvite(false);
-      return;
     }
-
-    logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: payload.email }, "success", rpcDuration, data);
-
-    const resData = data as Record<string, unknown> | null;
-    const token = resData?.token ? String(resData.token) : "";
-    const inviteUrl = buildPublicAppUrl(`/convite/clinica/${token}`);
-
-    setLastGeneratedInviteUrl(inviteUrl);
-    setLastGeneratedInviteEmail(payload.email.trim());
-
-    const fnStart = performance.now();
-    const { error: emailError } = await supabase.functions.invoke("send-clinic-invitation", {
-      body: { inviteUrl, token },
-    });
-    const fnDuration = Math.round(performance.now() - fnStart);
-
-    if (emailError) {
-      const reason = await extractEdgeFunctionErrorMessage(
-        emailError,
-        "Não foi possível despachar o e-mail automaticamente."
-      );
-      logRuntimeFunction("send-clinic-invitation", "error", fnDuration, { inviteUrl, reason }, emailError);
-      logRuntimeError("team.send-clinic-invitation", `Falha ao despachar e-mail via Resend: ${reason}`, {
-        inviteUrl,
-        token,
-        emailError,
-        email: payload.email,
-      });
-      console.error("[useClinicTeamData] Falha ao enviar e-mail de convite via Resend:", reason, emailError);
-      toast({
-        title: "Convite gerado (aviso de envio)",
-        description: `O link foi criado com sucesso, mas o e-mail não pôde ser despachado: ${reason}. Você pode copiar o link ou enviar no WhatsApp.`,
-        variant: "destructive",
-      });
-    } else {
-      logRuntimeFunction("send-clinic-invitation", "success", fnDuration, { email: payload.email });
-      logRuntimeInfo("team.send-clinic-invitation", `Convite enviado com sucesso para ${payload.email}`);
-      toast({
-        title: "Convite enviado com sucesso!",
-        description: `E-mail oficial enviado para ${payload.email}.`,
-      });
-    }
-
-    setSendingInvite(false);
-    void onTeamDataChanged();
   };
 
   const handleCopyLink = async (url: string, email: string) => {
@@ -230,6 +255,8 @@ export const useTeamInvitations = ({
   };
 
   const handleResendInvite = async (invitation: PendingCollaboratorInvitation) => {
+    if (resendingId || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setResendingId(invitation.id);
 
     try {
@@ -259,16 +286,25 @@ export const useTeamInvitations = ({
       setLastGeneratedInviteEmail(invitation.email);
 
       const fnStart = performance.now();
-      const { error: emailError } = await supabase.functions.invoke("send-clinic-invitation", {
+      const { data: resendResult, error: emailError } = await supabase.functions.invoke<{
+        sent?: boolean;
+        canShareLink?: boolean;
+        error?: string;
+      }>("send-clinic-invitation", {
         body: { inviteUrl, token },
       });
       const fnDuration = Math.round(performance.now() - fnStart);
 
-      if (emailError) {
-        const reason = await extractEdgeFunctionErrorMessage(
-          emailError,
-          "Não foi possível reenviar o e-mail automaticamente."
-        );
+      const hasError = Boolean(emailError || resendResult?.sent === false);
+      const canShare = Boolean(resendResult?.canShareLink || inviteUrl);
+
+      if (hasError) {
+        const reason = emailError
+          ? await extractEdgeFunctionErrorMessage(
+              emailError,
+              "Não foi possível reenviar o e-mail automaticamente."
+            )
+          : (resendResult?.error || "Não foi possível reenviar o e-mail automaticamente.");
         logRuntimeFunction("send-clinic-invitation", "error", fnDuration, { inviteUrl, reason }, emailError);
         logRuntimeError("team.resend-clinic-invitation", `Falha ao reenviar e-mail via Resend: ${reason}`, {
           inviteUrl,
@@ -276,36 +312,61 @@ export const useTeamInvitations = ({
           emailError,
           email: invitation.email,
         });
-        console.error("[useClinicTeamData] Falha ao reenviar e-mail de convite via Resend:", reason, emailError);
-        toast({
-          title: "Convite atualizado (aviso de envio)",
-          description: `Novo link gerado, mas o e-mail não pôde ser despachado: ${reason}. Copie o link direto caso necessário.`,
-          variant: "destructive",
-        });
-      } else {
+        console.warn("[useTeamInvitations] Falha ao reenviar e-mail de convite:", reason, emailError);
+
+        if (canShare) {
+          toast({
+            title: "Convite gerado!",
+            description:
+              "Convite gerado! O e-mail automático não pôde ser despachado agora, mas o link está pronto para envio via WhatsApp ou cópia.",
+          });
+        } else {
+          toast({
+            title: "Convite atualizado (aviso de envio)",
+            description: `Novo link gerado, mas o e-mail não pôde ser despachado: ${reason}. Copie o link direto caso necessário.`,
+            variant: "destructive",
+          });
+        }
+      } else if (resendResult?.sent === true) {
         logRuntimeFunction("send-clinic-invitation", "success", fnDuration, { email: invitation.email });
         logRuntimeInfo("team.send-clinic-invitation", `Convite reenviado com sucesso para ${invitation.email}`);
         toast({
-          title: "Convite reenviado!",
-          description: `Novo e-mail enviado para ${invitation.email}.`,
+          title: "Convite enviado com sucesso!",
+          description: "Convite enviado com sucesso para o e-mail informado!",
         });
       }
+
+      setPendingInvitations((prev) =>
+        prev.map((item) =>
+          item.id === invitation.id
+            ? {
+                ...item,
+                email_delivery_status: hasError ? "failed" : "sent",
+                email_last_error: hasError ? (resendResult?.error || "Falha no envio") : null,
+                last_resent_at: new Date().toISOString(),
+              }
+            : item
+        )
+      );
 
       void onTeamDataChanged();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erro ao reenviar convite.";
       toast({ title: "Erro ao reenviar", description: msg, variant: "destructive" });
     } finally {
+      isSubmittingRef.current = false;
       setResendingId(null);
     }
   };
 
   const handleSendCompletionInvite = async (member: ActiveMember) => {
+    if (sendingCompletionMemberId || isSubmittingRef.current) return;
     if (!clinicId || !member.email) {
       toast({ title: "Dados incompletos", description: "Colaborador não possui e-mail cadastrado.", variant: "destructive" });
       return;
     }
 
+    isSubmittingRef.current = true;
     setSendingCompletionMemberId(member.id);
     try {
       const { data: inviteData, error: inviteErr } = await supabase.rpc("invite_clinic_collaborator", {
@@ -324,21 +385,39 @@ export const useTeamInvitations = ({
       const token = invRecord?.token ? String(invRecord.token) : "";
       const inviteUrl = buildPublicAppUrl(`/convite/clinica/${token}`);
 
-      const { error: fnErr } = await supabase.functions.invoke("send-clinic-invitation", {
+      const { data: completionResult, error: fnErr } = await supabase.functions.invoke<{
+        sent?: boolean;
+        canShareLink?: boolean;
+        error?: string;
+      }>("send-clinic-invitation", {
         body: { inviteUrl, token },
       });
 
-      if (fnErr) {
-        const reason = await extractEdgeFunctionErrorMessage(fnErr, "Não foi possível despachar o e-mail.");
+      const hasError = Boolean(fnErr || completionResult?.sent === false);
+      const canShare = Boolean(completionResult?.canShareLink || inviteUrl);
+
+      if (hasError) {
+        const reason = fnErr
+          ? await extractEdgeFunctionErrorMessage(fnErr, "Não foi possível despachar o e-mail.")
+          : (completionResult?.error || "Não foi possível despachar o e-mail.");
+
+        if (canShare) {
+          toast({
+            title: "Convite gerado!",
+            description:
+              "Convite gerado! O e-mail automático não pôde ser despachado agora, mas o link está pronto para envio via WhatsApp ou cópia.",
+          });
+        } else {
+          toast({
+            title: "Convite de regularização gerado",
+            description: `O link para completar cadastro foi gerado, mas o envio automático falhou: ${reason}`,
+            variant: "destructive",
+          });
+        }
+      } else if (completionResult?.sent === true) {
         toast({
-          title: "Convite de regularização gerado",
-          description: `O link para completar cadastro foi gerado, mas o envio automático falhou: ${reason}`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "E-mail de regularização enviado!",
-          description: `Enviamos as instruções para ${member.full_name} (${member.email}) completar o cadastro.`,
+          title: "Convite enviado com sucesso!",
+          description: "Convite enviado com sucesso para o e-mail informado!",
         });
       }
 
@@ -351,6 +430,7 @@ export const useTeamInvitations = ({
         variant: "destructive",
       });
     } finally {
+      isSubmittingRef.current = false;
       setSendingCompletionMemberId(null);
     }
   };

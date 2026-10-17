@@ -481,7 +481,7 @@ describe("PacienteDetalhe", () => {
     expect(screen.getAllByText(/Último Atendimento/i).length).toBeGreaterThan(0);
   });
 
-  it("starts immediate attendance and creates confirmed agenda event when none exists", async () => {
+  it("opens start attendance options modal and starts unlinked attendance when chosen", async () => {
     renderPage();
 
     await screen.findByRole("heading", { name: "Maria Silva" });
@@ -489,32 +489,23 @@ describe("PacienteDetalhe", () => {
     const startButtons = screen.getAllByRole("button", { name: /iniciar atendimento agora/i });
     fireEvent.click(startButtons[0]);
 
+    const unlinkedBtn = await screen.findByRole("button", { name: /criar novo atendimento sem vínculo/i });
+    expect(unlinkedBtn).toBeInTheDocument();
+    fireEvent.click(unlinkedBtn);
+
     await waitFor(() => {
-      expect(supabaseMocks.insertCalls).toContainEqual({
-        payload: expect.objectContaining({
-          clinic_id: "clinic-1",
-          event_type: "atendimento",
-          patient_id: "patient-1",
-          status: "confirmado",
-          title: "Maria Silva",
-          user_id: "owner-1",
-        }),
-        table: "agenda_events",
-      });
       expect(navigateMock).toHaveBeenCalledWith(
         expect.stringContaining("/pacientes/patient-1/sessao/novo"),
         expect.objectContaining({
           state: expect.objectContaining({
-            agendaEventId: expect.any(String),
+            forceClean: true,
           }),
         })
       );
     });
   });
 
-  it("navigates to new session gracefully even when agenda event creation fails (e.g. collaborator RLS)", async () => {
-    supabaseMocks.insertError = new Error("new row violates row-level security policy for table agenda_events");
-
+  it("navigates to new session gracefully when choosing blank attendance", async () => {
     renderPage();
 
     await screen.findByRole("heading", { name: "Maria Silva" });
@@ -522,10 +513,12 @@ describe("PacienteDetalhe", () => {
     const startButtons = screen.getAllByRole("button", { name: /iniciar atendimento agora/i });
     fireEvent.click(startButtons[0]);
 
+    const blankBtn = await screen.findByRole("button", { name: /iniciar atendimento em branco/i });
+    expect(blankBtn).toBeInTheDocument();
+    fireEvent.click(blankBtn);
+
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith(
-        expect.stringContaining("/pacientes/patient-1/sessao/novo")
-      );
+      expect(navigateMock).toHaveBeenCalled();
     });
   });
 
@@ -642,7 +635,7 @@ describe("PacienteDetalhe", () => {
 
     expect(await screen.findByText(/Aguardando/i)).toBeInTheDocument();
     expect(screen.queryByText("Sem eventos")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /expandir agenda para tela cheia/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ver agenda completa/i })).toBeInTheDocument();
   });
 
   it("jumps to future patient agenda events with the same agenda controls", async () => {
@@ -825,15 +818,20 @@ describe("PacienteDetalhe", () => {
     const viewFullRegistrationOption = headerQueries.getByText("Ver cadastro completo");
     expect(viewFullRegistrationOption).toBeInTheDocument();
 
-    // Print & Export separate options
+    // Export option in Opções
+    const exportOption = headerQueries.getByText("Exportar dados (JSON)");
+    expect(exportOption).toBeInTheDocument();
+
+    // Print options moved to Termos button
+    const termosBtn = headerQueries.getByRole("button", { name: /termos e impressões/i });
+    fireEvent.click(termosBtn);
+
     const printOption = headerQueries.getByText("Imprimir cadastro (PDF)");
     const printAdultOption = headerQueries.getByText("Imprimir Termo de Consentimento (Adulto)");
     const printGuardianOption = headerQueries.getByText("Imprimir Termo do Responsável (Menor)");
-    const exportOption = headerQueries.getByText("Exportar dados (JSON)");
     expect(printOption).toBeInTheDocument();
     expect(printAdultOption).toBeInTheDocument();
     expect(printGuardianOption).toBeInTheDocument();
-    expect(exportOption).toBeInTheDocument();
 
     // Test Adult consent modal open
     fireEvent.click(printAdultOption);
@@ -854,4 +852,33 @@ describe("PacienteDetalhe", () => {
     fireEvent.click(printOption);
     expect(await screen.findByText(/termo de responsabilidade|termo lgpd/i)).toBeInTheDocument();
   });
+
+  it("handles mobile dock Agenda completa tab and Atender action reliably", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Maria Silva" });
+
+    // Click "Agenda completa" from mobile dock
+    const agendaCompletaBtn = screen.getByRole("button", { name: "Agenda completa" });
+    fireEvent.click(agendaCompletaBtn);
+
+    // Agenda block should remain visible on mobile
+    const agendaSection = document.querySelector("[data-tutorial='patient-internal-agenda']");
+    expect(agendaSection).toBeInTheDocument();
+
+    // Click "Atender" from mobile dock
+    const atenderBtn = screen.getByRole("button", { name: "Atender" });
+    fireEvent.click(atenderBtn);
+
+    const unlinkedBtn = await screen.findByRole("button", { name: /criar novo atendimento sem vínculo/i });
+    fireEvent.click(unlinkedBtn);
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith(
+        expect.stringContaining("/pacientes/patient-1/sessao/novo"),
+        expect.anything()
+      );
+    });
+  });
 });
+

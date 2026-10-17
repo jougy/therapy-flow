@@ -657,7 +657,7 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
-    const portfolioBtn = screen.getByTestId("open-portfolio-hero-btn");
+    const portfolioBtn = getNavButton(/^Meu Portfólio$/i);
     expect(portfolioBtn).toBeInTheDocument();
     fireEvent.click(portfolioBtn);
 
@@ -667,7 +667,7 @@ describe("SelecionarClinica", () => {
     expect(screen.getByText("Acervo Técnico Profissional")).toBeInTheDocument();
   });
 
-  it("hides Meu Portfólio section, hero button and header buttons when clinical_portfolio_enabled flag is false", () => {
+  it("hides Meu Portfólio section and header buttons when clinical_portfolio_enabled flag is false", () => {
     vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
     vi.mocked(useFeatureFlags).mockReturnValue({
       isFeatureEnabled: vi.fn((key: string) => key !== "clinical_portfolio_enabled"),
@@ -684,8 +684,6 @@ describe("SelecionarClinica", () => {
       </MemoryRouter>
     );
 
-    // Hero button should not exist
-    expect(screen.queryByTestId("open-portfolio-hero-btn")).not.toBeInTheDocument();
     // Header buttons should not exist
     expect(screen.queryByTestId("header-portfolio-btn")).not.toBeInTheDocument();
     expect(screen.queryByTestId("header-portfolio-mobile-btn")).not.toBeInTheDocument();

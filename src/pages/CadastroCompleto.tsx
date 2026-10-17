@@ -133,6 +133,11 @@ const CadastroCompleto = () => {
 
       setPatientRecord(patient);
       setPatientName(patient.name);
+      window.dispatchEvent(
+        new CustomEvent("pluri:set-patient-title", {
+          detail: { title: patient.name, patientKey: patient.patient_code || patient.id, id: patient.id },
+        })
+      );
       setName(patient.name);
       setDateOfBirth(patient.date_of_birth ?? "");
       setCpf(formatPatientCpf(patient.cpf ?? ""));

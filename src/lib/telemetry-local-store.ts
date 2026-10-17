@@ -304,6 +304,24 @@ class ClientTelemetryManager {
     this.store.recentErrors = [errorItem, ...currentRecent.slice(0, 49)];
     this.save();
 
+    // Persistência direta em nuvem (platform_error_logs) via Supabase
+    void (async () => {
+      try {
+        const route = typeof window !== "undefined" ? window.location.pathname : "/";
+        await supabase.from("platform_error_logs").insert({
+          clinic_id: this.cachedClinicId || null,
+          error_type: "runtime",
+          scope: errorItem.scope,
+          message: errorItem.message,
+          stack_trace: errorItem.stack || null,
+          context: (errorItem.context as Record<string, unknown>) || {},
+          route,
+        });
+      } catch (err) {
+        console.warn("[LocalTelemetry] Falha ao persistir erro em platform_error_logs:", err);
+      }
+    })();
+
     void this.syncToServer({
       clinicId: this.cachedClinicId,
       userName: this.cachedUserName,

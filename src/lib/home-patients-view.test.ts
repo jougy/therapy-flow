@@ -549,4 +549,82 @@ describe("home patients view", () => {
     expect(hasActiveHomePatientFilters(filters)).toBe(true);
     expect(getActiveHomePatientFilterCount(filters)).toBe(12);
   });
+
+  it("filters patients by agenda shifts (madrugada, manha, tarde, noite)", () => {
+    // Current fake time is 2099-04-14T12:00:00.000Z
+    // Let's create events at specific local hours
+    const testAgendaEvents = [
+      {
+        event_type: "atendimento",
+        id: "agenda-morning",
+        patient_id: "patient-1",
+        scheduled_for: "2099-04-15T09:00:00", // Manhã (9h)
+        status: "confirmado",
+        title: "Alice Araujo",
+      },
+      {
+        event_type: "atendimento",
+        id: "agenda-afternoon",
+        patient_id: "patient-2",
+        scheduled_for: "2099-04-15T15:00:00", // Tarde (15h)
+        status: "confirmado",
+        title: "Bruno Braga",
+      },
+      {
+        event_type: "atendimento",
+        id: "agenda-cancelled",
+        patient_id: "patient-3",
+        scheduled_for: "2099-04-15T09:00:00", // Manhã mas cancelado
+        status: "cancelado",
+        title: "Carla Campos",
+      },
+    ];
+
+    const morningResult = buildHomePatientViews({
+      agendaEvents: testAgendaEvents,
+      filters: { ...defaultFilters, agendaShifts: ["manha"] },
+      patientGroups,
+      patients,
+      sessions,
+      sortKey: DEFAULT_HOME_PATIENT_SORT_KEY,
+    });
+    expect(morningResult.map((p) => p.name)).toEqual(["Alice Araujo"]);
+
+    const afternoonResult = buildHomePatientViews({
+      agendaEvents: testAgendaEvents,
+      filters: { ...defaultFilters, agendaShifts: ["tarde"] },
+      patientGroups,
+      patients,
+      sessions,
+      sortKey: DEFAULT_HOME_PATIENT_SORT_KEY,
+    });
+    expect(afternoonResult.map((p) => p.name)).toEqual(["Bruno Braga"]);
+
+    const multiShiftResult = buildHomePatientViews({
+      agendaEvents: testAgendaEvents,
+      filters: { ...defaultFilters, agendaShifts: ["manha", "tarde"] },
+      patientGroups,
+      patients,
+      sessions,
+      sortKey: DEFAULT_HOME_PATIENT_SORT_KEY,
+    });
+    expect(multiShiftResult.map((p) => p.name)).toEqual(["Bruno Braga", "Alice Araujo"]);
+
+    const nightResult = buildHomePatientViews({
+      agendaEvents: testAgendaEvents,
+      filters: { ...defaultFilters, agendaShifts: ["noite"] },
+      patientGroups,
+      patients,
+      sessions,
+      sortKey: DEFAULT_HOME_PATIENT_SORT_KEY,
+    });
+    expect(nightResult.map((p) => p.name)).toEqual([]);
+
+    expect(
+      hasActiveHomePatientFilters({ ...defaultFilters, agendaShifts: ["manha"] }),
+    ).toBe(true);
+    expect(
+      getActiveHomePatientFilterCount({ ...defaultFilters, agendaShifts: ["manha", "noite"] }),
+    ).toBe(2);
+  });
 });

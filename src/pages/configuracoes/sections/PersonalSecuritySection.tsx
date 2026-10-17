@@ -18,6 +18,9 @@ import {
   Smartphone,
   ExternalLink,
   Send,
+  Stethoscope,
+  RefreshCw,
+  Wrench,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -135,6 +138,12 @@ export const PersonalSecuritySection = () => {
   const [totpVerifying, setTotpVerifying] = useState(false);
   const [disablingTotp, setDisablingTotp] = useState(false);
   const [sendingIntroMessage, setSendingIntroMessage] = useState(false);
+
+  // Estados de Diagnóstico do Bot de WhatsApp
+  const [diagModalOpen, setDiagModalOpen] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagResult, setDiagResult] = useState<any>(null);
+  const [testingPing, setTestingPing] = useState(false);
 
   // Estados do Modal de Troca de Senha Segura
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
@@ -339,6 +348,56 @@ export const PersonalSecuritySection = () => {
       });
     } finally {
       setSendingIntroMessage(false);
+    }
+  };
+
+  const handleOpenDiagnostics = async () => {
+    setDiagModalOpen(true);
+    setDiagLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("whatsapp-diagnostics");
+      if (error) throw error;
+      setDiagResult(data?.diagnostic || null);
+    } catch (err: unknown) {
+      toast({
+        title: "Erro no diagnóstico",
+        description: err instanceof Error ? err.message : "Não foi possível carregar o diagnóstico.",
+        variant: "destructive",
+      });
+    } finally {
+      setDiagLoading(false);
+    }
+  };
+
+  const handleTestPing = async () => {
+    setTestingPing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("whatsapp-diagnostics", {
+        body: { action: "test_ping" },
+      });
+      if (error) throw error;
+      setDiagResult(data?.diagnostic || null);
+
+      if (data?.diagnostic?.test_send_result?.success) {
+        toast({
+          title: "Ping de Teste Enviado!",
+          description: "O WhatsApp entregou a mensagem de teste com sucesso para o seu número.",
+        });
+      } else {
+        toast({
+          title: "Falha no Envio do Ping",
+          description: data?.diagnostic?.test_send_result?.error || "Verifique as credenciais ou a conexão da instância.",
+          variant: "destructive",
+        });
+      }
+    } catch (err: unknown) {
+      toast({
+        title: "Erro ao testar envio",
+        description: err instanceof Error ? err.message : "Falha ao enviar mensagem de teste.",
+        variant: "destructive",
+      });
+    } finally {
+      setTestingPing(false);
     }
   };
 
@@ -644,6 +703,221 @@ export const PersonalSecuritySection = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Modal de Diagnóstico e Debug do Bot de WhatsApp */}
+      <Dialog open={diagModalOpen} onOpenChange={setDiagModalOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wrench className="h-5 w-5 text-primary" />
+                Diagnóstico & Status do Bot de WhatsApp
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleOpenDiagnostics}
+                disabled={diagLoading}
+                className="h-7 text-xs gap-1.5"
+              >
+                <RefreshCw className={`h-3 w-3 ${diagLoading ? "animate-spin" : ""}`} />
+                Atualizar
+              </Button>
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Inspecione o estado das credenciais, sessão ativa e logs de entrega do WhatsApp Bot.
+            </DialogDescription>
+          </DialogHeader>
+
+          {diagLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+              <p className="text-xs text-muted-foreground">Consultando status dos servidores e sessões...</p>
+            </div>
+          ) : !diagResult ? (
+            <div className="p-6 text-center text-xs text-muted-foreground">
+              Não foi possível carregar as informações de diagnóstico.
+            </div>
+          ) : (
+            <div className="space-y-4 py-1 text-xs">
+              {/* Card 1: Conexão e Provedor */}
+              <div className="rounded-lg border p-3.5 bg-muted/20 space-y-2">
+                <p className="font-semibold text-foreground flex items-center gap-1.5 text-xs">
+                  <Smartphone className="h-4 w-4 text-primary" />
+                  1. Conexão & Credenciais da API
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <div className="border rounded bg-background p-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Provedor</span>
+                    <p className="font-mono font-medium text-foreground capitalize">
+                      {diagResult.whatsapp_config?.provider || "meta_cloud"}
+                    </p>
+                  </div>
+                  <div className="border rounded bg-background p-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Status API</span>
+                    <div>
+                      {diagResult.whatsapp_config?.is_configured ? (
+                        <Badge variant="outline" className="text-emerald-600 border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 text-[10px]">
+                          Configurado
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-destructive border-destructive/40 text-[10px]">
+                          Não configurado
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="border rounded bg-background p-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">API Key / Token</span>
+                    <div>
+                      {diagResult.whatsapp_config?.has_api_key ? (
+                        <Badge variant="outline" className="text-emerald-600 border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 text-[10px]">
+                          Presente
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-destructive border-destructive/40 text-[10px]">
+                          Ausente no server
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="border rounded bg-background p-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Phone ID / URL</span>
+                    <div>
+                      {diagResult.whatsapp_config?.has_phone_number_id || diagResult.whatsapp_config?.has_api_url ? (
+                        <Badge variant="outline" className="text-emerald-600 border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 text-[10px]">
+                          Presente
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-destructive border-destructive/40 text-[10px]">
+                          Ausente
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-muted-foreground flex flex-col sm:flex-row sm:items-center justify-between gap-1 pt-1">
+                  <span>Número oficial do bot: <strong className="font-mono">{diagResult.whatsapp_config?.business_phone || "-"}</strong></span>
+                  <span>Canal comercial: <strong className="font-mono">{diagResult.whatsapp_config?.admin_commercial_phone || "-"}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 2: Usuário & Sessão do Chat */}
+              <div className="rounded-lg border p-3.5 bg-card space-y-2">
+                <p className="font-semibold text-foreground flex items-center gap-1.5 text-xs">
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  2. Sessão & Autenticação do Usuário
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="border rounded bg-muted/10 p-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Celular Sanitizado</span>
+                    <p className="font-mono text-xs text-foreground font-semibold">
+                      {diagResult.user?.clean_phone || "Não detectado"}
+                    </p>
+                  </div>
+                  <div className="border rounded bg-muted/10 p-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">2FA Ente Auth</span>
+                    <div>
+                      {diagResult.user?.totp_enabled ? (
+                        <Badge variant="outline" className="text-emerald-600 border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 text-[10px]">
+                          Habilitado
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50 dark:bg-amber-950/40 text-[10px]">
+                          Desabilitado
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="border rounded bg-muted/10 p-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Status no Bot</span>
+                    <div>
+                      {diagResult.session?.is_authenticated ? (
+                        <Badge variant="outline" className="text-emerald-600 border-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 text-[10px]">
+                          Sessão Autenticada
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground text-[10px]">
+                          Sessão Não Logada
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {diagResult.session && (
+                  <div className="rounded bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground space-y-0.5">
+                    <div>Etapa atual (step): <strong className="text-foreground">{String(diagResult.session.current_step)}</strong></div>
+                    {diagResult.session.auth_expires_at && (
+                      <div>Expiração da sessão: <strong className="text-foreground">{formatDateTimeBr(String(diagResult.session.auth_expires_at))}</strong></div>
+                    )}
+                    {diagResult.session.last_message_at && (
+                      <div>Última mensagem: <strong className="text-foreground">{formatDateTimeBr(String(diagResult.session.last_message_at))}</strong></div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Card 3: Teste de Disparo ao Vivo (Ping) */}
+              <div className="rounded-lg border p-3.5 bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-foreground text-xs flex items-center gap-1.5">
+                    <Send className="h-3.5 w-3.5 text-primary" />
+                    Enviar Mensagem de Teste (Ping ao Vivo)
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Testa se os servidores do WhatsApp conseguem entregar mensagens diretamente no seu número agora.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleTestPing}
+                  disabled={testingPing || !diagResult.user?.clean_phone}
+                  className="gap-1.5 text-xs bg-primary text-primary-foreground shrink-0 self-start sm:self-auto"
+                >
+                  {testingPing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  Testar Envio Agora
+                </Button>
+              </div>
+
+              {/* Card 4: Logs Recentes de Erro do WhatsApp */}
+              <div className="rounded-lg border p-3.5 bg-card space-y-2">
+                <p className="font-semibold text-foreground text-xs">
+                  3. Logs Recentes do WhatsApp no Servidor
+                </p>
+                {diagResult.recent_error_logs && diagResult.recent_error_logs.length > 0 ? (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {diagResult.recent_error_logs.map((log: any) => (
+                      <div key={log.id} className="rounded border bg-muted/20 p-2 text-[11px] space-y-0.5">
+                        <div className="flex items-center justify-between font-semibold text-destructive">
+                          <span>{log.error_type || "Erro WhatsApp"}</span>
+                          <span className="text-[10px] text-muted-foreground font-normal">
+                            {formatDateTimeBr(log.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-foreground font-mono text-[10px] break-all">{log.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded border border-dashed p-3 text-center text-[11px] text-muted-foreground">
+                    Nenhum log de erro registrado para o WhatsApp recentemente.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setDiagModalOpen(false)}>
+              Fechar Diagnóstico
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal Seguro de Troca de Senha */}
       <Dialog open={changePasswordModalOpen} onOpenChange={setChangePasswordModalOpen}>
         <DialogContent className="sm:max-w-md">
@@ -906,21 +1180,34 @@ export const PersonalSecuritySection = () => {
                     </div>
 
                     {profile?.phone && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleSendIntroMessage}
-                        disabled={sendingIntroMessage}
-                        className="h-7 text-[11px] gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 shrink-0 self-start sm:self-auto"
-                      >
-                        {sendingIntroMessage ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Send className="h-3 w-3" />
-                        )}
-                        Iniciar conversa com o bot
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSendIntroMessage}
+                          disabled={sendingIntroMessage}
+                          className="h-7 text-[11px] gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 shrink-0"
+                        >
+                          {sendingIntroMessage ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Send className="h-3 w-3" />
+                          )}
+                          Iniciar conversa com o bot
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleOpenDiagnostics}
+                          className="h-7 text-[11px] gap-1.5 text-muted-foreground hover:text-foreground shrink-0"
+                        >
+                          <Wrench className="h-3 w-3" />
+                          Diagnóstico do Bot
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </div>

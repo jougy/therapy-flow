@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { PatientMobileDock } from "./PatientMobileDock";
 
 describe("PatientMobileDock", () => {
-  it("renders all 9 default items when features are enabled", () => {
+  it("renders all 10 default items when features are enabled", () => {
     const handleTabChange = vi.fn();
     render(
       <PatientMobileDock
@@ -15,8 +15,9 @@ describe("PatientMobileDock", () => {
     );
 
     expect(screen.getByText("Início")).toBeInTheDocument();
-    expect(screen.getByText("Resumo clínico")).toBeInTheDocument();
-    expect(screen.getByText("Novo Agendamento")).toBeInTheDocument();
+    expect(screen.getByText("Resumo")).toBeInTheDocument();
+    expect(screen.getByText("Agendar")).toBeInTheDocument();
+    expect(screen.getByText("Agenda")).toBeInTheDocument();
     expect(screen.getByText("Atender")).toBeInTheDocument();
     expect(screen.getByText("Histórico")).toBeInTheDocument();
     expect(screen.getByText("Arquivos")).toBeInTheDocument();
@@ -34,9 +35,9 @@ describe("PatientMobileDock", () => {
       />
     );
 
-    const historyBtn = screen.getByRole("button", { name: "Histórico" });
-    fireEvent.click(historyBtn);
+    const agendaBtn = screen.getByRole("button", { name: "Agenda completa" });
+    fireEvent.click(agendaBtn);
 
-    expect(handleTabChange).toHaveBeenCalledWith("historico");
+    expect(handleTabChange).toHaveBeenCalledWith("agenda_completa");
   });
 });

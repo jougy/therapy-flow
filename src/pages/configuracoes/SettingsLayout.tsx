@@ -6,6 +6,7 @@ import {
   ClipboardList,
   CreditCard,
   FileText,
+  HeartHandshake,
   MessageCircle,
   Pin,
   Settings,
@@ -100,6 +101,14 @@ export const SettingsLayout = () => {
         description: "Plano contratado, faturas e capacidade de acessos.",
         icon: CreditCard,
         path: `${basePath}/assinatura`,
+        space: "clinic",
+      },
+      {
+        id: "convenios",
+        title: "Planos e convênios",
+        description: "Operadoras aceitas, credenciamento e reembolso.",
+        icon: HeartHandshake,
+        path: `${basePath}/convenios`,
         space: "clinic",
       },
       {

@@ -88,6 +88,29 @@ const formatResponseValue = (field: AnamnesisField, responseValue: Json | undefi
     return formatted;
   }
 
+  if (isJsonObject(responseValue) && typeof responseValue.baseImageUrl === "string" && responseValue.baseImageUrl.trim()) {
+    const rawAnnotations = Array.isArray(responseValue.annotations) ? responseValue.annotations : [];
+    const pins = rawAnnotations.filter(
+      (item): item is Record<string, Json | undefined> =>
+        isJsonObject(item) && item.type === "pin"
+    );
+    const otherCount = rawAnnotations.length - pins.length;
+    const pinTexts = pins.map((p, idx) => {
+      const num = typeof p.pinNumber === "number" ? p.pinNumber : idx + 1;
+      const lbl = typeof p.label === "string" && p.label.trim() ? p.label.trim() : `Ponto ${num}`;
+      const cmt = typeof p.comment === "string" && p.comment.trim() ? ` (${p.comment.trim()})` : "";
+      return `#${num} ${lbl}${cmt}`;
+    });
+    const parts: string[] = [];
+    if (pinTexts.length > 0) {
+      parts.push(`Pontos: ${pinTexts.join("; ")}`);
+    }
+    if (otherCount > 0) {
+      parts.push(`${otherCount} ${otherCount === 1 ? "marcação gráfica" : "marcações gráficas"}`);
+    }
+    return parts.length > 0 ? parts.join(" • ") : "Imagem clínica anexada";
+  }
+
   return "";
 };
 
@@ -152,7 +175,10 @@ export const getSessionPreviewContent = (
   const treatmentState = readTreatmentState(session.treatment);
 
   const complaintFields = (baseSchema ?? []).filter(
-    (field) => field.type !== "section" && field.type !== "slider" && shouldShowInPatientList(field)
+    (field) =>
+      field.type !== "section" &&
+      field.type !== "slider" &&
+      (field.includeInGlobalDashboard === true || shouldShowInPatientList(field))
   );
 
   const complaint = complaintFields.length > 0

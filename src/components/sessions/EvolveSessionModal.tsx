@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Copy, Sparkles, X, Loader2, FileText, ChevronRight } from "lucide-react";
+import { Copy, Sparkles, X, Loader2, ChevronRight, FilePlus, Calendar } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,9 +19,14 @@ export interface EvolveSessionModalProps {
   onClose: () => void;
   onEvolveCopy: () => Promise<void> | void;
   onEvolveBlank: (templateId: string | null) => Promise<void> | void;
+  onStartUnlinked?: (templateId: string | null) => Promise<void> | void;
   templates?: DatabaseAnamnesisTemplate[];
   defaultTemplateId?: string | null;
   isEvolving?: boolean;
+  canEvolveFromPrevious?: boolean;
+  title?: string;
+  description?: string;
+  linkedAgendaEventDescription?: string | null;
 }
 
 export const EvolveSessionModal = ({
@@ -29,9 +34,14 @@ export const EvolveSessionModal = ({
   onClose,
   onEvolveCopy,
   onEvolveBlank,
+  onStartUnlinked,
   templates = [],
   defaultTemplateId = null,
   isEvolving = false,
+  canEvolveFromPrevious = true,
+  title,
+  description,
+  linkedAgendaEventDescription = null,
 }: EvolveSessionModalProps) => {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(defaultTemplateId);
 
@@ -51,12 +61,19 @@ export const EvolveSessionModal = ({
         <DialogHeader className="space-y-1.5 text-left">
           <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
             <Sparkles className="h-5 w-5 text-primary shrink-0" />
-            <span>Evoluir Atendimento</span>
+            <span>{title || "Evoluir Atendimento"}</span>
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm text-muted-foreground">
-            Escolha como deseja iniciar a evolução deste caso no histórico do paciente:
+            {description || "Escolha como deseja iniciar a evolução deste caso no histórico do paciente:"}
           </DialogDescription>
         </DialogHeader>
+
+        {linkedAgendaEventDescription && (
+          <div className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 px-3.5 py-2 text-xs text-primary font-medium">
+            <Calendar className="h-4 w-4 shrink-0" />
+            <span className="truncate">{linkedAgendaEventDescription}</span>
+          </div>
+        )}
 
         {templates.length > 1 && (
           <div className="space-y-1.5 py-1">
@@ -85,29 +102,31 @@ export const EvolveSessionModal = ({
 
         <div className="space-y-3 pt-2">
           {/* Opção 1: Iniciar a partir deste (Duplicar) */}
-          <button
-            type="button"
-            className="w-full text-left rounded-xl border border-primary/30 bg-card p-3.5 sm:p-4 hover:border-primary hover:bg-primary/5 transition-all duration-150 cursor-pointer shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none"
-            onClick={() => void onEvolveCopy()}
-            disabled={isEvolving}
-          >
-            <div className="flex items-start gap-3 w-full">
-              <div className="p-2.5 rounded-xl bg-primary/10 text-primary shrink-0 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                <Copy className="h-5 w-5" />
-              </div>
-              <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold text-sm sm:text-base text-foreground leading-tight">
-                    Iniciar atendimento a partir deste
-                  </p>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+          {canEvolveFromPrevious && (
+            <button
+              type="button"
+              className="w-full text-left rounded-xl border border-primary/30 bg-card p-3.5 sm:p-4 hover:border-primary hover:bg-primary/5 transition-all duration-150 cursor-pointer shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none"
+              onClick={() => void onEvolveCopy()}
+              disabled={isEvolving}
+            >
+              <div className="flex items-start gap-3 w-full">
+                <div className="p-2.5 rounded-xl bg-primary/10 text-primary shrink-0 group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                  <Copy className="h-5 w-5" />
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed whitespace-normal break-words">
-                  Duplica os dados clínicos, queixas e testes da sessão anterior para você apenas ajustar a evolução.
-                </p>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-sm sm:text-base text-foreground leading-tight">
+                      Iniciar atendimento a partir deste
+                    </p>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-normal break-words">
+                    Duplica os dados clínicos, queixas e testes da sessão anterior para você apenas ajustar a evolução.
+                  </p>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+          )}
 
           {/* Opção 2: Iniciar em branco */}
           <button
@@ -133,6 +152,33 @@ export const EvolveSessionModal = ({
               </div>
             </div>
           </button>
+
+          {/* Opção 3: Iniciar novo atendimento sem vínculo com outros */}
+          {onStartUnlinked && (
+            <button
+              type="button"
+              className="w-full text-left rounded-xl border border-border bg-card p-3.5 sm:p-4 hover:border-primary/60 hover:bg-accent/40 transition-all duration-150 cursor-pointer shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none"
+              onClick={() => void onStartUnlinked(selectedTemplateId)}
+              disabled={isEvolving}
+            >
+              <div className="flex items-start gap-3 w-full">
+                <div className="p-2.5 rounded-xl bg-muted text-muted-foreground shrink-0 group-hover:bg-primary/20 group-hover:text-primary transition-colors">
+                  <FilePlus className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-sm sm:text-base text-foreground leading-tight">
+                      Criar novo atendimento sem vínculo
+                    </p>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-normal break-words">
+                    Inicia um atendimento avulso e totalmente independente, sem herdar histórico ou vínculo com atendimentos anteriores.
+                  </p>
+                </div>
+              </div>
+            </button>
+          )}
 
           {/* Opção 3: Cancelar */}
           <div className="pt-1 flex justify-center">

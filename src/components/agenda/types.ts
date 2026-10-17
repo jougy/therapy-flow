@@ -140,3 +140,18 @@ export const SHIFT_CONFIG: Record<AgendaShift, ShiftConfig> = {
     hours: [18, 19, 20, 21, 22, 23],
   },
 };
+
+/**
+ * Estado da área de transferência de período copiado na agenda (Dia, Semana, Mês).
+ */
+export interface CopiedPeriodState {
+  mode: "day" | "week" | "month";
+  sourceReferenceDate: Date;
+  events: AgendaEventItem[];
+}
+
+/**
+ * Tipos de filtro suportados na toolbar da agenda.
+ */
+export type AgendaFilterType = AgendaEventType | "all";
+export type AgendaFilterStatus = AgendaEventStatus | "all";

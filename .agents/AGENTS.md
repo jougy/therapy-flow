@@ -127,13 +127,31 @@ Para economizar tokens, evitar ruído e dar foco total à qualidade sem desperdi
 
 Para manter a janela de contexto limpa, rápida e evitar estouro de tokens em threads longas:
 1. **Auditoria Headless e Checkers Determinísticos Locais (< 50 tokens):** Em vez de despejar logs gigantescos ou capturas de tela no contexto, use a suíte de verificação rápida:
-   - `npm run check:quick`: Roda validação em cadeia de ESLint/tipagem, regras do Supabase e Mobile-First.
+   - `npm run check:quick`: Roda validação em cadeia de ESLint/tipagem, regras do Supabase, Mobile-First e proteção anti-monolitos (`check:monoliths`).
    - `npm run check:lint -- <arquivo>`: Filtra apenas erros bloqueantes de código.
    - `npm run check:supabase`: Audita prevenção de `PGRST203`, padrão monetário (`_cents`) e SSOT de migrations.
    - `npm run check:responsive -- <arquivo>`: Inspeciona classes de risco mobile e conformidade com `can(capability)`.
-   - Se houver falha, o script aciona automaticamente o sintetizador local (`prompt-synthesizer.mjs` via Ollama `gemma4:cloud` ou OpenCode `mimo`) para devolver **apenas 1 parágrafo Markdown cirúrgico** com o que deve ser corrigido, economizando mais de 90% dos tokens do Gemini.
-2. **Subagentes Estritamente Leves no Gemini 3.7 Flash Low:** Subagentes disparados via `invoke_subagent` devem utilizar **obrigatoriamente** `Model: "flash"` ou `Model: "flash_lite"`, garantindo custo mínimo de tokens e respostas ultra-rápidas. O uso de `pro` é expressamente proibido sem consentimento prévio do usuário.
-3. **Leitura Cirúrgica com `view_file`:** Nunca leia arquivos grandes (mais de 200 linhas) inteiros de uma vez. Use `grep_search` prévio e restrinja `StartLine` e `EndLine` no `view_file` para blocos de 50 a 100 linhas.
-4. **Isolamento e Resumos Curtos em Subagentes:** Os prompts de subagentes devem ser autocontidos (arquivos exatos, 3 a 5 requisitos pontuais e critérios de aceite claros). Ao terminar, o subagente deve responder apenas com um resumo conciso das linhas alteradas e status de testes, sem despejar o arquivo completo de volta no chat.
-5. **Silenciamento de Logs e Testes Focados:** Execute testes do Vitest restritos ao arquivo sendo modificado (ex: `npx vitest run src/.../component.test.tsx`), evitando suítes completas de 2000 testes durante o desenvolvimento iterativo.
-6. **Arquivamento Periódico de Concluídos:** Respeite a política de manter a coluna `## Finalizados` do Kanban enxuta (últimos 10 cards), garantindo leituras ultra-rápidas e com custo mínimo de tokens.
+   - `npm run check:monoliths`: Bloqueia criação de novos arquivos > 500 linhas e expansão descontrolada de arquivos legados.
+   - `npm run check:clean-logs`: Impede poluição do console com dumps brutos de `console.log`.
+   - `npm run check:test -- <arquivo_teste>` (ou `./scripts/dev/test-focused.sh`): Roda Vitest silencioso, omite dumps gigantes de HTML do Testing Library e usa `gemma4:cloud` / `mimo` para resumir falhas em 2 frases.
+2. **Buscas e Resumos via Agentes Locais Open-Source (`gemma4:cloud` / `mimo` — Custo Zero na Nuvem):**
+   - `npm run ai:vault -- "<termo>"` (ou `./scripts/dev/vault-query.sh --kanban`): Busca na Vault com cache inteligente por `mtime` em `.cache/vault-queries/` (0ms se inalterada) e síntese local em < 150 tokens.
+   - `npm run ai:schema -- <tabela_ou_rpc>` (ou `./scripts/dev/schema-inspect.sh`): Consulta o índice modular `supabase/schema-index/00-INDEX.md` e os domínios em `supabase/schema-index/domains/*.sql` sem jamais precisar ler as 15.900 linhas de `supabase/schema.sql`.
+   - `npm run ai:scout -- <arquivo_ou_termo>` (ou `./scripts/dev/code-scout.sh`): Gera o mapa de linhas exatas (`L<inicio>-L<fim>`) de hooks, estados, `can(capability)` e seções JSX de qualquer arquivo, ou sintetiza ocorrências em `src/` antes de chamar `view_file`.
+3. **Arquitetura Anti-Monolito & Indexação Modular (Barrel Pattern):**
+   - É expressamente proibido criar ou expandir monolitos gigantes (> 500 linhas). Páginas, modais, registros e bibliotecas complexas devem residir em subpastas indexadas (ex: `src/components/tutorial/registry/`, `src/lib/anamnesis-forms/`, `src/pages/paciente-detalhe/`, `src/pages/sessao-detalhe/`, `src/integrations/supabase/types/`), mantendo o arquivo principal como um orquestrador ou barrel leve.
+   - Na Vault, o `Catálogo Mestre` mantém apenas a tabela-índice geral e delega os detalhes para os 5 blocos em `10 - Produto/00 - Hubs/Catalogo Modulos/`.
+   - Sempre que alterar `supabase/schema.sql`, rode `npm run schema:index` para atualizar `supabase/schema-index/`.
+   - Tipos de banco residem modularizados em `src/integrations/supabase/types/` (`npm run types:index`).
+4. **Comandos Git Compactos e Proibição de Dumps Verbosos:**
+   - É expressamente proibido rodar `git status` puro ou `git diff` sem filtros no terminal.
+   - Use sempre flags compactas: `git status -s` (retorna apenas 1 linha por arquivo) ou o comando unificado `npm run git:summary` (`git-compact.sh`), que exibe status resumido e diff estatístico com resumo inteligente via LLM local.
+5. **Subagentes Estritamente Leves (`flash` / `flash_lite`):** Subagentes disparados via `invoke_subagent` devem utilizar **obrigatoriamente** `Model: "flash"` ou `Model: "flash_lite"`, garantindo custo mínimo de tokens e respostas ultra-rápidas. O uso de `pro` é expressamente proibido sem consentimento prévio do usuário.
+6. **Leitura Cirúrgica com `view_file`:** Nunca leia arquivos grandes (mais de 200 linhas) inteiros de uma vez. Use `npm run ai:scout` ou `grep_search` prévio e restrinja `StartLine` e `EndLine` no `view_file` para blocos de 50 a 100 linhas.
+7. **Isolamento e Resumos Curtos em Subagentes:** Os prompts de subagentes devem ser autocontidos (arquivos exatos, 3 a 5 requisitos pontuais e critérios de aceite claros). Ao terminar, o subagente deve responder apenas com um resumo conciso das linhas alteradas e status de testes, sem despejar o arquivo completo de volta no chat.
+8. **Arquivamento Periódico de Concluídos (`npm run vault:modularize`):** Mantenha a coluna `## Finalizados` do Kanban enxuta (últimos 10 cards), arquivando os demais em `00 - Navegacao/Arquivo Kanban/Historico Concluidos.md`.
+9. **Protocolo Obrigatório de Compactação Contínua (`/compact` pós-etapa):**
+   - Ao finalizar qualquer plano, conjunto de tarefas ou etapa relevante, o agente deve:
+     (a) Concluir a tarefa no Kanban e atualizar o walkthrough;
+     (b) Recomendar ou orientar expressamente o usuário a disparar o comando **/compact** na interface antes do próximo envio de mensagem, evitando o acúmulo desnecessário de turnos passados na janela de contexto ativo.
+

@@ -1,228 +1,53 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { Activity, Award, Building2, CalendarDays, CheckCircle2, Clock, LayoutDashboard, Loader2, LogOut, Megaphone, Pencil, Plus, PlusCircle, RefreshCw, Settings, ShieldCheck, Sparkles, Tags, Trash2, UserRound, UsersRound, XCircle } from "lucide-react";
+import { Award, ShieldCheck } from "lucide-react";
 import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
-import ProfileAccountButton from "@/components/ProfileAccountButton";
-import { PlatformReleaseNotesManager } from "@/components/PlatformReleaseNotesManager";
+import type { ChartConfig } from "@/components/ui/chart";
 import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
 import { PersonalClinicalPortfolioTab } from "@/components/personal/PersonalClinicalPortfolioTab";
 import { PersonalWelcomeModal } from "@/components/personal/PersonalWelcomeModal";
-import { EmptyClinicsCallout } from "@/components/personal/EmptyClinicsCallout";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { getSignupIntent, clearSignupIntent } from "@/lib/signup-intent";
-import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
-import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
-import { evaluateClinicTrialStatus } from "@/lib/trial";
-import { cn } from "@/lib/utils";
-
-type PersonalSection = "clinics" | "dashboard" | "portfolio" | "news" | "settings";
-type ReleaseNoteCategory = "fixed" | "added" | "changed" | "removed";
-type AttendanceRange = "week" | "month" | "year";
-
-interface ReleaseNoteItem {
-  body: string | null;
-  category: ReleaseNoteCategory;
-  id: string;
-  release_id: string;
-  sort_order: number;
-  title: string;
-}
-
-interface ReleaseNote {
-  id: string;
-  items: ReleaseNoteItem[];
-  published_at: string;
-  summary: string | null;
-  title: string;
-  version: string;
-  version_order: number;
-}
-
-interface DashboardSession {
-  clinic_id: string | null;
-  group_id: string | null;
-  id: string;
-  patient_id: string;
-  session_date: string;
-  status: string;
-}
-
-interface DashboardGroup {
-  color: string | null;
-  id: string;
-  name: string;
-}
-
-interface AttendanceBucket {
-  atendimentos: number;
-  label: string;
-  key: string;
-}
-
-interface GroupCount {
-  color: string;
-  id: string;
-  key: string;
-  name: string;
-  total: number;
-}
-
-interface ClinicInvitation {
-  clinic_id: string;
-  clinic_logo_url: string | null;
-  clinic_name: string;
-  clinic_route_key: string;
-  created_at: string;
-  expires_at: string;
-  invitation_id: string;
-  invited_by_name: string | null;
-  job_title: string | null;
-  operational_role: string;
-  specialty: string | null;
-}
-
-interface ClinicSubscriptionSummary {
-  status: string;
-  trial_ends_at: string | null;
-  is_free_trial: boolean | null;
-  expires_at: string | null;
-  current_period_end: string | null;
-}
-
-const roleLabel: Record<string, string> = {
-  account_owner: "Dono da conta",
-  admin: "Admin",
-  assistant: "Assistente",
-  estagiario: "Estagiário",
-  owner: "Owner",
-  professional: "Profissional",
-};
-
-const sectionItems: Array<{
-  icon: typeof Building2;
-  label: string;
-  value: PersonalSection;
-}> = [
-  { icon: Building2, label: "Clínicas", value: "clinics" },
-  { icon: LayoutDashboard, label: "Minhas Estatísticas", value: "dashboard" },
-  { icon: Award, label: "Meu Portfólio", value: "portfolio" },
-  { icon: Megaphone, label: "Novidades", value: "news" },
-  { icon: Settings, label: "Configurações", value: "settings" },
-];
-
-const categoryLabels: Record<ReleaseNoteCategory, string> = {
-  added: "Adicionado",
-  changed: "Alterado",
-  fixed: "Reparado",
-  removed: "Removido",
-};
-
-const categoryIcons: Record<ReleaseNoteCategory, typeof CheckCircle2> = {
-  added: PlusCircle,
-  changed: RefreshCw,
-  fixed: CheckCircle2,
-  removed: Trash2,
-};
-
-const categoryOrder: ReleaseNoteCategory[] = ["added", "changed", "fixed", "removed"];
-
-const attendanceRangeLabels: Record<AttendanceRange, string> = {
-  week: "Semana",
-  month: "Mês",
-  year: "Ano",
-};
-
-const monthLabels = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const weekdayLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-const dashboardChartColors = ["#0ea5e9", "#10b981", "#f59e0b", "#8b5cf6", "#f43f5e"];
-const attendanceChartConfig = {
-  atendimentos: {
-    color: "#0ea5e9",
-    label: "Atendimentos",
-  },
-} satisfies ChartConfig;
-
-const isReleaseNoteCategory = (value: unknown): value is ReleaseNoteCategory =>
-  value === "fixed" || value === "added" || value === "changed" || value === "removed";
-
-const getInitials = (name: string) =>
-  name
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
-const getAccessLabel = (clinicOption: AccessibleClinic) =>
-  clinicOption.membership.account_role === "account_owner"
-    ? roleLabel.account_owner
-    : roleLabel[clinicOption.membership.operational_role] ?? "Colaborador";
-
-const formatLastSeen = (value: string | null | undefined) => {
-  if (!value) {
-    return "agora";
-  }
-
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
-
-  if (minutes <= 1) {
-    return "agora";
-  }
-
-  return `${minutes} min`;
-};
-
-const toLocalDay = (value: string | Date) => {
-  const date = typeof value === "string" ? new Date(value) : value;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-};
-
-const getStartOfWeek = (reference: Date) => {
-  const result = toLocalDay(reference);
-  const weekday = result.getDay();
-  const diff = weekday === 0 ? -6 : 1 - weekday;
-  result.setDate(result.getDate() + diff);
-  return result;
-};
-
-const addDays = (date: Date, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
-const getDayKey = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-
-const getMonthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-
-const formatShortDay = (date: Date) => `${weekdayLabels[date.getDay()]} ${String(date.getDate()).padStart(2, "0")}`;
-
-const isCompletedAttendance = (session: DashboardSession) => session.status !== "rascunho" && session.status !== "cancelado";
+import {
+  type PersonalSection,
+  type ReleaseNoteCategory,
+  type AttendanceRange,
+  type ReleaseNote,
+  type ReleaseNoteItem,
+  type DashboardSession,
+  type DashboardGroup,
+  type AttendanceBucket,
+  type GroupCount,
+  type ClinicInvitation,
+  type ClinicSubscriptionSummary,
+  sectionItems,
+  categoryOrder,
+  monthLabels,
+  dashboardChartColors,
+  isReleaseNoteCategory,
+  getInitials,
+  toLocalDay,
+  getStartOfWeek,
+  addDays,
+  getDayKey,
+  getMonthKey,
+  formatShortDay,
+  isCompletedAttendance,
+  PersonalHeader,
+  PersonalDesktopNav,
+  PersonalMobileNav,
+  PersonalDashboardTab,
+  PersonalNewsTab,
+  ClinicInvitationsList,
+  ClinicSelectionList,
+} from "./selecionar-clinica";
 
 const SelecionarClinica = () => {
   const { accessibleClinics, isPlatformOwner, loading: authLoading, profile, refreshAuthState, selectClinic, signOut, user } = useAuth();
@@ -344,7 +169,7 @@ const SelecionarClinica = () => {
           }
         }
         setClinicSubscriptions(map);
-      } catch (err) {
+      } catch {
         // Silently continue with clinicOption fallbacks
       }
     };
@@ -369,7 +194,7 @@ const SelecionarClinica = () => {
           console.info(`[SoloClinic] Auto-provisioned solo clinic (${data}) for user.`);
           await refreshAuthState();
         }
-      } catch (e) {
+      } catch {
         // Ignora silenciosamente caso a RPC ainda não exista no schema remoto
       }
     };
@@ -511,59 +336,49 @@ const SelecionarClinica = () => {
     }
   }, [activeSection, isDesignLabRoute, navigate]);
 
+  const fetchReleaseNotes = useCallback(async () => {
+    setLoadingReleaseNotes(true);
+
+    const [{ data: releasesData, error: releasesError }, { data: itemsData, error: itemsError }] = await Promise.all([
+      supabase
+        .from("platform_releases")
+        .select("id, version, version_order, title, summary, published_at")
+        .eq("is_active", true)
+        .order("version_order", { ascending: false })
+        .limit(12),
+      supabase
+        .from("platform_release_note_items")
+        .select("id, release_id, category, title, body, sort_order")
+        .order("sort_order", { ascending: true }),
+    ]);
+
+    setLoadingReleaseNotes(false);
+
+    if (releasesError || itemsError) {
+      logRuntimeError("personal_space.release_notes", releasesError ?? itemsError, { userId: user?.id });
+      return;
+    }
+
+    const items = (itemsData ?? []).filter((item): item is ReleaseNoteItem => isReleaseNoteCategory(item.category));
+    const nextReleaseNotes = (releasesData ?? []).map((release) => ({
+      ...release,
+      items: items.filter((item) => item.release_id === release.id),
+    }));
+
+    setReleaseNotes(nextReleaseNotes);
+
+    const firstCategoryWithItems =
+      categoryOrder.find((category) => nextReleaseNotes.some((release) => release.items.some((item) => item.category === category))) ?? "added";
+    setActiveReleaseCategory(firstCategoryWithItems);
+  }, [user?.id]);
+
   useEffect(() => {
     if (activeSection !== "news") {
       return;
     }
 
-    let cancelled = false;
-
-    const fetchReleaseNotes = async () => {
-      setLoadingReleaseNotes(true);
-
-      const [{ data: releasesData, error: releasesError }, { data: itemsData, error: itemsError }] = await Promise.all([
-        supabase
-          .from("platform_releases")
-          .select("id, version, version_order, title, summary, published_at")
-          .eq("is_active", true)
-          .order("version_order", { ascending: false })
-          .limit(12),
-        supabase
-          .from("platform_release_note_items")
-          .select("id, release_id, category, title, body, sort_order")
-          .order("sort_order", { ascending: true }),
-      ]);
-
-      if (cancelled) {
-        return;
-      }
-
-      setLoadingReleaseNotes(false);
-
-      if (releasesError || itemsError) {
-        logRuntimeError("personal_space.release_notes", releasesError ?? itemsError, { userId: user?.id });
-        return;
-      }
-
-      const items = (itemsData ?? []).filter((item): item is ReleaseNoteItem => isReleaseNoteCategory(item.category));
-      const nextReleaseNotes = (releasesData ?? []).map((release) => ({
-        ...release,
-        items: items.filter((item) => item.release_id === release.id),
-      }));
-
-      setReleaseNotes(nextReleaseNotes);
-
-      const firstCategoryWithItems =
-        categoryOrder.find((category) => nextReleaseNotes.some((release) => release.items.some((item) => item.category === category))) ?? "added";
-      setActiveReleaseCategory(firstCategoryWithItems);
-    };
-
     void fetchReleaseNotes();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSection, user?.id]);
+  }, [activeSection, fetchReleaseNotes]);
 
   useEffect(() => {
     if (activeSection !== "dashboard") {
@@ -754,7 +569,7 @@ const SelecionarClinica = () => {
       topGroups.map((group) => [
         group.key,
         {
-          color: group.color,
+          color: group.color ?? undefined,
           label: group.name,
         },
       ]),
@@ -898,431 +713,6 @@ const SelecionarClinica = () => {
     };
   }, []);
 
-  const personalDesktopNav = (
-    <nav className="grid w-full min-w-0 max-w-full gap-2">
-      {visibleSectionItems.map((item) => {
-        const Icon = item.icon;
-        const isActive = activeSection === item.value;
-
-        return (
-          <button
-            key={item.value}
-            type="button"
-            className={cn(
-              "group flex h-12 w-full min-w-0 items-center gap-2 rounded-xl border px-3 text-left text-sm font-medium shadow-sm transition-[border-color,background-color,box-shadow,color,transform] duration-200 ease-out active:translate-y-px",
-              isActive
-                ? "border-primary/55 bg-card text-primary shadow-[0_0_28px_hsl(198_93%_60%/0.16)]"
-                : "border-border/80 bg-card/92 text-muted-foreground hover:border-primary/35 hover:text-foreground hover:shadow-[0_0_22px_hsl(198_93%_60%/0.1)]"
-            )}
-            onClick={() => setActiveSection(item.value)}
-          >
-            <span
-              className={cn(
-                "grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors duration-200",
-                isActive ? "bg-primary/14 text-primary" : "bg-muted/70 text-foreground group-hover:bg-primary/10 group-hover:text-primary"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-            </span>
-            <span className="min-w-0 flex-1 truncate leading-tight">{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-
-  const personalMobileNav = (
-    <div
-      className="designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t bg-background/94 backdrop-blur supports-[backdrop-filter]:bg-background/88 lg:hidden"
-      data-dock-state={mobileDockExpanded ? "medium" : "compact"}
-      data-dock-pressing={mobileDockPointerActive ? "true" : "false"}
-    >
-      <div className="mx-auto max-w-screen-sm px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2">
-        {mobileDockTooltip && (
-          <span
-            className="designlab-settings-mobile-floating-tooltip"
-            style={{ "--mobile-dock-tooltip-x": `${mobileDockTooltip.x}px` } as CSSProperties}
-          >
-            {mobileDockTooltip.title}
-          </span>
-        )}
-        <div
-          className="designlab-settings-mobile-dock flex justify-center gap-1.5 overflow-visible pb-1"
-          onPointerMove={(event) => updateMobileDockPressedSectionFromPoint(event.clientX, event.clientY)}
-          onTouchMove={(event) => {
-            const touch = event.touches[0];
-            if (touch) {
-              updateMobileDockPressedSectionFromPoint(touch.clientX, touch.clientY);
-            }
-          }}
-          onPointerUp={finishMobileDockInteraction}
-          onPointerCancel={finishMobileDockInteraction}
-          onTouchEnd={finishMobileDockInteraction}
-          onTouchCancel={finishMobileDockInteraction}
-          onPointerLeave={() => {
-            if (mobileDockPointerActive) {
-              finishMobileDockInteraction();
-            }
-          }}
-        >
-          {visibleSectionItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeSection === item.value;
-            const isPressed = mobileDockPressedSection === item.value;
-
-            return (
-              <button
-                key={item.value}
-                type="button"
-                aria-label={item.label}
-                data-personal-mobile-section={item.value}
-                className={cn(
-                  "designlab-settings-mobile-item group relative flex shrink-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-150 ease-out active:translate-y-0.5",
-                  isActive && "is-active",
-                  isPressed && "is-pressed"
-                )}
-                onPointerDown={(event) => {
-                  setMobileDockExpanded(true);
-                  setMobileDockPointerActive(true);
-                  setMobileDockPressedSection(item.value);
-                  updateMobileDockTooltipForButton(event.currentTarget, item.label);
-                }}
-                onTouchStart={(event) => {
-                  const touch = event.touches[0];
-                  if (!touch) {
-                    return;
-                  }
-
-                  setMobileDockExpanded(true);
-                  setMobileDockPointerActive(true);
-                  setMobileDockPressedSection(item.value);
-                  updateMobileDockTooltipForButton(event.currentTarget, item.label);
-                }}
-                onClick={() => setActiveSection(item.value)}
-              >
-                <span
-                  className={cn(
-                    "designlab-settings-mobile-surface flex h-full w-full flex-col items-center justify-center rounded-[0.68rem] border px-2 py-2 transition-colors duration-300",
-                    isActive ? "border-primary/45 bg-primary/10 text-primary" : "border-border/80 bg-card/92 text-muted-foreground"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "designlab-settings-mobile-icon grid h-7 w-7 place-items-center rounded-lg transition-colors duration-300",
-                      isActive ? "bg-primary/14 text-primary" : "bg-muted/70 text-foreground"
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderDashboard = () => (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Card>
-          <CardContent className="p-4">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <UsersRound className="h-5 w-5" />
-            </div>
-            <p className="text-sm text-muted-foreground">Total de pacientes atendidos</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-              {loadingDashboard ? "..." : dashboardData.totalAttendedPatients}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <Activity className="h-5 w-5" />
-            </div>
-            <p className="text-sm text-muted-foreground">Total de atendimentos</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-              {loadingDashboard ? "..." : dashboardData.totalAttendances}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader className="gap-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <CalendarDays className="h-4 w-4 text-primary" />
-                Quantidade de atendimentos
-              </CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">Volume por dia, por mês ou mês a mês no ano.</p>
-            </div>
-            <div className="flex w-full gap-1 rounded-lg border bg-muted/20 p-1 md:w-auto">
-              {(Object.keys(attendanceRangeLabels) as AttendanceRange[]).map((range) => (
-                <button
-                  key={range}
-                  type="button"
-                  className={cn(
-                    "h-8 flex-1 rounded-md px-3 text-sm font-medium transition md:flex-none",
-                    attendanceRange === range ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                  onClick={() => setAttendanceRange(range)}
-                >
-                  {attendanceRangeLabels[range]}
-                </button>
-              ))}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loadingDashboard ? (
-            <div className="flex h-64 items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            </div>
-          ) : dashboardData.totalAttendances === 0 ? (
-            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Nenhum atendimento concluído encontrado nas suas clínicas.
-            </div>
-          ) : (
-            <ChartContainer config={attendanceChartConfig} className="h-64 w-full">
-              <LineChart data={dashboardData.attendanceBuckets} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={attendanceRange === "month" ? 18 : 8} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={34} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Line
-                  type="monotone"
-                  dataKey="atendimentos"
-                  stroke="var(--color-atendimentos)"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                  activeDot={{ r: 5 }}
-                />
-              </LineChart>
-            </ChartContainer>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Tags className="h-4 w-4 text-primary" />
-              Top 5 grupos de atendimentos
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">Grupos mais frequentes nos atendimentos concluídos.</p>
-          </CardHeader>
-          <CardContent>
-            {loadingDashboard ? (
-              <div className="flex h-44 items-center justify-center">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              </div>
-            ) : dashboardData.topGroups.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                Nenhum grupo com atendimento encontrado.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {dashboardData.topGroups.map((group, index) => (
-                  <div key={group.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
-                      {index + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{group.name}</p>
-                      <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            backgroundColor: group.color,
-                            width: `${Math.max(8, Math.round((group.total / Math.max(1, dashboardData.topGroups[0].total)) * 100))}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <Badge variant="secondary">{group.total}</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Grupos recorrentes por semana do mês</CardTitle>
-            <p className="text-sm text-muted-foreground">Distribuição semanal dos grupos mais recorrentes no mês atual.</p>
-          </CardHeader>
-          <CardContent>
-            {loadingDashboard ? (
-              <div className="flex h-64 items-center justify-center">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              </div>
-            ) : dashboardData.topGroups.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                Nenhum atendimento no mês atual para comparar por semana.
-              </div>
-            ) : (
-              <ChartContainer config={dashboardData.groupChartConfig} className="h-64 w-full">
-                <BarChart data={dashboardData.groupWeeks} margin={{ bottom: 8, left: -18, right: 12, top: 8 }}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={34} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  {dashboardData.topGroups.map((group) => (
-                    <Bar key={group.id} dataKey={group.key} fill={`var(--color-${group.key})`} radius={[4, 4, 0, 0]} />
-                  ))}
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {isPlatformOwner && (
-        <button
-          type="button"
-          className="flex w-full items-center justify-between gap-3 rounded-lg border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/50 hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-          onClick={() => navigate("/platform")}
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <p className="font-medium text-foreground">Painel administrativo global</p>
-              <p className="truncate text-sm text-muted-foreground">Ferramentas internas da plataforma</p>
-            </div>
-          </div>
-          <Badge variant="secondary">platform_owner</Badge>
-        </button>
-      )}
-    </div>
-  );
-
-  const renderNews = () => (
-    <Card>
-      <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <CardTitle className="text-base">Novidades</CardTitle>
-          <p className="text-sm text-muted-foreground">Histórico de notas de atualização publicadas na plataforma.</p>
-        </div>
-        {isPlatformOwner && (
-          <Button variant="outline" size="sm" onClick={() => setIsReleaseEditorOpen(true)}>
-            <Pencil className="mr-2 h-4 w-4 text-primary" />
-            Editar Novidades
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent>
-        {loadingReleaseNotes ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          </div>
-        ) : releaseNotes.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Nenhuma nota de atualização publicada ainda.
-          </div>
-        ) : (
-          <div className="min-w-0 space-y-4">
-            <nav className="flex w-full min-w-0 max-w-full gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {categoryOrder.map((category) => {
-                const Icon = categoryIcons[category];
-                const count = releaseItemsByCategory[category].length;
-                const isActive = activeReleaseCategory === category;
-
-                return (
-                  <button
-                    key={category}
-                    type="button"
-                    className={cn(
-                      "flex h-10 shrink-0 items-center justify-between gap-2 rounded-md border px-3 text-sm transition sm:min-w-40",
-                      isActive ? "border-primary bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:text-foreground"
-                    )}
-                    onClick={() => setActiveReleaseCategory(category)}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Icon className="h-4 w-4" />
-                      {categoryLabels[category]}
-                    </span>
-                    <Badge variant="secondary">{count}</Badge>
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div className="min-w-0 space-y-3">
-              {releaseItemsByCategory[activeReleaseCategory].length === 0 ? (
-                <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                  Nenhum tópico marcado como {categoryLabels[activeReleaseCategory].toLowerCase()}.
-                </div>
-              ) : (
-                releaseItemsByCategory[activeReleaseCategory].map((item) => (
-                  <article key={item.id} className="rounded-lg border bg-background p-4">
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-                      <div className="min-w-0 sm:pr-3">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium leading-snug">{item.title}</h3>
-                          {isPlatformOwner && (
-                            <button
-                              type="button"
-                              onClick={() => setIsReleaseEditorOpen(true)}
-                              className="text-xs text-muted-foreground hover:text-primary"
-                              title="Editar via acesso master"
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                        {item.body && <p className="mt-2 text-sm text-muted-foreground">{item.body}</p>}
-                      </div>
-                      <Badge variant="outline" className="w-fit shrink-0 justify-self-start sm:justify-self-end">{item.release.version}</Badge>
-                    </div>
-                  </article>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </CardContent>
-
-      {isPlatformOwner && (
-        <Dialog open={isReleaseEditorOpen} onOpenChange={setIsReleaseEditorOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Gerenciador de Novidades (Acesso Mestre)</DialogTitle>
-              <DialogDescription>
-                Crie, edite e remova versões e tópicos de novidades do sistema.
-              </DialogDescription>
-            </DialogHeader>
-            <PlatformReleaseNotesManager
-              onNotesUpdated={() => {
-                const fetchFn = async () => {
-                  const [{ data: releasesData }, { data: itemsData }] = await Promise.all([
-                    supabase.from("platform_releases").select("id, version, version_order, title, summary, published_at").eq("is_active", true).order("version_order", { ascending: false }).limit(12),
-                    supabase.from("platform_release_note_items").select("id, release_id, category, title, body, sort_order").order("sort_order", { ascending: true }),
-                  ]);
-                  const items = (itemsData ?? []).filter((item): item is ReleaseNoteItem => isReleaseNoteCategory(item.category));
-                  const nextReleaseNotes = (releasesData ?? []).map((release) => ({
-                    ...release,
-                    items: items.filter((item) => item.release_id === release.id),
-                  }));
-                  setReleaseNotes(nextReleaseNotes);
-                };
-                void fetchFn();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
-    </Card>
-  );
-
   const renderClinics = (): ReactNode => (
     <>
       {isPlatformOwner ? (
@@ -1340,340 +730,30 @@ const SelecionarClinica = () => {
         </Card>
       ) : (
         <div className="space-y-4">
-          {(loadingInvitations || clinicInvitations.length > 0) && (
-            <div className="space-y-3">
-              {loadingInvitations ? (
-                <Card className="border-sky-200 bg-sky-50/50 p-4">
-                  <div className="flex items-center gap-2 text-sm text-sky-800">
-                    <Loader2 className="h-4 w-4 animate-spin text-sky-600" />
-                    Buscando convites pendentes...
-                  </div>
-                </Card>
-              ) : (
-                clinicInvitations.map((invitation) => {
-                  const isActing = actingInvitationId === invitation.invitation_id;
-                  const clinicName = getClinicBrandName(invitation.clinic_name);
-                  const roleName = roleLabel[invitation.operational_role] ?? invitation.operational_role;
-                  const positionText = [invitation.job_title, invitation.specialty].filter(Boolean).join(" · ") || roleName;
+          <ClinicInvitationsList
+            loadingInvitations={loadingInvitations}
+            clinicInvitations={clinicInvitations}
+            actingInvitationId={actingInvitationId}
+            decliningInvitation={decliningInvitation}
+            setDecliningInvitation={setDecliningInvitation}
+            onAcceptInvitation={handleAcceptInvitation}
+            onDeclineInvitation={handleDeclineInvitation}
+          />
 
-                  return (
-                    <Card
-                      key={invitation.invitation_id}
-                      className="overflow-hidden border-2 border-emerald-500/40 bg-gradient-to-r from-emerald-50/90 via-teal-50/50 to-emerald-50/90 shadow-lg shadow-emerald-950/5 dark:from-emerald-950/30 dark:to-teal-950/20"
-                    >
-                      <div className="flex flex-col gap-4 p-4 sm:p-5 md:flex-row md:items-center md:justify-between">
-                        <div className="flex min-w-0 items-center gap-3.5">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/30">
-                            {invitation.clinic_logo_url ? (
-                              <img src={invitation.clinic_logo_url} alt="" className="h-10 w-10 rounded-lg object-contain" />
-                            ) : (
-                              <Building2 className="h-6 w-6" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-300">
-                              Convite para nova clínica
-                            </p>
-                            <h3 className="mt-0.5 text-base font-bold text-foreground">
-                              A clínica <span className="text-emerald-700 dark:text-emerald-400">{clinicName}</span> está te convidando para se juntar a ela como <span className="font-semibold text-foreground">{positionText}</span>.
-                            </h3>
-                            {invitation.invited_by_name && (
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Convidado por {invitation.invited_by_name}
-                              </p>
-                            )}
-                          </div>
-                        </div>
 
-                        <div className="flex shrink-0 flex-col gap-2.5 sm:flex-row md:items-center">
-                          <Button
-                            className="bg-emerald-600 text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-700"
-                            onClick={() => void handleAcceptInvitation(invitation.invitation_id)}
-                            disabled={!!actingInvitationId}
-                          >
-                            {isActing ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="mr-2 h-4 w-4" />
-                            )}
-                            Aceitar e entrar
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => setDecliningInvitation(invitation)}
-                            disabled={!!actingInvitationId}
-                          >
-                            <XCircle className="mr-2 h-4 w-4" />
-                            Recusar
-                          </Button>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          <AlertDialog open={!!decliningInvitation} onOpenChange={(open) => !open && setDecliningInvitation(null)}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Recusar convite da clínica {decliningInvitation?.clinic_name}?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  Tem certeza que deseja recusar o convite para se juntar à clínica <strong>{decliningInvitation?.clinic_name}</strong>? Você não terá acesso à clínica a menos que um administrador envie um novo convite.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={() => {
-                    if (decliningInvitation) {
-                      void handleDeclineInvitation(decliningInvitation.invitation_id);
-                      setDecliningInvitation(null);
-                    }
-                  }}
-                >
-                  Sim, recusar convite
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          {isPortfolioEnabled && (
-            <Card className="border-primary/30 bg-gradient-to-r from-card via-card to-primary/5 shadow-xs overflow-hidden">
-              <CardContent className="p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-xs">
-                    <Award className="h-6 w-6" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-bold text-foreground">Meu Portfólio Clínico</h3>
-                      <Badge variant="secondary" className="bg-primary/10 text-primary text-xs font-medium">
-                        Acervo Técnico
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Histórico de Atendimentos & Acervo Profissional sob sua responsabilidade técnica com proteção LGPD.
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  data-testid="open-portfolio-hero-btn"
-                  onClick={() => setActiveSection("portfolio")}
-                  className="shrink-0 gap-1.5 shadow-xs"
-                >
-                  <Award className="h-4 w-4" />
-                  Acessar Portfólio
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card className="overflow-hidden">
-            <CardHeader className="px-4 sm:px-6">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-base">Escolha a clínica</CardTitle>
-                  <ComponentHelpButton helpId="personal-clinics-block" size="xs" />
-                  {!authLoading && (
-                    <Badge variant="secondary" className="w-fit">{accessibleClinics.length} acesso{accessibleClinics.length === 1 ? "" : "s"}</Badge>
-                  )}
-                </div>
-                {hasEnterpriseAccess && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5 text-xs font-medium"
-                    data-testid="enterprise-create-clinic-btn"
-                    onClick={handleCreateClinicFromEmpty}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Novo espaço</span>
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 sm:px-6">
-              {authLoading ? (
-                <div data-testid="clinics-loading-skeleton" className="space-y-3 py-1">
-                  {[1, 2].map((slot) => (
-                    <div
-                      key={slot}
-                      className="flex w-full items-center gap-3 rounded-lg border bg-card/50 p-3 animate-pulse"
-                    >
-                      <div className="h-10 w-10 shrink-0 rounded-md bg-muted/60" />
-                      <div className="flex-1 space-y-2 py-0.5">
-                        <div className="h-4 w-40 rounded bg-muted/70" />
-                        <div className="h-3 w-24 rounded bg-muted/50" />
-                      </div>
-                      <div className="h-6 w-12 rounded-full bg-muted/40" />
-                    </div>
-                  ))}
-                </div>
-              ) : accessibleClinics.length === 0 ? (
-                hasEnterpriseAccess ? (
-                  <EmptyClinicsCallout
-                    userEmail={user?.email || profile?.email}
-                    onCreateClinic={handleCreateClinicFromEmpty}
-                  />
-                ) : null
-              ) : (
-                <div className="grid gap-3">
-                  {sortedAccessibleClinics.map((clinicOption, index) => {
-                    const clinicName = getClinicBrandName(clinicOption.clinic.name);
-                    const isSelecting = selectingClinicId === clinicOption.clinic.id;
-                    const canLeaveClinic = clinicOption.membership.account_role !== "account_owner" && clinicOption.membership.operational_role !== "owner";
-                    const isLeavingClinic = leavingClinicId === clinicOption.clinic.id;
-
-                    const subInfo = clinicSubscriptions[clinicOption.clinic.id];
-                    const trialEvaluation = evaluateClinicTrialStatus({
-                      status: subInfo?.status || clinicOption.clinic.subscription_status,
-                      isFreeTrial: subInfo?.is_free_trial,
-                      trialEndsAt: subInfo?.trial_ends_at || clinicOption.clinic.trial_ends_at,
-                      expiresAt: subInfo?.expires_at,
-                      currentPeriodEnd: subInfo?.current_period_end,
-                    });
-
-                    return (
-                      <div
-                        key={clinicOption.clinic.id}
-                        {...(index === 0 ? { "data-tutorial": "clinic-card-primary" } : {})}
-                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-lg border bg-card p-2 transition-colors hover:border-primary/50 hover:bg-accent/40 sm:gap-3"
-                      >
-                      <button
-                        type="button"
-                        className="flex min-w-0 items-center gap-3 rounded-md p-2 text-left disabled:cursor-wait disabled:opacity-70"
-                        onClick={() => handleSelectClinic(clinicOption.clinic.id)}
-                        disabled={!!selectingClinicId}
-                      >
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                          {clinicOption.clinic.logo_url ? (
-                            <img src={clinicOption.clinic.logo_url} alt="" className="h-8 w-8 rounded object-contain" />
-                          ) : (
-                            <Building2 className="h-5 w-5" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="truncate font-medium text-foreground">{clinicName}</p>
-                            {trialEvaluation.hasTrial && (
-                              <Badge
-                                variant="outline"
-                                data-testid="clinic-trial-badge"
-                                className={`text-[10px] px-1.5 py-0 font-medium ${trialEvaluation.badgeVariantClass}`}
-                              >
-                                <Sparkles className="w-2.5 h-2.5 mr-1 inline" />
-                                {trialEvaluation.badgeLabel}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                            <p className="truncate text-sm text-muted-foreground">{getAccessLabel(clinicOption)}</p>
-                            {trialEvaluation.hasTrial && (
-                              <span
-                                data-testid="clinic-trial-notice"
-                                className={`text-xs inline-flex items-center gap-1 ${trialEvaluation.noticeVariantClass}`}
-                              >
-                                <Clock className="w-3 h-3 shrink-0" />
-                                {trialEvaluation.noticeText}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                      <div className="flex min-w-0 shrink-0 items-center gap-1 pr-1 sm:gap-2 sm:pr-2">
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <button
-                              type="button"
-                              className="rounded-full border bg-background px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground sm:px-2.5"
-                              aria-label={`Ver acessos online da clínica ${clinicName}`}
-                            >
-                              {clinicOption.activeAccessCount}/{clinicOption.clinic.concurrent_access_limit}
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent align="end" className="w-72">
-                            <div className="space-y-3">
-                              <div>
-                                <p className="font-medium text-foreground">Acessos online</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {clinicOption.activeAccessCount} de {clinicOption.clinic.concurrent_access_limit} em uso.
-                                </p>
-                              </div>
-                              {clinicOption.activeAccessUsers.length > 0 ? (
-                                <div className="space-y-2">
-                                  {clinicOption.activeAccessUsers.map((activeUser) => (
-                                    <div key={`${clinicOption.clinic.id}-${activeUser.user_id}`} className="rounded-md border p-2 text-sm">
-                                      <p className="truncate font-medium text-foreground">
-                                        {activeUser.full_name || activeUser.email || "Usuário online"}
-                                      </p>
-                                      <p className="truncate text-xs text-muted-foreground">
-                                        {activeUser.device_label || "Dispositivo"} • {formatLastSeen(activeUser.last_seen_at)}
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-sm text-muted-foreground">Nenhum acesso online agora.</p>
-                              )}
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                        {isSelecting ? (
-                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                        ) : (
-                          <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
-                        )}
-                        {canLeaveClinic && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 px-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                disabled={!!selectingClinicId || !!leavingClinicId}
-                                aria-label={`Sair da clínica ${clinicName}`}
-                              >
-                                {isLeavingClinic ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Sair de {clinicName}?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Você deixará de acessar pacientes, atendimentos, agenda e configurações desta clínica.
-                                  Seu espaço pessoal e seus dados próprios continuam existindo. Para voltar, a clínica precisará enviar um novo convite.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => void handleLeaveClinic(clinicOption)}
-                                  disabled={!!leavingClinicId}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Sair da clínica
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
-                      </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <ClinicSelectionList
+            authLoading={authLoading}
+            accessibleClinics={accessibleClinics}
+            sortedAccessibleClinics={sortedAccessibleClinics}
+            clinicSubscriptions={clinicSubscriptions}
+            hasEnterpriseAccess={hasEnterpriseAccess}
+            userEmail={user?.email || profile?.email}
+            selectingClinicId={selectingClinicId}
+            leavingClinicId={leavingClinicId}
+            onSelectClinic={handleSelectClinic}
+            onLeaveClinic={handleLeaveClinic}
+            onCreateClinic={handleCreateClinicFromEmpty}
+          />
         </div>
       )}
     </>
@@ -1686,88 +766,59 @@ const SelecionarClinica = () => {
   );
 
   const renderActiveSection = () => {
-    if (activeSection === "dashboard") return renderDashboard();
+    if (activeSection === "dashboard") {
+      return (
+        <PersonalDashboardTab
+          loadingDashboard={loadingDashboard}
+          dashboardData={dashboardData}
+          attendanceRange={attendanceRange}
+          setAttendanceRange={setAttendanceRange}
+          isPlatformOwner={isPlatformOwner}
+          onNavigateToPlatform={() => navigate("/platform")}
+        />
+      );
+    }
     if (activeSection === "portfolio") return renderPortfolio();
-    if (activeSection === "news") return renderNews();
+    if (activeSection === "news") {
+      return (
+        <PersonalNewsTab
+          isPlatformOwner={isPlatformOwner}
+          loadingReleaseNotes={loadingReleaseNotes}
+          releaseNotes={releaseNotes}
+          releaseItemsByCategory={releaseItemsByCategory}
+          activeReleaseCategory={activeReleaseCategory}
+          setActiveReleaseCategory={setActiveReleaseCategory}
+          isReleaseEditorOpen={isReleaseEditorOpen}
+          setIsReleaseEditorOpen={setIsReleaseEditorOpen}
+          onRefreshReleaseNotes={fetchReleaseNotes}
+        />
+      );
+    }
     return renderClinics();
   };
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card px-4 py-4 sm:px-6">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
-          <div data-tutorial="personal-welcome" className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <img
-              src="/branding/logo/pluri_health_icon_gradient.svg"
-              alt="Pluri-Health"
-              className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 drop-shadow-xs"
-            />
-            <div className="min-w-0">
-              <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">Pluri-Health</p>
-              <h1 className="text-base sm:text-xl font-semibold tracking-tight text-foreground whitespace-nowrap">Espaço pessoal</h1>
-            </div>
-            <div className="hidden xs:block">
-              <ComponentHelpButton helpId="personal-welcome-block" size="sm" />
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            {isPortfolioEnabled && (
-              <Button
-                variant="outline"
-                size="sm"
-                data-testid="header-portfolio-btn"
-                className="hidden md:inline-flex items-center gap-1.5 border-primary/30 text-xs font-medium hover:border-primary hover:bg-primary/5"
-                onClick={() => setActiveSection("portfolio")}
-              >
-                <Award className="h-4 w-4 text-primary" />
-                <span>Meu Portfólio</span>
-              </Button>
-            )}
-            <div className="hidden sm:block">
-              <TutorialTriggerButton />
-            </div>
-            <PersonalNotificationsButton />
-            <div data-tutorial="personal-account-btn">
-              <ProfileAccountButton
-                displayName={displayName}
-                subtitle={profile?.email || user?.email || "Conta pessoal"}
-                avatarUrl={profile?.avatar_url}
-                initials={initials}
-                onClick={() => navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes/pessoal/perfil`)}
-              />
-            </div>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 sm:w-auto sm:px-3">
-                  <LogOut className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Sair</span>
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Sair da sua conta?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Você será desconectado deste navegador e voltará para a tela inicial de login. Para acessar
-                    novamente, será necessário informar seu e-mail e senha.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => void signOut()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                    Sair da conta
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
-        </div>
-      </header>
+      <PersonalHeader
+        isPortfolioEnabled={isPortfolioEnabled}
+        displayName={displayName}
+        subtitle={profile?.email || user?.email || "Conta pessoal"}
+        avatarUrl={profile?.avatar_url}
+        initials={initials}
+        onOpenPortfolio={() => setActiveSection("portfolio")}
+        onOpenProfile={() => navigate(`${isDesignLabRoute ? "/designlab" : ""}/configuracoes/pessoal/perfil`)}
+        onSignOut={() => signOut()}
+      />
 
       <main className="mx-auto w-full max-w-5xl overflow-hidden px-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-4 sm:p-6">
         <div className="grid min-w-0 gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
           <aside className="hidden min-w-0 pt-1 lg:block">
             <div className="mx-auto max-w-screen-sm lg:max-w-none">
-              {personalDesktopNav}
+              <PersonalDesktopNav
+                visibleSectionItems={visibleSectionItems}
+                activeSection={activeSection}
+                setActiveSection={setActiveSection}
+              />
             </div>
           </aside>
           <section className="min-w-0">
@@ -1775,7 +826,37 @@ const SelecionarClinica = () => {
           </section>
         </div>
       </main>
-      {personalMobileNav}
+
+      <PersonalMobileNav
+        visibleSectionItems={visibleSectionItems}
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
+        mobileDockExpanded={mobileDockExpanded}
+        mobileDockPressedSection={mobileDockPressedSection}
+        mobileDockPointerActive={mobileDockPointerActive}
+        mobileDockTooltip={mobileDockTooltip}
+        onPointerDownButton={(event, item) => {
+          setMobileDockExpanded(true);
+          setMobileDockPointerActive(true);
+          setMobileDockPressedSection(item.value);
+          updateMobileDockTooltipForButton(event.currentTarget, item.label);
+        }}
+        onTouchStartButton={(event, item) => {
+          const touch = event.touches[0];
+          if (!touch) return;
+          setMobileDockExpanded(true);
+          setMobileDockPointerActive(true);
+          setMobileDockPressedSection(item.value);
+          updateMobileDockTooltipForButton(event.currentTarget, item.label);
+        }}
+        onPointerMove={(event) => updateMobileDockPressedSectionFromPoint(event.clientX, event.clientY)}
+        onTouchMove={(event) => {
+          const touch = event.touches[0];
+          if (touch) updateMobileDockPressedSectionFromPoint(touch.clientX, touch.clientY);
+        }}
+        onFinishInteraction={finishMobileDockInteraction}
+      />
+
       <PersonalWelcomeModal userId={user?.id} userName={displayName} />
       <TermsUpdatePromptModal />
     </div>

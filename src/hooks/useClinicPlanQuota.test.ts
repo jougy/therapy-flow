@@ -4,17 +4,21 @@ import { useClinicPlanQuota } from "./useClinicPlanQuota";
 
 const supabaseMocks = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn().mockResolvedValue({ data: [{ total_bytes: 0, total_files: 0 }], error: null }),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: supabaseMocks.from,
+    rpc: supabaseMocks.rpc,
   },
 }));
 
 describe("useClinicPlanQuota", () => {
   beforeEach(() => {
     supabaseMocks.from.mockReset();
+    supabaseMocks.rpc.mockReset();
+    supabaseMocks.rpc.mockResolvedValue({ data: [{ total_bytes: 0, total_files: 0 }], error: null });
   });
 
   const setupMocks = (subData: any, counts = { sessions: 10, patients: 3, forms: 1 }) => {

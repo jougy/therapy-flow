@@ -38,97 +38,13 @@ import {
   paymentStatusBadgeClassNames,
 } from "./types";
 import { getPaymentStatusLabel, parseCurrencyToCents } from "@/lib/session-operations";
+import { ActivePaymentPlanCard } from "./ActivePaymentPlanCard";
+import type { AgendaEventRow } from "@/integrations/supabase/types/tables";
 
-export const PaymentStatusAutoControl = ({
-  disabled,
-  onChange,
-  saving,
-  status,
-}: {
-  disabled?: boolean;
-  onChange: (status: SessionPaymentStatus) => void;
-  saving?: boolean;
-  status: SessionPaymentStatus;
-}) => {
-  const isCourtesy = status === "cortesia";
+export { PaymentStatusAutoControl, PaymentCompositionChips, CurrencyInput } from "./payment/PaymentControls";
+import { PaymentStatusAutoControl, PaymentCompositionChips, CurrencyInput } from "./payment/PaymentControls";
+import { InsuranceContextPanel } from "./payment/InsuranceContextPanel";
 
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
-      <Badge
-        variant="outline"
-        className={`w-fit gap-1.5 px-3 py-1 text-sm ${paymentStatusBadgeClassNames[status]}`}
-      >
-        {getPaymentStatusLabel(status)}
-      </Badge>
-      <label className="flex w-fit items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium">
-        <Checkbox
-          checked={isCourtesy}
-          onCheckedChange={(checked) => onChange(checked ? "cortesia" : "nao_cobrado")}
-          disabled={disabled || saving}
-          aria-label="Marcar pagamento como cortesia"
-        />
-        <span>Cortesia</span>
-      </label>
-    </div>
-  );
-};
-
-export const PaymentCompositionChips = ({
-  creditCents,
-  paidCents,
-}: {
-  creditCents: number;
-  paidCents: number;
-}) => {
-  if (creditCents <= 0) {
-    return null;
-  }
-
-  const complementaryCents = Math.max(0, paidCents - creditCents);
-
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      <span className="rounded-full border border-success/20 bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
-        Pago {formatMoneyCents(paidCents)}
-      </span>
-      <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-        Crédito {formatMoneyCents(creditCents)}
-      </span>
-      <span className="rounded-full border border-muted-foreground/20 bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground">
-        Complemento {formatMoneyCents(complementaryCents)}
-      </span>
-    </div>
-  );
-};
-
-export const CurrencyInput = ({
-  disabled,
-  id,
-  onChange,
-  value,
-}: {
-  disabled?: boolean;
-  id: string;
-  onChange: (value: string) => void;
-  value: string;
-}) => (
-  <div className="relative">
-    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-      R$
-    </span>
-    <Input
-      id={id}
-      className="pl-10"
-      inputMode="decimal"
-      maxLength={PAYMENT_AMOUNT_INPUT_MAX_LENGTH}
-      type="text"
-      value={value}
-      onChange={(event) => onChange(currencyDigitsToInput(event.target.value))}
-      placeholder="0,00"
-      disabled={disabled}
-    />
-  </div>
-);
 
 export interface SessionPaymentSectionProps {
   amountCharged: string;
@@ -144,6 +60,12 @@ export interface SessionPaymentSectionProps {
   paymentMethod: SessionPaymentMethod;
   paymentPlanForm: PaymentPlanFormValues;
   activePaymentPlan: PatientPaymentPlanRow | null;
+  lastCompletedPlan?: PatientPaymentPlanRow | null;
+  agendaEvents?: AgendaEventRow[];
+  onPlanUpdated?: (updatedPlan: PatientPaymentPlanRow) => void;
+  onUnlinkPlan?: () => void;
+  onUpdateAgendaEventDate?: (eventId: string, newDateIso: string) => Promise<void>;
+  onPayDebit?: () => Promise<void>;
   patientAvailableCreditCents: number;
   paymentStatusDate: string;
   remainingPatientCreditCents: number;
@@ -173,6 +95,12 @@ export const SessionPaymentSection = ({
   paymentMethod,
   paymentPlanForm,
   activePaymentPlan,
+  lastCompletedPlan,
+  agendaEvents = [],
+  onPlanUpdated,
+  onUnlinkPlan,
+  onUpdateAgendaEventDate,
+  onPayDebit,
   patientAvailableCreditCents,
   paymentStatusDate,
   remainingPatientCreditCents,
@@ -203,6 +131,9 @@ export const SessionPaymentSection = ({
 
   const handleModeChange = (mode: string) => {
     if (mode === "cortesia") {
+      if (activePaymentPlan && onUnlinkPlan) {
+        onUnlinkPlan();
+      }
       onPaymentPlanFormChange((prev) => ({ ...prev, createPlan: false }));
       onPaymentStatusChange("cortesia");
     } else if (mode === "pacote") {
@@ -211,10 +142,13 @@ export const SessionPaymentSection = ({
       }
       onPaymentPlanFormChange((prev) => ({
         ...prev,
-        createPlan: true,
+        createPlan: !activePaymentPlan,
       }));
     } else {
       // avulso
+      if (activePaymentPlan && onUnlinkPlan) {
+        onUnlinkPlan();
+      }
       if (currentNormalizedPaymentStatus === "cortesia") {
         onPaymentStatusChange("nao_cobrado");
       }
@@ -289,7 +223,7 @@ export const SessionPaymentSection = ({
           className="w-full sm:w-auto"
         >
           <TabsList className="grid w-full grid-cols-3 sm:w-[380px]">
-            <TabsTrigger value="avulso" disabled={locked || !!activePaymentPlan} className="gap-1.5 text-xs">
+            <TabsTrigger value="avulso" disabled={locked} className="gap-1.5 text-xs">
               <CreditCard className="h-3.5 w-3.5" />
               <span>Avulso</span>
             </TabsTrigger>
@@ -302,33 +236,40 @@ export const SessionPaymentSection = ({
                 </span>
               ) : null}
             </TabsTrigger>
-            <TabsTrigger value="cortesia" disabled={locked || !!activePaymentPlan} className="gap-1.5 text-xs">
+            <TabsTrigger value="cortesia" disabled={locked} className="gap-1.5 text-xs">
               <Gift className="h-3.5 w-3.5" />
               <span>Cortesia</span>
             </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
-
-      {/* SEÇÃO: PACOTE ATIVO EXISTENTE */}
-      {activePaymentPlan ? (
-        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 p-4 text-xs text-primary">
-          <div className="flex items-center gap-3">
-            <div className="rounded-full bg-primary/20 p-2">
-              <Package className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="font-semibold text-sm">Vinculado ao {activePaymentPlan.name}</p>
-              <p className="text-muted-foreground mt-0.5">
-                Esta sessão será debitada automaticamente ({activePaymentPlan.used_sessions} de {activePaymentPlan.total_sessions} realizadas).
-              </p>
-            </div>
+      {lastCompletedPlan && !activePaymentPlan && (
+        <DismissibleInfoTip
+          id={`package-completed-${lastCompletedPlan.id}`}
+          variant="subtle"
+          className="border-primary/20 bg-primary/5"
+        >
+          <div className="space-y-0.5">
+            <p className="font-semibold text-foreground">Ciclo de Pacote Concluído</p>
+            <p className="text-xs text-muted-foreground">
+              O último pacote deste paciente (<strong>{lastCompletedPlan.name}</strong> - {lastCompletedPlan.total_sessions} sessões) foi concluído. Crie um novo pacote abaixo ou prossiga avulso.
+            </p>
           </div>
-          <Badge variant="outline" className={getPaymentPlanBadgeStyle(activePaymentPlan.payment_status)}>
-            {getPaymentPlanStatusLabel(activePaymentPlan.payment_status)}
-          </Badge>
-        </div>
-      ) : null}
+        </DismissibleInfoTip>
+      )}
+
+      {currentMode === "pacote" && activePaymentPlan && (
+        <ActivePaymentPlanCard
+          plan={activePaymentPlan}
+          currentSessionIndex={(activePaymentPlan.used_sessions || 0) + 1}
+          locked={locked}
+          onPlanUpdated={onPlanUpdated ?? (() => {})}
+          onUnlinkPlan={onUnlinkPlan ?? (() => {})}
+          agendaEvents={agendaEvents}
+          onUpdateAgendaEventDate={onUpdateAgendaEventDate ?? (async () => {})}
+          onPayDebit={onPayDebit ?? (async () => {})}
+        />
+      )}
 
       {/* SEÇÃO 1: PACOTE DE SESSÕES (CRIAR NOVO) */}
       {currentMode === "pacote" && !activePaymentPlan && (
@@ -464,6 +405,14 @@ export const SessionPaymentSection = ({
               </div>
             </div>
           </div>
+
+          {/* Painel Contextual de Convênio */}
+          <InsuranceContextPanel
+            paymentPlanForm={paymentPlanForm}
+            onPaymentPlanFormChange={onPaymentPlanFormChange}
+            locked={locked}
+          />
+
 
           {/* Indicador Inteligente de Quitação do Pacote */}
           <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">

@@ -10,6 +10,7 @@ import { getLegacyGroupHex, getReadableTextColor, toRgbaString } from "@/lib/gro
 import { PATIENT_RECURRENCE_WEEKDAY_OPTIONS } from "@/lib/patient-recurrence";
 import { getPatientPath } from "@/lib/patient-routing";
 import { cn } from "@/lib/utils";
+import { useLongPress } from "@/hooks/useLongPress";
 
 export interface PatientCardData {
   id: string;
@@ -42,6 +43,10 @@ export interface PatientCardData {
 interface PatientCardProps {
   patient: PatientCardData;
   onPrefetch?: (id: string, patientCode?: string | null) => void;
+  isSelected?: boolean;
+  selectionMode?: boolean;
+  onToggleSelect?: (patientId: string) => void;
+  onOpenQuickActions?: (patient: PatientCardData) => void;
 }
 
 const formatCpf = (cpf: string) =>
@@ -82,7 +87,14 @@ const recurrenceWeekdayLetters = ["D", "S", "T", "Q", "Q", "S", "S"] as const;
 
 const stopCardNavigation = (event: SyntheticEvent) => event.stopPropagation();
 
-const PatientCard = ({ patient, onPrefetch }: PatientCardProps) => {
+const PatientCard = ({
+  patient,
+  onPrefetch,
+  isSelected = false,
+  selectionMode = false,
+  onToggleSelect,
+  onOpenQuickActions,
+}: PatientCardProps) => {
   const navigate = useNavigate();
   const statusMeta = getPatientStatusMeta(patient.status);
   const recurringWeekdaySet = new Set(patient.recurringWeekdays ?? []);
@@ -98,17 +110,44 @@ const PatientCard = ({ patient, onPrefetch }: PatientCardProps) => {
     onPrefetch?.(patient.id, patient.patient_code);
   };
 
+  const longPress = useLongPress({
+    onLongPress: () => {
+      onOpenQuickActions?.(patient);
+    },
+    onClick: () => {
+      if (selectionMode) {
+        onToggleSelect?.(patient.id);
+      } else {
+        navigate(getPatientPath(patient));
+      }
+    },
+    threshold: 500,
+    moveThreshold: 10,
+    vibrate: 50,
+  });
+
   return (
     <Card
-      className="p-4 cursor-pointer hover:shadow-md transition-shadow duration-150 group select-none"
-      onClick={() => navigate(getPatientPath(patient))}
+      className={cn(
+        "p-4 cursor-pointer hover:shadow-md transition-shadow duration-150 group select-none",
+        isSelected && "ring-2 ring-primary ring-offset-2",
+      )}
+      {...longPress.handlers}
       onPointerEnter={handleTriggerPrefetch}
       onFocus={handleTriggerPrefetch}
-      onTouchStart={handleTriggerPrefetch}
       role="button"
       tabIndex={0}
       aria-label={`Ver detalhes de ${patient.name}`}
-      onKeyDown={(e) => e.key === "Enter" && navigate(getPatientPath(patient))}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          if (selectionMode) {
+            onToggleSelect?.(patient.id);
+          } else {
+            navigate(getPatientPath(patient));
+          }
+        }
+      }}
     >
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0 space-y-1.5">
@@ -125,6 +164,11 @@ const PatientCard = ({ patient, onPrefetch }: PatientCardProps) => {
             >
               {statusMeta.label}
             </Badge>
+            {selectionMode && (
+              <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
+                {isSelected ? "Selecionado" : "Toque para selecionar"}
+              </Badge>
+            )}
             {patient.paymentSummary && (
               <Popover>
                 <PopoverTrigger asChild>

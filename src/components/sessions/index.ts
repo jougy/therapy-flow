@@ -11,3 +11,5 @@ export * from "./SessionQuickEditModals";
 export * from "./SessionReadOnlyOverview";
 export * from "./EvolveSessionModal";
 export * from "./SessionFloatingActionPills";
+export * from "./ActivePaymentPlanCard";
+export * from "./EditPaymentPlanDialog";

@@ -38,6 +38,9 @@ import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButt
 import { SimulationTopDock } from "@/components/SimulationTopDock";
 import { FreeTrialUsageBanner } from "@/components/FreeTrialUsageBanner";
 import { TrialReadOnlyBanner } from "@/components/TrialReadOnlyBanner";
+import { AgendaAlarmDialog } from "@/components/agenda/AgendaAlarmDialog";
+import { useAgendaReminderPoller } from "@/hooks/useAgendaReminderPoller";
+
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -67,6 +70,26 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     openManualFeedback,
   } = useFeedbackTrigger();
   const [viewMode, setViewMode] = useState<"widescreen" | "mobile">("widescreen");
+  const isPreviewIframe = useMemo(() => {
+    try {
+      return (
+        window.self !== window.top ||
+        new URLSearchParams(location.search).get("is_preview_iframe") === "1"
+      );
+    } catch {
+      return true;
+    }
+  }, [location.search]);
+
+  const {
+    activeAlarmEvent,
+    isAlarmOpen,
+    closeAlarm,
+    dismissAlarm,
+  } = useAgendaReminderPoller({
+    clinicId: clinic?.id,
+    enabled: !isPreviewIframe,
+  });
 
   // Atalho global Cmd+Ctrl+D (Mac) ou Ctrl+Alt+D (Windows/Linux) para abrir painel de debug do backoffice
   useEffect(() => {
@@ -84,17 +107,6 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const isPreviewIframe = useMemo(() => {
-    try {
-      return (
-        window.self !== window.top ||
-        new URLSearchParams(location.search).get("is_preview_iframe") === "1"
-      );
-    } catch {
-      return true;
-    }
-  }, [location.search]);
-
   const iframeSrc = useMemo(() => {
     const url = new URL(window.location.href);
     url.searchParams.set("is_preview_iframe", "1");
@@ -105,11 +117,31 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     (location.pathname.startsWith("/configuracoes") && !location.pathname.startsWith("/clinica")) ||
     new URLSearchParams(location.search).get("origem") === "pessoal";
 
-  const [patientTopBarTitle, setPatientTopBarTitle] = useState<string | null>(null);
+  const [patientTopBarTitle, setPatientTopBarTitle] = useState<string | null>(() => {
+    try {
+      const isPatientRoute = window.location.pathname.includes("/pacientes/") || /\/PAC-[A-Z0-9_-]+/i.test(window.location.pathname);
+      if (isPatientRoute) {
+        return window.sessionStorage.getItem("pluri:last_patient_topbar_title") || null;
+      }
+    } catch {
+      // Ignore sessionStorage issues
+    }
+    return null;
+  });
 
   useEffect(() => {
     const handleSetPatientTitle = (event: any) => {
-      setPatientTopBarTitle(event.detail?.title ?? null);
+      const title = event.detail?.title ?? null;
+      setPatientTopBarTitle(title);
+      try {
+        if (title) {
+          window.sessionStorage.setItem("pluri:last_patient_topbar_title", title);
+        } else {
+          window.sessionStorage.removeItem("pluri:last_patient_topbar_title");
+        }
+      } catch {
+        // Ignore
+      }
     };
 
     window.addEventListener("pluri:set-patient-title", handleSetPatientTitle);
@@ -119,9 +151,32 @@ const AppLayout = ({ children }: AppLayoutProps) => {
   }, []);
 
   useEffect(() => {
-    const isPatientRoute = location.pathname.includes("/pacientes/");
-    if (!isPatientRoute && patientTopBarTitle) {
-      setPatientTopBarTitle(null);
+    // Detecta se a rota atual pertence a um fluxo de paciente
+    const patientMatch = location.pathname.match(/\/pacientes\/([^/]+)/) || location.pathname.match(/\/(PAC-[^/]+)/i);
+    const isPatientRoute = Boolean(patientMatch && patientMatch[1] !== "novo");
+
+    if (!isPatientRoute) {
+      if (patientTopBarTitle) {
+        setPatientTopBarTitle(null);
+        try {
+          window.sessionStorage.removeItem("pluri:last_patient_topbar_title");
+        } catch {
+          // Ignore
+        }
+      }
+      return;
+    }
+
+    // Se está em rota de paciente e ainda não temos título ou viemos de reload, recupera do cache de sessão
+    if (!patientTopBarTitle) {
+      try {
+        const cached = window.sessionStorage.getItem("pluri:last_patient_topbar_title");
+        if (cached) {
+          setPatientTopBarTitle(cached);
+        }
+      } catch {
+        // Ignore
+      }
     }
   }, [location.pathname, patientTopBarTitle]);
 
@@ -365,6 +420,14 @@ const AppLayout = ({ children }: AppLayoutProps) => {
             open={feedbackModalOpen}
             onOpenChange={setFeedbackModalOpen}
             triggerSource={feedbackTriggerSource}
+          />
+          <AgendaAlarmDialog
+            open={isAlarmOpen}
+            onOpenChange={(next) => {
+              if (!next) closeAlarm();
+            }}
+            event={activeAlarmEvent}
+            onDismiss={dismissAlarm}
           />
         </>
       )}

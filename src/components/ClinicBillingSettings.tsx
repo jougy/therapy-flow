@@ -20,7 +20,8 @@ import {
   RotateCw,
   Ban,
   ArrowUpRight,
-  FileText
+  FileText,
+  HardDrive
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -940,11 +941,33 @@ export function ClinicBillingSettings({
                 Modelos padrão do sistema são ilimitados.
               </p>
             </div>
+
+            {/* Armazenamento em Nuvem B2 (Trial) */}
+            <div className="p-4 rounded-xl bg-muted/40 border space-y-2 sm:col-span-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                  <HardDrive className="w-4 h-4 text-purple-500" /> Armazenamento Seguro em Nuvem (Backblaze B2)
+                </span>
+                <span className="font-bold text-foreground">
+                  {quota.storage.usedMb} MB / {quota.storage.maxMb >= 1024 ? `${(quota.storage.maxMb / 1024).toFixed(0)} GB` : `${quota.storage.maxMb} MB`} ({quota.storage.percentage}%)
+                </span>
+              </div>
+              <Progress
+                value={quota.storage.percentage}
+                className="h-2 rounded-full"
+              />
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>{quota.storage.totalFiles} arquivo(s) armazenado(s) • Máximo {quota.storage.maxFileSizeMb} MB por arquivo</span>
+                {quota.storage.isLimitReached && (
+                  <span className="text-red-500 font-medium">Limite atingido</span>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       ) : (
         /* Grid de Cotas e Limites para planos pagos */
-        <div className="grid gap-6">
+        <div className="grid gap-6 md:grid-cols-2">
           {/* Card: Acessos Simultâneos */}
           <Card className="border bg-card text-card-foreground shadow-lg rounded-2xl">
             <CardHeader className="p-6 pb-3">
@@ -993,6 +1016,87 @@ export function ClinicBillingSettings({
                 <p className="text-xs text-muted-foreground italic">
                   O plano Solo é limitado a 1 acesso simultâneo por vez.
                 </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Card: Armazenamento em Nuvem Soberano (Backblaze B2) */}
+          <Card className="border bg-card text-card-foreground shadow-lg rounded-2xl">
+            <CardHeader className="p-6 pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <HardDrive className="w-5 h-5 text-purple-500" />
+                  <CardTitle className="text-lg font-semibold text-foreground">Armazenamento em Nuvem</CardTitle>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={
+                    quota.storage.isLimitReached
+                      ? "border-red-500/30 text-red-600 dark:text-red-400 bg-red-500/10"
+                      : quota.storage.percentage >= 80
+                      ? "border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10"
+                      : "border-purple-500/30 text-purple-600 dark:text-purple-400 bg-purple-500/10"
+                  }
+                >
+                  {quota.storage.isLimitReached
+                    ? "Limite Esgotado"
+                    : quota.storage.percentage >= 80
+                    ? "Cota Quase Cheia"
+                    : "Backblaze B2"}
+                </Badge>
+              </div>
+              <CardDescription className="text-xs text-muted-foreground mt-1">
+                Espaço global seguro para exames, anexos médicos e formulários clínicos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-6 pt-2 space-y-4">
+              <div className="rounded-xl bg-muted/50 border p-3 space-y-2 text-xs text-foreground">
+                <div className="flex justify-between items-center">
+                  <span>Espaço Utilizado:</span>
+                  <span className="font-semibold">
+                    {quota.storage.usedMb >= 1024
+                      ? `${(quota.storage.usedMb / 1024).toFixed(2)} GB`
+                      : `${quota.storage.usedMb} MB`}{" "}
+                    de{" "}
+                    {quota.storage.maxMb >= 1024
+                      ? `${(quota.storage.maxMb / 1024).toFixed(0)} GB`
+                      : `${quota.storage.maxMb} MB`}
+                  </span>
+                </div>
+                <Progress
+                  value={quota.storage.percentage}
+                  className="h-2 rounded-full"
+                />
+                <div className="flex justify-between items-center text-[11px] text-muted-foreground pt-1">
+                  <span>{quota.storage.totalFiles} arquivo(s) armazenado(s)</span>
+                  <span className="font-medium text-foreground">{quota.storage.percentage}% em uso</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 text-xs text-muted-foreground leading-relaxed">
+                <div className="flex justify-between items-center">
+                  <span>Limite individual por arquivo:</span>
+                  <strong className="font-semibold text-foreground">Até {quota.storage.maxFileSizeMb} MB/arquivo</strong>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Deduplicação de imagens clínicas:</span>
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400">Ativa (Zero duplicação)</span>
+                </div>
+              </div>
+
+              {quota.storage.percentage >= 80 && isOwner && (
+                <Button
+                  onClick={() => {
+                    setTargetPlan(activePlan);
+                    setTargetCycle(activeCycle);
+                    setIsPlanModalOpen(true);
+                  }}
+                  variant="outline"
+                  className="w-full font-medium rounded-xl h-11 text-sm transition-all min-h-[44px] text-purple-600 hover:text-purple-700 hover:bg-purple-500/10 border-purple-500/30"
+                >
+                  <ArrowUpRight className="w-4 h-4 mr-2" />
+                  Fazer Upgrade para Mais Espaço
+                </Button>
               )}
             </CardContent>
           </Card>

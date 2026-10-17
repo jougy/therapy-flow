@@ -23,6 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { StatusPolygonRadar } from "@/components/anamnesis/StatusPolygonRadar";
+import { AnnotatedImagePreview } from "@/components/anamnesis/image-annotator/ImageAnnotationRuntimeInput";
 import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -760,6 +761,24 @@ const MetricChart = ({
     );
   }
 
+  if (metric.kind === "image_annotation") {
+    return (
+      <div className="space-y-4">
+        {(metric.imageEntries ?? []).map((entry) => (
+          <div key={entry.sessionId} className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-muted-foreground">Atendimento em {entry.label}</p>
+              <Badge variant="outline" className="text-[11px]">
+                {(entry.value.annotations || []).length} {(entry.value.annotations || []).length === 1 ? "marcação" : "marcações"}
+              </Badge>
+            </div>
+            <AnnotatedImagePreview value={entry.value} maxHeightClassName="max-h-[300px]" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return null;
 };
 
@@ -777,7 +796,17 @@ const MetricCard = ({
       <div className="min-w-0 space-y-1">
         <CardTitle className="break-words text-base leading-snug">{metric.fieldLabel}</CardTitle>
         <CardDescription>
-          {metric.kind === "number" ? "Evolução numérica" : metric.kind === "category" ? "Distribuição de respostas" : metric.kind === "text" ? "Últimas respostas" : metric.kind === "date" ? "Datas registradas" : "Resumo da tabela"}
+          {metric.kind === "number"
+            ? "Evolução numérica"
+            : metric.kind === "category"
+            ? "Distribuição de respostas"
+            : metric.kind === "text"
+            ? "Últimas respostas"
+            : metric.kind === "date"
+            ? "Datas registradas"
+            : metric.kind === "image_annotation"
+            ? "Mapa anatômico e anotações visuais"
+            : "Resumo da tabela"}
         </CardDescription>
       </div>
       {onChartChange && metric.allowedCharts.length > 1 ? (
@@ -1030,6 +1059,17 @@ const PacienteAnamnesisDashboard = () => {
       }
 
       const realPatientId = patientRes.data.id;
+      if (patientRes.data.name) {
+        window.dispatchEvent(
+          new CustomEvent("pluri:set-patient-title", {
+            detail: {
+              title: patientRes.data.name,
+              patientKey: id,
+              id: realPatientId,
+            },
+          })
+        );
+      }
       const [clinicRes, sessionsRes, templatesRes] = await Promise.all([
         clinicId ? supabase.from("clinics").select("anamnesis_base_schema").eq("id", clinicId).single() : Promise.resolve({ data: null, error: null }),
         supabase

@@ -373,28 +373,32 @@ const CadastroContaAlfa = () => {
       const registrationEventId = generateEventId("reg");
       const trialEventId = generateEventId("trial");
 
-      void trackRegistrationEvent({
-        profession: profession || "fisioterapeuta",
-        userData: {
-          email: nextEmail,
-          phone: cleanPhone,
-          name: nextOwnerName,
-          externalId: userId,
-        },
-        eventId: registrationEventId,
-      });
-
-      void trackTrialStartEvent({
-        profession: profession || "fisioterapeuta",
-        userData: {
-          email: nextEmail,
-          phone: cleanPhone,
-          name: nextOwnerName,
-          externalId: userId,
-        },
-        eventId: trialEventId,
-      });
-
+      try {
+        await Promise.allSettled([
+          trackRegistrationEvent({
+            profession: profession || "fisioterapeuta",
+            userData: {
+              email: nextEmail,
+              phone: cleanPhone,
+              name: nextOwnerName,
+              externalId: userId,
+            },
+            eventId: registrationEventId,
+          }),
+          trackTrialStartEvent({
+            profession: profession || "fisioterapeuta",
+            userData: {
+              email: nextEmail,
+              phone: cleanPhone,
+              name: nextOwnerName,
+              externalId: userId,
+            },
+            eventId: trialEventId,
+          }),
+        ]);
+      } catch (trackErr) {
+        console.warn("[CadastroContaAlfa] Falha no rastreamento de cadastro:", trackErr);
+      }
 
       // Disparar notificação para o Telegram via Edge Function (assíncrono e fail-safe)
       void supabase.functions.invoke("notify-admin-telegram", {

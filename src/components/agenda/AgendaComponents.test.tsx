@@ -194,8 +194,8 @@ describe("Agenda Modular Components", () => {
       );
 
       expect(screen.getByRole("heading", { name: /novo agendamento/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /30 min/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /50 min/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^30 min$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^50 min$/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /manual/i })).toBeInTheDocument();
 
       // Check both time inputs: start time and editable end time
@@ -205,7 +205,7 @@ describe("Agenda Modular Components", () => {
       expect(endTimeInput).toHaveValue("10:50");
 
       // Changing preset recalculates end time
-      fireEvent.click(screen.getByRole("button", { name: /30 min/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^30 min$/i }));
       expect(endTimeInput).toHaveValue("10:30");
 
       // Manually changing end time recalculates duration

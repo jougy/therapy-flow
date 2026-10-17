@@ -8,6 +8,7 @@ import { DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTit
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  HOME_PATIENT_AGENDA_SHIFT_OPTIONS,
   HOME_PATIENT_AGENDA_STATUS_OPTIONS,
   HOME_PATIENT_PAYMENT_STATUS_OPTIONS,
   HOME_PATIENT_RECURRENCE_STATUS_OPTIONS,
@@ -15,6 +16,7 @@ import {
   type HomeAgendaEventRecord,
   type HomeCollaboratorFilterRecord,
   type HomePatientAgendaFilterStatus,
+  type HomePatientAgendaShift,
   type HomePatientGroupRecord,
   type HomePatientPaymentFilterStatus,
   type HomePatientRecurrenceFilterStatus,
@@ -37,6 +39,7 @@ export type FilterSectionKey =
   | "origins"
   | "payments"
   | "recurrence"
+  | "shifts"
   | "statuses"
   | "weekdays";
 
@@ -52,6 +55,8 @@ interface PatientFilterDialogProps {
   onSelectedPaymentStatusesChange: (payments: HomePatientPaymentFilterStatus[]) => void;
   selectedAgendaStatuses: HomePatientAgendaFilterStatus[];
   onSelectedAgendaStatusesChange: (agenda: HomePatientAgendaFilterStatus[]) => void;
+  selectedAgendaShifts?: HomePatientAgendaShift[];
+  onSelectedAgendaShiftsChange?: (shifts: HomePatientAgendaShift[]) => void;
   selectedRecurrenceStatuses: HomePatientRecurrenceFilterStatus[];
   onSelectedRecurrenceStatusesChange: (recurrence: HomePatientRecurrenceFilterStatus[]) => void;
   selectedRecurringWeekdays: number[];
@@ -84,6 +89,8 @@ export const PatientFilterDialog = memo(function PatientFilterDialog({
   onSelectedPaymentStatusesChange,
   selectedAgendaStatuses,
   onSelectedAgendaStatusesChange,
+  selectedAgendaShifts = [],
+  onSelectedAgendaShiftsChange,
   selectedRecurrenceStatuses,
   onSelectedRecurrenceStatusesChange,
   selectedRecurringWeekdays,
@@ -112,6 +119,7 @@ export const PatientFilterDialog = memo(function PatientFilterDialog({
     origins: false,
     payments: false,
     recurrence: false,
+    shifts: false,
     statuses: true,
     weekdays: false,
   });
@@ -268,6 +276,34 @@ export const PatientFilterDialog = memo(function PatientFilterDialog({
                       aria-label={statusOption.label}
                     />
                     <span>{statusOption.label}</span>
+                  </label>
+                ))}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Agenda Shift Section */}
+          <Collapsible open={openSections.shifts} onOpenChange={() => toggleSection("shifts")}>
+            <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left">
+              <span className="font-medium">Turno do agendamento</span>
+              {openSections.shifts ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </CollapsibleTrigger>
+            <CollapsibleContent className="px-2 pt-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {HOME_PATIENT_AGENDA_SHIFT_OPTIONS.map((shiftOption) => (
+                  <label key={shiftOption.value} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={selectedAgendaShifts.includes(shiftOption.value)}
+                      onCheckedChange={() => {
+                        if (!onSelectedAgendaShiftsChange) return;
+                        toggleString(shiftOption.value, selectedAgendaShifts, onSelectedAgendaShiftsChange);
+                      }}
+                      aria-label={shiftOption.label}
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-medium leading-none">{shiftOption.label}</span>
+                      <span className="text-xs text-muted-foreground">{shiftOption.hint}</span>
+                    </div>
                   </label>
                 ))}
               </div>
@@ -441,7 +477,7 @@ export const PatientFilterDialog = memo(function PatientFilterDialog({
           {/* Dates Section */}
           <Collapsible open={openSections.dates} onOpenChange={() => toggleSection("dates")}>
             <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left">
-              <span className="font-medium">Período dos atendimentos</span>
+              <span className="font-medium">Intervalo de datas dos atendimentos</span>
               {openSections.dates ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">

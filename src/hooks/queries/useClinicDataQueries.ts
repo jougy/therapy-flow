@@ -502,8 +502,34 @@ export function useOptimisticPatientUpdates(clinicId?: string | null) {
     [clinicId, queryClient]
   );
 
+  const optimisticRemovePatients = useCallback(
+    (patientIds: string[]) => {
+      if (!clinicId || patientIds.length === 0) return;
+      const key = CLINIC_QUERY_KEYS.patients(clinicId);
+      queryClient.setQueryData<HomePatientRecord[]>(key, (current = []) =>
+        current.filter((patient) => !patientIds.includes(patient.id))
+      );
+    },
+    [clinicId, queryClient]
+  );
+
+  const optimisticUpdatePatientStatus = useCallback(
+    (patientIds: string[], nextStatus: string) => {
+      if (!clinicId || patientIds.length === 0) return;
+      const key = CLINIC_QUERY_KEYS.patients(clinicId);
+      queryClient.setQueryData<HomePatientRecord[]>(key, (current = []) =>
+        current.map((patient) =>
+          patientIds.includes(patient.id) ? { ...patient, status: nextStatus } : patient
+        )
+      );
+    },
+    [clinicId, queryClient]
+  );
+
   return {
     optimisticRemovePatient,
+    optimisticRemovePatients,
+    optimisticUpdatePatientStatus,
   };
 }
 

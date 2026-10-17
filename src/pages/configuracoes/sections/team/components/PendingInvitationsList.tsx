@@ -129,6 +129,22 @@ export const PendingInvitationsList: React.FC<PendingInvitationsListProps> = ({
                         {spec}
                       </Badge>
                     ))}
+                    {invitation.email_delivery_status === "failed" && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 font-normal border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                      >
+                        Falha no e-mail (copie o link)
+                      </Badge>
+                    )}
+                    {invitation.email_delivery_status === "sent" && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 font-normal border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      >
+                        E-mail despachado
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-xs text-amber-800 dark:text-amber-400 mt-1">
                     {invitation.pending_reason}

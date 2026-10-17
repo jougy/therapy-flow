@@ -16,15 +16,20 @@ import {
   type SessionShareRecipient,
 } from "./types";
 import { getShareRecipientLabel } from "@/lib/session-sharing";
-import type { AnamnesisField } from "@/lib/anamnesis-forms";
+import type { AnamnesisField, AnamnesisFormResponse, AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { SessionPaymentMethod, SessionPaymentStatus } from "@/lib/session-operations";
 import type { TreatmentBlock } from "@/lib/session-treatment";
 import { ScaleIndicator } from "./SessionAnamnesisRuntime";
 import { SessionAuditHistoryModal } from "./SessionAuditHistoryModal";
 import type { SessionEditHistoryViewEntry } from "@/lib/session-people";
+import { AnnotatedImagePreview } from "@/components/anamnesis/image-annotator/ImageAnnotationRuntimeInput";
+import type { ClinicalImageAnnotationValue } from "@/lib/image-annotation-vector";
 
 export interface SessionReadOnlyOverviewProps {
   activeTemplate: AnamnesisTemplate | null;
+  activeTemplateSchema?: AnamnesisTemplateSchema | null;
+  anamnesisFormResponse?: AnamnesisFormResponse;
+  baseTemplateSchema?: AnamnesisTemplateSchema;
   amountChargedCents: number;
   amountOriginalCents: number;
   amountPaidCents: number;
@@ -73,6 +78,9 @@ export interface SessionReadOnlyOverviewProps {
 
 export const SessionReadOnlyOverview = ({
   activeTemplate,
+  activeTemplateSchema,
+  anamnesisFormResponse = {},
+  baseTemplateSchema,
   amountChargedCents,
   amountOriginalCents,
   amountPaidCents,
@@ -330,6 +338,45 @@ export const SessionReadOnlyOverview = ({
               {sessionSummary || "Nenhuma anamnese registrada."}
             </p>
           </div>
+
+          {(() => {
+            const allFields = [
+              ...(baseTemplateSchema?.fields || []),
+              ...(activeTemplateSchema?.fields || []),
+            ];
+            const fieldLabelMap = new Map(allFields.map((f) => [f.id, f.label]));
+
+            const imageEntries: { fieldId: string; label: string; value: ClinicalImageAnnotationValue }[] = [];
+            for (const [fieldId, rawVal] of Object.entries(anamnesisFormResponse || {})) {
+              if (
+                rawVal &&
+                typeof rawVal === "object" &&
+                !Array.isArray(rawVal) &&
+                "baseImageUrl" in rawVal &&
+                typeof (rawVal as { baseImageUrl?: unknown }).baseImageUrl === "string" &&
+                ((rawVal as { baseImageUrl: string }).baseImageUrl || "").trim().length > 0
+              ) {
+                imageEntries.push({
+                  fieldId,
+                  label: fieldLabelMap.get(fieldId) || "Anotação Clínica em Imagem",
+                  value: rawVal as unknown as ClinicalImageAnnotationValue,
+                });
+              }
+            }
+
+            if (imageEntries.length === 0) return null;
+
+            return (
+              <div className="space-y-4 pt-3 border-t">
+                {imageEntries.map((entry) => (
+                  <div key={entry.fieldId} className="space-y-2">
+                    <h3 className="text-sm font-semibold text-foreground">{entry.label}</h3>
+                    <AnnotatedImagePreview value={entry.value} />
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 

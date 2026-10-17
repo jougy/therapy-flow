@@ -3,7 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 
 export type AgendaEventType = "atendimento" | "reuniao" | "evento";
-export type AgendaEventStatus = "lembrete" | "aguardando_confirmacao" | "confirmado" | "cancelado";
+export type AgendaEventStatus = "lembrete" | "aguardando_confirmacao" | "confirmado" | "cancelado" | "concluido";
+
+export const normalizeAgendaStatus = (value: string | null | undefined): AgendaEventStatus => {
+  if (value === "confirmado" || value === "cancelado" || value === "lembrete" || value === "aguardando_confirmacao" || value === "concluido") {
+    return value;
+  }
+  return "aguardando_confirmacao";
+};
 
 export const AGENDA_EVENTS_UPDATED_EVENT = "pluri-health:agenda-events-updated";
 export const AGENDA_PAST_EVENT_ERROR_MESSAGE =
@@ -44,6 +51,10 @@ export interface BuildAgendaEventPayloadInput {
   userId: string;
   durationMinutes?: number;
   graceMinutes?: number;
+  reminderConfigs?: unknown;
+  notifyTeam?: boolean;
+  notifyPatient?: boolean;
+  notifiedColleagueIds?: string[];
 }
 
 export const isValidDurationMinutes = (durationMinutes?: number | null): boolean => {
@@ -155,6 +166,10 @@ export const buildAgendaEventPayload = ({
   durationMinutes,
   eventType,
   graceMinutes,
+  reminderConfigs,
+  notifyTeam,
+  notifyPatient,
+  notifiedColleagueIds,
   selectedDate,
   selectedPatient,
   time,
@@ -193,7 +208,11 @@ export const buildAgendaEventPayload = ({
     clinic_id: cleanClinicId,
     duration_minutes: normalizeEventDurationMinutes(durationMinutes),
     event_type: eventType,
+    notified_colleague_ids: Array.isArray(notifiedColleagueIds) ? notifiedColleagueIds : [],
+    notify_patient: Boolean(notifyPatient),
+    notify_team: Boolean(notifyTeam),
     patient_id: cleanPatientId,
+    reminder_configs: (reminderConfigs as any) ?? [{ minutesBefore: 0 }],
     scheduled_for: scheduledFor.toISOString(),
     status: "aguardando_confirmacao",
     title: normalizedTitle,

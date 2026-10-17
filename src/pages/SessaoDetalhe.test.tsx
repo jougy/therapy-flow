@@ -57,10 +57,10 @@ vi.mock("@/lib/patient-routing", () => ({
   }),
   getClinicPatientPath: vi.fn(),
   getPatientRouteKey: (patient: any) => patient?.patient_code || patient?.id || "patient-123",
-  isUuid: () => true,
+  isUuid: (val: string) => typeof val === "string" && !val.startsWith("ATD-") && val !== "novo",
   resolveSessionReference: vi.fn().mockImplementation(async (sessionRef: string) => ({
     data: sessionRef === "novo" ? null : {
-      id: sessionRef,
+      id: sessionRef.startsWith("ATD-") ? "real-session-uuid-456" : sessionRef,
       patient_id: "patient-123",
       user_id: "user-1",
       session_date: "2026-08-25T16:57:00.000Z",
@@ -128,6 +128,7 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       const chain: any = {
         select: vi.fn(() => chain),
         eq: vi.fn(() => chain),
+        neq: vi.fn(() => chain),
         not: vi.fn(() => chain),
         in: vi.fn(() => chain),
         order: vi.fn(() => chain),
@@ -387,6 +388,70 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Página Paciente Detalhe")).toBeInTheDocument();
+    });
+  });
+
+  it("salva atendimento usando o UUID real no update do supabase quando a rota é acessada via código amigável ATD-8", async () => {
+    let capturedUpdatedId: string | null = null;
+    const sessionUpdateMock = vi.fn().mockImplementation(() => {
+      const chain: any = {
+        eq: vi.fn((col: string, val: string) => {
+          if (col === "id") capturedUpdatedId = val;
+          return chain;
+        }),
+        then: (resolve: any) => Promise.resolve({ data: null, error: null }).then(resolve),
+      };
+      return chain;
+    });
+
+    const createQueryChain = (resolvedData: any = []) => {
+      const chain: any = {
+        select: vi.fn(() => chain),
+        eq: vi.fn(() => chain),
+        neq: vi.fn(() => chain),
+        not: vi.fn(() => chain),
+        in: vi.fn(() => chain),
+        order: vi.fn(() => chain),
+        limit: vi.fn(() => chain),
+        single: vi.fn().mockResolvedValue({ data: Array.isArray(resolvedData) ? resolvedData[0] ?? null : resolvedData, error: null }),
+        maybeSingle: vi.fn().mockResolvedValue({ data: Array.isArray(resolvedData) ? resolvedData[0] ?? null : resolvedData, error: null }),
+        then: (resolve: any) => Promise.resolve({ data: resolvedData, error: null }).then(resolve),
+      };
+      return chain;
+    };
+
+    vi.mocked(supabase.from).mockImplementation((table: string) => {
+      if (table === "patients") return createQueryChain(mockPatient);
+      if (table === "patient_groups") return createQueryChain(mockGroups);
+      if (table === "anamnesis_form_templates") return createQueryChain(mockTemplates);
+      if (table === "clinics") return createQueryChain({ name: "Clínica Saúde", anamnesis_base_schema: DEFAULT_ANAMNESIS_TEMPLATE_SCHEMA });
+      if (table === "profiles") return createQueryChain([]);
+      if (table === "sessions") {
+        const chain = createQueryChain([]);
+        chain.update = sessionUpdateMock;
+        return chain;
+      }
+      return createQueryChain([]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/pacientes/patient-123/sessao/ATD-8?edit=true"]}>
+        <Routes>
+          <Route path="/pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Concluir Atendimento/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Concluir Atendimento/i }));
+
+    await waitFor(() => {
+      expect(sessionUpdateMock).toHaveBeenCalled();
+      expect(capturedUpdatedId).toBe("real-session-uuid-456");
+      expect(capturedUpdatedId).not.toBe("ATD-8");
     });
   });
 });

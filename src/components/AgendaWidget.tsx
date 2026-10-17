@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format, isSameDay, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Loader2, Maximize2, Plus, X, Play } from "lucide-react";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Eye, EyeOff, Loader2, Maximize2, MessageCircle, Plus, Trash2, X, Play } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
+import { AgendaViewSelector, PatientInlineAgendaView, AgendaEventQuickDialog, type AgendaViewMode } from "@/components/agenda";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -13,13 +14,17 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { getDesignLabButtonClass, designLabIconClass, designLabLabelClass } from "@/lib/design-animations";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import {
+  AgendaReminderSettingsBlock,
+  DEFAULT_REMINDER_SETTINGS,
+  type AgendaReminderSettingsValues,
+} from "@/components/agenda/AgendaReminderSettingsBlock";
 import {
   AGENDA_EVENTS_UPDATED_EVENT,
   AGENDA_PAST_EVENT_ERROR_MESSAGE,
@@ -61,18 +66,20 @@ const agendaStatusLabels: Record<AgendaEventStatus, string> = {
   aguardando_confirmacao: "Aguardando",
   cancelado: "Cancelado",
   confirmado: "Confirmado",
+  concluido: "Concluído",
   lembrete: "Lembrete",
 };
 
 const agendaStatusStyles: Record<AgendaEventStatus, string> = {
   aguardando_confirmacao: "bg-warning/15 text-warning border-warning/20",
   cancelado: "bg-destructive/15 text-destructive border-destructive/20",
-  confirmado: "bg-success/15 text-success border-success/20",
+  confirmado: "bg-primary/10 text-primary border-primary/20",
+  concluido: "bg-success/15 text-success border-success/20",
   lembrete: "bg-primary/10 text-primary border-primary/20",
 };
 
 const normalizeAgendaStatus = (status: string | null | undefined): AgendaEventStatus => {
-  if (status === "lembrete" || status === "aguardando_confirmacao" || status === "confirmado" || status === "cancelado") {
+  if (status === "lembrete" || status === "aguardando_confirmacao" || status === "confirmado" || status === "cancelado" || status === "concluido") {
     return status;
   }
 
@@ -83,6 +90,7 @@ const agendaStatusOptions: { value: AgendaEventStatus; label: string }[] = [
   { value: "lembrete", label: "Lembrete" },
   { value: "aguardando_confirmacao", label: "Aguardando confirmação" },
   { value: "confirmado", label: "Confirmado" },
+  { value: "concluido", label: "Concluído" },
   { value: "cancelado", label: "Cancelado" },
 ];
 
@@ -167,6 +175,7 @@ const AgendaWidget = ({
   const [selectedPatient, setSelectedPatient] = useState<AgendaPatientOption | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [newTime, setNewTime] = useState(() => getDefaultNewEventTime());
+  const [reminderSettings, setReminderSettings] = useState<AgendaReminderSettingsValues>(DEFAULT_REMINDER_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<AgendaEvent | null>(null);
@@ -174,6 +183,8 @@ const AgendaWidget = ({
   const [selectedEventDate, setSelectedEventDate] = useState(getDateInputValue());
   const [selectedEventTime, setSelectedEventTime] = useState("09:00");
   const [savingSelectedEvent, setSavingSelectedEvent] = useState(false);
+  const [viewMode, setViewMode] = useState<AgendaViewMode>("day");
+  const [showOtherPatients, setShowOtherPatients] = useState(false);
 
   const fetchAgendaData = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (!user) return;
@@ -191,12 +202,10 @@ const AgendaWidget = ({
 
     const patientsBase = supabase
       .from("patients")
-      .select("id, name");
-    const patientsRequest = fixedPatientId
-      ? Promise.resolve({ data: [] as AgendaPatientOption[], error: null })
-      : clinicId
-        ? patientsBase.eq("clinic_id", clinicId).order("name", { ascending: true })
-        : patientsBase.order("name", { ascending: true });
+      .select("id, name, phone");
+    const patientsRequest = clinicId
+      ? patientsBase.eq("clinic_id", clinicId).order("name", { ascending: true })
+      : patientsBase.order("name", { ascending: true });
 
     const [eventsRes, patientsRes] = await Promise.all([eventsRequest, patientsRequest]);
 
@@ -222,7 +231,7 @@ const AgendaWidget = ({
     );
     setPatients(Array.isArray(patientsRes.data) ? patientsRes.data : []);
     setLoading(false);
-  }, [clinicId, fixedPatientId, user]);
+  }, [clinicId, user]);
 
   useEffect(() => {
     void fetchAgendaData();
@@ -241,8 +250,8 @@ const AgendaWidget = ({
   }, [fetchAgendaData]);
 
   const scopedEvents = useMemo(
-    () => (fixedPatientId ? events.filter((event) => event.patientId === fixedPatientId) : events),
-    [events, fixedPatientId]
+    () => (fixedPatientId && !showOtherPatients ? events.filter((event) => event.patientId === fixedPatientId) : events),
+    [events, fixedPatientId, showOtherPatients]
   );
 
   const dayEvents = useMemo(
@@ -328,6 +337,7 @@ const AgendaWidget = ({
     setSelectedPatient(null);
     setNewTitle("");
     setNewTime(getDefaultNewEventTime());
+    setReminderSettings(DEFAULT_REMINDER_SETTINGS);
     setShowAdd(false);
   };
 
@@ -369,10 +379,19 @@ const AgendaWidget = ({
     try {
       assertAgendaEventDateTimeIsFuture(getAgendaEventDateTime(selectedDate, newTime), undefined, 15);
       setSaving(true);
+      const reminderConfigs = [
+        ...(reminderSettings.remindAtEvent ? [{ minutesBefore: 0 }] : []),
+        ...reminderSettings.additionalReminders.map((mins) => ({ minutesBefore: mins })),
+      ];
+
       const payload = buildAgendaEventPayload({
         clinicId: effectiveClinicId,
         eventType,
         graceMinutes: 15,
+        notifiedColleagueIds: reminderSettings.notifiedColleagueIds,
+        notifyPatient: reminderSettings.notifyPatient,
+        notifyTeam: reminderSettings.notifyTeam,
+        reminderConfigs,
         selectedDate,
         selectedPatient: fixedPatientId && fixedPatientName ? { id: fixedPatientId, name: fixedPatientName } : selectedPatient,
         time: newTime,
@@ -386,9 +405,13 @@ const AgendaWidget = ({
         .select("id, event_type, patient_id, status, title, scheduled_for")
         .single();
 
-      if (insertedResult.error && (insertedResult.error.code === "42703" || insertedResult.error.message.includes("duration_minutes"))) {
+      if (insertedResult.error && (insertedResult.error.code === "42703" || insertedResult.error.message.includes("duration_minutes") || insertedResult.error.message.includes("reminder_configs"))) {
         const fallbackPayload = { ...payload };
         delete (fallbackPayload as any).duration_minutes;
+        delete (fallbackPayload as any).reminder_configs;
+        delete (fallbackPayload as any).notify_team;
+        delete (fallbackPayload as any).notify_patient;
+        delete (fallbackPayload as any).notified_colleague_ids;
         insertedResult = await supabase
           .from("agenda_events")
           .insert(fallbackPayload)
@@ -778,19 +801,26 @@ const AgendaWidget = ({
       </div>
 
       {fixedPatientId ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button data-tutorial="agenda-add-btn" variant="default" size="sm" className={getDesignLabButtonClass("hover:w-[120px]")} onClick={handleOpenAddDialog}>
-            <Plus className={`${designLabIconClass} h-3.5 w-3.5`} />
-            <span className={designLabLabelClass}>Agendar</span>
+        <div className="flex flex-wrap items-center gap-2.5 pt-1">
+          <Button
+            data-tutorial="agenda-add-btn"
+            type="button"
+            variant="default"
+            size="sm"
+            className="h-9 rounded-xl border border-primary/20 bg-primary/90 hover:bg-primary text-primary-foreground font-medium text-xs gap-1.5 shadow-xs hover:shadow-sm px-3.5 transition-all active:scale-[0.98]"
+            onClick={handleOpenAddDialog}
+          >
+            <Plus className="h-4 w-4 shrink-0" />
+            <span>Agendar</span>
           </Button>
           <Button
             data-tutorial="agenda-quick-start"
             type="button"
             size="sm"
-            className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5 shadow-sm px-3.5 transition-all"
+            className="h-9 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs gap-1.5 shadow-xs hover:shadow-sm px-3.5 transition-all border border-emerald-500/30 active:scale-[0.98]"
             onClick={onStartAttendance ?? handleStartAttendanceNow}
           >
-            <Play className="h-3.5 w-3.5 fill-current text-white" />
+            <Play className="h-3.5 w-3.5 fill-current text-white/95" />
             <span>{startAttendanceLabel ?? "Iniciar Atendimento Agora"}</span>
           </Button>
         </div>
@@ -802,11 +832,174 @@ const AgendaWidget = ({
     </div>
   );
 
+  const patientDesktopView = fixedPatientId && !isModal ? (
+    <Card data-tutorial="agenda-widget" className="hover:shadow-md transition-shadow duration-150">
+      <CardHeader className="py-2.5 px-3 sm:px-4 border-b border-border/40">
+        <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="relative h-8 w-8 shrink-0 rounded-lg"
+              disabled={!previousEventDate}
+              onClick={() => previousEventDate && setSelectedDate(previousEventDate)}
+              aria-label={`Ir para o dia anterior com agendamentos. ${eventsBeforeSelectedDate.length} agendamento${eventsBeforeSelectedDate.length !== 1 ? "s" : ""} antes desta data.`}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              {eventsBeforeSelectedDate.length > 0 ? (
+                <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1 py-0.2 text-[9px] font-semibold leading-none text-primary-foreground">
+                  {eventsBeforeSelectedDate.length}
+                </span>
+              ) : null}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedDate(new Date())}
+              className="h-8 px-2 text-xs font-semibold text-primary hover:bg-primary/10 rounded-lg"
+            >
+              Hoje
+            </Button>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button data-tutorial="agenda-date-picker-btn" variant="outline" size="sm" className="h-8 min-w-[130px] justify-start text-left font-normal rounded-lg text-xs">
+                  <CalendarDays className="mr-1.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span className="truncate">{format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(date) => date && getLocalDayTimestamp(date) >= todayDay.getTime() && setSelectedDate(date)}
+                  disabled={(date) => getLocalDayTimestamp(date) < todayDay.getTime()}
+                  className={cn("p-3 pointer-events-auto")}
+                  modifiers={{ hasEvent: datesWithEvents }}
+                  modifiersClassNames={{ hasEvent: "bg-primary/20 font-bold" }}
+                />
+              </PopoverContent>
+            </Popover>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="relative h-8 w-8 shrink-0 rounded-lg"
+              disabled={!nextEventDate}
+              onClick={() => nextEventDate && setSelectedDate(nextEventDate)}
+              aria-label={`Ir para o próximo dia com agendamentos. ${eventsAfterSelectedDate.length} agendamento${eventsAfterSelectedDate.length !== 1 ? "s" : ""} depois desta data.`}
+            >
+              <ChevronRight className="h-4 w-4" />
+              {eventsAfterSelectedDate.length > 0 ? (
+                <span className="absolute -right-1 -top-1 rounded-full bg-primary px-1 py-0.2 text-[9px] font-semibold leading-none text-primary-foreground">
+                  {eventsAfterSelectedDate.length}
+                </span>
+              ) : null}
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <AgendaViewSelector
+              value={viewMode}
+              onChange={setViewMode}
+              className="p-0.5 border-border/50 bg-muted/40"
+            />
+
+            <Button
+              type="button"
+              variant={showOtherPatients ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => setShowOtherPatients((prev) => !prev)}
+              title={showOtherPatients ? "Ocultar agendamentos de outros pacientes da clínica" : "Exibir agendamentos de outros pacientes da clínica"}
+              className={cn(
+                "h-8 gap-1.5 text-xs rounded-xl px-2.5 transition-all font-medium",
+                showOtherPatients ? "bg-primary/10 text-primary border-primary/30" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {showOtherPatients ? (
+                <>
+                  <Eye className="h-3.5 w-3.5 text-primary" />
+                  <span className="hidden lg:inline">Outros agendamentos: Visíveis</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="h-3.5 w-3.5" />
+                  <span className="hidden lg:inline">Outros agendamentos: Ocultos</span>
+                </>
+              )}
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {headerAccessory}
+
+            <Button
+              data-tutorial="agenda-add-btn"
+              type="button"
+              variant="default"
+              size="sm"
+              className="h-8 rounded-xl border border-primary/20 bg-primary/90 hover:bg-primary text-primary-foreground font-medium text-xs gap-1.5 shadow-2xs hover:shadow-xs px-2.5 transition-all active:scale-[0.98]"
+              onClick={handleOpenAddDialog}
+            >
+              <Plus className="h-3.5 w-3.5 shrink-0" />
+              <span>Agendar</span>
+            </Button>
+
+            <Button
+              data-tutorial="agenda-quick-start"
+              type="button"
+              size="sm"
+              className="h-8 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs gap-1.5 shadow-2xs hover:shadow-xs px-2.5 transition-all border border-emerald-500/30 active:scale-[0.98]"
+              onClick={onStartAttendance ?? handleStartAttendanceNow}
+            >
+              <Play className="h-3 w-3 fill-current text-white/95" />
+              <span>{startAttendanceLabel ?? "Iniciar Atendimento Agora"}</span>
+            </Button>
+
+            {canExpand && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs text-primary border-primary/20 hover:bg-primary/5 hover:text-primary rounded-xl px-2.5 shrink-0"
+                onClick={() => navigate(fullAgendaPath)}
+                title="Ver agenda completa da clínica"
+                aria-label="Ver agenda completa"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span className="hidden xl:inline font-medium">Ver agenda completa</span>
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="p-3 sm:p-4">
+        <PatientInlineAgendaView
+          currentDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          viewMode={viewMode}
+          events={scopedEvents}
+          currentPatientId={fixedPatientId}
+          patients={patients}
+          onOpenEventDetails={handleOpenEventDetails}
+          onOpenAddModal={() => handleOpenAddDialog()}
+          onStartAttendance={handleStartAttendanceFromEvent}
+          canStartAttendance={true}
+        />
+      </CardContent>
+    </Card>
+  ) : null;
+
   const containerContent = isModal ? (
     <div data-tutorial="agenda-widget" className="w-full min-w-0 space-y-3">
       {content}
     </div>
-  ) : (
+  ) : patientDesktopView ?? (
     <Card data-tutorial="agenda-widget" className="hover:shadow-md transition-shadow duration-150">
       <CardHeader className="space-y-3 pb-2">
         <div className="flex items-start justify-between gap-3">
@@ -819,14 +1012,15 @@ const AgendaWidget = ({
             {canExpand && (
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs text-primary border-primary/20 hover:bg-primary/5 hover:text-primary rounded-xl px-2.5"
                 onClick={() => navigate(fullAgendaPath)}
-                title="Expandir agenda para tela cheia"
-                aria-label="Expandir agenda para tela cheia"
+                title="Ver agenda completa da clínica"
+                aria-label="Ver agenda completa"
               >
-                <Maximize2 className="h-4 w-4" />
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline font-medium">Ver agenda completa</span>
               </Button>
             )}
             <div className="rounded-lg bg-primary/10 p-2">
@@ -995,6 +1189,12 @@ const AgendaWidget = ({
                   {AGENDA_PAST_EVENT_ERROR_MESSAGE}
                 </div>
               ) : null}
+
+              <AgendaReminderSettingsBlock
+                values={reminderSettings}
+                onChange={setReminderSettings}
+                patientName={selectedPatient?.name || fixedPatientName || undefined}
+              />
             </div>
             <DialogFooter>
               <DialogClose asChild>
@@ -1007,122 +1207,29 @@ const AgendaWidget = ({
           </DialogContent>
         </Dialog>
 
-        <Dialog open={!!selectedEvent} onOpenChange={(open) => !open && setSelectedEvent(null)}>
-          <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] grid-rows-none flex-col overflow-hidden p-0 sm:max-w-3xl">
-            <DialogHeader className="shrink-0 border-b px-5 pb-3 pt-5 text-left">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Agendamento</p>
-              <DialogTitle className="break-words pr-7 text-xl leading-tight sm:text-3xl">{selectedEvent?.title ?? "Agendamento"}</DialogTitle>
-              <DialogDescription>
-                Revise o horário, atualize o status ou inicie o atendimento a partir deste agendamento.
-              </DialogDescription>
-            </DialogHeader>
-
-            {selectedEvent ? (
-              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-xl bg-muted/25 px-4 py-3">
-                    <p className="text-xs text-muted-foreground">Horário</p>
-                    <p className="mt-1 font-semibold">{formatAgendaEventDateTime(selectedEvent.scheduledFor)}</p>
-                  </div>
-                  <div className="rounded-xl bg-muted/25 px-4 py-3">
-                    <p className="text-xs text-muted-foreground">Status atual</p>
-                    <Badge variant="outline" className={`mt-1 ${agendaStatusStyles[selectedEvent.status]}`}>
-                      {agendaStatusLabels[selectedEvent.status]}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Trocar status</Label>
-                  <Select value={selectedStatusAction} onValueChange={(value) => setSelectedStatusAction(value as AgendaStatusAction)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {agendaStatusOptions.map((status) => (
-                        <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
-                      ))}
-                      {can("agenda.delete_events") && (
-                        <SelectItem value={agendaDeleteOption.value} className="text-destructive focus:text-destructive">
-                          {agendaDeleteOption.label}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {selectedStatusAction === "cancelado" ? (
-                    <p className="text-xs text-muted-foreground">
-                      Ao aplicar Cancelado, um atendimento vazio com status cancelado será registrado no histórico do paciente.
-                    </p>
-                  ) : selectedStatusAction === "delete" ? (
-                    <p className="text-xs text-destructive">
-                      Excluir remove apenas o agendamento da agenda. Nenhum atendimento será criado.
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-[1fr,1fr,auto] md:items-end">
-                  <div className="space-y-2">
-                    <Label htmlFor="homepage-agenda-date">Nova data</Label>
-                    <Input
-                      id="homepage-agenda-date"
-                      type="date"
-                      value={selectedEventDate}
-                      onChange={(event) => setSelectedEventDate(event.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="homepage-agenda-time">Novo horário</Label>
-                    <Input
-                      id="homepage-agenda-time"
-                      type="time"
-                      value={selectedEventTime}
-                      onChange={(event) => setSelectedEventTime(event.target.value)}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void handleUpdateSelectedDateTime()}
-                    disabled={savingSelectedEvent || !selectedEventDate || !selectedEventTime || isSelectedEventDateTimePast}
-                  >
-                    Trocar data/horário
-                  </Button>
-                </div>
-                {isSelectedEventDateTimePast ? (
-                  <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                    {AGENDA_PAST_EVENT_ERROR_MESSAGE}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-          <DialogFooter className="grid shrink-0 grid-cols-2 gap-2 border-t bg-background px-5 py-4 sm:grid-cols-3">
-              <Button
-                type="button"
-                className="col-span-2 sm:col-span-1"
-                onClick={() => void handleApplyEventStatus()}
-                disabled={savingSelectedEvent}
-                variant={selectedStatusAction === "delete" ? "destructive" : "default"}
-              >
-                {savingSelectedEvent ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Aplicar status
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleStartAttendanceFromEvent}
-                disabled={savingSelectedEvent || !selectedEvent?.patientId}
-                className="gap-1.5 font-medium"
-              >
-                <Play className="h-4 w-4 fill-primary text-primary" />
-                Iniciar atendimento
-              </Button>
-              <DialogClose asChild>
-                <Button type="button" variant="outline" disabled={savingSelectedEvent}>Fechar</Button>
-              </DialogClose>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <AgendaEventQuickDialog
+          selectedEvent={selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+          selectedStatusAction={selectedStatusAction}
+          onStatusActionChange={setSelectedStatusAction}
+          selectedEventDate={selectedEventDate}
+          onDateChange={setSelectedEventDate}
+          selectedEventTime={selectedEventTime}
+          onTimeChange={setSelectedEventTime}
+          savingSelectedEvent={savingSelectedEvent}
+          isSelectedEventDateTimePast={isSelectedEventDateTimePast}
+          patients={patients}
+          clinicName={clinic?.name ?? undefined}
+          canDeleteEvents={can("agenda.delete_events")}
+          onApplyStatus={() => void handleApplyEventStatus()}
+          onUpdateDateTime={() => void handleUpdateSelectedDateTime()}
+          onStartAttendance={handleStartAttendanceFromEvent}
+          formatDateTime={formatAgendaEventDateTime}
+          agendaStatusStyles={agendaStatusStyles}
+          agendaStatusLabels={agendaStatusLabels}
+          agendaStatusOptions={agendaStatusOptions}
+          agendaDeleteOption={agendaDeleteOption}
+        />
       </>
     );
 };
