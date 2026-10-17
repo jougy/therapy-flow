@@ -6,7 +6,34 @@ import { AgendaMonthView } from "./AgendaMonthView";
 import { AgendaDayView } from "./AgendaDayView";
 import { AgendaWeekView } from "./AgendaWeekView";
 import { AgendaEventModal } from "./AgendaEventModal";
+import { AgendaFiltersToolbar } from "./AgendaFiltersToolbar";
 import type { AgendaEventItem } from "./types";
+
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div data-testid="dropdown-menu">{children}</div>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div data-testid="dropdown-content">{children}</div>,
+  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuSeparator: () => <hr />,
+  DropdownMenuCheckboxItem: ({
+    children,
+    checked,
+    onCheckedChange,
+  }: {
+    children: React.ReactNode;
+    checked?: boolean;
+    onCheckedChange?: (c: boolean) => void;
+  }) => (
+    <button
+      role="checkbox"
+      aria-checked={checked}
+      onClick={() => onCheckedChange?.(!checked)}
+      type="button"
+    >
+      {children}
+    </button>
+  ),
+}));
 
 const mockEvents: AgendaEventItem[] = [
   {
@@ -259,4 +286,94 @@ describe("Agenda Modular Components", () => {
       expect(onOpenAddModal).toHaveBeenCalledWith(expect.any(Date), "07:00");
     });
   });
+
+  describe("AgendaFiltersToolbar (Drop Checklist de Períodos)", () => {
+    it("renders and toggles shift filters correctly", async () => {
+      const setSearchQuery = vi.fn();
+      const setFilterType = vi.fn();
+      const setFilterStatus = vi.fn();
+      const setFilterShifts = vi.fn();
+
+      const { rerender } = render(
+        <AgendaFiltersToolbar
+          searchQuery=""
+          setSearchQuery={setSearchQuery}
+          filterType="all"
+          setFilterType={setFilterType}
+          filterStatus="all"
+          setFilterStatus={setFilterStatus}
+          filterShifts={[]}
+          setFilterShifts={setFilterShifts}
+        />
+      );
+
+      // Botão do Drop Checklist com label padrão
+      const triggerBtn = screen.getByRole("button", { name: /todos os períodos/i });
+      expect(triggerBtn).toBeInTheDocument();
+
+      // Abrir dropdown (Radix UI responde a pointerDown)
+      fireEvent.pointerDown(triggerBtn, { button: 0 });
+
+      // Opções com turnos
+      expect(await screen.findByText("Madrugada")).toBeInTheDocument();
+      expect(screen.getByText("Manhã")).toBeInTheDocument();
+      expect(screen.getByText("Tarde")).toBeInTheDocument();
+      expect(screen.getByText("Noite")).toBeInTheDocument();
+
+      // Clicar em Manhã
+      const morningOption = screen.getByText("Manhã");
+      fireEvent.click(morningOption);
+      expect(setFilterShifts).toHaveBeenCalled();
+
+      // Rerender com 1 período selecionado
+      rerender(
+        <AgendaFiltersToolbar
+          searchQuery=""
+          setSearchQuery={setSearchQuery}
+          filterType="all"
+          setFilterType={setFilterType}
+          filterStatus="all"
+          setFilterStatus={setFilterStatus}
+          filterShifts={["morning"]}
+          setFilterShifts={setFilterShifts}
+        />
+      );
+
+      expect(screen.getByRole("button", { name: /manhã/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /limpar filtros/i })).toBeInTheDocument();
+    });
+  });
+
+  describe("AgendaWeekView Shift Filter Toggling", () => {
+    it("allows clicking shift badges in day cards to filter events interactively", () => {
+      const onSelectDate = vi.fn();
+      const onNavigateToDay = vi.fn();
+      const onOpenAddModal = vi.fn();
+      const onOpenEditModal = vi.fn();
+
+      render(
+        <AgendaWeekView
+          currentDate={new Date(2026, 8, 26)}
+          onSelectDate={onSelectDate}
+          onNavigateToDay={onNavigateToDay}
+          events={mockEvents}
+          patients={mockPatients}
+          onOpenAddModal={onOpenAddModal}
+          onOpenEditModal={onOpenEditModal}
+        />
+      );
+
+      // Buscar os botões de turno com title explicativo
+      const morningShiftBtns = screen.getAllByTitle(/manhã: 1 compromisso\(s\)/i);
+      expect(morningShiftBtns.length).toBeGreaterThan(0);
+
+      // Clicar no botão da manhã
+      fireEvent.click(morningShiftBtns[0]);
+
+      // Verificar que o botão "Todos" aparece no card para limpar o filtro
+      const resetBtn = screen.queryByTitle(/limpar filtro de turnos/i);
+      expect(resetBtn).toBeInTheDocument();
+    });
+  });
 });
+

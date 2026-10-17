@@ -155,3 +155,16 @@ export interface CopiedPeriodState {
  */
 export type AgendaFilterType = AgendaEventType | "all";
 export type AgendaFilterStatus = AgendaEventStatus | "all";
+
+export interface ShiftFilterOption {
+  key: AgendaShift;
+  label: string;
+  range: string;
+}
+
+export const SHIFT_FILTER_OPTIONS: readonly ShiftFilterOption[] = [
+  { key: "dawn", label: "Madrugada", range: "00h – 06h" },
+  { key: "morning", label: "Manhã", range: "06h – 12h" },
+  { key: "afternoon", label: "Tarde", range: "12h – 18h" },
+  { key: "evening", label: "Noite", range: "18h – 24h" },
+] as const;

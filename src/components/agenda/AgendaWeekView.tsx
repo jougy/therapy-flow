@@ -58,7 +58,10 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
   onOpenAddModal,
   onOpenEditModal,
 }) => {
-  // Agrupar por turnos do dia
+  // Estado local de turnos filtrados no card (multiseleção)
+  const [selectedLocalShifts, setSelectedLocalShifts] = React.useState<AgendaShift[]>([]);
+
+  // Agrupar por turnos do dia (resumo total do dia antes de filtros locais)
   const shiftsSummary = useMemo(() => {
     const summary: Record<AgendaShift, number> = {
       dawn: 0,
@@ -72,6 +75,25 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
     }
     return summary;
   }, [dayEvents]);
+
+  // Alternar turno selecionado no card (multiseleção)
+  const handleToggleLocalShift = (shift: AgendaShift, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedLocalShifts((prev) => {
+      if (prev.includes(shift)) {
+        return prev.filter((s) => s !== shift);
+      }
+      return [...prev, shift];
+    });
+  };
+
+  // Eventos exibidos após aplicar filtro de turno local se houver
+  const displayedEvents = useMemo(() => {
+    if (selectedLocalShifts.length === 0 || selectedLocalShifts.length === 4) {
+      return dayEvents;
+    }
+    return dayEvents.filter((ev) => selectedLocalShifts.includes(getEventShift(ev.time)));
+  }, [dayEvents, selectedLocalShifts]);
 
   return (
     <Card
@@ -109,85 +131,132 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           </span>
         </button>
 
-        {dayEvents.length > 0 ? (
-          <Badge
-            variant="secondary"
-            className="text-[10px] h-5 px-1.5 rounded-full font-bold bg-primary/10 text-primary"
-          >
-            {dayEvents.length}
-          </Badge>
-        ) : (
-          <span className="text-[10px] text-muted-foreground/50 font-medium">Livre</span>
-        )}
+        <div className="flex items-center gap-1">
+          {selectedLocalShifts.length > 0 && selectedLocalShifts.length < 4 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedLocalShifts([]);
+              }}
+              className="text-[10px] text-muted-foreground hover:text-primary underline px-1"
+              title="Limpar filtro de turnos"
+            >
+              Todos
+            </button>
+          )}
+          {dayEvents.length > 0 ? (
+            <Badge
+              variant="secondary"
+              className="text-[10px] h-5 px-1.5 rounded-full font-bold bg-primary/10 text-primary"
+            >
+              {displayedEvents.length !== dayEvents.length
+                ? `${displayedEvents.length}/${dayEvents.length}`
+                : dayEvents.length}
+            </Badge>
+          ) : (
+            <span className="text-[10px] text-muted-foreground/50 font-medium">Livre</span>
+          )}
+        </div>
       </div>
 
-      {/* Resumo visual dos 4 turnos (Madrugada, Manhã, Tarde, Noite) */}
+      {/* Resumo interativo dos 4 turnos (Madrugada, Manhã, Tarde, Noite) - Multisselecionáveis */}
       <div className="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-border/40 bg-muted/10 text-center">
         {/* Madrugada */}
-        <div
+        <button
+          type="button"
+          onClick={(e) => handleToggleLocalShift("dawn", e)}
           className={cn(
-            "flex items-center justify-center gap-0.5 py-0.5 rounded-md text-[10px] font-medium border",
-            shiftsSummary.dawn > 0
-              ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-300/40 font-semibold"
-              : "border-transparent text-muted-foreground/40"
+            "flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-lg text-[10px] font-medium border transition-all select-none cursor-pointer",
+            selectedLocalShifts.includes("dawn")
+              ? "bg-indigo-600 text-white border-indigo-700 shadow-xs font-bold ring-1 ring-indigo-400"
+              : shiftsSummary.dawn > 0
+              ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-300/40 hover:bg-indigo-500/20 font-semibold"
+              : "border-transparent text-muted-foreground/40 hover:bg-muted/40"
           )}
-          title={`Madrugada: ${shiftsSummary.dawn} compromisso(s)`}
+          title={`Madrugada: ${shiftsSummary.dawn} compromisso(s). Clique para filtrar.`}
         >
-          <CloudMoon className="h-2.5 w-2.5" />
+          <CloudMoon className="h-3 w-3 shrink-0" />
           <span>{shiftsSummary.dawn}</span>
-        </div>
+        </button>
 
         {/* Manhã */}
-        <div
+        <button
+          type="button"
+          onClick={(e) => handleToggleLocalShift("morning", e)}
           className={cn(
-            "flex items-center justify-center gap-0.5 py-0.5 rounded-md text-[10px] font-medium border",
-            shiftsSummary.morning > 0
-              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300/40 font-semibold"
-              : "border-transparent text-muted-foreground/40"
+            "flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-lg text-[10px] font-medium border transition-all select-none cursor-pointer",
+            selectedLocalShifts.includes("morning")
+              ? "bg-amber-600 text-white border-amber-700 shadow-xs font-bold ring-1 ring-amber-400"
+              : shiftsSummary.morning > 0
+              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300/40 hover:bg-amber-500/20 font-semibold"
+              : "border-transparent text-muted-foreground/40 hover:bg-muted/40"
           )}
-          title={`Manhã: ${shiftsSummary.morning} compromisso(s)`}
+          title={`Manhã: ${shiftsSummary.morning} compromisso(s). Clique para filtrar.`}
         >
-          <Sun className="h-2.5 w-2.5" />
+          <Sun className="h-3 w-3 shrink-0" />
           <span>{shiftsSummary.morning}</span>
-        </div>
+        </button>
 
         {/* Tarde */}
-        <div
+        <button
+          type="button"
+          onClick={(e) => handleToggleLocalShift("afternoon", e)}
           className={cn(
-            "flex items-center justify-center gap-0.5 py-0.5 rounded-md text-[10px] font-medium border",
-            shiftsSummary.afternoon > 0
-              ? "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-300/40 font-semibold"
-              : "border-transparent text-muted-foreground/40"
+            "flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-lg text-[10px] font-medium border transition-all select-none cursor-pointer",
+            selectedLocalShifts.includes("afternoon")
+              ? "bg-blue-600 text-white border-blue-700 shadow-xs font-bold ring-1 ring-blue-400"
+              : shiftsSummary.afternoon > 0
+              ? "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-300/40 hover:bg-blue-500/20 font-semibold"
+              : "border-transparent text-muted-foreground/40 hover:bg-muted/40"
           )}
-          title={`Tarde: ${shiftsSummary.afternoon} compromisso(s)`}
+          title={`Tarde: ${shiftsSummary.afternoon} compromisso(s). Clique para filtrar.`}
         >
-          <Sunset className="h-2.5 w-2.5" />
+          <Sunset className="h-3 w-3 shrink-0" />
           <span>{shiftsSummary.afternoon}</span>
-        </div>
+        </button>
 
         {/* Noite */}
-        <div
+        <button
+          type="button"
+          onClick={(e) => handleToggleLocalShift("evening", e)}
           className={cn(
-            "flex items-center justify-center gap-0.5 py-0.5 rounded-md text-[10px] font-medium border",
-            shiftsSummary.evening > 0
-              ? "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-300/40 font-semibold"
-              : "border-transparent text-muted-foreground/40"
+            "flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-lg text-[10px] font-medium border transition-all select-none cursor-pointer",
+            selectedLocalShifts.includes("evening")
+              ? "bg-purple-600 text-white border-purple-700 shadow-xs font-bold ring-1 ring-purple-400"
+              : shiftsSummary.evening > 0
+              ? "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-300/40 hover:bg-purple-500/20 font-semibold"
+              : "border-transparent text-muted-foreground/40 hover:bg-muted/40"
           )}
-          title={`Noite: ${shiftsSummary.evening} compromisso(s)`}
+          title={`Noite: ${shiftsSummary.evening} compromisso(s). Clique para filtrar.`}
         >
-          <Moon className="h-2.5 w-2.5" />
+          <Moon className="h-3 w-3 shrink-0" />
           <span>{shiftsSummary.evening}</span>
-        </div>
+        </button>
       </div>
 
       {/* Lista dos compromissos no card semanal */}
       <div className="flex-1 p-2 space-y-1.5 overflow-y-auto max-h-[220px]">
-        {dayEvents.length === 0 ? (
+        {displayedEvents.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-8 text-center text-muted-foreground/50">
-            <p className="text-[11px]">Nenhum horário</p>
+            <p className="text-[11px]">
+              {dayEvents.length > 0 ? "Nenhum no turno selecionado" : "Nenhum horário"}
+            </p>
+            {selectedLocalShifts.length > 0 && selectedLocalShifts.length < 4 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedLocalShifts([]);
+                }}
+                className="text-[10px] text-primary hover:underline font-semibold mt-1"
+              >
+                Ver todos ({dayEvents.length})
+              </button>
+            )}
           </div>
         ) : (
-          dayEvents.map((e) => {
+          displayedEvents.map((e) => {
             const typeStyle = eventTypeColors[e.eventType];
             const patient = e.patientId ? patientById.get(e.patientId) : null;
             const displayTitle = e.title || (patient ? patient.name : "Compromisso");
