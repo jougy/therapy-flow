@@ -1,25 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BellRing, ExternalLink, Loader2, Settings, Trash2, Volume2, VolumeX, X } from "lucide-react";
+import { BellRing, ExternalLink, Loader2, Settings, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import {
+  defaultNotificationPreferences,
+  type NotificationPreferences,
+  PersonalNotificationsSettings,
+} from "@/components/PersonalNotificationsSettings";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { playNotificationSound } from "@/lib/notification-sounds";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { cn } from "@/lib/utils";
 
 type NotificationCategory = "security" | "clinic_access" | "patient" | "session" | "reminder" | "system";
-type PreferenceToggleKey =
-  | "notify_security"
-  | "notify_clinic_access"
-  | "notify_patient_saved"
-  | "notify_session_activity"
-  | "notify_event_reminders"
-  | "notify_system";
 
 interface PersonalNotification {
   action_label: string | null;
@@ -38,61 +35,6 @@ interface PersonalNotification {
   title: string;
 }
 
-interface NotificationPreferences {
-  notify_clinic_access: boolean;
-  notify_event_reminders: boolean;
-  notify_patient_saved: boolean;
-  notify_security: boolean;
-  notify_session_activity: boolean;
-  notify_system: boolean;
-  sound_key: "soft" | "chime" | "pulse";
-  sound_mode: "default" | "silent";
-}
-
-const defaultPreferences: NotificationPreferences = {
-  notify_clinic_access: true,
-  notify_event_reminders: true,
-  notify_patient_saved: true,
-  notify_security: true,
-  notify_session_activity: true,
-  notify_system: true,
-  sound_key: "soft",
-  sound_mode: "default",
-};
-
-const preferenceItems: Array<{ key: PreferenceToggleKey; label: string; description: string }> = [
-  {
-    key: "notify_security",
-    label: "Segurança e acessos pessoais",
-    description: "Senha, sessões encerradas e alterações no seu acesso.",
-  },
-  {
-    key: "notify_clinic_access",
-    label: "Entrada e saída da clínica",
-    description: "Quando alguém acessa, sai ou perde acesso à clínica.",
-  },
-  {
-    key: "notify_patient_saved",
-    label: "Cadastros de paciente",
-    description: "Confirmações de cadastro salvo ou atualizado.",
-  },
-  {
-    key: "notify_session_activity",
-    label: "Atendimentos da clínica",
-    description: "Atendimentos registrados por outros usuários, com atalho quando houver.",
-  },
-  {
-    key: "notify_event_reminders",
-    label: "Lembretes de agenda",
-    description: "Eventos e atendimentos próximos do horário.",
-  },
-  {
-    key: "notify_system",
-    label: "Sistema e novidades",
-    description: "Avisos operacionais, atualizações e mensagens gerais.",
-  },
-];
-
 const categoryLabel: Record<NotificationCategory, string> = {
   clinic_access: "Clínica",
   patient: "Paciente",
@@ -102,43 +44,17 @@ const categoryLabel: Record<NotificationCategory, string> = {
   system: "Sistema",
 };
 
-const soundLabels: Record<NotificationPreferences["sound_key"], string> = {
-  chime: "Chime",
-  pulse: "Pulso",
-  soft: "Suave",
-};
-
 const formatNotificationDate = (value: string) =>
   new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
 
-const playNotificationPreview = (soundKey: NotificationPreferences["sound_key"]) => {
-  const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextConstructor) return;
-
-  const context = new AudioContextConstructor();
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  const frequency = soundKey === "chime" ? 880 : soundKey === "pulse" ? 520 : 660;
-
-  oscillator.frequency.value = frequency;
-  oscillator.type = soundKey === "pulse" ? "square" : "sine";
-  gain.gain.setValueAtTime(0.001, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.22);
-  oscillator.connect(gain);
-  gain.connect(context.destination);
-  oscillator.start();
-  oscillator.stop(context.currentTime + 0.24);
-};
-
 const PersonalNotificationsButton = ({ className }: { className?: string }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<PersonalNotification[]>([]);
-  const [preferences, setPreferences] = useState<NotificationPreferences>(defaultPreferences);
+  const [preferences, setPreferences] = useState<NotificationPreferences>(defaultNotificationPreferences);
   const [loading, setLoading] = useState(false);
   const [savingPreference, setSavingPreference] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -151,7 +67,7 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
   const fetchNotificationCenter = useCallback(async ({ markAsRead = false, showLoading = false }: { markAsRead?: boolean; showLoading?: boolean } = {}) => {
     if (!user?.id) {
       setNotifications([]);
-      setPreferences(defaultPreferences);
+      setPreferences(defaultNotificationPreferences);
       return;
     }
 
@@ -203,7 +119,7 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
     if (preferencesResponse.error) {
       logRuntimeError("personal_space.notification_preferences", preferencesResponse.error, { userId: user?.id });
     } else {
-      setPreferences(((preferencesResponse.data ?? [defaultPreferences])[0] ?? defaultPreferences) as NotificationPreferences);
+      setPreferences(((preferencesResponse.data ?? [defaultNotificationPreferences])[0] ?? defaultNotificationPreferences) as NotificationPreferences);
     }
   }, [user?.id]);
 
@@ -242,7 +158,7 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
     }
 
     if (changes.sound_key && nextPreferences.sound_mode !== "silent") {
-      playNotificationPreview(changes.sound_key);
+      playNotificationSound(changes.sound_key);
     }
   };
 
@@ -324,78 +240,14 @@ const PersonalNotificationsButton = ({ className }: { className?: string }) => {
     </Button>
   );
 
-  const settingsPanel = (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Som</label>
-          <Select
-            value={preferences.sound_mode}
-            onValueChange={(value) => void updatePreferences({ sound_mode: value as NotificationPreferences["sound_mode"] })}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">
-                <span className="flex items-center gap-2">
-                  <Volume2 className="h-3.5 w-3.5" />
-                  Com toque
-                </span>
-              </SelectItem>
-              <SelectItem value="silent">
-                <span className="flex items-center gap-2">
-                  <VolumeX className="h-3.5 w-3.5" />
-                  Silencioso
-                </span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Toque</label>
-          <Select
-            value={preferences.sound_key}
-            disabled={preferences.sound_mode === "silent"}
-            onValueChange={(value) => void updatePreferences({ sound_key: value as NotificationPreferences["sound_key"] })}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(soundLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        {preferenceItems.map((item) => (
-          <div key={item.key} className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium leading-tight">{item.label}</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.description}</p>
-            </div>
-            <Switch
-              checked={preferences[item.key]}
-              disabled={savingPreference}
-              onCheckedChange={(checked) => void updatePreferences({ [item.key]: checked } as Partial<NotificationPreferences>)}
-              aria-label={`Alternar ${item.label}`}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
   const feed = (
     <div className="min-w-0">
       {showSettings ? (
-        settingsPanel
+        <PersonalNotificationsSettings
+          preferences={preferences}
+          savingPreference={savingPreference}
+          onUpdatePreferences={updatePreferences}
+        />
       ) : loading ? (
         <div className="flex items-center justify-center py-10">
           <Loader2 className="h-5 w-5 animate-spin text-primary" />

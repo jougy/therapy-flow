@@ -156,27 +156,42 @@ ALTER TYPE "public"."subscription_plan" OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."accept_clinic_collaborator_invitation"("_token" "text", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'auth', 'extensions'
     AS $$
 DECLARE
   _user_id uuid := auth.uid();
   _user_email text;
   _invitation public.clinic_collaborator_invitations%ROWTYPE;
   _profile_exists boolean;
+  _clinic_plan text;
+  _subaccount_limit integer;
+  _active_members_count integer;
+  _token_clean text := trim(coalesce(_token, ''));
+  _sha256_hash text;
 BEGIN
   IF _user_id IS NULL THEN
     RAISE EXCEPTION 'Entre na sua conta para aceitar o convite.';
   END IF;
 
-  SELECT lower(email)
-  INTO _user_email
-  FROM auth.users
-  WHERE id = _user_id;
+  _user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
+  IF _user_email IS NULL OR _user_email = '' THEN
+    SELECT lower(email)
+    INTO _user_email
+    FROM auth.users
+    WHERE id = _user_id;
+  END IF;
+
+  BEGIN
+    _sha256_hash := encode(extensions.digest(_token_clean, 'sha256'), 'hex');
+  EXCEPTION WHEN OTHERS THEN
+    _sha256_hash := NULL;
+  END;
 
   SELECT *
   INTO _invitation
   FROM public.clinic_collaborator_invitations
-  WHERE token_hash = md5(coalesce(_token, ''))
+  WHERE token_hash = md5(_token_clean)
+     OR (_sha256_hash IS NOT NULL AND token_hash = _sha256_hash)
   LIMIT 1;
 
   IF _invitation.id IS NULL THEN
@@ -189,7 +204,7 @@ BEGIN
 
   IF _invitation.expires_at < now() THEN
     UPDATE public.clinic_collaborator_invitations
-    SET status = 'expired'
+    SET status = 'expired', updated_at = now()
     WHERE id = _invitation.id;
     RAISE EXCEPTION 'Este convite expirou.';
   END IF;
@@ -198,6 +213,30 @@ BEGIN
     RAISE EXCEPTION 'Entre com o e-mail convidado para aceitar este acesso.';
   END IF;
 
+  -- Validação de cota do plano da clínica antes de admitir novo membro
+  SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
+  INTO _clinic_plan, _subaccount_limit
+  FROM public.clinics
+  WHERE id = _invitation.clinic_id;
+
+  IF _clinic_plan IN ('prof_basico', 'prof_medio', 'solo') THEN
+    RAISE EXCEPTION 'Esta clínica está atualmente em um plano monoposto (apenas o titular) e não aceita novos colaboradores.';
+  END IF;
+
+  IF _subaccount_limit < 999999 THEN
+    SELECT COUNT(*)::integer INTO _active_members_count
+    FROM public.clinic_memberships
+    WHERE clinic_id = _invitation.clinic_id
+      AND is_active = true
+      AND membership_status = 'active'
+      AND user_id <> _user_id;
+
+    IF _active_members_count >= _subaccount_limit THEN
+      RAISE EXCEPTION 'O limite de membros da clínica foi atingido para o plano atual.';
+    END IF;
+  END IF;
+
+  -- Atualizar ou criar perfil
   SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = _user_id)
   INTO _profile_exists;
 
@@ -234,7 +273,7 @@ BEGIN
 
   INSERT INTO public.user_roles (user_id, role)
   VALUES (_user_id, 'user')
-  ON CONFLICT DO NOTHING;
+  ON CONFLICT (user_id, role) DO NOTHING;
 
   INSERT INTO public.user_security_settings (user_id, clinic_id)
   VALUES (_user_id, _invitation.clinic_id)
@@ -279,7 +318,8 @@ BEGIN
   SET
     status = 'accepted',
     accepted_by = _user_id,
-    accepted_at = now()
+    accepted_at = now(),
+    updated_at = now()
   WHERE id = _invitation.id;
 
   RETURN jsonb_build_object(
@@ -295,22 +335,28 @@ ALTER FUNCTION "public"."accept_clinic_collaborator_invitation"("_token" "text",
 
 CREATE OR REPLACE FUNCTION "public"."accept_current_user_clinic_invitation"("_invitation_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'auth', 'extensions'
     AS $$
 DECLARE
   _user_id uuid := auth.uid();
   _user_email text;
   _invitation public.clinic_collaborator_invitations%ROWTYPE;
   _profile_exists boolean;
+  _clinic_plan text;
+  _subaccount_limit integer;
+  _active_members_count integer;
 BEGIN
   IF _user_id IS NULL THEN
     RAISE EXCEPTION 'Entre na sua conta para aceitar o convite.';
   END IF;
 
-  SELECT lower(email)
-  INTO _user_email
-  FROM auth.users
-  WHERE id = _user_id;
+  _user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
+  IF _user_email IS NULL OR _user_email = '' THEN
+    SELECT lower(email)
+    INTO _user_email
+    FROM auth.users
+    WHERE id = _user_id;
+  END IF;
 
   SELECT *
   INTO _invitation
@@ -328,13 +374,36 @@ BEGIN
 
   IF _invitation.expires_at < now() THEN
     UPDATE public.clinic_collaborator_invitations
-    SET status = 'expired'
+    SET status = 'expired', updated_at = now()
     WHERE id = _invitation.id;
     RAISE EXCEPTION 'Este convite expirou.';
   END IF;
 
   IF lower(_invitation.email) IS DISTINCT FROM _user_email THEN
     RAISE EXCEPTION 'Este convite pertence a outro e-mail.';
+  END IF;
+
+  -- Validação de cota do plano da clínica antes de admitir novo membro
+  SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
+  INTO _clinic_plan, _subaccount_limit
+  FROM public.clinics
+  WHERE id = _invitation.clinic_id;
+
+  IF _clinic_plan IN ('prof_basico', 'prof_medio', 'solo') THEN
+    RAISE EXCEPTION 'Esta clínica está atualmente em um plano monoposto (apenas o titular) e não aceita novos colaboradores.';
+  END IF;
+
+  IF _subaccount_limit < 999999 THEN
+    SELECT COUNT(*)::integer INTO _active_members_count
+    FROM public.clinic_memberships
+    WHERE clinic_id = _invitation.clinic_id
+      AND is_active = true
+      AND membership_status = 'active'
+      AND user_id <> _user_id;
+
+    IF _active_members_count >= _subaccount_limit THEN
+      RAISE EXCEPTION 'O limite de membros da clínica foi atingido para o plano atual.';
+    END IF;
   END IF;
 
   SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = _user_id)
@@ -382,6 +451,7 @@ BEGIN
     user_id,
     account_role,
     operational_role,
+    role_key,
     membership_status,
     is_active,
     invited_by
@@ -391,6 +461,7 @@ BEGIN
     _user_id,
     NULL,
     _invitation.operational_role,
+    _invitation.role_key,
     'active',
     true,
     _invitation.invited_by
@@ -398,6 +469,7 @@ BEGIN
   ON CONFLICT (clinic_id, user_id)
   DO UPDATE SET
     operational_role = EXCLUDED.operational_role,
+    role_key = EXCLUDED.role_key,
     membership_status = 'active',
     is_active = true,
     ended_at = NULL,
@@ -412,7 +484,8 @@ BEGIN
   SET
     status = 'accepted',
     accepted_by = _user_id,
-    accepted_at = now()
+    accepted_at = now(),
+    updated_at = now()
   WHERE id = _invitation.id;
 
   RETURN jsonb_build_object(
@@ -424,6 +497,166 @@ $$;
 
 
 ALTER FUNCTION "public"."accept_current_user_clinic_invitation"("_invitation_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."auto_accept_pending_clinic_invitation_for_current_user"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth', 'extensions'
+    AS $$
+DECLARE
+  _user_id uuid := auth.uid();
+  _user_email text;
+  _invitation public.clinic_collaborator_invitations%ROWTYPE;
+  _profile_exists boolean;
+  _clinic_plan text;
+  _subaccount_limit integer;
+  _active_members_count integer;
+BEGIN
+  IF _user_id IS NULL THEN
+    RETURN jsonb_build_object('accepted', false, 'reason', 'unauthenticated');
+  END IF;
+
+  _user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
+  IF _user_email IS NULL OR _user_email = '' THEN
+    SELECT lower(email)
+    INTO _user_email
+    FROM auth.users
+    WHERE id = _user_id;
+  END IF;
+
+  IF _user_email IS NULL OR _user_email = '' THEN
+    RETURN jsonb_build_object('accepted', false, 'reason', 'email_not_found');
+  END IF;
+
+  SELECT *
+  INTO _invitation
+  FROM public.clinic_collaborator_invitations
+  WHERE lower(email) = _user_email
+    AND status = 'pending'
+    AND expires_at > now()
+  ORDER BY created_at DESC
+  LIMIT 1;
+
+  IF _invitation.id IS NULL THEN
+    RETURN jsonb_build_object('accepted', false, 'reason', 'no_pending_invitation');
+  END IF;
+
+  -- Validação de cota do plano da clínica antes de admitir novo membro
+  SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
+  INTO _clinic_plan, _subaccount_limit
+  FROM public.clinics
+  WHERE id = _invitation.clinic_id;
+
+  IF _clinic_plan IN ('prof_basico', 'prof_medio', 'solo') THEN
+    RETURN jsonb_build_object('accepted', false, 'reason', 'plan_monoposto_not_allowed', 'clinic_id', _invitation.clinic_id);
+  END IF;
+
+  IF _subaccount_limit < 999999 THEN
+    SELECT COUNT(*)::integer INTO _active_members_count
+    FROM public.clinic_memberships
+    WHERE clinic_id = _invitation.clinic_id
+      AND is_active = true
+      AND membership_status = 'active'
+      AND user_id <> _user_id;
+
+    IF _active_members_count >= _subaccount_limit THEN
+      RETURN jsonb_build_object('accepted', false, 'reason', 'clinic_subaccount_limit_reached', 'clinic_id', _invitation.clinic_id);
+    END IF;
+  END IF;
+
+  SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = _user_id)
+  INTO _profile_exists;
+
+  IF _profile_exists THEN
+    UPDATE public.profiles
+    SET
+      clinic_id = COALESCE(clinic_id, _invitation.clinic_id),
+      email = COALESCE(email, _invitation.email),
+      job_title = COALESCE(NULLIF(trim(_invitation.job_title), ''), job_title),
+      specialty = COALESCE(NULLIF(trim(_invitation.specialty), ''), specialty),
+      public_code = COALESCE(NULLIF(trim(public_code), ''), public.generate_profile_public_code())
+    WHERE id = _user_id;
+  ELSE
+    INSERT INTO public.profiles (
+      id,
+      clinic_id,
+      email,
+      job_title,
+      specialty,
+      public_code
+    )
+    VALUES (
+      _user_id,
+      _invitation.clinic_id,
+      _invitation.email,
+      NULLIF(trim(_invitation.job_title), ''),
+      NULLIF(trim(_invitation.specialty), ''),
+      public.generate_profile_public_code()
+    );
+  END IF;
+
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (_user_id, 'user')
+  ON CONFLICT (user_id, role) DO NOTHING;
+
+  INSERT INTO public.user_security_settings (user_id, clinic_id)
+  VALUES (_user_id, _invitation.clinic_id)
+  ON CONFLICT (user_id) DO UPDATE
+  SET clinic_id = COALESCE(public.user_security_settings.clinic_id, EXCLUDED.clinic_id);
+
+  INSERT INTO public.clinic_memberships (
+    clinic_id,
+    user_id,
+    account_role,
+    operational_role,
+    role_key,
+    membership_status,
+    is_active,
+    invited_by
+  )
+  VALUES (
+    _invitation.clinic_id,
+    _user_id,
+    NULL,
+    _invitation.operational_role,
+    _invitation.role_key,
+    'active',
+    true,
+    _invitation.invited_by
+  )
+  ON CONFLICT (clinic_id, user_id)
+  DO UPDATE SET
+    operational_role = EXCLUDED.operational_role,
+    role_key = EXCLUDED.role_key,
+    membership_status = 'active',
+    is_active = true,
+    ended_at = NULL,
+    invited_by = COALESCE(public.clinic_memberships.invited_by, EXCLUDED.invited_by);
+
+  INSERT INTO public.user_active_clinic_contexts (user_id, clinic_id, updated_at)
+  VALUES (_user_id, _invitation.clinic_id, now())
+  ON CONFLICT (user_id)
+  DO UPDATE SET clinic_id = EXCLUDED.clinic_id, updated_at = now();
+
+  UPDATE public.clinic_collaborator_invitations
+  SET
+    status = 'accepted',
+    accepted_by = _user_id,
+    accepted_at = now(),
+    updated_at = now()
+  WHERE id = _invitation.id;
+
+  RETURN jsonb_build_object(
+    'accepted', true,
+    'clinic_id', _invitation.clinic_id,
+    'invitation_id', _invitation.id,
+    'status', 'accepted'
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."auto_accept_pending_clinic_invitation_for_current_user"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."acknowledge_current_user_release_notes"("_release_id" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
@@ -2783,7 +3016,7 @@ CREATE TABLE IF NOT EXISTS "public"."notification_preferences" (
     "notify_system" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "notification_preferences_sound_key_check" CHECK (("sound_key" = ANY (ARRAY['soft'::"text", 'chime'::"text", 'pulse'::"text"]))),
+    CONSTRAINT "notification_preferences_sound_key_check" CHECK (("sound_key" = ANY (ARRAY['soft'::"text", 'cute'::"text", 'chime'::"text", 'pulse'::"text", 'urgent_alarm'::"text", 'siren'::"text"]))),
     CONSTRAINT "notification_preferences_sound_mode_check" CHECK (("sound_mode" = ANY (ARRAY['default'::"text", 'silent'::"text"])))
 );
 
@@ -3154,7 +3387,7 @@ ALTER FUNCTION "public"."get_asaas_webhook_logs"("_limit" integer, "_offset" int
 
 CREATE OR REPLACE FUNCTION "public"."get_clinic_collaborator_invitation"("_token" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'auth', 'extensions'
     AS $$
 DECLARE
   _invitation public.clinic_collaborator_invitations%ROWTYPE;
@@ -3163,11 +3396,20 @@ DECLARE
   _user_id uuid;
   _has_cpf boolean := false;
   _raw_cpf text;
+  _token_clean text := trim(coalesce(_token, ''));
+  _sha256_hash text;
 BEGIN
+  BEGIN
+    _sha256_hash := encode(extensions.digest(_token_clean, 'sha256'), 'hex');
+  EXCEPTION WHEN OTHERS THEN
+    _sha256_hash := NULL;
+  END;
+
   SELECT *
   INTO _invitation
   FROM public.clinic_collaborator_invitations
-  WHERE token_hash = md5(coalesce(_token, ''))
+  WHERE token_hash = md5(_token_clean)
+     OR (_sha256_hash IS NOT NULL AND token_hash = _sha256_hash)
   LIMIT 1;
 
   IF _invitation.id IS NULL THEN
@@ -3176,7 +3418,7 @@ BEGIN
 
   IF _invitation.status = 'pending' AND _invitation.expires_at < now() THEN
     UPDATE public.clinic_collaborator_invitations
-    SET status = 'expired'
+    SET status = 'expired', updated_at = now()
     WHERE id = _invitation.id;
 
     _invitation.status := 'expired';
@@ -3219,9 +3461,11 @@ BEGIN
     'clinic_name', COALESCE(_clinic_name, 'Clínica'),
     'email', _invitation.email,
     'operational_role', _invitation.operational_role,
+    'role_key', _invitation.role_key,
     'job_title', _invitation.job_title,
     'specialty', _invitation.specialty,
     'status', _invitation.status,
+    'email_delivery_status', _invitation.email_delivery_status,
     'existing_user', _is_existing_user,
     'has_cpf', _has_cpf,
     'pending_cpf_completion', (_is_existing_user AND NOT _has_cpf),
@@ -5846,7 +6090,7 @@ ALTER FUNCTION "public"."increment_community_template_import"("p_template_id" "u
 
 CREATE OR REPLACE FUNCTION "public"."invite_clinic_collaborator"("_clinic_id" "uuid" DEFAULT NULL::"uuid", "_email" "text" DEFAULT NULL::"text", "_operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_role_key" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'auth', 'extensions'
     AS $_$
 DECLARE
   _requester_id uuid := auth.uid();
@@ -5855,11 +6099,14 @@ DECLARE
   _token text := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
   _token_hash text := md5(_token);
   _existing_user_id uuid;
-  _existing_membership_id uuid;
   _invitation_id uuid;
   _normalized_role_key text := NULLIF(trim(_role_key), '');
   _inferred_operational_role public.operational_role_type := _operational_role;
   _custom_role record;
+  _clinic_plan text;
+  _subaccount_limit integer;
+  _active_subaccounts_count integer;
+  _pending_invites_count integer;
 BEGIN
   IF _requester_id IS NULL THEN
     RAISE EXCEPTION 'Usuário não autenticado.';
@@ -5875,13 +6122,53 @@ BEGIN
     RAISE EXCEPTION 'Você não tem permissão para convidar colaboradores.';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.clinics
-    WHERE clinics.id = _resolved_clinic_id
-      AND clinics.subscription_plan = 'clinic'
-  ) THEN
-    RAISE EXCEPTION 'Convites de colaboradores estão disponíveis apenas no plano clinic.';
+  -- Obter plano e limites canônicos da clínica
+  SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
+  INTO _clinic_plan, _subaccount_limit
+  FROM public.clinics
+  WHERE id = _resolved_clinic_id;
+
+  -- Trava 1: Planos Monoposto (prof_basico, prof_medio, solo) não permitem colaboradores
+  IF _clinic_plan IN ('prof_basico', 'prof_medio', 'solo') THEN
+    RAISE EXCEPTION 'Convites de colaboradores não estão disponíveis em planos individuais (monoposto). Faça upgrade para Profissional Top ou Plano Clínica.';
+  END IF;
+
+  -- Trava 2: Plano Profissional Top (prof_top): máximo de 1 colaborador de apoio (total 2 membros)
+  IF _clinic_plan = 'prof_top' OR _subaccount_limit = 2 THEN
+    SELECT COUNT(*)::integer INTO _active_subaccounts_count
+    FROM public.clinic_memberships
+    WHERE clinic_id = _resolved_clinic_id
+      AND is_active = true
+      AND membership_status = 'active'
+      AND account_role NOT IN ('account_owner', 'owner');
+
+    SELECT COUNT(*)::integer INTO _pending_invites_count
+    FROM public.clinic_collaborator_invitations
+    WHERE clinic_id = _resolved_clinic_id
+      AND status = 'pending'
+      AND lower(email) <> _normalized_email;
+
+    IF (_active_subaccounts_count + _pending_invites_count) >= 1 THEN
+      RAISE EXCEPTION 'O plano Profissional Top permite no máximo 1 colaborador de apoio (total de 2 membros). Limite atingido.';
+    END IF;
+  ELSIF _subaccount_limit < 999999 THEN
+    -- Verificação genérica para outros planos limitados
+    SELECT COUNT(*)::integer INTO _active_subaccounts_count
+    FROM public.clinic_memberships
+    WHERE clinic_id = _resolved_clinic_id
+      AND is_active = true
+      AND membership_status = 'active'
+      AND account_role NOT IN ('account_owner', 'owner');
+
+    SELECT COUNT(*)::integer INTO _pending_invites_count
+    FROM public.clinic_collaborator_invitations
+    WHERE clinic_id = _resolved_clinic_id
+      AND status = 'pending'
+      AND lower(email) <> _normalized_email;
+
+    IF (_active_subaccounts_count + _pending_invites_count) >= GREATEST(0, _subaccount_limit - 1) THEN
+      RAISE EXCEPTION 'O limite de membros da clínica foi atingido para o plano atual.';
+    END IF;
   END IF;
 
   IF _normalized_email = '' OR _normalized_email !~* '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$' THEN
@@ -5916,8 +6203,10 @@ BEGIN
   WHERE lower(users.email) = _normalized_email
   LIMIT 1;
 
+  -- Cancelar convites pendentes anteriores para o mesmo e-mail na mesma clínica
   UPDATE public.clinic_collaborator_invitations
-  SET status = 'cancelled'
+  SET status = 'cancelled',
+      updated_at = now()
   WHERE clinic_id = _resolved_clinic_id
     AND lower(email) = _normalized_email
     AND status = 'pending';
@@ -5932,7 +6221,10 @@ BEGIN
     token_hash,
     invited_by,
     existing_user_id,
-    status
+    status,
+    email_delivery_status,
+    email_last_error,
+    email_sent_at
   )
   VALUES (
     _resolved_clinic_id,
@@ -5944,7 +6236,10 @@ BEGIN
     _token_hash,
     _requester_id,
     _existing_user_id,
-    'pending'
+    'pending',
+    'pending',
+    NULL,
+    NULL
   )
   RETURNING id INTO _invitation_id;
 
@@ -8414,7 +8709,10 @@ BEGIN
       token_hash = _token_hash,
       last_resent_at = now(),
       updated_at = now(),
-      expires_at = now() + interval '14 days'
+      expires_at = now() + interval '14 days',
+      email_delivery_status = 'pending',
+      email_last_error = NULL,
+      email_sent_at = NULL
   WHERE id = _invitation_id;
 
   -- Check user status in auth.users
@@ -11012,10 +11310,14 @@ CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     "payment_plan_id" "uuid",
     "payment_plan_session_index" integer,
     "duration_minutes" integer DEFAULT 60 NOT NULL,
+    "reminder_configs" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "notify_team" boolean DEFAULT false NOT NULL,
+    "notify_patient" boolean DEFAULT false NOT NULL,
+    "notified_colleague_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
     CONSTRAINT "agenda_events_duration_minutes_check" CHECK (((duration_minutes > 0) AND (duration_minutes <= 1440))),
     CONSTRAINT "agenda_events_event_type_check" CHECK (("event_type" = ANY (ARRAY['atendimento'::"text", 'reuniao'::"text", 'evento'::"text"]))),
     CONSTRAINT "agenda_events_payment_plan_session_index_check" CHECK ((("payment_plan_session_index" IS NULL) OR ("payment_plan_session_index" >= 1))),
-    CONSTRAINT "agenda_events_status_check" CHECK (("status" = ANY (ARRAY['lembrete'::"text", 'aguardando_confirmacao'::"text", 'confirmado'::"text", 'cancelado'::"text"])))
+    CONSTRAINT "agenda_events_status_check" CHECK (("status" = ANY (ARRAY['lembrete'::"text", 'aguardando_confirmacao'::"text", 'confirmado'::"text", 'cancelado'::"text", 'concluido'::"text"])))
 );
 
 
@@ -11104,7 +11406,11 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_collaborator_invitations" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "last_resent_at" timestamp with time zone,
-    CONSTRAINT "clinic_collaborator_invitations_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'cancelled'::"text", 'expired'::"text"])))
+    "email_delivery_status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "email_last_error" "text",
+    "email_sent_at" timestamp with time zone,
+    CONSTRAINT "clinic_collaborator_invitations_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'cancelled'::"text", 'expired'::"text"]))),
+    CONSTRAINT "clinic_collaborator_invitations_email_delivery_status_check" CHECK (("email_delivery_status" = ANY (ARRAY['pending'::"text", 'sent'::"text", 'failed'::"text"])))
 );
 
 
@@ -14571,6 +14877,11 @@ GRANT ALL ON FUNCTION "public"."accept_current_user_clinic_invitation"("_invitat
 
 
 
+GRANT ALL ON FUNCTION "public"."auto_accept_pending_clinic_invitation_for_current_user"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."auto_accept_pending_clinic_invitation_for_current_user"() TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."acknowledge_current_user_release_notes"("_release_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."acknowledge_current_user_release_notes"("_release_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."acknowledge_current_user_release_notes"("_release_id" "uuid") TO "authenticated";
@@ -15841,6 +16152,31 @@ CREATE POLICY "Usuarios autenticados podem visualizar suas reunioes de onboardin
     USING (
         created_by = auth.uid()
     );
+
+-- ============================================================================
+-- Funcao RPC: get_clinic_storage_usage
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_clinic_storage_usage(_clinic_id uuid)
+RETURNS TABLE (
+  total_bytes bigint,
+  total_files bigint
+) 
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT 
+    COALESCE(SUM(COALESCE(stored_byte_size, byte_size)), 0)::bigint AS total_bytes,
+    COUNT(*)::bigint AS total_files
+  FROM public.patient_file_uploads
+  WHERE clinic_id = _clinic_id
+    AND status = 'uploaded';
+$$;
+
+COMMENT ON FUNCTION public.get_clinic_storage_usage(uuid) IS 'Calcula o uso total de armazenamento em bytes e quantidade de arquivos confirmados no Backblaze B2 para a clínica informada.';
+
+GRANT EXECUTE ON FUNCTION public.get_clinic_storage_usage(uuid) TO authenticated, service_role;
 
 
 

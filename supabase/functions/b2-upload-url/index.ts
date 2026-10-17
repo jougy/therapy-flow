@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
 import { createPresignedS3Url } from "../_shared/b2-s3.ts";
+import { getPlanStorageQuota } from "../_shared/b2-limits.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -276,6 +277,57 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (sessionError) throw new Error(sessionError.message);
       if (!session) return json({ error: "Atendimento não encontrado para este paciente." }, 404);
+    }
+
+    // --- Verificação Soberana de Cotas de Storage (Backblaze B2) ---
+    // 1. Identificar plano e status da assinatura da clínica
+    const { data: subData } = await admin
+      .from("clinic_subscriptions")
+      .select("status, is_free_trial, plan_type")
+      .eq("clinic_id", clinicId)
+      .maybeSingle();
+
+    const { data: clinicRow } = await admin
+      .from("clinics")
+      .select("subscription_plan")
+      .eq("id", clinicId)
+      .maybeSingle();
+
+    const rawSubStatus = String(subData?.status || "").toUpperCase();
+    const isTrial = rawSubStatus === "TRIAL" || subData?.is_free_trial === true;
+    const planType = subData?.plan_type || clinicRow?.subscription_plan || "prof_basico";
+    const quota = getPlanStorageQuota(planType, isTrial);
+
+    // 2. Validação de tamanho individual do arquivo
+    if (storedByteSize > quota.maxFileSizeBytes) {
+      return json(
+        {
+          code: "FILE_TOO_LARGE",
+          error: `Este arquivo possui ${(storedByteSize / (1024 * 1024)).toFixed(1)} MB. O limite individual do seu plano é de ${quota.maxFileSizeMb} MB.`,
+          maxFileSizeMb: quota.maxFileSizeMb,
+        },
+        403
+      );
+    }
+
+    // 3. Validação de cota global agregada da clínica
+    const { data: usageData, error: usageError } = await admin.rpc("get_clinic_storage_usage", {
+      _clinic_id: clinicId,
+    });
+
+    if (!usageError && usageData && usageData.length > 0) {
+      const currentBytes = Number(usageData[0].total_bytes || 0);
+      if (currentBytes + storedByteSize > quota.totalStorageBytes) {
+        return json(
+          {
+            code: "STORAGE_QUOTA_EXCEEDED",
+            currentStorageMb: Math.round(currentBytes / (1024 * 1024)),
+            error: `A cota global de armazenamento da sua clínica (${quota.totalStorageMb} MB) foi atingida. Faça upgrade do seu plano para liberar mais espaço.`,
+            maxStorageMb: quota.totalStorageMb,
+          },
+          403
+        );
+      }
     }
 
     const uploadId = crypto.randomUUID();

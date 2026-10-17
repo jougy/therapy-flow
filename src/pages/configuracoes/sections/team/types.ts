@@ -18,6 +18,8 @@ export type PendingCollaboratorInvitation = {
   account_state: "registered_unconfirmed" | "registered_confirmed_pending_acceptance" | "invite_sent";
   pending_reason: string;
   last_resent_at?: string | null;
+  email_delivery_status?: "pending" | "sent" | "failed" | null;
+  email_last_error?: string | null;
 };
 
 export type ActiveMember = {

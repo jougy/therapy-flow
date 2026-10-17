@@ -40,12 +40,30 @@ const mockPatients = [
   { id: "patient-2", name: "Maria Santos" },
 ];
 
+const mockInsert = vi.fn().mockReturnValue({
+  select: vi.fn().mockResolvedValue({
+    data: [
+      {
+        id: "ev-pasted-1",
+        event_type: "atendimento",
+        patient_id: "patient-1",
+        scheduled_for: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+        status: "aguardando_confirmacao",
+        title: "Atendimento João",
+        duration_minutes: 60,
+      },
+    ],
+    error: null,
+  }),
+});
+
 vi.mock("@/integrations/supabase/client", () => {
   return {
     supabase: {
       from: vi.fn((table: string) => ({
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
+        insert: mockInsert,
         order: vi.fn().mockImplementation(() => {
           if (table === "agenda_events") {
             return Promise.resolve({ data: mockEvents, error: null });
@@ -165,5 +183,66 @@ describe("ClinicAgendaPage", () => {
     expect(await screen.findByRole("heading", { name: /novo agendamento/i })).toBeInTheDocument();
     expect(screen.getByText(/duração da sessão/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /50 min/i })).toBeInTheDocument();
+  });
+
+  it("supports copying current period (day, week, month), displaying Paste and Cancel buttons", async () => {
+    render(
+      <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
+        <Routes>
+          <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Na visão inicial (dia)
+    const copyDayButton = await screen.findByRole("button", { name: /copiar dia/i });
+    expect(copyDayButton).toBeInTheDocument();
+
+    // Mudar para visão semana
+    const weekButton = await screen.findByRole("button", { name: /^semana$/i });
+    fireEvent.click(weekButton);
+
+    const copyWeekButton = await screen.findByRole("button", { name: /copiar semana/i });
+    expect(copyWeekButton).toBeInTheDocument();
+
+    // Clicar em Copiar Semana
+    fireEvent.click(copyWeekButton);
+
+    // Agora os botões Colar e Cancelar devem aparecer
+    const pasteButton = await screen.findByRole("button", { name: /colar/i });
+    const cancelButton = await screen.findByRole("button", { name: /cancelar/i });
+    expect(pasteButton).toBeInTheDocument();
+    expect(cancelButton).toBeInTheDocument();
+
+    // Cancelar a cópia limpa o clipboard e retorna o botão de copiar
+    fireEvent.click(cancelButton);
+    expect(await screen.findByRole("button", { name: /copiar semana/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /colar/i })).not.toBeInTheDocument();
+  });
+
+  it("executes pastePeriod and triggers insert when clicking 'Colar'", async () => {
+    render(
+      <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
+        <Routes>
+          <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Mudar para semana onde há eventos mockados
+    const weekButton = await screen.findByRole("button", { name: /^semana$/i });
+    fireEvent.click(weekButton);
+
+    const copyWeekButton = await screen.findByRole("button", { name: /copiar semana/i });
+    fireEvent.click(copyWeekButton);
+
+    const pasteButton = await screen.findByRole("button", { name: /colar/i });
+    expect(pasteButton).toBeInTheDocument();
+
+    fireEvent.click(pasteButton);
+
+    await waitFor(() => {
+      expect(mockInsert).toHaveBeenCalled();
+    });
   });
 });

@@ -32,6 +32,7 @@ import {
   ClinicTeamSection,
   ClinicSecuritySection,
   ClinicBillingSection,
+  ClinicInsurancesSection,
   ClinicFormsSection,
   ClinicTermsSection,
   ClinicTrashSection,
@@ -301,7 +302,8 @@ const App = () => (
                                   <Route path="colaboradores" element={<Navigate to="../equipe" replace />} />
                                   <Route path="seguranca" element={<ClinicSecuritySection />} />
                                   <Route path="assinatura" element={<ClinicBillingSection />} />
-                                  <Route path="tesouraria" element={<Navigate to="../perfil" replace />} />
+                                  <Route path="convenios" element={<ClinicInsurancesSection />} />
+                                  <Route path="tesouraria" element={<Navigate to="../convenios" replace />} />
                                   <Route path="formularios" element={<ClinicFormsSection />} />
                                   <Route path="termos" element={<ClinicTermsSection />} />
                                   <Route path="lixeira" element={<ClinicTrashSection />} />
@@ -317,7 +319,8 @@ const App = () => (
                                   <Route path="colaboradores" element={<Navigate to="../equipe" replace />} />
                                   <Route path="seguranca" element={<ClinicSecuritySection />} />
                                   <Route path="assinatura" element={<ClinicBillingSection />} />
-                                  <Route path="tesouraria" element={<Navigate to="../perfil" replace />} />
+                                  <Route path="convenios" element={<ClinicInsurancesSection />} />
+                                  <Route path="tesouraria" element={<Navigate to="../convenios" replace />} />
                                   <Route path="formularios" element={<ClinicFormsSection />} />
                                   <Route path="termos" element={<ClinicTermsSection />} />
                                   <Route path="lixeira" element={<ClinicTrashSection />} />

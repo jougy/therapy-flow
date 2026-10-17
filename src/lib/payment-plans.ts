@@ -17,6 +17,10 @@ export interface PaymentPlanFormValues {
   autoCreateDraftSessions: boolean;
   recurringWeekdays: number[]; // 0 = Sunday, 1 = Monday, ... 6 = Saturday
   recurringTime: string; // HH:mm
+  insuranceMode?: "none" | "direct_billing" | "reimbursement";
+  insuranceId?: string;
+  insuranceAuthorizationNumber?: string;
+  insuranceCardNumber?: string;
 }
 
 export const DEFAULT_PAYMENT_PLAN_FORM_VALUES: PaymentPlanFormValues = {
@@ -33,6 +37,10 @@ export const DEFAULT_PAYMENT_PLAN_FORM_VALUES: PaymentPlanFormValues = {
   autoCreateDraftSessions: false,
   recurringWeekdays: [1], // Default: Monday
   recurringTime: "14:00",
+  insuranceMode: "none",
+  insuranceId: "",
+  insuranceAuthorizationNumber: "",
+  insuranceCardNumber: "",
 };
 
 export const PAYMENT_PLAN_STATUS_OPTIONS = [
@@ -135,3 +143,86 @@ export const generatePlanScheduleDates = ({
 
   return dates;
 };
+
+export interface PaymentPlanFinancialSummary {
+  totalSessions: number;
+  usedSessions: number;
+  remainingSessions: number;
+  totalAmountCents: number;
+  sessionUnitAmountCents: number;
+  compensatedAmountCents: number;
+  remainingCreditCents: number;
+  paidAmountCents: number;
+  pendingDebitCents: number;
+  isFullyPaid: boolean;
+  isExhausted: boolean;
+}
+
+export const calculatePlanFinancialSummary = (
+  plan: Pick<PatientPaymentPlanRow, "total_sessions" | "used_sessions" | "total_amount_cents" | "session_unit_amount_cents" | "payment_status">
+): PaymentPlanFinancialSummary => {
+  const totalSessions = Math.max(1, plan.total_sessions || 1);
+  const usedSessions = Math.max(0, plan.used_sessions || 0);
+  const remainingSessions = Math.max(0, totalSessions - usedSessions);
+  const totalAmountCents = Math.max(0, Number(plan.total_amount_cents) || 0);
+  const unitAmountCents =
+    plan.session_unit_amount_cents && Number(plan.session_unit_amount_cents) > 0
+      ? Number(plan.session_unit_amount_cents)
+      : calculateSessionUnitAmountCents(totalAmountCents, totalSessions);
+
+  const compensatedAmountCents = Math.min(totalAmountCents, usedSessions * unitAmountCents);
+  const remainingCreditCents = Math.max(0, totalAmountCents - compensatedAmountCents);
+
+  let paidAmountCents = 0;
+  let pendingDebitCents = 0;
+
+  if (plan.payment_status === "pago") {
+    paidAmountCents = totalAmountCents;
+    pendingDebitCents = 0;
+  } else if (plan.payment_status === "parcial") {
+    paidAmountCents = Math.round(totalAmountCents / 2);
+    pendingDebitCents = totalAmountCents - paidAmountCents;
+  } else {
+    // "pendente" ou "cancelado"
+    paidAmountCents = 0;
+    pendingDebitCents = totalAmountCents;
+  }
+
+  return {
+    totalSessions,
+    usedSessions,
+    remainingSessions,
+    totalAmountCents,
+    sessionUnitAmountCents: unitAmountCents,
+    compensatedAmountCents,
+    remainingCreditCents,
+    paidAmountCents,
+    pendingDebitCents,
+    isFullyPaid: plan.payment_status === "pago",
+    isExhausted: usedSessions >= totalSessions,
+  };
+};
+
+/**
+ * Verifica se já existe um agendamento conflitante (mesmo paciente e mesma faixa de data/hora)
+ * para unificar a recorrência com o pacote de atendimento em vez de duplicar.
+ * Margem de tolerância padrão: 30 minutos (1.800.000 ms).
+ */
+export const findConflictingAgendaEvent = <T extends { scheduled_for: string; status?: string; patient_id?: string | null }>(
+  targetDate: Date,
+  events: T[],
+  toleranceMs = 30 * 60 * 1000
+): T | null => {
+  const targetTime = targetDate.getTime();
+
+  return (
+    events.find((evt) => {
+      if (evt.status === "cancelado") {
+        return false;
+      }
+      const evtTime = new Date(evt.scheduled_for).getTime();
+      return Math.abs(evtTime - targetTime) <= toleranceMs;
+    }) ?? null
+  );
+};
+

@@ -56,3 +56,6 @@ verify_jwt = false
 [functions.whatsapp-send-intro]
 verify_jwt = false
 
+[functions.whatsapp-diagnostics]
+verify_jwt = false
+

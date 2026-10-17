@@ -23,26 +23,14 @@ import {
   Clock,
   Loader2,
   Plus,
-  Search,
-  SlidersHorizontal,
-  X,
 } from "lucide-react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/useAuth";
+import { useAgendaPeriodClipboard } from "@/hooks/useAgendaPeriodClipboard";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -53,6 +41,7 @@ import {
   buildAgendaEventPayload,
   formatSupabaseErrorMessage,
   getAgendaEventDateTime,
+  normalizeAgendaStatus,
   notifyAgendaEventsUpdated,
   type AgendaEventStatus,
   type AgendaEventType,
@@ -69,16 +58,11 @@ import {
   AgendaDayView,
   AgendaWeekView,
   AgendaEventModal,
+  AgendaFiltersToolbar,
+  AgendaPeriodClipboardActions,
 } from "@/components/agenda";
 
 export type { AgendaEventItem };
-
-function normalizeStatus(value: string | null | undefined): AgendaEventStatus {
-  if (value === "confirmado" || value === "cancelado" || value === "lembrete") {
-    return value;
-  }
-  return "aguardando_confirmacao";
-}
 
 function getDefaultNewEventTime() {
   const current = new Date();
@@ -122,6 +106,23 @@ export default function ClinicAgendaPage() {
   const [selectedEventForModal, setSelectedEventForModal] = useState<AgendaEventItem | null>(null);
 
   const effectiveClinicId = clinicId || clinic?.id || null;
+
+  // Hook modular de Copiar & Colar Flexível de Período (Dia, Semana, Mês)
+  const {
+    copiedPeriod,
+    isPasting,
+    copyCurrentPeriod: handleCopyCurrentPeriod,
+    pastePeriod: handlePastePeriod,
+    cancelCopy: handleCancelCopy,
+  } = useAgendaPeriodClipboard({
+    user,
+    effectiveClinicId,
+    viewMode,
+    selectedDate,
+    events,
+    setEvents,
+    can,
+  });
 
   // Feature Flags da Agenda
   const { isFeatureEnabled, flags: featureFlags } = useFeatureFlags();
@@ -210,13 +211,24 @@ export default function ClinicAgendaPage() {
           variant: "destructive",
         });
       } else {
+        interface AgendaEventQueryResult {
+          id: string;
+          event_type: string;
+          patient_id: string | null;
+          scheduled_for: string;
+          status: string | null;
+          title: string;
+          duration_minutes?: number | null;
+        }
+
+        const rawEvents = (eventsRes.data ?? []) as unknown as AgendaEventQueryResult[];
         setEvents(
-          (eventsRes.data ?? []).map((ev: any) => ({
+          rawEvents.map((ev) => ({
             id: ev.id,
-            eventType: ev.event_type as AgendaEventType,
+            eventType: (ev.event_type as AgendaEventType) || "atendimento",
             patientId: ev.patient_id,
             scheduledFor: ev.scheduled_for,
-            status: normalizeStatus(ev.status),
+            status: normalizeAgendaStatus(ev.status),
             title: ev.title,
             date: parseISO(ev.scheduled_for),
             time: format(parseISO(ev.scheduled_for), "HH:mm"),
@@ -279,10 +291,21 @@ export default function ClinicAgendaPage() {
     });
   }, [events, filterType, filterStatus, searchQuery, patientNameById]);
 
-  // Eventos do dia selecionado
+  // Eventos do dia selecionado em O(N) com comparação direta de data
   const dayEvents = useMemo(() => {
+    const targetYear = selectedDate.getFullYear();
+    const targetMonth = selectedDate.getMonth();
+    const targetDay = selectedDate.getDate();
+
     return filteredEvents
-      .filter((ev) => isSameDay(ev.date, selectedDate))
+      .filter((ev) => {
+        const d = ev.date;
+        return (
+          d.getFullYear() === targetYear &&
+          d.getMonth() === targetMonth &&
+          d.getDate() === targetDay
+        );
+      })
       .sort((a, b) => a.time.localeCompare(b.time));
   }, [filteredEvents, selectedDate]);
 
@@ -363,6 +386,14 @@ export default function ClinicAgendaPage() {
     durationMinutes: number;
   }) => {
     if (!user) return;
+    if (!can("schedule.write")) {
+      toast({
+        title: "Permissão negada",
+        description: "Você não tem permissão para criar agendamentos.",
+        variant: "destructive",
+      });
+      return;
+    }
     const scheduledDateTime = getAgendaEventDateTime(data.date, data.time);
 
     try {
@@ -439,7 +470,7 @@ export default function ClinicAgendaPage() {
         variant: "destructive",
       });
     }
-  }, [user, patients, effectiveClinicId]);
+  }, [can, user, patients, effectiveClinicId]);
 
   // Salvar Edição de Agendamento
   const handleSaveEdit = useCallback(async (data: {
@@ -450,6 +481,14 @@ export default function ClinicAgendaPage() {
     durationMinutes?: number;
   }) => {
     if (!user) return;
+    if (!can("schedule.write")) {
+      toast({
+        title: "Permissão negada",
+        description: "Você não tem permissão para editar agendamentos.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       const newDateTime = new Date(`${data.date}T${data.time}:00`);
@@ -512,7 +551,7 @@ export default function ClinicAgendaPage() {
         variant: "destructive",
       });
     }
-  }, [user, effectiveClinicId]);
+  }, [can, user, effectiveClinicId]);
 
   // Excluir Agendamento
   const handleDeleteEvent = useCallback(async (id: string) => {
@@ -702,6 +741,17 @@ export default function ClinicAgendaPage() {
               />
             </PopoverContent>
           </Popover>
+
+          {/* Ações de Copiar & Colar de Período (Dia, Semana, Mês) */}
+          <AgendaPeriodClipboardActions
+            viewMode={viewMode}
+            copiedPeriod={copiedPeriod}
+            isPasting={isPasting}
+            onCopy={handleCopyCurrentPeriod}
+            onPaste={handlePastePeriod}
+            onCancel={handleCancelCopy}
+            canScheduleWrite={can("schedule.write")}
+          />
         </div>
 
         {/* Quick Stats Badges - Carousel tátil no mobile */}
@@ -727,160 +777,14 @@ export default function ClinicAgendaPage() {
       </div>
 
       {/* Filters Toolbar */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por paciente ou título..."
-            value={searchQuery}
-            onChange={(e) =>
-              setSearchQuery(sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.name))
-            }
-            maxLength={INPUT_LIMITS.name}
-            className="h-9 pl-9 rounded-xl text-xs"
-          />
-        </div>
-
-        {/* Mobile Filters Sheet Trigger */}
-        <div className="sm:hidden">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className={`h-9 w-9 rounded-xl shrink-0 ${
-                  filterType !== "all" || filterStatus !== "all"
-                    ? "border-primary text-primary bg-primary/5"
-                    : ""
-                }`}
-                aria-label="Abrir filtros"
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="bottom" className="rounded-t-2xl pb-8">
-              <SheetHeader className="text-left pb-3">
-                <SheetTitle className="text-base font-bold">Filtrar Agendamentos</SheetTitle>
-                <SheetDescription className="text-xs">
-                  Selecione o tipo de evento e o status desejado.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="space-y-4 pt-2">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Tipo de Evento</label>
-                  <Select value={filterType} onValueChange={setFilterType}>
-                    <SelectTrigger className="h-10 w-full rounded-xl text-xs">
-                      <SelectValue placeholder="Tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="text-xs">Todos os tipos</SelectItem>
-                      <SelectItem value="atendimento" className="text-xs">Atendimento</SelectItem>
-                      <SelectItem value="reuniao" className="text-xs">Reunião</SelectItem>
-                      <SelectItem value="evento" className="text-xs">Evento</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Status do Evento</label>
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="h-10 w-full rounded-xl text-xs">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="text-xs">Todos os status</SelectItem>
-                      <SelectItem value="confirmado" className="text-xs">Confirmado</SelectItem>
-                      <SelectItem value="aguardando_confirmacao" className="text-xs">Aguardando confirmação</SelectItem>
-                      <SelectItem value="cancelado" className="text-xs">Cancelado</SelectItem>
-                      <SelectItem value="lembrete" className="text-xs">Lembrete</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {(filterType !== "all" || filterStatus !== "all" || searchQuery.trim()) && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full h-10 text-xs text-muted-foreground"
-                    onClick={() => {
-                      setFilterType("all");
-                      setFilterStatus("all");
-                      setSearchQuery("");
-                    }}
-                  >
-                    Limpar todos os filtros
-                  </Button>
-                )}
-              </div>
-            </SheetContent>
-          </Sheet>
-        </div>
-
-        {/* Desktop Filter Selects */}
-        <div className="hidden sm:flex items-center gap-2">
-          <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="h-9 w-[140px] rounded-xl text-xs">
-              <SelectValue placeholder="Tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="text-xs">
-                Todos os tipos
-              </SelectItem>
-              <SelectItem value="atendimento" className="text-xs">
-                Atendimento
-              </SelectItem>
-              <SelectItem value="reuniao" className="text-xs">
-                Reunião
-              </SelectItem>
-              <SelectItem value="evento" className="text-xs">
-                Evento
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="h-9 w-[150px] rounded-xl text-xs">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="text-xs">
-                Todos os status
-              </SelectItem>
-              <SelectItem value="confirmado" className="text-xs">
-                Confirmado
-              </SelectItem>
-              <SelectItem value="aguardando_confirmacao" className="text-xs">
-                Aguardando
-              </SelectItem>
-              <SelectItem value="cancelado" className="text-xs">
-                Cancelado
-              </SelectItem>
-              <SelectItem value="lembrete" className="text-xs">
-                Lembrete
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          {(filterType !== "all" || filterStatus !== "all" || searchQuery.trim()) && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-9 text-xs gap-1 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                setFilterType("all");
-                setFilterStatus("all");
-                setSearchQuery("");
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-              Limpar filtros
-            </Button>
-          )}
-        </div>
-      </div>
+      <AgendaFiltersToolbar
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        filterType={filterType}
+        setFilterType={setFilterType}
+        filterStatus={filterStatus}
+        setFilterStatus={setFilterStatus}
+      />
 
       {/* Main Agenda View Grid (Year, Month, Week, Day) */}
       {loading ? (

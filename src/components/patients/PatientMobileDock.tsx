@@ -3,6 +3,7 @@ import {
   Home,
   FileText,
   CalendarDays,
+  Calendar,
   PlayCircle,
   History,
   FolderOpen,
@@ -17,6 +18,7 @@ export type PatientMobileTab =
   | "inicio"
   | "resumo"
   | "agendar"
+  | "agenda_completa"
   | "atender"
   | "historico"
   | "arquivos"
@@ -27,6 +29,7 @@ export type PatientMobileTab =
 export interface PatientMobileDockItem {
   id: PatientMobileTab;
   label: string;
+  tooltipTitle?: string;
   icon: LucideIcon;
   primary?: boolean;
   disabled?: boolean;
@@ -47,6 +50,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
 }: PatientMobileDockProps) {
   const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
   const [mobileDockPressedTab, setMobileDockPressedTab] = useState<PatientMobileTab | null>(null);
+  const mobileDockPressedTabRef = useRef<PatientMobileTab | null>(null);
   const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
   const [mobileDockTooltip, setMobileDockTooltip] = useState<{ title: string; x: number } | null>(null);
 
@@ -92,6 +96,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
     mobileLongPressTriggeredRef.current = true;
     setMobileDockPointerActive(true);
     setMobileDockExpanded(true);
+    mobileDockPressedTabRef.current = gesture.tab;
     setMobileDockPressedTab(gesture.tab);
     updateMobileDockTooltipForButton(gesture.button, gesture.title);
   }, [updateMobileDockTooltipForButton]);
@@ -110,7 +115,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
       };
       mobileLongPressTimerRef.current = window.setTimeout(() => {
         beginMobileDockSelection();
-      }, 240);
+      }, 380);
     },
     [beginMobileDockSelection, clearMobileLongPress]
   );
@@ -123,6 +128,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
       const title = button?.dataset.patientMobileDockTitle;
 
       if (tab && title) {
+        mobileDockPressedTabRef.current = tab;
         setMobileDockPressedTab(tab);
         updateMobileDockTooltipForButton(button, title);
       }
@@ -177,8 +183,9 @@ export const PatientMobileDock = memo(function PatientMobileDock({
   );
 
   const finishMobileDockInteraction = useCallback(() => {
-    if (mobileDockPointerActive && mobileDockPressedTab) {
-      onTabChange(mobileDockPressedTab);
+    const selectedTab = mobileDockPressedTabRef.current || mobileDockPressedTab;
+    if (mobileDockPointerActive && selectedTab) {
+      onTabChange(selectedTab);
     }
     clearMobileLongPress();
     stopMobileDockAutoScroll();
@@ -186,12 +193,14 @@ export const PatientMobileDock = memo(function PatientMobileDock({
     setMobileDockPointerActive(false);
     setMobileDockExpanded(true);
     setMobileDockPressedTab(null);
+    mobileDockPressedTabRef.current = null;
     setMobileDockTooltip(null);
   }, [clearMobileLongPress, mobileDockPointerActive, mobileDockPressedTab, onTabChange, stopMobileDockAutoScroll]);
 
   const handleMobileDockClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>, tab: PatientMobileTab) => {
-      if (mobileLongPressTriggeredRef.current) {
+      // Se não havia interação de ponteiro/arrasto ativa, dispara a navegação
+      if (mobileLongPressTriggeredRef.current && mobileDockPointerActive) {
         event.preventDefault();
         return;
       }
@@ -199,7 +208,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
       setMobileDockExpanded(true);
       onTabChange(tab);
     },
-    [onTabChange]
+    [mobileDockPointerActive, onTabChange]
   );
 
   useEffect(() => {
@@ -236,12 +245,13 @@ export const PatientMobileDock = memo(function PatientMobileDock({
 
   const dockItems: PatientMobileDockItem[] = [
     { id: "inicio", label: "Início", icon: Home },
-    { id: "resumo", label: "Resumo clínico", icon: FileText },
-    { id: "agendar", label: "Novo Agendamento", icon: CalendarDays },
+    { id: "resumo", label: "Resumo", tooltipTitle: "Resumo clínico", icon: FileText },
+    { id: "agendar", label: "Agendar", tooltipTitle: "Novo Agendamento", icon: CalendarDays },
+    { id: "agenda_completa", label: "Agenda", tooltipTitle: "Agenda completa", icon: Calendar },
     { id: "atender", label: "Atender", icon: PlayCircle, primary: true },
     { id: "historico", label: "Histórico", icon: History },
     ...(showFiles ? [{ id: "arquivos" as const, label: "Arquivos", icon: FolderOpen }] : []),
-    ...(showStats ? [{ id: "estatisticas" as const, label: "Estatísticas", icon: BarChart3 }] : []),
+    ...(showStats ? [{ id: "estatisticas" as const, label: "Estatísticas", tooltipTitle: "Estatísticas", icon: BarChart3 }] : []),
     { id: "termos", label: "Termos", icon: FileCheck2 },
     { id: "status", label: "Status", icon: Activity },
   ];
@@ -289,14 +299,15 @@ export const PatientMobileDock = memo(function PatientMobileDock({
             const isActive = activeTab === item.id;
             const isPressed = mobileDockPressedTab === item.id;
             const Icon = item.icon;
+            const itemTitle = item.tooltipTitle || item.label;
 
             return (
               <button
                 key={item.id}
                 type="button"
                 data-patient-mobile-dock-tab={item.id}
-                data-patient-mobile-dock-title={item.label}
-                aria-label={item.label}
+                data-patient-mobile-dock-title={itemTitle}
+                aria-label={itemTitle}
                 disabled={item.disabled}
                 className={cn(
                   "designlab-settings-mobile-item group relative flex shrink-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-150 ease-out active:translate-y-0.5 disabled:opacity-45",
@@ -308,7 +319,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
                   startMobileDockGesture(
                     event.currentTarget,
                     item.id,
-                    item.label,
+                    itemTitle,
                     event.clientX,
                     event.clientY,
                     event.pointerId
@@ -320,7 +331,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
                   startMobileDockGesture(
                     event.currentTarget,
                     item.id,
-                    item.label,
+                    itemTitle,
                     touch.clientX,
                     touch.clientY
                   );
@@ -329,7 +340,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
               >
                 <span
                   className={cn(
-                    "designlab-settings-mobile-surface flex h-full w-full flex-col items-center justify-center rounded-[0.68rem] border px-2.5 py-1.5 transition-colors duration-300",
+                    "designlab-settings-mobile-surface flex h-full w-full flex-col items-center justify-center rounded-[0.68rem] border px-2 py-1.5 transition-colors duration-300",
                     isActive
                       ? "border-primary/45 bg-primary/10 text-primary"
                       : item.primary
@@ -349,7 +360,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
                   >
                     <Icon className="h-4 w-4 shrink-0 transition-transform duration-200 group-active:scale-95" />
                   </span>
-                  <span className="designlab-settings-mobile-label mt-1 block max-w-[64px] truncate text-[10px] font-medium leading-tight tracking-tight">
+                  <span className="designlab-settings-mobile-label mt-1 block max-w-none px-0.5 text-[9.5px] font-medium leading-tight tracking-tight whitespace-nowrap text-center">
                     {item.label}
                   </span>
                 </span>

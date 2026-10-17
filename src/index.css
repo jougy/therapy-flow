@@ -913,7 +913,8 @@
 .designlab-settings-mobile-item {
   isolation: isolate;
   overflow: visible;
-  width: 3.65rem;
+  width: auto;
+  min-width: 3.45rem;
   min-height: 2.85rem;
   will-change: transform;
   transform: translateY(0) scale(1);
@@ -1100,7 +1101,8 @@
 }
 
 .designlab-settings-mobile-nav[data-dock-state="compact"] .designlab-settings-mobile-item {
-  width: 3.45rem;
+  width: auto;
+  min-width: 3.35rem;
   min-height: 2.75rem;
 }
 
@@ -1119,7 +1121,8 @@
 }
 
 .designlab-settings-mobile-nav[data-dock-state="medium"] .designlab-settings-mobile-item {
-  width: 4.35rem;
+  width: auto;
+  min-width: 4.15rem;
   min-height: 3.28rem;
 }
 

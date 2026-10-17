@@ -27,6 +27,7 @@ opencode.json
 .secrets/
 
 # Local operational artifacts
+.cache/
 .control
 .local-tools
 backups/

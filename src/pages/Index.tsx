@@ -19,12 +19,14 @@ import PatientCard from "@/components/PatientCard";
 import {
   DEFAULT_HOME_PATIENT_SORT_KEY,
   DEFAULT_HOME_SESSION_SORT_KEY,
+  HOME_PATIENT_AGENDA_SHIFT_OPTIONS,
   HOME_PATIENT_SORT_OPTIONS,
   buildHomePatientViews,
   getActiveHomePatientFilterCount,
   hasActiveHomePatientFilters,
   type HomeAgendaEventRecord,
   type HomePatientAgendaFilterStatus,
+  type HomePatientAgendaShift,
   type HomePatientFilters,
   type HomePatientGroupRecord,
   type HomePatientPaymentFilterStatus,
@@ -55,6 +57,10 @@ import {
 import { PatientSearchToolbar, type HomeListMode } from "@/components/home/PatientSearchToolbar";
 import { PatientFilterDialog } from "@/components/home/PatientFilterDialog";
 import { HomeSessionsBulkActionBar } from "@/components/home/HomeSessionsBulkActionBar";
+import { HomePatientsBulkActionBar } from "@/components/home/HomePatientsBulkActionBar";
+import { PatientQuickActionsMenu } from "@/components/patient/PatientQuickActionsMenu";
+import type { EditablePatientStatus } from "@/lib/patient-statuses";
+import type { PatientCardData } from "@/components/PatientCard";
 import { HomeMobileDock } from "@/components/home/HomeMobileDock";
 import { HomeDashboardModal } from "@/components/home/HomeDashboardModal";
 
@@ -137,7 +143,7 @@ const Index = () => {
 
   const invalidateClinicData = useInvalidateClinicData();
   const { optimisticMoveSessions, optimisticUpdateStatus, optimisticDeleteSessions } = useOptimisticSessionUpdates(clinicId);
-  const { optimisticRemovePatient } = useOptimisticPatientUpdates(clinicId);
+  const { optimisticRemovePatient, optimisticRemovePatients, optimisticUpdatePatientStatus } = useOptimisticPatientUpdates(clinicId);
   const prefetchPatient = usePrefetchPatientDetail(clinicId);
 
   // Search & Filter States
@@ -146,6 +152,7 @@ const Index = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedAgendaStatuses, setSelectedAgendaStatuses] = useState<HomePatientAgendaFilterStatus[]>([]);
+  const [selectedAgendaShifts, setSelectedAgendaShifts] = useState<HomePatientAgendaShift[]>([]);
   const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<HomePatientPaymentFilterStatus[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedGroupNames, setSelectedGroupNames] = useState<string[]>([]);
@@ -172,6 +179,14 @@ const Index = () => {
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const selectionMode = selectedSessionIds.length > 0;
+
+  // Patient Quick Actions & Multi-selection
+  const [selectedPatientIds, setSelectedPatientIds] = useState<string[]>([]);
+  const [bulkUpdatingPatients, setBulkUpdatingPatients] = useState(false);
+  const patientSelectionMode = selectedPatientIds.length > 0;
+  const [quickActionsPatient, setQuickActionsPatient] = useState<PatientCardData | null>(null);
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [agendaFixedPatient, setAgendaFixedPatient] = useState<{ id: string; name: string } | null>(null);
 
   // Refs for scroll and long-press interactions
   const sessionLongPressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -336,6 +351,7 @@ const Index = () => {
   const clearFilters = useCallback(() => {
     setSelectedStatuses([]);
     setSelectedAgendaStatuses([]);
+    setSelectedAgendaShifts([]);
     setSelectedPaymentStatuses([]);
     setSelectedRecurrenceStatuses([]);
     setSelectedRecurringWeekdays([]);
@@ -351,6 +367,7 @@ const Index = () => {
   // Filter structures (using deferredSearch for zero typing latency)
   const filters: HomePatientFilters = useMemo(
     () => ({
+      agendaShifts: selectedAgendaShifts,
       agendaStatuses: selectedAgendaStatuses,
       collaboratorIds: selectedCollaboratorIds,
       colors: selectedColors,
@@ -366,6 +383,7 @@ const Index = () => {
       weekdays: selectedWeekdays,
     }),
     [
+      selectedAgendaShifts,
       selectedAgendaStatuses,
       selectedCollaboratorIds,
       selectedColors,
@@ -557,6 +575,137 @@ const Index = () => {
       });
     }
   };
+
+  // Patient Selection & Bulk Handlers
+  const canDeletePatient = typeof can === "function" ? can("patients.delete") : false;
+
+  const togglePatientSelection = useCallback((patientId: string) => {
+    setSelectedPatientIds((current) =>
+      current.includes(patientId) ? current.filter((id) => id !== patientId) : [...current, patientId]
+    );
+  }, []);
+
+  const clearPatientSelection = useCallback(() => {
+    setSelectedPatientIds([]);
+  }, []);
+
+  const handleBulkPatientStatusUpdate = async (nextStatus: string) => {
+    if (selectedPatientIds.length === 0) return;
+    const ids = [...selectedPatientIds];
+    setBulkUpdatingPatients(true);
+    optimisticUpdatePatientStatus(ids, nextStatus);
+    clearPatientSelection();
+
+    const { error } = await supabase.from("patients").update({ status: nextStatus }).in("id", ids);
+    setBulkUpdatingPatients(false);
+
+    if (error) {
+      toast({ title: "Erro ao atualizar status dos pacientes", description: error.message, variant: "destructive" });
+      if (clinicId) void invalidateClinicData(clinicId, ["patients"]);
+    } else {
+      toast({ title: "Status dos pacientes atualizado" });
+    }
+  };
+
+  const handleBulkPatientMoveGroup = async (nextGroupId: string) => {
+    if (selectedPatientIds.length === 0 || !clinicId) return;
+    const ids = [...selectedPatientIds];
+    setBulkUpdatingPatients(true);
+    clearPatientSelection();
+
+    try {
+      if (nextGroupId === "none") {
+        await supabase.from("patient_groups").delete().in("patient_id", ids);
+      } else {
+        const targetGroup = patientGroups.find((g) => g.id === nextGroupId);
+        if (targetGroup) {
+          const inserts = ids.map((pid) => ({
+            clinic_id: clinicId,
+            patient_id: pid,
+            name: targetGroup.name,
+            color: targetGroup.color,
+            status: targetGroup.status,
+            clinic_color_slot_id: targetGroup.clinic_color_slot_id,
+          }));
+          await supabase.from("patient_groups").upsert(inserts, { onConflict: "patient_id,name" });
+        }
+      }
+      toast({ title: "Grupos dos pacientes atualizados" });
+      void invalidateClinicData(clinicId, ["groups", "patients"]);
+    } catch (err: any) {
+      toast({ title: "Erro ao mover pacientes", description: err.message, variant: "destructive" });
+    } finally {
+      setBulkUpdatingPatients(false);
+    }
+  };
+
+  const handleBulkPatientDelete = async () => {
+    if (selectedPatientIds.length === 0 || !canDeletePatient) return;
+    const ids = [...selectedPatientIds];
+    setBulkUpdatingPatients(true);
+    optimisticRemovePatients(ids);
+    clearPatientSelection();
+
+    const { error } = await supabase.rpc("move_entity_to_trash", {
+      _entity_type: "patients",
+      _entity_ids: ids,
+    });
+    setBulkUpdatingPatients(false);
+
+    if (error) {
+      toast({ title: "Erro ao mover pacientes para a lixeira", description: error.message, variant: "destructive" });
+      if (clinicId) void invalidateClinicData(clinicId, ["patients"]);
+    } else {
+      toast({
+        title: "Pacientes movidos para a lixeira",
+        description: "Os pacientes foram enviados para a lixeira da clínica e podem ser restaurados.",
+        action: createTrashToastAction(effectiveClinicKey, navigate),
+      });
+    }
+  };
+
+  // Patient Quick Actions Handlers
+  const handleQuickActionSelect = useCallback((patientId: string) => {
+    setSelectedPatientIds((current) => (!current.includes(patientId) ? [...current, patientId] : current));
+  }, []);
+
+  const handleQuickActionNewAppointment = useCallback((patient: PatientCardData) => {
+    setAgendaFixedPatient({ id: patient.id, name: patient.name });
+    setAgendaDialogOpen(true);
+  }, []);
+
+  const handleQuickActionAttendNow = useCallback(
+    (patient: PatientCardData) => {
+      navigate(getPatientSessionPath(patient, "novo"));
+    },
+    [navigate],
+  );
+
+  const handleQuickActionUpdateStatus = useCallback(
+    async (patientId: string, nextStatus: EditablePatientStatus) => {
+      optimisticUpdatePatientStatus([patientId], nextStatus);
+      const { error } = await supabase.from("patients").update({ status: nextStatus }).eq("id", patientId);
+      if (error) {
+        toast({ title: "Erro ao atualizar status do paciente", description: error.message, variant: "destructive" });
+        if (clinicId) void invalidateClinicData(clinicId, ["patients"]);
+      } else {
+        toast({ title: "Status do paciente atualizado com sucesso" });
+      }
+    },
+    [clinicId, invalidateClinicData, optimisticUpdatePatientStatus, toast],
+  );
+
+  const handleQuickActionViewProfile = useCallback(
+    (patient: PatientCardData) => {
+      navigate(getPatientPath(patient));
+    },
+    [navigate],
+  );
+
+  const handleOpenQuickActions = useCallback((patient: PatientCardData) => {
+    setQuickActionsPatient(patient);
+    setQuickActionsOpen(true);
+  }, []);
 
   // Render individual session card
   const renderSessionCard = (session: HomeSessionRecord) => {
@@ -758,6 +907,8 @@ const Index = () => {
             onSelectedPaymentStatusesChange={setSelectedPaymentStatuses}
             selectedAgendaStatuses={selectedAgendaStatuses}
             onSelectedAgendaStatusesChange={setSelectedAgendaStatuses}
+            selectedAgendaShifts={selectedAgendaShifts}
+            onSelectedAgendaShiftsChange={setSelectedAgendaShifts}
             selectedRecurrenceStatuses={selectedRecurrenceStatuses}
             onSelectedRecurrenceStatusesChange={setSelectedRecurrenceStatuses}
             selectedRecurringWeekdays={selectedRecurringWeekdays}
@@ -787,6 +938,7 @@ const Index = () => {
               return;
             }
             setAgendaDialogOpen(nextOpen);
+            if (!nextOpen) setAgendaFixedPatient(null);
           }}
         >
           <DialogContent className="max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 sm:max-w-xl sm:p-6">
@@ -805,6 +957,7 @@ const Index = () => {
                 className="h-8 gap-1.5 text-xs shrink-0 rounded-lg text-primary border-primary/20 hover:bg-primary/5"
                 onClick={() => {
                   setAgendaDialogOpen(false);
+                  setAgendaFixedPatient(null);
                   navigate(fullAgendaPath);
                 }}
                 title="Ver agenda completa"
@@ -814,7 +967,7 @@ const Index = () => {
                 <span>Ver agenda completa</span>
               </Button>
             </DialogHeader>
-            <AgendaWidget variant="modal" />
+            <AgendaWidget variant="modal" fixedPatient={agendaFixedPatient ?? undefined} />
           </DialogContent>
         </Dialog>
 
@@ -907,6 +1060,14 @@ const Index = () => {
               Agendamento: {selectedAgendaStatuses.join(", ")}
             </Badge>
           )}
+          {selectedAgendaShifts.length > 0 && (
+            <Badge variant="secondary">
+              Turno:{" "}
+              {HOME_PATIENT_AGENDA_SHIFT_OPTIONS.filter((opt) => selectedAgendaShifts.includes(opt.value))
+                .map((opt) => opt.label)
+                .join(", ")}
+            </Badge>
+          )}
           {selectedRecurrenceStatuses.length > 0 && (
             <Badge variant="secondary">
               Recorrência: {selectedRecurrenceStatuses.join(", ")}
@@ -919,7 +1080,7 @@ const Index = () => {
           )}
           {(sessionDateFrom || sessionDateTo) && (
             <Badge variant="secondary">
-              Período: {sessionDateFrom || "início"} até {sessionDateTo || "hoje"}
+              Intervalo de datas: {sessionDateFrom || "início"} até {sessionDateTo || "hoje"}
             </Badge>
           )}
           {selectedWeekdays.length > 0 && (
@@ -964,61 +1125,100 @@ const Index = () => {
             </Card>
           )}
         </div>
-      ) : isShowingPatientList ? (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-medium text-muted-foreground">{selectedPatientSortLabel}</h2>
-            <p className="text-sm text-muted-foreground">
-              {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado
-              {visiblePatients.length !== 1 ? "s" : ""}
-            </p>
-          </div>
-          {visiblePatients.map((patient, index) => (
-            <motion.div
-              key={patient.id}
-              {...(index === 0 ? { "data-tutorial": "patient-card-first" } : {})}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <PatientCard patient={patient} onPrefetch={prefetchPatient} />
-            </motion.div>
-          ))}
-          {visiblePatients.length === 0 && (
-            <p className="text-sm text-muted-foreground">Nenhum paciente encontrado.</p>
-          )}
-        </div>
       ) : (
         <div className="space-y-6">
-          {recentPatients.length > 0 && (
-            <div>
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-sm font-medium text-muted-foreground">Pacientes recentes</h2>
+          <HomePatientsBulkActionBar
+            selectedPatientIds={selectedPatientIds}
+            patientGroups={patientGroups}
+            bulkUpdating={bulkUpdatingPatients}
+            canDelete={canDeletePatient}
+            onBulkMoveGroup={handleBulkPatientMoveGroup}
+            onBulkStatusUpdate={handleBulkPatientStatusUpdate}
+            onBulkDelete={handleBulkPatientDelete}
+            onClearSelection={clearPatientSelection}
+          />
+          {isShowingPatientList ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-sm font-medium text-muted-foreground">{selectedPatientSortLabel}</h2>
                 <p className="text-sm text-muted-foreground">
-                  {recentPatients.length} paciente{recentPatients.length !== 1 ? "s" : ""} encontrado
-                  {recentPatients.length !== 1 ? "s" : ""}
+                  {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado
+                  {visiblePatients.length !== 1 ? "s" : ""}
                 </p>
               </div>
-              <div className="space-y-2">
-                {recentPatients.map((patient, index) => (
-                  <div key={patient.id} {...(index === 0 ? { "data-tutorial": "patient-card-first" } : {})}>
-                    <PatientCard patient={patient} onPrefetch={prefetchPatient} />
-                  </div>
-                ))}
-              </div>
+              {visiblePatients.map((patient, index) => (
+                <motion.div
+                  key={patient.id}
+                  {...(index === 0 ? { "data-tutorial": "patient-card-first" } : {})}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <PatientCard
+                    patient={patient}
+                    onPrefetch={prefetchPatient}
+                    isSelected={selectedPatientIds.includes(patient.id)}
+                    selectionMode={patientSelectionMode}
+                    onToggleSelect={togglePatientSelection}
+                    onOpenQuickActions={handleOpenQuickActions}
+                  />
+                </motion.div>
+              ))}
+              {visiblePatients.length === 0 && (
+                <p className="text-sm text-muted-foreground">Nenhum paciente encontrado.</p>
+              )}
             </div>
-          )}
-          {recentPatients.length === 0 && (
-            <Card className="p-8 text-center">
-              <p className="text-muted-foreground">Nenhum paciente cadastrado ainda.</p>
-              <Button className="mt-4" onClick={() => navigate("/pacientes/novo")}>
-                <Plus className="h-4 w-4 mr-2" />
-                Cadastrar primeiro paciente
-              </Button>
-            </Card>
+          ) : (
+            <div className="space-y-6">
+              {recentPatients.length > 0 && (
+                <div>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h2 className="text-sm font-medium text-muted-foreground">Pacientes recentes</h2>
+                    <p className="text-sm text-muted-foreground">
+                      {recentPatients.length} paciente{recentPatients.length !== 1 ? "s" : ""} encontrado
+                      {recentPatients.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {recentPatients.map((patient, index) => (
+                      <div key={patient.id} {...(index === 0 ? { "data-tutorial": "patient-card-first" } : {})}>
+                        <PatientCard
+                          patient={patient}
+                          onPrefetch={prefetchPatient}
+                          isSelected={selectedPatientIds.includes(patient.id)}
+                          selectionMode={patientSelectionMode}
+                          onToggleSelect={togglePatientSelection}
+                          onOpenQuickActions={handleOpenQuickActions}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {recentPatients.length === 0 && (
+                <Card className="p-8 text-center">
+                  <p className="text-muted-foreground">Nenhum paciente cadastrado ainda.</p>
+                  <Button className="mt-4" onClick={() => navigate("/pacientes/novo")}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Cadastrar primeiro paciente
+                  </Button>
+                </Card>
+              )}
+            </div>
           )}
         </div>
       )}
+
+      <PatientQuickActionsMenu
+        open={quickActionsOpen}
+        onOpenChange={setQuickActionsOpen}
+        patient={quickActionsPatient}
+        onSelect={handleQuickActionSelect}
+        onNewAppointment={handleQuickActionNewAppointment}
+        onAttendNow={handleQuickActionAttendNow}
+        onUpdateStatus={handleQuickActionUpdateStatus}
+        onViewProfile={handleQuickActionViewProfile}
+      />
     </motion.div>
   );
 };

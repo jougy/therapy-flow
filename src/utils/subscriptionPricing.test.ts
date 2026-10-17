@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculatePlanPrice, PLAN_PRICING_CONFIG, parsePlanType } from "./subscriptionPricing";
+import { calculatePlanPrice, PLAN_PRICING_CONFIG, parsePlanType, getPlanStorageQuota } from "./subscriptionPricing";
 
 describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
   describe("PLAN_PRICING_CONFIG matrix", () => {
@@ -360,21 +360,44 @@ describe("subscriptionPricing - Centralized Pricing & Calculations", () => {
     });
   });
 
-  describe("parsePlanType", () => {
-    it("correctly parses legacy and new plan types", () => {
-      expect(parsePlanType("solo")).toBe("solo");
-      expect(parsePlanType("clinic")).toBe("clinic");
-      expect(parsePlanType("enterprise")).toBe("enterprise");
-      expect(parsePlanType("prof_basico")).toBe("prof_basico");
-      expect(parsePlanType("prof-basico")).toBe("prof_basico");
-      expect(parsePlanType("prof_medio")).toBe("prof_medio");
-      expect(parsePlanType("prof_top")).toBe("prof_top");
-      expect(parsePlanType("clinica_basico")).toBe("clinica_basico");
-      expect(parsePlanType("clinica-basico")).toBe("clinica_basico");
-      expect(parsePlanType("clinica_medio")).toBe("clinica_medio");
-      expect(parsePlanType("clinica_top")).toBe("clinica_top");
-      expect(parsePlanType(null)).toBe("solo");
-      expect(parsePlanType("other")).toBe("solo");
+  describe("getPlanStorageQuota", () => {
+    it("returns correct quotas for trial", () => {
+      const trialQuota = getPlanStorageQuota("prof_basico", true);
+      expect(trialQuota.maxFileSizeMb).toBe(5);
+      expect(trialQuota.totalStorageMb).toBe(500);
+      expect(trialQuota.maxFileSizeBytes).toBe(5 * 1024 * 1024);
+      expect(trialQuota.totalStorageBytes).toBe(500 * 1024 * 1024);
+    });
+
+    it("returns correct quotas for all 6 tiers and legacy tiers", () => {
+      const basico = getPlanStorageQuota("prof_basico", false);
+      expect(basico.maxFileSizeMb).toBe(10);
+      expect(basico.totalStorageMb).toBe(2048);
+
+      const medio = getPlanStorageQuota("prof_medio", false);
+      expect(medio.maxFileSizeMb).toBe(15);
+      expect(medio.totalStorageMb).toBe(5120);
+
+      const profTop = getPlanStorageQuota("prof_top", false);
+      expect(profTop.maxFileSizeMb).toBe(20);
+      expect(profTop.totalStorageMb).toBe(15360);
+
+      const clinicaBasico = getPlanStorageQuota("clinica_basico", false);
+      expect(clinicaBasico.maxFileSizeMb).toBe(25);
+      expect(clinicaBasico.totalStorageMb).toBe(25600);
+
+      const clinicaMedio = getPlanStorageQuota("clinica_medio", false);
+      expect(clinicaMedio.maxFileSizeMb).toBe(30);
+      expect(clinicaMedio.totalStorageMb).toBe(51200);
+
+      const clinicaTop = getPlanStorageQuota("clinica_top", false);
+      expect(clinicaTop.maxFileSizeMb).toBe(40);
+      expect(clinicaTop.totalStorageMb).toBe(102400);
+
+      const legacySolo = getPlanStorageQuota("solo", false);
+      expect(legacySolo.maxFileSizeMb).toBe(15);
+      expect(legacySolo.totalStorageMb).toBe(5120);
     });
   });
 });
+

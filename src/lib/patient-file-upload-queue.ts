@@ -204,13 +204,31 @@ const invokePatientFileEdgeFunction = async <TData>(
 
   if (error) {
     let status = 400;
-    const message = error.message;
-    const technicalDetails: unknown = error;
+    let message = error.message;
+    let technicalDetails: unknown = error;
 
-    // Se o erro tiver contexto de resposta
+    // Se o erro tiver contexto de resposta (FunctionsHttpError)
     if ("context" in error && error.context && typeof error.context === "object") {
       const resp = error.context as Response;
       if (resp.status) status = resp.status;
+      try {
+        const cloned = resp.clone();
+        const jsonBody = await cloned.json();
+        if (jsonBody && typeof jsonBody === "object") {
+          technicalDetails = jsonBody;
+          if (typeof jsonBody.error === "string") {
+            message = jsonBody.error;
+          }
+        }
+      } catch {
+        // Fallback para response texto simples caso não seja JSON
+        try {
+          const text = await resp.clone().text();
+          if (text) message = text;
+        } catch {
+          // ignora
+        }
+      }
     }
 
     throw createUploadDiagnosticException({

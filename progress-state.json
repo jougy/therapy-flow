@@ -1,0 +1,12 @@
+{
+  "title": "Executando Tarefa",
+  "status": "running",
+  "current_step": 3,
+  "total_steps": 3,
+  "step_name": "Etapa 3",
+  "start_time": 1792207883,
+  "updated_at": 1792207909,
+  "est_total_seconds": 120,
+  "eta_seconds": 0,
+  "steps": ["Etapa 1", "Etapa 2", "Etapa 3"]
+}

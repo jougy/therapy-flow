@@ -87,6 +87,18 @@ const PacienteResumo = () => {
     }
   }, [id, patient, targetClinicKey, location.search, navigate]);
 
+  // Sincroniza o nome do paciente com a barra superior (AppLayout Header)
+  useEffect(() => {
+    if (patient?.name) {
+      const patientKey = getPatientRouteKey(patient);
+      window.dispatchEvent(
+        new CustomEvent("pluri:set-patient-title", {
+          detail: { title: patient.name, patientKey, id: patient.id },
+        })
+      );
+    }
+  }, [patient?.name, patient]);
+
   // Permissões e LGPD
   const canPrint = Boolean(typeof can === "function" ? can("system.print") : true) && isFeatureEnabled("print_general");
   const canExport = Boolean(typeof can === "function" ? can("patients.read") && can("system.print") : true);

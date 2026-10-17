@@ -42,6 +42,14 @@ async function main() {
   const codeLint = await runScript('scripts/dev/quick-lint.mjs');
   if (codeLint !== 0) process.exit(codeLint);
 
+  // 4. Anti-Monolith Protection
+  const codeMonolith = await runScript('scripts/dev/check-monoliths.mjs');
+  if (codeMonolith !== 0) process.exit(codeMonolith);
+
+  // 5. Clean Logs Protection
+  const codeLogs = await runScript('scripts/dev/check-clean-logs.mjs');
+  if (codeLogs !== 0) process.exit(codeLogs);
+
   console.log('\n🚀 [check:quick] Todas as verificações passaram com 100% de sucesso!');
   process.exit(0);
 }

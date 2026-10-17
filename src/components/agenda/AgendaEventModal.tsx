@@ -37,6 +37,11 @@ import {
 } from "@/lib/agenda-events";
 import { findConflictingAgendaEvents } from "@/lib/agenda-slot-condenser";
 import { toast } from "@/hooks/use-toast";
+import {
+  AgendaReminderSettingsBlock,
+  DEFAULT_REMINDER_SETTINGS,
+  type AgendaReminderSettingsValues,
+} from "./AgendaReminderSettingsBlock";
 import type { AgendaEventItem } from "./types";
 
 interface AgendaEventModalProps {
@@ -57,6 +62,7 @@ interface AgendaEventModalProps {
     date: Date;
     time: string;
     durationMinutes: number;
+    reminderSettings?: AgendaReminderSettingsValues;
   }) => Promise<void>;
   onSaveEdit: (data: {
     id: string;
@@ -104,6 +110,7 @@ export const AgendaEventModal = React.memo<AgendaEventModalProps>(({
   const [isCustomDuration, setIsCustomDuration] = useState(false);
   const [customDurationInput, setCustomDurationInput] = useState(String(defaultDurationMinutes));
   const [status, setStatus] = useState<AgendaEventStatus>("aguardando_confirmacao");
+  const [reminderSettings, setReminderSettings] = useState<AgendaReminderSettingsValues>(DEFAULT_REMINDER_SETTINGS);
 
   // Loading States
   const [saving, setSaving] = useState(false);
@@ -165,6 +172,7 @@ export const AgendaEventModal = React.memo<AgendaEventModalProps>(({
       setCustomDurationInput(String(initialDuration));
       setEndTime(computeEndTimeFromDuration(startTime, initialDuration));
       setStatus("aguardando_confirmacao");
+      setReminderSettings(DEFAULT_REMINDER_SETTINGS);
     } else if (mode === "edit" && selectedEvent) {
       setEventType(selectedEvent.eventType);
       const foundPatient = selectedEvent.patientId
@@ -287,6 +295,7 @@ export const AgendaEventModal = React.memo<AgendaEventModalProps>(({
           date,
           time,
           durationMinutes: finalDuration,
+          reminderSettings,
         });
       } else if (mode === "edit" && selectedEvent) {
         await onSaveEdit({
@@ -638,6 +647,13 @@ export const AgendaEventModal = React.memo<AgendaEventModalProps>(({
               </div>
             </div>
           )}
+
+          {/* Configurações de Lembrete e Notificações */}
+          <AgendaReminderSettingsBlock
+            values={reminderSettings}
+            onChange={setReminderSettings}
+            patientName={selectedPatient?.name}
+          />
 
           <DialogFooter className="gap-2 pt-2 sm:justify-between">
             {mode === "edit" && canDelete ? (

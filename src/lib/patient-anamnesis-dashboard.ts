@@ -9,8 +9,17 @@ import {
   type AnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
 
+import type { ClinicalImageAnnotationValue } from "@/lib/image-annotation-vector";
+
 export type PatientAnamnesisChartType = "area" | "bar" | "line" | "pie" | "proportion" | "radar";
-export type PatientAnamnesisMetricKind = "category" | "date" | "number" | "table" | "text";
+export type PatientAnamnesisMetricKind = "category" | "date" | "image_annotation" | "number" | "table" | "text";
+
+export interface PatientAnamnesisDashboardImageEntry {
+  date: string;
+  label: string;
+  sessionId: string;
+  value: ClinicalImageAnnotationValue;
+}
 
 export interface PatientAnamnesisDashboardSession {
   anamnesis: Json | null;
@@ -80,6 +89,7 @@ export interface PatientAnamnesisDashboardMetric {
   fieldId: string;
   fieldLabel: string;
   fieldType: AnamnesisField["type"];
+  imageEntries?: PatientAnamnesisDashboardImageEntry[];
   isRadarGroup?: boolean;
   key: string;
   kind: PatientAnamnesisMetricKind;
@@ -405,6 +415,51 @@ const buildTableMetric = (
   };
 };
 
+const buildImageAnnotationMetric = (
+  groupKey: string,
+  field: AnamnesisField,
+  sessions: PatientAnamnesisDashboardSession[],
+): PatientAnamnesisDashboardMetric | null => {
+  const imageEntries = sessions
+    .flatMap((session) => {
+      const value = readResponseValue(field, session);
+      if (
+        !value ||
+        typeof value !== "object" ||
+        Array.isArray(value) ||
+        !("baseImageUrl" in value) ||
+        typeof (value as { baseImageUrl?: unknown }).baseImageUrl !== "string" ||
+        !((value as { baseImageUrl: string }).baseImageUrl || "").trim()
+      ) {
+        return [];
+      }
+
+      return [{
+        date: session.session_date,
+        label: formatDateLabel(session.session_date),
+        sessionId: session.id,
+        value: value as unknown as ClinicalImageAnnotationValue,
+      }];
+    })
+    .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
+
+  if (imageEntries.length === 0) {
+    return null;
+  }
+
+  return {
+    allowedCharts: [],
+    count: imageEntries.length,
+    defaultChart: "bar",
+    fieldId: field.id,
+    fieldLabel: field.label,
+    fieldType: field.type,
+    imageEntries: imageEntries.slice(0, 6),
+    key: `${groupKey}:${field.id}`,
+    kind: "image_annotation",
+  };
+};
+
 const buildMetric = (
   groupKey: string,
   field: AnamnesisField,
@@ -434,6 +489,10 @@ const buildMetric = (
 
   if (field.type === "table") {
     return buildTableMetric(groupKey, field, sessions);
+  }
+
+  if (field.type === "image_annotation") {
+    return buildImageAnnotationMetric(groupKey, field, sessions);
   }
 
   return null;

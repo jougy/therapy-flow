@@ -29,6 +29,7 @@ export type HomeSessionSortKey =
 
 
 export interface HomePatientFilters {
+  agendaShifts?: HomePatientAgendaShift[];
   agendaStatuses: HomePatientAgendaFilterStatus[];
   collaboratorIds: string[];
   colors: string[];
@@ -118,6 +119,7 @@ export interface HomePatientView {
   name: string;
   originType: PatientOriginType;
   agendaFilterStatuses: HomePatientAgendaFilterStatus[];
+  agendaShifts: HomePatientAgendaShift[];
   nextAgendaSummary: HomePatientAgendaSummary | null;
   paymentFilterStatus: HomePatientPaymentFilterStatus;
   paymentSummary: HomePatientPaymentSummary | null;
@@ -163,6 +165,23 @@ export type HomePatientAgendaFilterStatus =
   | "confirmed"
   | "unconfirmed"
   | "no_agenda";
+
+export type HomePatientAgendaShift = "madrugada" | "manha" | "tarde" | "noite";
+
+export const HOME_PATIENT_AGENDA_SHIFT_OPTIONS: { label: string; value: HomePatientAgendaShift; hint: string }[] = [
+  { label: "Madrugada", value: "madrugada", hint: "00:00 às 05:59" },
+  { label: "Manhã", value: "manha", hint: "06:00 às 11:59" },
+  { label: "Tarde", value: "tarde", hint: "12:00 às 17:59" },
+  { label: "Noite", value: "noite", hint: "18:00 às 23:59" },
+];
+
+export const getAgendaShiftFromDate = (date: Date): HomePatientAgendaShift => {
+  const hours = date.getHours();
+  if (hours < 6) return "madrugada";
+  if (hours < 12) return "manha";
+  if (hours < 18) return "tarde";
+  return "noite";
+};
 
 export type HomePatientRecurrenceFilterStatus = "recurring" | "not_recurring";
 
@@ -476,6 +495,27 @@ const buildHomePatientAgendaFilterStatuses = (
   );
 };
 
+const buildHomePatientAgendaShifts = (
+  agendaEvents: HomeAgendaEventRecord[],
+  now: number,
+): HomePatientAgendaShift[] => {
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTodayTime = startOfToday.getTime();
+
+  const activeFutureEvents = agendaEvents.filter((event) => {
+    if (!event.patient_id || event.status === "cancelado") return false;
+    const time = getAgendaEventTime(event);
+    return !Number.isNaN(time) && time >= startOfTodayTime;
+  });
+
+  return Array.from(
+    new Set(
+      activeFutureEvents.map((event) => getAgendaShiftFromDate(new Date(event.scheduled_for))),
+    ),
+  );
+};
+
 const compareByName = (left: HomePatientView, right: HomePatientView) => compareText(left.name, right.name);
 
 const compareByDefault = (left: HomePatientView, right: HomePatientView) =>
@@ -507,6 +547,7 @@ const comparePatientsForSort = (sortKey: HomePatientSortKey, left: HomePatientVi
 
 export const hasActiveHomePatientFilters = (filters: HomePatientFilters) =>
   filters.agendaStatuses.length > 0 ||
+  (filters.agendaShifts && filters.agendaShifts.length > 0) ||
   filters.collaboratorIds.length > 0 ||
   filters.colors.length > 0 ||
   filters.groupNames.length > 0 ||
@@ -521,6 +562,7 @@ export const hasActiveHomePatientFilters = (filters: HomePatientFilters) =>
 
 export const getActiveHomePatientFilterCount = (filters: HomePatientFilters) =>
   filters.agendaStatuses.length +
+  (filters.agendaShifts ? filters.agendaShifts.length : 0) +
   filters.collaboratorIds.length +
   filters.colors.length +
   filters.groupNames.length +
@@ -601,6 +643,7 @@ export const buildHomePatientViews = ({
 
       return {
         agendaFilterStatuses: buildHomePatientAgendaFilterStatuses(agendaEventsByPatientId.get(patient.id) ?? [], nextGlobalAgendaEventId, now),
+        agendaShifts: buildHomePatientAgendaShifts(agendaEventsByPatientId.get(patient.id) ?? [], now),
         collaboratorIds,
         colors: Array.from(new Set(groups.map((group) => group.color))),
         cpf: patient.cpf,
@@ -655,6 +698,10 @@ export const buildHomePatientViews = ({
       }
 
       if (filters.agendaStatuses.length > 0 && !patient.agendaFilterStatuses.some((status) => filters.agendaStatuses.includes(status))) {
+        return false;
+      }
+
+      if (filters.agendaShifts && filters.agendaShifts.length > 0 && !patient.agendaShifts.some((shift) => filters.agendaShifts!.includes(shift))) {
         return false;
       }
 

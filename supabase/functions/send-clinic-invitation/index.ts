@@ -259,6 +259,7 @@ Deno.serve(async (req) => {
       `;
     }
 
+    const resend = new ResendClient();
     const emailResult = await resend.sendEmail({
       to: email,
       subject: emailSubject,
@@ -267,8 +268,24 @@ Deno.serve(async (req) => {
 
     if (emailResult.error) {
       console.error("[send-clinic-invitation] Resend dispatch error:", emailResult.error);
-      throw new Error(`Falha ao despachar e-mail via Resend: ${emailResult.error.message}`);
+      await admin.from("clinic_collaborator_invitations").update({
+        email_delivery_status: "failed",
+        email_last_error: emailResult.error.message,
+      }).eq("id", invitation.id);
+
+      return json({
+        sent: false,
+        error: emailResult.error.message,
+        canShareLink: true,
+        destinationUrl,
+      }, 200);
     }
+
+    await admin.from("clinic_collaborator_invitations").update({
+      email_delivery_status: "sent",
+      email_sent_at: new Date().toISOString(),
+      email_last_error: null,
+    }).eq("id", invitation.id);
 
     return json({
       sent: true,
@@ -276,10 +293,34 @@ Deno.serve(async (req) => {
       existingUser,
       destinationUrl,
       emailId: emailResult.id,
+      canShareLink: true,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao enviar convite.";
     console.error("[send-clinic-invitation] Error processing invitation:", message, error);
-    return json({ error: message }, 400);
+    
+    // Tentar marcar como falha se tivermos o ID do convite e o objeto invitation estiver acessível
+    // Como invitation pode não estar escopado no bloco catch se falhou antes, fazemos o check defensivo
+    try {
+      // @ts-ignore
+      if (typeof invitation !== "undefined" && invitation?.id) {
+        // @ts-ignore
+        await admin.from("clinic_collaborator_invitations").update({
+          email_delivery_status: "failed",
+          email_last_error: message,
+        }).eq("id", invitation.id);
+      }
+    } catch (updateErr) {
+      console.error("[send-clinic-invitation] Failed to update invitation error status:", updateErr);
+    }
+
+    // Retorna 200 ou 400 dependendo se for erro de validação prévia. Se já passou da validação, retorna 200 com canShareLink: true
+    return json({ 
+      sent: false, 
+      error: message, 
+      canShareLink: true, 
+      destinationUrl: "" 
+    }, 200);
   }
 });
+

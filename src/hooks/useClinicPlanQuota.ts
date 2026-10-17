@@ -1,7 +1,7 @@
-// src/hooks/useClinicPlanQuota.ts
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { calculateTrialRemainingTime } from "@/lib/trial";
+import { getPlanStorageQuota } from "@/utils/subscriptionPricing";
 
 export interface QuotaCheckResult {
   allowed: boolean;
@@ -37,6 +37,16 @@ export interface ClinicPlanUsage {
     current: number;
     max: number;
     remaining: number;
+    isLimitReached: boolean;
+  };
+  storage: {
+    usedBytes: number;
+    maxBytes: number;
+    usedMb: number;
+    maxMb: number;
+    percentage: number;
+    maxFileSizeMb: number;
+    totalFiles: number;
     isLimitReached: boolean;
   };
   loading: boolean;
@@ -75,6 +85,16 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
     attendances: { current: 0, max: 20, remaining: 20, isLimitReached: false },
     patients: { current: 0, max: 5, remaining: 5, isLimitReached: false },
     forms: { current: 0, max: 1, remaining: 1, isLimitReached: false },
+    storage: {
+      usedBytes: 0,
+      maxBytes: 2147483648,
+      usedMb: 0,
+      maxMb: 2048,
+      percentage: 0,
+      maxFileSizeMb: 10,
+      totalFiles: 0,
+      isLimitReached: false,
+    },
   });
 
   const fetchQuotas = useCallback(async () => {
@@ -154,6 +174,19 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
       const { daysRemaining: calculatedDaysRemaining, hoursRemaining: calculatedHoursRemaining } =
         calculateTrialRemainingTime(trialEndsAtDate);
 
+      // 5. Consultar consumo de armazenamento global da clínica (Backblaze B2)
+      const { data: storageData } = await supabase.rpc("get_clinic_storage_usage", {
+        _clinic_id: clinicId,
+      });
+
+      const quota = getPlanStorageQuota(planType, isTrial);
+      const usedBytes = Number(storageData?.[0]?.total_bytes || 0);
+      const totalFiles = Number(storageData?.[0]?.total_files || 0);
+      const usedMb = Math.round((usedBytes / (1024 * 1024)) * 10) / 10;
+      const maxMb = quota.totalStorageMb;
+      const percentage = maxMb > 0 ? Math.min(100, Math.round((usedMb / maxMb) * 100)) : 0;
+      const isStorageLimitReached = usedBytes >= quota.totalStorageBytes;
+
       setUsage({
         isFreeTrial: isTrial,
         isTrialExpired: isTrialExpiredCalculated,
@@ -181,6 +214,16 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
           max: maxFrm,
           remaining: maxFrm === -1 ? 999999 : Math.max(0, maxFrm - currentFrm),
           isLimitReached: maxFrm !== -1 && currentFrm >= maxFrm,
+        },
+        storage: {
+          usedBytes,
+          maxBytes: quota.totalStorageBytes,
+          usedMb,
+          maxMb,
+          percentage,
+          maxFileSizeMb: quota.maxFileSizeMb,
+          totalFiles,
+          isLimitReached: isStorageLimitReached,
         },
       });
     } catch (err) {

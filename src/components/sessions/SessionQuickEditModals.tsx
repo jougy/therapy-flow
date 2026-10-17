@@ -9,7 +9,7 @@ import {
   CurrencyInput,
   PaymentCompositionChips,
   PaymentStatusAutoControl,
-} from "./SessionPaymentSection";
+} from "./payment/PaymentControls";
 import {
   PAYMENT_ADJUSTMENT_REASON_MAX_LENGTH,
   PAYMENT_INSTALLMENT_OPTIONS,
