@@ -33,6 +33,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAgendaPeriodClipboard } from "@/hooks/useAgendaPeriodClipboard";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
+import { getLocalCacheItem, setLocalCacheItem } from "@/lib/indexed-db-persister";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AGENDA_EVENTS_UPDATED_EVENT,
@@ -64,6 +65,14 @@ import {
 
 export type { AgendaEventItem };
 
+import {
+  AGENDA_EVENTS_CACHE_KEY,
+  PATIENTS_CACHE_KEY,
+  inMemoryAgendaCache,
+  mapRawEventToItem,
+  type AgendaEventQueryResult,
+} from "@/lib/agenda-cache";
+
 function getDefaultNewEventTime() {
   const current = new Date();
   const nextHour = new Date(current.getTime() + 60 * 60 * 1000);
@@ -75,7 +84,7 @@ export default function ClinicAgendaPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clinicKey } = useParams<{ clinicKey?: string }>();
-  const { can, clinic, clinicId, loading: authLoading, user } = useAuth();
+  const { accessibleClinics, can, clinic, clinicId, loading: authLoading, user } = useAuth();
 
   const isDesignLab = location.pathname.startsWith("/designlab");
   const effectiveClinicKey = clinicKey || clinic?.route_key;
@@ -87,11 +96,18 @@ export default function ClinicAgendaPage() {
       ? `/clinica/${effectiveClinicKey}`
       : "/espacopessoal";
 
+  const routeClinicId = clinicKey
+    ? accessibleClinics?.find((opt) => opt.clinic?.route_key === clinicKey)?.clinic?.id
+    : undefined;
+  const effectiveClinicId = clinicId || clinic?.id || routeClinicId || null;
+
+  const initialCache = effectiveClinicId ? inMemoryAgendaCache.get(effectiveClinicId) : null;
+
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<AgendaViewMode>("day");
-  const [events, setEvents] = useState<AgendaEventItem[]>([]);
-  const [patients, setPatients] = useState<AgendaPatientOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<AgendaEventItem[]>(() => initialCache?.events ?? []);
+  const [patients, setPatients] = useState<AgendaPatientOption[]>(() => initialCache?.patients ?? []);
+  const [loading, setLoading] = useState(() => !initialCache);
 
   // Filtros
   const [filterType, setFilterType] = useState<string>("all");
@@ -105,7 +121,35 @@ export default function ClinicAgendaPage() {
   const [modalPresetTime, setModalPresetTime] = useState<string>(() => getDefaultNewEventTime());
   const [selectedEventForModal, setSelectedEventForModal] = useState<AgendaEventItem | null>(null);
 
-  const effectiveClinicId = clinicId || clinic?.id || null;
+  // Hidratação rápida via IndexedDB para o primeiro carregamento da aba
+  useEffect(() => {
+    if (!effectiveClinicId || inMemoryAgendaCache.has(effectiveClinicId)) return;
+
+    let isMounted = true;
+    void Promise.all([
+      getLocalCacheItem<AgendaEventQueryResult[]>(AGENDA_EVENTS_CACHE_KEY(effectiveClinicId)),
+      getLocalCacheItem<AgendaPatientOption[]>(PATIENTS_CACHE_KEY(effectiveClinicId)),
+    ]).then(([cachedEvents, cachedPatients]) => {
+      if (!isMounted) return;
+      let hasData = false;
+      if (Array.isArray(cachedEvents) && cachedEvents.length > 0) {
+        const mapped = cachedEvents.map(mapRawEventToItem);
+        setEvents(mapped);
+        hasData = true;
+      }
+      if (Array.isArray(cachedPatients) && cachedPatients.length > 0) {
+        setPatients(cachedPatients);
+        hasData = true;
+      }
+      if (hasData) {
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [effectiveClinicId]);
 
   // Hook modular de Copiar & Colar Flexível de Período (Dia, Semana, Mês)
   const {
@@ -157,25 +201,52 @@ export default function ClinicAgendaPage() {
 
   const currentUserId = user?.id;
 
-  const fetchAgendaData = useCallback(async () => {
+  const fetchAgendaData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
     if (authLoading) return;
     if (!currentUserId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+
+    // Se estivermos em uma rota de clínica específica (:clinicKey) mas o effectiveClinicId ainda não foi resolvido,
+    // aguardamos antes de disparar para evitar varredura global sem índice no Supabase
+    if (clinicKey && !effectiveClinicId) {
+      return;
+    }
+
+    if (showLoading) {
+      setLoading(true);
+    }
 
     try {
-      let eventsRes = effectiveClinicId
-        ? await supabase
+      const eventsRequest = effectiveClinicId
+        ? supabase
             .from("agenda_events")
             .select("id, event_type, patient_id, status, title, scheduled_for, duration_minutes")
             .eq("clinic_id", effectiveClinicId)
             .order("scheduled_for", { ascending: true })
-        : await supabase
+        : supabase
             .from("agenda_events")
             .select("id, event_type, patient_id, status, title, scheduled_for, duration_minutes")
             .order("scheduled_for", { ascending: true });
+
+      const patientsRequest = effectiveClinicId
+        ? supabase
+            .from("patients")
+            .select("id, name")
+            .eq("clinic_id", effectiveClinicId)
+            .order("name", { ascending: true })
+        : supabase
+            .from("patients")
+            .select("id, name")
+            .order("name", { ascending: true });
+
+      // Dispara ambas as requisições em paralelo (Promise.all) cortando a latência pela metade
+      const [initialEventsRes, patientsRes] = await Promise.all([
+        eventsRequest,
+        patientsRequest,
+      ]);
+      let eventsRes = initialEventsRes;
 
       // Fallback Expand and Contract: se o banco ainda não tiver duration_minutes, tenta sem a coluna
       if (eventsRes.error && (eventsRes.error.code === "42703" || eventsRes.error.message.includes("duration_minutes"))) {
@@ -191,19 +262,7 @@ export default function ClinicAgendaPage() {
               .order("scheduled_for", { ascending: true });
       }
 
-      const patientsRequest = effectiveClinicId
-        ? supabase
-            .from("patients")
-            .select("id, name")
-            .eq("clinic_id", effectiveClinicId)
-            .order("name", { ascending: true })
-        : supabase
-            .from("patients")
-            .select("id, name")
-            .order("name", { ascending: true });
-
-      const patientsRes = await patientsRequest;
-
+      let nextEvents: AgendaEventItem[] = [];
       if (eventsRes.error) {
         toast({
           title: "Erro ao carregar agenda",
@@ -211,32 +270,16 @@ export default function ClinicAgendaPage() {
           variant: "destructive",
         });
       } else {
-        interface AgendaEventQueryResult {
-          id: string;
-          event_type: string;
-          patient_id: string | null;
-          scheduled_for: string;
-          status: string | null;
-          title: string;
-          duration_minutes?: number | null;
-        }
-
         const rawEvents = (eventsRes.data ?? []) as unknown as AgendaEventQueryResult[];
-        setEvents(
-          rawEvents.map((ev) => ({
-            id: ev.id,
-            eventType: (ev.event_type as AgendaEventType) || "atendimento",
-            patientId: ev.patient_id,
-            scheduledFor: ev.scheduled_for,
-            status: normalizeAgendaStatus(ev.status),
-            title: ev.title,
-            date: parseISO(ev.scheduled_for),
-            time: format(parseISO(ev.scheduled_for), "HH:mm"),
-            durationMinutes: ev.duration_minutes ?? 60,
-          }))
-        );
+        nextEvents = rawEvents.map(mapRawEventToItem);
+        setEvents(nextEvents);
+
+        if (effectiveClinicId) {
+          void setLocalCacheItem(AGENDA_EVENTS_CACHE_KEY(effectiveClinicId), rawEvents);
+        }
       }
 
+      let nextPatients: AgendaPatientOption[] = [];
       if (patientsRes.error) {
         toast({
           title: "Erro ao carregar pacientes",
@@ -244,20 +287,36 @@ export default function ClinicAgendaPage() {
           variant: "destructive",
         });
       } else {
-        setPatients(Array.isArray(patientsRes.data) ? patientsRes.data : []);
+        nextPatients = Array.isArray(patientsRes.data) ? (patientsRes.data as AgendaPatientOption[]) : [];
+        setPatients(nextPatients);
+
+        if (effectiveClinicId) {
+          void setLocalCacheItem(PATIENTS_CACHE_KEY(effectiveClinicId), nextPatients);
+        }
+      }
+
+      // Atualiza o cache em memória imediato para transições entre rotas sem delay
+      if (effectiveClinicId) {
+        inMemoryAgendaCache.set(effectiveClinicId, {
+          events: nextEvents.length > 0 ? nextEvents : (inMemoryAgendaCache.get(effectiveClinicId)?.events ?? []),
+          patients: nextPatients.length > 0 ? nextPatients : (inMemoryAgendaCache.get(effectiveClinicId)?.patients ?? []),
+          timestamp: Date.now(),
+        });
       }
     } finally {
       setLoading(false);
     }
-  }, [authLoading, effectiveClinicId, currentUserId]);
+  }, [authLoading, clinicKey, effectiveClinicId, currentUserId]);
 
   useEffect(() => {
-    void fetchAgendaData();
-  }, [fetchAgendaData]);
+    const hasInitialCache = Boolean(effectiveClinicId && inMemoryAgendaCache.has(effectiveClinicId));
+    void fetchAgendaData({ showLoading: !hasInitialCache });
+  }, [fetchAgendaData, effectiveClinicId]);
 
   useEffect(() => {
     const handleEventsUpdated = () => {
-      void fetchAgendaData();
+      // Atualizações de eventos não devem resetar o layout com spinner de tela cheia
+      void fetchAgendaData({ showLoading: false });
     };
 
     window.addEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleEventsUpdated);
@@ -384,6 +443,7 @@ export default function ClinicAgendaPage() {
     date: Date;
     time: string;
     durationMinutes: number;
+    reminderSettings?: any;
   }) => {
     if (!user) return;
     if (!can("schedule.write")) {
@@ -417,6 +477,10 @@ export default function ClinicAgendaPage() {
         durationMinutes: data.durationMinutes,
         eventType: data.eventType,
         graceMinutes: 15,
+        notifiedColleagueIds: data.reminderSettings?.notifiedColleagueIds,
+        notifyPatient: data.reminderSettings?.notifyPatient,
+        notifyTeam: data.reminderSettings?.notifyTeam,
+        reminderConfigs: data.reminderSettings?.reminderConfigs,
         selectedDate: data.date,
         selectedPatient,
         time: data.time,
@@ -430,9 +494,21 @@ export default function ClinicAgendaPage() {
         .select()
         .single();
 
-      if (insertedResult.error && (insertedResult.error.code === "42703" || insertedResult.error.message.includes("duration_minutes"))) {
+      if (
+        insertedResult.error &&
+        (insertedResult.error.code === "42703" ||
+          insertedResult.error.code === "PGRST204" ||
+          insertedResult.error.message.includes("duration_minutes") ||
+          insertedResult.error.message.includes("notified_colleague_ids") ||
+          insertedResult.error.message.includes("reminder_configs") ||
+          insertedResult.error.message.includes("schema cache"))
+      ) {
         const fallbackPayload = { ...payload };
         delete (fallbackPayload as any).duration_minutes;
+        delete (fallbackPayload as any).reminder_configs;
+        delete (fallbackPayload as any).notify_team;
+        delete (fallbackPayload as any).notify_patient;
+        delete (fallbackPayload as any).notified_colleague_ids;
         insertedResult = await supabase
           .from("agenda_events")
           .insert(fallbackPayload)
@@ -444,20 +520,29 @@ export default function ClinicAgendaPage() {
       const inserted = insertedResult.data;
 
       if (inserted) {
-        setEvents((prev) => [
-          ...prev,
-          {
-            id: inserted.id,
-            eventType: inserted.event_type as AgendaEventType,
-            patientId: inserted.patient_id,
-            scheduledFor: inserted.scheduled_for,
-            status: normalizeStatus(inserted.status),
-            title: inserted.title,
-            date: parseISO(inserted.scheduled_for),
-            time: format(parseISO(inserted.scheduled_for), "HH:mm"),
-            durationMinutes: (inserted as any).duration_minutes ?? data.durationMinutes,
-          },
-        ]);
+        const newEvent: AgendaEventItem = {
+          id: inserted.id,
+          eventType: inserted.event_type as AgendaEventType,
+          patientId: inserted.patient_id,
+          scheduledFor: inserted.scheduled_for,
+          status: normalizeAgendaStatus(inserted.status),
+          title: inserted.title,
+          date: parseISO(inserted.scheduled_for),
+          time: format(parseISO(inserted.scheduled_for), "HH:mm"),
+          durationMinutes: (inserted as any).duration_minutes ?? data.durationMinutes,
+        };
+        setEvents((prev) => {
+          const next = [...prev, newEvent];
+          if (effectiveClinicId) {
+            const entry = inMemoryAgendaCache.get(effectiveClinicId);
+            inMemoryAgendaCache.set(effectiveClinicId, {
+              events: next,
+              patients: entry?.patients ?? patients,
+              timestamp: Date.now(),
+            });
+          }
+          return next;
+        });
       }
 
       notifyAgendaEventsUpdated();
@@ -526,8 +611,8 @@ export default function ClinicAgendaPage() {
 
       if (updateResult.error) throw updateResult.error;
 
-      setEvents((prev) =>
-        prev.map((e) =>
+      setEvents((prev) => {
+        const next = prev.map((e) =>
           e.id === data.id
             ? {
                 ...e,
@@ -538,8 +623,17 @@ export default function ClinicAgendaPage() {
                 durationMinutes: data.durationMinutes ?? e.durationMinutes,
               }
             : e
-        )
-      );
+        );
+        if (effectiveClinicId) {
+          const entry = inMemoryAgendaCache.get(effectiveClinicId);
+          inMemoryAgendaCache.set(effectiveClinicId, {
+            events: next,
+            patients: entry?.patients ?? patients,
+            timestamp: Date.now(),
+          });
+        }
+        return next;
+      });
 
       notifyAgendaEventsUpdated();
       setModalOpen(false);
@@ -551,7 +645,7 @@ export default function ClinicAgendaPage() {
         variant: "destructive",
       });
     }
-  }, [can, user, effectiveClinicId]);
+  }, [can, user, effectiveClinicId, patients]);
 
   // Excluir Agendamento
   const handleDeleteEvent = useCallback(async (id: string) => {
@@ -570,7 +664,18 @@ export default function ClinicAgendaPage() {
 
       if (error) throw error;
 
-      setEvents((prev) => prev.filter((e) => e.id !== id));
+      setEvents((prev) => {
+        const next = prev.filter((e) => e.id !== id);
+        if (effectiveClinicId) {
+          const entry = inMemoryAgendaCache.get(effectiveClinicId);
+          inMemoryAgendaCache.set(effectiveClinicId, {
+            events: next,
+            patients: entry?.patients ?? patients,
+            timestamp: Date.now(),
+          });
+        }
+        return next;
+      });
       notifyAgendaEventsUpdated();
       setModalOpen(false);
       toast({ title: "Agendamento excluído" });
