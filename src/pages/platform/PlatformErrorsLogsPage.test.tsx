@@ -1,5 +1,5 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import React from "react";
 import {
   PlatformErrorsLogsPage,
@@ -14,10 +14,47 @@ import {
   type RuntimeDebugEvent,
 } from "@/lib/runtime-debug";
 
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: {
+    rpc: vi.fn().mockImplementation((fnName: string) => {
+      if (fnName === "list_platform_error_logs") {
+        return Promise.resolve({ data: [], error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    }),
+    from: vi.fn().mockReturnValue({
+      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+      select: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      }),
+    }),
+  },
+}));
+
 describe("PlatformErrorsLogsPage & WhatsApp Bug Report Features", () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+  let consoleInfoSpy: ReturnType<typeof vi.spyOn>;
+  let consoleGroupCollapsedSpy: ReturnType<typeof vi.spyOn>;
+  let consoleGroupEndSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     clearDebugEvents();
     vi.clearAllMocks();
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    consoleInfoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    consoleGroupCollapsedSpy = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    consoleGroupEndSpy = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    cleanup();
+    consoleErrorSpy.mockRestore();
+    consoleWarnSpy.mockRestore();
+    consoleInfoSpy.mockRestore();
+    consoleGroupCollapsedSpy.mockRestore();
+    consoleGroupEndSpy.mockRestore();
   });
 
   describe("Helper Functions", () => {

@@ -52,7 +52,9 @@ import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import {
   type AgendaEventItem,
+  type AgendaShift,
   type AgendaViewMode,
+  getEventShift,
   AgendaViewSelector,
   AgendaYearView,
   AgendaMonthView,
@@ -112,6 +114,7 @@ export default function ClinicAgendaPage() {
   // Filtros
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterShifts, setFilterShifts] = useState<AgendaShift[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Modal Unificado de Criação e Edição
@@ -336,10 +339,15 @@ export default function ClinicAgendaPage() {
   // Filtragem dos eventos
   const filteredEvents = useMemo(() => {
     const q = sanitizeSingleLineInput(searchQuery, INPUT_LIMITS.name).trim().toLowerCase();
+    const hasShiftConstraint = filterShifts.length > 0 && filterShifts.length < 4;
 
     return events.filter((ev) => {
       if (filterType !== "all" && ev.eventType !== filterType) return false;
       if (filterStatus !== "all" && ev.status !== filterStatus) return false;
+      if (hasShiftConstraint) {
+        const evShift = getEventShift(ev.time);
+        if (!filterShifts.includes(evShift)) return false;
+      }
       if (q) {
         const matchesTitle = ev.title.toLowerCase().includes(q);
         const patientName = ev.patientId ? patientNameById.get(ev.patientId) : undefined;
@@ -348,7 +356,7 @@ export default function ClinicAgendaPage() {
       }
       return true;
     });
-  }, [events, filterType, filterStatus, searchQuery, patientNameById]);
+  }, [events, filterType, filterStatus, filterShifts, searchQuery, patientNameById]);
 
   // Eventos do dia selecionado em O(N) com comparação direta de data
   const dayEvents = useMemo(() => {
@@ -889,6 +897,8 @@ export default function ClinicAgendaPage() {
         setFilterType={setFilterType}
         filterStatus={filterStatus}
         setFilterStatus={setFilterStatus}
+        filterShifts={filterShifts}
+        setFilterShifts={setFilterShifts}
       />
 
       {/* Main Agenda View Grid (Year, Month, Week, Day) */}
