@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
+import { addBreadcrumb, getRecentBreadcrumbs, getEnvironmentMetadata } from "@/lib/telemetry-breadcrumbs";
 
 const RUNTIME_DEBUG_PREFIX = "[Pluri-Health runtime]";
 const GLOBAL_RUNTIME_DEBUG_FLAG = "__PRONTO_RUNTIME_DEBUG_INSTALLED__";
@@ -126,7 +127,17 @@ export const logRuntimeError = (scope: string, error: unknown, context?: Runtime
   const stack = "stack" in errorLike && typeof errorLike.stack === "string" ? errorLike.stack : undefined;
   const name = "name" in errorLike && typeof errorLike.name === "string" ? errorLike.name : undefined;
 
-  addDebugEvent("error", scope, errorLike.message, context, {
+  // Coleta metadados de ambiente e últimos passos do usuário
+  const breadcrumbs = getRecentBreadcrumbs();
+  const environment = getEnvironmentMetadata();
+
+  const enrichedContext: Record<string, unknown> = {
+    ...(context || {}),
+    breadcrumbs,
+    environment,
+  };
+
+  addDebugEvent("error", scope, errorLike.message, enrichedContext, {
     message: errorLike.message,
     name,
     stack,
@@ -137,7 +148,7 @@ export const logRuntimeError = (scope: string, error: unknown, context?: Runtime
       scope,
       message: errorLike.message,
       stack,
-      context,
+      context: enrichedContext,
     });
   } catch {
     // Graceful fallback
@@ -159,6 +170,7 @@ export const logRuntimeError = (scope: string, error: unknown, context?: Runtime
 };
 
 export const logRuntimeInfo = (scope: string, message: string, context?: RuntimeDebugContext) => {
+  addBreadcrumb("ui", `[${scope}] ${message}`, context);
   addDebugEvent("info", scope, message, context);
 };
 
@@ -170,6 +182,11 @@ export const logRuntimeFunction = (
   error?: unknown
 ) => {
   const isErr = status === "error";
+  addBreadcrumb("rpc", `Edge Function ${functionName} (${status}) - ${durationMs}ms`, {
+    functionName,
+    status,
+    durationMs,
+  });
   addDebugEvent(
     isErr ? "error" : "info",
     `edge-function.${functionName}`,
@@ -195,6 +212,11 @@ export const logRuntimeRpc = (
   error?: unknown
 ) => {
   const isErr = status === "error";
+  addBreadcrumb("rpc", `RPC ${rpcName} (${status}) - ${durationMs}ms`, {
+    rpcName,
+    status,
+    durationMs,
+  });
   addDebugEvent(
     isErr ? "error" : "rpc",
     `rpc.${rpcName}`,

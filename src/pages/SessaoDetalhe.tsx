@@ -156,6 +156,7 @@ const SessaoDetalhe = () => {
   const [patientName, setPatientName] = useState("");
   const [patientRow, setPatientRow] = useState<PatientRow | null>(null);
   const [resolvedPatientId, setResolvedPatientId] = useState<string | null>(null);
+  const [resolvedSessionId, setResolvedSessionId] = useState<string | null>(null);
   const [groups, setGroups] = useState<PatientGroup[]>([]);
   const [patientPaymentSessions, setPatientPaymentSessions] = useState<PatientPaymentSession[]>([]);
   const [collaboratorProfiles, setCollaboratorProfiles] = useState<CollaboratorProfile[]>([]);
@@ -187,41 +188,22 @@ const SessaoDetalhe = () => {
   const showFloatingPills = scrollDirection === "up" && !isNearTop;
 
   // Form state
-  const [queixa, setQueixa] = useState("");
-  const [sintomas, setSintomas] = useState("");
-  const [painScore, setPainScore] = useState([0]);
-  const [complexityScore, setComplexityScore] = useState([0]);
-  const [observacoes, setObservacoes] = useState("");
+  const [queixa, setQueixa] = useState(""), [sintomas, setSintomas] = useState(""), [observacoes, setObservacoes] = useState("");
+  const [painScore, setPainScore] = useState([0]), [complexityScore, setComplexityScore] = useState([0]);
   const [treatmentBlocks, setTreatmentBlocks] = useState<TreatmentBlock[]>([]);
   const [treatmentGeneralGuidance, setTreatmentGeneralGuidance] = useState("");
-  const [status, setStatus] = useState("rascunho");
-  const [notes, setNotes] = useState("");
-  const [groupId, setGroupId] = useState<string | null>(null);
-  const [careLineIds, setCareLineIds] = useState<string[]>([]);
-  const [sessionDate, setSessionDate] = useState<string>("");
-  const [scheduledStartAt, setScheduledStartAt] = useState<string>("");
-  const [patientArrivedAt, setPatientArrivedAt] = useState<string>("");
+  const [status, setStatus] = useState("rascunho"), [notes, setNotes] = useState("");
+  const [groupId, setGroupId] = useState<string | null>(null), [careLineIds, setCareLineIds] = useState<string[]>([]);
+  const [sessionDate, setSessionDate] = useState<string>(""), [scheduledStartAt, setScheduledStartAt] = useState<string>(""), [patientArrivedAt, setPatientArrivedAt] = useState<string>("");
   const [paymentStatus, setPaymentStatus] = useState<SessionPaymentStatus>("nao_cobrado");
-  const [amountCharged, setAmountCharged] = useState("");
-  const [amountOriginal, setAmountOriginal] = useState("");
-  const [amountPaid, setAmountPaid] = useState("");
-  const [paymentAdjustmentReason, setPaymentAdjustmentReason] = useState("");
-  const [paymentInstallments, setPaymentInstallments] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<SessionPaymentMethod>("nao_informado");
-  const [paymentStatusDate, setPaymentStatusDate] = useState("");
-  const [creditAppliedCents, setCreditAppliedCents] = useState(0);
-  const [draftScheduledStartAt, setDraftScheduledStartAt] = useState("");
-  const [draftPatientArrivedAt, setDraftPatientArrivedAt] = useState("");
-  const [draftSessionDate, setDraftSessionDate] = useState("");
+  const [amountCharged, setAmountCharged] = useState(""), [amountOriginal, setAmountOriginal] = useState(""), [amountPaid, setAmountPaid] = useState("");
+  const [paymentAdjustmentReason, setPaymentAdjustmentReason] = useState(""), [paymentInstallments, setPaymentInstallments] = useState(1);
+  const [paymentMethod, setPaymentMethod] = useState<SessionPaymentMethod>("nao_informado"), [paymentStatusDate, setPaymentStatusDate] = useState(""), [creditAppliedCents, setCreditAppliedCents] = useState(0);
+  const [draftScheduledStartAt, setDraftScheduledStartAt] = useState(""), [draftPatientArrivedAt, setDraftPatientArrivedAt] = useState(""), [draftSessionDate, setDraftSessionDate] = useState("");
   const [draftPaymentStatus, setDraftPaymentStatus] = useState<SessionPaymentStatus>("nao_cobrado");
-  const [draftAmountCharged, setDraftAmountCharged] = useState("");
-  const [draftAmountOriginal, setDraftAmountOriginal] = useState("");
-  const [draftAmountPaid, setDraftAmountPaid] = useState("");
-  const [draftPaymentAdjustmentReason, setDraftPaymentAdjustmentReason] = useState("");
-  const [draftPaymentInstallments, setDraftPaymentInstallments] = useState(1);
-  const [draftPaymentMethod, setDraftPaymentMethod] = useState<SessionPaymentMethod>("nao_informado");
-  const [draftPaymentStatusDate, setDraftPaymentStatusDate] = useState("");
-  const [draftCreditAppliedCents, setDraftCreditAppliedCents] = useState(0);
+  const [draftAmountCharged, setDraftAmountCharged] = useState(""), [draftAmountOriginal, setDraftAmountOriginal] = useState(""), [draftAmountPaid, setDraftAmountPaid] = useState("");
+  const [draftPaymentAdjustmentReason, setDraftPaymentAdjustmentReason] = useState(""), [draftPaymentInstallments, setDraftPaymentInstallments] = useState(1);
+  const [draftPaymentMethod, setDraftPaymentMethod] = useState<SessionPaymentMethod>("nao_informado"), [draftPaymentStatusDate, setDraftPaymentStatusDate] = useState(""), [draftCreditAppliedCents, setDraftCreditAppliedCents] = useState(0);
   const [paymentPlanForm, setPaymentPlanForm] = useState<PaymentPlanFormValues>(DEFAULT_PAYMENT_PLAN_FORM_VALUES);
   const [activePaymentPlan, setActivePaymentPlan] = useState<PatientPaymentPlanRow | null>(null);
   const [anamnesisTemplateId, setAnamnesisTemplateId] = useState<string | null>(null);
@@ -357,6 +339,7 @@ const SessaoDetalhe = () => {
       const historyData = historyDataRes.data;
 
       if (sessionData) {
+        setResolvedSessionId(sessionData.id);
         const canonicalPatientKey = patientRes.data?.patient_code || realPatientId;
         const canonicalSessionKey = sessionResolution.sessionIndex ? `ATD-${sessionResolution.sessionIndex}` : sessionData.id;
         const isClinicScoped = location.pathname.startsWith("/clinica/");
@@ -516,6 +499,7 @@ const SessaoDetalhe = () => {
         };
       }
     } else {
+      setResolvedSessionId(null);
       setLocked(false);
       setIsEditing(true);
       setCreatedByUserId(user?.id ?? null);
@@ -1341,15 +1325,22 @@ const SessaoDetalhe = () => {
         navigate(getPatientSessionPath(patientRow || patientId, nextSessionKey), { replace: true });
       }
     } else {
+      const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+      if (!targetSessionId) {
+        showErrorToast("Erro ao salvar atendimento", new Error("Identificador do atendimento não encontrado."), "Atualização dos dados do atendimento");
+        setSaving(false);
+        return;
+      }
       const { error } = await supabase
         .from("sessions")
         .update(sessionData)
-        .eq("id", sessionId!);
+        .eq("id", targetSessionId);
 
       if (error) {
         showErrorToast("Erro ao salvar atendimento", error, "Atualização dos dados do atendimento");
       } else {
         clearSessionDraft(targetClinicId, targetPatientId, sessionId);
+        if (targetSessionId !== sessionId) clearSessionDraft(targetClinicId, targetPatientId, targetSessionId);
         initialFormValuesRef.current = JSON.stringify(formValues);
         setHasRestoredDraft(false);
 
@@ -1420,11 +1411,9 @@ const SessaoDetalhe = () => {
 
         if (newGroup) {
           targetEvolutionGroupId = newGroup.id;
-          if (sessionId && sessionId !== "novo") {
-            void supabase
-              .from("sessions")
-              .update({ evolution_group_id: targetEvolutionGroupId })
-              .eq("id", sessionId);
+          const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+          if (targetSessionId) {
+            void supabase.from("sessions").update({ evolution_group_id: targetEvolutionGroupId }).eq("id", targetSessionId);
           }
         }
       }
@@ -1468,7 +1457,7 @@ const SessaoDetalhe = () => {
         sessionDate: getCurrentDateTimeInputValue(),
         statusOverride: "rascunho",
         values: targetValues,
-        parentSessionId: sessionId && sessionId !== "novo" ? sessionId : null,
+        parentSessionId: resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null),
         evolutionGroupId: targetEvolutionGroupId,
       });
 
@@ -1551,10 +1540,15 @@ const SessaoDetalhe = () => {
       scheduled_start_at: parseOptionalDateTimeInputValue(draftScheduledStartAt),
       session_date: parseDateTimeInputValue(draftSessionDate),
     };
+    const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+    if (!targetSessionId) {
+      setSavingPresence(false);
+      return;
+    }
     const { error } = await supabase
       .from("sessions")
       .update(nextPresence)
-      .eq("id", sessionId);
+      .eq("id", targetSessionId);
 
     if (error) {
       showErrorToast("Erro ao salvar presença", error, "Atualização rápida dos horários do atendimento");
@@ -1607,10 +1601,15 @@ const SessaoDetalhe = () => {
       payment_status_date: parseOptionalDateInputValue(draftPaymentStatusDate),
       payment_status: normalizedPaymentStatus,
     };
+    const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+    if (!targetSessionId) {
+      setSavingPayment(false);
+      return;
+    }
     const { error } = await supabase
       .from("sessions")
       .update(nextPayment)
-      .eq("id", sessionId);
+      .eq("id", targetSessionId);
 
     if (error) {
       showErrorToast("Erro ao salvar pagamento", error, "Atualização rápida do pagamento do atendimento");
@@ -1629,7 +1628,7 @@ const SessaoDetalhe = () => {
     setPaymentStatusDate(nextPayment.payment_status_date ?? "");
     setPatientPaymentSessions((current) =>
       current.map((session) =>
-        session.id === sessionId
+        session.id === targetSessionId || session.id === sessionId
           ? {
               ...session,
               amount_charged_cents: nextPayment.amount_charged_cents,
@@ -1678,7 +1677,8 @@ const SessaoDetalhe = () => {
   );
 
   const handleDelete = async () => {
-    if (!sessionId || !canDeleteSession) {
+    const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+    if (!targetSessionId || !canDeleteSession) {
       return;
     }
 
@@ -1688,7 +1688,7 @@ const SessaoDetalhe = () => {
 
     const { error } = await supabase.rpc("move_entity_to_trash", {
       _entity_type: "sessions",
-      _entity_ids: [sessionId],
+      _entity_ids: [targetSessionId],
     });
 
     if (error) {
@@ -2324,7 +2324,7 @@ const SessaoDetalhe = () => {
         }}
         open={sessionShareDialogOpen}
         sessionCount={1}
-        sessionIds={sessionId && sessionId !== "novo" ? [sessionId] : []}
+        sessionIds={resolvedSessionId ? [resolvedSessionId] : (sessionId && isUuid(sessionId) ? [sessionId] : [])}
       />
 
       <SessionQuickEditModals
