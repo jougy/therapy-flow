@@ -69,7 +69,7 @@ export type { AgendaEventItem };
 
 import {
   AGENDA_EVENTS_CACHE_KEY,
-  PATIENTS_CACHE_KEY,
+  AGENDA_PATIENTS_CACHE_KEY,
   inMemoryAgendaCache,
   mapRawEventToItem,
   type AgendaEventQueryResult,
@@ -131,7 +131,7 @@ export default function ClinicAgendaPage() {
     let isMounted = true;
     void Promise.all([
       getLocalCacheItem<AgendaEventQueryResult[]>(AGENDA_EVENTS_CACHE_KEY(effectiveClinicId)),
-      getLocalCacheItem<AgendaPatientOption[]>(PATIENTS_CACHE_KEY(effectiveClinicId)),
+      getLocalCacheItem<AgendaPatientOption[]>(AGENDA_PATIENTS_CACHE_KEY(effectiveClinicId)),
     ]).then(([cachedEvents, cachedPatients]) => {
       if (!isMounted) return;
       let hasData = false;
@@ -294,7 +294,7 @@ export default function ClinicAgendaPage() {
         setPatients(nextPatients);
 
         if (effectiveClinicId) {
-          void setLocalCacheItem(PATIENTS_CACHE_KEY(effectiveClinicId), nextPatients);
+          void setLocalCacheItem(AGENDA_PATIENTS_CACHE_KEY(effectiveClinicId), nextPatients);
         }
       }
 

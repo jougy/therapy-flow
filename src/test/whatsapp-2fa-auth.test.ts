@@ -70,4 +70,20 @@ describe("WhatsApp Bot 2FA TOTP (Ente Auth) & Auth Session Engine", () => {
     expect(TUTORIAL_ENTE_AUTH_HOW_TO_USE).toContain("6 dígitos");
     expect(TUTORIAL_ACCOUNT_NOT_FOUND).toContain("Configurações Pessoais");
   });
+
+  it("reconhece comandos de escape e cancelamento para destravar usuários", async () => {
+    const { isGlobalCancelCommand, isGlobalBackCommand } = await import(
+      "../../supabase/functions/whatsapp-webhook/owner-copilot.ts"
+    );
+
+    expect(isGlobalCancelCommand("cancelar")).toBe(true);
+    expect(isGlobalCancelCommand("sair")).toBe(true);
+    expect(isGlobalCancelCommand("menu")).toBe(true);
+    expect(isGlobalCancelCommand("desistir")).toBe(true);
+    expect(isGlobalCancelCommand("começar")).toBe(true);
+
+    expect(isGlobalBackCommand("voltar")).toBe(true);
+    expect(isGlobalBackCommand("retornar")).toBe(true);
+    expect(isGlobalBackCommand("anterior")).toBe(true);
+  });
 });

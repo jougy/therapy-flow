@@ -59,7 +59,7 @@ export interface HomePatientRecord {
   recurring_time?: string | null;
   recurring_weekdays?: number[] | null;
   status: string;
-  updated_at: string;
+  updated_at?: string | null;
 }
 
 export interface HomePatientGroupRecord {
@@ -132,7 +132,7 @@ export interface HomePatientView {
   sessionWeekdays: number[];
   status: string;
   statusPriority: number;
-  updatedAt: string;
+  updatedAt: string | null;
 }
 
 export interface HomePatientPaymentSummary {
@@ -519,12 +519,12 @@ const buildHomePatientAgendaShifts = (
 const compareByName = (left: HomePatientView, right: HomePatientView) => compareText(left.name, right.name);
 
 const compareByDefault = (left: HomePatientView, right: HomePatientView) =>
-  right.updatedAt.localeCompare(left.updatedAt) || compareByName(left, right);
+  compareNullableDesc(left.updatedAt, right.updatedAt) || compareByName(left, right);
 
 const comparePatientsForSort = (sortKey: HomePatientSortKey, left: HomePatientView, right: HomePatientView) => {
   switch (sortKey) {
     case "name_asc":
-      return compareByName(left, right) || right.updatedAt.localeCompare(left.updatedAt);
+      return compareByName(left, right) || compareNullableDesc(left.updatedAt, right.updatedAt);
     case "birth_date_asc":
       return compareNullableAsc(left.date_of_birth, right.date_of_birth) || compareByName(left, right);
     case "last_session_desc":
@@ -538,7 +538,7 @@ const comparePatientsForSort = (sortKey: HomePatientSortKey, left: HomePatientVi
     case "status_priority":
       return comparePatientStatusPriority(left.status, right.status) || compareByName(left, right);
     case "updated_at_asc":
-      return left.updatedAt.localeCompare(right.updatedAt) || compareByName(left, right);
+      return compareNullableAsc(left.updatedAt, right.updatedAt) || compareByName(left, right);
     case DEFAULT_HOME_PATIENT_SORT_KEY:
     default:
       return compareByDefault(left, right);
@@ -675,7 +675,7 @@ export const buildHomePatientViews = ({
         sessionWeekdays,
         status: patient.status,
         statusPriority: comparePatientStatusPriority(patient.status, "desconhecido"),
-        updatedAt: patient.updated_at,
+        updatedAt: patient.updated_at ?? null,
       };
     })
     .filter((patient) => {

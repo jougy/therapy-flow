@@ -1205,3 +1205,11 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_chat_sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- [RPC/FUNCTION] reset_whatsapp_chat_sessions (schema.sql L16184-L16189)
+CREATE OR REPLACE FUNCTION public.reset_whatsapp_chat_sessions(
+    _phone TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER

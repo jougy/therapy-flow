@@ -2,7 +2,9 @@ import { parseISO, format } from "date-fns";
 import { normalizeAgendaStatus, type AgendaEventItem, type AgendaEventType, type AgendaPatientOption } from "./agenda-events";
 
 export const AGENDA_EVENTS_CACHE_KEY = (clinicId: string) => `clinic_agenda_events_${clinicId}`;
-export const PATIENTS_CACHE_KEY = (clinicId: string) => `clinic_patients_${clinicId}`;
+export const AGENDA_PATIENTS_CACHE_KEY = (clinicId: string) => `clinic_agenda_patients_${clinicId}`;
+// Alias para compatibilidade
+export const PATIENTS_CACHE_KEY = AGENDA_PATIENTS_CACHE_KEY;
 
 export interface AgendaEventQueryResult {
   id: string;

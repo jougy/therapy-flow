@@ -52,15 +52,15 @@ Deno.serve(async (req: Request) => {
 
     // 2. Configurações da API de WhatsApp
     const whatsAppClient = new WhatsAppClient();
-    const provider = whatsAppClient.provider;
+    const provider = whatsAppClient.getProvider();
     const isConfigured = whatsAppClient.isConfigured();
     const businessPhone = whatsAppClient.getBusinessPhone();
     const adminCommercialPhone = whatsAppClient.getAdminCommercialPhone();
 
     // Diagnóstico das credenciais sem expor tokens completos
-    const hasApiKey = Boolean(whatsAppClient.apiKey && whatsAppClient.apiKey.length > 5);
-    const hasPhoneNumberId = Boolean(whatsAppClient.phoneNumberId);
-    const hasApiUrl = Boolean(whatsAppClient.apiUrl);
+    const hasApiKey = whatsAppClient.hasApiKey();
+    const hasPhoneNumberId = whatsAppClient.hasPhoneNumberId();
+    const hasApiUrl = whatsAppClient.hasApiUrl();
 
     // 3. Status da Sessão do WhatsApp do Usuário
     let sessionData: Record<string, unknown> | null = null;
