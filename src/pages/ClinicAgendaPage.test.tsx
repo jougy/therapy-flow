@@ -20,12 +20,20 @@ vi.mock("@/hooks/useAuth", () => ({
   }),
 }));
 
+// Garante que os eventos mockados caiam na semana atual independentemente do dia em que os testes rodam
+const currentWeekAnchor = new Date();
+// Ajusta para quarta-feira da semana corrente ao meio-dia
+const dayOfWeek = currentWeekAnchor.getDay(); // 0 (dom) a 6 (sab)
+// Se for domingo (0), a semana ISO começou na segunda anterior (-6 dias); senão, segunda é (1 - dayOfWeek)
+const daysToWednesday = (dayOfWeek === 0 ? -4 : 3 - dayOfWeek);
+const wednesdayCurrentWeek = new Date(currentWeekAnchor.getFullYear(), currentWeekAnchor.getMonth(), currentWeekAnchor.getDate() + daysToWednesday, 10, 0, 0);
+
 const mockEvents = [
   {
     id: "ev-1",
     event_type: "atendimento",
     patient_id: "patient-1",
-    scheduled_for: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+    scheduled_for: wednesdayCurrentWeek.toISOString(),
     status: "confirmado",
     title: "Atendimento João",
   },
@@ -33,7 +41,7 @@ const mockEvents = [
     id: "ev-2",
     event_type: "reuniao",
     patient_id: null,
-    scheduled_for: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+    scheduled_for: new Date(wednesdayCurrentWeek.getTime() + 2 * 3600 * 1000).toISOString(),
     status: "aguardando_confirmacao",
     title: "Reunião Clínica",
   },

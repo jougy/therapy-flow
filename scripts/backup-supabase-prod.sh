@@ -94,6 +94,11 @@ can_use_native_pg_dump() {
   [ "$TARGET" = "prod" ] || return 1
   command -v pg_dump >/dev/null 2>&1 || return 1
   command -v pg_dumpall >/dev/null 2>&1 || return 1
+  # Postgres 17+ no Supabase requer pg_dump 17+. Se a versão local do Homebrew for < 17, recua para o container Docker
+  local_major="$(pg_dump --version 2>/dev/null | grep -oE '[0-9]+' | head -n 1 || echo "0")"
+  if [ "$local_major" -lt 17 ]; then
+    return 1
+  fi
 }
 
 if [ "$TARGET" = "local" ]; then

@@ -627,4 +627,25 @@ describe("home patients view", () => {
       getActiveHomePatientFilterCount({ ...defaultFilters, agendaShifts: ["manha", "noite"] }),
     ).toBe(2);
   });
+
+  it("handles patients with undefined or null updated_at safely without throwing TypeError", () => {
+    const corrupt = [
+      { id: "p1", name: "Sem Data", status: "ativo" },
+      { id: "p2", name: "Data Nula", status: "ativo", updated_at: null },
+      { id: "p3", name: "Data Valida", status: "ativo", updated_at: "2026-10-17T12:00:00.000Z" },
+    ];
+    expect(() => {
+      const res = buildHomePatientViews({
+        agendaEvents: [],
+        filters: defaultFilters,
+        patientGroups: [],
+        patients: corrupt as any,
+        sessions: [],
+        sortKey: DEFAULT_HOME_PATIENT_SORT_KEY,
+      });
+      expect(res).toHaveLength(3);
+      expect(res[0].name).toBe("Data Valida");
+    }).not.toThrow();
+  });
 });
+

@@ -1,10 +1,10 @@
 # 🗄️ Índice Modular do Schema Supabase (SSOT Index)
 
-> **Gerado automaticamente** a partir de `supabase/schema.sql` (16212 linhas).
+> **Gerado automaticamente** a partir de `supabase/schema.sql` (16258 linhas).
 > **Regra de Economia de Tokens:** Nunca leia `supabase/schema.sql` inteiro. Consulte este índice ou abra diretamente `supabase/schema-index/domains/<dominio>.sql` ou use `view_file` com `StartLine`/`EndLine` exatos abaixo.
 
 ## 📊 Resumo Estrutural
-- **Tabelas:** 54 | **Views:** 0 | **RPCs/Funções:** 155 | **Políticas RLS:** 127
+- **Tabelas:** 54 | **Views:** 0 | **RPCs/Funções:** 156 | **Políticas RLS:** 127
 - **Overloads detectados (Risco PGRST203):** activate_clinic_free_trial (2x), handle_signup (4x), list_platform_directory (2x), validate_subscription_coupon (2x)
 
 ## 📁 Arquivos de Domínio (`supabase/schema-index/domains/`)
@@ -200,6 +200,7 @@
 | `register_current_security_session` | `sessions` | `L8482-L8653` | `"_session_key" "text", "_browser" "text" DEFAULT NULL::"text", "_platform" "text" DEFAULT ` |
 | `request_account_recovery_status` | `core_misc` | `L7337-L7464` | `"_identifier" "text"` |
 | `resend_clinic_collaborator_invitation` | `clinics_rbac` | `L8659-L8748` | `"_invitation_id" "uuid"` |
+| `reset_whatsapp_chat_sessions` | `sessions` | `L16184-L16189` | `` |
 | `revoke_clinic_member_access` | `clinics_rbac` | `L8754-L8827` | `"_membership_id" "uuid"` |
 | `revoke_session_share` | `sessions` | `L8833-L8861` | `"_session_id" "uuid", "_user_id" "uuid"` |
 | `revoke_user_punishment` | `clinics_rbac` | `L8867-L8882` | `"_punishment_id" "uuid", "_reason" "text"` |

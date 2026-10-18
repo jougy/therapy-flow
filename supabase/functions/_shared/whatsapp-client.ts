@@ -252,6 +252,18 @@ export class WhatsAppClient {
     return this.adminCommercialPhone;
   }
 
+  public hasApiKey(): boolean {
+    return Boolean(this.apiKey && this.apiKey.length > 5);
+  }
+
+  public hasPhoneNumberId(): boolean {
+    return Boolean(this.phoneNumberId);
+  }
+
+  public hasApiUrl(): boolean {
+    return Boolean(this.apiUrl);
+  }
+
   /**
    * Helper interno para verificar se dois números brasileiros são equivalentes,
    * tolerando DDI 55 e presença/ausência do nono dígito em celulares (8 vs 9 dígitos).

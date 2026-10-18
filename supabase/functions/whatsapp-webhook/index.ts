@@ -904,6 +904,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
     const isLogoutCommand =
       userTextLower === 'sair' ||
+      userTextLower === 'desconectar' ||
       cleanSelectedButtonId === 'btn_auth_logout';
 
     const isSwitchClinicCommand =
@@ -915,7 +916,15 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       userTextLower === 'ajuda' ||
       userTextLower === 'help';
 
-    // A. Comando explícito de LOGOUT / SAIR
+    const isCancelOrEscape =
+      isGlobalCancelCommand(userText) ||
+      isGlobalBackCommand(userText) ||
+      userTextLower === 'reiniciar' ||
+      userTextLower === 'reset' ||
+      cleanSelectedButtonId === 'btn_cancel_flow' ||
+      cleanSelectedButtonId === 'btn_reset_session';
+
+    // A. Comando explícito de LOGOUT / SAIR ou RESET
     if (isLogoutCommand) {
       await supabase
         .from('whatsapp_chat_sessions')
@@ -940,44 +949,22 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       });
     }
 
-    // B. Comando explícito de LOGIN ou ENTRAR
-    if (isLoginCommand) {
-      // 1. Número não encontrado
-      if (!customer.userId) {
-        await whatsAppClient.sendTextMessage(phone, TUTORIAL_ACCOUNT_NOT_FOUND);
-        return new Response(JSON.stringify({ success: true, step: 'auth_account_not_found' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      // 2. Número encontrado mas 2FA não está ativado
-      if (!customer.totpEnabled || !customer.totpSecret) {
-        await whatsAppClient.sendTextMessage(phone, TUTORIAL_ENTE_AUTH_NO_2FA);
-        return new Response(JSON.stringify({ success: true, step: 'auth_2fa_not_enabled' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      // 3. Número encontrado com 2FA ativo -> solicitar token
+    // B. Destravamento/Escape durante etapas de autenticação intermediárias
+    if ((currentStep === 'waiting_2fa_token' || currentStep === 'waiting_clinic_selection') && isCancelOrEscape) {
       await supabase
         .from('whatsapp_chat_sessions')
         .update({
-          current_step: 'waiting_2fa_token',
+          current_step: 'initial',
           last_message_at: new Date().toISOString(),
-          metadata: { ...metadata, auth_requested_at: new Date().toISOString() },
         })
         .eq('phone', phone);
 
       await whatsAppClient.sendTextMessage(
         phone,
-        `🔐 *Identificação confirmada, ${userName}!* 👋\n\n` +
-        `Para liberar o seu acesso seguro, digite o *código de 6 dígitos* gerado no seu aplicativo autenticador (*Ente Auth*).\n\n` +
-        `💡 _Se tiver dúvidas de como localizar ou usar o código, digite *ajuda*._`
+        `🔄 *Operação cancelada.*\n\nVocê retornou ao início. Para tentar se autenticar novamente, digite *login* ou *entrar*.`
       );
 
-      return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token' }), {
+      return new Response(JSON.stringify({ success: true, step: 'auth_cancelled' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -994,21 +981,51 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         });
       }
 
+      // Se o usuário digitou login/entrar/oi novamente, não trata como token inválido; reenvia prompt ou reinicia
+      if (isLoginCommand && userText.replace(/\D/g, '').length !== 6) {
+        await whatsAppClient.sendTextMessage(
+          phone,
+          `🔐 *Aguardando seu código do Ente Auth, ${userName}!* 👋\n\n` +
+          `Para acessar com segurança, digite os *6 números* gerados no seu aplicativo autenticador.\n\n` +
+          `💡 _Dica: Digite *ajuda* para instruções ou *cancelar* para voltar ao início._`
+        );
+        return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token_prompt_repeated' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const cleanDigits = userText.replace(/\D/g, '');
       if (cleanDigits.length === 6 && customer.totpSecret) {
         const isValid = await verifyTotpCode(customer.totpSecret, cleanDigits);
         if (isValid) {
-          // Token correto! Buscar clínicas do usuário
-          const { data: userMemberships } = await supabase
-            .from('clinic_memberships')
-            .select('clinic_id, clinics(id, name, subscription_plan)')
-            .eq('user_id', customer.userId)
-            .eq('is_active', true);
+          // Token correto! Buscar clínicas do usuário (via memberships e titularidade direta)
+          const [{ data: userMemberships }, { data: ownedClinics }] = await Promise.all([
+            supabase
+              .from('clinic_memberships')
+              .select('clinic_id, clinics(id, name, subscription_plan)')
+              .eq('user_id', customer.userId)
+              .eq('is_active', true),
+            supabase
+              .from('clinics')
+              .select('id, name, subscription_plan')
+              .eq('account_owner_user_id', customer.userId),
+          ]);
 
-          const clinicsList = (userMemberships || [])
-            .map((m: any) => m.clinics)
-            .filter(Boolean);
+          const clinicMap = new Map<string, { id: string; name: string }>();
+          (userMemberships || []).forEach((m: any) => {
+            if (m.clinics?.id) clinicMap.set(m.clinics.id, { id: m.clinics.id, name: m.clinics.name });
+          });
+          (ownedClinics || []).forEach((c: any) => {
+            if (c.id) clinicMap.set(c.id, { id: c.id, name: c.name });
+          });
 
+          // Se nenhuma foi encontrada na query acima mas temos customer.clinicId detectado
+          if (clinicMap.size === 0 && customer.clinicId) {
+            clinicMap.set(customer.clinicId, { id: customer.clinicId, name: customer.clinicName });
+          }
+
+          const clinicsList = Array.from(clinicMap.values());
           const newExpiresAt = getNewAuthExpiresAt();
 
           if (clinicsList.length > 1) {
@@ -1023,7 +1040,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
                 last_message_at: new Date().toISOString(),
                 metadata: {
                   ...metadata,
-                  available_clinics: clinicsList.map((c: any) => ({ id: c.id, name: c.name })),
+                  available_clinics: clinicsList.map((c) => ({ id: c.id, name: c.name })),
                 },
               })
               .eq('phone', phone);
@@ -1032,9 +1049,11 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
               `✅ *Código verificado com sucesso!*\n\n` +
               `Você possui acesso a mais de uma clínica. Digite o número correspondente para selecionar:\n\n`;
 
-            clinicsList.forEach((c: any, index: number) => {
+            clinicsList.forEach((c, index: number) => {
               clinicSelectionText += `*${index + 1}* - ${c.name}\n`;
             });
+
+            clinicSelectionText += `\n💡 _Dica: Digite *cancelar* para sair._`;
 
             await whatsAppClient.sendTextMessage(phone, clinicSelectionText);
             return new Response(JSON.stringify({ success: true, step: 'waiting_clinic_selection' }), {
@@ -1083,7 +1102,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           // Token inválido ou expirado
           await whatsAppClient.sendTextMessage(
             phone,
-            `❌ *Código incorreto ou expirado.*\n\nO código do Ente Auth muda a cada 30 segundos. Por favor, confira o código mais recente no app e tente novamente.\n\n💡 _Dica: Digite *ajuda* para ver o tutorial passo a passo._`
+            `❌ *Código incorreto ou expirado.*\n\nO código do Ente Auth muda a cada 30 segundos. Por favor, confira o código mais recente no app e tente novamente.\n\n💡 _Dica: Digite *ajuda* para ver o tutorial ou *cancelar* para voltar ao menu inicial._`
           );
           return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token_invalid' }), {
             status: 200,
@@ -1093,7 +1112,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       } else {
         await whatsAppClient.sendTextMessage(
           phone,
-          `⚠️ Por favor, envie os *6 números* do código gerado no aplicativo Ente Auth (ex: 123456).\nSe precisar de instruções, digite *ajuda*.`
+          `⚠️ Por favor, envie os *6 números* do código gerado no aplicativo Ente Auth (ex: 123456).\n` +
+          `Se precisar de instruções digite *ajuda*, ou digite *cancelar* para sair.`
         );
         return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token_non_digits' }), {
           status: 200,
@@ -1146,6 +1166,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         availableClinics.forEach((c, index) => {
           clinicSelectionText += `*${index + 1}* - ${c.name}\n`;
         });
+        clinicSelectionText += `\n💡 _Ou digite *cancelar* para voltar ao menu inicial._`;
 
         await whatsAppClient.sendTextMessage(phone, clinicSelectionText);
         return new Response(JSON.stringify({ success: true, step: 'waiting_clinic_selection_retry' }), {
@@ -1155,18 +1176,73 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       }
     }
 
-    // E. Comando TROCAR CLÍNICA (quando autenticado)
+    // E. Comando explícito de LOGIN ou ENTRAR
+    if (isLoginCommand) {
+      // 1. Número não encontrado
+      if (!customer.userId) {
+        await whatsAppClient.sendTextMessage(phone, TUTORIAL_ACCOUNT_NOT_FOUND);
+        return new Response(JSON.stringify({ success: true, step: 'auth_account_not_found' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // 2. Número encontrado mas 2FA não está ativado
+      if (!customer.totpEnabled || !customer.totpSecret) {
+        await whatsAppClient.sendTextMessage(phone, TUTORIAL_ENTE_AUTH_NO_2FA);
+        return new Response(JSON.stringify({ success: true, step: 'auth_2fa_not_enabled' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // 3. Número encontrado com 2FA ativo -> solicitar token
+      await supabase
+        .from('whatsapp_chat_sessions')
+        .update({
+          current_step: 'waiting_2fa_token',
+          last_message_at: new Date().toISOString(),
+          metadata: { ...metadata, auth_requested_at: new Date().toISOString() },
+        })
+        .eq('phone', phone);
+
+      await whatsAppClient.sendTextMessage(
+        phone,
+        `🔐 *Identificação confirmada, ${userName}!* 👋\n\n` +
+        `Para liberar o seu acesso seguro, digite o *código de 6 dígitos* gerado no seu aplicativo autenticador (*Ente Auth*).\n\n` +
+        `💡 _Se tiver dúvidas de como localizar ou usar o código, digite *ajuda*. Para sair, digite *cancelar*._`
+      );
+
+      return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // F. Comando TROCAR CLÍNICA (quando autenticado)
     if (isSwitchClinicCommand) {
       if (customer.userId) {
-        const { data: userMemberships } = await supabase
-          .from('clinic_memberships')
-          .select('clinic_id, clinics(id, name, subscription_plan)')
-          .eq('user_id', customer.userId)
-          .eq('is_active', true);
+        const [{ data: userMemberships }, { data: ownedClinics }] = await Promise.all([
+          supabase
+            .from('clinic_memberships')
+            .select('clinic_id, clinics(id, name, subscription_plan)')
+            .eq('user_id', customer.userId)
+            .eq('is_active', true),
+          supabase
+            .from('clinics')
+            .select('id, name, subscription_plan')
+            .eq('account_owner_user_id', customer.userId),
+        ]);
 
-        const clinicsList = (userMemberships || [])
-          .map((m: any) => m.clinics)
-          .filter(Boolean);
+        const clinicMap = new Map<string, { id: string; name: string }>();
+        (userMemberships || []).forEach((m: any) => {
+          if (m.clinics?.id) clinicMap.set(m.clinics.id, { id: m.clinics.id, name: m.clinics.name });
+        });
+        (ownedClinics || []).forEach((c: any) => {
+          if (c.id) clinicMap.set(c.id, { id: c.id, name: c.name });
+        });
+
+        const clinicsList = Array.from(clinicMap.values());
 
         if (clinicsList.length > 1) {
           const newExpiresAt = getNewAuthExpiresAt();
@@ -1178,7 +1254,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
               last_message_at: new Date().toISOString(),
               metadata: {
                 ...metadata,
-                available_clinics: clinicsList.map((c: any) => ({ id: c.id, name: c.name })),
+                available_clinics: clinicsList.map((c) => ({ id: c.id, name: c.name })),
               },
             })
             .eq('phone', phone);
@@ -1188,6 +1264,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           clinicsList.forEach((c: any, index: number) => {
             clinicSelectionText += `*${index + 1}* - ${c.name}\n`;
           });
+          clinicSelectionText += `\n💡 _Ou digite *cancelar* para manter a clínica atual._`;
 
           await whatsAppClient.sendTextMessage(phone, clinicSelectionText);
           return new Response(JSON.stringify({ success: true, step: 'waiting_clinic_selection' }), {
@@ -1206,6 +1283,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         }
       }
     }
+
 
     // F. VERIFICAÇÃO DE SESSÃO ATIVA (Timeout de 5 horas de inatividade)
     const isSessionActive = isSessionAuthenticated(session);

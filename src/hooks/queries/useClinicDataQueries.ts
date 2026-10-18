@@ -230,7 +230,17 @@ export function useClinicPatientsQuery(clinicId: string | null | undefined, enab
     queryFn: async (): Promise<HomePatientRecord[]> => {
       if (!clinicId) return [];
 
-      const cached = await getLocalCacheItem<HomePatientRecord[]>(PATIENTS_CACHE_KEY(clinicId));
+      const rawCached = await getLocalCacheItem<unknown>(PATIENTS_CACHE_KEY(clinicId));
+      // Garante que o cache local contém registros válidos de HomePatientRecord (evita contaminação de cache por outros módulos)
+      const cached = Array.isArray(rawCached)
+        ? (rawCached.filter(
+            (item): item is HomePatientRecord =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof (item as any).id === "string" &&
+              typeof (item as any).status === "string"
+          ))
+        : null;
       const lastSync = typeof window !== "undefined" ? window.sessionStorage.getItem(PATIENTS_SYNC_KEY(clinicId)) : null;
 
       // Delta sync if local cache exists
