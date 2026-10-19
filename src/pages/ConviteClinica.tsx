@@ -17,6 +17,7 @@ import {
   ConviteLoggedInCard,
   ConviteLoginTab,
   ConviteSignupTab,
+  ConviteBrandingHeader,
   isValidCpf,
   PENDING_INVITE_STORAGE_KEY,
   ROLE_LABELS,
@@ -27,7 +28,7 @@ import {
 const ConviteClinica = () => {
   const { token = "" } = useParams();
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, refreshAuthState } = useAuth();
 
   const [invite, setInvite] = useState<InviteSummary | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -39,6 +40,8 @@ const ConviteClinica = () => {
   const autoAcceptAttemptedRef = useRef(false);
   const inviteRef = useRef<InviteSummary | null>(null);
   inviteRef.current = invite;
+  const refreshAuthStateRef = useRef(refreshAuthState);
+  refreshAuthStateRef.current = refreshAuthState;
 
   // Form fields for new user onboarding
   const [fullName, setFullName] = useState("");
@@ -59,6 +62,29 @@ const ConviteClinica = () => {
     [invite]
   );
 
+  const handleAcceptSuccess = useCallback(async (
+    rpcData: unknown,
+    fallbackClinicName?: string,
+    isAlreadyAccepted?: boolean
+  ) => {
+    sessionStorage.removeItem(PENDING_INVITE_STORAGE_KEY);
+    toast({
+      title: isAlreadyAccepted ? "Convite já ativado!" : "Acesso ativado com sucesso!",
+      description: isAlreadyAccepted
+        ? `Este convite para a clínica ${fallbackClinicName || "sua clínica"} já foi aceito.`
+        : `Bem-vindo(a) à equipe da ${fallbackClinicName || "sua nova clínica"}! Seu acesso foi ativado com sucesso.`,
+    });
+
+    await refreshAuthStateRef.current?.().catch(() => undefined);
+
+    const targetRouteKey = (rpcData as any)?.clinic_route_key || inviteRef.current?.clinic_route_key;
+    if (targetRouteKey) {
+      navigate(`/clinica/${targetRouteKey}`, { replace: true });
+    } else {
+      navigate("/espacopessoal", { replace: true });
+    }
+  }, [navigate]);
+
   const loadInvite = useCallback(async () => {
     setLoading(true);
     const [{ data: sessionData }, { data, error }] = await Promise.all([
@@ -71,13 +97,14 @@ const ConviteClinica = () => {
     if (error) {
       toast({ title: "Convite indisponível", description: error.message, variant: "destructive" });
       setLoading(false);
-      return;
+      return null;
     }
 
     const parsedInvite = asInviteSummary(data);
     setInvite(parsedInvite);
     setMode(parsedInvite?.existing_user ? "login" : "signup");
     setLoading(false);
+    return parsedInvite;
   }, [token]);
 
   const acceptInvite = async (name = fullName, tokenOverride?: string) => {
@@ -85,16 +112,18 @@ const ConviteClinica = () => {
     const tokenToUse = tokenOverride || token || sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY) || "";
 
     let error: { message: string } | null = null;
+    let rpcData: unknown = null;
 
     if (tokenToUse) {
-      const { error: rpcError } = await supabase.rpc("accept_clinic_collaborator_invitation", {
+      const { data: acceptData, error: rpcError } = await supabase.rpc("accept_clinic_collaborator_invitation", {
         _full_name: name || null,
         _token: tokenToUse,
       });
       error = rpcError;
+      rpcData = acceptData;
     }
 
-    if (error && !tokenToUse) {
+    if (!tokenToUse || error) {
       const { data: autoData, error: autoError } = await supabase.rpc(
         "auto_accept_pending_clinic_invitation_for_current_user"
       );
@@ -104,6 +133,7 @@ const ConviteClinica = () => {
         error = { message: (autoData as any)?.reason || "Falha ao aceitar convite." };
       } else {
         error = null;
+        rpcData = autoData;
       }
     }
 
@@ -117,26 +147,23 @@ const ConviteClinica = () => {
       return false;
     }
 
-    sessionStorage.removeItem(PENDING_INVITE_STORAGE_KEY);
-    toast({
-      title: "Acesso ativado com sucesso!",
-      description: `Bem-vindo(a) à equipe da ${invite?.clinic_name || "sua nova clínica"}! Seu acesso foi ativado com sucesso.`,
-    });
-    navigate("/espacopessoal", { replace: true });
+    await handleAcceptSuccess(rpcData, invite?.clinic_name);
     return true;
   };
 
   useEffect(() => {
     let isMounted = true;
 
-    const checkAutoAccept = async (activeSession: Session | null) => {
+    const checkAutoAccept = async (activeSession: Session | null, currentLoadedInvite?: InviteSummary | null) => {
       if (!activeSession?.user?.email) return;
 
       const pendingToken = sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY);
-      if (!pendingToken) return;
+      const currentInvite = currentLoadedInvite || inviteRef.current;
+      const isAccepted = currentInvite?.status === "accepted";
+
+      if (!pendingToken && !isAccepted) return;
 
       const userEmail = activeSession.user.email.trim().toLowerCase();
-      const currentInvite = inviteRef.current;
       const currentInviteEmail = currentInvite?.email?.trim().toLowerCase();
 
       if (currentInviteEmail && userEmail !== currentInviteEmail) {
@@ -149,34 +176,36 @@ const ConviteClinica = () => {
       try {
         setSubmitting(true);
         let accepted = false;
+        let rpcData: unknown = null;
 
-        const tokenToUse = pendingToken || token;
-        if (tokenToUse) {
-          const { error: rpcError } = await supabase.rpc("accept_clinic_collaborator_invitation", {
-            _token: tokenToUse,
-            _full_name: fullNameRef.current.trim() || null,
-          });
-          if (!rpcError) {
-            accepted = true;
+        if (isAccepted) {
+          accepted = true;
+        } else {
+          const tokenToUse = pendingToken || token;
+          if (tokenToUse) {
+            const { data: acceptData, error: rpcError } = await supabase.rpc("accept_clinic_collaborator_invitation", {
+              _token: tokenToUse,
+              _full_name: fullNameRef.current.trim() || null,
+            });
+            if (!rpcError) {
+              accepted = true;
+              rpcData = acceptData;
+            }
           }
-        }
 
-        if (!accepted) {
-          const { data: autoData, error: autoError } = await supabase.rpc(
-            "auto_accept_pending_clinic_invitation_for_current_user"
-          );
-          if (!autoError && (autoData as any)?.accepted) {
-            accepted = true;
+          if (!accepted) {
+            const { data: autoData, error: autoError } = await supabase.rpc(
+              "auto_accept_pending_clinic_invitation_for_current_user"
+            );
+            if (!autoError && (autoData as any)?.accepted) {
+              accepted = true;
+              rpcData = autoData;
+            }
           }
         }
 
         if (accepted && isMounted) {
-          sessionStorage.removeItem(PENDING_INVITE_STORAGE_KEY);
-          toast({
-            title: "Acesso ativado com sucesso!",
-            description: `Bem-vindo(a) à equipe da ${currentInvite?.clinic_name || "sua nova clínica"}! Seu acesso foi ativado com sucesso.`,
-          });
-          navigate("/espacopessoal", { replace: true });
+          await handleAcceptSuccess(rpcData, currentInvite?.clinic_name, isAccepted);
         }
       } catch (err) {
         console.error("[ConviteClinica] Falha no auto-aceite pós-confirmação:", err);
@@ -187,17 +216,21 @@ const ConviteClinica = () => {
       }
     };
 
-    void loadInvite().then(() => {
+    void loadInvite().then((loadedInvite) => {
       supabase.auth.getSession().then(({ data }) => {
-        if (data.session && sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY)) {
-          void checkAutoAccept(data.session);
+        const hasPendingStorage = Boolean(sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY));
+        const isAccepted = loadedInvite?.status === "accepted";
+        if (data.session && (hasPendingStorage || isAccepted)) {
+          void checkAutoAccept(data.session, loadedInvite);
         }
       });
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
-      if (nextSession && sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY)) {
+      const hasPendingStorage = Boolean(sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY));
+      const isAccepted = inviteRef.current?.status === "accepted";
+      if (nextSession && (hasPendingStorage || isAccepted)) {
         void checkAutoAccept(nextSession);
       }
     });
@@ -206,7 +239,7 @@ const ConviteClinica = () => {
       isMounted = false;
       authListener.subscription.unsubscribe();
     };
-  }, [loadInvite, token, navigate]);
+  }, [loadInvite, token, handleAcceptSuccess]);
 
   const handleLoginAndAccept = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -244,32 +277,17 @@ const ConviteClinica = () => {
     const cleanPhone = sanitizeDigits(phone);
 
     if (!isValidCpf(cleanCpf)) {
-      toast({
-        title: "CPF inválido",
-        description: "Por favor, informe um CPF válido com 11 dígitos.",
-        variant: "destructive",
-      });
+      toast({ title: "CPF inválido", description: "Por favor, informe um CPF válido com 11 dígitos.", variant: "destructive" });
       return;
     }
-
     if (password.length < 8) {
-      toast({
-        title: "Senha muito curta",
-        description: "A senha deve conter no mínimo 8 caracteres.",
-        variant: "destructive",
-      });
+      toast({ title: "Senha muito curta", description: "A senha deve conter no mínimo 8 caracteres.", variant: "destructive" });
       return;
     }
-
     if (password !== confirmPassword) {
-      toast({
-        title: "Senhas não conferem",
-        description: "A confirmação de senha precisa ser idêntica.",
-        variant: "destructive",
-      });
+      toast({ title: "Senhas não conferem", description: "A confirmação de senha precisa ser idêntica.", variant: "destructive" });
       return;
     }
-
     if (!termsAccepted) {
       toast({
         title: "Termos de Uso e LGPD",
@@ -317,43 +335,48 @@ const ConviteClinica = () => {
         });
         setMode("login");
         setSubmitting(false);
-        setTimeout(() => {
-          passwordInputRef.current?.focus();
-        }, 100);
+        setTimeout(() => passwordInputRef.current?.focus(), 100);
         return;
       }
 
-      if (signUpError) {
-        throw signUpError;
-      }
+      if (signUpError) throw signUpError;
 
       const createdUserId = authResult?.user?.id;
-
       if (createdUserId) {
-        const { error: rpcError } = await supabase.rpc("handle_personal_signup", {
-          _user_id: createdUserId,
-          _full_name: fullName.trim(),
-          _cpf: cleanCpf,
-          _birth_date: birthDate,
-          _phone: cleanPhone,
-          _email: normalizedEmail,
-        });
+        try {
+          const { error: rpcError } = await supabase.rpc("handle_personal_signup", {
+            _user_id: createdUserId,
+            _full_name: fullName.trim(),
+            _cpf: cleanCpf,
+            _birth_date: birthDate,
+            _phone: cleanPhone,
+            _email: normalizedEmail,
+          });
 
-        if (rpcError) {
-          throw rpcError;
+          if (rpcError) {
+            const rpcMsg = rpcError.message?.toLowerCase() || "";
+            if (rpcMsg.includes("cpf já está cadastrado") || rpcError.code === "23505") {
+              throw new Error("Este CPF já está cadastrado em outra conta no Pluri-Health. Verifique os dados informados.");
+            }
+            console.warn("[ConviteClinica] Aviso não-bloqueante no handle_personal_signup:", rpcError);
+          }
+        } catch (profileErr: unknown) {
+          const pMsg = (profileErr instanceof Error ? profileErr.message : String(profileErr)).toLowerCase();
+          const pCode = (profileErr as { code?: string })?.code;
+          if (pMsg.includes("cpf já está cadastrado") || pCode === "23505") {
+            throw profileErr;
+          }
+          console.warn("[ConviteClinica] Falha não-fatal no handle_personal_signup, prosseguindo com aceite do convite:", profileErr);
         }
       }
 
       if (authResult?.session) {
-        // Instant login session created -> accept invitation and enter
         sessionStorage.removeItem(PENDING_INVITE_STORAGE_KEY);
         await acceptInvite(fullName.trim());
       } else {
-        // Confirmation required -> store pending token for auto-heal
         if (token) {
           sessionStorage.setItem(PENDING_INVITE_STORAGE_KEY, token);
         }
-        // Redirect to standard confirmation screen
         navigate(`/auth/confirmado?email=${encodeURIComponent(normalizedEmail)}&aguardando=true`, {
           replace: true,
           state: { email: normalizedEmail },
@@ -361,11 +384,7 @@ const ConviteClinica = () => {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erro ao concluir cadastro.";
-      toast({
-        title: "Erro ao criar conta",
-        description: msg,
-        variant: "destructive",
-      });
+      toast({ title: "Erro ao criar conta", description: msg, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -386,7 +405,13 @@ const ConviteClinica = () => {
   }
 
   if (!invite || invite.status !== "pending") {
-    return <ConviteExpiredCard />;
+    return (
+      <ConviteExpiredCard
+        isAccepted={invite?.status === "accepted"}
+        clinicName={invite?.clinic_name}
+        clinicRouteKey={invite?.clinic_route_key}
+      />
+    );
   }
 
   const currentUserEmail = session?.user?.email?.toLowerCase() || "";
@@ -402,20 +427,7 @@ const ConviteClinica = () => {
         transition={{ duration: 0.3 }}
         className="mx-auto w-full max-w-xl space-y-6"
       >
-        <div className="text-center flex flex-col items-center">
-          <img
-            src="/branding/logo/pluri_health_icon_gradient.svg"
-            alt="Pluri-Health"
-            className="h-12 w-12 mb-2 drop-shadow-md"
-          />
-          <p className="text-xs font-semibold uppercase tracking-wider text-sky-700 dark:text-sky-400">Pluri-Health</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Convite de Acesso à Clínica
-          </h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            Você foi convidado para fazer parte da equipe de <strong>{invite.clinic_name}</strong>.
-          </p>
-        </div>
+        <ConviteBrandingHeader clinicName={invite.clinic_name} />
 
         <Card className="overflow-hidden border-sky-100 shadow-xl shadow-sky-950/5 backdrop-blur-sm">
           <ConviteHeaderCard invite={invite} roleLabel={roleLabel} />

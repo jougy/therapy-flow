@@ -162,15 +162,22 @@ DECLARE
   _user_id uuid := auth.uid();
   _user_email text;
   _invitation public.clinic_collaborator_invitations%ROWTYPE;
+  _newer_invitation public.clinic_collaborator_invitations%ROWTYPE;
   _profile_exists boolean;
   _clinic_plan text;
   _subaccount_limit integer;
   _active_members_count integer;
   _token_clean text := trim(coalesce(_token, ''));
+  _md5_hash text := md5(_token_clean);
   _sha256_hash text;
+  _clinic_route_key text;
 BEGIN
   IF _user_id IS NULL THEN
     RAISE EXCEPTION 'Entre na sua conta para aceitar o convite.';
+  END IF;
+
+  IF _token_clean = '' THEN
+    RAISE EXCEPTION 'Convite não encontrado.';
   END IF;
 
   _user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
@@ -190,16 +197,93 @@ BEGIN
   SELECT *
   INTO _invitation
   FROM public.clinic_collaborator_invitations
-  WHERE token_hash = md5(_token_clean)
+  WHERE token_hash = _md5_hash
      OR (_sha256_hash IS NOT NULL AND token_hash = _sha256_hash)
+     OR _md5_hash = ANY(valid_token_hashes)
+     OR (_sha256_hash IS NOT NULL AND _sha256_hash = ANY(valid_token_hashes))
+  ORDER BY CASE WHEN status = 'pending' THEN 0 WHEN status = 'accepted' THEN 1 ELSE 2 END, created_at DESC
   LIMIT 1;
 
   IF _invitation.id IS NULL THEN
     RAISE EXCEPTION 'Convite não encontrado.';
   END IF;
 
-  IF _invitation.status <> 'pending' THEN
-    RAISE EXCEPTION 'Este convite não está mais pendente.';
+  -- Fallback se o convite inicial estava cancelado, busca pending mais recente
+  IF _invitation.status = 'cancelled' THEN
+    SELECT *
+    INTO _newer_invitation
+    FROM public.clinic_collaborator_invitations
+    WHERE clinic_id = _invitation.clinic_id
+      AND lower(email) = lower(_invitation.email)
+      AND status = 'pending'
+      AND expires_at > now()
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF _newer_invitation.id IS NOT NULL THEN
+      _invitation := _newer_invitation;
+    END IF;
+  END IF;
+
+  IF _user_email IS DISTINCT FROM lower(_invitation.email) THEN
+    RAISE EXCEPTION 'Entre com o e-mail convidado para aceitar este acesso.';
+  END IF;
+
+  SELECT route_key
+  INTO _clinic_route_key
+  FROM public.clinics
+  WHERE id = _invitation.clinic_id;
+
+  -- IDEMPOTÊNCIA: Se convite já aceito, garante membership e contexto e retorna sucesso
+  IF _invitation.status = 'accepted' THEN
+    INSERT INTO public.user_roles (user_id, role)
+    VALUES (_user_id, 'user')
+    ON CONFLICT (user_id, role) DO NOTHING;
+
+    INSERT INTO public.user_security_settings (user_id, clinic_id)
+    VALUES (_user_id, _invitation.clinic_id)
+    ON CONFLICT (user_id) DO UPDATE
+    SET clinic_id = COALESCE(public.user_security_settings.clinic_id, EXCLUDED.clinic_id);
+
+    INSERT INTO public.clinic_memberships (
+      clinic_id,
+      user_id,
+      account_role,
+      operational_role,
+      role_key,
+      membership_status,
+      is_active,
+      invited_by
+    )
+    VALUES (
+      _invitation.clinic_id,
+      _user_id,
+      NULL,
+      _invitation.operational_role,
+      _invitation.role_key,
+      'active',
+      true,
+      _invitation.invited_by
+    )
+    ON CONFLICT (clinic_id, user_id)
+    DO UPDATE SET
+      operational_role = COALESCE(public.clinic_memberships.operational_role, EXCLUDED.operational_role),
+      role_key = COALESCE(public.clinic_memberships.role_key, EXCLUDED.role_key),
+      membership_status = 'active',
+      is_active = true,
+      ended_at = NULL;
+
+    INSERT INTO public.user_active_clinic_contexts (user_id, clinic_id, updated_at)
+    VALUES (_user_id, _invitation.clinic_id, now())
+    ON CONFLICT (user_id)
+    DO UPDATE SET clinic_id = EXCLUDED.clinic_id, updated_at = now();
+
+    RETURN jsonb_build_object(
+      'clinic_id', _invitation.clinic_id,
+      'clinic_route_key', _clinic_route_key,
+      'status', 'accepted',
+      'already_accepted', true
+    );
   END IF;
 
   IF _invitation.expires_at < now() THEN
@@ -209,8 +293,8 @@ BEGIN
     RAISE EXCEPTION 'Este convite expirou.';
   END IF;
 
-  IF _user_email IS DISTINCT FROM lower(_invitation.email) THEN
-    RAISE EXCEPTION 'Entre com o e-mail convidado para aceitar este acesso.';
+  IF _invitation.status <> 'pending' THEN
+    RAISE EXCEPTION 'Este convite não está mais pendente.';
   END IF;
 
   -- Validação de cota do plano da clínica antes de admitir novo membro
@@ -324,6 +408,7 @@ BEGIN
 
   RETURN jsonb_build_object(
     'clinic_id', _invitation.clinic_id,
+    'clinic_route_key', _clinic_route_key,
     'status', 'accepted'
   );
 END;
@@ -341,10 +426,12 @@ DECLARE
   _user_id uuid := auth.uid();
   _user_email text;
   _invitation public.clinic_collaborator_invitations%ROWTYPE;
+  _newer_invitation public.clinic_collaborator_invitations%ROWTYPE;
   _profile_exists boolean;
   _clinic_plan text;
   _subaccount_limit integer;
   _active_members_count integer;
+  _clinic_route_key text;
 BEGIN
   IF _user_id IS NULL THEN
     RAISE EXCEPTION 'Entre na sua conta para aceitar o convite.';
@@ -368,8 +455,82 @@ BEGIN
     RAISE EXCEPTION 'Convite não encontrado.';
   END IF;
 
-  IF _invitation.status <> 'pending' THEN
-    RAISE EXCEPTION 'Este convite não está mais pendente.';
+  -- Fallback se convite cancelado
+  IF _invitation.status = 'cancelled' THEN
+    SELECT *
+    INTO _newer_invitation
+    FROM public.clinic_collaborator_invitations
+    WHERE clinic_id = _invitation.clinic_id
+      AND lower(email) = lower(_invitation.email)
+      AND status = 'pending'
+      AND expires_at > now()
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF _newer_invitation.id IS NOT NULL THEN
+      _invitation := _newer_invitation;
+    END IF;
+  END IF;
+
+  IF lower(_invitation.email) IS DISTINCT FROM _user_email THEN
+    RAISE EXCEPTION 'Este convite pertence a outro e-mail.';
+  END IF;
+
+  SELECT route_key
+  INTO _clinic_route_key
+  FROM public.clinics
+  WHERE id = _invitation.clinic_id;
+
+  -- IDEMPOTÊNCIA: Se convite já aceito, garante membership e contexto e retorna sucesso
+  IF _invitation.status = 'accepted' THEN
+    INSERT INTO public.user_roles (user_id, role)
+    VALUES (_user_id, 'user')
+    ON CONFLICT (user_id, role) DO NOTHING;
+
+    INSERT INTO public.user_security_settings (user_id, clinic_id)
+    VALUES (_user_id, _invitation.clinic_id)
+    ON CONFLICT (user_id) DO UPDATE
+    SET clinic_id = COALESCE(public.user_security_settings.clinic_id, EXCLUDED.clinic_id);
+
+    INSERT INTO public.clinic_memberships (
+      clinic_id,
+      user_id,
+      account_role,
+      operational_role,
+      role_key,
+      membership_status,
+      is_active,
+      invited_by
+    )
+    VALUES (
+      _invitation.clinic_id,
+      _user_id,
+      NULL,
+      _invitation.operational_role,
+      _invitation.role_key,
+      'active',
+      true,
+      _invitation.invited_by
+    )
+    ON CONFLICT (clinic_id, user_id)
+    DO UPDATE SET
+      operational_role = COALESCE(public.clinic_memberships.operational_role, EXCLUDED.operational_role),
+      role_key = COALESCE(public.clinic_memberships.role_key, EXCLUDED.role_key),
+      membership_status = 'active',
+      is_active = true,
+      ended_at = NULL;
+
+    INSERT INTO public.user_active_clinic_contexts (user_id, clinic_id, updated_at)
+    VALUES (_user_id, _invitation.clinic_id, now())
+    ON CONFLICT (user_id)
+    DO UPDATE SET clinic_id = EXCLUDED.clinic_id, updated_at = now();
+
+    RETURN jsonb_build_object(
+      'clinic_id', _invitation.clinic_id,
+      'clinic_route_key', _clinic_route_key,
+      'status', 'accepted',
+      'already_accepted', true
+    );
   END IF;
 
   IF _invitation.expires_at < now() THEN
@@ -379,8 +540,8 @@ BEGIN
     RAISE EXCEPTION 'Este convite expirou.';
   END IF;
 
-  IF lower(_invitation.email) IS DISTINCT FROM _user_email THEN
-    RAISE EXCEPTION 'Este convite pertence a outro e-mail.';
+  IF _invitation.status <> 'pending' THEN
+    RAISE EXCEPTION 'Este convite não está mais pendente.';
   END IF;
 
   -- Validação de cota do plano da clínica antes de admitir novo membro
@@ -490,6 +651,7 @@ BEGIN
 
   RETURN jsonb_build_object(
     'clinic_id', _invitation.clinic_id,
+    'clinic_route_key', _clinic_route_key,
     'status', 'accepted'
   );
 END;
@@ -511,6 +673,7 @@ DECLARE
   _clinic_plan text;
   _subaccount_limit integer;
   _active_members_count integer;
+  _clinic_route_key text;
 BEGIN
   IF _user_id IS NULL THEN
     RETURN jsonb_build_object('accepted', false, 'reason', 'unauthenticated');
@@ -541,6 +704,11 @@ BEGIN
     RETURN jsonb_build_object('accepted', false, 'reason', 'no_pending_invitation');
   END IF;
 
+  SELECT route_key
+  INTO _clinic_route_key
+  FROM public.clinics
+  WHERE id = _invitation.clinic_id;
+
   -- Validação de cota do plano da clínica antes de admitir novo membro
   SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
   INTO _clinic_plan, _subaccount_limit
@@ -548,7 +716,12 @@ BEGIN
   WHERE id = _invitation.clinic_id;
 
   IF _clinic_plan IN ('prof_basico', 'prof_medio', 'solo') THEN
-    RETURN jsonb_build_object('accepted', false, 'reason', 'plan_monoposto_not_allowed', 'clinic_id', _invitation.clinic_id);
+    RETURN jsonb_build_object(
+      'accepted', false,
+      'reason', 'plan_monoposto_not_allowed',
+      'clinic_id', _invitation.clinic_id,
+      'clinic_route_key', _clinic_route_key
+    );
   END IF;
 
   IF _subaccount_limit < 999999 THEN
@@ -560,7 +733,12 @@ BEGIN
       AND user_id <> _user_id;
 
     IF _active_members_count >= _subaccount_limit THEN
-      RETURN jsonb_build_object('accepted', false, 'reason', 'clinic_subaccount_limit_reached', 'clinic_id', _invitation.clinic_id);
+      RETURN jsonb_build_object(
+        'accepted', false,
+        'reason', 'clinic_subaccount_limit_reached',
+        'clinic_id', _invitation.clinic_id,
+        'clinic_route_key', _clinic_route_key
+      );
     END IF;
   END IF;
 
@@ -649,6 +827,7 @@ BEGIN
   RETURN jsonb_build_object(
     'accepted', true,
     'clinic_id', _invitation.clinic_id,
+    'clinic_route_key', _clinic_route_key,
     'invitation_id', _invitation.id,
     'status', 'accepted'
   );
@@ -3391,14 +3570,21 @@ CREATE OR REPLACE FUNCTION "public"."get_clinic_collaborator_invitation"("_token
     AS $$
 DECLARE
   _invitation public.clinic_collaborator_invitations%ROWTYPE;
+  _newer_invitation public.clinic_collaborator_invitations%ROWTYPE;
   _clinic_name text;
+  _clinic_route_key text;
   _is_existing_user boolean := false;
   _user_id uuid;
   _has_cpf boolean := false;
   _raw_cpf text;
   _token_clean text := trim(coalesce(_token, ''));
+  _md5_hash text := md5(_token_clean);
   _sha256_hash text;
 BEGIN
+  IF _token_clean = '' THEN
+    RAISE EXCEPTION 'Convite não encontrado.';
+  END IF;
+
   BEGIN
     _sha256_hash := encode(extensions.digest(_token_clean, 'sha256'), 'hex');
   EXCEPTION WHEN OTHERS THEN
@@ -3408,12 +3594,32 @@ BEGIN
   SELECT *
   INTO _invitation
   FROM public.clinic_collaborator_invitations
-  WHERE token_hash = md5(_token_clean)
+  WHERE token_hash = _md5_hash
      OR (_sha256_hash IS NOT NULL AND token_hash = _sha256_hash)
+     OR _md5_hash = ANY(valid_token_hashes)
+     OR (_sha256_hash IS NOT NULL AND _sha256_hash = ANY(valid_token_hashes))
+  ORDER BY CASE WHEN status = 'pending' THEN 0 WHEN status = 'accepted' THEN 1 ELSE 2 END, created_at DESC
   LIMIT 1;
 
   IF _invitation.id IS NULL THEN
     RAISE EXCEPTION 'Convite não encontrado.';
+  END IF;
+
+  -- Fallback inteligente: se o convite foi cancelado, buscar convite pending mais novo para mesmo email e clínica
+  IF _invitation.status = 'cancelled' THEN
+    SELECT *
+    INTO _newer_invitation
+    FROM public.clinic_collaborator_invitations
+    WHERE clinic_id = _invitation.clinic_id
+      AND lower(email) = lower(_invitation.email)
+      AND status = 'pending'
+      AND expires_at > now()
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF _newer_invitation.id IS NOT NULL THEN
+      _invitation := _newer_invitation;
+    END IF;
   END IF;
 
   IF _invitation.status = 'pending' AND _invitation.expires_at < now() THEN
@@ -3424,8 +3630,8 @@ BEGIN
     _invitation.status := 'expired';
   END IF;
 
-  SELECT name
-  INTO _clinic_name
+  SELECT name, route_key
+  INTO _clinic_name, _clinic_route_key
   FROM public.clinics
   WHERE id = _invitation.clinic_id;
 
@@ -3459,6 +3665,7 @@ BEGIN
     'id', _invitation.id,
     'clinic_id', _invitation.clinic_id,
     'clinic_name', COALESCE(_clinic_name, 'Clínica'),
+    'clinic_route_key', _clinic_route_key,
     'email', _invitation.email,
     'operational_role', _invitation.operational_role,
     'role_key', _invitation.role_key,
@@ -6091,13 +6298,14 @@ ALTER FUNCTION "public"."increment_community_template_import"("p_template_id" "u
 CREATE OR REPLACE FUNCTION "public"."invite_clinic_collaborator"("_clinic_id" "uuid" DEFAULT NULL::"uuid", "_email" "text" DEFAULT NULL::"text", "_operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_role_key" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'extensions'
-    AS $_$
+    AS $$
 DECLARE
   _requester_id uuid := auth.uid();
   _resolved_clinic_id uuid;
   _normalized_email text := lower(trim(coalesce(_email, '')));
   _token text := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
   _token_hash text := md5(_token);
+  _sha256_hash text;
   _existing_user_id uuid;
   _invitation_id uuid;
   _normalized_role_key text := NULLIF(trim(_role_key), '');
@@ -6140,7 +6348,8 @@ BEGIN
     WHERE clinic_id = _resolved_clinic_id
       AND is_active = true
       AND membership_status = 'active'
-      AND account_role NOT IN ('account_owner', 'owner');
+      AND COALESCE(account_role::text, '') NOT IN ('account_owner', 'owner')
+      AND COALESCE(operational_role::text, '') <> 'owner';
 
     SELECT COUNT(*)::integer INTO _pending_invites_count
     FROM public.clinic_collaborator_invitations
@@ -6158,7 +6367,8 @@ BEGIN
     WHERE clinic_id = _resolved_clinic_id
       AND is_active = true
       AND membership_status = 'active'
-      AND account_role NOT IN ('account_owner', 'owner');
+      AND COALESCE(account_role::text, '') NOT IN ('account_owner', 'owner')
+      AND COALESCE(operational_role::text, '') <> 'owner';
 
     SELECT COUNT(*)::integer INTO _pending_invites_count
     FROM public.clinic_collaborator_invitations
@@ -6203,45 +6413,78 @@ BEGIN
   WHERE lower(users.email) = _normalized_email
   LIMIT 1;
 
-  -- Cancelar convites pendentes anteriores para o mesmo e-mail na mesma clínica
-  UPDATE public.clinic_collaborator_invitations
-  SET status = 'cancelled',
-      updated_at = now()
+  _sha256_hash := encode(extensions.digest(_token, 'sha256'), 'hex');
+
+  -- Reuso / Renovação Não-Destrutiva: se já existir convite pendente, reaproveita e expande tokens válidos
+  SELECT id INTO _invitation_id
+  FROM public.clinic_collaborator_invitations
   WHERE clinic_id = _resolved_clinic_id
     AND lower(email) = _normalized_email
-    AND status = 'pending';
+    AND status = 'pending'
+  ORDER BY created_at DESC
+  LIMIT 1;
 
-  INSERT INTO public.clinic_collaborator_invitations (
-    clinic_id,
-    email,
-    operational_role,
-    role_key,
-    job_title,
-    specialty,
-    token_hash,
-    invited_by,
-    existing_user_id,
-    status,
-    email_delivery_status,
-    email_last_error,
-    email_sent_at
-  )
-  VALUES (
-    _resolved_clinic_id,
-    _normalized_email,
-    _inferred_operational_role,
-    _normalized_role_key,
-    NULLIF(trim(_job_title), ''),
-    NULLIF(trim(_specialty), ''),
-    _token_hash,
-    _requester_id,
-    _existing_user_id,
-    'pending',
-    'pending',
-    NULL,
-    NULL
-  )
-  RETURNING id INTO _invitation_id;
+  IF _invitation_id IS NOT NULL THEN
+    UPDATE public.clinic_collaborator_invitations
+    SET
+      operational_role = _inferred_operational_role,
+      role_key = _normalized_role_key,
+      job_title = NULLIF(trim(_job_title), ''),
+      specialty = NULLIF(trim(_specialty), ''),
+      invited_by = _requester_id,
+      existing_user_id = _existing_user_id,
+      token_hash = _token_hash,
+      valid_token_hashes = ARRAY(
+        SELECT DISTINCT u
+        FROM unnest(
+          array_cat(
+            COALESCE(valid_token_hashes, ARRAY[token_hash]),
+            ARRAY[_token_hash, _sha256_hash]
+          )
+        ) AS u
+        WHERE u IS NOT NULL AND u <> ''
+      ),
+      expires_at = now() + interval '14 days',
+      updated_at = now(),
+      email_delivery_status = 'pending',
+      email_last_error = NULL,
+      email_sent_at = NULL
+    WHERE id = _invitation_id;
+  ELSE
+    INSERT INTO public.clinic_collaborator_invitations (
+      clinic_id,
+      email,
+      operational_role,
+      role_key,
+      job_title,
+      specialty,
+      token_hash,
+      valid_token_hashes,
+      invited_by,
+      existing_user_id,
+      status,
+      email_delivery_status,
+      email_last_error,
+      email_sent_at
+    )
+    VALUES (
+      _resolved_clinic_id,
+      _normalized_email,
+      _inferred_operational_role,
+      _normalized_role_key,
+      NULLIF(trim(_job_title), ''),
+      NULLIF(trim(_specialty), ''),
+      _token_hash,
+      ARRAY[_token_hash, _sha256_hash],
+      _requester_id,
+      _existing_user_id,
+      'pending',
+      'pending',
+      NULL,
+      NULL
+    )
+    RETURNING id INTO _invitation_id;
+  END IF;
 
   PERFORM public.log_security_event(
     _resolved_clinic_id,
@@ -6265,7 +6508,7 @@ BEGIN
     'status', 'pending'
   );
 END;
-$_$;
+$$;
 
 
 ALTER FUNCTION "public"."invite_clinic_collaborator"("_clinic_id" "uuid", "_email" "text", "_operational_role" "public"."operational_role_type", "_job_title" "text", "_specialty" "text", "_role_key" "text") OWNER TO "postgres";
@@ -6503,7 +6746,7 @@ $$;
 ALTER FUNCTION "public"."leave_current_user_clinic"("_clinic_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."list_current_user_clinic_invitations"() RETURNS TABLE("invitation_id" "uuid", "clinic_id" "uuid", "clinic_name" "text", "clinic_logo_url" "text", "clinic_route_key" "text", "operational_role" "public"."operational_role_type", "job_title" "text", "specialty" "text", "invited_by_name" "text", "expires_at" timestamp with time zone, "created_at" timestamp with time zone)
+CREATE OR REPLACE FUNCTION "public"."list_current_user_clinic_invitations"() RETURNS TABLE("invitation_id" "uuid", "clinic_id" "uuid", "clinic_name" "text", "clinic_logo_url" "text", "clinic_route_key" "text", "operational_role" "public"."operational_role_type", "role_key" "text", "job_title" "text", "specialty" "text", "invited_by_name" "text", "expires_at" timestamp with time zone, "created_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
     AS $$
@@ -6514,6 +6757,7 @@ CREATE OR REPLACE FUNCTION "public"."list_current_user_clinic_invitations"() RET
     clinics.logo_url AS clinic_logo_url,
     clinics.route_key AS clinic_route_key,
     invitations.operational_role,
+    invitations.role_key,
     invitations.job_title,
     invitations.specialty,
     inviter.full_name AS invited_by_name,
@@ -6527,7 +6771,7 @@ CREATE OR REPLACE FUNCTION "public"."list_current_user_clinic_invitations"() RET
   JOIN auth.users
     ON users.id = auth.uid()
   WHERE invitations.status = 'pending'
-    AND invitations.expires_at >= now()
+    AND invitations.expires_at > now()
     AND lower(invitations.email) = lower(users.email)
   ORDER BY invitations.created_at DESC;
 $$;
@@ -8658,13 +8902,14 @@ ALTER FUNCTION "public"."register_current_security_session"("_session_key" "text
 
 CREATE OR REPLACE FUNCTION "public"."resend_clinic_collaborator_invitation"("_invitation_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'auth', 'extensions'
     AS $$
 DECLARE
   _requester_id uuid := auth.uid();
   _invitation public.clinic_collaborator_invitations%ROWTYPE;
   _token text := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
   _token_hash text := md5(_token);
+  _sha256_hash text;
   _remaining_seconds integer;
   _account_state text := 'invite_sent';
   _existing_user auth.users%ROWTYPE;
@@ -8697,16 +8942,28 @@ BEGIN
     END IF;
   END IF;
 
-  -- 30-second rate-limiting check
-  IF _invitation.last_resent_at IS NOT NULL AND (now() - _invitation.last_resent_at) < interval '30 seconds' THEN
-    _remaining_seconds := 30 - extract(epoch from (now() - _invitation.last_resent_at))::integer;
+  -- Cooldown reduzido para 5 segundos para testes rápidos e melhor UX
+  IF _invitation.last_resent_at IS NOT NULL AND (now() - _invitation.last_resent_at) < interval '5 seconds' THEN
+    _remaining_seconds := 5 - extract(epoch from (now() - _invitation.last_resent_at))::integer;
     RAISE EXCEPTION 'Aguarde % segundos antes de reenviar o convite novamente.', GREATEST(_remaining_seconds, 1);
   END IF;
 
-  -- Update status to pending (caso estivesse cancelled ou expired), token e resend timestamp
+  _sha256_hash := encode(extensions.digest(_token, 'sha256'), 'hex');
+
+  -- Update status to pending (caso estivesse cancelled ou expired), token e resend timestamp mantendo tokens válidos
   UPDATE public.clinic_collaborator_invitations
   SET status = 'pending',
       token_hash = _token_hash,
+      valid_token_hashes = ARRAY(
+        SELECT DISTINCT u
+        FROM unnest(
+          array_cat(
+            COALESCE(valid_token_hashes, ARRAY[token_hash]),
+            ARRAY[_token_hash, _sha256_hash]
+          )
+        ) AS u
+        WHERE u IS NOT NULL AND u <> ''
+      ),
       last_resent_at = now(),
       updated_at = now(),
       expires_at = now() + interval '14 days',
@@ -8737,12 +8994,12 @@ BEGIN
     'success', true,
     'id', _invitation.id,
     'token', _token,
-    'path', '/convite/' || _token,
+    'path', '/convite/clinica/' || _token,
     'email', _invitation.email,
     'clinic_id', _invitation.clinic_id,
     'clinic_route_key', _clinic_route_key,
     'account_state', _account_state,
-    'remaining_cooldown', 30
+    'remaining_cooldown', 5
   );
 END;
 $$;
@@ -11397,6 +11654,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_collaborator_invitations" (
     "job_title" "text",
     "specialty" "text",
     "token_hash" "text" NOT NULL,
+    "valid_token_hashes" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
     "status" "text" DEFAULT 'pending'::"text" NOT NULL,
     "invited_by" "uuid",
     "existing_user_id" "uuid",
@@ -12871,6 +13129,10 @@ CREATE INDEX "idx_clinic_collaborator_invitations_clinic_role_key" ON "public"."
 
 
 CREATE INDEX "idx_clinic_collaborator_invitations_email" ON "public"."clinic_collaborator_invitations" USING "btree" ("lower"("email"));
+
+
+
+CREATE INDEX "idx_clinic_invitations_valid_token_hashes" ON "public"."clinic_collaborator_invitations" USING "gin" ("valid_token_hashes");
 
 
 

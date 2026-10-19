@@ -3,7 +3,7 @@
 -- Fonte SSOT: supabase/schema.sql
 -- ==========================================================================
 
--- [RPC/FUNCTION] cleanup_old_telemetry_events (schema.sql L1520-L1553)
+-- [RPC/FUNCTION] cleanup_old_telemetry_events (schema.sql L1699-L1732)
 CREATE OR REPLACE FUNCTION "public"."cleanup_old_telemetry_events"("_page_view_retention_days" integer DEFAULT 15, "_security_event_retention_days" integer DEFAULT 90) RETURNS TABLE("deleted_page_views" bigint, "deleted_security_events" bigint)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -39,7 +39,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] list_feature_flags (schema.sql L6674-L6709)
+-- [RPC/FUNCTION] list_feature_flags (schema.sql L6918-L6953)
 CREATE OR REPLACE FUNCTION "public"."list_feature_flags"("_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id" "uuid", "key" "text", "scope" "public"."feature_flag_scope", "clinic_id" "uuid", "tag_id" "uuid", "clinic_name" "text", "value" "jsonb", "description" "text", "starts_at" timestamp with time zone, "expires_at" timestamp with time zone, "reason" "text", "created_by" "uuid", "updated_by" "uuid", "created_at" timestamp with time zone, "updated_at" timestamp with time zone, "is_active_now" boolean)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -77,7 +77,7 @@ CREATE OR REPLACE FUNCTION "public"."list_feature_flags"("_clinic_id" "uuid" DEF
   order by feature_flags.scope, feature_flags.key
 $$;
 
--- [RPC/FUNCTION] upsert_feature_flag (schema.sql L10521-L10708)
+-- [RPC/FUNCTION] upsert_feature_flag (schema.sql L10778-L10965)
 CREATE OR REPLACE FUNCTION "public"."upsert_feature_flag"("_key" "text", "_scope" "public"."feature_flag_scope", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_tag_id" "uuid" DEFAULT NULL::"uuid", "_value" "jsonb" DEFAULT 'false'::"jsonb", "_description" "text" DEFAULT NULL::"text", "_starts_at" timestamp with time zone DEFAULT NULL::timestamp with time zone, "_expires_at" timestamp with time zone DEFAULT NULL::timestamp with time zone, "_reason" "text" DEFAULT NULL::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -267,7 +267,7 @@ begin
 end;
 $$;
 
--- [TABLE] feature_flags (schema.sql L11687-L11704)
+-- [TABLE] feature_flags (schema.sql L11945-L11962)
 CREATE TABLE IF NOT EXISTS "public"."feature_flags" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "key" "text" NOT NULL,
@@ -287,14 +287,14 @@ CREATE TABLE IF NOT EXISTS "public"."feature_flags" (
     CONSTRAINT "feature_flags_scope_check" CHECK ((((("scope")::"text" = 'global'::"text") AND ("clinic_id" IS NULL) AND ("tag_id" IS NULL)) OR ((("scope")::"text" = 'clinic'::"text") AND ("clinic_id" IS NOT NULL) AND ("tag_id" IS NULL)) OR ((("scope")::"text" = 'tag'::"text") AND ("tag_id" IS NOT NULL) AND ("clinic_id" IS NULL))))
 );
 
--- [TABLE] governance_rules (schema.sql L11710-L11714)
+-- [TABLE] governance_rules (schema.sql L11968-L11972)
 CREATE TABLE IF NOT EXISTS "public"."governance_rules" (
     "key" "text" NOT NULL,
     "value" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] telemetry_events (schema.sql L12303-L12314)
+-- [TABLE] telemetry_events (schema.sql L12561-L12572)
 CREATE TABLE IF NOT EXISTS "public"."telemetry_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -308,17 +308,17 @@ CREATE TABLE IF NOT EXISTS "public"."telemetry_events" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [POLICY] Anyone authenticated can view governance rules ON governance_rules (schema.sql L14017-L14017)
+-- [POLICY] Anyone authenticated can view governance rules ON governance_rules (schema.sql L14279-L14279)
 CREATE POLICY "Anyone authenticated can view governance rules" ON "public"."governance_rules" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Authenticated users can insert telemetry events ON telemetry_events (schema.sql L14033-L14033)
+-- [POLICY] Authenticated users can insert telemetry events ON telemetry_events (schema.sql L14295-L14295)
 CREATE POLICY "Authenticated users can insert telemetry events" ON "public"."telemetry_events" FOR INSERT TO "authenticated" WITH CHECK (true);
 
--- [POLICY] Platform owners can manage governance rules ON governance_rules (schema.sql L14155-L14155)
+-- [POLICY] Platform owners can manage governance rules ON governance_rules (schema.sql L14417-L14417)
 CREATE POLICY "Platform owners can manage governance rules" ON "public"."governance_rules" TO "authenticated" USING ("public"."is_platform_owner"()) WITH CHECK ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners can view all telemetry events ON telemetry_events (schema.sql L14167-L14167)
+-- [POLICY] Platform owners can view all telemetry events ON telemetry_events (schema.sql L14429-L14429)
 CREATE POLICY "Platform owners can view all telemetry events" ON "public"."telemetry_events" FOR SELECT TO "authenticated" USING ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners manage feature flags ON feature_flags (schema.sql L14179-L14179)
+-- [POLICY] Platform owners manage feature flags ON feature_flags (schema.sql L14441-L14441)
 CREATE POLICY "Platform owners manage feature flags" ON "public"."feature_flags" TO "authenticated" USING ("public"."is_platform_owner_mfa_verified"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner_mfa_verified"("auth"."uid"()));

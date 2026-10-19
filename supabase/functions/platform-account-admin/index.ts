@@ -1356,42 +1356,27 @@ const resendInvitation = async (
     throw new Error("Convite ou usuário não encontrado para o identificador informado.");
   }
 
-  // Rate limiting check de 30 segundos
-  if (invitation?.last_resent_at) {
-    const diffMs = Date.now() - new Date(String(invitation.last_resent_at)).getTime();
-    if (diffMs < 30000) {
-      const remaining = Math.ceil((30000 - diffMs) / 1000);
-      throw new Error(`Aguarde ${remaining} segundos antes de reenviar o convite novamente.`);
-    }
-  }
-
-  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-  const encoder = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(token));
-  const tokenHash = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
-
-  const nowIso = new Date().toISOString();
-  const expiresIso = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-
+  let token = "";
   let clinicId = invitation?.clinic_id ? String(invitation.clinic_id) : null;
+  let remainingCooldown = 5;
 
   if (invitation?.id) {
-    // Se estava cancelado ou expirado, reativa para 'pending'
-    const { error: updateErr } = await admin
-      .from("clinic_collaborator_invitations")
-      .update({
-        status: "pending",
-        token_hash: tokenHash,
-        last_resent_at: nowIso,
-        updated_at: nowIso,
-        expires_at: expiresIso,
-      })
-      .eq("id", invitation.id);
+    const { data: rpcData, error: rpcErr } = await admin.rpc(
+      "resend_clinic_collaborator_invitation",
+      { _invitation_id: invitation.id }
+    );
+    if (rpcErr) throw new Error(rpcErr.message);
 
-    if (updateErr) throw new Error(updateErr.message);
+    token = String((rpcData as Record<string, unknown>)?.token ?? "");
+    clinicId = (rpcData as Record<string, unknown>)?.clinic_id
+      ? String((rpcData as Record<string, unknown>).clinic_id)
+      : clinicId;
+    remainingCooldown = Number((rpcData as Record<string, unknown>)?.remaining_cooldown ?? 5);
+  } else {
+    throw new Error("Convite de clínica não encontrado para o identificador informado.");
   }
 
-  const path = `/convite/${token}`;
+  const path = `/convite/clinica/${token}`;
 
   // Gerar link oficial do Supabase Auth
   let actionLink: string | null = null;
@@ -1421,7 +1406,7 @@ const resendInvitation = async (
     email: targetEmail,
     invitation_id: invitation?.id ?? invitationId,
     path,
-    remaining_cooldown: 30,
+    remaining_cooldown: remainingCooldown,
     token,
   };
 };

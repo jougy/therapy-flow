@@ -155,6 +155,7 @@ interface WebhookPayload {
         caption?: string;
       };
     };
+    messageTimestamp?: number | string;
   };
 }
 
@@ -344,6 +345,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
     let userMessageText = '';
     let imageUrl = '';
     let isFromMe = false;
+    let incomingMessageId = '';
+    let incomingTimestampSec = 0;
     let flowResponseJson: Record<string, unknown> | null = null;
 
     // A. IDENTIFICAÇÃO E PARSING DO FORMATO META WHATSAPP CLOUD API
@@ -369,6 +372,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       }
 
       rawNumber = metaMsg.from || '';
+      incomingMessageId = String(metaMsg.id || '').trim();
+      incomingTimestampSec = Number(metaMsg.timestamp || 0);
       pushName = changeValue?.contacts?.[0]?.profile?.name || '';
 
       // Botão interativo, lista ou WhatsApp Flow na Meta API
@@ -424,11 +429,10 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       // B. IDENTIFICAÇÃO E PARSING DO FORMATO EVOLUTION API / GATEWAY REST
       const eventType = String(body.event || body.type || 'UNKNOWN').trim();
 
-      // Se o evento não for de mensagem recebida (ex: connection.update, qrcode.updated), responde 200 OK graciosamente
+      // Se o evento não for de mensagem recebida (ex: connection.update, qrcode.updated, messages.update), responde 200 OK graciosamente
       if (
         eventType !== 'messages.upsert' &&
         eventType !== 'MESSAGES_UPSERT' &&
-        eventType !== 'messages.update' &&
         !body.data?.message
       ) {
         return new Response(JSON.stringify({ success: true, ignored: true, event: eventType }), {
@@ -437,8 +441,18 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         });
       }
 
+      if (eventType === 'messages.update' || eventType === 'MESSAGES_UPDATE') {
+        return new Response(JSON.stringify({ success: true, ignored: true, event: eventType }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const key = body.data?.key;
       isFromMe = key?.fromMe === true;
+      incomingMessageId = String(key?.id || '').trim();
+      const rawEvoTs = Number(body.data?.messageTimestamp || 0);
+      incomingTimestampSec = rawEvoTs > 1e11 ? Math.floor(rawEvoTs / 1000) : rawEvoTs;
 
       if (isFromMe) {
         return new Response(JSON.stringify({ success: true, ignored: true, reason: 'from_me' }), {
@@ -479,6 +493,24 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       });
     }
 
+    // BLOQUEIO ANTI-REPLAY / ANTI-RETENTATIVA ATRASADA:
+    // Se o webhook traz um timestamp de criação > 120 segundos atrás, é retentativa atrasada da Meta/Evolution
+    if (incomingTimestampSec > 1700000000) {
+      const ageSeconds = Math.floor(Date.now() / 1000) - incomingTimestampSec;
+      if (ageSeconds > 120) {
+        console.warn(
+          `[whatsapp-webhook] Ignorando webhook atrasado/retentativa (age=${ageSeconds}s, msgId=${incomingMessageId}) para ${maskPhoneLgpd(phone)}`
+        );
+        return new Response(
+          JSON.stringify({ success: true, ignored: true, reason: 'stale_webhook_retry', ageSeconds }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+    }
+
     // Rate limiting por número de telefone de origem (máx 15 mensagens/minuto)
     if (!checkRateLimit(`phone:${phone}`, 15, 60_000)) {
       console.warn(`[whatsapp-webhook] Rate limit excedido para o telefone ${maskPhoneLgpd(phone)}`);
@@ -492,8 +524,16 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
     const userText = sanitizeInput(userMessageText, 1000);
     const userTextLower = userText.toLowerCase();
 
+    // Ignora eventos de protocolo, sincronização ou recibos sem texto/botão/imagem/flow
+    if (!userText && !cleanSelectedButtonId && !imageUrl && !flowResponseJson) {
+      return new Response(JSON.stringify({ success: true, ignored: true, reason: 'empty_message_or_protocol_sync' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log(
-      `[whatsapp-webhook] Mensagem recebida de ${maskPhoneLgpd(phone)}: "${userText.slice(0, 100)}" (ButtonId: "${cleanSelectedButtonId}")`
+      `[whatsapp-webhook] Mensagem recebida de ${maskPhoneLgpd(phone)} [msgId=${incomingMessageId}]: "${userText.slice(0, 100)}" (ButtonId: "${cleanSelectedButtonId}")`
     );
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -594,43 +634,56 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           .eq('id', userId)
           .maybeSingle();
         profileData = data as ProfileLookupRecord | null;
+        console.log(`[whatsapp-webhook] Profile lookup by existing userId (${userId}): found=${!!profileData}, totp_enabled=${profileData?.totp_enabled}, has_secret=${!!profileData?.totp_secret}`);
       }
 
-      // Se não encontrou por userId, busca na tabela profiles testando todas as variantes de telefone
-      if (!profileData && phoneVariants.size > 0) {
+      // Se não encontrou por userId ou se o userId da sessão não possui 2FA ativo,
+      // busca na tabela profiles testando todas as variantes de telefone, priorizando perfis com 2FA ativo
+      if ((!profileData || !profileData.totp_secret) && phoneVariants.size > 0) {
         const variantsList = Array.from(phoneVariants);
-        const { data } = await supabase
+        const { data: matchedProfiles } = await supabase
           .from('profiles')
           .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
           .in('phone', variantsList)
+          .order('totp_enabled', { ascending: false })
           .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        profileData = data as ProfileLookupRecord | null;
+          .limit(5);
+
+        if (matchedProfiles && matchedProfiles.length > 0) {
+          // Prefere perfil que tem 2FA configurado
+          const with2fa = matchedProfiles.find((p) => p.totp_enabled && p.totp_secret);
+          profileData = (with2fa || matchedProfiles[0]) as ProfileLookupRecord;
+          console.log(`[whatsapp-webhook] Phone variants lookup: matched=${matchedProfiles.length}, chosenId=${profileData.id}, totp_enabled=${profileData.totp_enabled}, has_secret=${!!profileData.totp_secret}`);
+        }
       }
 
       // Se ainda não encontrou e temos ao menos 8 dígitos finais, tenta ilike defensivo
-      if (!profileData && last8Digits.length >= 8) {
-        const { data } = await supabase
+      if ((!profileData || !profileData.totp_secret) && last8Digits.length >= 8) {
+        const { data: ilikeProfiles } = await supabase
           .from('profiles')
           .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
           .ilike('phone', `%${last8Digits}`)
+          .order('totp_enabled', { ascending: false })
           .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        profileData = data as ProfileLookupRecord | null;
+          .limit(5);
+
+        if (ilikeProfiles && ilikeProfiles.length > 0) {
+          const with2fa = ilikeProfiles.find((p) => p.totp_enabled && p.totp_secret);
+          profileData = (with2fa || ilikeProfiles[0]) as ProfileLookupRecord;
+        }
       }
 
-      // Se ainda não encontrou por variantes normais, busca todos os profiles com phone preenchido e compara dígitos puros
-      if (!profileData && digitsOnly.length >= 8) {
+      // Se ainda não encontrou por variantes normais, busca profiles com phone preenchido e compara dígitos puros
+      if ((!profileData || !profileData.totp_secret) && digitsOnly.length >= 8) {
         const { data: allPhones } = await supabase
           .from('profiles')
           .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
           .not('phone', 'is', null)
-          .limit(100);
+          .order('totp_enabled', { ascending: false })
+          .limit(200);
 
         if (allPhones && allPhones.length > 0) {
-          const matched = allPhones.find((p) => {
+          const matched = allPhones.filter((p) => {
             if (!p.phone) return false;
             const pDigits = p.phone.replace(/\D/g, '');
             const pNational = pDigits.startsWith('55') ? pDigits.slice(2) : pDigits;
@@ -641,33 +694,38 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
               (pDigits.length >= 8 && pDigits.endsWith(last8Digits))
             );
           });
-          if (matched) {
-            profileData = matched as ProfileLookupRecord;
+          if (matched.length > 0) {
+            const with2fa = matched.find((p) => p.totp_enabled && p.totp_secret);
+            profileData = (with2fa || matched[0]) as ProfileLookupRecord;
           }
         }
       }
 
-      // Se ainda não encontrou profile e for o admin comercial oficial, carrega o primeiro platform_admin ativo
-      if (!profileData && isMasterCommercial) {
-        const { data: firstAdmin } = await supabase
+      // Se ainda não encontrou profile ou se não possui 2FA e for o admin comercial oficial:
+      // Busca platform_admins priorizando quem possui 2FA ativo
+      if ((!profileData || !profileData.totp_secret) && isMasterCommercial) {
+        const { data: adminList } = await supabase
           .from('platform_admins')
           .select('user_id')
           .eq('is_active', true)
           .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle();
+          .limit(5);
 
-        if (firstAdmin?.user_id) {
-          const { data: adminProf } = await supabase
+        if (adminList && adminList.length > 0) {
+          const adminUserIds = adminList.map((a) => a.user_id);
+          const { data: adminProfiles } = await supabase
             .from('profiles')
             .select('id, full_name, email, phone, profession, council_name, professional_license, totp_secret, totp_enabled')
-            .eq('id', firstAdmin.user_id)
-            .maybeSingle();
-          if (adminProf) {
-            profileData = adminProf as ProfileLookupRecord;
+            .in('id', adminUserIds);
+
+          if (adminProfiles && adminProfiles.length > 0) {
+            const with2fa = adminProfiles.find((p) => p.totp_enabled && p.totp_secret);
+            profileData = (with2fa || adminProfiles[0]) as ProfileLookupRecord;
           }
         }
       }
+
+      let memberships: Array<{ id: string; clinic_id: string; operational_role: string | null; role_key: string | null; is_active: boolean }> = [];
 
       if (profileData) {
         userId = profileData.id;
@@ -695,11 +753,12 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         }
 
         // 2. Checar clinic_memberships (operational_role = 'owner')
-        const { data: memberships } = await supabase
+        const { data: userMemberships } = await supabase
           .from('clinic_memberships')
           .select('id, clinic_id, operational_role, role_key, is_active')
           .eq('user_id', profileData.id)
           .eq('is_active', true);
+        memberships = (userMemberships || []) as typeof memberships;
 
         const ownerMembership = (memberships || []).find(
           (m) => m.operational_role === 'owner' || m.role_key === 'owner'
@@ -806,7 +865,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         isSoloPlan,
         isClinicPlan,
         activeRole,
-        totpEnabled: !!profileData?.totp_enabled,
+        totpEnabled: !!(profileData?.totp_enabled || profileData?.totp_secret),
         totpSecret: profileData?.totp_secret || null,
         memberships: memberships || [],
       };
@@ -839,8 +898,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       } else {
         session = newSession;
       }
-    } else if (customer.userId && (!session.user_id || !session.clinic_id)) {
-      // Se a sessão já existia sem vínculo de usuário e agora foi identificado pelo telefone
+    } else if (customer.userId && (session.user_id !== customer.userId || !session.clinic_id)) {
+      // Se a sessão estava desatualizada ou com outro usuário sem 2FA, re-associa ao usuário correto
       await supabase
         .from('whatsapp_chat_sessions')
         .update({
@@ -854,6 +913,34 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
     const currentStep = session?.current_step || 'initial';
     const metadata = (session?.metadata || {}) as Record<string, unknown>;
+
+    // DEDUPLICAÇÃO PERSISTENTE POR MESSAGE_ID (Impede retentativas da Meta/Evolution de reprocessarem a mesma mensagem)
+    if (incomingMessageId) {
+      const processedIds = Array.isArray(metadata.processed_message_ids)
+        ? (metadata.processed_message_ids as string[])
+        : [];
+      if (processedIds.includes(incomingMessageId)) {
+        console.log(
+          `[whatsapp-webhook] Mensagem duplicada ignorada via processed_message_ids (msgId=${incomingMessageId}) para ${maskPhoneLgpd(phone)}`
+        );
+        return new Response(
+          JSON.stringify({ success: true, ignored: true, reason: 'duplicate_message_id', messageId: incomingMessageId }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      const nextProcessedIds = [...processedIds.slice(-19), incomingMessageId];
+      metadata.processed_message_ids = nextProcessedIds;
+      await supabase
+        .from('whatsapp_chat_sessions')
+        .update({
+          metadata,
+        })
+        .eq('phone', phone);
+    }
+
     const userName = customer.userName || sanitizeInput((metadata.user_name as string) || pushName || 'Doutor(a)', 80);
     const clinicName = customer.clinicName || sanitizeInput((metadata.clinic_name as string) || 'Consultório Solo', 80);
     const planName = customer.planName || sanitizeInput((metadata.plan_name as string) || 'Teste Gratuito (7 dias)', 60);
@@ -895,11 +982,6 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
     const isLoginCommand =
       userTextLower === 'login' ||
       userTextLower === 'entrar' ||
-      userTextLower === 'oi' ||
-      userTextLower === 'ola' ||
-      userTextLower === 'olá' ||
-      userTextLower === 'iniciar' ||
-      userTextLower === 'começar' ||
       cleanSelectedButtonId === 'btn_auth_login';
 
     const isLogoutCommand =
@@ -985,9 +1067,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       if (isLoginCommand && userText.replace(/\D/g, '').length !== 6) {
         await whatsAppClient.sendTextMessage(
           phone,
-          `🔐 *Aguardando seu código do Ente Auth, ${userName}!* 👋\n\n` +
-          `Para acessar com segurança, digite os *6 números* gerados no seu aplicativo autenticador.\n\n` +
-          `💡 _Dica: Digite *ajuda* para instruções ou *cancelar* para voltar ao início._`
+          `entre no seu app de autenticação, copie e cole aqui o código token da pluri para realizar o seu login\n\n💡 _Dica: Digite *ajuda* para instruções ou *cancelar* para voltar ao início._`
         );
         return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token_prompt_repeated' }), {
           status: 200,
@@ -1178,7 +1258,32 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
     // E. Comando explícito de LOGIN ou ENTRAR
     if (isLoginCommand) {
-      // 1. Número não encontrado
+      // 0. Se já estiver autenticado e ativo na sessão
+      if (isSessionAuthenticated(session)) {
+        await whatsAppClient.sendTextMessage(
+          phone,
+          `✅ *Você já está conectado ao Pluri-Health!*\n\nCaso queira sair ou trocar de conta, basta digitar *sair*.`
+        );
+        return new Response(JSON.stringify({ success: true, step: 'already_authenticated' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Trava de concorrência / Idempotência (evita mensagens duplicadas caso o webhook chegue repetido)
+      const nowMs = Date.now();
+      const lastLoginLock = metadata.login_lock_at ? Number(metadata.login_lock_at) : 0;
+      if (lastLoginLock && nowMs - lastLoginLock < 4000) {
+        console.log(`[whatsapp-webhook] Requisição concorrente de login ignorada (idempotência) para ${phone}`);
+        return new Response(JSON.stringify({ success: true, step: 'login_locked_idempotent' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log(`[whatsapp-webhook] Processing login command for phone=${phone}: userId=${customer.userId}, totpEnabled=${customer.totpEnabled}, hasSecret=${!!customer.totpSecret}`);
+
+      // 1. Número não encontrado no sistema
       if (!customer.userId) {
         await whatsAppClient.sendTextMessage(phone, TUTORIAL_ACCOUNT_NOT_FOUND);
         return new Response(JSON.stringify({ success: true, step: 'auth_account_not_found' }), {
@@ -1202,15 +1307,17 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         .update({
           current_step: 'waiting_2fa_token',
           last_message_at: new Date().toISOString(),
-          metadata: { ...metadata, auth_requested_at: new Date().toISOString() },
+          metadata: {
+            ...metadata,
+            auth_requested_at: new Date().toISOString(),
+            login_lock_at: nowMs,
+          },
         })
         .eq('phone', phone);
 
       await whatsAppClient.sendTextMessage(
         phone,
-        `🔐 *Identificação confirmada, ${userName}!* 👋\n\n` +
-        `Para liberar o seu acesso seguro, digite o *código de 6 dígitos* gerado no seu aplicativo autenticador (*Ente Auth*).\n\n` +
-        `💡 _Se tiver dúvidas de como localizar ou usar o código, digite *ajuda*. Para sair, digite *cancelar*._`
+        `entre no seu app de autenticação, copie e cole aqui o código token da pluri para realizar o seu login`
       );
 
       return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token' }), {
@@ -1299,6 +1406,10 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
       if (!isPublicOnboardingFlow) {
         // Encerra sessão caso estivesse marcada como autenticada anteriormente mas expirou
+        const nowMs = Date.now();
+        const lastAuthPromptAt = metadata.last_auth_prompt_at ? Number(metadata.last_auth_prompt_at) : 0;
+        const shouldThrottlePrompt = lastAuthPromptAt && nowMs - lastAuthPromptAt < 60_000; // Throttle de 1 min
+
         if (session?.is_authenticated) {
           await supabase
             .from('whatsapp_chat_sessions')
@@ -1308,17 +1419,35 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
               auth_expires_at: null,
               current_step: 'initial',
               last_message_at: new Date().toISOString(),
+              metadata: {
+                ...metadata,
+                last_auth_prompt_at: nowMs,
+              },
+            })
+            .eq('phone', phone);
+        } else if (!shouldThrottlePrompt) {
+          await supabase
+            .from('whatsapp_chat_sessions')
+            .update({
+              last_message_at: new Date().toISOString(),
+              metadata: {
+                ...metadata,
+                last_auth_prompt_at: nowMs,
+              },
             })
             .eq('phone', phone);
         }
 
-        const expiredOrNotLoggedText =
-          `🔒 *Sessão não autenticada no WhatsApp*\n\n` +
-          `Para acessar os dados e comandos da sua clínica, é necessário se autenticar.\n\n` +
-          `👉 Digite *login* ou *entrar* para iniciar a identificação com seu número e código do Ente Auth.`;
+        if (!shouldThrottlePrompt) {
+          const expiredOrNotLoggedText =
+            `🔒 *Sessão não autenticada no WhatsApp*\n\n` +
+            `Para acessar os dados e comandos da sua clínica, é necessário se autenticar.\n\n` +
+            `👉 Digite *login* ou *entrar* para iniciar a identificação com seu número e código do Ente Auth.`;
 
-        await whatsAppClient.sendTextMessage(phone, expiredOrNotLoggedText);
-        return new Response(JSON.stringify({ success: true, step: 'auth_required' }), {
+          await whatsAppClient.sendTextMessage(phone, expiredOrNotLoggedText);
+        }
+
+        return new Response(JSON.stringify({ success: true, step: 'auth_required', throttled: !!shouldThrottlePrompt }), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

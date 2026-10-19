@@ -46,5 +46,7 @@ export const asInviteSummary = (value: unknown): InviteSummary | null => {
     operational_role: String(data.operational_role || "professional"),
     specialty: data.specialty ? String(data.specialty) : null,
     status: data.status,
+    clinic_route_key: data.clinic_route_key ? String(data.clinic_route_key) : null,
+    role_key: data.role_key ? String(data.role_key) : null,
   };
 };

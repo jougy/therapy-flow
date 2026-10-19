@@ -63,6 +63,7 @@ export interface ClinicInvitation {
   invited_by_name: string | null;
   job_title: string | null;
   operational_role: string;
+  role_key?: string | null;
   specialty: string | null;
 }
 

@@ -120,31 +120,65 @@ Deno.serve(async (req) => {
       return json({ error: "Você não tem permissão para enviar este convite." }, 403);
     }
 
-    // Obter o nome de quem convidou
-    const { data: inviterProfile } = await admin
-      .from("profiles")
-      .select("full_name, email")
-      .eq("id", authData.user.id)
-      .maybeSingle();
+    // Resolver cargo customizado se role_key estiver presente
+    let resolvedRoleLabel = roleLabel;
+    const roleKey = invitation?.role_key ? String(invitation.role_key) : "";
+    if (roleKey) {
+      const { data: customRoleData } = await admin
+        .from("clinic_operational_roles")
+        .select("name")
+        .eq("clinic_id", clinicId)
+        .eq("key", roleKey)
+        .maybeSingle();
+      if (customRoleData?.name) {
+        resolvedRoleLabel = String(customRoleData.name);
+      }
+    }
 
-    const inviterName =
-      inviterProfile?.full_name || inviterProfile?.email || "A administração da clínica";
+    // Helper para URL canônica do convite
+    const buildCanonicalInviteUrl = (rawInviteUrl: string, tkn: string): string => {
+      try {
+        const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("SITE_URL") || "";
+        let base = publicAppUrl.trim();
+        
+        if (!base) {
+          const parsed = new URL(rawInviteUrl);
+          const isLocal = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+          if (!isLocal) {
+            base = `${parsed.protocol}//${parsed.host}`;
+          }
+        }
+
+        if (base) {
+          const cleanBase = base.replace(/\/+$/, "");
+          return `${cleanBase}/convite/clinica/${tkn}`;
+        }
+
+        const parsed = new URL(rawInviteUrl);
+        parsed.pathname = `/convite/clinica/${tkn}`;
+        parsed.search = "";
+        parsed.hash = "";
+        return parsed.toString();
+      } catch {
+        return rawInviteUrl;
+      }
+    };
+
+    const sanitizedInviteUrl = buildCanonicalInviteUrl(inviteUrl, token);
 
     const safeInviterName = escapeHtml(inviterName);
     const safeClinicName = escapeHtml(clinicName);
-    const safeRoleLabel = escapeHtml(roleLabel);
+    const safeRoleLabel = escapeHtml(resolvedRoleLabel);
     const safeJobTitle = jobTitle ? escapeHtml(jobTitle) : "";
     const safeSpecialty = specialty ? escapeHtml(specialty) : "";
     const safeEmail = escapeHtml(email);
 
     let emailSubject = "";
     let emailHtml = "";
-    let destinationUrl = inviteUrl;
+    // CORREÇÃO CRÍTICA 1: Nunca descartar o token da URL. destinationUrl aponta sempre para /convite/clinica/${token}
+    let destinationUrl = sanitizedInviteUrl;
 
     if (existingUser && !pendingCpfCompletion) {
-      // Usuário existente com cadastro completo -> Link leva para o Espaço Pessoal onde responderá o convite
-      const origin = new URL(inviteUrl).origin;
-      destinationUrl = `${origin}/espacopessoal`;
       emailSubject = `Você foi convidado para participar da clínica ${clinicName} - Pluri-Health`;
       emailHtml = `
         <!DOCTYPE html>
@@ -183,11 +217,11 @@ Deno.serve(async (req) => {
             </div>
 
             <p style="font-size: 14px; color: #475569; text-align: center;">
-              Como você já possui cadastro no Pluri-Health, o convite já está disponível no seu <strong>Espaço Pessoal</strong> para você aceitar ou recusar.
+              Como você já possui cadastro no Pluri-Health, clique no botão abaixo para aceitar o convite com 1 clique ou respondê-lo pelo seu Espaço Pessoal.
             </p>
 
             <div class="button-wrapper">
-              <a href="${destinationUrl}" class="button" target="_blank">Acessar Meu Espaço Pessoal</a>
+              <a href="${destinationUrl}" class="button" target="_blank">Aceitar Convite e Acessar Clínica</a>
             </div>
 
             <div class="footer">
@@ -199,8 +233,7 @@ Deno.serve(async (req) => {
         </html>
       `;
     } else {
-      // Novo usuário ou usuário com CPF pendente -> Link leva para a página de onboarding / convite com formulário de cadastro
-      destinationUrl = inviteUrl;
+      destinationUrl = sanitizedInviteUrl;
       emailSubject = pendingCpfCompletion
         ? `Complete seu cadastro para ingressar na equipe da clínica ${clinicName} - Pluri-Health`
         : `Convite para ingressar na equipe da clínica ${clinicName} - Pluri-Health`;

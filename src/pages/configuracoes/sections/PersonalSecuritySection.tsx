@@ -222,7 +222,8 @@ export const PersonalSecuritySection = () => {
     try {
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
-        friendlyName: "Pluri-Health WhatsApp Bot",
+        issuer: "Pluri Fisio",
+        friendlyName: "Pluri Fisio",
       });
 
       if (error) throw error;

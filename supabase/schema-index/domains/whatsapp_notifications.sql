@@ -3,7 +3,7 @@
 -- Fonte SSOT: supabase/schema.sql
 -- ==========================================================================
 
--- [RPC/FUNCTION] create_due_agenda_reminder_notifications (schema.sql L1932-L1988)
+-- [RPC/FUNCTION] create_due_agenda_reminder_notifications (schema.sql L2111-L2167)
 CREATE OR REPLACE FUNCTION "public"."create_due_agenda_reminder_notifications"("_lookahead" interval DEFAULT '00:30:00'::interval) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -62,7 +62,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] notification_preferences (schema.sql L3007-L3021)
+-- [TABLE] notification_preferences (schema.sql L3186-L3200)
 CREATE TABLE IF NOT EXISTS "public"."notification_preferences" (
     "user_id" "uuid" NOT NULL,
     "sound_mode" "text" DEFAULT 'default'::"text" NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS "public"."notification_preferences" (
     CONSTRAINT "notification_preferences_sound_mode_check" CHECK (("sound_mode" = ANY (ARRAY['default'::"text", 'silent'::"text"])))
 );
 
--- [RPC/FUNCTION] ensure_notification_preferences (schema.sql L3027-L3049)
+-- [RPC/FUNCTION] ensure_notification_preferences (schema.sql L3206-L3228)
 CREATE OR REPLACE FUNCTION "public"."ensure_notification_preferences"("_user_id" "uuid") RETURNS "public"."notification_preferences"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -104,7 +104,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] notification_category_enabled (schema.sql L7965-L7978)
+-- [RPC/FUNCTION] notification_category_enabled (schema.sql L8209-L8222)
 CREATE OR REPLACE FUNCTION "public"."notification_category_enabled"("_preferences" "public"."notification_preferences", "_category" "text") RETURNS boolean
     LANGUAGE "sql" IMMUTABLE
     SET "search_path" TO 'public'
@@ -120,7 +120,7 @@ CREATE OR REPLACE FUNCTION "public"."notification_category_enabled"("_preference
   END;
 $$;
 
--- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L9576-L9584)
+-- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L9833-L9841)
 CREATE OR REPLACE FUNCTION "public"."touch_notification_preferences_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -131,7 +131,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] app_notifications (schema.sql L11349-L11369)
+-- [TABLE] app_notifications (schema.sql L11606-L11626)
 CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -154,14 +154,14 @@ CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     CONSTRAINT "app_notifications_title_check" CHECK ((("char_length"("title") >= 1) AND ("char_length"("title") <= 160)))
 );
 
--- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L14301-L14301)
+-- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L14563-L14563)
 CREATE POLICY "Users delete own app notifications" ON "public"."app_notifications" FOR DELETE USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L14333-L14333)
+-- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L14595-L14595)
 CREATE POLICY "Users manage own notification preferences" ON "public"."notification_preferences" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own app notifications ON app_notifications (schema.sql L14394-L14394)
+-- [POLICY] Users read own app notifications ON app_notifications (schema.sql L14656-L14656)
 CREATE POLICY "Users read own app notifications" ON "public"."app_notifications" FOR SELECT USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users update own app notifications ON app_notifications (schema.sql L14450-L14450)
+-- [POLICY] Users update own app notifications ON app_notifications (schema.sql L14712-L14712)
 CREATE POLICY "Users update own app notifications" ON "public"."app_notifications" FOR UPDATE USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));

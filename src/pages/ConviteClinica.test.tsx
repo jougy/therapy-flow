@@ -28,14 +28,19 @@ vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
 }));
 
+const authMocks = vi.hoisted(() => ({
+  signOut: vi.fn().mockResolvedValue(undefined),
+  refreshAuthState: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@/hooks/useAuth", () => ({
-  useAuth: () => ({
-    signOut: vi.fn().mockResolvedValue(undefined),
-  }),
+  useAuth: () => authMocks,
 }));
 
 describe("ConviteClinica", () => {
   beforeEach(() => {
+    authMocks.signOut.mockClear();
+    authMocks.refreshAuthState.mockClear();
     supabaseMocks.getSession.mockReset();
     supabaseMocks.onAuthStateChange.mockReturnValue({
       data: { subscription: { unsubscribe: vi.fn() } },
@@ -89,6 +94,7 @@ describe("ConviteClinica", () => {
         _full_name: null,
         _token: "valid-token-123",
       });
+      expect(authMocks.refreshAuthState).toHaveBeenCalledTimes(1);
       expect(toast).toHaveBeenCalledWith({
         title: "Acesso ativado com sucesso!",
         description: "Bem-vindo(a) à equipe da Clínica Bem Estar! Seu acesso foi ativado com sucesso.",
@@ -341,4 +347,144 @@ describe("ConviteClinica", () => {
       });
     });
   });
+
+  it("renders friendly already-accepted card when invite status is accepted", async () => {
+    supabaseMocks.getSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+    supabaseMocks.rpc.mockImplementation(async (method: string) => {
+      if (method === "get_clinic_collaborator_invitation") {
+        return {
+          data: {
+            clinic_name: "Clínica Vida Ativa",
+            email: "membro@clinica.com",
+            existing_user: true,
+            operational_role: "professional",
+            status: "accepted",
+            clinic_route_key: "vida-ativa",
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/convite/clinica/already-accepted-token"]}>
+        <Routes>
+          <Route path="/convite/clinica/:token" element={<ConviteClinica />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/convite já ativado!/i)).toBeInTheDocument();
+    expect(screen.getByText(/este convite para a clínica clínica vida ativa já foi aceito/i)).toBeInTheDocument();
+    const accessButton = screen.getByRole("link", { name: /acessar clínica agora/i });
+    expect(accessButton).toBeInTheDocument();
+    expect(accessButton).toHaveAttribute("href", "/clinica/vida-ativa");
+  });
+
+  it("falls back to auto_accept_pending_clinic_invitation_for_current_user when token acceptance fails", async () => {
+    supabaseMocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: "user-fallback", email: "fallback@clinica.com" } } },
+      error: null,
+    });
+    supabaseMocks.rpc.mockImplementation(async (method: string) => {
+      if (method === "get_clinic_collaborator_invitation") {
+        return {
+          data: {
+            clinic_name: "Clínica Resiliente",
+            email: "fallback@clinica.com",
+            existing_user: true,
+            operational_role: "professional",
+            status: "pending",
+            clinic_route_key: "resiliente",
+          },
+          error: null,
+        };
+      }
+      if (method === "accept_clinic_collaborator_invitation") {
+        return { data: null, error: { message: "Token inválido ou expirado" } };
+      }
+      if (method === "auto_accept_pending_clinic_invitation_for_current_user") {
+        return {
+          data: { accepted: true, clinic_id: "clinic-resiliente", clinic_route_key: "resiliente" },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/convite/clinica/broken-token"]}>
+        <Routes>
+          <Route path="/convite/clinica/:token" element={<ConviteClinica />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const acceptButton = await screen.findByRole("button", { name: /aceitar convite e entrar na clínica/i });
+    fireEvent.click(acceptButton);
+
+    await waitFor(() => {
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("accept_clinic_collaborator_invitation", {
+        _full_name: null,
+        _token: "broken-token",
+      });
+      expect(supabaseMocks.rpc).toHaveBeenCalledWith("auto_accept_pending_clinic_invitation_for_current_user");
+      expect(authMocks.refreshAuthState).toHaveBeenCalledTimes(1);
+      expect(toast).toHaveBeenCalledWith({
+        title: "Acesso ativado com sucesso!",
+        description: "Bem-vindo(a) à equipe da Clínica Resiliente! Seu acesso foi ativado com sucesso.",
+      });
+    });
+  });
+
+  it("calls refreshAuthState before redirecting to clinic dashboard on invitation acceptance", async () => {
+    supabaseMocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: "user-refresh", email: "refresh@clinica.com" } } },
+      error: null,
+    });
+    supabaseMocks.rpc.mockImplementation(async (method: string) => {
+      if (method === "get_clinic_collaborator_invitation") {
+        return {
+          data: {
+            clinic_name: "Clínica Integrada",
+            email: "refresh@clinica.com",
+            existing_user: true,
+            operational_role: "professional",
+            status: "pending",
+            clinic_route_key: "integrada",
+          },
+          error: null,
+        };
+      }
+      if (method === "accept_clinic_collaborator_invitation") {
+        return {
+          data: { clinic_id: "clinic-integrada", clinic_route_key: "integrada", status: "accepted" },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/convite/clinica/refresh-token"]}>
+        <Routes>
+          <Route path="/convite/clinica/:token" element={<ConviteClinica />} />
+          <Route path="/clinica/:slug" element={<div>Painel da Clínica Integrada</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const acceptButton = await screen.findByRole("button", { name: /aceitar convite e entrar na clínica/i });
+    fireEvent.click(acceptButton);
+
+    await waitFor(() => {
+      expect(authMocks.refreshAuthState).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Painel da Clínica Integrada")).toBeInTheDocument();
+    });
+  });
 });
+

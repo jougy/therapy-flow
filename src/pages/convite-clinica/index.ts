@@ -5,3 +5,4 @@ export * from "./ConviteHeaderCard";
 export * from "./ConviteLoggedInCard";
 export * from "./ConviteLoginTab";
 export * from "./ConviteSignupTab";
+export * from "./ConviteBrandingHeader";

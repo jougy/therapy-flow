@@ -41,37 +41,66 @@ export class ResendClient {
     }
 
     const fromAddress = payload.from || this.defaultFrom;
+    const maxAttempts = 3;
+    let lastError: any = null;
 
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: fromAddress,
-        to: Array.isArray(payload.to) ? payload.to : [payload.to],
-        subject: payload.subject,
-        html: payload.html,
-        text: payload.text,
-        reply_to: payload.reply_to,
-      }),
-    });
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: fromAddress,
+            to: Array.isArray(payload.to) ? payload.to : [payload.to],
+            subject: payload.subject,
+            html: payload.html,
+            text: payload.text,
+            reply_to: payload.reply_to,
+          }),
+        });
 
-    const data = await response.json().catch(() => ({}));
+        const data = await response.json().catch(() => ({}));
 
-    if (!response.ok) {
-      console.error("[ResendClient] Erro na API do Resend:", response.status, data, "From:", fromAddress);
-      return {
-        error: {
-          message: data?.message || `Erro ao enviar e-mail via Resend (Status ${response.status})`,
-          statusCode: response.status,
-          name: data?.name,
-        },
-      };
+        if (!response.ok) {
+          const status = response.status;
+          console.error(`[ResendClient] Tentativa ${attempt}/${maxAttempts} falhou com status ${status}:`, data);
+          
+          if ((status === 429 || status >= 500) && attempt < maxAttempts) {
+            const delay = attempt * 700;
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+
+          return {
+            error: {
+              message: data?.message || `Erro ao enviar e-mail via Resend (Status ${status})`,
+              statusCode: status,
+              name: data?.name,
+            },
+          };
+        }
+
+        return { id: data.id };
+      } catch (err) {
+        lastError = err;
+        console.error(`[ResendClient] Erro de rede na tentativa ${attempt}/${maxAttempts}:`, err);
+        if (attempt < maxAttempts) {
+          const delay = attempt * 700;
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+      }
     }
 
-    return { id: data.id };
+    return {
+      error: {
+        message: lastError?.message || "Erro de conexão ao enviar e-mail após múltiplas tentativas.",
+        statusCode: 500,
+      },
+    };
   }
 }
 
