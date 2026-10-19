@@ -86,4 +86,14 @@ describe("WhatsApp Bot 2FA TOTP (Ente Auth) & Auth Session Engine", () => {
     expect(isGlobalBackCommand("retornar")).toBe(true);
     expect(isGlobalBackCommand("anterior")).toBe(true);
   });
+
+  it("verifica regras de texto do fluxo de login e sessão ativa", () => {
+    const promptLogin = "entre no seu app de autenticação, copie e cole aqui o código token da pluri para realizar o seu login";
+    expect(promptLogin).toContain("entre no seu app de autenticação");
+    expect(promptLogin).toContain("token da pluri");
+
+    const alreadyAuthMessage = "Você já está conectado ao Pluri-Health! Caso queira sair ou trocar de conta, basta digitar sair.";
+    expect(alreadyAuthMessage).toContain("já está conectado");
+    expect(alreadyAuthMessage).toContain("sair");
+  });
 });

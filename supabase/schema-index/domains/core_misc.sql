@@ -3,7 +3,7 @@
 -- Fonte SSOT: supabase/schema.sql
 -- ==========================================================================
 
--- [RPC/FUNCTION] finalize_overdue_agenda_events (schema.sql L3155-L3267)
+-- [RPC/FUNCTION] finalize_overdue_agenda_events (schema.sql L3334-L3446)
 CREATE OR REPLACE FUNCTION "public"."finalize_overdue_agenda_events"("_batch_size" integer DEFAULT 500, "_timezone" "text" DEFAULT 'America/Sao_Paulo'::"text") RETURNS TABLE("cancelled_count" integer, "deleted_event_count" integer)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -118,7 +118,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_personal_signup (schema.sql L5468-L5697)
+-- [RPC/FUNCTION] handle_personal_signup (schema.sql L5675-L5904)
 CREATE OR REPLACE FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text" DEFAULT NULL::"text", "_cpf" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date", "_profession" "text" DEFAULT NULL::"text", "_council_number" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -350,7 +350,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L5703-L5743)
+-- [RPC/FUNCTION] handle_signup (schema.sql L5910-L5950)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -393,7 +393,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L5749-L5825)
+-- [RPC/FUNCTION] handle_signup (schema.sql L5956-L6032)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -472,7 +472,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L5831-L5917)
+-- [RPC/FUNCTION] handle_signup (schema.sql L6038-L6124)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text", "_clinic_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -561,7 +561,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L5923-L6056)
+-- [RPC/FUNCTION] handle_signup (schema.sql L6130-L6263)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text", "_clinic_name" "text" DEFAULT NULL::"text", "_allow_duplicate_cnpj" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -697,7 +697,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] request_account_recovery_status (schema.sql L7337-L7464)
+-- [RPC/FUNCTION] request_account_recovery_status (schema.sql L7581-L7708)
 CREATE OR REPLACE FUNCTION "public"."request_account_recovery_status"("_identifier" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -827,7 +827,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] log_security_event (schema.sql L7530-L7626)
+-- [RPC/FUNCTION] log_security_event (schema.sql L7774-L7870)
 CREATE OR REPLACE FUNCTION "public"."log_security_event"("_clinic_id" "uuid", "_actor_user_id" "uuid", "_target_user_id" "uuid", "_event_type" "text", "_visibility_scope" "text" DEFAULT 'self'::"text", "_payload" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -926,7 +926,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] raise_exception_json (schema.sql L8418-L8424)
+-- [RPC/FUNCTION] raise_exception_json (schema.sql L8662-L8668)
 CREATE OR REPLACE FUNCTION "public"."raise_exception_json"("_message" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE
     AS $$
@@ -935,7 +935,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] set_updated_at (schema.sql L8953-L8960)
+-- [RPC/FUNCTION] set_updated_at (schema.sql L9210-L9217)
 CREATE OR REPLACE FUNCTION "public"."set_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -945,7 +945,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] slugify_text (schema.sql L9054-L9078)
+-- [RPC/FUNCTION] slugify_text (schema.sql L9311-L9335)
 CREATE OR REPLACE FUNCTION "public"."slugify_text"("_val" "text") RETURNS "text"
     LANGUAGE "plpgsql" IMMUTABLE
     AS $_$
@@ -972,7 +972,7 @@ begin
 end;
 $_$;
 
--- [RPC/FUNCTION] update_updated_at_column (schema.sql L10448-L10456)
+-- [RPC/FUNCTION] update_updated_at_column (schema.sql L10705-L10713)
 CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -983,7 +983,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] verify_password_recovery_identity (schema.sql L11267-L11292)
+-- [RPC/FUNCTION] verify_password_recovery_identity (schema.sql L11524-L11549)
 CREATE OR REPLACE FUNCTION "public"."verify_password_recovery_identity"("_email" "text", "_cpf" "text") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -1011,7 +1011,7 @@ BEGIN
 END;
 $_$;
 
--- [TABLE] agenda_events (schema.sql L11298-L11321)
+-- [TABLE] agenda_events (schema.sql L11555-L11578)
 CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -1037,7 +1037,7 @@ CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     CONSTRAINT "agenda_events_status_check" CHECK (("status" = ANY (ARRAY['lembrete'::"text", 'aguardando_confirmacao'::"text", 'confirmado'::"text", 'cancelado'::"text", 'concluido'::"text"])))
 );
 
--- [TABLE] security_events (schema.sql L12096-L12106)
+-- [TABLE] security_events (schema.sql L12354-L12364)
 CREATE TABLE IF NOT EXISTS "public"."security_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -1050,23 +1050,23 @@ CREATE TABLE IF NOT EXISTS "public"."security_events" (
     CONSTRAINT "security_events_visibility_scope_check" CHECK (("visibility_scope" = ANY (ARRAY['self'::"text", 'admin'::"text"])))
 );
 
--- [POLICY] Super admins manage all agenda events ON agenda_events (schema.sql L14215-L14215)
+-- [POLICY] Super admins manage all agenda events ON agenda_events (schema.sql L14477-L14477)
 CREATE POLICY "Super admins manage all agenda events" ON "public"."agenda_events" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users delete clinic agenda events ON agenda_events (schema.sql L14279-L14279)
+-- [POLICY] Users delete clinic agenda events ON agenda_events (schema.sql L14541-L14541)
 CREATE POLICY "Users delete clinic agenda events" ON "public"."agenda_events" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.delete_events'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic agenda events ON agenda_events (schema.sql L14337-L14337)
+-- [POLICY] Users read clinic agenda events ON agenda_events (schema.sql L14599-L14599)
 CREATE POLICY "Users read clinic agenda events" ON "public"."agenda_events" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('agenda.read'::"text", "clinic_id")));
 
--- [POLICY] Users update clinic agenda events ON agenda_events (schema.sql L14426-L14426)
+-- [POLICY] Users update clinic agenda events ON agenda_events (schema.sql L14688-L14688)
 CREATE POLICY "Users update clinic agenda events" ON "public"."agenda_events" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id")));
 
--- [POLICY] Users write clinic agenda events ON agenda_events (schema.sql L14462-L14462)
+-- [POLICY] Users write clinic agenda events ON agenda_events (schema.sql L14724-L14724)
 CREATE POLICY "Users write clinic agenda events" ON "public"."agenda_events" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id")));
 
--- [POLICY] admins can read clinic security events ON security_events (schema.sql L14494-L14494)
+-- [POLICY] admins can read clinic security events ON security_events (schema.sql L14756-L14756)
 CREATE POLICY "admins can read clinic security events" ON "public"."security_events" FOR SELECT USING ((("visibility_scope" = 'admin'::"text") AND ("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND "public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")));
 
--- [POLICY] users can read own security events ON security_events (schema.sql L14690-L14690)
+-- [POLICY] users can read own security events ON security_events (schema.sql L14952-L14952)
 CREATE POLICY "users can read own security events" ON "public"."security_events" FOR SELECT USING ((("actor_user_id" = "auth"."uid"()) OR ("target_user_id" = "auth"."uid"())));

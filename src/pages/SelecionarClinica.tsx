@@ -181,27 +181,42 @@ const SelecionarClinica = () => {
     };
   }, [accessibleClinics]);
 
-  // Auto-healing: Se o usuário estiver autenticado, carregamento finalizado e sem clínicas, tentar reconciliar/provisionar seu consultório solo gratuito
+  // Auto-healing: Se o usuário estiver autenticado, carregamento finalizado e sem clínicas, tentar auto-aceitar convites pendentes e em seguida provisionar consultório solo
   useEffect(() => {
     if (authLoading || !user?.id || isPlatformOwner) return;
     if (accessibleClinics && accessibleClinics.length > 0) return;
 
     let isSubscribed = true;
-    const autoProvisionSoloClinic = async () => {
+    const autoHealingFlow = async () => {
       try {
+        // 1. Tentar auto-aceitar convite pendente emitido para o e-mail deste usuário
+        const { data: inviteResult } = await supabase.rpc(
+          "auto_accept_pending_clinic_invitation_for_current_user" as never
+        ) as { data: { accepted?: boolean; clinic_id?: string } | null };
+
+        if (inviteResult?.accepted && isSubscribed) {
+          toast({
+            title: "Convite de clínica ativado!",
+            description: "Identificamos um convite pendente para sua conta e ativamos seu acesso automaticamente.",
+          });
+          await refreshAuthState();
+          return;
+        }
+
+        // 2. Se não houver convite, reconciliar consultório solo gratuito
         const { data, error } = await supabase.rpc("reconcile_legacy_users_solo_clinic");
         if (!error && data && data > 0 && isSubscribed) {
           console.info(`[SoloClinic] Auto-provisioned solo clinic (${data}) for user.`);
           await refreshAuthState();
         }
       } catch {
-        // Ignora silenciosamente caso a RPC ainda não exista no schema remoto
+        // Ignora silenciosamente caso as RPCs ainda não existam no schema remoto
       }
     };
 
     const timer = setTimeout(() => {
-      void autoProvisionSoloClinic();
-    }, 800);
+      void autoHealingFlow();
+    }, 600);
 
     return () => {
       isSubscribed = false;

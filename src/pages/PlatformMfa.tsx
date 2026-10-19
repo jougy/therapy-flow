@@ -92,7 +92,8 @@ const PlatformMfa = () => {
     try {
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
-        friendlyName: "Pluri-Health Master",
+        issuer: "Pluri Fisio",
+        friendlyName: "Pluri Fisio",
       });
 
       if (error) throw error;

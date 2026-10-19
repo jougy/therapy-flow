@@ -219,30 +219,38 @@ export const useTeamInvitations = ({
   const handleGetInviteLinkOnly = async (invitation: PendingCollaboratorInvitation) => {
     try {
       const rpcStart = performance.now();
-      const { data, error } = await supabase.rpc("invite_clinic_collaborator", {
-        _clinic_id: clinicId || undefined,
-        _email: invitation.email,
-        _operational_role: invitation.operational_role,
-        _job_title: invitation.job_title || undefined,
-        _specialty: invitation.specialty || undefined,
-      });
-      const rpcDuration = Math.round(performance.now() - rpcStart);
+      let token = "";
 
-      if (error) {
-        logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: invitation.email }, "error", rpcDuration, null, error);
-        logRuntimeError("team.get_invite_link_only", error, { clinicId, email: invitation.email });
-        throw new Error(error.message);
+      const { data: resendData, error: resendError } = await supabase.rpc("resend_clinic_collaborator_invitation", {
+        _invitation_id: invitation.id,
+      });
+
+      if (!resendError && (resendData as any)?.token) {
+        token = String((resendData as any).token);
+        logRuntimeRpc("resend_clinic_collaborator_invitation", { invitationId: invitation.id }, "success", Math.round(performance.now() - rpcStart), resendData);
+      } else {
+        const { data, error } = await supabase.rpc("invite_clinic_collaborator", {
+          _clinic_id: clinicId || undefined,
+          _email: invitation.email,
+          _operational_role: invitation.operational_role,
+          _role_key: invitation.role_key || undefined,
+          _job_title: invitation.job_title || undefined,
+          _specialty: invitation.specialty || undefined,
+        });
+        const rpcDuration = Math.round(performance.now() - rpcStart);
+        if (error) {
+          logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: invitation.email }, "error", rpcDuration, null, error);
+          logRuntimeError("team.get_invite_link_only", error, { clinicId, email: invitation.email });
+          throw new Error(resendError?.message || error.message);
+        }
+        logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: invitation.email }, "success", rpcDuration, data);
+        token = (data as Record<string, unknown>)?.token ? String((data as any).token) : "";
       }
 
-      logRuntimeRpc("invite_clinic_collaborator", { clinicId, email: invitation.email }, "success", rpcDuration, data);
-
-      const resData = data as Record<string, unknown>;
-      const token = resData?.token ? String(resData.token) : "";
+      if (!token) throw new Error("Não foi possível gerar o link de convite.");
       const inviteUrl = buildPublicAppUrl(`/convite/clinica/${token}`);
-
       setLastGeneratedInviteUrl(inviteUrl);
       setLastGeneratedInviteEmail(invitation.email);
-
       await navigator.clipboard.writeText(inviteUrl);
       toast({
         title: "Link de convite copiado!",
@@ -265,6 +273,7 @@ export const useTeamInvitations = ({
         _clinic_id: clinicId || undefined,
         _email: invitation.email,
         _operational_role: invitation.operational_role,
+        _role_key: invitation.role_key || undefined,
         _job_title: invitation.job_title || undefined,
         _specialty: invitation.specialty || undefined,
       });
@@ -373,6 +382,7 @@ export const useTeamInvitations = ({
         _clinic_id: clinicId,
         _email: member.email.trim(),
         _operational_role: member.operational_role === "owner" ? "admin" : member.operational_role,
+        _role_key: member.role_key || undefined,
         _job_title: member.job_title || undefined,
         _specialty: member.specialty || undefined,
       });

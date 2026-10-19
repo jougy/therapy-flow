@@ -7,6 +7,8 @@ export type InviteSummary = {
   operational_role: string;
   specialty: string | null;
   status: "pending" | "accepted" | "cancelled" | "expired";
+  clinic_route_key?: string | null;
+  role_key?: string | null;
 };
 
 export const ROLE_LABELS: Record<string, string> = {

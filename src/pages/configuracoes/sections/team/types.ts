@@ -10,6 +10,7 @@ export type PendingCollaboratorInvitation = {
   clinic_id: string;
   email: string;
   operational_role: SubaccountOperationalRole;
+  role_key?: string | null;
   job_title: string | null;
   specialty: string | null;
   status: "pending" | "accepted" | "cancelled" | "expired";
