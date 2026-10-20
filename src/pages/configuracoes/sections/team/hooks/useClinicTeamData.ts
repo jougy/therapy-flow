@@ -33,7 +33,10 @@ export const useClinicTeamData = () => {
   const [activeSessions, setActiveSessions] = useState<ActiveSessionRow[]>([]);
 
   // Regras estritas de autorização baseadas em RBAC e Plano de Assinatura
-  const isAccountOwner = accountRole === "account_owner" || operationalRole === "owner";
+  const isAccountOwner =
+    accountRole === "account_owner" ||
+    operationalRole === "owner" ||
+    Boolean(authClinic?.account_owner_user_id && user?.id && authClinic.account_owner_user_id === user.id);
   const isOneSeatPlan =
     subscriptionPlan === "solo" ||
     subscriptionPlan === "prof_basico" ||

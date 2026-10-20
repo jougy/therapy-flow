@@ -91,113 +91,8 @@ export interface RolesManagementModalProps {
   onDeleteSelectedRole?: () => Promise<void> | void;
 }
 
-export const PermissionHelpButton: React.FC<{ details: string; title: string }> = ({
-  details,
-  title,
-}) => {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95 touch-manipulation"
-          aria-label={`Explicar permissão ${title}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpen((prev) => !prev);
-          }}
-        >
-          <CircleHelp className="h-3.5 w-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80 p-3 text-xs" side="top" align="start">
-        <p className="font-semibold text-foreground">{title}</p>
-        <p className="mt-1 text-muted-foreground">{details}</p>
-      </PopoverContent>
-    </Popover>
-  );
-};
-
-// Subcomponente memoizado para renderizar cada switch sem re-render desnecessário
-interface RolePermissionSwitchItemProps {
-  action: RolePermissionAction;
-  itemTitle: string;
-  checked: boolean;
-  disabled: boolean;
-  onToggle: (capability: AccessCapability, nextChecked: boolean) => void;
-}
-
-const RolePermissionSwitchItem: React.FC<RolePermissionSwitchItemProps> = React.memo(({
-  action,
-  itemTitle,
-  checked,
-  disabled,
-  onToggle,
-}) => {
-  const handleToggle = useCallback(
-    (next: boolean) => {
-      onToggle(action.capability, next);
-    },
-    [action.capability, onToggle]
-  );
-
-  return (
-    <RolePermissionSwitch
-      checked={checked}
-      disabled={disabled}
-      kind={action.kind}
-      label={action.label}
-      itemTitle={itemTitle}
-      onToggle={handleToggle}
-    />
-  );
-});
-
-RolePermissionSwitchItem.displayName = "RolePermissionSwitchItem";
-
-// Subcomponente memoizado para cada linha de função/permissão, isolando re-renderizações
-interface PermissionItemCardProps {
-  item: RolePermissionItem;
-  capabilities: Record<AccessCapability, boolean>;
-  canEdit: boolean;
-  onToggleRoleCapability: (capability: AccessCapability, nextChecked: boolean) => void;
-}
-
-const PermissionItemCard: React.FC<PermissionItemCardProps> = React.memo(({
-  item,
-  capabilities,
-  canEdit,
-  onToggleRoleCapability,
-}) => {
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-card p-3.5 transition-colors hover:border-primary/30">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="font-semibold text-sm text-foreground">{item.title}</p>
-          <PermissionHelpButton details={item.details} title={item.title} />
-        </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto shrink-0">
-        {item.actions.map((action) => (
-          <RolePermissionSwitchItem
-            key={`${item.key}-${action.kind}-${action.capability}`}
-            action={action}
-            itemTitle={item.title}
-            checked={capabilities[action.capability] ?? false}
-            disabled={!canEdit}
-            onToggle={onToggleRoleCapability}
-          />
-        ))}
-      </div>
-    </div>
-  );
-});
-
-PermissionItemCard.displayName = "PermissionItemCard";
+import { PermissionHelpButton, PermissionItemCard } from "./PermissionItemCard";
+export { PermissionHelpButton, PermissionItemCard };
 
 export const RolesManagementModal: React.FC<RolesManagementModalProps> = ({
   open,
@@ -251,6 +146,25 @@ export const RolesManagementModal: React.FC<RolesManagementModalProps> = ({
       roleDefs[0]
     );
   }, [passedSelectedRoleDefinition, roleDefs, selectedOperationalRole]);
+
+  // Índice real e canMoveUp / canMoveDown
+  const currentRoleIndex = useMemo(() => {
+    if (typeof selectedRoleIndex === "number" && selectedRoleIndex >= 0) {
+      return selectedRoleIndex;
+    }
+    return roleDefs.findIndex((r) => r.role_key === activeSelectedRole?.role_key);
+  }, [selectedRoleIndex, roleDefs, activeSelectedRole?.role_key]);
+
+  const canMoveUp =
+    canMoveSelectedRole &&
+    !savingRoleDefinition &&
+    currentRoleIndex > 1;
+
+  const canMoveDown =
+    canMoveSelectedRole &&
+    !savingRoleDefinition &&
+    currentRoleIndex >= 1 &&
+    currentRoleIndex < roleDefs.length - 1;
 
   // Suporte a estado controlado ou local com dirty checking
   const isLabelControlled = typeof editingRoleLabel === "string" && typeof setEditingRoleLabel === "function";
@@ -358,65 +272,108 @@ export const RolesManagementModal: React.FC<RolesManagementModalProps> = ({
           </aside>
 
           {/* Conteúdo de Permissões do Papel Selecionado (Scrollável à direita) */}
-          <section className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background p-4 sm:p-5">
-            {/* Seletor Mobile de Papel Operacional (apenas em telas menores que md:) */}
-            <div className="mb-4 flex flex-col gap-2 rounded-xl border bg-muted/20 p-3 md:hidden shrink-0">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Selecionar Papel:
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-2 text-xs gap-1"
-                  onClick={() => void onCreateOperationalRole()}
-                  disabled={savingRoleDefinition || !canManage}
-                >
-                  <Plus className="h-3 w-3" />
-                  Criar papel
-                </Button>
-              </div>
-              <Select
-                value={selectedOperationalRole}
-                onValueChange={(val) => onSelectRole?.(val)}
-              >
-                <SelectTrigger className="w-full h-9 text-xs bg-background">
-                  <SelectValue placeholder="Escolha um papel..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {roleDefs.map((role) => {
-                    const count = roleUsageCounts[role.role_key] ?? 0;
-                    return (
-                      <SelectItem key={role.role_key} value={role.role_key}>
-                        {role.label} ({count} pessoa{count === 1 ? "" : "s"})
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
+          <section className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background p-3 sm:p-5">
+            {/* Topo Compacto: Mobile (3 linhas finas) / Desktop (layout espaçado) */}
+            <div className="mb-2 shrink-0 space-y-2">
+              {/* Linha 1 Mobile: Dropdown do Papel + Ações (Subir, Descer, Excluir, Novo) */}
+              <div className="flex md:hidden items-center justify-between gap-1.5">
+                <span className="sr-only">Selecionar Papel:</span>
+                <div className="flex-1 min-w-0">
+                  <Select
+                    value={selectedOperationalRole}
+                    onValueChange={(val) => onSelectRole?.(val)}
+                  >
+                    <SelectTrigger className="w-full h-8 text-xs bg-muted/30 font-medium" aria-label="Selecionar Papel:">
+                      <SelectValue placeholder="Escolha um papel..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roleDefs.map((role) => {
+                        const count = roleUsageCounts[role.role_key] ?? 0;
+                        return (
+                          <SelectItem key={role.role_key} value={role.role_key} className="text-xs">
+                            {role.label} ({count} pessoa{count === 1 ? "" : "s"})
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between shrink-0">
-              <div className="space-y-1.5 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8"
+                    disabled={!canMoveUp}
+                    onClick={() => void onMove?.("up")}
+                    aria-label="Subir papel na hierarquia"
+                    title={currentRoleIndex <= 1 ? "Papel já está no topo dos cargos configuráveis (abaixo do Proprietário)" : "Subir na hierarquia"}
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8"
+                    disabled={!canMoveDown}
+                    onClick={() => void onMove?.("down")}
+                    aria-label="Descer papel na hierarquia"
+                    title={currentRoleIndex >= roleDefs.length - 1 ? "Papel já está na base da hierarquia" : "Descer na hierarquia"}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={!canDeleteSelectedRole || savingRoleDefinition}
+                    onClick={() => void onDelete?.()}
+                    aria-label="Excluir papel"
+                    title="Excluir papel"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="default"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => void onCreateOperationalRole()}
+                    disabled={savingRoleDefinition || !canManage}
+                    title="Criar novo papel"
+                    aria-label="Criar novo papel"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Linha 2 Mobile / Topo Desktop: Edição de Nome do Papel e Status */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
                   <Input
-                    className="h-9 max-w-xs font-semibold"
+                    className="h-8 max-w-xs text-xs sm:text-sm font-semibold"
                     value={currentLabel}
                     maxLength={40}
                     disabled={!canEditSelectedRole || savingRoleDefinition}
                     onChange={(e) => handleLabelChange(e.target.value)}
                     onBlur={handleBlurLabel}
+                    placeholder="Nome do papel"
                   />
-                  <div className="flex items-center gap-1">
+                  {/* Controles de movimentação/exclusão em Desktop (ocultos em mobile onde estão na Linha 1) */}
+                  <div className="hidden md:flex items-center gap-1 shrink-0">
                     <Button
                       type="button"
                       size="icon"
                       variant="outline"
-                      className="h-9 w-9"
-                      disabled={!canMoveSelectedRole || savingRoleDefinition || selectedRoleIndex <= 1}
+                      className="h-8 w-8"
+                      disabled={!canMoveUp}
                       onClick={() => void onMove?.("up")}
                       aria-label="Subir papel na hierarquia"
+                      title={currentRoleIndex <= 1 ? "Papel já está no topo dos cargos configuráveis (abaixo do Proprietário)" : "Subir na hierarquia"}
                     >
                       <ChevronUp className="h-4 w-4" />
                     </Button>
@@ -424,14 +381,11 @@ export const RolesManagementModal: React.FC<RolesManagementModalProps> = ({
                       type="button"
                       size="icon"
                       variant="outline"
-                      className="h-9 w-9"
-                      disabled={
-                        !canMoveSelectedRole ||
-                        savingRoleDefinition ||
-                        selectedRoleIndex >= roleDefs.length - 1
-                      }
+                      className="h-8 w-8"
+                      disabled={!canMoveDown}
                       onClick={() => void onMove?.("down")}
                       aria-label="Descer papel na hierarquia"
+                      title={currentRoleIndex >= roleDefs.length - 1 ? "Papel já está na base da hierarquia" : "Descer na hierarquia"}
                     >
                       <ChevronDown className="h-4 w-4" />
                     </Button>
@@ -439,7 +393,7 @@ export const RolesManagementModal: React.FC<RolesManagementModalProps> = ({
                       type="button"
                       size="icon"
                       variant="outline"
-                      className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
                       disabled={!canDeleteSelectedRole || savingRoleDefinition}
                       onClick={() => void onDelete?.()}
                       aria-label="Excluir papel"
@@ -448,58 +402,88 @@ export const RolesManagementModal: React.FC<RolesManagementModalProps> = ({
                     </Button>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground max-w-2xl">
-                  {!canEditSelectedRole
-                    ? "Seu nível de acesso atual não permite alterar este papel (somente papéis em hierarquia inferior podem ser editados)."
-                    : activeSelectedRole?.role_key === "owner"
-                    ? "Conta principal da clínica. Gestão irrestrita de permissões e diretrizes operacionais."
-                    : activeSelectedRole?.description ||
-                      "Acompanha a equipe, ajusta acessos e gerencia configurações operacionais da clínica."}
-                </p>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!canEditSelectedRole ? (
+                    <Badge variant="outline" className="text-[11px] h-6 px-2 text-amber-600 border-amber-300">
+                      Somente leitura
+                    </Badge>
+                  ) : activeSelectedRole?.role_key === "owner" ? (
+                    <Badge variant="secondary" className="text-[11px] h-6 px-2">
+                      Topo (Owner)
+                    </Badge>
+                  ) : null}
+
+                  {/* Informação/Descrição do papel como Popover compacto em mobile, texto expandido em desktop */}
+                  <div className="md:hidden">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                          <CircleHelp className="h-4 w-4" />
+                          <span className="sr-only">Descrição do papel</span>
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-72 text-xs p-3" align="end">
+                        <p className="font-medium text-foreground mb-1">{activeSelectedRole?.label}</p>
+                        <p className="text-muted-foreground leading-relaxed">
+                          {!canEditSelectedRole
+                            ? "Seu nível de acesso atual não permite alterar este papel (somente papéis em hierarquia inferior podem ser editados)."
+                            : activeSelectedRole?.role_key === "owner"
+                            ? "Conta principal da clínica. Gestão irrestrita de permissões e diretrizes operacionais."
+                            : activeSelectedRole?.description ||
+                              "Acompanha a equipe, ajusta acessos e gerencia configurações operacionais da clínica."}
+                        </p>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
               </div>
-              {!canEditSelectedRole ? (
-                <Badge variant="outline" className="w-fit shrink-0 text-amber-600 border-amber-300">
-                  Somente leitura
-                </Badge>
-              ) : activeSelectedRole?.role_key === "owner" ? (
-                <Badge variant="secondary" className="w-fit shrink-0">
-                  Topo (Owner)
-                </Badge>
-              ) : null}
-            </div>
 
-            {/* Filtro de Categorias de Permissão com Contadores Dinâmicos */}
-            <div className="mb-3 flex flex-wrap gap-1.5 rounded-xl border bg-muted/30 p-1.5 shrink-0">
-              {activeCategories.map((category) => {
-                const isActive = rolePermissionCategory === category.id;
-                const count = activeCategoryCounts[category.id] ?? 0;
+              {/* Descrição em Desktop */}
+              <p className="hidden md:block text-xs text-muted-foreground max-w-2xl">
+                {!canEditSelectedRole
+                  ? "Seu nível de acesso atual não permite alterar este papel (somente papéis em hierarquia inferior podem ser editados)."
+                  : activeSelectedRole?.role_key === "owner"
+                  ? "Conta principal da clínica. Gestão irrestrita de permissões e diretrizes operacionais."
+                  : activeSelectedRole?.description ||
+                    "Acompanha a equipe, ajusta acessos e gerencia configurações operacionais da clínica."}
+              </p>
 
-                return (
-                  <button
-                    key={category.id}
-                    type="button"
-                    onClick={() => onCategoryChange?.(category.id)}
-                    className={cn(
-                      "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs transition-all",
-                      isActive
-                        ? "border-primary bg-primary/10 text-primary font-semibold shadow-xs"
-                        : "border-transparent bg-transparent text-muted-foreground hover:bg-muted"
-                    )}
-                  >
-                    {category.label}
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 py-0.2 text-[10px] font-bold",
-                        isActive
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted-foreground/20 text-muted-foreground"
-                      )}
-                    >
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
+              {/* Linha 3 Mobile / Barra Desktop: Filtro de Categorias com Scroll Horizontal Suave */}
+              <div className="w-full max-w-full min-w-0 overflow-x-auto touch-pan-x no-scrollbar py-0.5">
+                <div className="flex items-center gap-1.5 w-max">
+                  {activeCategories.map((category) => {
+                    const isActive = rolePermissionCategory === category.id;
+                    const count = activeCategoryCounts[category.id] ?? 0;
+
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() => onCategoryChange?.(category.id)}
+                        className={cn(
+                          "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs whitespace-nowrap transition-all shrink-0",
+                          isActive
+                            ? "border-primary bg-primary/10 text-primary font-semibold shadow-xs"
+                            : "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/50"
+                        )}
+                      >
+                        {category.label}
+                        <span
+                          className={cn(
+                            "rounded-full px-1.5 py-0.2 text-[10px] font-bold",
+                            isActive
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted-foreground/20 text-muted-foreground"
+                          )}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             {/* Cabeçalho da Tabela */}

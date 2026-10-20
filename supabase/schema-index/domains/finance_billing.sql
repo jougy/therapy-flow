@@ -3,21 +3,23 @@
 -- Fonte SSOT: supabase/schema.sql
 -- ==========================================================================
 
--- [RPC/FUNCTION] confirm_asaas_subscription_payment (schema.sql L1829-L1892)
+-- [RPC/FUNCTION] confirm_asaas_subscription_payment (schema.sql L2126-L2198)
 CREATE OR REPLACE FUNCTION "public"."confirm_asaas_subscription_payment"("_asaas_payment_id" "text", "_clinic_id" "uuid", "_paid_value" numeric, "_payment_date" timestamp with time zone DEFAULT "now"(), "_billing_type" "text" DEFAULT 'PIX'::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_sub public.clinic_subscriptions%ROWTYPE;
   v_duration_days integer := 30;
   v_new_expires_at timestamptz;
   v_new_due_date date;
+  v_base_date timestamptz;
 BEGIN
-  -- 1. Buscar assinatura da clínica
+  -- 1. Bloqueio pessimista (FOR UPDATE) para evitar condições de corrida com webhooks duplicados
   SELECT * INTO v_sub
   FROM public.clinic_subscriptions
-  WHERE clinic_id = _clinic_id;
+  WHERE clinic_id = _clinic_id
+  FOR UPDATE;
 
   IF v_sub.id IS NOT NULL THEN
     v_duration_days := CASE
@@ -26,15 +28,22 @@ BEGIN
       ELSE 30
     END;
 
-    v_new_expires_at := _payment_date + (v_duration_days || ' days')::interval;
-    v_new_due_date := (_payment_date + (v_duration_days || ' days')::interval)::date;
+    -- Cálculo seguro: se a assinatura ainda não expirou, estender a partir da data de expiração existente, e não da data do pagamento
+    IF v_sub.expires_at IS NOT NULL AND v_sub.expires_at > _payment_date THEN
+      v_base_date := v_sub.expires_at;
+    ELSE
+      v_base_date := _payment_date;
+    END IF;
+
+    v_new_expires_at := v_base_date + (v_duration_days || ' days')::interval;
+    v_new_due_date := v_new_expires_at::date;
 
     -- Atualizar assinatura para ACTIVE
     UPDATE public.clinic_subscriptions
     SET
       status = 'ACTIVE',
       is_free_trial = false,
-      current_period_start = _payment_date,
+      current_period_start = COALESCE(v_sub.current_period_start, _payment_date),
       current_period_end = v_new_expires_at,
       expires_at = v_new_expires_at,
       next_due_date = v_new_due_date,
@@ -69,7 +78,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_asaas_webhook_logs (schema.sql L3533-L3561)
+-- [RPC/FUNCTION] get_asaas_webhook_logs (schema.sql L4232-L4260)
 CREATE OR REPLACE FUNCTION "public"."get_asaas_webhook_logs"("_limit" integer DEFAULT 50, "_offset" integer DEFAULT 0) RETURNS TABLE("id" "uuid", "asaas_event_id" "text", "event_type" "text", "payload" "jsonb", "processed" boolean, "processed_at" timestamp with time zone, "error_message" "text", "signature" "text", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -100,7 +109,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] record_asaas_webhook_event (schema.sql L8674-L8720)
+-- [RPC/FUNCTION] record_asaas_webhook_event (schema.sql L9924-L9970)
 CREATE OR REPLACE FUNCTION "public"."record_asaas_webhook_event"("_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -149,7 +158,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] toggle_subscription_auto_renew (schema.sql L9799-L9827)
+-- [RPC/FUNCTION] toggle_subscription_auto_renew (schema.sql L11559-L11587)
 CREATE OR REPLACE FUNCTION "public"."toggle_subscription_auto_renew"("_clinic_id" "uuid", "_auto_renew" boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -180,7 +189,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L11138-L11213)
+-- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L13044-L13119)
 CREATE OR REPLACE FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -258,7 +267,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L11219-L11499)
+-- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L13125-L13405)
 CREATE OR REPLACE FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_billing_cycle" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -541,7 +550,7 @@ begin
 end;
 $$;
 
--- [TABLE] asaas_webhook_events (schema.sql L11632-L11642)
+-- [TABLE] asaas_webhook_events (schema.sql L13545-L13555)
 CREATE TABLE IF NOT EXISTS "public"."asaas_webhook_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "asaas_event_id" "text" NOT NULL,
@@ -554,7 +563,7 @@ CREATE TABLE IF NOT EXISTS "public"."asaas_webhook_events" (
     "signature" "text"
 );
 
--- [TABLE] subscription_coupons (schema.sql L12455-L12479)
+-- [TABLE] subscription_coupons (schema.sql L14595-L14619)
 CREATE TABLE IF NOT EXISTS "public"."subscription_coupons" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "code" "text" NOT NULL,
@@ -581,7 +590,7 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_coupons" (
     CONSTRAINT "subscription_coupons_times_redeemed_check" CHECK (("times_redeemed" >= 0))
 );
 
--- [TABLE] subscription_invoices (schema.sql L12497-L12533)
+-- [TABLE] subscription_invoices (schema.sql L14637-L14673)
 CREATE TABLE IF NOT EXISTS "public"."subscription_invoices" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -608,37 +617,37 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_invoices" (
     "paid_at" timestamp with time zone,
     "installment_number" integer DEFAULT 1,
     "total_installments" integer DEFAULT 1,
-    "asaas_invoice_id" text,
-    "nfe_status" text,
-    "nfe_number" text,
-    "nfe_pdf_url" text,
-    "nfe_xml_url" text,
-    "nfe_error_message" text,
-    "identification_field" text,
-    "bar_code" text,
+    "asaas_invoice_id" "text",
+    "nfe_status" "text",
+    "nfe_number" "text",
+    "nfe_pdf_url" "text",
+    "nfe_xml_url" "text",
+    "nfe_error_message" "text",
+    "identification_field" "text",
+    "bar_code" "text",
     CONSTRAINT "subscription_invoices_charge_type_check" CHECK (("charge_type" = ANY (ARRAY['RECURRING_SUBSCRIPTION'::"text", 'ONE_TIME_SUBACCOUNT_EXPANSION'::"text"]))),
     CONSTRAINT "subscription_invoices_status_check" CHECK (("status" = ANY (ARRAY['PENDING'::"text", 'RECEIVED'::"text", 'CONFIRMED'::"text", 'OVERDUE'::"text", 'REFUNDED'::"text", 'DELETED'::"text", 'DUNNING_RECEIVED'::"text", 'RECEIVED_IN_CASH'::"text", 'AWAITING_PAYMENT'::"text"])))
 );
 
--- [POLICY] Owners e gestores podem ver as faturas ON subscription_invoices (schema.sql L14373-L14375)
+-- [POLICY] Owners e gestores podem ver as faturas ON subscription_invoices (schema.sql L16865-L16867)
 CREATE POLICY "Owners e gestores podem ver as faturas" ON "public"."subscription_invoices" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "subscription_invoices"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR "public"."current_user_can"('subscription_billing.read'::"text", "subscription_invoices"."clinic_id"))))));
 
--- [POLICY] Platform admins podem ver eventos de webhook ON asaas_webhook_events (schema.sql L14379-L14381)
+-- [POLICY] Platform admins podem ver eventos de webhook ON asaas_webhook_events (schema.sql L16883-L16885)
 CREATE POLICY "Platform admins podem ver eventos de webhook" ON "public"."asaas_webhook_events" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform admins podem ver todas as faturas ON subscription_invoices (schema.sql L14397-L14399)
+-- [POLICY] Platform admins podem ver todas as faturas ON subscription_invoices (schema.sql L16905-L16907)
 CREATE POLICY "Platform admins podem ver todas as faturas" ON "public"."subscription_invoices" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform admins possuem controle total dos cupons ON subscription_coupons (schema.sql L14403-L14405)
+-- [POLICY] Platform admins possuem controle total dos cupons ON subscription_coupons (schema.sql L16917-L16919)
 CREATE POLICY "Platform admins possuem controle total dos cupons" ON "public"."subscription_coupons" TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Todos autenticados e anonimos podem consultar cupons ativos ON subscription_coupons (schema.sql L14517-L14517)
+-- [POLICY] Todos autenticados e anonimos podem consultar cupons ativos ON subscription_coupons (schema.sql L17031-L17031)
 CREATE POLICY "Todos autenticados e anonimos podem consultar cupons ativos" ON "public"."subscription_coupons" FOR SELECT USING ((("is_active" = true) AND (("valid_until" IS NULL) OR ("valid_until" >= "now"()))));

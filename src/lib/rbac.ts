@@ -1,4 +1,13 @@
-export type SubscriptionPlan = "solo" | "clinic";
+export type SubscriptionPlan =
+  | "solo"
+  | "clinic"
+  | "prof_basico"
+  | "prof_medio"
+  | "prof_top"
+  | "clinica_basico"
+  | "clinica_medio"
+  | "clinica_top"
+  | "enterprise";
 export type AccountRole = "account_owner" | null;
 export type OperationalRole = "owner" | "admin" | "professional" | "assistant" | "estagiario" | null;
 export type MembershipStatus = "invited" | "active" | "inactive" | "suspended";
@@ -243,7 +252,17 @@ const isAccountOwner = (context: MembershipContext) => context.accountRole === "
 const hasOperationalRole = (context: MembershipContext, roles: OperationalRole[]) =>
   context.operationalRole !== null && roles.includes(context.operationalRole);
 
-export const canHaveSubaccounts = (plan: SubscriptionPlan) => plan === "clinic";
+export const SUBACCOUNT_ELIGIBLE_PLANS: readonly SubscriptionPlan[] = [
+  "clinic",
+  "enterprise",
+  "clinica_basico",
+  "clinica_medio",
+  "clinica_top",
+  "prof_top",
+];
+
+export const canHaveSubaccounts = (plan?: SubscriptionPlan | string | null): boolean =>
+  Boolean(plan && (SUBACCOUNT_ELIGIBLE_PLANS as readonly string[]).includes(plan));
 
 export const hasDefaultCapability = (context: MembershipContext, capability: AccessCapability) => {
   if (!isMembershipUsable(context)) {

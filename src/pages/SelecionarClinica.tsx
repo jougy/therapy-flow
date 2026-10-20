@@ -80,6 +80,7 @@ const SelecionarClinica = () => {
   const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
   const [mobileDockTooltip, setMobileDockTooltip] = useState<{ title: string; x: number } | null>(null);
   const mobileDockScrollResetTimerRef = useRef<number | null>(null);
+  const hasAttemptedReconciliation = useRef(false);
 
   const displayName = profile?.full_name || profile?.email || user?.email || "Usuário";
   const initials = getInitials(displayName || "U");
@@ -181,20 +182,26 @@ const SelecionarClinica = () => {
     };
   }, [accessibleClinics]);
 
-  // Auto-healing: Se o usuário estiver autenticado, carregamento finalizado e sem clínicas, tentar auto-aceitar convites pendentes e em seguida provisionar consultório solo
+  // Auto-healing: Tentar auto-aceitar convites pendentes por e-mail (mesmo que o usuário já tenha consultório próprio) e, se não tiver nenhuma clínica, reconciliar consultório solo
   useEffect(() => {
     if (authLoading || !user?.id || isPlatformOwner) return;
-    if (accessibleClinics && accessibleClinics.length > 0) return;
+    if (hasAttemptedReconciliation.current) return;
 
     let isSubscribed = true;
     const autoHealingFlow = async () => {
       try {
-        // 1. Tentar auto-aceitar convite pendente emitido para o e-mail deste usuário
-        const { data: inviteResult } = await supabase.rpc(
-          "auto_accept_pending_clinic_invitation_for_current_user" as never
-        ) as { data: { accepted?: boolean; clinic_id?: string } | null };
+        hasAttemptedReconciliation.current = true;
 
-        if (inviteResult?.accepted && isSubscribed) {
+        // 1. Sempre tentar auto-aceitar convite pendente emitido para o e-mail deste usuário
+        const { data: inviteRows } = await supabase.rpc(
+          "auto_accept_pending_clinic_invitation_for_current_user" as never
+        ) as { data: Array<{ invitation_id?: string; clinic_id?: string }> | { accepted?: boolean; clinic_id?: string } | null };
+
+        const acceptedInvite = Array.isArray(inviteRows)
+          ? inviteRows.length > 0
+          : Boolean(inviteRows && "accepted" in inviteRows && inviteRows.accepted);
+
+        if (acceptedInvite && isSubscribed) {
           toast({
             title: "Convite de clínica ativado!",
             description: "Identificamos um convite pendente para sua conta e ativamos seu acesso automaticamente.",
@@ -203,7 +210,12 @@ const SelecionarClinica = () => {
           return;
         }
 
-        // 2. Se não houver convite, reconciliar consultório solo gratuito
+        // 2. Se já possui clínicas acessíveis, não precisa provisionar consultório solo legado
+        if (accessibleClinics && accessibleClinics.length > 0) {
+          return;
+        }
+
+        // 3. Se não houver nenhuma clínica acessível, reconciliar consultório solo gratuito
         const { data, error } = await supabase.rpc("reconcile_legacy_users_solo_clinic");
         if (!error && data && data > 0 && isSubscribed) {
           console.info(`[SoloClinic] Auto-provisioned solo clinic (${data}) for user.`);

@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
 import { ResendClient } from "../_shared/resend-client.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-dispatch-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Origin": "*",
 };
@@ -52,6 +52,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Método não permitido." }, 405);
 
+  let invitationId: string | null = null;
+  let destinationUrl = "";
+
   try {
     const authorization = req.headers.get("Authorization");
     const bearer = authorization?.replace(/^Bearer\s+/i, "");
@@ -60,6 +63,22 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const token = normalizeToken(body.token);
     const inviteUrl = String(body.inviteUrl ?? "").trim();
+    const internalDispatchSecret = req.headers.get("x-internal-dispatch-secret");
+    const decodeJwtRole = (jwt: string): string | null => {
+      try {
+        const parts = jwt.split(".");
+        if (parts.length !== 3) return null;
+        const payloadJson = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+        const parsed = JSON.parse(payloadJson);
+        return typeof parsed?.role === "string" ? parsed.role : null;
+      } catch {
+        return null;
+      }
+    };
+    const isInternalServiceCall =
+      bearer === serviceRoleKey ||
+      (Boolean(serviceRoleKey) && internalDispatchSecret === serviceRoleKey) ||
+      decodeJwtRole(bearer) === "service_role";
 
     if (!token || !inviteUrl) {
       return json({ error: "Convite inválido ou URL ausente." }, 400);
@@ -75,13 +94,24 @@ Deno.serve(async (req) => {
       return json({ error: "Formato de URL inválido." }, 400);
     }
 
+    let authUserId = "";
+    let authUserEmail = "";
+    let authUserMetaName = "";
+
     const userClient = createClient(supabaseUrl, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
       global: { headers: { Authorization: `Bearer ${bearer}` } },
     });
 
-    const { data: authData, error: authError } = await userClient.auth.getUser(bearer);
-    if (authError || !authData.user) return json({ error: "Usuário não autenticado." }, 401);
+    if (!isInternalServiceCall) {
+      const { data: authData, error: authError } = await userClient.auth.getUser(bearer);
+      if (authError || !authData.user) return json({ error: "Usuário não autenticado." }, 401);
+      authUserId = authData.user.id;
+      authUserEmail = authData.user.email || "";
+      authUserMetaName = String(
+        authData.user.user_metadata?.full_name || authData.user.user_metadata?.name || ""
+      );
+    }
 
     const { data: invitation, error: invitationError } = await admin.rpc(
       "get_clinic_collaborator_invitation",
@@ -89,6 +119,7 @@ Deno.serve(async (req) => {
     );
     if (invitationError) throw new Error(invitationError.message);
 
+    invitationId = invitation?.id ? String(invitation.id) : null;
     const clinicId = String(invitation?.clinic_id ?? "");
     const email = String(invitation?.email ?? "").trim().toLowerCase();
     const existingUser = Boolean(invitation?.existing_user);
@@ -104,21 +135,52 @@ Deno.serve(async (req) => {
       return json({ error: "Convite não está mais pendente." }, 400);
     }
 
-    const [{ data: canWrite }, { data: canManage }, { data: isPlatformOwner }] = await Promise.all([
-      userClient.rpc("current_user_can", {
-        _capability: "subaccounts.write",
-        _clinic_id: clinicId,
-      }),
-      userClient.rpc("current_user_can", {
-        _capability: "subaccounts.manage",
-        _clinic_id: clinicId,
-      }),
-      userClient.rpc("is_platform_owner_mfa_verified"),
-    ]);
+    if (!isInternalServiceCall) {
+      const [{ data: canWrite }, { data: canManage }, { data: isPlatformOwner }] = await Promise.all([
+        userClient.rpc("current_user_can", {
+          _capability: "subaccounts.write",
+          _clinic_id: clinicId,
+        }),
+        userClient.rpc("current_user_can", {
+          _capability: "subaccounts.manage",
+          _clinic_id: clinicId,
+        }),
+        userClient.rpc("is_platform_owner_mfa_verified"),
+      ]);
 
-    if (canWrite !== true && canManage !== true && isPlatformOwner !== true) {
-      return json({ error: "Você não tem permissão para enviar este convite." }, 403);
+      if (canWrite !== true && canManage !== true && isPlatformOwner !== true) {
+        return json({ error: "Você não tem permissão para enviar este convite." }, 403);
+      }
     }
+
+    let profileLookupId = authUserId;
+    if (!profileLookupId && invitationId) {
+      const { data: invRow } = await admin
+        .from("clinic_collaborator_invitations")
+        .select("invited_by")
+        .eq("id", invitationId)
+        .maybeSingle();
+      if (invRow?.invited_by) {
+        profileLookupId = String(invRow.invited_by);
+      }
+    }
+
+    const { data: inviterProfile } = profileLookupId
+      ? await admin
+          .from("profiles")
+          .select("full_name, social_name, email")
+          .eq("id", profileLookupId)
+          .maybeSingle()
+      : { data: null };
+
+    const inviterName = String(
+      inviterProfile?.social_name ||
+        inviterProfile?.full_name ||
+        authUserMetaName ||
+        inviterProfile?.email ||
+        authUserEmail ||
+        "A direção da clínica"
+    ).trim();
 
     // Resolver cargo customizado se role_key estiver presente
     let resolvedRoleLabel = roleLabel;
@@ -126,12 +188,12 @@ Deno.serve(async (req) => {
     if (roleKey) {
       const { data: customRoleData } = await admin
         .from("clinic_operational_roles")
-        .select("name")
+        .select("label")
         .eq("clinic_id", clinicId)
-        .eq("key", roleKey)
+        .eq("role_key", roleKey)
         .maybeSingle();
-      if (customRoleData?.name) {
-        resolvedRoleLabel = String(customRoleData.name);
+      if (customRoleData?.label) {
+        resolvedRoleLabel = String(customRoleData.label);
       }
     }
 
@@ -176,7 +238,7 @@ Deno.serve(async (req) => {
     let emailSubject = "";
     let emailHtml = "";
     // CORREÇÃO CRÍTICA 1: Nunca descartar o token da URL. destinationUrl aponta sempre para /convite/clinica/${token}
-    let destinationUrl = sanitizedInviteUrl;
+    destinationUrl = sanitizedInviteUrl;
 
     if (existingUser && !pendingCpfCompletion) {
       emailSubject = `Você foi convidado para participar da clínica ${clinicName} - Pluri-Health`;
@@ -332,27 +394,22 @@ Deno.serve(async (req) => {
     const message = error instanceof Error ? error.message : "Erro ao enviar convite.";
     console.error("[send-clinic-invitation] Error processing invitation:", message, error);
     
-    // Tentar marcar como falha se tivermos o ID do convite e o objeto invitation estiver acessível
-    // Como invitation pode não estar escopado no bloco catch se falhou antes, fazemos o check defensivo
     try {
-      // @ts-ignore
-      if (typeof invitation !== "undefined" && invitation?.id) {
-        // @ts-ignore
+      if (invitationId) {
         await admin.from("clinic_collaborator_invitations").update({
           email_delivery_status: "failed",
           email_last_error: message,
-        }).eq("id", invitation.id);
+        }).eq("id", invitationId);
       }
     } catch (updateErr) {
       console.error("[send-clinic-invitation] Failed to update invitation error status:", updateErr);
     }
 
-    // Retorna 200 ou 400 dependendo se for erro de validação prévia. Se já passou da validação, retorna 200 com canShareLink: true
     return json({ 
       sent: false, 
       error: message, 
       canShareLink: true, 
-      destinationUrl: "" 
+      destinationUrl 
     }, 200);
   }
 });

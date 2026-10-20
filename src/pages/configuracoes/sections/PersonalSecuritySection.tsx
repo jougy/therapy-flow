@@ -627,12 +627,21 @@ export const PersonalSecuritySection = () => {
                 2. Escaneie o QR Code no app Ente Auth:
               </p>
               {totpFactor?.qr_code ? (
-                <div className="flex justify-center p-2 bg-white rounded-lg inline-block mx-auto border shadow-sm">
+                <div className="relative flex justify-center p-2 bg-white rounded-lg inline-block mx-auto border shadow-sm">
                   <img
                     src={totpFactor.qr_code}
-                    alt="QR Code Ente Auth"
+                    alt="QR Code Pluri Fisio - Ente Auth"
                     className="h-44 w-44 object-contain"
                   />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="bg-white p-1 rounded-md shadow-sm border border-border/40">
+                      <img
+                        src="/brand/plurihealth-icon-192.png"
+                        alt="Pluri Fisio"
+                        className="h-7 w-7 object-contain rounded-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-44 text-muted-foreground">

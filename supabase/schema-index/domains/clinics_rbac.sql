@@ -3,7 +3,7 @@
 -- Fonte SSOT: supabase/schema.sql
 -- ==========================================================================
 
--- [RPC/FUNCTION] accept_clinic_collaborator_invitation (schema.sql L157-L415)
+-- [RPC/FUNCTION] accept_clinic_collaborator_invitation (schema.sql L172-L442)
 CREATE OR REPLACE FUNCTION "public"."accept_clinic_collaborator_invitation"("_token" "text", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'extensions'
@@ -16,7 +16,7 @@ DECLARE
   _profile_exists boolean;
   _clinic_plan text;
   _subaccount_limit integer;
-  _active_members_count integer;
+  _active_collaborators_count integer;
   _token_clean text := trim(coalesce(_token, ''));
   _md5_hash text := md5(_token_clean);
   _sha256_hash text;
@@ -58,7 +58,6 @@ BEGIN
     RAISE EXCEPTION 'Convite não encontrado.';
   END IF;
 
-  -- Fallback se o convite inicial estava cancelado, busca pending mais recente
   IF _invitation.status = 'cancelled' THEN
     SELECT *
     INTO _newer_invitation
@@ -84,7 +83,7 @@ BEGIN
   FROM public.clinics
   WHERE id = _invitation.clinic_id;
 
-  -- IDEMPOTÊNCIA: Se convite já aceito, garante membership e contexto e retorna sucesso
+  -- Idempotency if already accepted
   IF _invitation.status = 'accepted' THEN
     INSERT INTO public.user_roles (user_id, role)
     VALUES (_user_id, 'user')
@@ -110,7 +109,7 @@ BEGIN
       _user_id,
       NULL,
       _invitation.operational_role,
-      _invitation.role_key,
+      COALESCE(_invitation.role_key, _invitation.operational_role::text),
       'active',
       true,
       _invitation.invited_by
@@ -147,8 +146,14 @@ BEGIN
     RAISE EXCEPTION 'Este convite não está mais pendente.';
   END IF;
 
-  -- Validação de cota do plano da clínica antes de admitir novo membro
-  SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
+  -- Validate clinic plan & collaborator quota (counting only non-owner collaborators)
+  SELECT
+    LOWER(COALESCE(subscription_plan::text, 'solo')),
+    CASE
+      WHEN subscription_plan::text IN ('clinica_basico', 'clinica_medio', 'clinica_top', 'clinic', 'enterprise') THEN 999999
+      WHEN subscription_plan::text = 'prof_top' THEN GREATEST(COALESCE(subaccount_limit, 2), 2)
+      ELSE COALESCE(subaccount_limit, 1)
+    END
   INTO _clinic_plan, _subaccount_limit
   FROM public.clinics
   WHERE id = _invitation.clinic_id;
@@ -158,19 +163,20 @@ BEGIN
   END IF;
 
   IF _subaccount_limit < 999999 THEN
-    SELECT COUNT(*)::integer INTO _active_members_count
+    SELECT COUNT(*)::integer INTO _active_collaborators_count
     FROM public.clinic_memberships
     WHERE clinic_id = _invitation.clinic_id
       AND is_active = true
       AND membership_status = 'active'
-      AND user_id <> _user_id;
+      AND user_id <> _user_id
+      AND COALESCE(account_role::text, '') NOT IN ('account_owner', 'owner')
+      AND COALESCE(operational_role::text, '') <> 'owner';
 
-    IF _active_members_count >= _subaccount_limit THEN
+    IF _active_collaborators_count >= GREATEST(1, _subaccount_limit - 1) THEN
       RAISE EXCEPTION 'O limite de membros da clínica foi atingido para o plano atual.';
     END IF;
   END IF;
 
-  -- Atualizar ou criar perfil
   SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = _user_id)
   INTO _profile_exists;
 
@@ -229,15 +235,21 @@ BEGIN
     _user_id,
     NULL,
     _invitation.operational_role,
-    _invitation.role_key,
+    COALESCE(_invitation.role_key, _invitation.operational_role::text),
     'active',
     true,
     _invitation.invited_by
   )
   ON CONFLICT (clinic_id, user_id)
   DO UPDATE SET
-    operational_role = EXCLUDED.operational_role,
-    role_key = EXCLUDED.role_key,
+    operational_role = CASE
+      WHEN public.clinic_memberships.account_role = 'account_owner' THEN 'owner'::public.operational_role_type
+      ELSE EXCLUDED.operational_role
+    END,
+    role_key = CASE
+      WHEN public.clinic_memberships.account_role = 'account_owner' THEN 'owner'
+      ELSE EXCLUDED.role_key
+    END,
     membership_status = 'active',
     is_active = true,
     ended_at = NULL,
@@ -264,7 +276,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] accept_current_user_clinic_invitation (schema.sql L421-L658)
+-- [RPC/FUNCTION] accept_current_user_clinic_invitation (schema.sql L448-L697)
 CREATE OR REPLACE FUNCTION "public"."accept_current_user_clinic_invitation"("_invitation_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'extensions'
@@ -277,7 +289,7 @@ DECLARE
   _profile_exists boolean;
   _clinic_plan text;
   _subaccount_limit integer;
-  _active_members_count integer;
+  _active_collaborators_count integer;
   _clinic_route_key text;
 BEGIN
   IF _user_id IS NULL THEN
@@ -302,7 +314,6 @@ BEGIN
     RAISE EXCEPTION 'Convite não encontrado.';
   END IF;
 
-  -- Fallback se convite cancelado
   IF _invitation.status = 'cancelled' THEN
     SELECT *
     INTO _newer_invitation
@@ -328,7 +339,7 @@ BEGIN
   FROM public.clinics
   WHERE id = _invitation.clinic_id;
 
-  -- IDEMPOTÊNCIA: Se convite já aceito, garante membership e contexto e retorna sucesso
+  -- Idempotency if already accepted
   IF _invitation.status = 'accepted' THEN
     INSERT INTO public.user_roles (user_id, role)
     VALUES (_user_id, 'user')
@@ -354,7 +365,7 @@ BEGIN
       _user_id,
       NULL,
       _invitation.operational_role,
-      _invitation.role_key,
+      COALESCE(_invitation.role_key, _invitation.operational_role::text),
       'active',
       true,
       _invitation.invited_by
@@ -391,8 +402,13 @@ BEGIN
     RAISE EXCEPTION 'Este convite não está mais pendente.';
   END IF;
 
-  -- Validação de cota do plano da clínica antes de admitir novo membro
-  SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
+  SELECT
+    LOWER(COALESCE(subscription_plan::text, 'solo')),
+    CASE
+      WHEN subscription_plan::text IN ('clinica_basico', 'clinica_medio', 'clinica_top', 'clinic', 'enterprise') THEN 999999
+      WHEN subscription_plan::text = 'prof_top' THEN GREATEST(COALESCE(subaccount_limit, 2), 2)
+      ELSE COALESCE(subaccount_limit, 1)
+    END
   INTO _clinic_plan, _subaccount_limit
   FROM public.clinics
   WHERE id = _invitation.clinic_id;
@@ -402,14 +418,16 @@ BEGIN
   END IF;
 
   IF _subaccount_limit < 999999 THEN
-    SELECT COUNT(*)::integer INTO _active_members_count
+    SELECT COUNT(*)::integer INTO _active_collaborators_count
     FROM public.clinic_memberships
     WHERE clinic_id = _invitation.clinic_id
       AND is_active = true
       AND membership_status = 'active'
-      AND user_id <> _user_id;
+      AND user_id <> _user_id
+      AND COALESCE(account_role::text, '') NOT IN ('account_owner', 'owner')
+      AND COALESCE(operational_role::text, '') <> 'owner';
 
-    IF _active_members_count >= _subaccount_limit THEN
+    IF _active_collaborators_count >= GREATEST(1, _subaccount_limit - 1) THEN
       RAISE EXCEPTION 'O limite de membros da clínica foi atingido para o plano atual.';
     END IF;
   END IF;
@@ -469,15 +487,21 @@ BEGIN
     _user_id,
     NULL,
     _invitation.operational_role,
-    _invitation.role_key,
+    COALESCE(_invitation.role_key, _invitation.operational_role::text),
     'active',
     true,
     _invitation.invited_by
   )
   ON CONFLICT (clinic_id, user_id)
   DO UPDATE SET
-    operational_role = EXCLUDED.operational_role,
-    role_key = EXCLUDED.role_key,
+    operational_role = CASE
+      WHEN public.clinic_memberships.account_role = 'account_owner' THEN 'owner'::public.operational_role_type
+      ELSE EXCLUDED.operational_role
+    END,
+    role_key = CASE
+      WHEN public.clinic_memberships.account_role = 'account_owner' THEN 'owner'
+      ELSE EXCLUDED.role_key
+    END,
     membership_status = 'active',
     is_active = true,
     ended_at = NULL,
@@ -504,181 +528,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] auto_accept_pending_clinic_invitation_for_current_user (schema.sql L664-L835)
-CREATE OR REPLACE FUNCTION "public"."auto_accept_pending_clinic_invitation_for_current_user"() RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth', 'extensions'
-    AS $$
-DECLARE
-  _user_id uuid := auth.uid();
-  _user_email text;
-  _invitation public.clinic_collaborator_invitations%ROWTYPE;
-  _profile_exists boolean;
-  _clinic_plan text;
-  _subaccount_limit integer;
-  _active_members_count integer;
-  _clinic_route_key text;
-BEGIN
-  IF _user_id IS NULL THEN
-    RETURN jsonb_build_object('accepted', false, 'reason', 'unauthenticated');
-  END IF;
-
-  _user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
-  IF _user_email IS NULL OR _user_email = '' THEN
-    SELECT lower(email)
-    INTO _user_email
-    FROM auth.users
-    WHERE id = _user_id;
-  END IF;
-
-  IF _user_email IS NULL OR _user_email = '' THEN
-    RETURN jsonb_build_object('accepted', false, 'reason', 'email_not_found');
-  END IF;
-
-  SELECT *
-  INTO _invitation
-  FROM public.clinic_collaborator_invitations
-  WHERE lower(email) = _user_email
-    AND status = 'pending'
-    AND expires_at > now()
-  ORDER BY created_at DESC
-  LIMIT 1;
-
-  IF _invitation.id IS NULL THEN
-    RETURN jsonb_build_object('accepted', false, 'reason', 'no_pending_invitation');
-  END IF;
-
-  SELECT route_key
-  INTO _clinic_route_key
-  FROM public.clinics
-  WHERE id = _invitation.clinic_id;
-
-  -- Validação de cota do plano da clínica antes de admitir novo membro
-  SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
-  INTO _clinic_plan, _subaccount_limit
-  FROM public.clinics
-  WHERE id = _invitation.clinic_id;
-
-  IF _clinic_plan IN ('prof_basico', 'prof_medio', 'solo') THEN
-    RETURN jsonb_build_object(
-      'accepted', false,
-      'reason', 'plan_monoposto_not_allowed',
-      'clinic_id', _invitation.clinic_id,
-      'clinic_route_key', _clinic_route_key
-    );
-  END IF;
-
-  IF _subaccount_limit < 999999 THEN
-    SELECT COUNT(*)::integer INTO _active_members_count
-    FROM public.clinic_memberships
-    WHERE clinic_id = _invitation.clinic_id
-      AND is_active = true
-      AND membership_status = 'active'
-      AND user_id <> _user_id;
-
-    IF _active_members_count >= _subaccount_limit THEN
-      RETURN jsonb_build_object(
-        'accepted', false,
-        'reason', 'clinic_subaccount_limit_reached',
-        'clinic_id', _invitation.clinic_id,
-        'clinic_route_key', _clinic_route_key
-      );
-    END IF;
-  END IF;
-
-  SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = _user_id)
-  INTO _profile_exists;
-
-  IF _profile_exists THEN
-    UPDATE public.profiles
-    SET
-      clinic_id = COALESCE(clinic_id, _invitation.clinic_id),
-      email = COALESCE(email, _invitation.email),
-      job_title = COALESCE(NULLIF(trim(_invitation.job_title), ''), job_title),
-      specialty = COALESCE(NULLIF(trim(_invitation.specialty), ''), specialty),
-      public_code = COALESCE(NULLIF(trim(public_code), ''), public.generate_profile_public_code())
-    WHERE id = _user_id;
-  ELSE
-    INSERT INTO public.profiles (
-      id,
-      clinic_id,
-      email,
-      job_title,
-      specialty,
-      public_code
-    )
-    VALUES (
-      _user_id,
-      _invitation.clinic_id,
-      _invitation.email,
-      NULLIF(trim(_invitation.job_title), ''),
-      NULLIF(trim(_invitation.specialty), ''),
-      public.generate_profile_public_code()
-    );
-  END IF;
-
-  INSERT INTO public.user_roles (user_id, role)
-  VALUES (_user_id, 'user')
-  ON CONFLICT (user_id, role) DO NOTHING;
-
-  INSERT INTO public.user_security_settings (user_id, clinic_id)
-  VALUES (_user_id, _invitation.clinic_id)
-  ON CONFLICT (user_id) DO UPDATE
-  SET clinic_id = COALESCE(public.user_security_settings.clinic_id, EXCLUDED.clinic_id);
-
-  INSERT INTO public.clinic_memberships (
-    clinic_id,
-    user_id,
-    account_role,
-    operational_role,
-    role_key,
-    membership_status,
-    is_active,
-    invited_by
-  )
-  VALUES (
-    _invitation.clinic_id,
-    _user_id,
-    NULL,
-    _invitation.operational_role,
-    _invitation.role_key,
-    'active',
-    true,
-    _invitation.invited_by
-  )
-  ON CONFLICT (clinic_id, user_id)
-  DO UPDATE SET
-    operational_role = EXCLUDED.operational_role,
-    role_key = EXCLUDED.role_key,
-    membership_status = 'active',
-    is_active = true,
-    ended_at = NULL,
-    invited_by = COALESCE(public.clinic_memberships.invited_by, EXCLUDED.invited_by);
-
-  INSERT INTO public.user_active_clinic_contexts (user_id, clinic_id, updated_at)
-  VALUES (_user_id, _invitation.clinic_id, now())
-  ON CONFLICT (user_id)
-  DO UPDATE SET clinic_id = EXCLUDED.clinic_id, updated_at = now();
-
-  UPDATE public.clinic_collaborator_invitations
-  SET
-    status = 'accepted',
-    accepted_by = _user_id,
-    accepted_at = now(),
-    updated_at = now()
-  WHERE id = _invitation.id;
-
-  RETURN jsonb_build_object(
-    'accepted', true,
-    'clinic_id', _invitation.clinic_id,
-    'clinic_route_key', _clinic_route_key,
-    'invitation_id', _invitation.id,
-    'status', 'accepted'
-  );
-END;
-$$;
-
--- [RPC/FUNCTION] acknowledge_current_user_release_notes (schema.sql L841-L900)
+-- [RPC/FUNCTION] acknowledge_current_user_release_notes (schema.sql L703-L762)
 CREATE OR REPLACE FUNCTION "public"."acknowledge_current_user_release_notes"("_release_id" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -740,7 +590,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] activate_clinic_free_trial (schema.sql L906-L1064)
+-- [RPC/FUNCTION] activate_clinic_free_trial (schema.sql L768-L926)
 CREATE OR REPLACE FUNCTION "public"."activate_clinic_free_trial"("_clinic_id" "uuid", "_plan_type" "text" DEFAULT 'clinic'::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -901,7 +751,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] activate_clinic_free_trial (schema.sql L1070-L1075)
+-- [RPC/FUNCTION] activate_clinic_free_trial (schema.sql L932-L937)
 CREATE OR REPLACE FUNCTION "public"."activate_clinic_free_trial"("_clinic_id" "uuid", "_plan_type" "public"."subscription_plan") RETURNS "jsonb"
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -909,7 +759,7 @@ CREATE OR REPLACE FUNCTION "public"."activate_clinic_free_trial"("_clinic_id" "u
   SELECT public.activate_clinic_free_trial(_clinic_id, _plan_type::text);
 $$;
 
--- [RPC/FUNCTION] apply_user_punishment (schema.sql L1081-L1122)
+-- [RPC/FUNCTION] apply_user_punishment (schema.sql L943-L984)
 CREATE OR REPLACE FUNCTION "public"."apply_user_punishment"("_user_id" "uuid", "_punishment_type" "text", "_duration_minutes" integer, "_reason" "text", "_is_manual" boolean DEFAULT true) RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -953,7 +803,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] assign_profile_public_code (schema.sql L1128-L1139)
+-- [RPC/FUNCTION] assign_profile_public_code (schema.sql L990-L1001)
 CREATE OR REPLACE FUNCTION "public"."assign_profile_public_code"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -967,7 +817,194 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] buy_clinic_subaccount_extra_spaces (schema.sql L1145-L1228)
+-- [RPC/FUNCTION] auto_accept_pending_clinic_invitation_for_current_user (schema.sql L1082-L1266)
+CREATE OR REPLACE FUNCTION "public"."auto_accept_pending_clinic_invitation_for_current_user"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth', 'extensions'
+    AS $$
+DECLARE
+  _user_id uuid := auth.uid();
+  _user_email text;
+  _invitation public.clinic_collaborator_invitations%ROWTYPE;
+  _profile_exists boolean;
+  _clinic_plan text;
+  _subaccount_limit integer;
+  _active_collaborators_count integer;
+  _clinic_route_key text;
+BEGIN
+  IF _user_id IS NULL THEN
+    RETURN jsonb_build_object('accepted', false, 'reason', 'unauthenticated');
+  END IF;
+
+  _user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
+  IF _user_email IS NULL OR _user_email = '' THEN
+    SELECT lower(email)
+    INTO _user_email
+    FROM auth.users
+    WHERE id = _user_id;
+  END IF;
+
+  IF _user_email IS NULL OR _user_email = '' THEN
+    RETURN jsonb_build_object('accepted', false, 'reason', 'email_not_found');
+  END IF;
+
+  SELECT *
+  INTO _invitation
+  FROM public.clinic_collaborator_invitations
+  WHERE lower(email) = _user_email
+    AND status = 'pending'
+    AND expires_at > now()
+  ORDER BY created_at DESC
+  LIMIT 1;
+
+  IF _invitation.id IS NULL THEN
+    RETURN jsonb_build_object('accepted', false, 'reason', 'no_pending_invitation');
+  END IF;
+
+  SELECT route_key
+  INTO _clinic_route_key
+  FROM public.clinics
+  WHERE id = _invitation.clinic_id;
+
+  SELECT
+    LOWER(COALESCE(subscription_plan::text, 'solo')),
+    CASE
+      WHEN subscription_plan::text IN ('clinica_basico', 'clinica_medio', 'clinica_top', 'clinic', 'enterprise') THEN 999999
+      WHEN subscription_plan::text = 'prof_top' THEN GREATEST(COALESCE(subaccount_limit, 2), 2)
+      ELSE COALESCE(subaccount_limit, 1)
+    END
+  INTO _clinic_plan, _subaccount_limit
+  FROM public.clinics
+  WHERE id = _invitation.clinic_id;
+
+  IF _clinic_plan IN ('prof_basico', 'prof_medio', 'solo') THEN
+    RETURN jsonb_build_object(
+      'accepted', false,
+      'reason', 'plan_monoposto_not_allowed',
+      'clinic_id', _invitation.clinic_id,
+      'clinic_route_key', _clinic_route_key
+    );
+  END IF;
+
+  IF _subaccount_limit < 999999 THEN
+    SELECT COUNT(*)::integer INTO _active_collaborators_count
+    FROM public.clinic_memberships
+    WHERE clinic_id = _invitation.clinic_id
+      AND is_active = true
+      AND membership_status = 'active'
+      AND user_id <> _user_id
+      AND COALESCE(account_role::text, '') NOT IN ('account_owner', 'owner')
+      AND COALESCE(operational_role::text, '') <> 'owner';
+
+    IF _active_collaborators_count >= GREATEST(1, _subaccount_limit - 1) THEN
+      RETURN jsonb_build_object(
+        'accepted', false,
+        'reason', 'clinic_subaccount_limit_reached',
+        'clinic_id', _invitation.clinic_id,
+        'clinic_route_key', _clinic_route_key
+      );
+    END IF;
+  END IF;
+
+  SELECT EXISTS (SELECT 1 FROM public.profiles WHERE id = _user_id)
+  INTO _profile_exists;
+
+  IF _profile_exists THEN
+    UPDATE public.profiles
+    SET
+      clinic_id = COALESCE(clinic_id, _invitation.clinic_id),
+      email = COALESCE(email, _invitation.email),
+      job_title = COALESCE(NULLIF(trim(_invitation.job_title), ''), job_title),
+      specialty = COALESCE(NULLIF(trim(_invitation.specialty), ''), specialty),
+      public_code = COALESCE(NULLIF(trim(public_code), ''), public.generate_profile_public_code())
+    WHERE id = _user_id;
+  ELSE
+    INSERT INTO public.profiles (
+      id,
+      clinic_id,
+      email,
+      job_title,
+      specialty,
+      public_code
+    )
+    VALUES (
+      _user_id,
+      _invitation.clinic_id,
+      _invitation.email,
+      NULLIF(trim(_invitation.job_title), ''),
+      NULLIF(trim(_invitation.specialty), ''),
+      public.generate_profile_public_code()
+    );
+  END IF;
+
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (_user_id, 'user')
+  ON CONFLICT (user_id, role) DO NOTHING;
+
+  INSERT INTO public.user_security_settings (user_id, clinic_id)
+  VALUES (_user_id, _invitation.clinic_id)
+  ON CONFLICT (user_id) DO UPDATE
+  SET clinic_id = COALESCE(public.user_security_settings.clinic_id, EXCLUDED.clinic_id);
+
+  INSERT INTO public.clinic_memberships (
+    clinic_id,
+    user_id,
+    account_role,
+    operational_role,
+    role_key,
+    membership_status,
+    is_active,
+    invited_by
+  )
+  VALUES (
+    _invitation.clinic_id,
+    _user_id,
+    NULL,
+    _invitation.operational_role,
+    COALESCE(_invitation.role_key, _invitation.operational_role::text),
+    'active',
+    true,
+    _invitation.invited_by
+  )
+  ON CONFLICT (clinic_id, user_id)
+  DO UPDATE SET
+    operational_role = CASE
+      WHEN public.clinic_memberships.account_role = 'account_owner' THEN 'owner'::public.operational_role_type
+      ELSE EXCLUDED.operational_role
+    END,
+    role_key = CASE
+      WHEN public.clinic_memberships.account_role = 'account_owner' THEN 'owner'
+      ELSE EXCLUDED.role_key
+    END,
+    membership_status = 'active',
+    is_active = true,
+    ended_at = NULL,
+    invited_by = COALESCE(public.clinic_memberships.invited_by, EXCLUDED.invited_by);
+
+  INSERT INTO public.user_active_clinic_contexts (user_id, clinic_id, updated_at)
+  VALUES (_user_id, _invitation.clinic_id, now())
+  ON CONFLICT (user_id)
+  DO UPDATE SET clinic_id = EXCLUDED.clinic_id, updated_at = now();
+
+  UPDATE public.clinic_collaborator_invitations
+  SET
+    status = 'accepted',
+    accepted_by = _user_id,
+    accepted_at = now(),
+    updated_at = now()
+  WHERE id = _invitation.id;
+
+  RETURN jsonb_build_object(
+    'accepted', true,
+    'clinic_id', _invitation.clinic_id,
+    'clinic_route_key', _clinic_route_key,
+    'invitation_id', _invitation.id,
+    'status', 'accepted'
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] buy_clinic_subaccount_extra_spaces (schema.sql L1427-L1510)
 CREATE OR REPLACE FUNCTION "public"."buy_clinic_subaccount_extra_spaces"("_clinic_id" "uuid", "_quantity" integer, "_billing_type" "text" DEFAULT 'PIX'::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1053,7 +1090,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] can_read_clinic_data (schema.sql L1391-L1450)
+-- [RPC/FUNCTION] can_read_clinic_data (schema.sql L1567-L1633)
 CREATE OR REPLACE FUNCTION "public"."can_read_clinic_data"("_clinic_id" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1067,15 +1104,15 @@ BEGIN
     RETURN false;
   END IF;
 
-  -- Platform admin bypass
+  -- Platform admin / owner bypass
   IF EXISTS (
     SELECT 1 FROM public.platform_admins pa
     WHERE pa.user_id = v_uid AND pa.is_active = true
-  ) THEN
+  ) OR public.is_platform_owner(v_uid) THEN
     RETURN true;
   END IF;
 
-  -- Verificar se é owner
+  -- Check if user is clinic owner
   IF EXISTS (
     SELECT 1 FROM public.clinics c
     WHERE c.id = _clinic_id AND c.account_owner_user_id = v_uid
@@ -1083,27 +1120,34 @@ BEGIN
     SELECT 1 FROM public.clinic_memberships cm
     WHERE cm.clinic_id = _clinic_id
       AND cm.user_id = v_uid
-      AND cm.account_role = 'account_owner'
+      AND (cm.account_role = 'account_owner' OR cm.operational_role = 'owner')
       AND cm.is_active = true
       AND cm.membership_status = 'active'
   ) THEN
     v_is_owner := true;
   END IF;
 
-  -- Checar status da assinatura
-  SELECT status, is_free_trial, expires_at, current_period_end INTO v_sub
+  IF NOT v_is_owner AND NOT public.user_has_active_clinic_membership(v_uid, _clinic_id) THEN
+    RETURN false;
+  END IF;
+
+  -- Check subscription status
+  SELECT status, is_free_trial, is_courtesy, expires_at, current_period_end
+  INTO v_sub
   FROM public.clinic_subscriptions
   WHERE clinic_id = _clinic_id
   LIMIT 1;
 
   IF FOUND THEN
-    -- Se o status for TRIAL_EXPIRED e não for owner, bloqueia leitura completamente
+    IF COALESCE(v_sub.is_courtesy, false) = true OR v_sub.status IN ('ACTIVE', 'BETA', 'COURTESY', 'PENDING') THEN
+      RETURN true;
+    END IF;
+
     IF v_sub.status = 'TRIAL_EXPIRED' AND NOT v_is_owner THEN
       RETURN false;
     END IF;
 
-    -- Se for trial expirado sem assinatura ativa e não for owner, bloqueia
-    IF (v_sub.status = 'TRIAL' OR COALESCE(v_sub.is_free_trial, false) = true) AND NOT v_is_owner THEN
+    IF v_sub.status = 'TRIAL' AND NOT v_is_owner THEN
       IF COALESCE(v_sub.expires_at, v_sub.current_period_end) IS NOT NULL
          AND COALESCE(v_sub.expires_at, v_sub.current_period_end) < now() THEN
         RETURN false;
@@ -1115,7 +1159,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] cancel_clinic_collaborator_invitation (schema.sql L1539-L1587)
+-- [RPC/FUNCTION] cancel_clinic_collaborator_invitation (schema.sql L1722-L1770)
 CREATE OR REPLACE FUNCTION "public"."cancel_clinic_collaborator_invitation"("_invitation_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1166,7 +1210,53 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] check_clinic_plan_quota (schema.sql L1593-L1693)
+-- [RPC/FUNCTION] change_clinic_subscription_plan (schema.sql L1776-L1783)
+CREATE OR REPLACE FUNCTION "public"."change_clinic_subscription_plan"("_clinic_id" "uuid", "_new_plan" "public"."subscription_plan", "_billing_cycle" "text" DEFAULT 'annual'::"text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+BEGIN
+  RETURN public.manage_clinic_subscription_plan(_clinic_id, _new_plan, _billing_cycle);
+END;
+$$;
+
+-- [RPC/FUNCTION] check_clinic_hibernation_eligibility (schema.sql L1789-L1822)
+CREATE OR REPLACE FUNCTION "public"."check_clinic_hibernation_eligibility"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_has_active_subscription boolean := false;
+BEGIN
+  IF NEW.is_hibernated = true THEN
+    -- Regra sagrada: Clínicas com assinatura ativa (ou access_status ativo com plano ativo) não podem ser hibernadas
+    IF LOWER(COALESCE(NEW.access_status, '')) = 'active' THEN
+      SELECT EXISTS (
+        SELECT 1
+        FROM public.clinic_subscriptions cs
+        WHERE cs.clinic_id = NEW.id
+          AND cs.status = 'ACTIVE'
+      ) INTO v_has_active_subscription;
+
+      IF v_has_active_subscription THEN
+        RAISE EXCEPTION 'Regra sagrada: Clínicas com subscription ativa (subscription_status = ACTIVE / access_status = active) NUNCA podem ser marcadas como hibernadas.';
+      END IF;
+    END IF;
+
+    -- Preencher hibernated_at se ainda não preenchido
+    IF NEW.hibernated_at IS NULL THEN
+      NEW.hibernated_at := now();
+    END IF;
+  ELSE
+    -- Ao deshibernar, limpa a data de hibernação
+    NEW.hibernated_at := NULL;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- [RPC/FUNCTION] check_clinic_plan_quota (schema.sql L1828-L1928)
 CREATE OR REPLACE FUNCTION "public"."check_clinic_plan_quota"("p_clinic_id" "uuid", "p_feature_type" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1269,7 +1359,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] clear_current_user_notifications (schema.sql L1807-L1823)
+-- [RPC/FUNCTION] clear_current_user_notifications (schema.sql L2042-L2058)
 CREATE OR REPLACE FUNCTION "public"."clear_current_user_notifications"() RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1288,7 +1378,66 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] create_clinic_subaccount (schema.sql L1898-L2074)
+-- [RPC/FUNCTION] complete_unregistered_cpf_profile (schema.sql L2064-L2120)
+CREATE OR REPLACE FUNCTION "public"."complete_unregistered_cpf_profile"("_full_name" "text", "_cpf" "text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth'
+    AS $$
+DECLARE
+  _user_id uuid := auth.uid();
+  _normalized_cpf text;
+  _clean_name text;
+  _clean_phone text;
+  _existing_cpf_user_id uuid;
+BEGIN
+  IF _user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  _normalized_cpf := NULLIF(regexp_replace(COALESCE(_cpf, ''), '\D', '', 'g'), '');
+  _clean_name := NULLIF(trim(COALESCE(_full_name, '')), '');
+  _clean_phone := NULLIF(trim(COALESCE(_phone, '')), '');
+
+  IF _normalized_cpf IS NULL OR length(_normalized_cpf) <> 11 THEN
+    RAISE EXCEPTION 'CPF inválido. Forneça um CPF com 11 dígitos.';
+  END IF;
+
+  IF _clean_name IS NULL THEN
+    RAISE EXCEPTION 'Nome completo é obrigatório.';
+  END IF;
+
+  -- Verificar se outro perfil já possui este CPF
+  SELECT id
+  INTO _existing_cpf_user_id
+  FROM public.profiles
+  WHERE regexp_replace(coalesce(cpf, ''), '\D', '', 'g') = _normalized_cpf
+    AND id <> _user_id
+  LIMIT 1;
+
+  IF _existing_cpf_user_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Este CPF já está cadastrado em outra conta.';
+  END IF;
+
+  -- Atualiza os dados no perfil existente do usuário autenticado
+  UPDATE public.profiles
+  SET
+    full_name = _clean_name,
+    cpf = _normalized_cpf,
+    phone = COALESCE(_clean_phone, phone),
+    birth_date = COALESCE(_birth_date, birth_date),
+    updated_at = now()
+  WHERE id = _user_id;
+
+  RETURN jsonb_build_object(
+    'user_id', _user_id,
+    'full_name', _clean_name,
+    'cpf', _normalized_cpf,
+    'status', 'completed'
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] create_clinic_subaccount (schema.sql L2204-L2380)
 CREATE OR REPLACE FUNCTION "public"."create_clinic_subaccount"("_email" "text", "_password" "text", "_full_name" "text", "_operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1467,7 +1616,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] create_current_user_notification (schema.sql L2080-L2105)
+-- [RPC/FUNCTION] create_current_user_notification (schema.sql L2386-L2411)
 CREATE OR REPLACE FUNCTION "public"."create_current_user_notification"("_clinic_id" "uuid", "_category" "text", "_event_type" "text", "_title" "text", "_body" "text", "_action_label" "text" DEFAULT NULL::"text", "_action_url" "text" DEFAULT NULL::"text", "_payload" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1495,7 +1644,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] create_user_notification (schema.sql L2263-L2322)
+-- [RPC/FUNCTION] create_user_notification (schema.sql L2569-L2628)
 CREATE OR REPLACE FUNCTION "public"."create_user_notification"("_user_id" "uuid", "_clinic_id" "uuid", "_actor_user_id" "uuid", "_category" "text", "_event_type" "text", "_title" "text", "_body" "text", "_action_label" "text" DEFAULT NULL::"text", "_action_url" "text" DEFAULT NULL::"text", "_payload" "jsonb" DEFAULT '{}'::"jsonb", "_source_event_id" "uuid" DEFAULT NULL::"uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1557,7 +1706,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] current_user_can (schema.sql L2328-L2615)
+-- [RPC/FUNCTION] current_user_can (schema.sql L2634-L2926)
 CREATE OR REPLACE FUNCTION "public"."current_user_can"("_capability" "text", "_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS boolean
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1568,6 +1717,301 @@ DECLARE
   _account_role public.account_role_type;
   _operational_role public.operational_role_type;
   _role_key text;
+  _membership_status public.membership_status_type;
+  _is_active boolean;
+  _subscription_plan public.subscription_plan;
+  _plan_str text;
+  _clinic_owner_id uuid;
+  _override_enabled boolean;
+  _sub record;
+  _is_subscription_expired boolean := false;
+  _is_read_only boolean := false;
+  _is_owner boolean := false;
+  _can_have_subaccounts boolean := false;
+  _canonical_capability text := _capability;
+BEGIN
+  IF _user_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  -- Normalize synonym capabilities
+  IF _capability IN ('patient_groups.write', 'patients_groups.write') THEN
+    _canonical_capability := 'patients.manage_groups';
+  ELSIF _capability IN ('patient_groups.read') THEN
+    _canonical_capability := 'patients_groups.read';
+  ELSIF _capability = 'agenda.read' THEN
+    _canonical_capability := 'schedule.read';
+  ELSIF _capability = 'agenda.write' THEN
+    _canonical_capability := 'schedule.write';
+  END IF;
+
+  _resolved_clinic_id := COALESCE(_clinic_id, public.get_user_clinic_id(_user_id));
+
+  IF _resolved_clinic_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  -- Bypass for Platform Owner in active simulation context
+  IF public.is_platform_owner(_user_id)
+     AND public.get_active_platform_clinic_id(_user_id) = _resolved_clinic_id THEN
+    RETURN true;
+  END IF;
+
+  SELECT
+    clinic_memberships.account_role,
+    clinic_memberships.operational_role,
+    clinic_memberships.role_key,
+    clinic_memberships.membership_status,
+    clinic_memberships.is_active,
+    clinics.subscription_plan,
+    LOWER(COALESCE(clinics.subscription_plan::text, 'solo')),
+    clinics.account_owner_user_id
+  INTO
+    _account_role,
+    _operational_role,
+    _role_key,
+    _membership_status,
+    _is_active,
+    _subscription_plan,
+    _plan_str,
+    _clinic_owner_id
+  FROM public.clinic_memberships
+  JOIN public.clinics ON clinics.id = clinic_memberships.clinic_id
+  WHERE clinic_memberships.user_id = _user_id
+    AND clinic_memberships.clinic_id = _resolved_clinic_id
+  LIMIT 1;
+
+  -- Fallback if user is account_owner_user_id on clinics
+  IF _operational_role IS NULL THEN
+    SELECT
+      'account_owner'::public.account_role_type,
+      'owner'::public.operational_role_type,
+      'owner',
+      'active'::public.membership_status_type,
+      true,
+      clinics.subscription_plan,
+      LOWER(COALESCE(clinics.subscription_plan::text, 'solo')),
+      clinics.account_owner_user_id
+    INTO
+      _account_role,
+      _operational_role,
+      _role_key,
+      _membership_status,
+      _is_active,
+      _subscription_plan,
+      _plan_str,
+      _clinic_owner_id
+    FROM public.clinics
+    WHERE clinics.id = _resolved_clinic_id
+      AND clinics.account_owner_user_id = _user_id
+    LIMIT 1;
+  END IF;
+
+  IF _is_active IS DISTINCT FROM true
+     OR _membership_status IS DISTINCT FROM 'active'::public.membership_status_type THEN
+    RETURN false;
+  END IF;
+
+  _is_owner := (_account_role = 'account_owner' OR _operational_role = 'owner' OR _clinic_owner_id = _user_id);
+  _can_have_subaccounts := _plan_str IN ('clinic', 'enterprise', 'clinica_basico', 'clinica_medio', 'clinica_top', 'prof_top');
+
+  -- 1. Check Subscription & Read-Only state
+  SELECT * INTO _sub
+  FROM public.clinic_subscriptions
+  WHERE clinic_id = _resolved_clinic_id
+  LIMIT 1;
+
+  IF _sub IS NOT NULL THEN
+    IF COALESCE(_sub.is_courtesy, false) = false AND _sub.status NOT IN ('ACTIVE', 'BETA', 'COURTESY', 'PENDING') THEN
+      IF _sub.status = 'TRIAL_EXPIRED' AND NOT _is_owner THEN
+        RETURN false;
+      END IF;
+
+      IF public.is_clinic_read_only(_resolved_clinic_id) THEN
+        _is_read_only := true;
+        IF (_sub.status IN ('TRIAL_EXPIRED', 'TRIAL')) AND NOT _is_owner THEN
+          RETURN false;
+        END IF;
+      END IF;
+
+      IF _sub.status IN ('EXPIRED', 'SUSPENDED', 'CANCELED') THEN
+        _is_subscription_expired := true;
+      END IF;
+    END IF;
+  END IF;
+
+  -- If clinic is in read-only or expired subscription mode:
+  IF _is_read_only OR _is_subscription_expired THEN
+    IF _capability = 'subscription_billing.manage' AND _is_owner THEN
+      RETURN true;
+    END IF;
+
+    IF _capability IN (
+      'patients.read',
+      'schedule.read',
+      'schedule.read_all',
+      'agenda.read',
+      'sessions.read',
+      'sessions.read_all',
+      'patient_groups.read',
+      'patients_groups.read',
+      'subaccounts_analytics.read',
+      'subaccounts.read',
+      'subaccounts_roles.read',
+      'clinic_profile.read',
+      'forms.read',
+      'anamnesis_forms.read',
+      'treasury.read',
+      'subscription_billing.read'
+    ) OR _canonical_capability IN (
+      'patients.read',
+      'schedule.read',
+      'schedule.read_all',
+      'agenda.read',
+      'sessions.read',
+      'sessions.read_all',
+      'patient_groups.read',
+      'patients_groups.read',
+      'subaccounts_analytics.read',
+      'subaccounts.read',
+      'subaccounts_roles.read',
+      'clinic_profile.read',
+      'forms.read',
+      'anamnesis_forms.read',
+      'treasury.read',
+      'subscription_billing.read'
+    ) THEN
+      RETURN true;
+    END IF;
+
+    RETURN false;
+  END IF;
+
+  -- Owner has full access in active clinic
+  IF _is_owner THEN
+    RETURN true;
+  END IF;
+
+  IF _capability = 'subscription_billing.manage' THEN
+    RETURN false;
+  END IF;
+
+  -- 2. Check Overrides in clinic_operational_role_capabilities
+  IF _role_key IS NOT NULL AND _role_key <> '' THEN
+    SELECT enabled
+    INTO _override_enabled
+    FROM public.clinic_operational_role_capabilities
+    WHERE clinic_id = _resolved_clinic_id
+      AND operational_role = _role_key
+      AND capability IN (_capability, _canonical_capability)
+    ORDER BY (capability = _canonical_capability) DESC
+    LIMIT 1;
+
+    IF FOUND THEN
+      RETURN _override_enabled;
+    END IF;
+  END IF;
+
+  SELECT enabled
+  INTO _override_enabled
+  FROM public.clinic_operational_role_capabilities
+  WHERE clinic_id = _resolved_clinic_id
+    AND operational_role = _operational_role::text
+    AND capability IN (_capability, _canonical_capability)
+  ORDER BY (capability = _canonical_capability) DESC
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN _override_enabled;
+  END IF;
+
+  -- 3. Default Canonical Permission Matrix
+  CASE _capability
+    WHEN 'clinic_profile.read',
+         'clinic_profile.manage',
+         'clinic_terms.manage',
+         'clinic_trash.manage',
+         'forms.manage',
+         'treasury.read',
+         'treasury.manage',
+         'agenda.delete_events',
+         'patients.delete',
+         'sessions.read_all',
+         'sessions.write_others',
+         'sessions.delete' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+
+    WHEN 'forms.read' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional');
+
+    WHEN 'subaccounts.read',
+         'subaccounts.write',
+         'subaccounts.manage',
+         'subaccounts.delete',
+         'subaccounts_roles.read',
+         'subaccounts_roles.manage',
+         'team_development.manage',
+         'subaccounts_analytics.read' THEN
+      RETURN _can_have_subaccounts AND _operational_role IN ('owner', 'admin');
+
+    WHEN 'subscription_billing.read' THEN
+      RETURN _is_owner OR _operational_role = 'admin';
+
+    WHEN 'patients.read',
+         'patients.write',
+         'patients.manage_groups',
+         'patient_groups.write',
+         'patients_groups.write',
+         'patient_groups.read',
+         'patients_groups.read',
+         'system.print' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+
+    WHEN 'agenda.read',
+         'schedule.read',
+         'agenda.write',
+         'schedule.write' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+
+    WHEN 'schedule.read_all',
+         'schedule.write_others' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'assistant');
+
+    WHEN 'sessions.read',
+         'sessions.write' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional', 'estagiario');
+
+    WHEN 'sessions.share',
+         'session.delete_draft' THEN
+      RETURN _operational_role IN ('owner', 'admin', 'professional');
+
+    ELSE
+      IF _canonical_capability <> _capability THEN
+        CASE _canonical_capability
+          WHEN 'patients.manage_groups', 'patients_groups.read' THEN
+            RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+          WHEN 'schedule.read', 'schedule.write' THEN
+            RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+          ELSE
+            RETURN false;
+        END CASE;
+      END IF;
+      RETURN false;
+  END CASE;
+END;
+$$;
+
+-- [RPC/FUNCTION] current_user_can_role_capability (schema.sql L2932-L3204)
+CREATE OR REPLACE FUNCTION "public"."current_user_can_role_capability"("_capability" "text", "_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS boolean
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+  _user_id uuid := auth.uid();
+  _resolved_clinic_id uuid;
+  _operational_role public.operational_role_type;
+  _role_key text;
+  _account_role public.account_role_type;
   _membership_status public.membership_status_type;
   _is_active boolean;
   _subscription_plan public.subscription_plan;
@@ -1642,21 +2086,17 @@ BEGIN
   LIMIT 1;
 
   IF _sub IS NOT NULL THEN
-    -- A. Bloqueio completo de colaboradores que NÃO sejam o owner quando status for TRIAL_EXPIRED
     IF _sub.status = 'TRIAL_EXPIRED' AND NOT _is_owner THEN
       RETURN false;
     END IF;
 
-    -- B. Checagem de status TRIAL que expirou
     IF public.is_clinic_read_only(_resolved_clinic_id) THEN
       _is_read_only := true;
-      -- Se for colaborador não-owner e o trial já expirou, bloqueia o acesso
       IF (_sub.status = 'TRIAL_EXPIRED' OR _sub.status = 'TRIAL' OR COALESCE(_sub.is_free_trial, false) = true) AND NOT _is_owner THEN
         RETURN false;
       END IF;
     END IF;
 
-    -- C. Checagem de expiração regular (não-trial e não-cortesia)
     IF _sub.status NOT IN ('BETA', 'TRIAL', 'COURTESY') AND COALESCE(_sub.is_courtesy, false) = false THEN
       IF _sub.expires_at IS NOT NULL AND _sub.expires_at < now() THEN
         _is_subscription_expired := true;
@@ -1666,14 +2106,11 @@ BEGIN
     END IF;
   END IF;
 
-  -- Se a clínica estiver em modo read-only ou com assinatura expirada:
   IF _is_read_only OR _is_subscription_expired THEN
-    -- Owner pode gerenciar cobrança/assinatura para regularizar
     IF _capability = 'subscription_billing.manage' AND _is_owner THEN
       RETURN true;
     END IF;
 
-    -- Permite APENAS permissões de leitura (.read)
     IF _capability IN (
       'patients.read',
       'schedule.read',
@@ -1712,11 +2149,20 @@ BEGIN
       RETURN true;
     END IF;
 
-    -- Qualquer escrita ou deleção é ESTRITAMENTE bloqueada
     RETURN false;
   END IF;
 
-  -- Se a clínica estiver normal e não expirada, o owner possui acesso pleno:
+  -- 2. Salvaguarda de Plano: Em planos monoposto, subaccounts.* e roles.* são expressamente desabilitados mesmo para o owner
+  IF NOT _is_clinic_tier AND _canonical_capability IN (
+    'subaccounts.write',
+    'subaccounts.manage',
+    'subaccounts.delete',
+    'subaccounts_roles.manage',
+    'team_development.manage'
+  ) THEN
+    RETURN false;
+  END IF;
+
   IF _is_owner THEN
     RETURN true;
   END IF;
@@ -1725,8 +2171,7 @@ BEGIN
     RETURN false;
   END IF;
 
-  -- 2. Checagem de Override na tabela clinic_operational_role_capabilities
-  -- Prioridade 1: checar pelo role_key específico (se existir)
+  -- 3. Checagem de Override na tabela clinic_operational_role_capabilities
   IF _role_key IS NOT NULL AND _role_key <> '' THEN
     SELECT enabled
     INTO _override_enabled
@@ -1742,21 +2187,20 @@ BEGIN
     END IF;
   END IF;
 
-  -- Prioridade 2: checar pelo operational_role padrão
   SELECT enabled
-  INTO _override_enabled
-  FROM public.clinic_operational_role_capabilities
-  WHERE clinic_id = _resolved_clinic_id
-    AND operational_role = _operational_role::text
-    AND capability IN (_capability, _canonical_capability)
+    INTO _override_enabled
+    FROM public.clinic_operational_role_capabilities
+    WHERE clinic_id = _resolved_clinic_id
+      AND operational_role = _operational_role::text
+      AND capability IN (_capability, _canonical_capability)
     ORDER BY (capability = _canonical_capability) DESC
-  LIMIT 1;
+    LIMIT 1;
 
   IF FOUND THEN
     RETURN _override_enabled;
   END IF;
 
-  -- 3. Matriz Padrão Canônica de Permissões
+  -- 4. Matriz Padrão Canônica de Permissões
   CASE _capability
     WHEN 'clinic_profile.read' THEN
       RETURN _operational_role IN ('owner', 'admin');
@@ -1827,27 +2271,12 @@ BEGIN
     WHEN 'system.print' THEN
       RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant');
     ELSE
-      -- Fallback para conferir capacidade canônica caso informada como alias
-      IF _canonical_capability <> _capability THEN
-        CASE _canonical_capability
-          WHEN 'patients.manage_groups' THEN
-            RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
-          WHEN 'patients_groups.read' THEN
-            RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
-          WHEN 'schedule.read' THEN
-            RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant');
-          WHEN 'schedule.write' THEN
-            RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant');
-          ELSE
-            RETURN false;
-        END CASE;
-      END IF;
       RETURN false;
   END CASE;
 END;
 $$;
 
--- [RPC/FUNCTION] current_user_is_clinic_manager (schema.sql L2621-L2626)
+-- [RPC/FUNCTION] current_user_is_clinic_manager (schema.sql L3210-L3215)
 CREATE OR REPLACE FUNCTION "public"."current_user_is_clinic_manager"("_clinic_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1855,7 +2284,7 @@ CREATE OR REPLACE FUNCTION "public"."current_user_is_clinic_manager"("_clinic_id
   SELECT public.current_user_can('subaccounts_roles.manage', _clinic_id);
 $$;
 
--- [RPC/FUNCTION] decline_current_user_clinic_invitation (schema.sql L2632-L2683)
+-- [RPC/FUNCTION] decline_current_user_clinic_invitation (schema.sql L3265-L3316)
 CREATE OR REPLACE FUNCTION "public"."decline_current_user_clinic_invitation"("_invitation_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -1909,7 +2338,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] delete_current_user_notification (schema.sql L2689-L2706)
+-- [RPC/FUNCTION] delete_current_user_notification (schema.sql L3322-L3339)
 CREATE OR REPLACE FUNCTION "public"."delete_current_user_notification"("_notification_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1929,7 +2358,41 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] enforce_clinic_membership_integrity (schema.sql L2917-L2949)
+-- [RPC/FUNCTION] disable_user_totp (schema.sql L3345-L3376)
+CREATE OR REPLACE FUNCTION "public"."disable_user_totp"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    _current_user_id UUID := auth.uid();
+BEGIN
+    IF _current_user_id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Não autenticado');
+    END IF;
+
+    UPDATE public.profiles
+    SET 
+        totp_secret = NULL,
+        totp_enabled = false,
+        totp_enabled_at = NULL,
+        updated_at = now()
+    WHERE id = _current_user_id;
+
+    -- Desconectar sessões ativas do WhatsApp associadas a este usuário
+    UPDATE public.whatsapp_chat_sessions
+    SET 
+        is_authenticated = false,
+        authenticated_at = NULL,
+        auth_expires_at = NULL,
+        current_step = 'initial',
+        updated_at = now()
+    WHERE user_id = _current_user_id;
+
+    RETURN jsonb_build_object('success', true);
+END;
+$$;
+
+-- [RPC/FUNCTION] enforce_clinic_membership_integrity (schema.sql L3587-L3619)
 CREATE OR REPLACE FUNCTION "public"."enforce_clinic_membership_integrity"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -1964,7 +2427,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] ensure_team_development_profile (schema.sql L3234-L3288)
+-- [RPC/FUNCTION] ensure_team_development_profile (schema.sql L3933-L3987)
 CREATE OR REPLACE FUNCTION "public"."ensure_team_development_profile"("_clinic_id" "uuid", "_user_id" "uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -2021,7 +2484,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] ensure_team_development_profile_from_membership (schema.sql L3294-L3302)
+-- [RPC/FUNCTION] ensure_team_development_profile_from_membership (schema.sql L3993-L4001)
 CREATE OR REPLACE FUNCTION "public"."ensure_team_development_profile_from_membership"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -2032,7 +2495,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] generate_profile_public_code (schema.sql L3477-L3497)
+-- [RPC/FUNCTION] generate_profile_public_code (schema.sql L4176-L4196)
 CREATE OR REPLACE FUNCTION "public"."generate_profile_public_code"() RETURNS "text"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -2055,7 +2518,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] generate_profile_public_code_for_clinic (schema.sql L3503-L3510)
+-- [RPC/FUNCTION] generate_profile_public_code_for_clinic (schema.sql L4202-L4209)
 CREATE OR REPLACE FUNCTION "public"."generate_profile_public_code_for_clinic"("_clinic_id" "uuid") RETURNS "text"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -2065,7 +2528,63 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_clinic_collaborator_invitation (schema.sql L3567-L3682)
+-- [RPC/FUNCTION] get_clinic_active_terms (schema.sql L4266-L4319)
+CREATE OR REPLACE FUNCTION "public"."get_clinic_active_terms"("p_clinic_id" "uuid") RETURNS TABLE("term_type" "text", "is_custom" boolean, "id" "uuid", "clinic_id" "uuid", "original_filename" "text", "content_markdown" "text", "b2_object_key" "text", "byte_size" integer, "compressed_byte_size" integer, "storage_encoding" "text", "version" integer, "uploaded_by" "uuid", "created_at" timestamp with time zone, "updated_at" timestamp with time zone)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_has_access boolean := false;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Acesso não autenticado' USING ERRCODE = '42501';
+  END IF;
+
+  -- Checa se o usuário tem permissão para ler dados desta clínica
+  IF public.get_user_clinic_id(v_user_id) = p_clinic_id
+     OR public.is_platform_owner(v_user_id)
+     OR EXISTS (
+       SELECT 1 FROM public.clinic_memberships cm
+       WHERE cm.clinic_id = p_clinic_id
+         AND cm.user_id = v_user_id
+         AND cm.is_active = true
+         AND cm.membership_status = 'active'
+     ) THEN
+    v_has_access := true;
+  END IF;
+
+  IF NOT v_has_access THEN
+    RAISE EXCEPTION 'Acesso não autorizado para esta clínica' USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+  WITH requested_types AS (
+    SELECT unnest(ARRAY['adult_consent', 'minor_consent']) AS expected_type
+  )
+  SELECT
+    rt.expected_type AS term_type,
+    (ct.id IS NOT NULL) AS is_custom,
+    ct.id,
+    p_clinic_id AS clinic_id,
+    COALESCE(ct.original_filename, rt.expected_type || '_padrao.md') AS original_filename,
+    COALESCE(ct.content_markdown, '') AS content_markdown,
+    COALESCE(ct.b2_object_key, '') AS b2_object_key,
+    COALESCE(ct.byte_size, 0) AS byte_size,
+    COALESCE(ct.compressed_byte_size, 0) AS compressed_byte_size,
+    COALESCE(ct.storage_encoding, 'gzip') AS storage_encoding,
+    COALESCE(ct.version, 1) AS version,
+    ct.uploaded_by,
+    ct.created_at,
+    ct.updated_at
+  FROM requested_types rt
+  LEFT JOIN public.clinic_terms ct
+    ON ct.clinic_id = p_clinic_id
+   AND ct.term_type = rt.expected_type;
+END;
+$$;
+
+-- [RPC/FUNCTION] get_clinic_collaborator_invitation (schema.sql L4325-L4440)
 CREATE OR REPLACE FUNCTION "public"."get_clinic_collaborator_invitation"("_token" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'extensions'
@@ -2183,7 +2702,39 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_clinic_dashboard_analytics (schema.sql L3688-L4171)
+-- [RPC/FUNCTION] get_clinic_concurrent_access_overview (schema.sql L4446-L4475)
+CREATE OR REPLACE FUNCTION "public"."get_clinic_concurrent_access_overview"("_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_cid uuid := COALESCE(_clinic_id, public.get_user_clinic_id(v_uid));
+  v_active_sessions integer := 0;
+BEGIN
+  IF v_uid IS NULL OR v_cid IS NULL THEN
+    RETURN jsonb_build_object('active_sessions', 0);
+  END IF;
+
+  IF NOT public.user_has_active_clinic_membership(v_uid, v_cid) AND NOT public.is_platform_owner(v_uid) THEN
+    RETURN jsonb_build_object('active_sessions', 0);
+  END IF;
+
+  SELECT COUNT(DISTINCT uss.user_id)
+  INTO v_active_sessions
+  FROM public.user_security_sessions uss
+  WHERE uss.clinic_id = v_cid
+    AND uss.ended_at IS NULL
+    AND uss.force_signed_out_at IS NULL
+    AND uss.last_seen_at >= (now() - interval '15 minutes');
+
+  RETURN jsonb_build_object(
+    'active_sessions', GREATEST(1, COALESCE(v_active_sessions, 1))
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] get_clinic_dashboard_analytics (schema.sql L4481-L4964)
 CREATE OR REPLACE FUNCTION "public"."get_clinic_dashboard_analytics"("_clinic_id" "uuid", "_year" integer DEFAULT NULL::integer) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -2669,7 +3220,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_clinic_feature_flags (schema.sql L4177-L4229)
+-- [RPC/FUNCTION] get_clinic_feature_flags (schema.sql L4970-L5022)
 CREATE OR REPLACE FUNCTION "public"."get_clinic_feature_flags"("_clinic_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -2724,7 +3275,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] get_clinic_pending_collaborator_invitations (schema.sql L4235-L4289)
+-- [RPC/FUNCTION] get_clinic_pending_collaborator_invitations (schema.sql L5028-L5092)
 CREATE OR REPLACE FUNCTION "public"."get_clinic_pending_collaborator_invitations"("_clinic_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -2745,12 +3296,20 @@ BEGIN
     RAISE EXCEPTION 'Sem permissão para visualizar convites desta clínica.';
   END IF;
 
+  -- Auto-expirar convites vencidos
+  UPDATE public.clinic_collaborator_invitations
+  SET status = 'expired', updated_at = now()
+  WHERE clinic_id = _clinic_id
+    AND status = 'pending'
+    AND expires_at < now();
+
   SELECT jsonb_agg(
     jsonb_build_object(
       'id', i.id,
       'clinic_id', i.clinic_id,
       'email', i.email,
       'operational_role', i.operational_role,
+      'role_key', i.role_key,
       'job_title', i.job_title,
       'specialty', i.specialty,
       'token_hash', i.token_hash,
@@ -2759,6 +3318,8 @@ BEGIN
       'last_resent_at', i.last_resent_at,
       'expires_at', i.expires_at,
       'existing_user_id', i.existing_user_id,
+      'email_delivery_status', i.email_delivery_status,
+      'email_last_error', i.email_last_error,
       'account_state', CASE
         WHEN u.id IS NOT NULL AND u.email_confirmed_at IS NULL THEN 'registered_unconfirmed'
         WHEN u.id IS NOT NULL AND u.email_confirmed_at IS NOT NULL THEN 'registered_confirmed_pending_acceptance'
@@ -2781,7 +3342,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_clinic_share_collaborators (schema.sql L4295-L4323)
+-- [RPC/FUNCTION] get_clinic_share_collaborators (schema.sql L5098-L5126)
 CREATE OR REPLACE FUNCTION "public"."get_clinic_share_collaborators"("_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS json
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -2812,63 +3373,20 @@ CREATE OR REPLACE FUNCTION "public"."get_clinic_share_collaborators"("_clinic_id
   WHERE public.current_user_can('sessions.read', resolved.clinic_id);
 $$;
 
--- [RPC/FUNCTION] get_clinic_active_terms (schema.sql L4329-L4382)
-CREATE OR REPLACE FUNCTION "public"."get_clinic_active_terms"("p_clinic_id" "uuid") RETURNS TABLE("term_type" "text", "is_custom" boolean, "id" "uuid", "clinic_id" "uuid", "original_filename" "text", "content_markdown" "text", "b2_object_key" "text", "byte_size" integer, "compressed_byte_size" integer, "storage_encoding" "text", "version" integer, "uploaded_by" "uuid", "created_at" timestamp with time zone, "updated_at" timestamp with time zone)
-    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+-- [RPC/FUNCTION] get_clinic_storage_usage (schema.sql L5132-L5142)
+CREATE OR REPLACE FUNCTION "public"."get_clinic_storage_usage"("_clinic_id" "uuid") RETURNS TABLE("total_bytes" bigint, "total_files" bigint)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
     AS $$
-DECLARE
-  v_user_id uuid := auth.uid();
-  v_has_access boolean := false;
-BEGIN
-  IF v_user_id IS NULL THEN
-    RAISE EXCEPTION 'Acesso não autenticado' USING ERRCODE = '42501';
-  END IF;
-
-  -- Checa se o usuário tem permissão para ler dados desta clínica
-  IF public.get_user_clinic_id(v_user_id) = p_clinic_id
-     OR public.is_platform_owner(v_user_id)
-     OR EXISTS (
-       SELECT 1 FROM public.clinic_memberships cm
-       WHERE cm.clinic_id = p_clinic_id
-         AND cm.user_id = v_user_id
-         AND cm.is_active = true
-         AND cm.membership_status = 'active'
-     ) THEN
-    v_has_access := true;
-  END IF;
-
-  IF NOT v_has_access THEN
-    RAISE EXCEPTION 'Acesso não autorizado para esta clínica' USING ERRCODE = '42501';
-  END IF;
-
-  RETURN QUERY
-  WITH requested_types AS (
-    SELECT unnest(ARRAY['adult_consent', 'minor_consent']) AS expected_type
-  )
-  SELECT
-    rt.expected_type AS term_type,
-    (ct.id IS NOT NULL) AS is_custom,
-    ct.id,
-    p_clinic_id AS clinic_id,
-    COALESCE(ct.original_filename, rt.expected_type || '_padrao.md') AS original_filename,
-    COALESCE(ct.content_markdown, '') AS content_markdown,
-    COALESCE(ct.b2_object_key, '') AS b2_object_key,
-    COALESCE(ct.byte_size, 0) AS byte_size,
-    COALESCE(ct.compressed_byte_size, 0) AS compressed_byte_size,
-    COALESCE(ct.storage_encoding, 'gzip') AS storage_encoding,
-    COALESCE(ct.version, 1) AS version,
-    ct.uploaded_by,
-    ct.created_at,
-    ct.updated_at
-  FROM requested_types rt
-  LEFT JOIN public.clinic_terms ct
-    ON ct.clinic_id = p_clinic_id
-   AND ct.term_type = rt.expected_type;
-END;
+  SELECT 
+    COALESCE(SUM(COALESCE(stored_byte_size, byte_size)), 0)::bigint AS total_bytes,
+    COUNT(*)::bigint AS total_files
+  FROM public.patient_file_uploads
+  WHERE clinic_id = _clinic_id
+    AND status = 'uploaded';
 $$;
 
--- [RPC/FUNCTION] get_clinic_subscription_summary (schema.sql L4387-L4469)
+-- [RPC/FUNCTION] get_clinic_subscription_summary (schema.sql L5152-L5234)
 CREATE OR REPLACE FUNCTION "public"."get_clinic_subscription_summary"("_clinic_id" "uuid") RETURNS TABLE("subscription_id" "uuid", "clinic_id" "uuid", "account_owner_user_id" "uuid", "plan_type" "public"."subscription_plan", "status" "text", "billing_cycle" "text", "payment_method" "text", "base_monthly_price" numeric, "total_recurring_monthly_price" numeric, "base_subaccount_limit" integer, "purchased_subaccount_extra_count" integer, "total_subaccount_limit" integer, "base_concurrent_access_count" integer, "additional_concurrent_access_count" integer, "total_concurrent_access_limit" integer, "next_due_date" "date", "current_period_start" timestamp with time zone, "current_period_end" timestamp with time zone, "expires_at" timestamp with time zone, "period_duration_days" integer, "auto_renew" boolean, "days_remaining" integer, "is_expired" boolean, "asaas_customer_id" "text", "asaas_subscription_id" "text", "applied_coupon_id" "uuid", "coupon_code" "text", "discount_percentage" numeric, "discount_fixed_amount" numeric, "trial_ends_at" timestamp with time zone, "override_reason" "text", "override_by_user_id" "uuid", "override_at" timestamp with time zone, "cpf_cnpj" "text", "billing_email" "text", "billing_name" "text", "billing_due_window" "text", "billing_due_window_updated_at" timestamp with time zone, "can_change_billing_window" boolean, "next_allowed_billing_window_change" timestamp with time zone)
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -2953,136 +3471,130 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_billing_due_window (schema.sql L4474-L4600)
-CREATE OR REPLACE FUNCTION "public"."update_clinic_billing_due_window"("_clinic_id" "uuid", "_window" "text") RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
+-- [RPC/FUNCTION] get_clinic_trash_items (schema.sql L5240-L5360)
+CREATE OR REPLACE FUNCTION "public"."get_clinic_trash_items"("_clinic_id" "uuid", "_entity_type" "text" DEFAULT 'all'::"text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_user_id uuid := auth.uid();
-  v_sub record;
-  v_is_owner boolean;
-  v_is_admin boolean;
-  v_last_updated timestamptz;
-  v_now timestamptz := clock_timestamp();
-  v_days_since_last_update integer;
-  v_next_allowed_at timestamptz;
-  v_target_day integer;
-  v_current_next_due date;
-  v_new_next_due date;
+  _auth_user_id uuid := auth.uid();
+  _clean_entity_type text := lower(trim(COALESCE(_entity_type, 'all')));
+  _result jsonb;
 BEGIN
-  -- Validar parâmetro de entrada
-  IF _window NOT IN ('DAY_1_TO_5', 'DAY_10_TO_15', 'DAY_25_TO_30') THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'Janela de vencimento inválida. Opções permitidas: DAY_1_TO_5, DAY_10_TO_15, DAY_25_TO_30.'
-    );
+  -- 1. Validação de autenticação
+  IF _auth_user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuario nao autenticado.';
   END IF;
 
-  -- Verificar autorização: proprietário da clínica ou platform_admin
-  SELECT (cm.account_role = 'account_owner' AND cm.is_active = true)
-  INTO v_is_owner
-  FROM public.clinic_memberships cm
-  WHERE cm.clinic_id = _clinic_id AND cm.user_id = v_user_id;
-
-  SELECT (pa.is_active = true)
-  INTO v_is_admin
-  FROM public.platform_admins pa
-  WHERE pa.user_id = v_user_id;
-
-  IF NOT (COALESCE(v_is_owner, false) OR COALESCE(v_is_admin, false)) THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'Apenas o proprietário da clínica ou administrador pode alterar as preferências de cobrança.'
-    );
+  -- 2. Validação de pertinência à clínica
+  IF NOT (
+    public.is_active_clinic_member(_clinic_id, _auth_user_id)
+    OR public.has_role(_auth_user_id, 'super_admin'::app_role)
+    OR (public.is_platform_owner(_auth_user_id) AND public.get_active_platform_clinic_id(_auth_user_id) = _clinic_id)
+  ) THEN
+    RAISE EXCEPTION 'Acesso negado para a clinica informada.';
   END IF;
 
-  -- Buscar assinatura atual
-  SELECT * INTO v_sub
-  FROM public.clinic_subscriptions
-  WHERE clinic_id = _clinic_id;
-
-  IF v_sub.id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'Assinatura da clínica não encontrada.'
-    );
+  -- 3. Validação de permissões: clinic_trash.read, clinic_trash.manage ou manager
+  IF NOT (
+    public.current_user_can('clinic_trash.read', _clinic_id)
+    OR public.current_user_can('clinic_trash.manage', _clinic_id)
+    OR public.current_user_is_clinic_manager(_clinic_id)
+  ) THEN
+    RAISE EXCEPTION 'Permissao negada para visualizar a lixeira da clinica.';
   END IF;
 
-  -- Se já for a mesma janela, apenas retornar sucesso
-  IF v_sub.billing_due_window = _window THEN
-    RETURN jsonb_build_object(
-      'success', true,
-      'message', 'A janela de vencimento informada já está ativa.',
-      'billing_due_window', _window,
-      'billing_due_window_updated_at', v_sub.billing_due_window_updated_at
-    );
-  END IF;
+  -- 4. Construção dos itens da lixeira
+  WITH trash_union AS (
+    -- SESSÕES
+    SELECT
+      s.id,
+      'sessions'::text AS entity_type,
+      COALESCE(p.name, 'Atendimento sem paciente') AS title,
+      CONCAT_WS(
+        ' • ',
+        'Data: ' || to_char(s.session_date, 'DD/MM/YYYY HH24:MI'),
+        CASE WHEN prof.full_name IS NOT NULL THEN 'Profissional: ' || prof.full_name ELSE NULL END
+      ) AS subtitle,
+      s.deleted_at,
+      COALESCE(del_prof.full_name, del_prof.social_name, del_prof.email, 'Usuário') AS deleted_by_name,
+      (date_trunc('week', s.deleted_at) + interval '6 days 23 hours 59 minutes 59 seconds') AS expires_at
+    FROM public.sessions s
+    LEFT JOIN public.patients p ON p.id = s.patient_id
+    LEFT JOIN public.profiles prof ON prof.id = COALESCE(s.provider_id, s.user_id)
+    LEFT JOIN public.profiles del_prof ON del_prof.id = s.deleted_by_user_id
+    WHERE s.clinic_id = _clinic_id
+      AND s.deleted_at IS NOT NULL
+      AND _clean_entity_type IN ('all', 'sessions', 'session')
 
-  -- Validar se já houve alteração nos últimos 30 dias (Regra: 1 vez por mês)
-  v_last_updated := v_sub.billing_due_window_updated_at;
-  IF v_last_updated IS NOT NULL THEN
-    v_days_since_last_update := EXTRACT(DAY FROM (v_now - v_last_updated))::integer;
-    v_next_allowed_at := v_last_updated + interval '30 days';
-    
-    -- Se tiver sido alterado há menos de 30 dias e não for a primeira configuração
-    IF v_days_since_last_update < 30 AND v_sub.billing_due_window IS NOT NULL THEN
-      RETURN jsonb_build_object(
-        'success', false,
-        'error', format('A janela de vencimento só pode ser alterada uma vez a cada 30 dias. Próxima alteração permitida em %s.', to_char(v_next_allowed_at, 'DD/MM/YYYY')),
-        'next_allowed_at', v_next_allowed_at,
-        'days_remaining', (30 - v_days_since_last_update)
-      );
-    END IF;
-  END IF;
+    UNION ALL
 
-  -- Mapear dia de vencimento alvo da janela escolhida
-  v_target_day := CASE 
-    WHEN _window = 'DAY_1_TO_5' THEN 5
-    WHEN _window = 'DAY_10_TO_15' THEN 15
-    WHEN _window = 'DAY_25_TO_30' THEN 30
-    ELSE 5
-  END;
+    -- PACIENTES
+    SELECT
+      p.id,
+      'patients'::text AS entity_type,
+      p.name AS title,
+      COALESCE(
+        NULLIF(
+          CONCAT_WS(
+            ' • ',
+            CASE WHEN p.patient_code IS NOT NULL AND trim(p.patient_code) <> '' THEN 'Código: ' || p.patient_code ELSE NULL END,
+            CASE WHEN p.cpf IS NOT NULL AND trim(p.cpf) <> '' THEN 'CPF: ' || p.cpf ELSE NULL END,
+            CASE WHEN p.phone IS NOT NULL AND trim(p.phone) <> '' THEN 'Tel: ' || p.phone ELSE NULL END
+          ),
+          ''
+        ),
+        'Paciente cadastrado'
+      ) AS subtitle,
+      p.deleted_at,
+      COALESCE(del_prof.full_name, del_prof.social_name, del_prof.email, 'Usuário') AS deleted_by_name,
+      (date_trunc('week', p.deleted_at) + interval '6 days 23 hours 59 minutes 59 seconds') AS expires_at
+    FROM public.patients p
+    LEFT JOIN public.profiles del_prof ON del_prof.id = p.deleted_by_user_id
+    WHERE p.clinic_id = _clinic_id
+      AND p.deleted_at IS NOT NULL
+      AND _clean_entity_type IN ('all', 'patients', 'patient')
 
-  -- Calcular o vencimento para o próximo ciclo subsequente
-  v_current_next_due := COALESCE(v_sub.next_due_date, CURRENT_DATE + interval '30 days');
-  -- Ajustar para o dia alvo mantendo ou projetando para o mês seguinte
-  v_new_next_due := make_date(
-    EXTRACT(YEAR FROM v_current_next_due)::integer,
-    EXTRACT(MONTH FROM v_current_next_due)::integer,
-    LEAST(v_target_day, EXTRACT(DAY FROM (date_trunc('month', v_current_next_due) + interval '1 month - 1 day'))::integer)
-  );
+    UNION ALL
 
-  IF v_new_next_due <= CURRENT_DATE THEN
-    v_new_next_due := make_date(
-      EXTRACT(YEAR FROM v_current_next_due + interval '1 month')::integer,
-      EXTRACT(MONTH FROM v_current_next_due + interval '1 month')::integer,
-      LEAST(v_target_day, EXTRACT(DAY FROM (date_trunc('month', v_current_next_due + interval '1 month') + interval '1 month - 1 day'))::integer)
-    );
-  END IF;
+    -- FORMULÁRIOS / MODELOS DE ANAMNESE
+    SELECT
+      f.id,
+      'forms'::text AS entity_type,
+      f.name AS title,
+      COALESCE(NULLIF(trim(f.description), ''), 'Modelo de anamnese') AS subtitle,
+      f.deleted_at,
+      COALESCE(del_prof.full_name, del_prof.social_name, del_prof.email, 'Usuário') AS deleted_by_name,
+      (date_trunc('week', f.deleted_at) + interval '6 days 23 hours 59 minutes 59 seconds') AS expires_at
+    FROM public.anamnesis_form_templates f
+    LEFT JOIN public.profiles del_prof ON del_prof.id = f.deleted_by_user_id
+    WHERE f.clinic_id = _clinic_id
+      AND f.deleted_at IS NOT NULL
+      AND _clean_entity_type IN ('all', 'forms', 'form', 'anamnesis_forms', 'anamnesis_form_templates')
+  )
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', tu.id,
+        'entity_type', tu.entity_type,
+        'title', tu.title,
+        'subtitle', tu.subtitle,
+        'deleted_at', tu.deleted_at,
+        'deleted_by_name', tu.deleted_by_name,
+        'expires_at', tu.expires_at
+      )
+      ORDER BY tu.deleted_at DESC
+    ),
+    '[]'::jsonb
+  )
+  INTO _result
+  FROM trash_union tu;
 
-  -- Atualizar registro na base local
-  UPDATE public.clinic_subscriptions
-  SET 
-    billing_due_window = _window,
-    billing_due_window_updated_at = v_now,
-    next_due_date = v_new_next_due,
-    updated_at = v_now
-  WHERE clinic_id = _clinic_id;
-
-  RETURN jsonb_build_object(
-    'success', true,
-    'message', 'Janela de vencimento atualizada com sucesso para os próximos ciclos.',
-    'billing_due_window', _window,
-    'billing_due_window_updated_at', v_now,
-    'target_due_day', v_target_day,
-    'next_due_date', v_new_next_due,
-    'next_allowed_at', v_now + interval '30 days'
-  );
+  RETURN _result;
 END;
 $$;
 
--- [RPC/FUNCTION] get_current_user_pending_release_notes (schema.sql L4621-L4748)
+-- [RPC/FUNCTION] get_current_user_pending_release_notes (schema.sql L5382-L5509)
 CREATE OR REPLACE FUNCTION "public"."get_current_user_pending_release_notes"() RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3212,7 +3724,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] get_user_active_governance (schema.sql L5612-L5642)
+-- [RPC/FUNCTION] get_user_active_governance (schema.sql L6483-L6513)
 CREATE OR REPLACE FUNCTION "public"."get_user_active_governance"("_user_id" "uuid") RETURNS TABLE("punishment_id" "uuid", "punishment_type" "text", "applied_at" timestamp with time zone, "expires_at" timestamp with time zone, "reason" "text", "is_manual" boolean, "applied_by_name" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -3245,7 +3757,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_user_clinic_id (schema.sql L5648-L5669)
+-- [RPC/FUNCTION] get_user_clinic_id (schema.sql L6519-L6540)
 CREATE OR REPLACE FUNCTION "public"."get_user_clinic_id"("_user_id" "uuid") RETURNS "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3269,7 +3781,36 @@ CREATE OR REPLACE FUNCTION "public"."get_user_clinic_id"("_user_id" "uuid") RETU
   )
 $$;
 
--- [RPC/FUNCTION] has_role (schema.sql L6269-L6277)
+-- [RPC/FUNCTION] get_user_totp_status (schema.sql L6546-L6572)
+CREATE OR REPLACE FUNCTION "public"."get_user_totp_status"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    _current_user_id UUID := auth.uid();
+    _enabled BOOLEAN := false;
+    _enabled_at TIMESTAMPTZ := NULL;
+    _phone TEXT := NULL;
+BEGIN
+    IF _current_user_id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Não autenticado');
+    END IF;
+
+    SELECT totp_enabled, totp_enabled_at, phone
+    INTO _enabled, _enabled_at, _phone
+    FROM public.profiles
+    WHERE id = _current_user_id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'totp_enabled', COALESCE(_enabled, false),
+        'totp_enabled_at', _enabled_at,
+        'phone', _phone
+    );
+END;
+$$;
+
+-- [RPC/FUNCTION] has_role (schema.sql L7212-L7220)
 CREATE OR REPLACE FUNCTION "public"."has_role"("_user_id" "uuid", "_role" "public"."app_role") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3280,11 +3821,11 @@ CREATE OR REPLACE FUNCTION "public"."has_role"("_user_id" "uuid", "_role" "publi
   )
 $$;
 
--- [RPC/FUNCTION] invite_clinic_collaborator (schema.sql L6298-L6511)
+-- [RPC/FUNCTION] invite_clinic_collaborator (schema.sql L7241-L7492)
 CREATE OR REPLACE FUNCTION "public"."invite_clinic_collaborator"("_clinic_id" "uuid" DEFAULT NULL::"uuid", "_email" "text" DEFAULT NULL::"text", "_operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_role_key" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'extensions'
-    AS $$
+    AS $_$
 DECLARE
   _requester_id uuid := auth.uid();
   _resolved_clinic_id uuid;
@@ -3294,11 +3835,12 @@ DECLARE
   _sha256_hash text;
   _existing_user_id uuid;
   _invitation_id uuid;
-  _normalized_role_key text := NULLIF(trim(_role_key), '');
-  _inferred_operational_role public.operational_role_type := _operational_role;
+  _normalized_role_key text := lower(trim(coalesce(_role_key, '')));
+  _inferred_operational_role public.operational_role_type := COALESCE(_operational_role, 'professional'::public.operational_role_type);
   _custom_role record;
   _clinic_plan text;
   _subaccount_limit integer;
+  _max_collaborator_slots integer;
   _active_subaccounts_count integer;
   _pending_invites_count integer;
 BEGIN
@@ -3316,19 +3858,34 @@ BEGIN
     RAISE EXCEPTION 'Você não tem permissão para convidar colaboradores.';
   END IF;
 
-  -- Obter plano e limites canônicos da clínica
-  SELECT LOWER(COALESCE(subscription_plan::text, 'solo')), COALESCE(subaccount_limit, 1)
+  -- Lock clinic row to prevent race conditions
+  PERFORM 1 FROM public.clinics WHERE id = _resolved_clinic_id FOR UPDATE;
+
+  SELECT
+    LOWER(COALESCE(subscription_plan::text, 'solo')),
+    CASE
+      WHEN subscription_plan::text IN ('clinica_basico', 'clinica_medio', 'clinica_top', 'clinic', 'enterprise') THEN 999999
+      WHEN subscription_plan::text = 'prof_top' THEN GREATEST(COALESCE(subaccount_limit, 2), 2)
+      ELSE COALESCE(subaccount_limit, 1)
+    END
   INTO _clinic_plan, _subaccount_limit
   FROM public.clinics
   WHERE id = _resolved_clinic_id;
 
-  -- Trava 1: Planos Monoposto (prof_basico, prof_medio, solo) não permitem colaboradores
+  -- Check 1: Single-user plans cannot invite collaborators
   IF _clinic_plan IN ('prof_basico', 'prof_medio', 'solo') THEN
     RAISE EXCEPTION 'Convites de colaboradores não estão disponíveis em planos individuais (monoposto). Faça upgrade para Profissional Top ou Plano Clínica.';
   END IF;
 
-  -- Trava 2: Plano Profissional Top (prof_top): máximo de 1 colaborador de apoio (total 2 membros)
-  IF _clinic_plan = 'prof_top' OR _subaccount_limit = 2 THEN
+  -- Expire outdated pending invitations before counting slots
+  UPDATE public.clinic_collaborator_invitations
+  SET status = 'expired', updated_at = now()
+  WHERE clinic_id = _resolved_clinic_id
+    AND status = 'pending'
+    AND expires_at <= now();
+
+  -- Check 2: Collaborator slot limit (excluding the clinic owner)
+  IF _subaccount_limit < 999999 THEN
     SELECT COUNT(*)::integer INTO _active_subaccounts_count
     FROM public.clinic_memberships
     WHERE clinic_id = _resolved_clinic_id
@@ -3341,29 +3898,20 @@ BEGIN
     FROM public.clinic_collaborator_invitations
     WHERE clinic_id = _resolved_clinic_id
       AND status = 'pending'
+      AND expires_at > now()
       AND lower(email) <> _normalized_email;
 
-    IF (_active_subaccounts_count + _pending_invites_count) >= 1 THEN
-      RAISE EXCEPTION 'O plano Profissional Top permite no máximo 1 colaborador de apoio (total de 2 membros). Limite atingido.';
-    END IF;
-  ELSIF _subaccount_limit < 999999 THEN
-    -- Verificação genérica para outros planos limitados
-    SELECT COUNT(*)::integer INTO _active_subaccounts_count
-    FROM public.clinic_memberships
-    WHERE clinic_id = _resolved_clinic_id
-      AND is_active = true
-      AND membership_status = 'active'
-      AND COALESCE(account_role::text, '') NOT IN ('account_owner', 'owner')
-      AND COALESCE(operational_role::text, '') <> 'owner';
+    _max_collaborator_slots := CASE
+      WHEN _clinic_plan = 'prof_top' THEN GREATEST(1, _subaccount_limit - 1)
+      ELSE GREATEST(1, _subaccount_limit - 1)
+    END;
 
-    SELECT COUNT(*)::integer INTO _pending_invites_count
-    FROM public.clinic_collaborator_invitations
-    WHERE clinic_id = _resolved_clinic_id
-      AND status = 'pending'
-      AND lower(email) <> _normalized_email;
-
-    IF (_active_subaccounts_count + _pending_invites_count) >= GREATEST(0, _subaccount_limit - 1) THEN
-      RAISE EXCEPTION 'O limite de membros da clínica foi atingido para o plano atual.';
+    IF (_active_subaccounts_count + _pending_invites_count) >= _max_collaborator_slots THEN
+      IF _clinic_plan = 'prof_top' THEN
+        RAISE EXCEPTION 'O plano Profissional Top permite no máximo 1 colaborador de apoio (total de 2 membros). Limite atingido.';
+      ELSE
+        RAISE EXCEPTION 'O limite de membros da clínica foi atingido para o plano atual.';
+      END IF;
     END IF;
   END IF;
 
@@ -3371,26 +3919,54 @@ BEGIN
     RAISE EXCEPTION 'Informe um e-mail válido para o convite.';
   END IF;
 
+  -- Normalize common Portuguese aliases for standard roles
+  IF _normalized_role_key IN ('assistente', 'recepcionista', 'secretaria', 'secretária') THEN
+    _normalized_role_key := 'assistant';
+  ELSIF _normalized_role_key IN ('profissional', 'fisioterapeuta', 'terapeuta') THEN
+    _normalized_role_key := 'professional';
+  ELSIF _normalized_role_key IN ('administrador', 'administradora', 'gestor', 'gestora') THEN
+    _normalized_role_key := 'admin';
+  ELSIF _normalized_role_key IN ('estagiário', 'estagiaria', 'estagiária', 'intern') THEN
+    _normalized_role_key := 'estagiario';
+  END IF;
+
   IF _operational_role = 'owner' OR _normalized_role_key = 'owner' THEN
     RAISE EXCEPTION 'O papel owner não pode ser atribuído por convite operacional.';
   END IF;
 
-  -- Validar role_key em clinic_operational_roles se informado
-  IF _normalized_role_key IS NOT NULL THEN
-    SELECT *
-    INTO _custom_role
-    FROM public.clinic_operational_roles
-    WHERE clinic_id = _resolved_clinic_id
-      AND role_key = _normalized_role_key
-    LIMIT 1;
+  -- Ensure default roles exist for this clinic
+  INSERT INTO public.clinic_operational_roles (
+    clinic_id, role_key, label, description, base_operational_role, sort_order, is_system
+  )
+  VALUES
+    (_resolved_clinic_id, 'owner', 'Proprietário(a)', 'Titular da conta com controle total da clínica.', 'owner', 10, true),
+    (_resolved_clinic_id, 'professional', 'Profissional', 'Realiza atendimentos, gerencia prontuários e sua própria agenda.', 'professional', 20, true),
+    (_resolved_clinic_id, 'admin', 'Administrador(a)', 'Gerencia equipe, agenda geral, pacientes e configurações da clínica.', 'admin', 30, true),
+    (_resolved_clinic_id, 'assistant', 'Assistente', 'Apoia na recepção, cadastro de pacientes e gestão de agendamentos.', 'assistant', 40, true),
+    (_resolved_clinic_id, 'estagiario', 'Estagiário(a)', 'Realiza atendimentos e evoluções clínicas sob supervisão.', 'estagiario', 50, true)
+  ON CONFLICT (clinic_id, role_key) DO NOTHING;
 
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'Papel operacional inválido para esta clínica.';
-    END IF;
+  -- Resolve role_key and infer operational_role
+  IF _normalized_role_key IS NOT NULL AND _normalized_role_key <> '' THEN
+    IF _normalized_role_key IN ('admin', 'professional', 'assistant', 'estagiario') THEN
+      _inferred_operational_role := _normalized_role_key::public.operational_role_type;
+    ELSE
+      SELECT *
+      INTO _custom_role
+      FROM public.clinic_operational_roles
+      WHERE clinic_id = _resolved_clinic_id
+        AND (LOWER(role_key) = _normalized_role_key OR LOWER(label) = _normalized_role_key)
+      LIMIT 1;
 
-    IF _operational_role IS NULL OR _operational_role = 'professional'::public.operational_role_type THEN
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Papel operacional inválido para esta clínica.';
+      END IF;
+
+      _normalized_role_key := _custom_role.role_key;
       _inferred_operational_role := _custom_role.base_operational_role;
     END IF;
+  ELSE
+    _normalized_role_key := _inferred_operational_role::text;
   END IF;
 
   SELECT users.id
@@ -3401,7 +3977,6 @@ BEGIN
 
   _sha256_hash := encode(extensions.digest(_token, 'sha256'), 'hex');
 
-  -- Reuso / Renovação Não-Destrutiva: se já existir convite pendente, reaproveita e expande tokens válidos
   SELECT id INTO _invitation_id
   FROM public.clinic_collaborator_invitations
   WHERE clinic_id = _resolved_clinic_id
@@ -3414,21 +3989,25 @@ BEGIN
     UPDATE public.clinic_collaborator_invitations
     SET
       operational_role = _inferred_operational_role,
-      role_key = _normalized_role_key,
+      role_key = NULLIF(_normalized_role_key, ''),
       job_title = NULLIF(trim(_job_title), ''),
       specialty = NULLIF(trim(_specialty), ''),
       invited_by = _requester_id,
       existing_user_id = _existing_user_id,
       token_hash = _token_hash,
       valid_token_hashes = ARRAY(
-        SELECT DISTINCT u
-        FROM unnest(
-          array_cat(
-            COALESCE(valid_token_hashes, ARRAY[token_hash]),
-            ARRAY[_token_hash, _sha256_hash]
-          )
-        ) AS u
-        WHERE u IS NOT NULL AND u <> ''
+        SELECT u FROM (
+          SELECT DISTINCT u
+          FROM unnest(
+            array_cat(
+              COALESCE(valid_token_hashes, ARRAY[token_hash]),
+              ARRAY[_token_hash, _sha256_hash]
+            )
+          ) AS u
+          WHERE u IS NOT NULL AND u <> ''
+        ) sub
+        ORDER BY 1 DESC
+        LIMIT 10
       ),
       expires_at = now() + interval '14 days',
       updated_at = now(),
@@ -3457,7 +4036,7 @@ BEGIN
       _resolved_clinic_id,
       _normalized_email,
       _inferred_operational_role,
-      _normalized_role_key,
+      NULLIF(_normalized_role_key, ''),
       NULLIF(trim(_job_title), ''),
       NULLIF(trim(_specialty), ''),
       _token_hash,
@@ -3482,7 +4061,7 @@ BEGIN
       'invitation_id', _invitation_id,
       'email', _normalized_email,
       'operational_role', _inferred_operational_role,
-      'role_key', _normalized_role_key,
+      'role_key', NULLIF(_normalized_role_key, ''),
       'job_title', _job_title,
       'specialty', _specialty
     )
@@ -3494,9 +4073,9 @@ BEGIN
     'status', 'pending'
   );
 END;
-$$;
+$_$;
 
--- [RPC/FUNCTION] is_active_clinic_member (schema.sql L6517-L6529)
+-- [RPC/FUNCTION] is_active_clinic_member (schema.sql L7498-L7510)
 CREATE OR REPLACE FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3511,7 +4090,7 @@ CREATE OR REPLACE FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid
   );
 $$;
 
--- [RPC/FUNCTION] is_clinic_read_only (schema.sql L6535-L6587)
+-- [RPC/FUNCTION] is_clinic_read_only (schema.sql L7516-L7565)
 CREATE OR REPLACE FUNCTION "public"."is_clinic_read_only"("_clinic_id" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3539,23 +4118,20 @@ BEGIN
     RETURN false;
   END IF;
 
-  -- Se flag explícita estiver marcada
+  -- Active, Beta, Courtesy, or Pending subscriptions are never read-only
+  IF COALESCE(v_sub.is_courtesy, false) = true OR v_sub.status IN ('ACTIVE', 'BETA', 'COURTESY', 'PENDING') THEN
+    RETURN false;
+  END IF;
+
   IF COALESCE(v_sub.is_read_only, false) = true THEN
     RETURN true;
   END IF;
 
-  -- Se o status for TRIAL_EXPIRED
-  IF v_sub.status = 'TRIAL_EXPIRED' THEN
+  IF v_sub.status IN ('TRIAL_EXPIRED', 'SUSPENDED', 'CANCELED', 'EXPIRED') THEN
     RETURN true;
   END IF;
 
-  -- Cortesia parceira ativa nunca fica read-only
-  IF COALESCE(v_sub.is_courtesy, false) = true OR v_sub.status = 'COURTESY' THEN
-    RETURN false;
-  END IF;
-
-  -- Se for TRIAL ou marcado como is_free_trial e expirou sem assinatura ativa
-  IF (v_sub.status = 'TRIAL' OR COALESCE(v_sub.is_free_trial, false) = true) THEN
+  IF v_sub.status = 'TRIAL' THEN
     IF COALESCE(v_sub.expires_at, v_sub.current_period_end) IS NOT NULL
        AND COALESCE(v_sub.expires_at, v_sub.current_period_end) < now() THEN
       RETURN true;
@@ -3566,7 +4142,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] is_clinic_subscription_manager (schema.sql L6593-L6615)
+-- [RPC/FUNCTION] is_clinic_subscription_manager (schema.sql L7571-L7593)
 CREATE OR REPLACE FUNCTION "public"."is_clinic_subscription_manager"("_user_id" "uuid", "_clinic_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3591,7 +4167,7 @@ CREATE OR REPLACE FUNCTION "public"."is_clinic_subscription_manager"("_user_id" 
   );
 $$;
 
--- [RPC/FUNCTION] leave_current_user_clinic (schema.sql L6666-L6743)
+-- [RPC/FUNCTION] leave_current_user_clinic (schema.sql L7644-L7721)
 CREATE OR REPLACE FUNCTION "public"."leave_current_user_clinic"("_clinic_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3671,7 +4247,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] list_current_user_clinic_invitations (schema.sql L6749-L6777)
+-- [RPC/FUNCTION] list_current_user_clinic_invitations (schema.sql L7727-L7755)
 CREATE OR REPLACE FUNCTION "public"."list_current_user_clinic_invitations"() RETURNS TABLE("invitation_id" "uuid", "clinic_id" "uuid", "clinic_name" "text", "clinic_logo_url" "text", "clinic_route_key" "text", "operational_role" "public"."operational_role_type", "role_key" "text", "job_title" "text", "specialty" "text", "invited_by_name" "text", "expires_at" timestamp with time zone, "created_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -3702,7 +4278,7 @@ CREATE OR REPLACE FUNCTION "public"."list_current_user_clinic_invitations"() RET
   ORDER BY invitations.created_at DESC;
 $$;
 
--- [RPC/FUNCTION] list_current_user_clinics (schema.sql L6783-L6835)
+-- [RPC/FUNCTION] list_current_user_clinics (schema.sql L7761-L7822)
 CREATE OR REPLACE FUNCTION "public"."list_current_user_clinics"() RETURNS TABLE("membership_id" "uuid", "clinic_id" "uuid", "clinic_route_key" "text", "clinic_name" "text", "clinic_logo_url" "text", "clinic_subscription_plan" "public"."subscription_plan", "clinic_subaccount_limit" integer, "clinic_concurrent_access_limit" integer, "clinic_active_access_count" integer, "clinic_active_access_users" "jsonb", "clinic_account_owner_user_id" "uuid", "account_role" "public"."account_role_type", "operational_role" "public"."operational_role_type", "role_key" "text", "membership_status" "public"."membership_status_type", "is_active" boolean, "joined_at" timestamp with time zone)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3714,8 +4290,17 @@ CREATE OR REPLACE FUNCTION "public"."list_current_user_clinics"() RETURNS TABLE(
     clinics.name AS clinic_name,
     clinics.logo_url AS clinic_logo_url,
     clinics.subscription_plan AS clinic_subscription_plan,
-    COALESCE(clinics.subaccount_limit, CASE WHEN clinics.subscription_plan = 'clinic' THEN 30 ELSE 0 END)::integer AS clinic_subaccount_limit,
-    COALESCE(clinics.concurrent_access_limit, CASE WHEN clinics.subscription_plan = 'clinic' THEN 2 ELSE 1 END)::integer AS clinic_concurrent_access_limit,
+    CASE
+      WHEN clinics.subscription_plan::text IN ('clinica_basico', 'clinica_medio', 'clinica_top', 'clinic', 'enterprise') THEN 999999
+      WHEN clinics.subscription_plan::text = 'prof_top' THEN GREATEST(COALESCE(clinics.subaccount_limit, 2), 2)
+      ELSE GREATEST(COALESCE(clinics.subaccount_limit, 1), 1)
+    END::integer AS clinic_subaccount_limit,
+    CASE
+      WHEN clinics.subscription_plan::text IN ('clinica_top', 'enterprise') THEN GREATEST(COALESCE(clinics.concurrent_access_limit, 8), 8)
+      WHEN clinics.subscription_plan::text IN ('clinica_medio', 'clinic') THEN GREATEST(COALESCE(clinics.concurrent_access_limit, 4), 4)
+      WHEN clinics.subscription_plan::text IN ('clinica_basico', 'prof_top') THEN GREATEST(COALESCE(clinics.concurrent_access_limit, 2), 2)
+      ELSE GREATEST(COALESCE(clinics.concurrent_access_limit, 1), 1)
+    END::integer AS clinic_concurrent_access_limit,
     COALESCE(active_accesses.active_access_count, 0)::integer AS clinic_active_access_count,
     COALESCE(active_accesses.active_access_users, '[]'::jsonb) AS clinic_active_access_users,
     clinics.account_owner_user_id AS clinic_account_owner_user_id,
@@ -3752,12 +4337,12 @@ CREATE OR REPLACE FUNCTION "public"."list_current_user_clinics"() RETURNS TABLE(
   ) active_accesses ON true
   WHERE clinic_memberships.user_id = (SELECT auth.uid())
     AND clinic_memberships.is_active = true
-    AND clinic_memberships.membership_status = 'active'
-    AND clinics.access_status IN ('active', 'payment_pending')
+    AND clinic_memberships.membership_status = 'active'::public.membership_status_type
+    AND COALESCE(clinics.access_status, 'active') IN ('active', 'payment_pending', 'trialing')
   ORDER BY clinic_memberships.joined_at ASC;
 $$;
 
--- [RPC/FUNCTION] list_current_user_notification_preferences (schema.sql L6841-L6867)
+-- [RPC/FUNCTION] list_current_user_notification_preferences (schema.sql L7828-L7854)
 CREATE OR REPLACE FUNCTION "public"."list_current_user_notification_preferences"() RETURNS TABLE("sound_mode" "text", "sound_key" "text", "notify_security" boolean, "notify_clinic_access" boolean, "notify_patient_saved" boolean, "notify_session_activity" boolean, "notify_event_reminders" boolean, "notify_system" boolean)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3786,7 +4371,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] list_current_user_notifications (schema.sql L6873-L6912)
+-- [RPC/FUNCTION] list_current_user_notifications (schema.sql L7860-L7899)
 CREATE OR REPLACE FUNCTION "public"."list_current_user_notifications"() RETURNS TABLE("notification_id" "uuid", "created_at" timestamp with time zone, "category" "text", "event_type" "text", "title" "text", "body" "text", "clinic_id" "uuid", "clinic_name" "text", "actor_user_id" "uuid", "actor_name" "text", "action_label" "text", "action_url" "text", "payload" "jsonb", "read_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -3828,236 +4413,167 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] complete_unregistered_cpf_profile (schema.sql L7714-L7768)
-CREATE OR REPLACE FUNCTION "public"."complete_unregistered_cpf_profile"("_full_name" "text", "_cpf" "text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date") RETURNS "jsonb"
+-- [RPC/FUNCTION] manage_clinic_subscription_plan (schema.sql L8800-L8992)
+CREATE OR REPLACE FUNCTION "public"."manage_clinic_subscription_plan"("_clinic_id" "uuid", "_new_plan" "public"."subscription_plan", "_billing_cycle" "text" DEFAULT 'annual'::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
     AS $$
 DECLARE
-  _user_id uuid := auth.uid();
-  _normalized_cpf text;
-  _clean_name text;
-  _clean_phone text;
-  _existing_cpf_user_id uuid;
+  v_current_user_id uuid := auth.uid();
+  v_owner_user_id uuid;
+  v_is_platform_admin boolean := false;
+  v_active_subaccounts_count integer := 0;
+  v_sub_record public.clinic_subscriptions%ROWTYPE;
+  v_plan_str text := LOWER(_new_plan::text);
+  v_billing_cycle text := LOWER(COALESCE(_billing_cycle, 'annual'));
+  v_base_monthly_price bigint := 0;
+  v_base_subaccount_limit integer := 1;
+  v_base_concurrent_access integer := 1;
+  v_additional_seat_price bigint := 2990;
 BEGIN
-  IF _user_id IS NULL THEN
+  IF v_current_user_id IS NULL THEN
     RAISE EXCEPTION 'Usuário não autenticado.';
   END IF;
 
-  _normalized_cpf := NULLIF(regexp_replace(COALESCE(_cpf, ''), '\D', '', 'g'), '');
-  _clean_name := NULLIF(trim(COALESCE(_full_name, '')), '');
-  _clean_phone := NULLIF(trim(COALESCE(_phone, '')), '');
+  SELECT is_active INTO v_is_platform_admin
+  FROM public.platform_admins
+  WHERE user_id = v_current_user_id;
 
-  IF _normalized_cpf IS NULL OR length(_normalized_cpf) <> 11 THEN
-    RAISE EXCEPTION 'CPF inválido. Forneça um CPF com 11 dígitos.';
-  END IF;
-
-  IF _clean_name IS NULL THEN
-    RAISE EXCEPTION 'Nome completo é obrigatório.';
-  END IF;
-
-  SELECT id
-  INTO _existing_cpf_user_id
-  FROM public.profiles
-  WHERE regexp_replace(coalesce(cpf, ''), '\D', '', 'g') = _normalized_cpf
-    AND id <> _user_id
+  SELECT user_id INTO v_owner_user_id
+  FROM public.clinic_memberships
+  WHERE clinic_id = _clinic_id
+    AND (
+      COALESCE(account_role::text, '') IN ('account_owner', 'owner')
+      OR COALESCE(operational_role::text, '') = 'owner'
+    )
+    AND is_active = true
   LIMIT 1;
 
-  IF _existing_cpf_user_id IS NOT NULL THEN
-    RAISE EXCEPTION 'Este CPF já está cadastrado em outra conta.';
+  IF v_owner_user_id IS NULL THEN
+    SELECT account_owner_user_id INTO v_owner_user_id
+    FROM public.clinics
+    WHERE id = _clinic_id;
   END IF;
 
-  UPDATE public.profiles
-  SET
-    full_name = _clean_name,
-    cpf = _normalized_cpf,
-    phone = COALESCE(_clean_phone, phone),
-    birth_date = COALESCE(_birth_date, birth_date),
-    updated_at = now()
-  WHERE id = _user_id;
-
-  RETURN jsonb_build_object(
-    'user_id', _user_id,
-    'full_name', _clean_name,
-    'cpf', _normalized_cpf,
-    'status', 'completed'
-  );
-END;
-$$;
-
--- [RPC/FUNCTION] manage_clinic_subscription_plan (schema.sql L7970-L8175)
-CREATE OR REPLACE FUNCTION "public"."manage_clinic_subscription_plan"("_clinic_id" "uuid", "_new_plan" "public"."subscription_plan", "_billing_cycle" "text" DEFAULT 'annual'::"text") RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
-    AS $$
-DECLARE
-  v_current_user_id uuid := auth.uid();
-  v_active_subaccounts_count integer;
-  v_owner_user_id uuid;
-  v_sub_record public.clinic_subscriptions%ROWTYPE;
-  v_cycle text := LOWER(COALESCE(_billing_cycle, 'annual'));
-  v_base_price numeric(10,2);
-  v_extra_price numeric(10,2);
-  v_base_subaccounts integer;
-  v_base_concurrent integer;
-  v_current_extra_seats integer := 0;
-  v_plan_str text := LOWER(_new_plan::text);
-BEGIN
-  IF NOT public.is_clinic_subscription_manager(v_current_user_id, _clinic_id) THEN
-    RAISE EXCEPTION 'Acesso negado: apenas o responsável pela clínica (account_owner) pode alterar o plano.';
+  IF NOT (COALESCE(v_is_platform_admin, false) = true OR public.is_platform_owner(v_current_user_id) OR v_owner_user_id = v_current_user_id) THEN
+    RAISE EXCEPTION 'Apenas o proprietário da clínica ou um administrador da plataforma pode alterar o plano.';
   END IF;
-
-  SELECT account_owner_user_id INTO v_owner_user_id
-  FROM public.clinics
-  WHERE id = _clinic_id;
 
   v_owner_user_id := COALESCE(v_owner_user_id, v_current_user_id);
 
-  -- Validação no Downgrade para planos individuais (prof_basico, prof_medio, solo):
-  -- Não pode ter colaboradores ativos cadastrados
   IF v_plan_str IN ('prof_basico', 'prof_medio', 'solo') THEN
     SELECT COUNT(*)::integer INTO v_active_subaccounts_count
     FROM public.clinic_memberships
     WHERE clinic_id = _clinic_id
       AND is_active = true
       AND membership_status = 'active'
-      AND account_role NOT IN ('account_owner', 'owner');
+      AND COALESCE(account_role::text, '') NOT IN ('account_owner', 'owner')
+      AND COALESCE(operational_role::text, '') <> 'owner';
 
     IF v_active_subaccounts_count > 0 THEN
       RAISE EXCEPTION 'Não é possível alterar para plano individual enquanto houver % colaborador(es) ativo(s) cadastrado(s). Desative ou remova os colaboradores primeiro.', v_active_subaccounts_count;
     END IF;
   ELSIF v_plan_str = 'prof_top' THEN
-    -- prof_top permite no máximo 1 colaborador adicional de apoio (total 2 membros com o titular)
     SELECT COUNT(*)::integer INTO v_active_subaccounts_count
     FROM public.clinic_memberships
     WHERE clinic_id = _clinic_id
       AND is_active = true
       AND membership_status = 'active'
-      AND account_role NOT IN ('account_owner', 'owner');
+      AND COALESCE(account_role::text, '') NOT IN ('account_owner', 'owner')
+      AND COALESCE(operational_role::text, '') <> 'owner';
 
     IF v_active_subaccounts_count > 1 THEN
       RAISE EXCEPTION 'O plano Profissional Top permite no máximo 1 colaborador de apoio (total de 2 membros). Atualmente há % colaboradores ativos.', v_active_subaccounts_count;
     END IF;
   END IF;
 
-  -- Matriz Oficial de Preços e Cotas por Ciclo:
-  -- Mensal: base
-  -- Trimestral: 10% OFF
-  -- Anual: 25% OFF
-  IF v_plan_str = 'prof_basico' THEN
-    v_base_price := CASE
-      WHEN v_cycle = 'monthly' THEN 39.99
-      WHEN v_cycle = 'quarterly' THEN 35.99  -- ~10% OFF
-      ELSE 29.99                           -- ~25% OFF
-    END;
-    v_extra_price := 0.00;
-    v_base_subaccounts := 1;
-    v_base_concurrent := 1;
-    v_current_extra_seats := 0;
+  CASE v_plan_str
+    WHEN 'prof_basico' THEN
+      v_base_monthly_price := CASE WHEN v_billing_cycle = 'annual' THEN 3990 ELSE 4990 END;
+      v_base_subaccount_limit := 1;
+      v_base_concurrent_access := 1;
+    WHEN 'prof_medio' THEN
+      v_base_monthly_price := CASE WHEN v_billing_cycle = 'annual' THEN 5990 ELSE 7990 END;
+      v_base_subaccount_limit := 1;
+      v_base_concurrent_access := 1;
+    WHEN 'prof_top' THEN
+      v_base_monthly_price := CASE WHEN v_billing_cycle = 'annual' THEN 8990 ELSE 11990 END;
+      v_base_subaccount_limit := 2;
+      v_base_concurrent_access := 2;
+    WHEN 'clinica_basico' THEN
+      v_base_monthly_price := CASE WHEN v_billing_cycle = 'annual' THEN 14990 ELSE 18990 END;
+      v_base_subaccount_limit := 999999;
+      v_base_concurrent_access := 2;
+    WHEN 'clinica_medio', 'clinica_intermediario', 'clinic' THEN
+      v_base_monthly_price := CASE WHEN v_billing_cycle = 'annual' THEN 24990 ELSE 29990 END;
+      v_base_subaccount_limit := 999999;
+      v_base_concurrent_access := 4;
+    WHEN 'clinica_top', 'clinica_avancado', 'enterprise' THEN
+      v_base_monthly_price := CASE WHEN v_billing_cycle = 'annual' THEN 39990 ELSE 49990 END;
+      v_base_subaccount_limit := 999999;
+      v_base_concurrent_access := 8;
+    WHEN 'solo' THEN
+      v_base_monthly_price := 0;
+      v_base_subaccount_limit := 1;
+      v_base_concurrent_access := 1;
+    ELSE
+      v_base_monthly_price := CASE WHEN v_billing_cycle = 'annual' THEN 14990 ELSE 18990 END;
+      v_base_subaccount_limit := 999999;
+      v_base_concurrent_access := 2;
+  END CASE;
 
-  ELSIF v_plan_str IN ('prof_medio', 'solo') THEN
-    v_base_price := CASE
-      WHEN v_cycle = 'monthly' THEN 59.99
-      WHEN v_cycle = 'quarterly' THEN 53.99  -- ~10% OFF
-      ELSE 44.99                           -- ~25% OFF
-    END;
-    v_extra_price := 0.00;
-    v_base_subaccounts := 1;
-    v_base_concurrent := 1;
-    v_current_extra_seats := 0;
+  UPDATE public.clinics
+  SET
+    subscription_plan = _new_plan,
+    subaccount_limit = v_base_subaccount_limit,
+    concurrent_access_limit = v_base_concurrent_access,
+    access_status = COALESCE(NULLIF(btrim(access_status), ''), 'active'),
+    updated_at = now()
+  WHERE id = _clinic_id;
 
-  ELSIF v_plan_str = 'prof_top' THEN
-    v_base_price := CASE
-      WHEN v_cycle = 'monthly' THEN 89.99
-      WHEN v_cycle = 'quarterly' THEN 80.99  -- ~10% OFF
-      ELSE 67.49                           -- ~25% OFF
-    END;
-    v_extra_price := 0.00;
-    v_base_subaccounts := 2;
-    v_base_concurrent := 2;
-    v_current_extra_seats := 0;
-
-  ELSIF v_plan_str = 'clinica_basico' THEN
-    v_base_price := CASE
-      WHEN v_cycle = 'monthly' THEN 99.00
-      WHEN v_cycle = 'quarterly' THEN 89.10  -- 10% OFF
-      ELSE 74.25                           -- 25% OFF
-    END;
-    v_extra_price := 25.00;
-    v_base_subaccounts := 999999;
-    v_base_concurrent := 2;
-
-    SELECT additional_concurrent_access_count INTO v_current_extra_seats
-    FROM public.clinic_subscriptions
-    WHERE clinic_id = _clinic_id;
-    v_current_extra_seats := COALESCE(v_current_extra_seats, 0);
-
-  ELSIF v_plan_str IN ('clinica_medio', 'clinic') THEN
-    v_base_price := CASE
-      WHEN v_cycle = 'monthly' THEN 139.00
-      WHEN v_cycle = 'quarterly' THEN 125.10 -- 10% OFF
-      ELSE 104.25                          -- 25% OFF
-    END;
-    v_extra_price := 25.00;
-    v_base_subaccounts := 999999;
-    v_base_concurrent := 4;
-
-    SELECT additional_concurrent_access_count INTO v_current_extra_seats
-    FROM public.clinic_subscriptions
-    WHERE clinic_id = _clinic_id;
-    v_current_extra_seats := COALESCE(v_current_extra_seats, 0);
-
-  ELSIF v_plan_str IN ('clinica_top', 'enterprise') THEN
-    v_base_price := CASE
-      WHEN v_cycle = 'monthly' THEN 199.00
-      WHEN v_cycle = 'quarterly' THEN 179.10 -- 10% OFF
-      ELSE 149.25                          -- 25% OFF
-    END;
-    v_extra_price := 25.00;
-    v_base_subaccounts := 999999;
-    v_base_concurrent := 8;
-
-    SELECT additional_concurrent_access_count INTO v_current_extra_seats
-    FROM public.clinic_subscriptions
-    WHERE clinic_id = _clinic_id;
-    v_current_extra_seats := COALESCE(v_current_extra_seats, 0);
-
-  ELSE
-    RAISE EXCEPTION 'Plano de assinatura desconhecido: %', _new_plan;
-  END IF;
-
-  -- Upsert em clinic_subscriptions
   INSERT INTO public.clinic_subscriptions (
     clinic_id,
     account_owner_user_id,
     plan_type,
     billing_cycle,
+    status,
     base_monthly_price,
     base_subaccount_limit,
     base_concurrent_access_count,
     additional_concurrent_access_count,
     additional_concurrent_access_price,
     total_recurring_monthly_price,
-    status
+    is_free_trial,
+    is_read_only,
+    expires_at,
+    updated_at
   )
   VALUES (
     _clinic_id,
     v_owner_user_id,
     _new_plan,
-    UPPER(v_cycle),
-    v_base_price,
-    v_base_subaccounts,
-    v_base_concurrent,
-    v_current_extra_seats,
-    v_extra_price,
-    v_base_price + (v_current_extra_seats * v_extra_price),
-    'ACTIVE'
+    v_billing_cycle,
+    'ACTIVE',
+    v_base_monthly_price,
+    v_base_subaccount_limit,
+    v_base_concurrent_access,
+    0,
+    v_additional_seat_price,
+    v_base_monthly_price,
+    false,
+    false,
+    NULL,
+    now()
   )
   ON CONFLICT (clinic_id) DO UPDATE
   SET
     account_owner_user_id = COALESCE(clinic_subscriptions.account_owner_user_id, EXCLUDED.account_owner_user_id),
     plan_type = EXCLUDED.plan_type,
     billing_cycle = EXCLUDED.billing_cycle,
+    status = 'ACTIVE',
+    is_free_trial = false,
+    is_read_only = false,
+    expires_at = NULL,
     base_monthly_price = EXCLUDED.base_monthly_price,
     base_subaccount_limit = EXCLUDED.base_subaccount_limit,
     base_concurrent_access_count = EXCLUDED.base_concurrent_access_count,
@@ -4075,7 +4591,6 @@ BEGIN
     updated_at = now()
   RETURNING * INTO v_sub_record;
 
-  -- Assegurar que clinics.account_owner_user_id permanece consistente
   UPDATE public.clinics
   SET account_owner_user_id = COALESCE(account_owner_user_id, v_owner_user_id)
   WHERE id = _clinic_id;
@@ -4093,17 +4608,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] change_clinic_subscription_plan (schema.sql L8181-L8188)
-CREATE OR REPLACE FUNCTION "public"."change_clinic_subscription_plan"("_clinic_id" "uuid", "_new_plan" "public"."subscription_plan", "_billing_cycle" "text" DEFAULT 'annual'::"text") RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
-    AS $$
-BEGIN
-  RETURN public.manage_clinic_subscription_plan(_clinic_id, _new_plan, _billing_cycle);
-END;
-$$;
-
--- [RPC/FUNCTION] notify_clinic_collaborator_presence (schema.sql L8279-L8360)
+-- [RPC/FUNCTION] notify_clinic_collaborator_presence (schema.sql L9201-L9282)
 CREATE OR REPLACE FUNCTION "public"."notify_clinic_collaborator_presence"("_clinic_id" "uuid", "_user_id" "uuid", "_status" "text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4187,7 +4692,274 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] resend_clinic_collaborator_invitation (schema.sql L8903-L9005)
+-- [RPC/FUNCTION] purge_clinic_trash_bin (schema.sql L9619-L9725)
+CREATE OR REPLACE FUNCTION "public"."purge_clinic_trash_bin"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  _purged_sessions_count integer := 0;
+  _purged_patients_count integer := 0;
+  _purged_forms_count integer := 0;
+  _session_ids uuid[];
+  _patient_ids uuid[];
+  _patient_session_ids uuid[];
+  _form_ids uuid[];
+BEGIN
+  -- 1. Identifica os formulários elegíveis para expurgo definitivo:
+  -- Itens cuja semana já se encerrou (domingo 23:59:59 passou) OU carência superior a 7 dias
+  SELECT array_agg(id) INTO _form_ids
+  FROM public.anamnesis_form_templates
+  WHERE deleted_at IS NOT NULL
+    AND (
+      (date_trunc('week', deleted_at) + interval '6 days 23 hours 59 minutes 59 seconds') <= now()
+      OR deleted_at <= (now() - interval '7 days')
+      OR deleted_at < date_trunc('week', now())
+    );
+
+  IF _form_ids IS NOT NULL AND cardinality(_form_ids) > 0 THEN
+    -- Desvincula templates de sessões se houver referência
+    UPDATE public.sessions
+    SET anamnesis_template_id = NULL
+    WHERE anamnesis_template_id = ANY(_form_ids);
+
+    DELETE FROM public.anamnesis_form_templates
+    WHERE id = ANY(_form_ids);
+    GET DIAGNOSTICS _purged_forms_count = ROW_COUNT;
+  END IF;
+
+  -- 2. Identifica pacientes elegíveis para expurgo definitivo
+  SELECT array_agg(id) INTO _patient_ids
+  FROM public.patients
+  WHERE deleted_at IS NOT NULL
+    AND (
+      (date_trunc('week', deleted_at) + interval '6 days 23 hours 59 minutes 59 seconds') <= now()
+      OR deleted_at <= (now() - interval '7 days')
+      OR deleted_at < date_trunc('week', now())
+    );
+
+  IF _patient_ids IS NOT NULL AND cardinality(_patient_ids) > 0 THEN
+    -- Mapeia todas as sessões ligadas a estes pacientes para remoção completa respeitando FKs
+    SELECT array_agg(id) INTO _patient_session_ids
+    FROM public.sessions
+    WHERE patient_id = ANY(_patient_ids);
+
+    IF _patient_session_ids IS NOT NULL AND cardinality(_patient_session_ids) > 0 THEN
+      DELETE FROM public.clinical_session_billings WHERE session_id = ANY(_patient_session_ids);
+      DELETE FROM public.session_edit_history WHERE session_id = ANY(_patient_session_ids);
+      DELETE FROM public.session_shares WHERE session_id = ANY(_patient_session_ids);
+      UPDATE public.sessions SET parent_session_id = NULL WHERE parent_session_id = ANY(_patient_session_ids);
+      DELETE FROM public.sessions WHERE id = ANY(_patient_session_ids);
+    END IF;
+
+    -- Limpa registros dependentes de pacientes
+    DELETE FROM public.clinical_session_billings WHERE patient_id = ANY(_patient_ids);
+    DELETE FROM public.agenda_events WHERE patient_id = ANY(_patient_ids);
+    DELETE FROM public.patient_clinical_snapshots WHERE patient_id = ANY(_patient_ids);
+    DELETE FROM public.patient_file_uploads WHERE patient_id = ANY(_patient_ids);
+    DELETE FROM public.patient_payment_plans WHERE patient_id = ANY(_patient_ids);
+    DELETE FROM public.patient_evolution_groups WHERE patient_id = ANY(_patient_ids);
+
+    DELETE FROM public.patients WHERE id = ANY(_patient_ids);
+    GET DIAGNOSTICS _purged_patients_count = ROW_COUNT;
+  END IF;
+
+  -- 3. Identifica sessões individuais elegíveis para expurgo definitivo
+  SELECT array_agg(id) INTO _session_ids
+  FROM public.sessions
+  WHERE deleted_at IS NOT NULL
+    AND (
+      (date_trunc('week', deleted_at) + interval '6 days 23 hours 59 minutes 59 seconds') <= now()
+      OR deleted_at <= (now() - interval '7 days')
+      OR deleted_at < date_trunc('week', now())
+    );
+
+  IF _session_ids IS NOT NULL AND cardinality(_session_ids) > 0 THEN
+    -- Remove faturamentos clínicos vinculados
+    DELETE FROM public.clinical_session_billings WHERE session_id = ANY(_session_ids);
+
+    -- Remove histórico de edições e compartilhamentos
+    DELETE FROM public.session_edit_history WHERE session_id = ANY(_session_ids);
+    DELETE FROM public.session_shares WHERE session_id = ANY(_session_ids);
+
+    -- Limpa dependências de autorreferência e uploads
+    UPDATE public.sessions SET parent_session_id = NULL WHERE parent_session_id = ANY(_session_ids);
+    UPDATE public.patient_file_uploads SET session_id = NULL WHERE session_id = ANY(_session_ids);
+
+    -- Expurga definitivamente as sessões
+    DELETE FROM public.sessions WHERE id = ANY(_session_ids);
+    GET DIAGNOSTICS _purged_sessions_count = ROW_COUNT;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'purged_sessions', _purged_sessions_count,
+    'purged_patients', _purged_patients_count,
+    'purged_forms', _purged_forms_count,
+    'executed_at', now()
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] reconcile_legacy_users_solo_clinic (schema.sql L9763-L9918)
+CREATE OR REPLACE FUNCTION "public"."reconcile_legacy_users_solo_clinic"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rec record;
+  v_provisioned_count integer := 0;
+  v_public_code text;
+  v_clinic_id uuid;
+  v_route_suffix text;
+  v_route_key text;
+  v_clinic_name text;
+  v_trial_end timestamptz;
+BEGIN
+  FOR v_rec IN
+    SELECT p.id AS user_id, p.full_name, p.cpf, p.public_code
+    FROM public.profiles p
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM public.clinic_memberships cm
+      WHERE cm.user_id = p.id
+        AND cm.is_active = true
+        AND (cm.account_role = 'account_owner' OR cm.operational_role = 'owner')
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.clinics c
+      WHERE c.account_owner_user_id = p.id
+    )
+    AND (auth.uid() IS NULL OR p.id = auth.uid())
+  LOOP
+    v_trial_end := now() + interval '7 days';
+    v_public_code := COALESCE(NULLIF(trim(v_rec.public_code), ''), public.generate_profile_public_code());
+
+    IF v_rec.public_code IS NULL OR trim(v_rec.public_code) = '' THEN
+      UPDATE public.profiles SET public_code = v_public_code WHERE id = v_rec.user_id;
+    END IF;
+
+    v_clinic_name := 'Consultório - ' || COALESCE(NULLIF(trim(v_rec.full_name), ''), 'Profissional');
+    v_route_suffix := lower(regexp_replace(v_public_code, '^PLR-|-', '', 'g'));
+    v_route_key := 'consultorio-' || v_route_suffix;
+
+    IF EXISTS (SELECT 1 FROM public.clinics WHERE route_key = v_route_key) THEN
+      v_route_key := v_route_key || '-' || lower(substr(replace(gen_random_uuid()::text, '-', ''), 1, 4));
+    END IF;
+
+    INSERT INTO public.clinics (
+      name,
+      cnpj,
+      route_key,
+      subscription_plan,
+      access_status,
+      concurrent_access_limit,
+      subaccount_limit,
+      account_owner_user_id
+    )
+    VALUES (
+      v_clinic_name,
+      COALESCE(NULLIF(regexp_replace(COALESCE(v_rec.cpf, ''), '\D', '', 'g'), ''), '00000000000'),
+      v_route_key,
+      'prof_basico'::public.subscription_plan,
+      'active',
+      1,
+      1,
+      v_rec.user_id
+    )
+    RETURNING id INTO v_clinic_id;
+
+    INSERT INTO public.clinic_subscriptions (
+      clinic_id,
+      account_owner_user_id,
+      plan_type,
+      billing_cycle,
+      payment_method,
+      base_monthly_price,
+      base_concurrent_access_count,
+      total_recurring_monthly_price,
+      base_subaccount_limit,
+      status,
+      is_free_trial,
+      is_read_only,
+      trial_ends_at,
+      trial_max_attendances,
+      trial_max_patients,
+      trial_max_custom_forms,
+      period_duration_days,
+      current_period_start,
+      current_period_end,
+      expires_at
+    )
+    VALUES (
+      v_clinic_id,
+      v_rec.user_id,
+      'prof_basico'::public.subscription_plan,
+      'ANNUAL',
+      'TRIAL',
+      39.99,
+      1,
+      0,
+      1,
+      'TRIAL',
+      true,
+      false,
+      v_trial_end,
+      20,
+      5,
+      1,
+      7,
+      now(),
+      v_trial_end,
+      v_trial_end
+    )
+    ON CONFLICT (clinic_id) DO NOTHING;
+
+    INSERT INTO public.clinic_memberships (
+      clinic_id,
+      user_id,
+      account_role,
+      operational_role,
+      role_key,
+      membership_status,
+      is_active
+    )
+    VALUES (
+      v_clinic_id,
+      v_rec.user_id,
+      'account_owner',
+      'owner',
+      'owner',
+      'active',
+      true
+    )
+    ON CONFLICT (clinic_id, user_id) DO UPDATE
+    SET
+      account_role = 'account_owner',
+      operational_role = 'owner',
+      role_key = 'owner',
+      membership_status = 'active',
+      is_active = true,
+      updated_at = now();
+
+    -- CRITICAL: Do NOT overwrite active clinic context if the user already has one (e.g. a third-party clinic)!
+    INSERT INTO public.user_active_clinic_contexts (user_id, clinic_id, updated_at)
+    VALUES (v_rec.user_id, v_clinic_id, now())
+    ON CONFLICT (user_id) DO NOTHING;
+
+    UPDATE public.profiles
+    SET clinic_id = COALESCE(clinic_id, v_clinic_id)
+    WHERE id = v_rec.user_id;
+
+    v_provisioned_count := v_provisioned_count + 1;
+  END LOOP;
+
+  RETURN v_provisioned_count;
+END;
+$$;
+
+-- [RPC/FUNCTION] resend_clinic_collaborator_invitation (schema.sql L10295-L10396)
 CREATE OR REPLACE FUNCTION "public"."resend_clinic_collaborator_invitation"("_invitation_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'extensions'
@@ -4204,7 +4976,6 @@ DECLARE
   _clinic_route_key text;
   _is_service_role boolean := (coalesce(current_setting('request.jwt.claim.role', true), '') = 'service_role');
 BEGIN
-  -- Se não for service_role, requer autenticação do chamador
   IF NOT _is_service_role THEN
     IF _requester_id IS NULL THEN
       RAISE EXCEPTION 'Usuário não autenticado.';
@@ -4220,7 +4991,6 @@ BEGIN
     RAISE EXCEPTION 'Convite não encontrado.';
   END IF;
 
-  -- Se não for service_role, verifica permissões de clínica ou platform owner
   IF NOT _is_service_role THEN
     IF NOT (
       public.current_user_can('subaccounts.manage', _invitation.clinic_id) OR
@@ -4230,7 +5000,6 @@ BEGIN
     END IF;
   END IF;
 
-  -- Cooldown reduzido para 5 segundos para testes rápidos e melhor UX
   IF _invitation.last_resent_at IS NOT NULL AND (now() - _invitation.last_resent_at) < interval '5 seconds' THEN
     _remaining_seconds := 5 - extract(epoch from (now() - _invitation.last_resent_at))::integer;
     RAISE EXCEPTION 'Aguarde % segundos antes de reenviar o convite novamente.', GREATEST(_remaining_seconds, 1);
@@ -4238,19 +5007,22 @@ BEGIN
 
   _sha256_hash := encode(extensions.digest(_token, 'sha256'), 'hex');
 
-  -- Update status to pending (caso estivesse cancelled ou expired), token e resend timestamp mantendo tokens válidos
   UPDATE public.clinic_collaborator_invitations
   SET status = 'pending',
       token_hash = _token_hash,
       valid_token_hashes = ARRAY(
-        SELECT DISTINCT u
-        FROM unnest(
-          array_cat(
-            COALESCE(valid_token_hashes, ARRAY[token_hash]),
-            ARRAY[_token_hash, _sha256_hash]
-          )
-        ) AS u
-        WHERE u IS NOT NULL AND u <> ''
+        SELECT u FROM (
+          SELECT DISTINCT u
+          FROM unnest(
+            array_cat(
+              COALESCE(valid_token_hashes, ARRAY[token_hash]),
+              ARRAY[_token_hash, _sha256_hash]
+            )
+          ) AS u
+          WHERE u IS NOT NULL AND u <> ''
+        ) sub
+        ORDER BY 1 DESC
+        LIMIT 10
       ),
       last_resent_at = now(),
       updated_at = now(),
@@ -4260,7 +5032,6 @@ BEGIN
       email_sent_at = NULL
   WHERE id = _invitation_id;
 
-  -- Check user status in auth.users
   SELECT * INTO _existing_user
   FROM auth.users
   WHERE lower(users.email) = lower(_invitation.email)
@@ -4282,17 +5053,17 @@ BEGIN
     'success', true,
     'id', _invitation.id,
     'token', _token,
-    'path', '/convite/clinica/' || _token,
-    'email', _invitation.email,
-    'clinic_id', _invitation.clinic_id,
+    'status', 'pending',
+    'destination_url', '/convite/clinica/' || _token,
     'clinic_route_key', _clinic_route_key,
+    'role_key', _invitation.role_key,
     'account_state', _account_state,
-    'remaining_cooldown', 5
+    'email_delivery_status', 'pending'
   );
 END;
 $$;
 
--- [RPC/FUNCTION] revoke_clinic_member_access (schema.sql L9011-L9084)
+-- [RPC/FUNCTION] revoke_clinic_member_access (schema.sql L10552-L10625)
 CREATE OR REPLACE FUNCTION "public"."revoke_clinic_member_access"("_membership_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4368,7 +5139,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] revoke_user_punishment (schema.sql L9124-L9139)
+-- [RPC/FUNCTION] revoke_user_punishment (schema.sql L10665-L10680)
 CREATE OR REPLACE FUNCTION "public"."revoke_user_punishment"("_punishment_id" "uuid", "_reason" "text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -4386,7 +5157,47 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] set_clinic_subscriptions_updated_at (schema.sql L9145-L9152)
+-- [RPC/FUNCTION] sanitize_clinical_free_text (schema.sql L10686-L10723)
+CREATE OR REPLACE FUNCTION "public"."sanitize_clinical_free_text"("_text" "text") RETURNS "text"
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  _sanitized text := _text;
+BEGIN
+  IF _sanitized IS NULL OR trim(_sanitized) = '' THEN
+    RETURN _sanitized;
+  END IF;
+
+  -- 1. Sanitizar e-mails primeiro para não conflitar com regex de pontuação/letras
+  _sanitized := regexp_replace(
+    _sanitized,
+    '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+    '[EMAIL OCULTADO]',
+    'g'
+  );
+
+  -- 2. Sanitizar CPFs (com pontuação ou sequência de 11 dígitos com separadores opcionais)
+  _sanitized := regexp_replace(
+    _sanitized,
+    '\y\d{3}\.?\d{3}\.?\d{3}[-\s]?\d{2}\y',
+    '[DOCUMENTO OCULTADO]',
+    'g'
+  );
+
+  -- 3. Sanitizar telefones celulares e fixos com DDD ou +55 opcional
+  _sanitized := regexp_replace(
+    _sanitized,
+    '(\+?55\s*)?(\(?\d{2}\)?\s*)?(9\s*)?\d{4}[-\s]?\d{4}',
+    '[CONTATO OCULTADO]',
+    'g'
+  );
+
+  RETURN _sanitized;
+END;
+$$;
+
+-- [RPC/FUNCTION] set_clinic_subscriptions_updated_at (schema.sql L10729-L10736)
 CREATE OR REPLACE FUNCTION "public"."set_clinic_subscriptions_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -4396,7 +5207,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] set_current_user_active_clinic (schema.sql L9158-L9180)
+-- [RPC/FUNCTION] set_current_user_active_clinic (schema.sql L10742-L10764)
 CREATE OR REPLACE FUNCTION "public"."set_current_user_active_clinic"("_clinic_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4421,7 +5232,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] set_current_user_active_clinic_by_route_key (schema.sql L9186-L9204)
+-- [RPC/FUNCTION] set_current_user_active_clinic_by_route_key (schema.sql L10770-L10788)
 CREATE OR REPLACE FUNCTION "public"."set_current_user_active_clinic_by_route_key"("_route_key" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4442,7 +5253,87 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] sync_clinic_limits_from_subscription (schema.sql L9706-L9754)
+-- [RPC/FUNCTION] setup_user_totp (schema.sql L10807-L10832)
+CREATE OR REPLACE FUNCTION "public"."setup_user_totp"("_totp_secret" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    _current_user_id UUID := auth.uid();
+BEGIN
+    IF _current_user_id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Não autenticado');
+    END IF;
+
+    IF _totp_secret IS NULL OR length(trim(_totp_secret)) < 16 THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Segredo TOTP inválido');
+    END IF;
+
+    UPDATE public.profiles
+    SET 
+        totp_secret = trim(_totp_secret),
+        totp_enabled = true,
+        totp_enabled_at = now(),
+        updated_at = now()
+    WHERE id = _current_user_id;
+
+    RETURN jsonb_build_object('success', true);
+END;
+$$;
+
+-- [RPC/FUNCTION] sync_clinic_daily_metrics (schema.sql L11321-L11370)
+CREATE OR REPLACE FUNCTION "public"."sync_clinic_daily_metrics"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  _target_clinic_id uuid;
+  _target_date date;
+BEGIN
+  _target_clinic_id := COALESCE(NEW.clinic_id, OLD.clinic_id);
+  _target_date := (COALESCE(NEW.session_date, OLD.session_date) AT TIME ZONE 'UTC')::date;
+
+  IF _target_clinic_id IS NOT NULL AND _target_date IS NOT NULL THEN
+    INSERT INTO public.clinic_daily_metrics (
+      clinic_id,
+      metric_date,
+      total_sessions,
+      canceled_sessions,
+      paid_sessions,
+      revenue_paid_cents,
+      revenue_open_cents,
+      revenue_credit_cents,
+      updated_at
+    )
+    SELECT
+      _target_clinic_id,
+      _target_date,
+      COUNT(*)::integer,
+      COUNT(*) FILTER (WHERE status = 'cancelado')::integer,
+      COUNT(*) FILTER (WHERE COALESCE(amount_charged_cents, 0) > 0 AND COALESCE(amount_paid_cents, 0) >= COALESCE(amount_charged_cents, 0))::integer,
+      COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN LEAST(COALESCE(amount_paid_cents, 0), COALESCE(amount_charged_cents, 0)) ELSE 0 END), 0)::bigint,
+      COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN GREATEST(0, COALESCE(amount_charged_cents, 0) - COALESCE(amount_paid_cents, 0)) ELSE 0 END), 0)::bigint,
+      COALESCE(SUM(CASE WHEN payment_status <> 'cortesia' THEN GREATEST(0, COALESCE(amount_paid_cents, 0) - COALESCE(amount_charged_cents, 0)) ELSE 0 END), 0)::bigint,
+      now()
+    FROM public.sessions
+    WHERE clinic_id = _target_clinic_id
+      AND (session_date AT TIME ZONE 'UTC')::date = _target_date
+      AND deleted_at IS NULL
+    ON CONFLICT (clinic_id, metric_date) DO UPDATE SET
+      total_sessions = EXCLUDED.total_sessions,
+      canceled_sessions = EXCLUDED.canceled_sessions,
+      paid_sessions = EXCLUDED.paid_sessions,
+      revenue_paid_cents = EXCLUDED.revenue_paid_cents,
+      revenue_open_cents = EXCLUDED.revenue_open_cents,
+      revenue_credit_cents = EXCLUDED.revenue_credit_cents,
+      updated_at = now();
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+-- [RPC/FUNCTION] sync_clinic_limits_from_subscription (schema.sql L11376-L11424)
 CREATE OR REPLACE FUNCTION "public"."sync_clinic_limits_from_subscription"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4493,7 +5384,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] trim_user_notifications (schema.sql L9895-L9912)
+-- [RPC/FUNCTION] trim_user_notifications (schema.sql L11668-L11685)
 CREATE OR REPLACE FUNCTION "public"."trim_user_notifications"("_user_id" "uuid") RETURNS "void"
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4513,7 +5404,136 @@ CREATE OR REPLACE FUNCTION "public"."trim_user_notifications"("_user_id" "uuid")
   );
 $$;
 
--- [RPC/FUNCTION] update_clinic_collaborator_invitation (schema.sql L9918-L9962)
+-- [RPC/FUNCTION] update_clinic_billing_due_window (schema.sql L11691-L11817)
+CREATE OR REPLACE FUNCTION "public"."update_clinic_billing_due_window"("_clinic_id" "uuid", "_window" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_sub record;
+  v_is_owner boolean;
+  v_is_admin boolean;
+  v_last_updated timestamptz;
+  v_now timestamptz := clock_timestamp();
+  v_days_since_last_update integer;
+  v_next_allowed_at timestamptz;
+  v_target_day integer;
+  v_current_next_due date;
+  v_new_next_due date;
+BEGIN
+  -- Validar parâmetro de entrada
+  IF _window NOT IN ('DAY_1_TO_5', 'DAY_10_TO_15', 'DAY_25_TO_30') THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Janela de vencimento inválida. Opções permitidas: DAY_1_TO_5, DAY_10_TO_15, DAY_25_TO_30.'
+    );
+  END IF;
+
+  -- Verificar autorização: proprietário da clínica ou platform_admin
+  SELECT (cm.account_role = 'account_owner' AND cm.is_active = true)
+  INTO v_is_owner
+  FROM public.clinic_memberships cm
+  WHERE cm.clinic_id = _clinic_id AND cm.user_id = v_user_id;
+
+  SELECT (pa.is_active = true)
+  INTO v_is_admin
+  FROM public.platform_admins pa
+  WHERE pa.user_id = v_user_id;
+
+  IF NOT (COALESCE(v_is_owner, false) OR COALESCE(v_is_admin, false)) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Apenas o proprietário da clínica ou administrador pode alterar as preferências de cobrança.'
+    );
+  END IF;
+
+  -- Buscar assinatura atual
+  SELECT * INTO v_sub
+  FROM public.clinic_subscriptions
+  WHERE clinic_id = _clinic_id;
+
+  IF v_sub.id IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Assinatura da clínica não encontrada.'
+    );
+  END IF;
+
+  -- Se já for a mesma janela, apenas retornar sucesso
+  IF v_sub.billing_due_window = _window THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'message', 'A janela de vencimento informada já está ativa.',
+      'billing_due_window', _window,
+      'billing_due_window_updated_at', v_sub.billing_due_window_updated_at
+    );
+  END IF;
+
+  -- Validar se já houve alteração nos últimos 30 dias (Regra: 1 vez por mês)
+  v_last_updated := v_sub.billing_due_window_updated_at;
+  IF v_last_updated IS NOT NULL THEN
+    v_days_since_last_update := EXTRACT(DAY FROM (v_now - v_last_updated))::integer;
+    v_next_allowed_at := v_last_updated + interval '30 days';
+    
+    -- Se tiver sido alterado há menos de 30 dias e não for a primeira configuração
+    IF v_days_since_last_update < 30 AND v_sub.billing_due_window IS NOT NULL THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'error', format('A janela de vencimento só pode ser alterada uma vez a cada 30 dias. Próxima alteração permitida em %s.', to_char(v_next_allowed_at, 'DD/MM/YYYY')),
+        'next_allowed_at', v_next_allowed_at,
+        'days_remaining', (30 - v_days_since_last_update)
+      );
+    END IF;
+  END IF;
+
+  -- Mapear dia de vencimento alvo da janela escolhida
+  v_target_day := CASE 
+    WHEN _window = 'DAY_1_TO_5' THEN 5
+    WHEN _window = 'DAY_10_TO_15' THEN 15
+    WHEN _window = 'DAY_25_TO_30' THEN 30
+    ELSE 5
+  END;
+
+  -- Calcular o vencimento para o próximo ciclo subsequente
+  v_current_next_due := COALESCE(v_sub.next_due_date, CURRENT_DATE + interval '30 days');
+  -- Ajustar para o dia alvo mantendo ou projetando para o mês seguinte
+  v_new_next_due := make_date(
+    EXTRACT(YEAR FROM v_current_next_due)::integer,
+    EXTRACT(MONTH FROM v_current_next_due)::integer,
+    LEAST(v_target_day, EXTRACT(DAY FROM (date_trunc('month', v_current_next_due) + interval '1 month - 1 day'))::integer)
+  );
+
+  IF v_new_next_due <= CURRENT_DATE THEN
+    v_new_next_due := make_date(
+      EXTRACT(YEAR FROM v_current_next_due + interval '1 month')::integer,
+      EXTRACT(MONTH FROM v_current_next_due + interval '1 month')::integer,
+      LEAST(v_target_day, EXTRACT(DAY FROM (date_trunc('month', v_current_next_due + interval '1 month') + interval '1 month - 1 day'))::integer)
+    );
+  END IF;
+
+  -- Atualizar registro na base local
+  UPDATE public.clinic_subscriptions
+  SET 
+    billing_due_window = _window,
+    billing_due_window_updated_at = v_now,
+    next_due_date = v_new_next_due,
+    updated_at = v_now
+  WHERE clinic_id = _clinic_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'message', 'Janela de vencimento atualizada com sucesso para os próximos ciclos.',
+    'billing_due_window', _window,
+    'billing_due_window_updated_at', v_now,
+    'target_due_day', v_target_day,
+    'next_due_date', v_new_next_due,
+    'next_allowed_at', v_now + interval '30 days'
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] update_clinic_collaborator_invitation (schema.sql L11823-L11867)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_collaborator_invitation"("_invitation_id" "uuid", "_operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -4560,7 +5580,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_concurrent_accesses (schema.sql L9968-L10044)
+-- [RPC/FUNCTION] update_clinic_concurrent_accesses (schema.sql L11873-L11949)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_concurrent_accesses"("_clinic_id" "uuid", "_extra_concurrent" integer) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4639,15 +5659,15 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_member_operational_fields (schema.sql L10050-L10172)
+-- [RPC/FUNCTION] update_clinic_member_operational_fields (schema.sql L11955-L12059)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_member_operational_fields"("_membership_id" "uuid", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_working_hours" "text" DEFAULT NULL::"text", "_operational_role" "public"."operational_role_type" DEFAULT NULL::"public"."operational_role_type", "_membership_status" "public"."membership_status_type" DEFAULT NULL::"public"."membership_status_type", "_role_key" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'auth'
     AS $$
 DECLARE
   _requester_id uuid := auth.uid();
   _target_membership public.clinic_memberships%ROWTYPE;
-  _normalized_role_key text := NULLIF(trim(_role_key), '');
+  _normalized_role_key text := lower(trim(coalesce(_role_key, '')));
   _inferred_operational_role public.operational_role_type := _operational_role;
   _custom_role record;
 BEGIN
@@ -4687,20 +5707,22 @@ BEGIN
     RAISE EXCEPTION 'Status convidado e controlado pelo fluxo de convites.';
   END IF;
 
-  -- Validação de role_key em clinic_operational_roles se informada
-  IF _normalized_role_key IS NOT NULL THEN
-    SELECT *
-    INTO _custom_role
-    FROM public.clinic_operational_roles
-    WHERE clinic_id = _target_membership.clinic_id
-      AND role_key = _normalized_role_key
-    LIMIT 1;
+  -- Validação de role_key
+  IF _normalized_role_key IS NOT NULL AND _normalized_role_key <> '' THEN
+    IF _normalized_role_key IN ('admin', 'professional', 'assistant', 'estagiario') THEN
+      _inferred_operational_role := _normalized_role_key::public.operational_role_type;
+    ELSE
+      SELECT *
+      INTO _custom_role
+      FROM public.clinic_operational_roles
+      WHERE clinic_id = _target_membership.clinic_id
+        AND role_key = _normalized_role_key
+      LIMIT 1;
 
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'Papel operacional inválido para esta clínica.';
-    END IF;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Papel operacional inválido para esta clínica.';
+      END IF;
 
-    IF _inferred_operational_role IS NULL THEN
       _inferred_operational_role := _custom_role.base_operational_role;
     END IF;
   END IF;
@@ -4716,55 +5738,35 @@ BEGIN
   UPDATE public.clinic_memberships
   SET
     operational_role = COALESCE(_inferred_operational_role, operational_role),
-    role_key = CASE WHEN _role_key IS NULL THEN role_key ELSE _normalized_role_key END,
+    role_key = CASE 
+      WHEN _role_key IS NOT NULL THEN NULLIF(_normalized_role_key, '')
+      ELSE role_key 
+    END,
     membership_status = COALESCE(_membership_status, membership_status),
     is_active = CASE
-      WHEN COALESCE(_membership_status, membership_status) = 'active' THEN true
+      WHEN _membership_status IS NULL THEN is_active
+      WHEN _membership_status = 'active' THEN true
       ELSE false
     END,
     ended_at = CASE
-      WHEN COALESCE(_membership_status, membership_status) = 'active' THEN NULL
-      WHEN ended_at IS NULL THEN now()
-      ELSE ended_at
-    END
-  WHERE id = _membership_id;
+      WHEN _membership_status IS NULL THEN ended_at
+      WHEN _membership_status = 'active' THEN NULL
+      ELSE COALESCE(ended_at, now())
+    END,
+    updated_at = now()
+  WHERE id = _target_membership.id;
 
-  IF (_inferred_operational_role IS NOT NULL AND _inferred_operational_role IS DISTINCT FROM _target_membership.operational_role)
-     OR (_role_key IS NOT NULL AND _normalized_role_key IS DISTINCT FROM _target_membership.role_key) THEN
-    PERFORM public.log_security_event(
-      _target_membership.clinic_id,
-      _requester_id,
-      _target_membership.user_id,
-      'subaccount_role_changed',
-      'admin',
-      jsonb_build_object(
-        'from_operational_role', _target_membership.operational_role,
-        'to_operational_role', COALESCE(_inferred_operational_role, _target_membership.operational_role),
-        'from_role_key', _target_membership.role_key,
-        'to_role_key', CASE WHEN _role_key IS NULL THEN _target_membership.role_key ELSE _normalized_role_key END
-      )
-    );
-  END IF;
-
-  IF _membership_status IS NOT NULL AND _membership_status IS DISTINCT FROM _target_membership.membership_status THEN
-    PERFORM public.log_security_event(
-      _target_membership.clinic_id,
-      _requester_id,
-      _target_membership.user_id,
-      'subaccount_status_changed',
-      'admin',
-      jsonb_build_object(
-        'from', _target_membership.membership_status,
-        'to', _membership_status
-      )
-    );
-  END IF;
-
-  RETURN jsonb_build_object('membership_id', _membership_id);
+  RETURN jsonb_build_object(
+    'membership_id', _target_membership.id,
+    'clinic_id', _target_membership.clinic_id,
+    'operational_role', COALESCE(_inferred_operational_role, _target_membership.operational_role),
+    'role_key', CASE WHEN _role_key IS NOT NULL THEN NULLIF(_normalized_role_key, '') ELSE _target_membership.role_key END,
+    'status', COALESCE(_membership_status, _target_membership.membership_status)
+  );
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_subaccount (schema.sql L10178-L10294)
+-- [RPC/FUNCTION] update_clinic_subaccount (schema.sql L12065-L12181)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_subaccount"("_membership_id" "uuid", "_full_name" "text" DEFAULT NULL::"text", "_email" "text" DEFAULT NULL::"text", "_cpf" "text" DEFAULT NULL::"text", "_professional_license" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_job_title" "text" DEFAULT NULL::"text", "_operational_role" "public"."operational_role_type" DEFAULT NULL::"public"."operational_role_type", "_membership_status" "public"."membership_status_type" DEFAULT NULL::"public"."membership_status_type", "_new_password" "text" DEFAULT NULL::"text", "_working_hours" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4883,7 +5885,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_subaccount_profile (schema.sql L10300-L10467)
+-- [RPC/FUNCTION] update_clinic_subaccount_profile (schema.sql L12187-L12354)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_subaccount_profile"("_membership_id" "uuid", "_full_name" "text" DEFAULT NULL::"text", "_social_name" "text" DEFAULT NULL::"text", "_email" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date", "_cpf" "text" DEFAULT NULL::"text", "_professional_license" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_job_title" "text" DEFAULT NULL::"text", "_bio" "text" DEFAULT NULL::"text", "_working_hours" "text" DEFAULT NULL::"text", "_address" "jsonb" DEFAULT NULL::"jsonb", "_operational_role" "public"."operational_role_type" DEFAULT NULL::"public"."operational_role_type", "_membership_status" "public"."membership_status_type" DEFAULT NULL::"public"."membership_status_type", "_new_password" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5053,7 +6055,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_current_profile (schema.sql L10473-L10594)
+-- [RPC/FUNCTION] update_current_profile (schema.sql L12360-L12481)
 CREATE OR REPLACE FUNCTION "public"."update_current_profile"("_full_name" "text" DEFAULT NULL::"text", "_social_name" "text" DEFAULT NULL::"text", "_email" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date", "_cpf" "text" DEFAULT NULL::"text", "_professional_license" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_job_title" "text" DEFAULT NULL::"text", "_bio" "text" DEFAULT NULL::"text", "_working_hours" "text" DEFAULT NULL::"text", "_address" "jsonb" DEFAULT NULL::"jsonb", "_new_password" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5177,7 +6179,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_current_user_notification_preferences (schema.sql L10600-L10627)
+-- [RPC/FUNCTION] update_current_user_notification_preferences (schema.sql L12487-L12514)
 CREATE OR REPLACE FUNCTION "public"."update_current_user_notification_preferences"("_sound_mode" "text" DEFAULT NULL::"text", "_sound_key" "text" DEFAULT NULL::"text", "_notify_security" boolean DEFAULT NULL::boolean, "_notify_clinic_access" boolean DEFAULT NULL::boolean, "_notify_patient_saved" boolean DEFAULT NULL::boolean, "_notify_session_activity" boolean DEFAULT NULL::boolean, "_notify_event_reminders" boolean DEFAULT NULL::boolean, "_notify_system" boolean DEFAULT NULL::boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5207,7 +6209,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_team_development_profile (schema.sql L10633-L10699)
+-- [RPC/FUNCTION] update_team_development_profile (schema.sql L12575-L12641)
 CREATE OR REPLACE FUNCTION "public"."update_team_development_profile"("_user_id" "uuid", "_development_status" "text" DEFAULT NULL::"text", "_internal_level" "text" DEFAULT NULL::"text", "_goals" "text" DEFAULT NULL::"text", "_review_notes" "text" DEFAULT NULL::"text", "_last_review_at" "date" DEFAULT NULL::"date", "_next_review_at" "date" DEFAULT NULL::"date", "_onboarding_flow_read" boolean DEFAULT NULL::boolean, "_onboarding_initial_training" boolean DEFAULT NULL::boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5276,7 +6278,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] upsert_current_user_security_settings (schema.sql L10719-L10772)
+-- [RPC/FUNCTION] upsert_current_user_security_settings (schema.sql L12661-L12714)
 CREATE OR REPLACE FUNCTION "public"."upsert_current_user_security_settings"("_alert_password_changed" boolean DEFAULT NULL::boolean, "_alert_new_login" boolean DEFAULT NULL::boolean, "_alert_other_sessions_ended" boolean DEFAULT NULL::boolean, "_alert_access_change" boolean DEFAULT NULL::boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5332,11 +6334,11 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] upsert_user_telemetry_summary (schema.sql L11014-L11112)
+-- [RPC/FUNCTION] upsert_user_telemetry_summary (schema.sql L12913-L13011)
 CREATE OR REPLACE FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean DEFAULT false, "_spam_reason" "text" DEFAULT NULL::"text", "_clinical_records_saved" integer DEFAULT 0, "_forms_completed" integer DEFAULT 0, "_upgrade_views" integer DEFAULT 0, "_form_validation_errors" integer DEFAULT 0, "_recent_errors" "jsonb" DEFAULT '[]'::"jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
-    AS $$
+    AS $_$
 DECLARE
   v_user_id UUID := auth.uid();
   v_clean_user_name TEXT := COALESCE(NULLIF(trim(_user_name), ''), 'Usuário');
@@ -5431,26 +6433,33 @@ BEGIN
     spam_reason = COALESCE(EXCLUDED.spam_reason, user_telemetry_summaries.spam_reason),
     updated_at = now();
 END;
-$$;
+$_$;
 
--- [RPC/FUNCTION] user_has_active_clinic_membership (schema.sql L11118-L11132)
+-- [RPC/FUNCTION] user_has_active_clinic_membership (schema.sql L13017-L13038)
 CREATE OR REPLACE FUNCTION "public"."user_has_active_clinic_membership"("_user_id" "uuid", "_clinic_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
     AS $$
-  select exists (
-    select 1
-    from public.clinic_memberships
-    join public.clinics on clinics.id = clinic_memberships.clinic_id
-    where clinic_memberships.user_id = _user_id
-      and clinic_memberships.clinic_id = _clinic_id
-      and clinic_memberships.is_active = true
-      and clinic_memberships.membership_status = 'active'
-      and clinics.access_status in ('active', 'payment_pending')
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.clinic_memberships
+    JOIN public.clinics ON clinics.id = clinic_memberships.clinic_id
+    WHERE clinic_memberships.user_id = _user_id
+      AND clinic_memberships.clinic_id = _clinic_id
+      AND clinic_memberships.is_active = true
+      AND clinic_memberships.membership_status = 'active'::public.membership_status_type
+      AND COALESCE(clinics.access_status, 'active') IN ('active', 'payment_pending', 'trialing')
   )
+  OR EXISTS (
+    SELECT 1
+    FROM public.clinics
+    WHERE clinics.id = _clinic_id
+      AND clinics.account_owner_user_id = _user_id
+      AND COALESCE(clinics.access_status, 'active') IN ('active', 'payment_pending', 'trialing')
+  );
 $$;
 
--- [RPC/FUNCTION] validate_user_clinic (schema.sql L11505-L11518)
+-- [RPC/FUNCTION] validate_user_clinic (schema.sql L13411-L13424)
 CREATE OR REPLACE FUNCTION "public"."validate_user_clinic"("_user_id" "uuid", "_cnpj" "text") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5466,17 +6475,15 @@ CREATE OR REPLACE FUNCTION "public"."validate_user_clinic"("_user_id" "uuid", "_
   )
 $$;
 
--- [TABLE] clinic_collaborator_invitations (schema.sql L11648-L11672)
+-- [TABLE] clinic_collaborator_invitations (schema.sql L13561-L13585)
 CREATE TABLE IF NOT EXISTS "public"."clinic_collaborator_invitations" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
     "email" "text" NOT NULL,
     "operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type" NOT NULL,
-    "role_key" "text",
     "job_title" "text",
     "specialty" "text",
     "token_hash" "text" NOT NULL,
-    "valid_token_hashes" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
     "status" "text" DEFAULT 'pending'::"text" NOT NULL,
     "invited_by" "uuid",
     "existing_user_id" "uuid",
@@ -5486,14 +6493,29 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_collaborator_invitations" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "last_resent_at" timestamp with time zone,
+    "role_key" "text",
     "email_delivery_status" "text" DEFAULT 'pending'::"text" NOT NULL,
     "email_last_error" "text",
     "email_sent_at" timestamp with time zone,
-    CONSTRAINT "clinic_collaborator_invitations_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'cancelled'::"text", 'expired'::"text"]))),
-    CONSTRAINT "clinic_collaborator_invitations_email_delivery_status_check" CHECK (("email_delivery_status" = ANY (ARRAY['pending'::"text", 'sent'::"text", 'failed'::"text"])))
+    "valid_token_hashes" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    CONSTRAINT "clinic_collaborator_invitations_email_delivery_status_check" CHECK (("email_delivery_status" = ANY (ARRAY['pending'::"text", 'sent'::"text", 'failed'::"text"]))),
+    CONSTRAINT "clinic_collaborator_invitations_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'cancelled'::"text", 'expired'::"text"])))
 );
 
--- [TABLE] clinic_group_color_slots (schema.sql L11678-L11689)
+-- [TABLE] clinic_daily_metrics (schema.sql L13591-L13601)
+CREATE TABLE IF NOT EXISTS "public"."clinic_daily_metrics" (
+    "clinic_id" "uuid" NOT NULL,
+    "metric_date" "date" NOT NULL,
+    "total_sessions" integer DEFAULT 0 NOT NULL,
+    "canceled_sessions" integer DEFAULT 0 NOT NULL,
+    "paid_sessions" integer DEFAULT 0 NOT NULL,
+    "revenue_paid_cents" bigint DEFAULT 0 NOT NULL,
+    "revenue_open_cents" bigint DEFAULT 0 NOT NULL,
+    "revenue_credit_cents" bigint DEFAULT 0 NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+-- [TABLE] clinic_group_color_slots (schema.sql L13607-L13618)
 CREATE TABLE IF NOT EXISTS "public"."clinic_group_color_slots" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -5507,24 +6529,59 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_group_color_slots" (
     CONSTRAINT "clinic_group_color_slots_slot_index_check" CHECK ((("slot_index" >= 0) AND ("slot_index" < 21)))
 );
 
--- [TABLE] clinic_memberships (schema.sql L11695-L11709)
+-- [TABLE] clinic_health_insurances (schema.sql L13624-L13637)
+CREATE TABLE IF NOT EXISTS "public"."clinic_health_insurances" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "ans_code" "text",
+    "payment_term_days" integer DEFAULT 30 NOT NULL,
+    "requires_authorization_guide" boolean DEFAULT true NOT NULL,
+    "requires_session_signature" boolean DEFAULT true NOT NULL,
+    "is_active" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "clinic_health_insurances_payment_term_days_check" CHECK (("payment_term_days" >= 0))
+);
+
+-- [TABLE] clinic_insurance_procedures (schema.sql L13643-L13656)
+CREATE TABLE IF NOT EXISTS "public"."clinic_insurance_procedures" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "health_insurance_id" "uuid" NOT NULL,
+    "procedure_name" "text" NOT NULL,
+    "tuss_code" "text",
+    "session_unit_amount_cents" bigint NOT NULL,
+    "copay_amount_cents" bigint DEFAULT 0 NOT NULL,
+    "is_active" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "clinic_insurance_procedures_copay_amount_cents_check" CHECK (("copay_amount_cents" >= 0)),
+    CONSTRAINT "clinic_insurance_procedures_session_unit_amount_cents_check" CHECK (("session_unit_amount_cents" >= 0))
+);
+
+-- [TABLE] clinic_memberships (schema.sql L13662-L13679)
 CREATE TABLE IF NOT EXISTS "public"."clinic_memberships" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
     "user_id" "uuid" NOT NULL,
     "account_role" "public"."account_role_type",
     "operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type" NOT NULL,
-    "role_key" "text",
     "membership_status" "public"."membership_status_type" DEFAULT 'active'::"public"."membership_status_type" NOT NULL,
     "is_active" boolean DEFAULT true NOT NULL,
     "joined_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "ended_at" timestamp with time zone,
     "invited_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "job_title" "text",
+    "specialty" "text",
+    "working_hours" "jsonb",
+    "role_key" "text"
 );
 
--- [TABLE] clinic_operational_role_capabilities (schema.sql L11715-L11725)
+-- [TABLE] clinic_operational_role_capabilities (schema.sql L13697-L13707)
 CREATE TABLE IF NOT EXISTS "public"."clinic_operational_role_capabilities" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -5537,7 +6594,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_operational_role_capabilities" (
     CONSTRAINT "clinic_operational_role_capabilities_no_owner" CHECK (("operational_role" <> 'owner'::"text"))
 );
 
--- [TABLE] clinic_operational_roles (schema.sql L11733-L11747)
+-- [TABLE] clinic_operational_roles (schema.sql L13715-L13729)
 CREATE TABLE IF NOT EXISTS "public"."clinic_operational_roles" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -5554,7 +6611,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_operational_roles" (
     CONSTRAINT "clinic_operational_roles_no_custom_owner" CHECK ((("is_system" = true) OR ("role_key" <> 'owner'::"text")))
 );
 
--- [TABLE] clinic_subscriptions (schema.sql L11755-L11807)
+-- [TABLE] clinic_subscriptions (schema.sql L13737-L13789)
 CREATE TABLE IF NOT EXISTS "public"."clinic_subscriptions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -5603,13 +6660,13 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_subscriptions" (
     "is_read_only" boolean DEFAULT false,
     "billing_due_window" "text" DEFAULT 'DAY_1_TO_5'::"text",
     "billing_due_window_updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "clinic_subscriptions_billing_due_window_check" CHECK (("billing_due_window" = ANY (ARRAY['DAY_1_TO_5'::"text", 'DAY_10_TO_15'::"text", 'DAY_25_TO_30'::"text"]))),
     CONSTRAINT "clinic_subscriptions_discount_fixed_amount_check" CHECK (("discount_fixed_amount" >= (0)::numeric)),
     CONSTRAINT "clinic_subscriptions_discount_percentage_check" CHECK ((("discount_percentage" >= (0)::numeric) AND ("discount_percentage" <= (100)::numeric))),
-    CONSTRAINT "clinic_subscriptions_status_check" CHECK (("status" = ANY (ARRAY['ACTIVE'::"text", 'PENDING'::"text", 'TRIAL'::"text", 'TRIAL_EXPIRED'::"text", 'BETA'::"text", 'OVERDUE'::"text", 'PAUSED'::"text", 'CANCELED'::"text", 'SUSPENDED'::"text", 'EXPIRED'::"text", 'COURTESY'::"text"]))),
-    CONSTRAINT "clinic_subscriptions_billing_due_window_check" CHECK (("billing_due_window" = ANY (ARRAY['DAY_1_TO_5'::"text", 'DAY_10_TO_15'::"text", 'DAY_25_TO_30'::"text"])))
+    CONSTRAINT "clinic_subscriptions_status_check" CHECK (("status" = ANY (ARRAY['ACTIVE'::"text", 'PENDING'::"text", 'TRIAL'::"text", 'TRIAL_EXPIRED'::"text", 'BETA'::"text", 'OVERDUE'::"text", 'PAUSED'::"text", 'CANCELED'::"text", 'SUSPENDED'::"text", 'EXPIRED'::"text", 'COURTESY'::"text"])))
 );
 
--- [TABLE] clinic_tag_relations (schema.sql L11813-L11818)
+-- [TABLE] clinic_tag_relations (schema.sql L13795-L13800)
 CREATE TABLE IF NOT EXISTS "public"."clinic_tag_relations" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -5617,7 +6674,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_tag_relations" (
     "created_at" timestamp with time zone DEFAULT "now"()
 );
 
--- [TABLE] clinic_tags (schema.sql L11824-L11830)
+-- [TABLE] clinic_tags (schema.sql L13806-L13812)
 CREATE TABLE IF NOT EXISTS "public"."clinic_tags" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "name" "text" NOT NULL,
@@ -5626,7 +6683,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_tags" (
     "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
--- [TABLE] clinic_terms (schema.sql L11836-L11851)
+-- [TABLE] clinic_terms (schema.sql L13818-L13833)
 CREATE TABLE IF NOT EXISTS "public"."clinic_terms" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -5644,7 +6701,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_terms" (
     CONSTRAINT "clinic_terms_term_type_check" CHECK (("term_type" = ANY (ARRAY['adult_consent'::"text", 'minor_consent'::"text"])))
 );
 
--- [TABLE] clinics (schema.sql L11857-L11887)
+-- [TABLE] clinics (schema.sql L13871-L13901)
 CREATE TABLE IF NOT EXISTS "public"."clinics" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "cnpj" "text" NOT NULL,
@@ -5677,7 +6734,7 @@ CASE
 END))
 );
 
--- [TABLE] profiles (schema.sql L12319-L12348)
+-- [TABLE] profiles (schema.sql L14416-L14449)
 CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "id" "uuid" NOT NULL,
     "clinic_id" "uuid",
@@ -5704,12 +6761,16 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "owner_terms_accepted_at" timestamp with time zone,
     "profession" "text",
     "council_name" "text" DEFAULT 'CREFITO'::"text",
+    "gender" "text",
+    "preferred_pronoun" "text",
+    "signup_origin" "text",
+    "signup_utm" "jsonb",
     "totp_secret" "text",
     "totp_enabled" boolean DEFAULT false NOT NULL,
     "totp_enabled_at" timestamp with time zone
 );
 
--- [TABLE] team_development_profiles (schema.sql L12539-L12555)
+-- [TABLE] team_development_profiles (schema.sql L14687-L14703)
 CREATE TABLE IF NOT EXISTS "public"."team_development_profiles" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -5728,14 +6789,14 @@ CREATE TABLE IF NOT EXISTS "public"."team_development_profiles" (
     CONSTRAINT "team_development_profiles_internal_level_check" CHECK (("internal_level" = ANY (ARRAY['estagiario'::"text", 'junior'::"text", 'pleno'::"text", 'senior'::"text", 'referencia'::"text"])))
 );
 
--- [TABLE] user_active_clinic_contexts (schema.sql L12578-L12582)
+-- [TABLE] user_active_clinic_contexts (schema.sql L14726-L14730)
 CREATE TABLE IF NOT EXISTS "public"."user_active_clinic_contexts" (
     "user_id" "uuid" NOT NULL,
     "clinic_id" "uuid" NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_governance_overrides (schema.sql L12588-L12593)
+-- [TABLE] user_governance_overrides (schema.sql L14736-L14741)
 CREATE TABLE IF NOT EXISTS "public"."user_governance_overrides" (
     "user_id" "uuid" NOT NULL,
     "max_actions" integer DEFAULT 150 NOT NULL,
@@ -5743,7 +6804,7 @@ CREATE TABLE IF NOT EXISTS "public"."user_governance_overrides" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_punishments (schema.sql L12599-L12609)
+-- [TABLE] user_punishments (schema.sql L14747-L14757)
 CREATE TABLE IF NOT EXISTS "public"."user_punishments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -5756,7 +6817,7 @@ CREATE TABLE IF NOT EXISTS "public"."user_punishments" (
     "is_manual" boolean DEFAULT false NOT NULL
 );
 
--- [TABLE] user_release_note_states (schema.sql L12615-L12622)
+-- [TABLE] user_release_note_states (schema.sql L14763-L14770)
 CREATE TABLE IF NOT EXISTS "public"."user_release_note_states" (
     "user_id" "uuid" NOT NULL,
     "last_seen_release_id" "uuid",
@@ -5766,14 +6827,14 @@ CREATE TABLE IF NOT EXISTS "public"."user_release_note_states" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_roles (schema.sql L12628-L12632)
+-- [TABLE] user_roles (schema.sql L14776-L14780)
 CREATE TABLE IF NOT EXISTS "public"."user_roles" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
     "role" "public"."app_role" NOT NULL
 );
 
--- [TABLE] user_security_settings (schema.sql L12660-L12669)
+-- [TABLE] user_security_settings (schema.sql L14808-L14817)
 CREATE TABLE IF NOT EXISTS "public"."user_security_settings" (
     "user_id" "uuid" NOT NULL,
     "clinic_id" "uuid",
@@ -5785,7 +6846,7 @@ CREATE TABLE IF NOT EXISTS "public"."user_security_settings" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_telemetry_summaries (schema.sql L12675-L12695)
+-- [TABLE] user_telemetry_summaries (schema.sql L14823-L14843)
 CREATE TABLE IF NOT EXISTS "public"."user_telemetry_summaries" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -5800,159 +6861,169 @@ CREATE TABLE IF NOT EXISTS "public"."user_telemetry_summaries" (
     "top_routes" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
     "is_spam_flagged" boolean DEFAULT false NOT NULL,
     "spam_reason" "text",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "clinical_records_saved_count" integer DEFAULT 0 NOT NULL,
     "forms_completed_count" integer DEFAULT 0 NOT NULL,
     "upgrade_views_count" integer DEFAULT 0 NOT NULL,
     "form_validation_errors_count" integer DEFAULT 0 NOT NULL,
-    "recent_errors" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "recent_errors" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL
 );
 
--- [POLICY] Managers insert clinic memberships ON clinic_memberships (schema.sql L14349-L14351)
-CREATE POLICY "Managers insert clinic memberships" ON "public"."clinic_memberships" FOR INSERT TO "authenticated" WITH CHECK (("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id") AND (EXISTS ( SELECT 1
+-- [POLICY] Managers insert clinic memberships ON clinic_memberships (schema.sql L16843-L16845)
+CREATE POLICY "Managers insert clinic memberships" ON "public"."clinic_memberships" FOR INSERT TO "authenticated" WITH CHECK ((("public"."current_user_can"('subaccounts.write'::"text", "clinic_id") OR "public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")) AND (EXISTS ( SELECT 1
    FROM "public"."clinics"
-  WHERE (("clinics"."id" = "clinic_memberships"."clinic_id") AND ("clinics"."subscription_plan" = 'clinic'::"public"."subscription_plan"))))));
+  WHERE (("clinics"."id" = "clinic_memberships"."clinic_id") AND (("clinics"."subscription_plan")::"text" = ANY (ARRAY['clinic'::"text", 'enterprise'::"text", 'clinica_basico'::"text", 'clinica_medio'::"text", 'clinica_top'::"text", 'prof_top'::"text"])))))));
 
--- [POLICY] Managers read clinic collaborator invitations ON clinic_collaborator_invitations (schema.sql L14355-L14355)
-CREATE POLICY "Managers read clinic collaborator invitations" ON "public"."clinic_collaborator_invitations" FOR SELECT TO "authenticated" USING ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id"));
+-- [POLICY] Managers read clinic collaborator invitations ON clinic_collaborator_invitations (schema.sql L16849-L16849)
+CREATE POLICY "Managers read clinic collaborator invitations" ON "public"."clinic_collaborator_invitations" FOR SELECT TO "authenticated" USING (("public"."current_user_can"('subaccounts.read'::"text", "clinic_id") OR "public"."current_user_can"('subaccounts.write'::"text", "clinic_id") OR "public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")));
 
--- [POLICY] Managers update clinic memberships ON clinic_memberships (schema.sql L14359-L14359)
+-- [POLICY] Managers update clinic memberships ON clinic_memberships (schema.sql L16853-L16853)
 CREATE POLICY "Managers update clinic memberships" ON "public"."clinic_memberships" FOR UPDATE TO "authenticated" USING ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id"));
 
--- [POLICY] Managers update clinic profiles ON profiles (schema.sql L14363-L14363)
+-- [POLICY] Managers update clinic profiles ON profiles (schema.sql L16857-L16857)
 CREATE POLICY "Managers update clinic profiles" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id"));
 
--- [POLICY] Owners e gestores podem ver a assinatura ON clinic_subscriptions (schema.sql L14367-L14369)
-CREATE POLICY "Owners e gestores podem ver a assinatura" ON "public"."clinic_subscriptions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."clinic_memberships" "cm"
-  WHERE (("cm"."clinic_id" = "clinic_subscriptions"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR "public"."current_user_can"('subscription_billing.read'::"text", "clinic_subscriptions"."clinic_id"))))));
+-- [POLICY] Owners e gestores podem ver a assinatura ON clinic_subscriptions (schema.sql L16861-L16861)
+CREATE POLICY "Owners e gestores podem ver a assinatura" ON "public"."clinic_subscriptions" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id") OR "public"."current_user_can"('subscription_billing.read'::"text", "clinic_id")));
 
--- [POLICY] Platform admins podem ver todas as clinicas ON clinics (schema.sql L14385-L14387)
-CREATE POLICY "Platform admins podem ver todas as clinicas" ON "public"."clinics" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
-   FROM "public"."platform_admins" "pa"
-  WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
-
--- [POLICY] Platform admins podem ver todas as assinaturas ON clinic_subscriptions (schema.sql L14391-L14393)
+-- [POLICY] Platform admins podem ver todas as assinaturas ON clinic_subscriptions (schema.sql L16889-L16891)
 CREATE POLICY "Platform admins podem ver todas as assinaturas" ON "public"."clinic_subscriptions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform owners can manage governance overrides ON user_governance_overrides (schema.sql L14413-L14413)
+-- [POLICY] Platform admins podem ver todas as clinicas ON clinics (schema.sql L16895-L16897)
+CREATE POLICY "Platform admins podem ver todas as clinicas" ON "public"."clinics" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."platform_admins" "pa"
+  WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
+
+-- [POLICY] Platform owners can manage governance overrides ON user_governance_overrides (schema.sql L16927-L16927)
 CREATE POLICY "Platform owners can manage governance overrides" ON "public"."user_governance_overrides" TO "authenticated" USING ("public"."is_platform_owner"()) WITH CHECK ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners can manage user punishments ON user_punishments (schema.sql L14421-L14421)
+-- [POLICY] Platform owners can manage user punishments ON user_punishments (schema.sql L16935-L16935)
 CREATE POLICY "Platform owners can manage user punishments" ON "public"."user_punishments" TO "authenticated" USING ("public"."is_platform_owner"()) WITH CHECK ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners can view all summaries ON user_telemetry_summaries (schema.sql L14425-L14425)
+-- [POLICY] Platform owners can view all summaries ON user_telemetry_summaries (schema.sql L16939-L16939)
 CREATE POLICY "Platform owners can view all summaries" ON "public"."user_telemetry_summaries" FOR SELECT TO "authenticated" USING ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners manage clinic_tag_relations ON clinic_tag_relations (schema.sql L14433-L14433)
+-- [POLICY] Platform owners manage clinic_tag_relations ON clinic_tag_relations (schema.sql L16947-L16947)
 CREATE POLICY "Platform owners manage clinic_tag_relations" ON "public"."clinic_tag_relations" USING ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Platform owners manage clinic_tags ON clinic_tags (schema.sql L14437-L14437)
+-- [POLICY] Platform owners manage clinic_tags ON clinic_tags (schema.sql L16951-L16951)
 CREATE POLICY "Platform owners manage clinic_tags" ON "public"."clinic_tags" USING ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Super admins manage all clinics ON clinics (schema.sql L14485-L14485)
+-- [POLICY] Super admins manage all clinics ON clinics (schema.sql L16995-L16995)
 CREATE POLICY "Super admins manage all clinics" ON "public"."clinics" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all profiles ON profiles (schema.sql L14505-L14505)
+-- [POLICY] Super admins manage all profiles ON profiles (schema.sql L17015-L17015)
 CREATE POLICY "Super admins manage all profiles" ON "public"."profiles" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all roles ON user_roles (schema.sql L14509-L14509)
+-- [POLICY] Super admins manage all roles ON user_roles (schema.sql L17019-L17019)
 CREATE POLICY "Super admins manage all roles" ON "public"."user_roles" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users can insert own profile ON profiles (schema.sql L14525-L14525)
+-- [POLICY] Users can insert own profile ON profiles (schema.sql L17039-L17039)
 CREATE POLICY "Users can insert own profile" ON "public"."profiles" FOR INSERT TO "authenticated" WITH CHECK (("id" = "auth"."uid"()));
 
--- [POLICY] Users can read own active punishments ON user_punishments (schema.sql L14529-L14529)
+-- [POLICY] Users can read own active punishments ON user_punishments (schema.sql L17043-L17043)
 CREATE POLICY "Users can read own active punishments" ON "public"."user_punishments" FOR SELECT TO "authenticated" USING ((("auth"."uid"() = "user_id") OR "public"."is_platform_owner"()));
 
--- [POLICY] Users can read own overrides ON user_governance_overrides (schema.sql L14533-L14533)
+-- [POLICY] Users can read own overrides ON user_governance_overrides (schema.sql L17047-L17047)
 CREATE POLICY "Users can read own overrides" ON "public"."user_governance_overrides" FOR SELECT TO "authenticated" USING ((("auth"."uid"() = "user_id") OR "public"."is_platform_owner"()));
 
--- [POLICY] Users can upsert own summary row ON user_telemetry_summaries (schema.sql L14537-L14537)
+-- [POLICY] Users can upsert own summary row ON user_telemetry_summaries (schema.sql L17051-L17051)
 CREATE POLICY "Users can upsert own summary row" ON "public"."user_telemetry_summaries" TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
 
--- [POLICY] Users delete clinic terms ON clinic_terms (schema.sql L14559-L14559)
-CREATE POLICY "Users delete clinic terms" ON "public"."clinic_terms" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
+-- [POLICY] Users delete clinic terms ON clinic_terms (schema.sql L17073-L17073)
+CREATE POLICY "Users delete clinic terms" ON "public"."clinic_terms" FOR DELETE TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users insert clinic terms ON clinic_terms (schema.sql L14583-L14583)
-CREATE POLICY "Users insert clinic terms" ON "public"."clinic_terms" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
+-- [POLICY] Users insert clinic terms ON clinic_terms (schema.sql L17097-L17097)
+CREATE POLICY "Users insert clinic terms" ON "public"."clinic_terms" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic memberships ON clinic_memberships (schema.sql L14611-L14611)
-CREATE POLICY "Users read clinic memberships" ON "public"."clinic_memberships" FOR SELECT TO "authenticated" USING (("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())));
+-- [POLICY] Users read clinic daily metrics ON clinic_daily_metrics (schema.sql L17129-L17129)
+CREATE POLICY "Users read clinic daily metrics" ON "public"."clinic_daily_metrics" FOR SELECT TO "authenticated" USING ((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND ("public"."current_user_can"('treasury.read'::"text", "clinic_id") OR "public"."current_user_can"('sessions.read'::"text", "clinic_id"))));
 
--- [POLICY] Users read clinic profiles ON profiles (schema.sql L14627-L14630)
+-- [POLICY] Users read clinic memberships ON clinic_memberships (schema.sql L17137-L17137)
+CREATE POLICY "Users read clinic memberships" ON "public"."clinic_memberships" FOR SELECT TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR ("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")));
+
+-- [POLICY] Users read clinic profiles ON profiles (schema.sql L17153-L17156)
 CREATE POLICY "Users read clinic profiles" ON "public"."profiles" FOR SELECT TO "authenticated" USING ((("id" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role") AS "has_role") OR (("clinic_id" IS NOT NULL) AND ("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id"))) OR (EXISTS ( SELECT 1
    FROM ("public"."clinic_memberships" "requester_membership"
      JOIN "public"."clinic_memberships" "target_membership" ON (("target_membership"."clinic_id" = "requester_membership"."clinic_id")))
   WHERE (("requester_membership"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("requester_membership"."is_active" = true) AND ("target_membership"."user_id" = "profiles"."id"))))));
 
--- [POLICY] Users read clinic terms ON clinic_terms (schema.sql L14644-L14644)
-CREATE POLICY "Users read clinic terms" ON "public"."clinic_terms" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('patients.read'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.read'::"text", "clinic_id"))));
+-- [POLICY] Users read clinic terms ON clinic_terms (schema.sql L17176-L17176)
+CREATE POLICY "Users read clinic terms" ON "public"."clinic_terms" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('patients.read'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.read'::"text", "clinic_id"))));
 
--- [POLICY] Users read clinic_group_color_slots ON clinic_group_color_slots (schema.sql L14648-L14648)
+-- [POLICY] Users read clinic_group_color_slots ON clinic_group_color_slots (schema.sql L17180-L17180)
 CREATE POLICY "Users read clinic_group_color_slots" ON "public"."clinic_group_color_slots" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.read'::"text", "clinic_id")));
 
--- [POLICY] Users read own active clinic context ON user_active_clinic_contexts (schema.sql L14652-L14652)
+-- [POLICY] Users read own active clinic context ON user_active_clinic_contexts (schema.sql L17184-L17184)
 CREATE POLICY "Users read own active clinic context" ON "public"."user_active_clinic_contexts" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own clinic ON clinics (schema.sql L14660-L14660)
-CREATE POLICY "Users read own clinic" ON "public"."clinics" FOR SELECT TO "authenticated" USING (("id" = "public"."get_user_clinic_id"("auth"."uid"())));
+-- [POLICY] Users read own clinic ON clinics (schema.sql L17192-L17192)
+CREATE POLICY "Users read own clinic" ON "public"."clinics" FOR SELECT TO "authenticated" USING ((("id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "id") OR ("account_owner_user_id" = "auth"."uid"())));
 
--- [POLICY] Users read own release note state ON user_release_note_states (schema.sql L14668-L14668)
+-- [POLICY] Users read own release note state ON user_release_note_states (schema.sql L17200-L17200)
 CREATE POLICY "Users read own release note state" ON "public"."user_release_note_states" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own roles ON user_roles (schema.sql L14672-L14672)
+-- [POLICY] Users read own roles ON user_roles (schema.sql L17204-L17204)
 CREATE POLICY "Users read own roles" ON "public"."user_roles" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users update clinic terms ON clinic_terms (schema.sql L14704-L14704)
-CREATE POLICY "Users update clinic terms" ON "public"."clinic_terms" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
+-- [POLICY] Users update clinic terms ON clinic_terms (schema.sql L17236-L17236)
+CREATE POLICY "Users update clinic terms" ON "public"."clinic_terms" FOR UPDATE TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users update managed clinic ON clinics (schema.sql L14708-L14708)
+-- [POLICY] Users update managed clinic ON clinics (schema.sql L17240-L17240)
 CREATE POLICY "Users update managed clinic" ON "public"."clinics" FOR UPDATE TO "authenticated" USING ("public"."current_user_can"('clinic_profile.manage'::"text", "id")) WITH CHECK ("public"."current_user_can"('clinic_profile.manage'::"text", "id"));
 
--- [POLICY] Users update own profile ON profiles (schema.sql L14716-L14716)
+-- [POLICY] Users update own profile ON profiles (schema.sql L17248-L17248)
 CREATE POLICY "Users update own profile" ON "public"."profiles" FOR UPDATE TO "authenticated" USING (("id" = "auth"."uid"())) WITH CHECK (("id" = "auth"."uid"()));
 
--- [POLICY] Users write clinic_group_color_slots ON clinic_group_color_slots (schema.sql L14748-L14748)
+-- [POLICY] Users write clinic_group_color_slots ON clinic_group_color_slots (schema.sql L17280-L17280)
 CREATE POLICY "Users write clinic_group_color_slots" ON "public"."clinic_group_color_slots" TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
 
--- [POLICY] operational roles are manageable by role admins ON clinic_operational_roles (schema.sql L14820-L14820)
+-- [POLICY] clinic_health_insurances_delete ON clinic_health_insurances (schema.sql L17324-L17324)
+CREATE POLICY "clinic_health_insurances_delete" ON "public"."clinic_health_insurances" FOR DELETE USING ("public"."current_user_can"('treasury.manage'::"text", "clinic_id"));
+
+-- [POLICY] clinic_health_insurances_insert ON clinic_health_insurances (schema.sql L17328-L17328)
+CREATE POLICY "clinic_health_insurances_insert" ON "public"."clinic_health_insurances" FOR INSERT WITH CHECK ("public"."current_user_can"('treasury.manage'::"text", "clinic_id"));
+
+-- [POLICY] clinic_health_insurances_select ON clinic_health_insurances (schema.sql L17332-L17332)
+CREATE POLICY "clinic_health_insurances_select" ON "public"."clinic_health_insurances" FOR SELECT USING (("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id") AND ("deleted_at" IS NULL)));
+
+-- [POLICY] clinic_health_insurances_update ON clinic_health_insurances (schema.sql L17336-L17336)
+CREATE POLICY "clinic_health_insurances_update" ON "public"."clinic_health_insurances" FOR UPDATE USING ("public"."current_user_can"('treasury.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('treasury.manage'::"text", "clinic_id"));
+
+-- [POLICY] clinic_insurance_procedures_all ON clinic_insurance_procedures (schema.sql L17343-L17343)
+CREATE POLICY "clinic_insurance_procedures_all" ON "public"."clinic_insurance_procedures" USING ("public"."current_user_can"('treasury.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('treasury.manage'::"text", "clinic_id"));
+
+-- [POLICY] clinic_insurance_procedures_select ON clinic_insurance_procedures (schema.sql L17347-L17347)
+CREATE POLICY "clinic_insurance_procedures_select" ON "public"."clinic_insurance_procedures" FOR SELECT USING ("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id"));
+
+-- [POLICY] operational roles are manageable by role admins ON clinic_operational_roles (schema.sql L17396-L17396)
 CREATE POLICY "operational roles are manageable by role admins" ON "public"."clinic_operational_roles" USING ("public"."current_user_can"('subaccounts_roles.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('subaccounts_roles.manage'::"text", "clinic_id"));
 
--- [POLICY] operational roles are readable by clinic members ON clinic_operational_roles (schema.sql L14824-L14824)
+-- [POLICY] operational roles are readable by clinic members ON clinic_operational_roles (schema.sql L17400-L17400)
 CREATE POLICY "operational roles are readable by clinic members" ON "public"."clinic_operational_roles" FOR SELECT USING ("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id"));
 
--- [POLICY] platform owners can manage all clinic operational role capabili ON clinic_operational_role_capabilities (schema.sql L14852-L14852)
+-- [POLICY] platform owners can manage all clinic operational role capabili ON clinic_operational_role_capabilities (schema.sql L17439-L17439)
 CREATE POLICY "platform owners can manage all clinic operational role capabili" ON "public"."clinic_operational_role_capabilities" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] platform owners can manage all clinic operational roles ON clinic_operational_roles (schema.sql L14856-L14856)
+-- [POLICY] platform owners can manage all clinic operational roles ON clinic_operational_roles (schema.sql L17443-L17443)
 CREATE POLICY "platform owners can manage all clinic operational roles" ON "public"."clinic_operational_roles" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] platform owners can read all clinic operational role capabiliti ON clinic_operational_role_capabilities (schema.sql L14860-L14860)
+-- [POLICY] platform owners can read all clinic operational role capabiliti ON clinic_operational_role_capabilities (schema.sql L17447-L17447)
 CREATE POLICY "platform owners can read all clinic operational role capabiliti" ON "public"."clinic_operational_role_capabilities" FOR SELECT USING ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] platform owners can read all clinic operational roles ON clinic_operational_roles (schema.sql L14864-L14864)
+-- [POLICY] platform owners can read all clinic operational roles ON clinic_operational_roles (schema.sql L17451-L17451)
 CREATE POLICY "platform owners can read all clinic operational roles" ON "public"."clinic_operational_roles" FOR SELECT USING ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] role capabilities are manageable by role admins ON clinic_operational_role_capabilities (schema.sql L14892-L14892)
+-- [POLICY] role capabilities are manageable by role admins ON clinic_operational_role_capabilities (schema.sql L17482-L17482)
 CREATE POLICY "role capabilities are manageable by role admins" ON "public"."clinic_operational_role_capabilities" USING ("public"."current_user_can"('subaccounts_roles.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('subaccounts_roles.manage'::"text", "clinic_id"));
 
--- [POLICY] role capabilities are readable by clinic members ON clinic_operational_role_capabilities (schema.sql L14896-L14896)
+-- [POLICY] role capabilities are readable by clinic members ON clinic_operational_role_capabilities (schema.sql L17486-L17486)
 CREATE POLICY "role capabilities are readable by clinic members" ON "public"."clinic_operational_role_capabilities" FOR SELECT USING ("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id"));
 
--- [POLICY] team development readable by clinic admins or self ON team_development_profiles (schema.sql L14918-L14918)
+-- [POLICY] team development readable by clinic admins or self ON team_development_profiles (schema.sql L17508-L17508)
 CREATE POLICY "team development readable by clinic admins or self" ON "public"."team_development_profiles" FOR SELECT USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND ("public"."current_user_can"('subaccounts_analytics.read'::"text", "clinic_id") OR ("user_id" = "auth"."uid"()))));
 
--- [POLICY] users can read own security settings ON user_security_settings (schema.sql L14960-L14960)
+-- [POLICY] users can read own security settings ON user_security_settings (schema.sql L17550-L17550)
 CREATE POLICY "users can read own security settings" ON "public"."user_security_settings" FOR SELECT USING (("user_id" = "auth"."uid"()));
-
--- [RPC/FUNCTION] get_clinic_storage_usage (schema.sql L16421-L16427)
-CREATE OR REPLACE FUNCTION public.get_clinic_storage_usage(_clinic_id uuid)
-RETURNS TABLE (
-  total_bytes bigint,
-  total_files bigint
-) 
-LANGUAGE sql
-SECURITY DEFINER
