@@ -278,6 +278,8 @@ export const useTeamRolesManagement = ({
       sort_order: (idx + 1) * 10,
     }));
 
+    // Otimização de UI Instantânea (Otimista)
+    setOperationalRoleDefinitions(updatedList);
     setSavingRoleDefinition(true);
 
     const { error } = await supabase
@@ -287,6 +289,8 @@ export const useTeamRolesManagement = ({
     setSavingRoleDefinition(false);
 
     if (error) {
+      // Reverte em caso de erro no servidor
+      setOperationalRoleDefinitions(sortedOperationalRoleDefinitions);
       toast({
         title: "Erro ao reordenar papéis",
         description: error.message,
@@ -294,8 +298,6 @@ export const useTeamRolesManagement = ({
       });
       return;
     }
-
-    setOperationalRoleDefinitions(updatedList);
   };
 
   // Otimização Big-O: Mapa O(P) para contagem de convites pendentes por papel

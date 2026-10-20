@@ -56,6 +56,7 @@ export interface ClinicPlanUsage {
 interface ClinicSubscriptionRecord {
   status?: string | null;
   is_free_trial?: boolean | null;
+  is_courtesy?: boolean | null;
   expires_at?: string | null;
   current_period_end?: string | null;
   trial_ends_at?: string | null;
@@ -113,7 +114,8 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
 
       const sub = subData as ClinicSubscriptionRecord | null;
       const rawStatus = (sub?.status || "").toUpperCase();
-      const isTrial = !sub ? false : (rawStatus === "TRIAL" || sub.is_free_trial === true);
+      const isCourtesy = sub?.is_courtesy === true || rawStatus === "COURTESY";
+      const isTrial = !sub ? false : !isCourtesy && (rawStatus === "TRIAL" || sub.is_free_trial === true);
       const isTimeExpired = sub?.expires_at
         ? new Date(sub.expires_at).getTime() < Date.now()
         : sub?.current_period_end

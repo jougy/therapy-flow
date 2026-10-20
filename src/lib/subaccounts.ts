@@ -1,4 +1,5 @@
 import type { Database } from "@/integrations/supabase/types";
+import { canHaveSubaccounts, type SubscriptionPlan } from "@/lib/rbac";
 
 export type MembershipLike = Pick<
   Database["public"]["Tables"]["clinic_memberships"]["Row"],
@@ -89,13 +90,13 @@ export const getConcurrentAccessCapacity = (
   };
 };
 
-export const shouldShowTeamSettingsSection = (subscriptionPlan: "solo" | "clinic" | null | undefined) =>
-  subscriptionPlan === "clinic";
+export const shouldShowTeamSettingsSection = (subscriptionPlan: SubscriptionPlan | string | null | undefined) =>
+  canHaveSubaccounts(subscriptionPlan);
 
 export const shouldShowTeamAnalyticsSection = (
-  subscriptionPlan: "solo" | "clinic" | null | undefined,
+  subscriptionPlan: SubscriptionPlan | string | null | undefined,
   canReadAnalytics: boolean
-) => subscriptionPlan === "clinic" && canReadAnalytics;
+) => canHaveSubaccounts(subscriptionPlan) && canReadAnalytics;
 
 export const sortMembershipsForDisplay = (memberships: MembershipLike[]) =>
   [...memberships].sort((left, right) => {

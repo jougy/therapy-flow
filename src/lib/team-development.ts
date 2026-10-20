@@ -1,4 +1,4 @@
-import type { MembershipStatus, OperationalRole, SubscriptionPlan } from "@/lib/rbac";
+import { canHaveSubaccounts, type MembershipStatus, type OperationalRole, type SubscriptionPlan } from "@/lib/rbac";
 
 export type DevelopmentStatus =
   | "onboarding"
@@ -60,7 +60,7 @@ export const shouldShowTeamDevelopmentSection = (
   subscriptionPlan: SubscriptionPlan | null | undefined,
   canReadAnalytics: boolean,
   operationalRole: OperationalRole
-) => subscriptionPlan === "clinic" && (canReadAnalytics || operationalRole === "professional");
+) => canHaveSubaccounts(subscriptionPlan) && (canReadAnalytics || operationalRole === "professional");
 
 export const getDevelopmentStatusMeta = (status: DevelopmentStatus | string | null | undefined) =>
   (status ? DEVELOPMENT_STATUS_META[status as DevelopmentStatus] : null) ?? UNKNOWN_DEVELOPMENT_STATUS_META;

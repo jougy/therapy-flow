@@ -3,7 +3,200 @@
 -- Fonte SSOT: supabase/schema.sql
 -- ==========================================================================
 
--- [RPC/FUNCTION] finalize_overdue_agenda_events (schema.sql L3334-L3446)
+-- [RPC/FUNCTION] batch_sync_push (schema.sql L1272-L1421)
+CREATE OR REPLACE FUNCTION "public"."batch_sync_push"("_mutations" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  _item jsonb;
+  _table text;
+  _action text;
+  _id uuid;
+  _expected_version integer;
+  _current_version integer;
+  _data jsonb;
+  _results jsonb := '[]'::jsonb;
+  _user_id uuid := auth.uid();
+  _applied_count integer := 0;
+  _conflict_count integer := 0;
+BEGIN
+  IF _user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuário não autenticado.';
+  END IF;
+
+  IF _mutations IS NULL OR jsonb_typeof(_mutations) <> 'array' THEN
+    RAISE EXCEPTION 'Payload inválido: array esperado.';
+  END IF;
+
+  FOR _item IN SELECT * FROM jsonb_array_elements(_mutations)
+  LOOP
+    _table := _item->>'table';
+    _action := _item->>'action'; -- 'upsert' ou 'delete'
+    _id := (_item->>'id')::uuid;
+    _expected_version := (_item->>'expected_version')::integer;
+    _data := COALESCE(_item->'data', '{}'::jsonb);
+
+    IF _table = 'sessions' THEN
+      IF _action = 'delete' THEN
+        UPDATE public.sessions
+        SET deleted_at = now(), deleted_by_user_id = _user_id
+        WHERE id = _id AND deleted_at IS NULL;
+
+        _applied_count := _applied_count + 1;
+        _results := _results || jsonb_build_object('id', _id, 'status', 'deleted');
+      ELSE
+        -- Checagem de versão concorrente
+        SELECT version INTO _current_version FROM public.sessions WHERE id = _id;
+
+        IF _current_version IS NOT NULL AND _expected_version IS NOT NULL AND _current_version > _expected_version THEN
+          _conflict_count := _conflict_count + 1;
+          _results := _results || jsonb_build_object('id', _id, 'status', 'conflict', 'server_version', _current_version);
+        ELSE
+          -- Executar update ou insert seguro
+          IF _current_version IS NOT NULL THEN
+            UPDATE public.sessions
+            SET
+              notes = COALESCE(_data->>'notes', notes),
+              status = COALESCE(_data->>'status', status),
+              pain_score = COALESCE((_data->>'pain_score')::integer, pain_score),
+              anamnesis = CASE WHEN _data ? 'anamnesis' THEN _data->'anamnesis' ELSE anamnesis END,
+              treatment = CASE WHEN _data ? 'treatment' THEN _data->'treatment' ELSE treatment END,
+              updated_at = now()
+            WHERE id = _id;
+          ELSE
+            INSERT INTO public.sessions (
+              id,
+              user_id,
+              patient_id,
+              clinic_id,
+              session_date,
+              notes,
+              status,
+              pain_score,
+              anamnesis,
+              treatment
+            )
+            VALUES (
+              _id,
+              _user_id,
+              (_data->>'patient_id')::uuid,
+              (_data->>'clinic_id')::uuid,
+              COALESCE((_data->>'session_date')::timestamptz, now()),
+              _data->>'notes',
+              COALESCE(_data->>'status', 'rascunho'),
+              COALESCE((_data->>'pain_score')::integer, 0),
+              _data->'anamnesis',
+              _data->'treatment'
+            );
+          END IF;
+
+          _applied_count := _applied_count + 1;
+          _results := _results || jsonb_build_object('id', _id, 'status', 'applied');
+        END IF;
+      END IF;
+
+    ELSIF _table = 'agenda_events' THEN
+      IF _action = 'delete' THEN
+        DELETE FROM public.agenda_events WHERE id = _id;
+        _applied_count := _applied_count + 1;
+        _results := _results || jsonb_build_object('id', _id, 'status', 'deleted');
+      ELSE
+        SELECT version INTO _current_version FROM public.agenda_events WHERE id = _id;
+
+        IF _current_version IS NOT NULL AND _expected_version IS NOT NULL AND _current_version > _expected_version THEN
+          _conflict_count := _conflict_count + 1;
+          _results := _results || jsonb_build_object('id', _id, 'status', 'conflict', 'server_version', _current_version);
+        ELSE
+          IF _current_version IS NOT NULL THEN
+            UPDATE public.agenda_events
+            SET
+              title = COALESCE(_data->>'title', title),
+              scheduled_for = COALESCE((_data->>'scheduled_for')::timestamptz, scheduled_for),
+              status = COALESCE(_data->>'status', status),
+              updated_at = now()
+            WHERE id = _id;
+          ELSE
+            INSERT INTO public.agenda_events (
+              id,
+              user_id,
+              clinic_id,
+              patient_id,
+              title,
+              scheduled_for,
+              event_type,
+              status
+            )
+            VALUES (
+              _id,
+              _user_id,
+              (_data->>'clinic_id')::uuid,
+              (_data->>'patient_id')::uuid,
+              COALESCE(_data->>'title', 'Consulta'),
+              COALESCE((_data->>'scheduled_for')::timestamptz, now()),
+              COALESCE(_data->>'event_type', 'atendimento'),
+              COALESCE(_data->>'status', 'agendado')
+            );
+          END IF;
+
+          _applied_count := _applied_count + 1;
+          _results := _results || jsonb_build_object('id', _id, 'status', 'applied');
+        END IF;
+      END IF;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'applied_count', _applied_count,
+    'conflict_count', _conflict_count,
+    'results', _results
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] custom_access_token_hook (schema.sql L3221-L3259)
+CREATE OR REPLACE FUNCTION "public"."custom_access_token_hook"("event" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  _user_id uuid;
+  _claims jsonb;
+  _active_clinic_id uuid;
+  _role text;
+  _is_owner boolean := false;
+BEGIN
+  _user_id := (event->>'user_id')::uuid;
+  _claims := COALESCE(event->'claims', '{}'::jsonb);
+
+  IF _user_id IS NOT NULL THEN
+    _active_clinic_id := public.get_user_clinic_id(_user_id);
+
+    IF _active_clinic_id IS NOT NULL THEN
+      SELECT 
+        operational_role::text,
+        (account_role = 'account_owner' OR operational_role = 'owner')
+      INTO _role, _is_owner
+      FROM public.clinic_memberships
+      WHERE user_id = _user_id 
+        AND clinic_id = _active_clinic_id
+        AND is_active = true
+        AND membership_status = 'active'
+      LIMIT 1;
+
+      _claims := jsonb_set(_claims, '{active_clinic_id}', to_jsonb(_active_clinic_id::text));
+      _claims := jsonb_set(_claims, '{operational_role}', to_jsonb(COALESCE(_role, 'professional')));
+      _claims := jsonb_set(_claims, '{is_clinic_owner}', to_jsonb(COALESCE(_is_owner, false)));
+    END IF;
+  END IF;
+
+  event := jsonb_set(event, '{claims}', _claims);
+  RETURN event;
+END;
+$$;
+
+-- [RPC/FUNCTION] finalize_overdue_agenda_events (schema.sql L4033-L4145)
 CREATE OR REPLACE FUNCTION "public"."finalize_overdue_agenda_events"("_batch_size" integer DEFAULT 500, "_timezone" "text" DEFAULT 'America/Sao_Paulo'::"text") RETURNS TABLE("cancelled_count" integer, "deleted_event_count" integer)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -118,7 +311,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_personal_signup (schema.sql L5675-L5904)
+-- [RPC/FUNCTION] handle_personal_signup (schema.sql L6578-L6821)
 CREATE OR REPLACE FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text" DEFAULT NULL::"text", "_cpf" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date", "_profession" "text" DEFAULT NULL::"text", "_council_number" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -138,12 +331,14 @@ DECLARE
   v_trial_end timestamptz;
   v_is_already_owner boolean := false;
 BEGIN
+  -- Higienização dos campos de entrada
   _normalized_cpf := NULLIF(regexp_replace(COALESCE(_cpf, ''), '\D', '', 'g'), '');
   _clean_name := NULLIF(trim(COALESCE(_full_name, '')), '');
   _clean_phone := NULLIF(trim(COALESCE(_phone, '')), '');
   _clean_profession := NULLIF(trim(COALESCE(_profession, '')), '');
   _clean_council_number := NULLIF(trim(COALESCE(_council_number, '')), '');
 
+  -- Validação atômica de CPF: se já existir outro usuário com o mesmo CPF higienizado
   IF _normalized_cpf IS NOT NULL THEN
     SELECT id INTO _existing_cpf_user_id
     FROM public.profiles
@@ -156,6 +351,7 @@ BEGIN
     END IF;
   END IF;
 
+  -- Obter ou gerar o ID Global do perfil (public_code)
   SELECT public_code INTO v_public_code
   FROM public.profiles
   WHERE id = _user_id;
@@ -164,6 +360,7 @@ BEGIN
     v_public_code := public.generate_profile_public_code();
   END IF;
 
+  -- Inserir ou atualizar perfil
   INSERT INTO public.profiles (
     id,
     clinic_id,
@@ -202,10 +399,12 @@ BEGIN
       public_code = COALESCE(profiles.public_code, EXCLUDED.public_code),
       updated_at = now();
 
+  -- Papel básico de usuário
   INSERT INTO public.user_roles (user_id, role)
   VALUES (_user_id, 'user')
   ON CONFLICT (user_id, role) DO NOTHING;
 
+  -- Checar se o usuário já é owner de alguma clínica
   SELECT EXISTS (
     SELECT 1
     FROM public.clinic_memberships cm
@@ -218,17 +417,21 @@ BEGIN
     WHERE c.account_owner_user_id = _user_id
   ) INTO v_is_already_owner;
 
+  -- Se NÃO for owner de nenhuma clínica, provisionar consultório solo gratuito
   IF NOT v_is_already_owner THEN
     v_trial_end := now() + interval '7 days';
     v_clinic_name := 'Consultório - ' || COALESCE(_clean_name, 'Profissional');
 
+    -- Formatar route_key: 'consultorio-' || lower(regexp_replace(v_public_code, '^PLR-|-', '', 'g'))
     v_route_suffix := lower(regexp_replace(COALESCE(v_public_code, gen_random_uuid()::text), '^PLR-|-', '', 'g'));
     v_route_key := 'consultorio-' || v_route_suffix;
 
+    -- Garantir unicidade do route_key caso colida por rara coincidência
     IF EXISTS (SELECT 1 FROM public.clinics WHERE route_key = v_route_key) THEN
       v_route_key := v_route_key || '-' || lower(substr(replace(gen_random_uuid()::text, '-', ''), 1, 4));
     END IF;
 
+    -- Inserir clínica solo
     INSERT INTO public.clinics (
       name,
       cnpj,
@@ -251,6 +454,7 @@ BEGIN
     )
     RETURNING id INTO v_clinic_id;
 
+    -- Inserir assinatura em teste gratuito (7 dias, 20 atendimentos, 1 acesso)
     INSERT INTO public.clinic_subscriptions (
       clinic_id,
       account_owner_user_id,
@@ -297,6 +501,7 @@ BEGIN
     )
     ON CONFLICT (clinic_id) DO NOTHING;
 
+    -- Vínculo de membership: account_owner, operational_role 'owner', role_key 'owner', status 'active'
     INSERT INTO public.clinic_memberships (
       clinic_id,
       user_id,
@@ -324,11 +529,13 @@ BEGIN
       is_active = true,
       updated_at = now();
 
+    -- Definir contexto ativo inicial
     INSERT INTO public.user_active_clinic_contexts (user_id, clinic_id, updated_at)
     VALUES (_user_id, v_clinic_id, now())
     ON CONFLICT (user_id) DO UPDATE
     SET clinic_id = EXCLUDED.clinic_id, updated_at = now();
 
+    -- Atualizar clinic_id no profile
     UPDATE public.profiles
     SET clinic_id = COALESCE(clinic_id, v_clinic_id)
     WHERE id = _user_id;
@@ -350,7 +557,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L5910-L5950)
+-- [RPC/FUNCTION] handle_signup (schema.sql L6840-L6880)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -375,7 +582,7 @@ BEGIN
   
   -- Check if super admin (hardcoded email)
   -- The platform owner can change this email
-  IF _email = 'admin@therapyflow.com' THEN
+  IF _email = 'admin@prontohealthfisio.com' THEN
     INSERT INTO public.user_roles (user_id, role)
     VALUES (_user_id, 'super_admin')
     ON CONFLICT (user_id, role) DO NOTHING;
@@ -393,7 +600,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L5956-L6032)
+-- [RPC/FUNCTION] handle_signup (schema.sql L6886-L6962)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -453,7 +660,7 @@ BEGIN
   SET account_owner_user_id = _user_id
   WHERE id = _clinic_id;
 
-  IF _email = 'admin@therapyflow.com' THEN
+  IF _email = 'admin@prontohealthfisio.com' THEN
     INSERT INTO public.user_roles (user_id, role)
     VALUES (_user_id, 'super_admin')
     ON CONFLICT (user_id, role) DO NOTHING;
@@ -472,7 +679,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L6038-L6124)
+-- [RPC/FUNCTION] handle_signup (schema.sql L6968-L7054)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text", "_clinic_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -561,7 +768,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L6130-L6263)
+-- [RPC/FUNCTION] handle_signup (schema.sql L7060-L7193)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text", "_clinic_name" "text" DEFAULT NULL::"text", "_allow_duplicate_cnpj" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -697,137 +904,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] request_account_recovery_status (schema.sql L7581-L7708)
-CREATE OR REPLACE FUNCTION "public"."request_account_recovery_status"("_identifier" "text") RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
-    AS $$
-DECLARE
-  _trimmed text := trim(coalesce(_identifier, ''));
-  _clean_digits text;
-  _user_email text;
-  _masked_email text;
-  _profile_user_id uuid;
-  _profile_cpf text;
-  _at_pos int;
-  _user_part text;
-  _domain_part text;
-  _masked_user text;
-  _first_dot int;
-  _domain_name text;
-  _domain_tld text;
-  _masked_domain text;
-BEGIN
-  IF _trimmed = '' THEN
-    RETURN jsonb_build_object('status', 'invalid_identifier');
-  END IF;
-
-  _clean_digits := regexp_replace(_trimmed, '\D', '', 'g');
-
-  IF (position('@' in _trimmed) = 0 AND _clean_digits <> '') THEN
-    IF length(_clean_digits) <> 11 THEN
-      RETURN jsonb_build_object('status', 'invalid_cpf');
-    END IF;
-
-    SELECT p.id, p.email, p.cpf
-    INTO _profile_user_id, _user_email, _profile_cpf
-    FROM public.profiles p
-    WHERE regexp_replace(coalesce(p.cpf, ''), '\D', '', 'g') = _clean_digits
-    LIMIT 1;
-
-    IF _profile_user_id IS NULL THEN
-      RETURN jsonb_build_object('status', 'cpf_not_found');
-    END IF;
-
-    IF _user_email IS NULL OR _user_email = '' THEN
-      SELECT lower(u.email)
-      INTO _user_email
-      FROM auth.users u
-      WHERE u.id = _profile_user_id;
-    END IF;
-
-    IF _user_email IS NULL OR _user_email = '' THEN
-      RETURN jsonb_build_object('status', 'cpf_not_found');
-    END IF;
-
-    _user_email := lower(trim(_user_email));
-
-    _at_pos := position('@' in _user_email);
-    IF _at_pos > 1 THEN
-      _user_part := substring(_user_email from 1 for _at_pos - 1);
-      _domain_part := substring(_user_email from _at_pos + 1);
-
-      IF length(_user_part) <= 2 THEN
-        _masked_user := substring(_user_part from 1 for 1) || '***';
-      ELSE
-        _masked_user := substring(_user_part from 1 for 1) || '***' || substring(_user_part from length(_user_part) for 1);
-      END IF;
-
-      _first_dot := position('.' in _domain_part);
-      IF _first_dot > 1 THEN
-        _domain_name := substring(_domain_part from 1 for _first_dot - 1);
-        _domain_tld := substring(_domain_part from _first_dot);
-        IF length(_domain_name) <= 2 THEN
-          _masked_domain := substring(_domain_name from 1 for 1) || '***' || _domain_tld;
-        ELSE
-          _masked_domain := substring(_domain_name from 1 for 1) || '***' || substring(_domain_name from length(_domain_name) for 1) || _domain_tld;
-        END IF;
-      ELSE
-        _masked_domain := '***';
-      END IF;
-
-      _masked_email := _masked_user || '@' || _masked_domain;
-    ELSE
-      _masked_email := '***@***.com';
-    END IF;
-
-    RETURN jsonb_build_object(
-      'status', 'cpf_found',
-      'email', _user_email,
-      'masked_email', _masked_email
-    );
-  ELSE
-    _user_email := lower(_trimmed);
-
-    SELECT u.id, u.email
-    INTO _profile_user_id, _user_email
-    FROM auth.users u
-    WHERE lower(u.email) = _user_email
-    LIMIT 1;
-
-    IF _profile_user_id IS NULL THEN
-      SELECT p.id, p.email
-      INTO _profile_user_id, _user_email
-      FROM public.profiles p
-      WHERE lower(p.email) = _user_email
-      LIMIT 1;
-    END IF;
-
-    IF _profile_user_id IS NULL THEN
-      RETURN jsonb_build_object('status', 'email_not_found');
-    END IF;
-
-    SELECT regexp_replace(coalesce(p.cpf, ''), '\D', '', 'g')
-    INTO _profile_cpf
-    FROM public.profiles p
-    WHERE p.id = _profile_user_id;
-
-    IF _profile_cpf IS NOT NULL AND length(_profile_cpf) = 11 THEN
-      RETURN jsonb_build_object(
-        'status', 'email_found_with_cpf',
-        'email', lower(_user_email)
-      );
-    ELSE
-      RETURN jsonb_build_object(
-        'status', 'email_found_without_cpf',
-        'email', lower(_user_email)
-      );
-    END IF;
-  END IF;
-END;
-$$;
-
--- [RPC/FUNCTION] log_security_event (schema.sql L7774-L7870)
+-- [RPC/FUNCTION] log_security_event (schema.sql L8600-L8696)
 CREATE OR REPLACE FUNCTION "public"."log_security_event"("_clinic_id" "uuid", "_actor_user_id" "uuid", "_target_user_id" "uuid", "_event_type" "text", "_visibility_scope" "text" DEFAULT 'self'::"text", "_payload" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -926,7 +1003,122 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] raise_exception_json (schema.sql L8662-L8668)
+-- [RPC/FUNCTION] move_entity_to_trash (schema.sql L8998-L9110)
+CREATE OR REPLACE FUNCTION "public"."move_entity_to_trash"("_entity_type" "text", "_entity_ids" "uuid"[]) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  _auth_user_id uuid := auth.uid();
+  _clean_entity_type text := lower(trim(COALESCE(_entity_type, '')));
+  _clinic_id uuid;
+  _affected integer := 0;
+  _has_session_delete boolean;
+  _has_patient_delete boolean;
+  _has_forms_manage boolean;
+BEGIN
+  -- 1. Validação de autenticação
+  IF _auth_user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuario nao autenticado.';
+  END IF;
+
+  -- 2. Identificação da clínica ativa
+  _clinic_id := COALESCE(
+    NULLIF(auth.jwt() ->> 'active_clinic_id', '')::uuid,
+    public.get_user_clinic_id(_auth_user_id)
+  );
+
+  IF _clinic_id IS NULL THEN
+    RAISE EXCEPTION 'Clinica ativa nao identificada para o usuario.';
+  END IF;
+
+  IF public.is_clinic_read_only(_clinic_id) THEN
+    RAISE EXCEPTION 'Clinica em modo apenas leitura. Operacao nao permitida.';
+  END IF;
+
+  IF _entity_ids IS NULL OR cardinality(_entity_ids) = 0 THEN
+    RETURN jsonb_build_object('success', true, 'count', 0, 'entity_type', _clean_entity_type);
+  END IF;
+
+  -- 3. Validação e Execução por tipo de entidade
+  IF _clean_entity_type IN ('sessions', 'session') THEN
+    _clean_entity_type := 'sessions';
+    _has_session_delete := public.current_user_can('sessions.delete', _clinic_id) OR public.current_user_is_clinic_manager(_clinic_id);
+
+    -- Se não possui permissão clínica de deleção, exige ser o criador ou prestador de todos os atendimentos
+    IF NOT _has_session_delete THEN
+      IF EXISTS (
+        SELECT 1 FROM public.sessions
+        WHERE id = ANY(_entity_ids)
+          AND clinic_id = _clinic_id
+          AND user_id <> _auth_user_id
+          AND (provider_id IS NULL OR provider_id <> _auth_user_id)
+      ) THEN
+        RAISE EXCEPTION 'Permissao negada: voce so pode mover para a lixeira atendimentos criados ou prestados por voce.';
+      END IF;
+    END IF;
+
+    UPDATE public.sessions
+    SET deleted_at = now(),
+        deleted_by_user_id = _auth_user_id
+    WHERE id = ANY(_entity_ids)
+      AND clinic_id = _clinic_id
+      AND deleted_at IS NULL;
+    GET DIAGNOSTICS _affected = ROW_COUNT;
+
+  ELSIF _clean_entity_type IN ('patients', 'patient') THEN
+    _clean_entity_type := 'patients';
+    _has_patient_delete := public.current_user_can('patients.delete', _clinic_id) OR public.current_user_is_clinic_manager(_clinic_id);
+
+    IF NOT _has_patient_delete THEN
+      RAISE EXCEPTION 'Permissao negada: requer permissao patients.delete.';
+    END IF;
+
+    UPDATE public.patients
+    SET deleted_at = now(),
+        deleted_by_user_id = _auth_user_id
+    WHERE id = ANY(_entity_ids)
+      AND clinic_id = _clinic_id
+      AND deleted_at IS NULL;
+    GET DIAGNOSTICS _affected = ROW_COUNT;
+
+    -- Cascata em sessões ativas filhas do paciente
+    UPDATE public.sessions
+    SET deleted_at = now(),
+        deleted_by_user_id = _auth_user_id
+    WHERE patient_id = ANY(_entity_ids)
+      AND clinic_id = _clinic_id
+      AND deleted_at IS NULL;
+
+  ELSIF _clean_entity_type IN ('forms', 'form', 'anamnesis_forms', 'anamnesis_form_templates') THEN
+    _clean_entity_type := 'forms';
+    _has_forms_manage := public.current_user_can('forms.manage', _clinic_id) OR public.current_user_is_clinic_manager(_clinic_id);
+
+    IF NOT _has_forms_manage THEN
+      RAISE EXCEPTION 'Permissao negada: requer permissao forms.manage.';
+    END IF;
+
+    UPDATE public.anamnesis_form_templates
+    SET deleted_at = now(),
+        deleted_by_user_id = _auth_user_id
+    WHERE id = ANY(_entity_ids)
+      AND clinic_id = _clinic_id
+      AND deleted_at IS NULL;
+    GET DIAGNOSTICS _affected = ROW_COUNT;
+
+  ELSE
+    RAISE EXCEPTION 'Tipo de entidade desconhecido para lixeira: %', _entity_type;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'count', _affected,
+    'entity_type', _clean_entity_type
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] raise_exception_json (schema.sql L9751-L9757)
 CREATE OR REPLACE FUNCTION "public"."raise_exception_json"("_message" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE
     AS $$
@@ -935,7 +1127,253 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] set_updated_at (schema.sql L9210-L9217)
+-- [RPC/FUNCTION] request_account_recovery_status (schema.sql L10153-L10289)
+CREATE OR REPLACE FUNCTION "public"."request_account_recovery_status"("_identifier" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth'
+    AS $$
+DECLARE
+  _trimmed text := trim(coalesce(_identifier, ''));
+  _clean_digits text;
+  _user_email text;
+  _masked_email text;
+  _profile_user_id uuid;
+  _profile_cpf text;
+  _at_pos int;
+  _user_part text;
+  _domain_part text;
+  _masked_user text;
+  _first_dot int;
+  _domain_name text;
+  _domain_tld text;
+  _masked_domain text;
+BEGIN
+  IF _trimmed = '' THEN
+    RETURN jsonb_build_object('status', 'invalid_identifier');
+  END IF;
+
+  _clean_digits := regexp_replace(_trimmed, '\D', '', 'g');
+
+  -- Se for numérico ou tiver formato de CPF (ex: 11 dígitos numéricos ou sem @ contendo dígitos)
+  IF (position('@' in _trimmed) = 0 AND _clean_digits <> '') THEN
+    -- Validação básica de tamanho de CPF (deve ter 11 dígitos)
+    IF length(_clean_digits) <> 11 THEN
+      RETURN jsonb_build_object('status', 'invalid_cpf');
+    END IF;
+
+    -- Busca em public.profiles pelo CPF limpo
+    SELECT p.id, p.email, p.cpf
+    INTO _profile_user_id, _user_email, _profile_cpf
+    FROM public.profiles p
+    WHERE regexp_replace(coalesce(p.cpf, ''), '\D', '', 'g') = _clean_digits
+    LIMIT 1;
+
+    -- Se não achou em profiles pelo CPF
+    IF _profile_user_id IS NULL THEN
+      RETURN jsonb_build_object('status', 'cpf_not_found');
+    END IF;
+
+    -- Se profiles.email for nulo, busca o e-mail em auth.users
+    IF _user_email IS NULL OR _user_email = '' THEN
+      SELECT lower(u.email)
+      INTO _user_email
+      FROM auth.users u
+      WHERE u.id = _profile_user_id;
+    END IF;
+
+    IF _user_email IS NULL OR _user_email = '' THEN
+      RETURN jsonb_build_object('status', 'cpf_not_found');
+    END IF;
+
+    _user_email := lower(trim(_user_email));
+
+    -- Formata e ofusca o email (ex: j***y@g***.com)
+    _at_pos := position('@' in _user_email);
+    IF _at_pos > 1 THEN
+      _user_part := substring(_user_email from 1 for _at_pos - 1);
+      _domain_part := substring(_user_email from _at_pos + 1);
+
+      IF length(_user_part) <= 2 THEN
+        _masked_user := substring(_user_part from 1 for 1) || '***';
+      ELSE
+        _masked_user := substring(_user_part from 1 for 1) || '***' || substring(_user_part from length(_user_part) for 1);
+      END IF;
+
+      _first_dot := position('.' in _domain_part);
+      IF _first_dot > 1 THEN
+        _domain_name := substring(_domain_part from 1 for _first_dot - 1);
+        _domain_tld := substring(_domain_part from _first_dot);
+        IF length(_domain_name) <= 2 THEN
+          _masked_domain := substring(_domain_name from 1 for 1) || '***' || _domain_tld;
+        ELSE
+          _masked_domain := substring(_domain_name from 1 for 1) || '***' || substring(_domain_name from length(_domain_name) for 1) || _domain_tld;
+        END IF;
+      ELSE
+        _masked_domain := '***';
+      END IF;
+
+      _masked_email := _masked_user || '@' || _masked_domain;
+    ELSE
+      _masked_email := '***@***.com';
+    END IF;
+
+    RETURN jsonb_build_object(
+      'status', 'cpf_found',
+      'email', _user_email,
+      'masked_email', _masked_email
+    );
+  ELSE
+    -- Trata como E-mail
+    _user_email := lower(_trimmed);
+
+    -- Busca em auth.users ou public.profiles
+    SELECT u.id, u.email
+    INTO _profile_user_id, _user_email
+    FROM auth.users u
+    WHERE lower(u.email) = _user_email
+    LIMIT 1;
+
+    IF _profile_user_id IS NULL THEN
+      SELECT p.id, p.email
+      INTO _profile_user_id, _user_email
+      FROM public.profiles p
+      WHERE lower(p.email) = _user_email
+      LIMIT 1;
+    END IF;
+
+    IF _profile_user_id IS NULL THEN
+      RETURN jsonb_build_object('status', 'email_not_found');
+    END IF;
+
+    -- Busca se profiles tem CPF preenchido com 11 dígitos
+    SELECT regexp_replace(coalesce(p.cpf, ''), '\D', '', 'g')
+    INTO _profile_cpf
+    FROM public.profiles p
+    WHERE p.id = _profile_user_id;
+
+    IF _profile_cpf IS NOT NULL AND length(_profile_cpf) = 11 THEN
+      RETURN jsonb_build_object(
+        'status', 'email_found_with_cpf',
+        'email', lower(_user_email)
+      );
+    ELSE
+      RETURN jsonb_build_object(
+        'status', 'email_found_without_cpf',
+        'email', lower(_user_email)
+      );
+    END IF;
+  END IF;
+END;
+$$;
+
+-- [RPC/FUNCTION] restore_entity_from_trash (schema.sql L10442-L10546)
+CREATE OR REPLACE FUNCTION "public"."restore_entity_from_trash"("_entity_type" "text", "_entity_ids" "uuid"[]) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  _auth_user_id uuid := auth.uid();
+  _clean_entity_type text := lower(trim(COALESCE(_entity_type, '')));
+  _clinic_id uuid;
+  _affected integer := 0;
+  _can_restore boolean;
+BEGIN
+  -- 1. Validação de autenticação
+  IF _auth_user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuario nao autenticado.';
+  END IF;
+
+  -- 2. Identificação da clínica ativa
+  _clinic_id := COALESCE(
+    NULLIF(auth.jwt() ->> 'active_clinic_id', '')::uuid,
+    public.get_user_clinic_id(_auth_user_id)
+  );
+
+  IF _clinic_id IS NULL THEN
+    RAISE EXCEPTION 'Clinica ativa nao identificada para o usuario.';
+  END IF;
+
+  IF public.is_clinic_read_only(_clinic_id) THEN
+    RAISE EXCEPTION 'Clinica em modo apenas leitura. Operacao nao permitida.';
+  END IF;
+
+  -- 3. Validação de permissões: clinic_trash.manage ou role owner/admin
+  _can_restore := (
+    public.current_user_can('clinic_trash.manage', _clinic_id)
+    OR public.current_user_is_clinic_manager(_clinic_id)
+    OR EXISTS (
+      SELECT 1 FROM public.clinic_memberships cm
+      WHERE cm.user_id = _auth_user_id
+        AND cm.clinic_id = _clinic_id
+        AND cm.is_active = true
+        AND cm.membership_status = 'active'
+        AND (cm.account_role = 'account_owner' OR cm.operational_role IN ('owner', 'admin'))
+    )
+  );
+
+  IF NOT _can_restore THEN
+    RAISE EXCEPTION 'Permissao negada para restaurar itens da lixeira. Requer perfil owner ou admin.';
+  END IF;
+
+  IF _entity_ids IS NULL OR cardinality(_entity_ids) = 0 THEN
+    RETURN jsonb_build_object('success', true, 'count', 0, 'entity_type', _clean_entity_type);
+  END IF;
+
+  -- 4. Restauração por entidade
+  IF _clean_entity_type IN ('sessions', 'session') THEN
+    _clean_entity_type := 'sessions';
+
+    UPDATE public.sessions
+    SET deleted_at = NULL,
+        deleted_by_user_id = NULL
+    WHERE id = ANY(_entity_ids)
+      AND clinic_id = _clinic_id
+      AND deleted_at IS NOT NULL;
+    GET DIAGNOSTICS _affected = ROW_COUNT;
+
+  ELSIF _clean_entity_type IN ('patients', 'patient') THEN
+    _clean_entity_type := 'patients';
+
+    UPDATE public.patients
+    SET deleted_at = NULL,
+        deleted_by_user_id = NULL
+    WHERE id = ANY(_entity_ids)
+      AND clinic_id = _clinic_id
+      AND deleted_at IS NOT NULL;
+    GET DIAGNOSTICS _affected = ROW_COUNT;
+
+    -- Restaura também sessões filhas vinculadas aos pacientes restaurados
+    UPDATE public.sessions
+    SET deleted_at = NULL,
+        deleted_by_user_id = NULL
+    WHERE patient_id = ANY(_entity_ids)
+      AND clinic_id = _clinic_id
+      AND deleted_at IS NOT NULL;
+
+  ELSIF _clean_entity_type IN ('forms', 'form', 'anamnesis_forms', 'anamnesis_form_templates') THEN
+    _clean_entity_type := 'forms';
+
+    UPDATE public.anamnesis_form_templates
+    SET deleted_at = NULL,
+        deleted_by_user_id = NULL
+    WHERE id = ANY(_entity_ids)
+      AND clinic_id = _clinic_id
+      AND deleted_at IS NOT NULL;
+    GET DIAGNOSTICS _affected = ROW_COUNT;
+
+  ELSE
+    RAISE EXCEPTION 'Tipo de entidade desconhecido para lixeira: %', _entity_type;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'count', _affected,
+    'entity_type', _clean_entity_type
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] set_updated_at (schema.sql L10794-L10801)
 CREATE OR REPLACE FUNCTION "public"."set_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -945,7 +1383,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] slugify_text (schema.sql L9311-L9335)
+-- [RPC/FUNCTION] slugify_text (schema.sql L10926-L10950)
 CREATE OR REPLACE FUNCTION "public"."slugify_text"("_val" "text") RETURNS "text"
     LANGUAGE "plpgsql" IMMUTABLE
     AS $_$
@@ -972,7 +1410,17 @@ begin
 end;
 $_$;
 
--- [RPC/FUNCTION] update_updated_at_column (schema.sql L10705-L10713)
+-- [RPC/FUNCTION] trg_increment_row_version (schema.sql L11639-L11646)
+CREATE OR REPLACE FUNCTION "public"."trg_increment_row_version"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  NEW.version := COALESCE(OLD.version, 1) + 1;
+  RETURN NEW;
+END;
+$$;
+
+-- [RPC/FUNCTION] update_updated_at_column (schema.sql L12647-L12655)
 CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -983,7 +1431,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] verify_password_recovery_identity (schema.sql L11524-L11549)
+-- [RPC/FUNCTION] verify_password_recovery_identity (schema.sql L13430-L13455)
 CREATE OR REPLACE FUNCTION "public"."verify_password_recovery_identity"("_email" "text", "_cpf" "text") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -1011,7 +1459,7 @@ BEGIN
 END;
 $_$;
 
--- [TABLE] agenda_events (schema.sql L11555-L11578)
+-- [TABLE] agenda_events (schema.sql L13461-L13485)
 CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -1026,18 +1474,19 @@ CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     "generated_by_recurring_patient" boolean DEFAULT false NOT NULL,
     "payment_plan_id" "uuid",
     "payment_plan_session_index" integer,
+    "version" integer DEFAULT 1 NOT NULL,
     "duration_minutes" integer DEFAULT 60 NOT NULL,
     "reminder_configs" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
     "notify_team" boolean DEFAULT false NOT NULL,
     "notify_patient" boolean DEFAULT false NOT NULL,
     "notified_colleague_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
-    CONSTRAINT "agenda_events_duration_minutes_check" CHECK (((duration_minutes > 0) AND (duration_minutes <= 1440))),
+    CONSTRAINT "agenda_events_duration_minutes_check" CHECK ((("duration_minutes" > 0) AND ("duration_minutes" <= 1440))),
     CONSTRAINT "agenda_events_event_type_check" CHECK (("event_type" = ANY (ARRAY['atendimento'::"text", 'reuniao'::"text", 'evento'::"text"]))),
     CONSTRAINT "agenda_events_payment_plan_session_index_check" CHECK ((("payment_plan_session_index" IS NULL) OR ("payment_plan_session_index" >= 1))),
     CONSTRAINT "agenda_events_status_check" CHECK (("status" = ANY (ARRAY['lembrete'::"text", 'aguardando_confirmacao'::"text", 'confirmado'::"text", 'cancelado'::"text", 'concluido'::"text"])))
 );
 
--- [TABLE] security_events (schema.sql L12354-L12364)
+-- [TABLE] security_events (schema.sql L14479-L14489)
 CREATE TABLE IF NOT EXISTS "public"."security_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -1050,23 +1499,23 @@ CREATE TABLE IF NOT EXISTS "public"."security_events" (
     CONSTRAINT "security_events_visibility_scope_check" CHECK (("visibility_scope" = ANY (ARRAY['self'::"text", 'admin'::"text"])))
 );
 
--- [POLICY] Super admins manage all agenda events ON agenda_events (schema.sql L14477-L14477)
+-- [POLICY] Super admins manage all agenda events ON agenda_events (schema.sql L16987-L16987)
 CREATE POLICY "Super admins manage all agenda events" ON "public"."agenda_events" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users delete clinic agenda events ON agenda_events (schema.sql L14541-L14541)
+-- [POLICY] Users delete clinic agenda events ON agenda_events (schema.sql L17055-L17055)
 CREATE POLICY "Users delete clinic agenda events" ON "public"."agenda_events" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.delete_events'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic agenda events ON agenda_events (schema.sql L14599-L14599)
+-- [POLICY] Users read clinic agenda events ON agenda_events (schema.sql L17121-L17121)
 CREATE POLICY "Users read clinic agenda events" ON "public"."agenda_events" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('agenda.read'::"text", "clinic_id")));
 
--- [POLICY] Users update clinic agenda events ON agenda_events (schema.sql L14688-L14688)
+-- [POLICY] Users update clinic agenda events ON agenda_events (schema.sql L17220-L17220)
 CREATE POLICY "Users update clinic agenda events" ON "public"."agenda_events" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id")));
 
--- [POLICY] Users write clinic agenda events ON agenda_events (schema.sql L14724-L14724)
+-- [POLICY] Users write clinic agenda events ON agenda_events (schema.sql L17256-L17256)
 CREATE POLICY "Users write clinic agenda events" ON "public"."agenda_events" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id")));
 
--- [POLICY] admins can read clinic security events ON security_events (schema.sql L14756-L14756)
+-- [POLICY] admins can read clinic security events ON security_events (schema.sql L17296-L17296)
 CREATE POLICY "admins can read clinic security events" ON "public"."security_events" FOR SELECT USING ((("visibility_scope" = 'admin'::"text") AND ("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND "public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")));
 
--- [POLICY] users can read own security events ON security_events (schema.sql L14952-L14952)
+-- [POLICY] users can read own security events ON security_events (schema.sql L17542-L17542)
 CREATE POLICY "users can read own security events" ON "public"."security_events" FOR SELECT USING ((("actor_user_id" = "auth"."uid"()) OR ("target_user_id" = "auth"."uid"())));

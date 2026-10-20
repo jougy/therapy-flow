@@ -124,8 +124,15 @@ const emptyCapabilities = Object.fromEntries(
 ) as Record<AccessCapability, boolean>;
 
 const DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN: Record<SubscriptionPlan, number> = {
-  clinic: 4,
   solo: 1,
+  prof_basico: 1,
+  prof_medio: 1,
+  prof_top: 2,
+  clinica_basico: 2,
+  clinica_medio: 4,
+  clinic: 4,
+  clinica_top: 8,
+  enterprise: 8,
 };
 const ACTIVE_CLINIC_STORAGE_KEY = "therapy-flow.activeClinicId";
 
@@ -167,17 +174,36 @@ const isDuplicateSecuritySessionError = (error: unknown) => {
 };
 
 const deriveConcurrentAccessLimit = (clinicSummary: {
+  concurrent_access_limit?: number | null;
   subaccount_limit: number | null;
   subscription_plan: SubscriptionPlan;
 }) => {
-  if (clinicSummary.subscription_plan === "solo") {
-    return DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN.solo;
+  if (
+    typeof clinicSummary.concurrent_access_limit === "number" &&
+    Number.isFinite(clinicSummary.concurrent_access_limit) &&
+    clinicSummary.concurrent_access_limit > 0
+  ) {
+    return Math.max(1, Math.trunc(clinicSummary.concurrent_access_limit));
   }
 
-  return Math.max(
-    clinicSummary.subaccount_limit ?? DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN.clinic,
-    DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN.clinic
-  );
+  const defaultForPlan = DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN[clinicSummary.subscription_plan] ?? 1;
+  if (
+    clinicSummary.subscription_plan === "solo" ||
+    clinicSummary.subscription_plan === "prof_basico" ||
+    clinicSummary.subscription_plan === "prof_medio"
+  ) {
+    return defaultForPlan;
+  }
+
+  if (
+    typeof clinicSummary.subaccount_limit === "number" &&
+    clinicSummary.subaccount_limit > 0 &&
+    clinicSummary.subaccount_limit <= 20
+  ) {
+    return Math.max(clinicSummary.subaccount_limit, defaultForPlan);
+  }
+
+  return defaultForPlan;
 };
 
 const AuthContext = createContext<AuthContextType>({

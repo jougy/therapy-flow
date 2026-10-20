@@ -218,8 +218,17 @@ const PlatformMfa = () => {
                   ) : (
                     <div className="space-y-3">
                       {enrollment.totp?.qr_code && (
-                        <div className="flex justify-center rounded-lg bg-white p-4">
-                          <img src={enrollment.totp.qr_code} alt="QR Code para Ente Auth" className="h-48 w-48" />
+                        <div className="relative flex justify-center rounded-lg bg-white p-4">
+                          <img src={enrollment.totp.qr_code} alt="QR Code Pluri Fisio - Ente Auth" className="h-48 w-48" />
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="bg-white p-1 rounded-md shadow-sm border border-border/40">
+                              <img
+                                src="/brand/plurihealth-icon-192.png"
+                                alt="Pluri Fisio"
+                                className="h-8 w-8 object-contain rounded-sm"
+                              />
+                            </div>
+                          </div>
                         </div>
                       )}
                       {enrollment.totp?.secret && (

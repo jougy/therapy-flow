@@ -1086,6 +1086,7 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
     if (payload.isCourtesy !== undefined) {
       if (isCourtesy) {
         subUpdate.is_courtesy = true;
+        subUpdate.is_free_trial = false;
         subUpdate.status = "COURTESY";
         subUpdate.expires_at = null;
         subUpdate.current_period_end = null;

@@ -21,6 +21,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { canHaveSubaccounts } from "@/lib/rbac";
 
 import { useAuth } from "@/hooks/useAuth";
 
@@ -39,7 +40,7 @@ export const SettingsLayout = () => {
   const navigate = useNavigate();
   const { subscriptionPlan, can } = useAuth();
 
-  const canAccessTeam = subscriptionPlan === "clinic" || can("subaccounts.read") || can("subaccounts.manage");
+  const canAccessTeam = canHaveSubaccounts(subscriptionPlan) || can("subaccounts.read") || can("subaccounts.manage");
 
   // Menu retrátil / fixo (padrão desafixado para dar máxima largura à tela e conforto visual)
   const [pinnedMenu, setPinnedMenu] = useState(false);

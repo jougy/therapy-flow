@@ -70,10 +70,12 @@ const SECURITY_EVENT_FALLBACK: SecurityEventMeta = {
   tone: "muted",
 };
 
+import { canHaveSubaccounts, type SubscriptionPlan } from "@/lib/rbac";
+
 export const shouldShowAdminSecuritySection = (
-  subscriptionPlan: "clinic" | "solo" | null | undefined,
+  subscriptionPlan: SubscriptionPlan | string | null | undefined,
   canManageTeam: boolean
-) => subscriptionPlan === "clinic" && canManageTeam;
+) => canHaveSubaccounts(subscriptionPlan) && canManageTeam;
 
 export const getSecurityEventMeta = (eventType: SecurityEventType): SecurityEventMeta =>
   SECURITY_EVENT_META[eventType] ?? SECURITY_EVENT_FALLBACK;

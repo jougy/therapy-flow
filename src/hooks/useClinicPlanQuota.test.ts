@@ -155,6 +155,30 @@ describe("useClinicPlanQuota", () => {
     expect(result.current.forms.isLimitReached).toBe(true);
   });
 
+  it("does NOT identify COURTESY subscription as free trial even if is_free_trial flag is true", async () => {
+    setupMocks({
+      id: "sub-courtesy",
+      clinic_id: "clinic-courtesy",
+      status: "COURTESY",
+      is_courtesy: true,
+      is_free_trial: true,
+      plan_type: "prof_top",
+    });
+
+    const { result } = renderHook(() => useClinicPlanQuota("clinic-courtesy"));
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.isFreeTrial).toBe(false);
+    expect(result.current.isTrialExpired).toBe(false);
+    expect(result.current.isExpired).toBe(false);
+    expect(result.current.attendances.max).toBe(-1);
+    expect(result.current.patients.max).toBe(-1);
+    expect(result.current.forms.max).toBe(-1);
+  });
+
   it("handles null clinicId gracefully", async () => {
     const { result } = renderHook(() => useClinicPlanQuota(null));
 
