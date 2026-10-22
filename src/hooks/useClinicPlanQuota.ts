@@ -137,7 +137,7 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
         .from("patients")
         .select("id", { count: "exact", head: true })
         .eq("clinic_id", clinicId)
-        .eq("is_active", true);
+        .eq("status", "ativo");
 
       // 4. Contar Formulários Personalizados Ativos
       const { count: formCount } = await supabase

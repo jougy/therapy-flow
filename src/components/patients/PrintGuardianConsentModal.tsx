@@ -73,7 +73,7 @@ export const PrintGuardianConsentModal: React.FC<PrintGuardianConsentModalProps>
           .from("feature_flags")
           .select("value")
           .eq("key", "terms_of_service_management")
-          .single();
+          .maybeSingle();
 
         const payload = (data?.value || {}) as TermsConfigPayload;
         const backofficeContent = payload.minor_terms?.content || payload.minor_consent?.content;

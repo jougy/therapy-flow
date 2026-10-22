@@ -311,17 +311,22 @@ export function useAgendaReminderPoller(
     }
   }, [checkDueReminders, effectiveClinicId, enabled, overrideEvents, user?.id]);
 
-  // Poller de intervalo
+  // Poller de intervalo protegido com document.visibilityState e backoff
   useEffect(() => {
     if (!enabled) return;
 
     if (overrideEvents) {
       checkDueReminders(overrideEvents);
-    } else {
+    } else if (typeof document === "undefined" || !document.hidden) {
       void fetchAndCheckRemotes();
     }
 
     const intervalTimer = setInterval(() => {
+      // Se o usuário estiver com a aba em segundo plano ou tela travada, não pollar o banco
+      if (typeof document !== "undefined" && document.hidden) {
+        return;
+      }
+
       if (overrideEvents) {
         checkDueReminders(overrideEvents);
       } else {
@@ -329,7 +334,22 @@ export function useAgendaReminderPoller(
       }
     }, pollIntervalMs);
 
-    return () => clearInterval(intervalTimer);
+    const handleVisibilityChange = () => {
+      if (!document.hidden && !overrideEvents) {
+        void fetchAndCheckRemotes();
+      }
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      clearInterval(intervalTimer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+    };
   }, [checkDueReminders, enabled, fetchAndCheckRemotes, overrideEvents, pollIntervalMs]);
 
   // Escuta de atualizações da agenda na janela local

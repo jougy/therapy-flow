@@ -330,6 +330,8 @@ export function usePatientGroupSuggestionsQuery(clinicId?: string | null, enable
 export function usePatientAnamnesisTemplatesQuery(clinicId?: string | null, enabled = true) {
   return useQuery({
     queryKey: PATIENT_QUERY_KEYS.anamnesisTemplates(clinicId),
+    staleTime: 30 * 60 * 1000, // 30 minutos em cache (dados frios de catálogo)
+    gcTime: 60 * 60 * 1000,    // 1 hora de retenção em memória
     queryFn: async () => {
       if (!clinicId) return [];
 
