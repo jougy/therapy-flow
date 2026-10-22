@@ -14,6 +14,7 @@
     "mobile:status": "bash scripts/dev/mobile-preview-status.sh",
     "audit:layout": "node scripts/dev/audit-layout.mjs",
     "check:quick": "node scripts/dev/check-all.mjs",
+    "check:migrations": "node scripts/dev/cargo-migrate.mjs",
     "check:lint": "node scripts/dev/quick-lint.mjs",
     "check:supabase": "node scripts/dev/audit-supabase.mjs",
     "check:responsive": "node scripts/dev/quick-responsive.mjs",

@@ -23,30 +23,28 @@ CREATE INDEX IF NOT EXISTS idx_sessions_patient_cover
 ON public.sessions (patient_id) 
 WHERE deleted_at IS NULL;
 
--- 2.2. Foreign Keys em Anexos e Documentos de Pacientes
-CREATE INDEX IF NOT EXISTS idx_attachments_session_cover 
-ON public.attachments (session_id) 
-WHERE session_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_patient_documents_patient_cover 
-ON public.patient_documents (patient_id) 
-WHERE patient_id IS NOT NULL;
+-- 2.2. Foreign Keys em Arquivos de Pacientes e Sessões
+-- patient_file_uploads já possui cobertura em (session_id) e (patient_id)
+CREATE INDEX IF NOT EXISTS idx_patient_file_uploads_user_cover 
+ON public.patient_file_uploads (uploaded_by_user_id) 
+WHERE deleted_at IS NULL;
 
 -- 2.3. Foreign Keys em Membros de Clínica e Convites
 CREATE INDEX IF NOT EXISTS idx_clinic_memberships_user_cover 
 ON public.clinic_memberships (user_id) 
 WHERE is_active = true;
 
-CREATE INDEX IF NOT EXISTS idx_clinic_invitations_clinic_cover 
-ON public.clinic_invitations (clinic_id) 
+-- clinic_collaborator_invitations já possui idx_clinic_collaborator_invitations_clinic_id
+CREATE INDEX IF NOT EXISTS idx_clinic_collaborator_invitations_invited_by_cover 
+ON public.clinic_collaborator_invitations (invited_by) 
 WHERE status = 'pending';
 
 -- 2.4. Foreign Keys em Planos de Pagamento e Assinaturas
 CREATE INDEX IF NOT EXISTS idx_patient_payment_plans_patient_cover 
 ON public.patient_payment_plans (patient_id);
 
-CREATE INDEX IF NOT EXISTS idx_clinic_invoices_subscription_cover 
-ON public.clinic_invoices (subscription_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_invoices_subscription_cover 
+ON public.subscription_invoices (subscription_id);
 
 -- 2.5. Foreign Keys em Governança e Auditoria
 CREATE INDEX IF NOT EXISTS idx_session_edit_history_session_cover 

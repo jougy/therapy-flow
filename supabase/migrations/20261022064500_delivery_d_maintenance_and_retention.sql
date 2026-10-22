@@ -51,8 +51,12 @@ GRANT EXECUTE ON FUNCTION public.purge_expired_operational_data() TO service_rol
 DO $$
 BEGIN
     -- Fixar search_path seguro nas funções apontadas pelo advisor
-    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'is_platform_owner') THEN
-        ALTER FUNCTION public.is_platform_owner() SET search_path = public, pg_temp;
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'is_platform_owner' AND pronargs = 1) THEN
+        ALTER FUNCTION public.is_platform_owner(uuid) SET search_path = public, pg_temp;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'is_platform_owner_mfa_verified' AND pronargs = 1) THEN
+        ALTER FUNCTION public.is_platform_owner_mfa_verified(uuid) SET search_path = public, pg_temp;
     END IF;
 
     IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'has_role' AND pronargs = 2) THEN
