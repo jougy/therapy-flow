@@ -29,19 +29,22 @@ describe("TermsUpdatePromptModal", () => {
       isSuperAdmin: false,
     } as never);
 
+    const mockSingleResult = {
+      data: {
+        value: {
+          publishedVersion: "v2026-07-26",
+          user_br: { content: "# Termos Usuários BR", filename: "user_br.md", updatedAt: "2026-07-26" },
+          owner_br: { content: "# Termos Owner BR", filename: "owner_br.md", updatedAt: "2026-07-26" },
+        },
+      },
+      error: null,
+    };
+
     vi.mocked(supabase.from).mockReturnValue({
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
-          single: vi.fn().mockResolvedValue({
-            data: {
-              value: {
-                publishedVersion: "v2026-07-26",
-                user_br: { content: "# Termos Usuários BR", filename: "user_br.md", updatedAt: "2026-07-26" },
-                owner_br: { content: "# Termos Owner BR", filename: "owner_br.md", updatedAt: "2026-07-26" },
-              },
-            },
-            error: null,
-          }),
+          single: vi.fn().mockResolvedValue(mockSingleResult),
+          maybeSingle: vi.fn().mockResolvedValue(mockSingleResult),
         }),
       }),
     } as never);
