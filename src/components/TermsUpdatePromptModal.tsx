@@ -27,7 +27,7 @@ export function TermsUpdatePromptModal() {
         .from("feature_flags")
         .select("value")
         .eq("key", "terms_of_service_management")
-        .single();
+        .maybeSingle();
 
       if (error && error.code !== "PGRST116") {
         console.error("Erro ao buscar termos:", error);

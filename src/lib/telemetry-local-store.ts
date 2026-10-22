@@ -307,8 +307,12 @@ class ClientTelemetryManager {
     // Persistência direta em nuvem (platform_error_logs) via Supabase
     void (async () => {
       try {
+        const { data: authData } = await supabase.auth.getSession();
+        const currentUserId = authData?.session?.user?.id || null;
+
         const route = typeof window !== "undefined" ? window.location.pathname : "/";
-        await supabase.from("platform_error_logs").insert({
+        const { error } = await supabase.from("platform_error_logs").insert({
+          user_id: currentUserId,
           clinic_id: this.cachedClinicId || null,
           error_type: "runtime",
           scope: errorItem.scope,
@@ -317,6 +321,11 @@ class ClientTelemetryManager {
           context: (errorItem.context as Record<string, unknown>) || {},
           route,
         });
+
+        if (error) {
+          // Não relançar como erro de telemetria para evitar loops infinitos
+          console.warn("[LocalTelemetry] RLS ou falha ao persistir erro em platform_error_logs:", error.message);
+        }
       } catch (err) {
         console.warn("[LocalTelemetry] Falha ao persistir erro em platform_error_logs:", err);
       }

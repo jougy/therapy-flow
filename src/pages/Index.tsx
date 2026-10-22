@@ -42,7 +42,7 @@ import { PATIENT_ORIGIN_OPTIONS, type PatientOriginType } from "@/lib/patient-or
 import { AGENDA_EVENTS_UPDATED_EVENT } from "@/lib/agenda-events";
 import { PATIENTS_UPDATED_EVENT } from "@/lib/patient-events";
 import { formatMoneyCents, getPaymentMethodLabel, getPaymentStatusLabel, sanitizeDashboardCents } from "@/lib/session-operations";
-import { getPatientPath, getPatientSessionPath } from "@/lib/patient-routing";
+import { getClinicPatientPath, getPatientPath, getPatientSessionPath } from "@/lib/patient-routing";
 import {
   useClinicPatientsQuery,
   useClinicSessionsSummaryQuery,
@@ -171,6 +171,7 @@ const Index = () => {
   // Modal Dialog States
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
+  const [agendaAutoOpenAdd, setAgendaAutoOpenAdd] = useState(false);
   const [dashboardDialogOpen, setDashboardDialogOpen] = useState(false);
   const [mobileSearchFocused, setMobileSearchFocused] = useState(false);
   const [toolbarFixed, setToolbarFixed] = useState(false);
@@ -671,6 +672,7 @@ const Index = () => {
 
   const handleQuickActionNewAppointment = useCallback((patient: PatientCardData) => {
     setAgendaFixedPatient({ id: patient.id, name: patient.name });
+    setAgendaAutoOpenAdd(true);
     setAgendaDialogOpen(true);
   }, []);
 
@@ -697,9 +699,9 @@ const Index = () => {
 
   const handleQuickActionViewProfile = useCallback(
     (patient: PatientCardData) => {
-      navigate(getPatientPath(patient));
+      navigate(getClinicPatientPath(effectiveClinicKey, patient, "resumo"));
     },
-    [navigate],
+    [effectiveClinicKey, navigate],
   );
 
   const handleOpenQuickActions = useCallback((patient: PatientCardData) => {
@@ -938,7 +940,10 @@ const Index = () => {
               return;
             }
             setAgendaDialogOpen(nextOpen);
-            if (!nextOpen) setAgendaFixedPatient(null);
+            if (!nextOpen) {
+              setAgendaFixedPatient(null);
+              setAgendaAutoOpenAdd(false);
+            }
           }}
         >
           <DialogContent className="max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 sm:max-w-xl sm:p-6">
@@ -958,6 +963,7 @@ const Index = () => {
                 onClick={() => {
                   setAgendaDialogOpen(false);
                   setAgendaFixedPatient(null);
+                  setAgendaAutoOpenAdd(false);
                   navigate(fullAgendaPath);
                 }}
                 title="Ver agenda completa"
@@ -967,7 +973,19 @@ const Index = () => {
                 <span>Ver agenda completa</span>
               </Button>
             </DialogHeader>
-            <AgendaWidget variant="modal" fixedPatient={agendaFixedPatient ?? undefined} />
+            <AgendaWidget
+              key={agendaAutoOpenAdd && agendaFixedPatient ? `auto-add-${agendaFixedPatient.id}` : "standard"}
+              variant="modal"
+              fixedPatient={agendaFixedPatient ?? undefined}
+              autoOpenAdd={agendaAutoOpenAdd}
+              onOpenAddChange={(open) => {
+                if (!open && agendaAutoOpenAdd) {
+                  setAgendaAutoOpenAdd(false);
+                  setAgendaDialogOpen(false);
+                  setAgendaFixedPatient(null);
+                }
+              }}
+            />
           </DialogContent>
         </Dialog>
 

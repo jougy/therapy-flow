@@ -71,7 +71,7 @@ export const PrintAdultConsentModal: React.FC<PrintAdultConsentModalProps> = ({
           .from("feature_flags")
           .select("value")
           .eq("key", "terms_of_service_management")
-          .single();
+          .maybeSingle();
 
         const payload = (data?.value || {}) as TermsConfigPayload;
         const backofficeContent = payload.adult_terms?.content;

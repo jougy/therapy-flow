@@ -132,12 +132,13 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
         .neq("status", "cancelado")
         .neq("status", "rascunho");
 
-      // 3. Contar Pacientes Ativos
+      // 3. Contar Pacientes Ativos (exclui soft-deleted e inativos)
       const { count: patientCount } = await supabase
         .from("patients")
         .select("id", { count: "exact", head: true })
         .eq("clinic_id", clinicId)
-        .eq("is_active", true);
+        .is("deleted_at", null)
+        .neq("status", "inativo");
 
       // 4. Contar Formulários Personalizados Ativos
       const { count: formCount } = await supabase

@@ -6,7 +6,16 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
-import { AgendaViewSelector, PatientInlineAgendaView, AgendaEventQuickDialog, type AgendaViewMode } from "@/components/agenda";
+import {
+  AgendaViewSelector,
+  PatientInlineAgendaView,
+  AgendaEventQuickDialog,
+  agendaDeleteOption,
+  agendaStatusOptions,
+  agendaStatusStyles,
+  type AgendaStatusAction,
+  type AgendaViewMode,
+} from "@/components/agenda";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -34,6 +43,7 @@ import {
   isAgendaEventDateTimeInPast,
   notifyAgendaEventsUpdated,
   formatSupabaseErrorMessage,
+  normalizeAgendaStatus,
   resolvePatientSelection,
   type AgendaEventStatus,
   type AgendaEventType,
@@ -70,33 +80,6 @@ const agendaStatusLabels: Record<AgendaEventStatus, string> = {
   lembrete: "Lembrete",
 };
 
-const agendaStatusStyles: Record<AgendaEventStatus, string> = {
-  aguardando_confirmacao: "bg-warning/15 text-warning border-warning/20",
-  cancelado: "bg-destructive/15 text-destructive border-destructive/20",
-  confirmado: "bg-primary/10 text-primary border-primary/20",
-  concluido: "bg-success/15 text-success border-success/20",
-  lembrete: "bg-primary/10 text-primary border-primary/20",
-};
-
-const normalizeAgendaStatus = (status: string | null | undefined): AgendaEventStatus => {
-  if (status === "lembrete" || status === "aguardando_confirmacao" || status === "confirmado" || status === "cancelado" || status === "concluido") {
-    return status;
-  }
-
-  return "aguardando_confirmacao";
-};
-
-const agendaStatusOptions: { value: AgendaEventStatus; label: string }[] = [
-  { value: "lembrete", label: "Lembrete" },
-  { value: "aguardando_confirmacao", label: "Aguardando confirmação" },
-  { value: "confirmado", label: "Confirmado" },
-  { value: "concluido", label: "Concluído" },
-  { value: "cancelado", label: "Cancelado" },
-];
-
-const agendaDeleteOption = { value: "delete" as const, label: "Excluir agendamento" };
-
-type AgendaStatusAction = AgendaEventStatus | "delete";
 
 const getDateInputValue = (date = new Date()) => {
   const year = date.getFullYear();
@@ -133,8 +116,10 @@ const formatAgendaEventDateTime = (value: string) =>
   });
 
 interface AgendaWidgetProps {
+  autoOpenAdd?: boolean;
   fixedPatient?: AgendaPatientOption;
   headerAccessory?: React.ReactNode;
+  onOpenAddChange?: (open: boolean) => void;
   onStartAttendance?: () => void;
   startAttendanceLabel?: string;
   showExpandButton?: boolean;
@@ -142,8 +127,10 @@ interface AgendaWidgetProps {
 }
 
 const AgendaWidget = ({
+  autoOpenAdd = false,
   fixedPatient,
   headerAccessory,
+  onOpenAddChange,
   onStartAttendance,
   startAttendanceLabel,
   showExpandButton,
@@ -166,15 +153,16 @@ const AgendaWidget = ({
       ? "/designlab/agenda"
       : "/espacopessoal";
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [newEventDate, setNewEventDate] = useState<Date | null>(() => (autoOpenAdd ? null : new Date()));
   const [events, setEvents] = useState<AgendaEvent[]>([]);
   const [patients, setPatients] = useState<AgendaPatientOption[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd] = useState(autoOpenAdd);
   const [eventType, setEventType] = useState<AgendaEventType>("atendimento");
   const [patientQuery, setPatientQuery] = useState("");
   const [patientComboboxOpen, setPatientComboboxOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<AgendaPatientOption | null>(null);
   const [newTitle, setNewTitle] = useState("");
-  const [newTime, setNewTime] = useState(() => getDefaultNewEventTime());
+  const [newTime, setNewTime] = useState(() => (autoOpenAdd ? "" : getDefaultNewEventTime()));
   const [reminderSettings, setReminderSettings] = useState<AgendaReminderSettingsValues>(DEFAULT_REMINDER_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -295,8 +283,8 @@ const AgendaWidget = ({
   }, [scopedEvents, selectedDayTimestamp, todayDay]);
 
   const newEventDateTime = useMemo(
-    () => (newTime ? getAgendaEventDateTime(selectedDate, newTime) : null),
-    [newTime, selectedDate]
+    () => (newEventDate && newTime ? getAgendaEventDateTime(newEventDate, newTime) : null),
+    [newEventDate, newTime]
   );
   const isNewEventDateTimePast = useMemo(
     () => (newEventDateTime ? isAgendaEventDateTimeInPast(newEventDateTime, undefined, 15) : false),
@@ -324,11 +312,12 @@ const AgendaWidget = ({
 
   const canSave = useMemo(() => {
     if (!user || saving || isNewEventDateTimePast) return false;
+    if (!newEventDate || !newTime) return false;
     if (eventType === "atendimento") {
-      return Boolean((fixedPatientId || selectedPatient) && newTime);
+      return Boolean(fixedPatientId || selectedPatient);
     }
-    return Boolean(newTitle.trim() && newTime);
-  }, [eventType, fixedPatientId, isNewEventDateTimePast, newTime, newTitle, saving, selectedPatient, user]);
+    return Boolean(newTitle.trim());
+  }, [eventType, fixedPatientId, isNewEventDateTimePast, newEventDate, newTime, newTitle, saving, selectedPatient, user]);
 
   const resetDialog = () => {
     setEventType("atendimento");
@@ -336,14 +325,18 @@ const AgendaWidget = ({
     setPatientComboboxOpen(false);
     setSelectedPatient(null);
     setNewTitle("");
+    setNewEventDate(new Date());
     setNewTime(getDefaultNewEventTime());
     setReminderSettings(DEFAULT_REMINDER_SETTINGS);
     setShowAdd(false);
+    onOpenAddChange?.(false);
   };
 
   const handleOpenAddDialog = () => {
+    setNewEventDate(selectedDate);
     setNewTime(getDefaultNewEventTime());
     setShowAdd(true);
+    onOpenAddChange?.(true);
   };
 
   const handleEventTypeChange = (value: AgendaEventType) => {
@@ -374,10 +367,10 @@ const AgendaWidget = ({
   const effectiveClinicId = clinicId || clinic?.id || null;
 
   const handleAdd = async () => {
-    if (!user) return;
+    if (!user || !newEventDate) return;
 
     try {
-      assertAgendaEventDateTimeIsFuture(getAgendaEventDateTime(selectedDate, newTime), undefined, 15);
+      assertAgendaEventDateTimeIsFuture(getAgendaEventDateTime(newEventDate, newTime), undefined, 15);
       setSaving(true);
       const reminderConfigs = [
         ...(reminderSettings.remindAtEvent ? [{ minutesBefore: 0 }] : []),
@@ -392,7 +385,7 @@ const AgendaWidget = ({
         notifyPatient: reminderSettings.notifyPatient,
         notifyTeam: reminderSettings.notifyTeam,
         reminderConfigs,
-        selectedDate,
+        selectedDate: newEventDate,
         selectedPatient: fixedPatientId && fixedPatientName ? { id: fixedPatientId, name: fixedPatientName } : selectedPatient,
         time: newTime,
         title: newTitle,
@@ -1039,7 +1032,16 @@ const AgendaWidget = ({
     <>
       {containerContent}
 
-        <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <Dialog
+          open={showAdd}
+          onOpenChange={(open) => {
+            setShowAdd(open);
+            onOpenAddChange?.(open);
+            if (!open) {
+              resetDialog();
+            }
+          }}
+        >
           <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-md sm:p-6">
             <DialogHeader className="space-y-1 text-left">
               <DialogTitle className="text-base font-semibold">Novo agendamento</DialogTitle>
@@ -1149,18 +1151,25 @@ const AgendaWidget = ({
                       <Button
                         type="button"
                         variant="outline"
-                        className="h-10 w-full justify-start text-xs rounded-xl font-normal"
+                        className={cn(
+                          "h-10 w-full justify-start text-xs rounded-xl font-normal",
+                          !newEventDate && "text-muted-foreground"
+                        )}
                         title="Selecione a data do agendamento"
                       >
                         <CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />
-                        {format(selectedDate, "dd/MM/yyyy")}
+                        {newEventDate ? format(newEventDate, "dd/MM/yyyy") : "Selecione uma data"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
                       <Calendar
                         mode="single"
-                        selected={selectedDate}
-                        onSelect={(date) => date && getLocalDayTimestamp(date) >= todayDay.getTime() && setSelectedDate(date)}
+                        selected={newEventDate ?? undefined}
+                        onSelect={(date) => {
+                          if (date && getLocalDayTimestamp(date) >= todayDay.getTime()) {
+                            setNewEventDate(date);
+                          }
+                        }}
                         disabled={(date) => getLocalDayTimestamp(date) < todayDay.getTime()}
                         className={cn("p-3 pointer-events-auto")}
                         modifiers={{ hasEvent: datesWithEvents }}

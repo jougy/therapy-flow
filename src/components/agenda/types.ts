@@ -36,6 +36,25 @@ export const agendaStatusLabels: Record<AgendaEventStatus, string> = {
   lembrete: "Lembrete",
 };
 
+export const agendaStatusOptions: { value: AgendaEventStatus; label: string }[] = [
+  { value: "lembrete", label: "Lembrete" },
+  { value: "aguardando_confirmacao", label: "Aguardando confirmação" },
+  { value: "confirmado", label: "Confirmado" },
+  { value: "concluido", label: "Concluído" },
+  { value: "cancelado", label: "Cancelado" },
+];
+
+export const agendaDeleteOption = { value: "delete" as const, label: "Excluir agendamento" };
+export type AgendaStatusAction = AgendaEventStatus | "delete";
+
+export const agendaStatusStyles: Record<AgendaEventStatus, string> = {
+  aguardando_confirmacao: "bg-warning/15 text-warning border-warning/20",
+  cancelado: "bg-destructive/15 text-destructive border-destructive/20",
+  confirmado: "bg-primary/10 text-primary border-primary/20",
+  concluido: "bg-success/15 text-success border-success/20",
+  lembrete: "bg-primary/10 text-primary border-primary/20",
+};
+
 /**
  * Estilos Tailwind CSS para as badges de status.
  */
