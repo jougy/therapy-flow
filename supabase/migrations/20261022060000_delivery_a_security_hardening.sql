@@ -176,7 +176,7 @@ CREATE POLICY "Users insert clinic session edit history" ON public.session_edit_
         SELECT cm.clinic_id 
         FROM public.clinic_memberships cm 
         WHERE cm.user_id = auth.uid() 
-          AND cm.status = 'active'
+          AND cm.is_active = true
       )
       -- Ou o usuário é um super_admin
       OR public.has_role(auth.uid(), 'super_admin'::public.app_role)
@@ -212,7 +212,7 @@ CREATE POLICY "Authenticated users can insert telemetry events"
         SELECT cm.clinic_id 
         FROM public.clinic_memberships cm 
         WHERE cm.user_id = auth.uid() 
-          AND cm.status = 'active'
+          AND cm.is_active = true
       )
     )
   );

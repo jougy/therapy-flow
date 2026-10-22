@@ -36,7 +36,7 @@ WHERE patient_id IS NOT NULL;
 -- 2.3. Foreign Keys em Membros de Clínica e Convites
 CREATE INDEX IF NOT EXISTS idx_clinic_memberships_user_cover 
 ON public.clinic_memberships (user_id) 
-WHERE status = 'active';
+WHERE is_active = true;
 
 CREATE INDEX IF NOT EXISTS idx_clinic_invitations_clinic_cover 
 ON public.clinic_invitations (clinic_id) 
@@ -75,7 +75,7 @@ CREATE POLICY "Users read clinic session billings" ON public.clinical_session_bi
       SELECT cm.clinic_id 
       FROM public.clinic_memberships cm 
       WHERE cm.user_id = (SELECT auth.uid()) 
-        AND cm.status = 'active'
+        AND cm.is_active = true
     )
   );
 
@@ -88,7 +88,7 @@ CREATE POLICY "Users read clinic sessions" ON public.sessions
       SELECT cm.clinic_id 
       FROM public.clinic_memberships cm 
       WHERE cm.user_id = (SELECT auth.uid()) 
-        AND cm.status = 'active'
+        AND cm.is_active = true
     )
     OR public.has_role((SELECT auth.uid()), 'super_admin'::public.app_role)
   );
@@ -102,7 +102,7 @@ CREATE POLICY "Users read clinic patients" ON public.patients
       SELECT cm.clinic_id 
       FROM public.clinic_memberships cm 
       WHERE cm.user_id = (SELECT auth.uid()) 
-        AND cm.status = 'active'
+        AND cm.is_active = true
     )
     OR public.has_role((SELECT auth.uid()), 'super_admin'::public.app_role)
   );
