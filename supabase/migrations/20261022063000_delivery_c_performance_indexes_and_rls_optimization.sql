@@ -1,0 +1,108 @@
+-- Migration: 20261022063000_delivery_c_performance_indexes_and_rls_optimization.sql
+-- Description: Entrega C - Cobertura de Foreign Keys críticas, remoção de índice duplicado e otimização de subqueries RLS
+
+-- ==============================================================================
+-- 1. DEDUPLICAÇÃO DE ÍNDICES EM SESSIONS
+-- ==============================================================================
+
+-- Remover índice redundante idêntico apontado pelo Advisor
+-- idx_sessions_active_lookup e idx_sessions_active_clinics possuem exatamente a mesma definição:
+-- (clinic_id, session_date DESC) WHERE deleted_at IS NULL
+DROP INDEX IF EXISTS public.idx_sessions_active_clinics;
+
+
+-- ==============================================================================
+-- 2. COBERTURA DE FOREIGN KEYS CRÍTICAS (ELIMINAR SEQ SCANS EM JOINS/CASCADES)
+-- ==============================================================================
+
+-- 2.1. Foreign Keys em Sessões e Faturamento
+CREATE INDEX IF NOT EXISTS idx_clinical_session_billings_session_cover 
+ON public.clinical_session_billings (session_id) 
+WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_sessions_patient_cover 
+ON public.sessions (patient_id) 
+WHERE deleted_at IS NULL;
+
+-- 2.2. Foreign Keys em Anexos e Documentos de Pacientes
+CREATE INDEX IF NOT EXISTS idx_attachments_session_cover 
+ON public.attachments (session_id) 
+WHERE session_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_patient_documents_patient_cover 
+ON public.patient_documents (patient_id) 
+WHERE patient_id IS NOT NULL;
+
+-- 2.3. Foreign Keys em Membros de Clínica e Convites
+CREATE INDEX IF NOT EXISTS idx_clinic_memberships_user_cover 
+ON public.clinic_memberships (user_id) 
+WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_clinic_invitations_clinic_cover 
+ON public.clinic_invitations (clinic_id) 
+WHERE status = 'pending';
+
+-- 2.4. Foreign Keys em Planos de Pagamento e Assinaturas
+CREATE INDEX IF NOT EXISTS idx_patient_payment_plans_patient_cover 
+ON public.patient_payment_plans (patient_id) 
+WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_clinic_invoices_subscription_cover 
+ON public.clinic_invoices (subscription_id);
+
+-- 2.5. Foreign Keys em Governança e Auditoria
+CREATE INDEX IF NOT EXISTS idx_session_edit_history_session_cover 
+ON public.session_edit_history (session_id, edited_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_user_cover 
+ON public.user_roles (user_id);
+
+
+-- ==============================================================================
+-- 3. OTIMIZAÇÃO DE RLS COM SUBQUERIES DE EXECUÇÃO ÚNICA (POSTGRES 17 HOISTING)
+-- ==============================================================================
+
+-- No PostgreSQL 17, envelopar auth.uid() e funções STABLE em subqueries (SELECT auth.uid())
+-- força a avaliação em tempo de planejamento/início (one-time execution),
+-- evitando que a função seja invocada para cada linha avaliada no scan da tabela.
+
+-- 3.1. Otimizar RLS de clinical_session_billings
+DROP POLICY IF EXISTS "Users read clinic session billings" ON public.clinical_session_billings;
+CREATE POLICY "Users read clinic session billings" ON public.clinical_session_billings
+  FOR SELECT TO authenticated
+  USING (
+    clinic_id IN (
+      SELECT cm.clinic_id 
+      FROM public.clinic_memberships cm 
+      WHERE cm.user_id = (SELECT auth.uid()) 
+        AND cm.status = 'active'
+    )
+  );
+
+-- 3.2. Otimizar RLS de sessions (Leitura rápida)
+DROP POLICY IF EXISTS "Users read clinic sessions" ON public.sessions;
+CREATE POLICY "Users read clinic sessions" ON public.sessions
+  FOR SELECT TO authenticated
+  USING (
+    clinic_id IN (
+      SELECT cm.clinic_id 
+      FROM public.clinic_memberships cm 
+      WHERE cm.user_id = (SELECT auth.uid()) 
+        AND cm.status = 'active'
+    )
+    OR public.has_role((SELECT auth.uid()), 'super_admin'::public.app_role)
+  );
+
+-- 3.3. Otimizar RLS de patients (Leitura rápida)
+DROP POLICY IF EXISTS "Users read clinic patients" ON public.patients;
+CREATE POLICY "Users read clinic patients" ON public.patients
+  FOR SELECT TO authenticated
+  USING (
+    clinic_id IN (
+      SELECT cm.clinic_id 
+      FROM public.clinic_memberships cm 
+      WHERE cm.user_id = (SELECT auth.uid()) 
+        AND cm.status = 'active'
+    )
+    OR public.has_role((SELECT auth.uid()), 'super_admin'::public.app_role)
+  );
