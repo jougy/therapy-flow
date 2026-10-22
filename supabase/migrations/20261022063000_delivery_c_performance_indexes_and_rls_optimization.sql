@@ -17,8 +17,7 @@ DROP INDEX IF EXISTS public.idx_sessions_active_clinics;
 
 -- 2.1. Foreign Keys em Sessões e Faturamento
 CREATE INDEX IF NOT EXISTS idx_clinical_session_billings_session_cover 
-ON public.clinical_session_billings (session_id) 
-WHERE deleted_at IS NULL;
+ON public.clinical_session_billings (session_id);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_patient_cover 
 ON public.sessions (patient_id) 
@@ -44,8 +43,7 @@ WHERE status = 'pending';
 
 -- 2.4. Foreign Keys em Planos de Pagamento e Assinaturas
 CREATE INDEX IF NOT EXISTS idx_patient_payment_plans_patient_cover 
-ON public.patient_payment_plans (patient_id) 
-WHERE deleted_at IS NULL;
+ON public.patient_payment_plans (patient_id);
 
 CREATE INDEX IF NOT EXISTS idx_clinic_invoices_subscription_cover 
 ON public.clinic_invoices (subscription_id);
