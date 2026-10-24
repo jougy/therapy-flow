@@ -1,6 +1,7 @@
 import type { TablesInsert } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
+import { getDeviceTimezone } from "@/lib/geo-timezone";
 
 export type AgendaEventType = "atendimento" | "reuniao" | "evento";
 export type AgendaEventStatus = "lembrete" | "aguardando_confirmacao" | "confirmado" | "cancelado" | "concluido";
@@ -39,6 +40,10 @@ export interface AgendaEventItem {
   date: Date;
   time: string;
   durationMinutes?: number;
+  originTimezone?: string | null;
+  originLat?: number | null;
+  originLng?: number | null;
+  originCity?: string | null;
 }
 
 export interface BuildAgendaEventPayloadInput {
@@ -55,6 +60,10 @@ export interface BuildAgendaEventPayloadInput {
   notifyTeam?: boolean;
   notifyPatient?: boolean;
   notifiedColleagueIds?: string[];
+  originTimezone?: string | null;
+  originLat?: number | null;
+  originLng?: number | null;
+  originCity?: string | null;
 }
 
 export const isValidDurationMinutes = (durationMinutes?: number | null): boolean => {
@@ -170,6 +179,10 @@ export const buildAgendaEventPayload = ({
   notifyTeam,
   notifyPatient,
   notifiedColleagueIds,
+  originCity,
+  originLat,
+  originLng,
+  originTimezone,
   selectedDate,
   selectedPatient,
   time,
@@ -203,6 +216,10 @@ export const buildAgendaEventPayload = ({
 
   const cleanClinicId = clinicId ? sanitizeSingleLineInput(clinicId, 64).trim() || null : null;
   const cleanPatientId = selectedPatient?.id ? sanitizeSingleLineInput(selectedPatient.id, 64).trim() || null : null;
+  const cleanOriginTimezone = (originTimezone && originTimezone.trim()) || getDeviceTimezone();
+  const cleanOriginCity = originCity ? sanitizeSingleLineInput(originCity, 100).trim() || null : null;
+  const cleanOriginLat = typeof originLat === "number" && Number.isFinite(originLat) ? originLat : null;
+  const cleanOriginLng = typeof originLng === "number" && Number.isFinite(originLng) ? originLng : null;
 
   return {
     clinic_id: cleanClinicId,
@@ -217,6 +234,10 @@ export const buildAgendaEventPayload = ({
     status: "aguardando_confirmacao",
     title: normalizedTitle,
     user_id: cleanUserId,
+    origin_timezone: cleanOriginTimezone,
+    origin_lat: cleanOriginLat,
+    origin_lng: cleanOriginLng,
+    origin_city: cleanOriginCity,
   };
 };
 

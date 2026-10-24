@@ -168,7 +168,22 @@ const LegacyClinicRoute = () => {
   if (isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
   if (!clinic?.route_key) return <Navigate to="/espacopessoal" replace />;
 
-  return <Navigate to={`/clinica/${clinic.route_key}${location.pathname}${location.search}`} replace />;
+  // Normaliza rotas legadas no singular (ex: /paciente/:id -> /pacientes/:id)
+  let normalizedPath = location.pathname;
+  if (normalizedPath === "/paciente" || normalizedPath.startsWith("/paciente/")) {
+    normalizedPath = normalizedPath.replace(/^\/paciente(\/|$)/, "/pacientes$1");
+  }
+
+  return <Navigate to={`/clinica/${clinic.route_key}${normalizedPath}${location.search}`} replace />;
+};
+
+const LegacyClinicPatientRedirect = () => {
+  const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  // Obtém o sufixo após /paciente/:id (ex: /cadastro, /resumo, /sessao/...)
+  const match = location.pathname.match(/\/paciente\/[^/]+(.*)/);
+  const rest = match ? match[1] : "";
+  return <Navigate to={`../pacientes/${id || ""}${rest}${location.search}`} replace />;
 };
 
 
@@ -338,6 +353,9 @@ const App = () => (
                                 <Route path="pacientes/:id/resumo" element={<PacienteResumo />} />
                                 <Route path="pacientes/:id/cadastro" element={<CadastroCompleto />} />
                                 <Route path="pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />
+                                <Route path="paciente/:id/*" element={<LegacyClinicPatientRedirect />} />
+                                <Route path="paciente/:id" element={<LegacyClinicPatientRedirect />} />
+                                <Route path="paciente" element={<Navigate to="../pacientes" replace />} />
                                 <Route path="*" element={<NotFound />} />
                               </Routes>
                             </AppLayout>

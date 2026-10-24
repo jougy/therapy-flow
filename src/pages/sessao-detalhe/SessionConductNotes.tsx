@@ -1,14 +1,15 @@
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ClinicalSpellcheckTextarea } from "@/components/spellcheck";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 
 export interface SessionConductNotesProps {
   notes: string;
   locked: boolean;
   onNotesChange: (value: string) => void;
+  clinicId?: string;
 }
 
-export function SessionConductNotes({ notes, locked, onNotesChange }: SessionConductNotesProps) {
+export function SessionConductNotes({ notes, locked, onNotesChange, clinicId }: SessionConductNotesProps) {
   return (
     <div data-tutorial="session-conduct-notes">
       <div className="flex items-center justify-between mb-1.5">
@@ -17,10 +18,11 @@ export function SessionConductNotes({ notes, locked, onNotesChange }: SessionCon
         </Label>
         <ComponentHelpButton helpId="session-conduct-notes" size="xs" />
       </div>
-      <Textarea
+      <ClinicalSpellcheckTextarea
         id="notes"
         value={notes}
-        onChange={(e) => onNotesChange(e.target.value)}
+        onChangeValue={onNotesChange}
+        clinicId={clinicId}
         placeholder="Observações gerais sobre o atendimento..."
         className="mt-1"
         rows={2}

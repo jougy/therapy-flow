@@ -25,7 +25,7 @@ CREATE OR REPLACE FUNCTION "public"."can_perform_action"("_capability" "text", "
   SELECT public.current_user_can(_capability, _clinic_id);
 $$;
 
--- [RPC/FUNCTION] end_platform_clinic_access (schema.sql L3546-L3581)
+-- [RPC/FUNCTION] end_platform_clinic_access (schema.sql L3551-L3586)
 CREATE OR REPLACE FUNCTION "public"."end_platform_clinic_access"() RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -63,7 +63,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] get_active_platform_clinic_id (schema.sql L4215-L4226)
+-- [RPC/FUNCTION] get_active_platform_clinic_id (schema.sql L4220-L4231)
 CREATE OR REPLACE FUNCTION "public"."get_active_platform_clinic_id"("_user_id" "uuid") RETURNS "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -77,7 +77,7 @@ CREATE OR REPLACE FUNCTION "public"."get_active_platform_clinic_id"("_user_id" "
   limit 1
 $$;
 
--- [RPC/FUNCTION] get_current_platform_role (schema.sql L5366-L5376)
+-- [RPC/FUNCTION] get_current_platform_role (schema.sql L5371-L5381)
 CREATE OR REPLACE FUNCTION "public"."get_current_platform_role"() RETURNS "public"."platform_admin_role"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -90,7 +90,7 @@ CREATE OR REPLACE FUNCTION "public"."get_current_platform_role"() RETURNS "publi
   limit 1
 $$;
 
--- [RPC/FUNCTION] get_platform_clinic_detail (schema.sql L5851-L5911)
+-- [RPC/FUNCTION] get_platform_clinic_detail (schema.sql L5856-L5916)
 CREATE OR REPLACE FUNCTION "public"."get_platform_clinic_detail"("_clinic_id" "uuid") RETURNS "jsonb"
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -153,7 +153,7 @@ CREATE OR REPLACE FUNCTION "public"."get_platform_clinic_detail"("_clinic_id" "u
   end
 $$;
 
--- [RPC/FUNCTION] get_platform_clinic_detail_by_route_key (schema.sql L5917-L5948)
+-- [RPC/FUNCTION] get_platform_clinic_detail_by_route_key (schema.sql L5922-L5953)
 CREATE OR REPLACE FUNCTION "public"."get_platform_clinic_detail_by_route_key"("_route_key" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -187,7 +187,7 @@ begin
 end;
 $_$;
 
--- [RPC/FUNCTION] get_platform_clinic_forms_summary_by_route_key (schema.sql L5954-L6043)
+-- [RPC/FUNCTION] get_platform_clinic_forms_summary_by_route_key (schema.sql L5959-L6048)
 CREATE OR REPLACE FUNCTION "public"."get_platform_clinic_forms_summary_by_route_key"("_route_key" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -279,7 +279,7 @@ begin
 end;
 $_$;
 
--- [RPC/FUNCTION] get_platform_clinic_roles_overview (schema.sql L6049-L6121)
+-- [RPC/FUNCTION] get_platform_clinic_roles_overview (schema.sql L6054-L6126)
 CREATE OR REPLACE FUNCTION "public"."get_platform_clinic_roles_overview"("_clinic_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -354,7 +354,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_platform_dashboard (schema.sql L6127-L6185)
+-- [RPC/FUNCTION] get_platform_dashboard (schema.sql L6132-L6190)
 CREATE OR REPLACE FUNCTION "public"."get_platform_dashboard"() RETURNS "jsonb"
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -415,7 +415,7 @@ CREATE OR REPLACE FUNCTION "public"."get_platform_dashboard"() RETURNS "jsonb"
   end
 $$;
 
--- [RPC/FUNCTION] get_platform_person_detail (schema.sql L6191-L6398)
+-- [RPC/FUNCTION] get_platform_person_detail (schema.sql L6196-L6403)
 CREATE OR REPLACE FUNCTION "public"."get_platform_person_detail"("_item_type" "text", "_item_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -625,7 +625,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_platform_onboarding_meetings_updated_at (schema.sql L6827-L6834)
+-- [RPC/FUNCTION] handle_platform_onboarding_meetings_updated_at (schema.sql L6832-L6839)
 CREATE OR REPLACE FUNCTION "public"."handle_platform_onboarding_meetings_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -635,7 +635,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] increment_community_template_import (schema.sql L7226-L7235)
+-- [RPC/FUNCTION] increment_community_template_import (schema.sql L7231-L7240)
 CREATE OR REPLACE FUNCTION "public"."increment_community_template_import"("p_template_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -647,7 +647,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] is_platform_admin (schema.sql L7599-L7609)
+-- [RPC/FUNCTION] is_platform_admin (schema.sql L7628-L7638)
 CREATE OR REPLACE FUNCTION "public"."is_platform_admin"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
@@ -660,7 +660,7 @@ CREATE OR REPLACE FUNCTION "public"."is_platform_admin"("_user_id" "uuid" DEFAUL
   );
 $$;
 
--- [RPC/FUNCTION] is_platform_owner (schema.sql L7615-L7626)
+-- [RPC/FUNCTION] is_platform_owner (schema.sql L7644-L7655)
 CREATE OR REPLACE FUNCTION "public"."is_platform_owner"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -674,7 +674,7 @@ CREATE OR REPLACE FUNCTION "public"."is_platform_owner"("_user_id" "uuid" DEFAUL
   )
 $$;
 
--- [RPC/FUNCTION] is_platform_owner_mfa_verified (schema.sql L7632-L7638)
+-- [RPC/FUNCTION] is_platform_owner_mfa_verified (schema.sql L7661-L7667)
 CREATE OR REPLACE FUNCTION "public"."is_platform_owner_mfa_verified"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -683,7 +683,7 @@ CREATE OR REPLACE FUNCTION "public"."is_platform_owner_mfa_verified"("_user_id" 
     and coalesce(auth.jwt()->>'aal', '') = 'aal2'
 $$;
 
--- [RPC/FUNCTION] list_platform_audit_events (schema.sql L7946-L7969)
+-- [RPC/FUNCTION] list_platform_audit_events (schema.sql L7975-L7998)
 CREATE OR REPLACE FUNCTION "public"."list_platform_audit_events"("_clinic_id" "uuid" DEFAULT NULL::"uuid", "_limit" integer DEFAULT 80) RETURNS TABLE("id" "uuid", "actor_user_id" "uuid", "actor_email" "text", "actor_name" "text", "actor_platform_role" "public"."platform_admin_role", "clinic_id" "uuid", "clinic_name" "text", "event_type" "text", "reason" "text", "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -709,7 +709,7 @@ CREATE OR REPLACE FUNCTION "public"."list_platform_audit_events"("_clinic_id" "u
   limit least(greatest(coalesce(_limit, 80), 1), 200)
 $$;
 
--- [RPC/FUNCTION] list_platform_clinics (schema.sql L7975-L8029)
+-- [RPC/FUNCTION] list_platform_clinics (schema.sql L8004-L8058)
 CREATE OR REPLACE FUNCTION "public"."list_platform_clinics"() RETURNS TABLE("clinic_id" "uuid", "clinic_route_key" "text", "clinic_name" "text", "clinic_cnpj" "text", "clinic_subscription_plan" "public"."subscription_plan", "clinic_subaccount_limit" integer, "clinic_concurrent_access_limit" integer, "clinic_created_at" timestamp with time zone, "clinic_updated_at" timestamp with time zone, "owner_user_id" "uuid", "owner_name" "text", "owner_email" "text", "collaborators_count" bigint, "patients_count" bigint, "sessions_count" bigint, "active_flags_count" bigint, "last_activity_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -766,7 +766,7 @@ CREATE OR REPLACE FUNCTION "public"."list_platform_clinics"() RETURNS TABLE("cli
   order by clinics.updated_at desc nulls last, clinics.created_at desc
 $$;
 
--- [RPC/FUNCTION] list_platform_directory (schema.sql L8035-L8395)
+-- [RPC/FUNCTION] list_platform_directory (schema.sql L8064-L8424)
 CREATE OR REPLACE FUNCTION "public"."list_platform_directory"("_query" "text" DEFAULT NULL::"text", "_kind" "text" DEFAULT 'all'::"text", "_status" "text" DEFAULT 'all'::"text", "_tag_id" "uuid" DEFAULT NULL::"uuid", "_limit" integer DEFAULT 80) RETURNS TABLE("item_type" "text", "item_id" "uuid", "clinic_id" "uuid", "clinic_name" "text", "title" "text", "subtitle" "text", "primary_document" "text", "secondary_document" "text", "status" "text", "metadata" "jsonb", "updated_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1129,7 +1129,7 @@ CREATE OR REPLACE FUNCTION "public"."list_platform_directory"("_query" "text" DE
   LIMIT (SELECT row_limit FROM input);
 $$;
 
--- [RPC/FUNCTION] list_platform_error_logs (schema.sql L8401-L8436)
+-- [RPC/FUNCTION] list_platform_error_logs (schema.sql L8430-L8465)
 CREATE OR REPLACE FUNCTION "public"."list_platform_error_logs"("_limit" integer DEFAULT 100, "_error_type" "text" DEFAULT NULL::"text", "_search" "text" DEFAULT NULL::"text") RETURNS TABLE("id" "uuid", "user_id" "uuid", "user_name" "text", "user_email" "text", "clinic_id" "uuid", "clinic_name" "text", "error_type" "text", "scope" "text", "message" "text", "stack_trace" "text", "context" "jsonb", "route" "text", "created_at" timestamp with time zone)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
@@ -1167,7 +1167,7 @@ CREATE OR REPLACE FUNCTION "public"."list_platform_error_logs"("_limit" integer 
   LIMIT LEAST(GREATEST(COALESCE(_limit, 100), 1), 500);
 $$;
 
--- [RPC/FUNCTION] list_platform_telemetry_events (schema.sql L8442-L8469)
+-- [RPC/FUNCTION] list_platform_telemetry_events (schema.sql L8471-L8498)
 CREATE OR REPLACE FUNCTION "public"."list_platform_telemetry_events"("_clinic_id" "uuid", "_limit" integer DEFAULT 100) RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "user_id" "uuid", "user_name" "text", "event_type" "text", "pathname" "text", "resource_type" "text", "resource_id" "text", "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -1197,7 +1197,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] list_platform_user_telemetry_events (schema.sql L8475-L8502)
+-- [RPC/FUNCTION] list_platform_user_telemetry_events (schema.sql L8504-L8531)
 CREATE OR REPLACE FUNCTION "public"."list_platform_user_telemetry_events"("_user_id" "uuid", "_limit" integer DEFAULT 100) RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "user_id" "uuid", "user_name" "text", "event_type" "text", "pathname" "text", "resource_type" "text", "resource_id" "text", "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -1227,7 +1227,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] log_platform_audit_event (schema.sql L8508-L8551)
+-- [RPC/FUNCTION] log_platform_audit_event (schema.sql L8537-L8580)
 CREATE OR REPLACE FUNCTION "public"."log_platform_audit_event"("_event_type" "text", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_reason" "text" DEFAULT NULL::"text", "_metadata" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1273,7 +1273,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] log_platform_error (schema.sql L8557-L8594)
+-- [RPC/FUNCTION] log_platform_error (schema.sql L8586-L8623)
 CREATE OR REPLACE FUNCTION "public"."log_platform_error"("_error_type" "text", "_message" "text", "_scope" "text" DEFAULT NULL::"text", "_stack_trace" "text" DEFAULT NULL::"text", "_context" "jsonb" DEFAULT '{}'::"jsonb", "_route" "text" DEFAULT NULL::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
@@ -1313,7 +1313,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] platform_create_clinic (schema.sql L9349-L9398)
+-- [RPC/FUNCTION] platform_create_clinic (schema.sql L9378-L9427)
 CREATE OR REPLACE FUNCTION "public"."platform_create_clinic"("_name" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'clinic'::"public"."subscription_plan", "_subaccount_limit" integer DEFAULT 4, "_reason" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1365,7 +1365,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] platform_normalize_search (schema.sql L9404-L9409)
+-- [RPC/FUNCTION] platform_normalize_search (schema.sql L9433-L9438)
 CREATE OR REPLACE FUNCTION "public"."platform_normalize_search"("_value" "text") RETURNS "text"
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -1373,7 +1373,7 @@ CREATE OR REPLACE FUNCTION "public"."platform_normalize_search"("_value" "text")
   select lower(regexp_replace(coalesce(_value, ''), '[^[:alnum:]]+', '', 'g'));
 $$;
 
--- [RPC/FUNCTION] platform_override_clinic_subscription (schema.sql L9415-L9556)
+-- [RPC/FUNCTION] platform_override_clinic_subscription (schema.sql L9444-L9585)
 CREATE OR REPLACE FUNCTION "public"."platform_override_clinic_subscription"("_clinic_id" "uuid", "_new_plan" "public"."subscription_plan" DEFAULT NULL::"public"."subscription_plan", "_status" "text" DEFAULT NULL::"text", "_subaccount_limit" integer DEFAULT NULL::integer, "_concurrent_access_limit" integer DEFAULT NULL::integer, "_next_due_date" "date" DEFAULT NULL::"date", "_reason" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1517,7 +1517,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] start_platform_clinic_access (schema.sql L10956-L11016)
+-- [RPC/FUNCTION] start_platform_clinic_access (schema.sql L10985-L11045)
 CREATE OR REPLACE FUNCTION "public"."start_platform_clinic_access"("_clinic_id" "uuid", "_reason" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1580,7 +1580,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] submit_user_platform_feedback (schema.sql L11234-L11315)
+-- [RPC/FUNCTION] submit_user_platform_feedback (schema.sql L11263-L11344)
 CREATE OR REPLACE FUNCTION "public"."submit_user_platform_feedback"("_clinic_id" "uuid", "_ratings" "jsonb", "_problem_report" "text" DEFAULT NULL::"text", "_opinion" "text" DEFAULT NULL::"text", "_page_url" "text" DEFAULT NULL::"text", "_user_agent" "text" DEFAULT NULL::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1664,7 +1664,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] toggle_community_template_like (schema.sql L11520-L11553)
+-- [RPC/FUNCTION] toggle_community_template_like (schema.sql L11549-L11582)
 CREATE OR REPLACE FUNCTION "public"."toggle_community_template_like"("p_template_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1700,7 +1700,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] touch_platform_feedbacks_updated_at (schema.sql L11607-L11614)
+-- [RPC/FUNCTION] touch_platform_feedbacks_updated_at (schema.sql L11636-L11643)
 CREATE OR REPLACE FUNCTION "public"."touch_platform_feedbacks_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -1710,7 +1710,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] anamnesis_form_templates (schema.sql L13495-L13513)
+-- [TABLE] anamnesis_form_templates (schema.sql L13528-L13546)
 CREATE TABLE IF NOT EXISTS "public"."anamnesis_form_templates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -1731,7 +1731,7 @@ CASE
 END))
 );
 
--- [TABLE] community_form_template_comments (schema.sql L13919-L13930)
+-- [TABLE] community_form_template_comments (schema.sql L13952-L13963)
 CREATE TABLE IF NOT EXISTS "public"."community_form_template_comments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "template_id" "uuid" NOT NULL,
@@ -1745,14 +1745,14 @@ CREATE TABLE IF NOT EXISTS "public"."community_form_template_comments" (
     CONSTRAINT "community_form_template_comments_rating_check" CHECK ((("rating" >= 1) AND ("rating" <= 5)))
 );
 
--- [TABLE] community_form_template_likes (schema.sql L13936-L13940)
+-- [TABLE] community_form_template_likes (schema.sql L13969-L13973)
 CREATE TABLE IF NOT EXISTS "public"."community_form_template_likes" (
     "template_id" "uuid" NOT NULL,
     "user_id" "uuid" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] community_form_templates (schema.sql L13946-L13965)
+-- [TABLE] community_form_templates (schema.sql L13979-L13998)
 CREATE TABLE IF NOT EXISTS "public"."community_form_templates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -1774,7 +1774,7 @@ CREATE TABLE IF NOT EXISTS "public"."community_form_templates" (
     "fields_count" smallint DEFAULT 0 NOT NULL
 );
 
--- [TABLE] platform_admins (schema.sql L14271-L14278)
+-- [TABLE] platform_admins (schema.sql L14306-L14313)
 CREATE TABLE IF NOT EXISTS "public"."platform_admins" (
     "user_id" "uuid" NOT NULL,
     "role" "public"."platform_admin_role" DEFAULT 'platform_owner'::"public"."platform_admin_role" NOT NULL,
@@ -1784,7 +1784,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_admins" (
     "last_used_at" timestamp with time zone
 );
 
--- [TABLE] platform_audit_events (schema.sql L14284-L14295)
+-- [TABLE] platform_audit_events (schema.sql L14319-L14330)
 CREATE TABLE IF NOT EXISTS "public"."platform_audit_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "actor_user_id" "uuid" NOT NULL,
@@ -1798,7 +1798,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_audit_events" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] platform_error_logs (schema.sql L14315-L14326)
+-- [TABLE] platform_error_logs (schema.sql L14350-L14361)
 CREATE TABLE IF NOT EXISTS "public"."platform_error_logs" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -1812,7 +1812,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_error_logs" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] platform_feedbacks (schema.sql L14332-L14350)
+-- [TABLE] platform_feedbacks (schema.sql L14367-L14385)
 CREATE TABLE IF NOT EXISTS "public"."platform_feedbacks" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -1833,7 +1833,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_feedbacks" (
     CONSTRAINT "platform_feedbacks_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'reviewed'::"text", 'archived'::"text"])))
 );
 
--- [TABLE] platform_onboarding_meetings (schema.sql L14356-L14372)
+-- [TABLE] platform_onboarding_meetings (schema.sql L14391-L14407)
 CREATE TABLE IF NOT EXISTS "public"."platform_onboarding_meetings" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "lead_name" "text" NOT NULL,
@@ -1852,7 +1852,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_onboarding_meetings" (
     CONSTRAINT "platform_onboarding_meetings_status_check" CHECK (("status" = ANY (ARRAY['scheduled'::"text", 'completed'::"text", 'canceled'::"text", 'rescheduled'::"text", 'no_show'::"text"])))
 );
 
--- [TABLE] platform_release_note_items (schema.sql L14382-L14391)
+-- [TABLE] platform_release_note_items (schema.sql L14417-L14426)
 CREATE TABLE IF NOT EXISTS "public"."platform_release_note_items" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "release_id" "uuid" NOT NULL,
@@ -1864,7 +1864,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_release_note_items" (
     CONSTRAINT "platform_release_note_items_title_not_blank" CHECK (("btrim"("title") <> ''::"text"))
 );
 
--- [TABLE] platform_releases (schema.sql L14397-L14410)
+-- [TABLE] platform_releases (schema.sql L14432-L14445)
 CREATE TABLE IF NOT EXISTS "public"."platform_releases" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "version" "text" NOT NULL,
@@ -1880,98 +1880,98 @@ CREATE TABLE IF NOT EXISTS "public"."platform_releases" (
     CONSTRAINT "platform_releases_version_order_positive" CHECK (("version_order" > 0))
 );
 
--- [POLICY] Anon can insert error logs ON platform_error_logs (schema.sql L16765-L16765)
+-- [POLICY] Anon can insert error logs ON platform_error_logs (schema.sql L16808-L16808)
 CREATE POLICY "Anon can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "anon" WITH CHECK (("user_id" IS NULL));
 
--- [POLICY] Anyone authenticated can view published community templates ON community_form_templates (schema.sql L16773-L16773)
+-- [POLICY] Anyone authenticated can view published community templates ON community_form_templates (schema.sql L16816-L16816)
 CREATE POLICY "Anyone authenticated can view published community templates" ON "public"."community_form_templates" FOR SELECT TO "authenticated" USING ((("is_published" = true) OR ("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authenticated users can insert comments ON community_form_template_comments (schema.sql L16777-L16777)
+-- [POLICY] Authenticated users can insert comments ON community_form_template_comments (schema.sql L16820-L16820)
 CREATE POLICY "Authenticated users can insert comments" ON "public"."community_form_template_comments" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can insert error logs ON platform_error_logs (schema.sql L16781-L16781)
+-- [POLICY] Authenticated users can insert error logs ON platform_error_logs (schema.sql L16824-L16824)
 CREATE POLICY "Authenticated users can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "authenticated" WITH CHECK ((("auth"."uid"() IS NULL) OR ("user_id" = "auth"."uid"())));
 
--- [POLICY] Authenticated users can manage their own likes ON community_form_template_likes (schema.sql L16793-L16793)
+-- [POLICY] Authenticated users can manage their own likes ON community_form_template_likes (schema.sql L16836-L16836)
 CREATE POLICY "Authenticated users can manage their own likes" ON "public"."community_form_template_likes" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can publish community templates ON community_form_templates (schema.sql L16797-L16797)
+-- [POLICY] Authenticated users can publish community templates ON community_form_templates (schema.sql L16840-L16840)
 CREATE POLICY "Authenticated users can publish community templates" ON "public"."community_form_templates" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can read comments ON community_form_template_comments (schema.sql L16801-L16801)
+-- [POLICY] Authenticated users can read comments ON community_form_template_comments (schema.sql L16844-L16844)
 CREATE POLICY "Authenticated users can read comments" ON "public"."community_form_template_comments" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Authenticated users can remove their own likes ON community_form_template_likes (schema.sql L16805-L16805)
+-- [POLICY] Authenticated users can remove their own likes ON community_form_template_likes (schema.sql L16848-L16848)
 CREATE POLICY "Authenticated users can remove their own likes" ON "public"."community_form_template_likes" FOR DELETE TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can view template likes ON community_form_template_likes (schema.sql L16813-L16813)
+-- [POLICY] Authenticated users can view template likes ON community_form_template_likes (schema.sql L16856-L16856)
 CREATE POLICY "Authenticated users can view template likes" ON "public"."community_form_template_likes" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Authenticated users insert own feedback ON platform_feedbacks (schema.sql L16821-L16821)
+-- [POLICY] Authenticated users insert own feedback ON platform_feedbacks (schema.sql L16864-L16864)
 CREATE POLICY "Authenticated users insert own feedback" ON "public"."platform_feedbacks" FOR INSERT TO "authenticated" WITH CHECK (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR ("user_id" IS NULL)));
 
--- [POLICY] Authenticated users read platform releases ON platform_releases (schema.sql L16825-L16825)
+-- [POLICY] Authenticated users read platform releases ON platform_releases (schema.sql L16868-L16868)
 CREATE POLICY "Authenticated users read platform releases" ON "public"."platform_releases" FOR SELECT TO "authenticated" USING ((("is_active" = true) OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authenticated users read release note items ON platform_release_note_items (schema.sql L16829-L16831)
+-- [POLICY] Authenticated users read release note items ON platform_release_note_items (schema.sql L16872-L16874)
 CREATE POLICY "Authenticated users read release note items" ON "public"."platform_release_note_items" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_releases"
   WHERE (("platform_releases"."id" = "platform_release_note_items"."release_id") AND (("platform_releases"."is_active" = true) OR "public"."is_platform_owner"("auth"."uid"()))))));
 
--- [POLICY] Authors, super admins and platform owners can delete community  ON community_form_templates (schema.sql L16835-L16835)
+-- [POLICY] Authors, super admins and platform owners can delete community  ON community_form_templates (schema.sql L16878-L16878)
 CREATE POLICY "Authors, super admins and platform owners can delete community " ON "public"."community_form_templates" FOR DELETE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authors, super admins and platform owners can update community  ON community_form_templates (schema.sql L16839-L16839)
+-- [POLICY] Authors, super admins and platform owners can update community  ON community_form_templates (schema.sql L16882-L16882)
 CREATE POLICY "Authors, super admins and platform owners can update community " ON "public"."community_form_templates" FOR UPDATE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"()))) WITH CHECK ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Platform admins can view platform error logs ON platform_error_logs (schema.sql L16871-L16871)
+-- [POLICY] Platform admins can view platform error logs ON platform_error_logs (schema.sql L16914-L16914)
 CREATE POLICY "Platform admins can view platform error logs" ON "public"."platform_error_logs" FOR SELECT TO "authenticated" USING (("public"."is_platform_admin"("auth"."uid"()) OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Platform admins podem gerenciar platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L16875-L16879)
+-- [POLICY] Platform admins podem gerenciar platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L16918-L16922)
 CREATE POLICY "Platform admins podem gerenciar platform_onboarding_meetings" ON "public"."platform_onboarding_meetings" TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform owner manage feedbacks ON platform_feedbacks (schema.sql L16923-L16923)
+-- [POLICY] Platform owner manage feedbacks ON platform_feedbacks (schema.sql L16966-L16966)
 CREATE POLICY "Platform owner manage feedbacks" ON "public"."platform_feedbacks" TO "authenticated" USING ("public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid"))) WITH CHECK ("public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid")));
 
--- [POLICY] Platform owners manage platform release note items ON platform_release_note_items (schema.sql L16959-L16959)
+-- [POLICY] Platform owners manage platform release note items ON platform_release_note_items (schema.sql L17002-L17002)
 CREATE POLICY "Platform owners manage platform release note items" ON "public"."platform_release_note_items" TO "authenticated" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Platform owners manage platform releases ON platform_releases (schema.sql L16963-L16963)
+-- [POLICY] Platform owners manage platform releases ON platform_releases (schema.sql L17006-L17006)
 CREATE POLICY "Platform owners manage platform releases" ON "public"."platform_releases" TO "authenticated" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Platform owners read platform admins ON platform_admins (schema.sql L16967-L16967)
+-- [POLICY] Platform owners read platform admins ON platform_admins (schema.sql L17010-L17010)
 CREATE POLICY "Platform owners read platform admins" ON "public"."platform_admins" FOR SELECT TO "authenticated" USING (("public"."is_platform_owner_mfa_verified"("auth"."uid"()) OR ("user_id" = "auth"."uid"())));
 
--- [POLICY] Platform owners read platform audit ON platform_audit_events (schema.sql L16971-L16971)
+-- [POLICY] Platform owners read platform audit ON platform_audit_events (schema.sql L17014-L17014)
 CREATE POLICY "Platform owners read platform audit" ON "public"."platform_audit_events" FOR SELECT TO "authenticated" USING ("public"."is_platform_owner_mfa_verified"("auth"."uid"()));
 
--- [POLICY] Service role tem acesso total a platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L16979-L16979)
+-- [POLICY] Service role tem acesso total a platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L17022-L17022)
 CREATE POLICY "Service role tem acesso total a platform_onboarding_meetings" ON "public"."platform_onboarding_meetings" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Super admins manage all anamnesis form templates ON anamnesis_form_templates (schema.sql L16991-L16991)
+-- [POLICY] Super admins manage all anamnesis form templates ON anamnesis_form_templates (schema.sql L17034-L17034)
 CREATE POLICY "Super admins manage all anamnesis form templates" ON "public"."anamnesis_form_templates" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users and admins can delete own comments ON community_form_template_comments (schema.sql L17035-L17035)
+-- [POLICY] Users and admins can delete own comments ON community_form_template_comments (schema.sql L17078-L17078)
 CREATE POLICY "Users and admins can delete own comments" ON "public"."community_form_template_comments" FOR DELETE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Users delete clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17059-L17059)
+-- [POLICY] Users delete clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17102-L17102)
 CREATE POLICY "Users delete clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17125-L17125)
+-- [POLICY] Users read clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17168-L17168)
 CREATE POLICY "Users read clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('forms.read'::"text", "clinic_id") OR "public"."current_user_can"('anamnesis_forms.read'::"text", "clinic_id"))));
 
--- [POLICY] Users read own feedback ON platform_feedbacks (schema.sql L17196-L17196)
+-- [POLICY] Users read own feedback ON platform_feedbacks (schema.sql L17239-L17239)
 CREATE POLICY "Users read own feedback" ON "public"."platform_feedbacks" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR "public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid"))));
 
--- [POLICY] Users update clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17224-L17224)
+-- [POLICY] Users update clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17267-L17267)
 CREATE POLICY "Users update clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users write clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17260-L17260)
+-- [POLICY] Users write clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17303-L17303)
 CREATE POLICY "Users write clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Usuarios autenticados podem visualizar suas reunioes de onboard ON platform_onboarding_meetings (schema.sql L17292-L17292)
+-- [POLICY] Usuarios autenticados podem visualizar suas reunioes de onboard ON platform_onboarding_meetings (schema.sql L17335-L17335)
 CREATE POLICY "Usuarios autenticados podem visualizar suas reunioes de onboard" ON "public"."platform_onboarding_meetings" FOR SELECT TO "authenticated" USING (("created_by" = "auth"."uid"()));

@@ -60,6 +60,7 @@ describe("CadastroCompleto", () => {
       clinicId: "clinic-1",
       session: { access_token: "mock-token" },
       user: { id: "user-1" },
+      can: () => false,
     } as ReturnType<typeof useAuth>);
     navigateMock.mockClear();
   });

@@ -195,7 +195,7 @@ export const AgendaAlarmDialog: React.FC<AgendaAlarmDialogProps> = ({
     if (onViewPatient) {
       onViewPatient(event);
     } else {
-      const target = event.patientId ? `/paciente/${event.patientId}` : "/pacientes";
+      const target = event.patientId ? `/pacientes/${event.patientId}` : "/pacientes";
       navigate(target);
     }
   };

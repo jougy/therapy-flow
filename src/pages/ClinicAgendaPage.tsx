@@ -49,6 +49,7 @@ import {
   type AgendaPatientOption,
 } from "@/lib/agenda-events";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
+import { resolveCurrentGeoLocation } from "@/lib/geo-timezone";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import {
   type AgendaEventItem,
@@ -75,11 +76,22 @@ import {
   type AgendaEventQueryResult,
 } from "@/lib/agenda-cache";
 
-function getDefaultNewEventTime() {
+function getDefaultNewEventPreset(referenceDate = new Date()) {
   const current = new Date();
-  const nextHour = new Date(current.getTime() + 60 * 60 * 1000);
-  nextHour.setMinutes(0, 0, 0);
-  return format(nextHour, "HH:mm");
+  const nextSlot = new Date(current.getTime() + 60 * 60 * 1000);
+  nextSlot.setMinutes(0, 0, 0);
+
+  // Se a próxima hora avançou para o dia seguinte (ex: 23:45 -> 00:00 do dia seguinte),
+  // ajustamos também a data padrão para manter o compromisso no futuro
+  const presetDate = new Date(referenceDate);
+  if (nextSlot.getDate() !== current.getDate()) {
+    presetDate.setDate(presetDate.getDate() + 1);
+  }
+
+  return {
+    presetDate,
+    presetTime: format(nextSlot, "HH:mm"),
+  };
 }
 
 export default function ClinicAgendaPage() {
@@ -120,8 +132,8 @@ export default function ClinicAgendaPage() {
   // Modal Unificado de Criação e Edição
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [modalPresetDate, setModalPresetDate] = useState<Date>(new Date());
-  const [modalPresetTime, setModalPresetTime] = useState<string>(() => getDefaultNewEventTime());
+  const [modalPresetDate, setModalPresetDate] = useState<Date>(() => getDefaultNewEventPreset().presetDate);
+  const [modalPresetTime, setModalPresetTime] = useState<string>(() => getDefaultNewEventPreset().presetTime);
   const [selectedEventForModal, setSelectedEventForModal] = useState<AgendaEventItem | null>(null);
 
   // Hidratação rápida via IndexedDB para o primeiro carregamento da aba
@@ -225,12 +237,12 @@ export default function ClinicAgendaPage() {
       const eventsRequest = effectiveClinicId
         ? supabase
             .from("agenda_events")
-            .select("id, event_type, patient_id, status, title, scheduled_for, duration_minutes")
+            .select("id, event_type, patient_id, status, title, scheduled_for, duration_minutes, origin_timezone, origin_lat, origin_lng, origin_city")
             .eq("clinic_id", effectiveClinicId)
             .order("scheduled_for", { ascending: true })
         : supabase
             .from("agenda_events")
-            .select("id, event_type, patient_id, status, title, scheduled_for, duration_minutes")
+            .select("id, event_type, patient_id, status, title, scheduled_for, duration_minutes, origin_timezone, origin_lat, origin_lng, origin_city")
             .order("scheduled_for", { ascending: true });
 
       const patientsRequest = effectiveClinicId
@@ -245,14 +257,16 @@ export default function ClinicAgendaPage() {
             .order("name", { ascending: true });
 
       // Dispara ambas as requisições em paralelo (Promise.all) cortando a latência pela metade
-      const [initialEventsRes, patientsRes] = await Promise.all([
-        eventsRequest,
-        patientsRequest,
-      ]);
+      const [initialEventsRes, patientsRes] = await Promise.all([eventsRequest, patientsRequest]);
       let eventsRes = initialEventsRes;
 
-      // Fallback Expand and Contract: se o banco ainda não tiver duration_minutes, tenta sem a coluna
-      if (eventsRes.error && (eventsRes.error.code === "42703" || eventsRes.error.message.includes("duration_minutes"))) {
+      // Fallback Expand and Contract: se o banco ainda não tiver colunas novas, tenta sem elas
+      if (
+        eventsRes.error &&
+        (eventsRes.error.code === "42703" ||
+          eventsRes.error.message.includes("duration_minutes") ||
+          eventsRes.error.message.includes("origin_timezone"))
+      ) {
         eventsRes = effectiveClinicId
           ? await supabase
               .from("agenda_events")
@@ -417,8 +431,9 @@ export default function ClinicAgendaPage() {
 
   // Abrir Modal de Novo Agendamento
   const handleOpenAddModal = useCallback((presetDate?: Date, presetTime?: string) => {
-    setModalPresetDate(presetDate || selectedDate);
-    setModalPresetTime(presetTime || getDefaultNewEventTime());
+    const defaultPreset = getDefaultNewEventPreset(presetDate || selectedDate);
+    setModalPresetDate(presetDate || defaultPreset.presetDate);
+    setModalPresetTime(presetTime || defaultPreset.presetTime);
     setSelectedEventForModal(null);
     setModalMode("create");
     setModalOpen(true);
@@ -480,6 +495,8 @@ export default function ClinicAgendaPage() {
       : null;
 
     try {
+      const geo = await resolveCurrentGeoLocation();
+
       const payload = buildAgendaEventPayload({
         clinicId: effectiveClinicId,
         durationMinutes: data.durationMinutes,
@@ -488,6 +505,10 @@ export default function ClinicAgendaPage() {
         notifiedColleagueIds: data.reminderSettings?.notifiedColleagueIds,
         notifyPatient: data.reminderSettings?.notifyPatient,
         notifyTeam: data.reminderSettings?.notifyTeam,
+        originCity: geo.city,
+        originLat: geo.lat,
+        originLng: geo.lng,
+        originTimezone: geo.timezone,
         reminderConfigs: data.reminderSettings?.reminderConfigs,
         selectedDate: data.date,
         selectedPatient,
@@ -509,6 +530,7 @@ export default function ClinicAgendaPage() {
           insertedResult.error.message.includes("duration_minutes") ||
           insertedResult.error.message.includes("notified_colleague_ids") ||
           insertedResult.error.message.includes("reminder_configs") ||
+          insertedResult.error.message.includes("origin_timezone") ||
           insertedResult.error.message.includes("schema cache"))
       ) {
         const fallbackPayload = { ...payload };
@@ -517,6 +539,10 @@ export default function ClinicAgendaPage() {
         delete (fallbackPayload as any).notify_team;
         delete (fallbackPayload as any).notify_patient;
         delete (fallbackPayload as any).notified_colleague_ids;
+        delete (fallbackPayload as any).origin_timezone;
+        delete (fallbackPayload as any).origin_lat;
+        delete (fallbackPayload as any).origin_lng;
+        delete (fallbackPayload as any).origin_city;
         insertedResult = await supabase
           .from("agenda_events")
           .insert(fallbackPayload)
@@ -538,6 +564,10 @@ export default function ClinicAgendaPage() {
           date: parseISO(inserted.scheduled_for),
           time: format(parseISO(inserted.scheduled_for), "HH:mm"),
           durationMinutes: (inserted as any).duration_minutes ?? data.durationMinutes,
+          originTimezone: (inserted as any).origin_timezone ?? geo.timezone,
+          originLat: (inserted as any).origin_lat ?? geo.lat,
+          originLng: (inserted as any).origin_lng ?? geo.lng,
+          originCity: (inserted as any).origin_city ?? geo.city,
         };
         setEvents((prev) => {
           const next = [...prev, newEvent];
@@ -584,7 +614,7 @@ export default function ClinicAgendaPage() {
     }
 
     try {
-      const newDateTime = new Date(`${data.date}T${data.time}:00`);
+      const newDateTime = getAgendaEventDateTime(data.date, data.time);
       const updatePayload: {
         status: AgendaEventStatus;
         scheduled_for: string;

@@ -1,8 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ClinicalSpellcheckInput, ClinicalSpellcheckTextarea } from "@/components/spellcheck";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { createTreatmentBlock, type TreatmentBlock } from "@/lib/session-treatment";
 import { Plus, Trash2 } from "lucide-react";
@@ -13,6 +12,7 @@ export interface SessionTreatmentFieldsProps {
   treatmentGeneralGuidance: string;
   onTreatmentBlocksChange: React.Dispatch<React.SetStateAction<TreatmentBlock[]>>;
   onTreatmentGeneralGuidanceChange: (val: string) => void;
+  clinicId?: string;
 }
 
 export const SessionTreatmentFields = ({
@@ -21,6 +21,7 @@ export const SessionTreatmentFields = ({
   treatmentGeneralGuidance,
   onTreatmentBlocksChange,
   onTreatmentGeneralGuidanceChange,
+  clinicId,
 }: SessionTreatmentFieldsProps) => {
   const addTreatmentBlock = () => {
     onTreatmentBlocksChange((current) => [...current, createTreatmentBlock(current.length)]);
@@ -83,48 +84,53 @@ export const SessionTreatmentFields = ({
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Nome do tratamento</Label>
-                    <Input
+                    <ClinicalSpellcheckInput
                       value={block.name}
-                      onChange={(event) => updateTreatmentBlock(block.id, { name: event.target.value })}
+                      onChangeValue={(val) => updateTreatmentBlock(block.id, { name: val })}
                       placeholder="Ex: Alongamento lombar"
                       disabled={locked}
+                      clinicId={clinicId}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>De quanto em quanto tempo</Label>
-                    <Input
+                    <ClinicalSpellcheckInput
                       value={block.frequency}
-                      onChange={(event) => updateTreatmentBlock(block.id, { frequency: event.target.value })}
+                      onChangeValue={(val) => updateTreatmentBlock(block.id, { frequency: val })}
                       placeholder="Ex: a cada 8h"
                       disabled={locked}
+                      clinicId={clinicId}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Por quanto tempo</Label>
-                    <Input
+                    <ClinicalSpellcheckInput
                       value={block.duration}
-                      onChange={(event) => updateTreatmentBlock(block.id, { duration: event.target.value })}
+                      onChangeValue={(val) => updateTreatmentBlock(block.id, { duration: val })}
                       placeholder="Ex: por 15 dias"
                       disabled={locked}
+                      clinicId={clinicId}
                     />
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Quantidade de séries</Label>
-                      <Input
+                      <ClinicalSpellcheckInput
                         value={block.series}
-                        onChange={(event) => updateTreatmentBlock(block.id, { series: event.target.value })}
+                        onChangeValue={(val) => updateTreatmentBlock(block.id, { series: val })}
                         placeholder="Opcional"
                         disabled={locked}
+                        clinicId={clinicId}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label>Quantidade de repetições</Label>
-                      <Input
+                      <ClinicalSpellcheckInput
                         value={block.repetitions}
-                        onChange={(event) => updateTreatmentBlock(block.id, { repetitions: event.target.value })}
+                        onChangeValue={(val) => updateTreatmentBlock(block.id, { repetitions: val })}
                         placeholder="Opcional"
                         disabled={locked}
+                        clinicId={clinicId}
                       />
                     </div>
                   </div>
@@ -132,12 +138,13 @@ export const SessionTreatmentFields = ({
 
                 <div className="space-y-2">
                   <Label>Instruções adicionais</Label>
-                  <Textarea
+                  <ClinicalSpellcheckTextarea
                     value={block.instructions}
-                    onChange={(event) => updateTreatmentBlock(block.id, { instructions: event.target.value })}
+                    onChangeValue={(val) => updateTreatmentBlock(block.id, { instructions: val })}
                     placeholder="Descreva detalhes do bloco de tratamento..."
                     rows={3}
                     disabled={locked}
+                    clinicId={clinicId}
                   />
                 </div>
               </div>
@@ -149,14 +156,15 @@ export const SessionTreatmentFields = ({
           <Label htmlFor="treatment-general-guidance" className="text-sm font-medium">
             Orientações gerais e observações
           </Label>
-          <Textarea
+          <ClinicalSpellcheckTextarea
             id="treatment-general-guidance"
             value={treatmentGeneralGuidance}
-            onChange={(event) => onTreatmentGeneralGuidanceChange(event.target.value)}
+            onChangeValue={(val) => onTreatmentGeneralGuidanceChange(val)}
             placeholder="Registre orientações gerais do receituário, alertas e observações importantes..."
             className="mt-1.5"
             rows={5}
             disabled={locked}
+            clinicId={clinicId}
           />
         </div>
       </CardContent>

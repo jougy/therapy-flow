@@ -21,6 +21,7 @@ import type { PatientPaymentPlanRow } from "@/lib/payment-plans";
 import type { Session, PatientGroup } from "./pacienteDetalheTypes";
 import { statusColors, formatOperationalTime, ScaleIndicator } from "./pacienteDetalheHelpers";
 import { SessionTabsPreview } from "./SessionTabsPreview";
+import { formatAbbreviatedName } from "@/lib/session-people";
 
 export interface SessionCardProps {
   baseSchema: AnamnesisTemplateSchema;
@@ -144,7 +145,9 @@ export const SessionCard = memo(({
             <div className="flex items-center gap-2 flex-wrap min-w-0">
               <span className="font-semibold text-xs tracking-tight">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
               <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${statusColors[session.status] || ""}`}>{session.status}</Badge>
-              <span className="text-xs text-muted-foreground truncate max-w-[120px]">{creatorName}</span>
+              <span className="text-xs text-muted-foreground truncate max-w-[140px]" title={creatorName}>
+                {formatAbbreviatedName(creatorName)}
+              </span>
               {creatorIsIntern && (
                 <Badge variant="outline" className="text-[10px] h-5 px-1">Estagiário</Badge>
               )}
@@ -203,6 +206,24 @@ export const SessionCard = memo(({
                 </Badge>
               )}
 
+              {onLinkGroup && !selectionMode && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onLinkGroup();
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  title="Vincular a grupo de evolução"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline text-[11px]">Grupo</span>
+                </Button>
+              )}
+
               {onEvolve && !selectionMode && (
                 <Button
                   type="button"
@@ -219,24 +240,6 @@ export const SessionCard = memo(({
                 >
                   {isEvolving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
                   <span className="text-[11px] font-medium">Evoluir</span>
-                </Button>
-              )}
-
-              {onLinkGroup && !selectionMode && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onLinkGroup();
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  title="Vincular a grupo de evolução"
-                >
-                  <FolderPlus className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline text-[11px]">Grupo</span>
                 </Button>
               )}
 
@@ -389,73 +392,78 @@ export const SessionCard = memo(({
       <CardContent className="p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
-              <Badge variant="outline" className={`text-xs ${statusColors[session.status] || ""}`}>{session.status}</Badge>
-              <Badge variant="secondary" className="text-xs">
-                {creatorName}
-              </Badge>
-              {creatorIsIntern && (
-                <Badge variant="outline" className="text-xs">
-                  Estagiario
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <span className="font-medium text-sm">{new Date(session.session_date).toLocaleDateString("pt-BR")}</span>
+                <Badge variant="outline" className={`text-xs ${statusColors[session.status] || ""}`}>{session.status}</Badge>
+                <Badge variant="secondary" className="text-xs max-w-[200px] truncate" title={creatorName}>
+                  {formatAbbreviatedName(creatorName)}
                 </Badge>
-              )}
-              {shareCount > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onViewShareRecipients();
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  <Share2 className="h-3.5 w-3.5" />
-                  {shareCount}
-                </Button>
-              )}
-              {selectionMode && (
-                <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
-                  {isSelected ? "Selecionado" : "Toque para selecionar"}
-                </Badge>
-              )}
-              {onEvolve && !selectionMode && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-6 px-2 text-xs gap-1 border-primary/20 hover:bg-primary/10 hover:text-primary transition-colors"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onEvolve();
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  disabled={isEvolving}
-                  title="Evoluir atendimento (iniciar novo a partir deste)"
-                >
-                  {isEvolving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
-                  <span className="text-[11px] font-medium">Evoluir caso</span>
-                </Button>
-              )}
-              {onLinkGroup && !selectionMode && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onLinkGroup();
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  title="Vincular a grupo de evolução"
-                >
-                  <FolderPlus className="h-3.5 w-3.5" />
-                  <span className="text-[11px]">Grupo</span>
-                </Button>
-              )}
+                {creatorIsIntern && (
+                  <Badge variant="outline" className="text-xs">
+                    Estagiario
+                  </Badge>
+                )}
+                {shareCount > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onViewShareRecipients();
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    {shareCount}
+                  </Button>
+                )}
+                {selectionMode && (
+                  <Badge variant={isSelected ? "default" : "outline"} className="text-xs">
+                    {isSelected ? "Selecionado" : "Toque para selecionar"}
+                  </Badge>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                {onLinkGroup && !selectionMode && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onLinkGroup();
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    title="Vincular a grupo de evolução"
+                  >
+                    <FolderPlus className="h-3.5 w-3.5" />
+                    <span className="text-[11px]">Grupo</span>
+                  </Button>
+                )}
+                {onEvolve && !selectionMode && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-6 px-2 text-xs gap-1 border-primary/20 hover:bg-primary/10 hover:text-primary transition-colors"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onEvolve();
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    disabled={isEvolving}
+                    title="Evoluir atendimento (iniciar novo a partir deste)"
+                  >
+                    {isEvolving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                    <span className="text-[11px] font-medium">Evoluir caso</span>
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Badges de Sintomas & Linhas de Cuidado da Sessão */}

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { Database } from "@/integrations/supabase/types";
 import { formatPatientPhone } from "@/lib/patient-registration";
+import { ExclusivePatientBadge } from "@/components/patients/ExclusivePatientBadge";
 
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 
@@ -116,6 +117,7 @@ export const PatientSummaryHeader: React.FC<PatientSummaryHeaderProps> = React.m
               Cadastro preliminar
             </Badge>
           )}
+          <ExclusivePatientBadge patient={patient} />
 
           {/* Minor Guardian Consent Badge */}
           {Boolean(

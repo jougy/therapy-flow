@@ -2865,6 +2865,9 @@ BEGIN
          'sessions.delete' THEN
       RETURN _operational_role IN ('owner', 'admin');
 
+    WHEN 'patients.manage_exclusive' THEN
+      RETURN _operational_role = 'owner';
+
     WHEN 'forms.read' THEN
       RETURN _operational_role IN ('owner', 'admin', 'professional');
 
@@ -3169,6 +3172,8 @@ BEGIN
       RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
     WHEN 'patients.delete' THEN
       RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'patients.manage_exclusive' THEN
+      RETURN _operational_role = 'owner';
     WHEN 'patients.manage_groups', 'patient_groups.write', 'patients_groups.write' THEN
       RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
     WHEN 'patient_groups.read', 'patients_groups.read' THEN
@@ -7511,6 +7516,30 @@ $$;
 
 
 ALTER FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.clinic_memberships cm
+    WHERE cm.clinic_id = _clinic_id
+      AND cm.user_id = _user_id
+      AND cm.is_active = true
+      AND cm.membership_status = 'active'
+      AND (cm.account_role = 'account_owner' OR cm.operational_role = 'owner')
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.clinics c
+    WHERE c.id = _clinic_id
+      AND c.account_owner_user_id = _user_id
+  );
+$$;
+
+
+ALTER FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_user_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."is_clinic_read_only"("_clinic_id" "uuid") RETURNS boolean
@@ -13478,6 +13507,10 @@ CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     "notify_team" boolean DEFAULT false NOT NULL,
     "notify_patient" boolean DEFAULT false NOT NULL,
     "notified_colleague_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
+    "origin_timezone" "text",
+    "origin_lat" double precision,
+    "origin_lng" double precision,
+    "origin_city" "text",
     CONSTRAINT "agenda_events_duration_minutes_check" CHECK ((("duration_minutes" > 0) AND ("duration_minutes" <= 1440))),
     CONSTRAINT "agenda_events_event_type_check" CHECK (("event_type" = ANY (ARRAY['atendimento'::"text", 'reuniao'::"text", 'evento'::"text"]))),
     CONSTRAINT "agenda_events_payment_plan_session_index_check" CHECK ((("payment_plan_session_index" IS NULL) OR ("payment_plan_session_index" >= 1))),
@@ -13702,7 +13735,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_operational_role_capabilities" (
     "enabled" boolean DEFAULT false NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "clinic_operational_role_capabilities_known" CHECK (("capability" = ANY (ARRAY['clinic_profile.read'::"text", 'clinic_profile.manage'::"text", 'forms.read'::"text", 'forms.manage'::"text", 'subaccounts.read'::"text", 'subaccounts.write'::"text", 'subaccounts.manage'::"text", 'subaccounts.delete'::"text", 'subaccounts_roles.read'::"text", 'subaccounts_roles.manage'::"text", 'subscription_billing.read'::"text", 'subscription_billing.manage'::"text", 'treasury.read'::"text", 'treasury.manage'::"text", 'agenda.delete_events'::"text", 'subaccounts_analytics.read'::"text", 'team_development.manage'::"text", 'patients.read'::"text", 'patients.write'::"text", 'patients.delete'::"text", 'patients_groups.read'::"text", 'patients.manage_groups'::"text", 'schedule.read'::"text", 'schedule.read_all'::"text", 'schedule.write'::"text", 'schedule.write_others'::"text", 'sessions.read'::"text", 'sessions.write'::"text", 'sessions.read_all'::"text", 'sessions.write_others'::"text", 'sessions.share'::"text", 'sessions.delete'::"text", 'session.delete_draft'::"text", 'system.print'::"text"]))),
+    CONSTRAINT "clinic_operational_role_capabilities_known" CHECK (("capability" = ANY (ARRAY['clinic_profile.read'::"text", 'clinic_profile.manage'::"text", 'clinic_terms.manage'::"text", 'clinic_trash.manage'::"text", 'forms.read'::"text", 'forms.manage'::"text", 'subaccounts.read'::"text", 'subaccounts.write'::"text", 'subaccounts.manage'::"text", 'subaccounts.delete'::"text", 'subaccounts_roles.read'::"text", 'subaccounts_roles.manage'::"text", 'subscription_billing.read'::"text", 'subscription_billing.manage'::"text", 'treasury.read'::"text", 'treasury.manage'::"text", 'agenda.delete_events'::"text", 'subaccounts_analytics.read'::"text", 'team_development.manage'::"text", 'patients.read'::"text", 'patients.write'::"text", 'patients.delete'::"text", 'patients.manage_exclusive'::"text", 'patients_groups.read'::"text", 'patients.manage_groups'::"text", 'schedule.read'::"text", 'schedule.read_all'::"text", 'schedule.write'::"text", 'schedule.write_others'::"text", 'sessions.read'::"text", 'sessions.write'::"text", 'sessions.read_all'::"text", 'sessions.write_others'::"text", 'sessions.share'::"text", 'sessions.delete'::"text", 'session.delete_draft'::"text", 'system.print'::"text"]))),
     CONSTRAINT "clinic_operational_role_capabilities_no_owner" CHECK (("operational_role" <> 'owner'::"text"))
 );
 
@@ -14245,6 +14278,8 @@ CREATE TABLE IF NOT EXISTS "public"."patients" (
     "deleted_at" timestamp with time zone,
     "deleted_by_user_id" "uuid",
     "version" integer DEFAULT 1 NOT NULL,
+    "is_exclusive" boolean DEFAULT false NOT NULL,
+    "exclusive_user_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
     CONSTRAINT "patients_origin_fields_lengths" CHECK ((("char_length"(COALESCE("origin_referrer_name", ''::"text")) <= 120) AND ("char_length"(COALESCE("origin_insurance_provider", ''::"text")) <= 120) AND ("char_length"(COALESCE("origin_insurance_plan", ''::"text")) <= 120) AND ("char_length"(COALESCE("origin_insurance_member_id", ''::"text")) <= 80) AND ("char_length"(COALESCE("origin_other_name", ''::"text")) <= 120) AND ("char_length"(COALESCE("origin_other_description", ''::"text")) <= 500))),
     CONSTRAINT "patients_origin_type_valid" CHECK (("origin_type" = ANY (ARRAY['particular'::"text", 'indicacao'::"text", 'convenio'::"text", 'filantropia'::"text", 'outros'::"text"]))),
     CONSTRAINT "patients_recurring_time_valid" CHECK (("recurring_time" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'::"text")),
@@ -15593,6 +15628,14 @@ CREATE INDEX "idx_patients_deleted_at" ON "public"."patients" USING "btree" ("de
 
 
 CREATE INDEX "idx_patients_recurrence" ON "public"."patients" USING "btree" ("clinic_id", "is_recurring") WHERE ("is_recurring" = true);
+
+
+
+CREATE INDEX "idx_patients_is_exclusive" ON "public"."patients" USING "btree" ("clinic_id", "is_exclusive") WHERE ("is_exclusive" = true);
+
+
+
+CREATE INDEX "idx_patients_exclusive_users" ON "public"."patients" USING "gin" ("exclusive_user_ids");
 
 
 
@@ -17066,7 +17109,7 @@ CREATE POLICY "Users delete clinic draft sessions" ON "public"."sessions" FOR DE
 
 
 
-CREATE POLICY "Users delete clinic patients" ON "public"."patients" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.delete'::"text", "clinic_id")));
+CREATE POLICY "Users delete clinic patients" ON "public"."patients" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.delete'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids")))));
 
 
 
@@ -17146,7 +17189,7 @@ CREATE POLICY "Users read clinic patient_groups" ON "public"."patient_groups" FO
 
 
 
-CREATE POLICY "Users read clinic patients" ON "public"."patients" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('patients.read'::"text", "clinic_id")));
+CREATE POLICY "Users read clinic patients" ON "public"."patients" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('patients.read'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids")))));
 
 
 
@@ -17225,7 +17268,7 @@ CREATE POLICY "Users update clinic anamnesis forms" ON "public"."anamnesis_form_
 
 
 
-CREATE POLICY "Users update clinic patients" ON "public"."patients" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
+CREATE POLICY "Users update clinic patients" ON "public"."patients" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids"))))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids")))));
 
 
 
@@ -18247,6 +18290,12 @@ GRANT ALL ON FUNCTION "public"."invite_clinic_collaborator"("_clinic_id" "uuid",
 REVOKE ALL ON FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") TO "authenticated";
+
+
+REVOKE ALL ON FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_user_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_user_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_user_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_user_id" "uuid") TO "anon";
 
 
 

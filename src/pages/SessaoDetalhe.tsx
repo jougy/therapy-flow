@@ -19,6 +19,7 @@ import {
 import { DEFAULT_GROUP_COLOR_SLOT_SEEDS, normalizeGroupName } from "@/lib/group-colors";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { Textarea } from "@/components/ui/textarea";
+import { ClinicalSpellcheckTextarea } from "@/components/spellcheck";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
@@ -2028,10 +2029,11 @@ const SessaoDetalhe = () => {
               <Label htmlFor="notes" className="text-sm font-medium">Anotações rápidas e conduta</Label>
               <ComponentHelpButton helpId="session-conduct-notes" size="xs" />
             </div>
-            <Textarea
+            <ClinicalSpellcheckTextarea
               id="notes"
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChangeValue={(val) => setNotes(val)}
+              clinicId={clinicId}
               placeholder="Observações gerais sobre o atendimento..."
               className="mt-1"
               rows={2}
@@ -2275,6 +2277,7 @@ const SessaoDetalhe = () => {
                 treatmentGeneralGuidance={treatmentGeneralGuidance}
                 onTreatmentBlocksChange={setTreatmentBlocks}
                 onTreatmentGeneralGuidanceChange={setTreatmentGeneralGuidance}
+                clinicId={clinicId}
               />
             </TabsContent>
 

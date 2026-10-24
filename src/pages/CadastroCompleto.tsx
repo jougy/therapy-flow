@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { ExclusivePatientSelector } from "@/components/patients/ExclusivePatientSelector";
 import type { Database } from "@/integrations/supabase/types";
 import {
   EMPTY_CLINICAL_PROFILE,
@@ -69,12 +70,14 @@ interface AddressData {
 const CadastroCompleto = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { clinic, clinicId, session, user } = useAuth();
+  const { clinic, clinicId, session, user, can } = useAuth();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [patientName, setPatientName] = useState("");
   const [patientRecord, setPatientRecord] = useState<Patient | null>(null);
+  const [isExclusive, setIsExclusive] = useState(false);
+  const [exclusiveUserIds, setExclusiveUserIds] = useState<string[]>([]);
 
   // Dados básicos
   const [name, setName] = useState("");
@@ -132,6 +135,8 @@ const CadastroCompleto = () => {
       const patient: Patient = data;
 
       setPatientRecord(patient);
+      setIsExclusive(patient.is_exclusive ?? false);
+      setExclusiveUserIds(patient.exclusive_user_ids ?? []);
       setPatientName(patient.name);
       window.dispatchEvent(
         new CustomEvent("pluri:set-patient-title", {
@@ -323,6 +328,8 @@ const CadastroCompleto = () => {
         state,
         street,
         surgeries,
+        isExclusive: can("patients.manage_exclusive") ? isExclusive : (patientRecord?.is_exclusive ?? false),
+        exclusiveUserIds: can("patients.manage_exclusive") ? exclusiveUserIds : (patientRecord?.exclusive_user_ids ?? []),
       });
 
       const previousClinicalState = buildPatientClinicalSnapshotState(patientRecord);
@@ -440,10 +447,16 @@ const CadastroCompleto = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="name">Nome completo *</Label>
-                  <Input id="name" value={name} onChange={(e) => {
-                    setName(e.target.value);
-                    setPatientName(e.target.value);
-                  }} />
+                  <Input
+                    id="name"
+                    value={name}
+                    maxLength={INPUT_LIMITS.name}
+                    onChange={(e) => {
+                      const sanitized = sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.name);
+                      setName(sanitized);
+                      setPatientName(sanitized);
+                    }}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="date-of-birth">Data de nascimento</Label>
@@ -484,12 +497,24 @@ const CadastroCompleto = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="rg">RG</Label>
-                  <Input id="rg" value={rg} onChange={(e) => setRg(e.target.value)} placeholder="0000000-0" />
+                  <Input
+                    id="rg"
+                    value={rg}
+                    maxLength={INPUT_LIMITS.patientDocument}
+                    onChange={(e) => setRg(sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.patientDocument))}
+                    placeholder="0000000-0"
+                  />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="profession">Profissão</Label>
-                <Input id="profession" value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="Ex: Engenheiro(a)" />
+                <Input
+                  id="profession"
+                  value={profession}
+                  maxLength={INPUT_LIMITS.profession}
+                  onChange={(e) => setProfession(sanitizeSingleLineInput(e.target.value, INPUT_LIMITS.profession))}
+                  placeholder="Ex: Engenheiro(a)"
+                />
               </div>
               <section className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
                 <div>
@@ -575,6 +600,19 @@ const CadastroCompleto = () => {
                   ) : null}
                 </div>
               </section>
+
+              {can("patients.manage_exclusive") && (
+                <section className="pt-2 border-t border-border/60">
+                  <ExclusivePatientSelector
+                    isExclusive={isExclusive}
+                    onChangeIsExclusive={setIsExclusive}
+                    exclusiveUserIds={exclusiveUserIds}
+                    onChangeExclusiveUserIds={setExclusiveUserIds}
+                    clinicId={clinicId ?? undefined}
+                    disabled={submitting}
+                  />
+                </section>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

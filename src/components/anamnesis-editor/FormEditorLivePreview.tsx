@@ -13,6 +13,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
+import { ClinicalSpellcheckInput, ClinicalSpellcheckTextarea } from "@/components/spellcheck";
 import { getOptionMatrixRows, type AnamnesisField } from "@/lib/anamnesis-forms";
 
 export interface FormEditorLivePreviewProps {
@@ -40,9 +41,9 @@ export const FormEditorLivePreview: React.FC<FormEditorLivePreviewProps> = ({
     return (
       <div className="min-w-0 space-y-2">
         <FieldLabelWithHelp label={field.label} helpText={field.helpText} required={field.required} />
-        <Input
+        <ClinicalSpellcheckInput
           value={(testAnswers[field.id] as string) ?? ""}
-          onChange={(e) => setFieldTestAnswer(field.id, e.target.value)}
+          onChangeValue={(val) => setFieldTestAnswer(field.id, val)}
           onFocus={triggerFocus}
           placeholder={field.placeholder}
         />
@@ -54,9 +55,9 @@ export const FormEditorLivePreview: React.FC<FormEditorLivePreviewProps> = ({
     return (
       <div className="min-w-0 space-y-2">
         <FieldLabelWithHelp label={field.label} helpText={field.helpText} required={field.required} />
-        <Textarea
+        <ClinicalSpellcheckTextarea
           value={(testAnswers[field.id] as string) ?? ""}
-          onChange={(e) => setFieldTestAnswer(field.id, e.target.value)}
+          onChangeValue={(val) => setFieldTestAnswer(field.id, val)}
           onFocus={triggerFocus}
           placeholder={field.placeholder}
           rows={4}

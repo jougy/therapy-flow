@@ -62,7 +62,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] notification_preferences (schema.sql L3885-L3899)
+-- [TABLE] notification_preferences (schema.sql L3890-L3904)
 CREATE TABLE IF NOT EXISTS "public"."notification_preferences" (
     "user_id" "uuid" NOT NULL,
     "sound_mode" "text" DEFAULT 'default'::"text" NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS "public"."notification_preferences" (
     CONSTRAINT "notification_preferences_sound_mode_check" CHECK (("sound_mode" = ANY (ARRAY['default'::"text", 'silent'::"text"])))
 );
 
--- [RPC/FUNCTION] ensure_notification_preferences (schema.sql L3905-L3927)
+-- [RPC/FUNCTION] ensure_notification_preferences (schema.sql L3910-L3932)
 CREATE OR REPLACE FUNCTION "public"."ensure_notification_preferences"("_user_id" "uuid") RETURNS "public"."notification_preferences"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -104,7 +104,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] notification_category_enabled (schema.sql L9131-L9144)
+-- [RPC/FUNCTION] notification_category_enabled (schema.sql L9160-L9173)
 CREATE OR REPLACE FUNCTION "public"."notification_category_enabled"("_preferences" "public"."notification_preferences", "_category" "text") RETURNS boolean
     LANGUAGE "sql" IMMUTABLE
     SET "search_path" TO 'public'
@@ -120,7 +120,7 @@ CREATE OR REPLACE FUNCTION "public"."notification_category_enabled"("_preference
   END;
 $$;
 
--- [RPC/FUNCTION] purge_old_app_notifications (schema.sql L9731-L9745)
+-- [RPC/FUNCTION] purge_old_app_notifications (schema.sql L9760-L9774)
 CREATE OR REPLACE FUNCTION "public"."purge_old_app_notifications"("_retention_days" integer DEFAULT 60) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -137,7 +137,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L11593-L11601)
+-- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L11622-L11630)
 CREATE OR REPLACE FUNCTION "public"."touch_notification_preferences_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -148,7 +148,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] app_notifications (schema.sql L13519-L13539)
+-- [TABLE] app_notifications (schema.sql L13552-L13572)
 CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -171,14 +171,14 @@ CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     CONSTRAINT "app_notifications_title_check" CHECK ((("char_length"("title") >= 1) AND ("char_length"("title") <= 160)))
 );
 
--- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L17077-L17077)
+-- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L17120-L17120)
 CREATE POLICY "Users delete own app notifications" ON "public"."app_notifications" FOR DELETE USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L17117-L17117)
+-- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L17160-L17160)
 CREATE POLICY "Users manage own notification preferences" ON "public"."notification_preferences" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own app notifications ON app_notifications (schema.sql L17188-L17188)
+-- [POLICY] Users read own app notifications ON app_notifications (schema.sql L17231-L17231)
 CREATE POLICY "Users read own app notifications" ON "public"."app_notifications" FOR SELECT USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users update own app notifications ON app_notifications (schema.sql L17244-L17244)
+-- [POLICY] Users update own app notifications ON app_notifications (schema.sql L17287-L17287)
 CREATE POLICY "Users update own app notifications" ON "public"."app_notifications" FOR UPDATE USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));

@@ -11,11 +11,13 @@ import {
   Play,
   User,
   CalendarDays,
+  Globe,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getRelativeTimezoneComparison } from "@/lib/geo-timezone";
 import type { AgendaPatientOption } from "@/lib/agenda-events";
 import {
   type AgendaEventItem,
@@ -111,7 +113,7 @@ export const PatientInlineAgendaView: React.FC<PatientInlineAgendaViewProps> = R
   // Se estiver no modo Semana, Mês ou Ano
   if (viewMode === "week") {
     return (
-      <div className="max-h-[300px] overflow-y-auto pr-1">
+      <div className="w-full min-w-0 transition-all">
         <AgendaWeekView
           currentDate={currentDate}
           onSelectDate={onSelectDate}
@@ -120,6 +122,7 @@ export const PatientInlineAgendaView: React.FC<PatientInlineAgendaViewProps> = R
           patients={patients}
           onOpenAddModal={onOpenAddModal}
           onOpenEditModal={onOpenEventDetails}
+          compact
         />
       </div>
     );
@@ -127,7 +130,7 @@ export const PatientInlineAgendaView: React.FC<PatientInlineAgendaViewProps> = R
 
   if (viewMode === "month") {
     return (
-      <div className="max-h-[320px] overflow-y-auto pr-1">
+      <div className="w-full min-w-0 transition-all">
         <AgendaMonthView
           currentDate={currentDate}
           onSelectDate={onSelectDate}
@@ -136,6 +139,7 @@ export const PatientInlineAgendaView: React.FC<PatientInlineAgendaViewProps> = R
           onOpenAddModal={onOpenAddModal}
           onOpenEditModal={onOpenEventDetails}
           onNavigateToDay={(d) => onSelectDate(d)}
+          compact
         />
       </div>
     );
@@ -143,12 +147,13 @@ export const PatientInlineAgendaView: React.FC<PatientInlineAgendaViewProps> = R
 
   if (viewMode === "year") {
     return (
-      <div className="max-h-[340px] overflow-y-auto pr-1">
+      <div className="w-full min-w-0 transition-all">
         <AgendaYearView
           currentDate={currentDate}
           onSelectDate={onSelectDate}
           onNavigateToView={(_, targetDate) => onSelectDate(targetDate)}
           events={events}
+          compact
         />
       </div>
     );
@@ -207,6 +212,7 @@ export const PatientInlineAgendaView: React.FC<PatientInlineAgendaViewProps> = R
                 const statusStyle = statusBadgeStyles[event.status] || "";
                 const statusLabel = agendaStatusLabels[event.status] || event.status;
                 const typeLabel = eventTypeLabels[event.eventType] || event.eventType;
+                const tzComparison = getRelativeTimezoneComparison(event.scheduledFor, event.originTimezone);
 
                 return (
                   <div
@@ -234,10 +240,21 @@ export const PatientInlineAgendaView: React.FC<PatientInlineAgendaViewProps> = R
                     )}
                   >
                     <div className="flex items-center justify-between gap-1.5 min-w-0">
-                      <span className="flex items-center gap-1 font-bold text-foreground shrink-0">
-                        <Clock className="h-3 w-3 text-muted-foreground" />
-                        {event.time}
-                      </span>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className="flex items-center gap-1 font-bold text-foreground shrink-0">
+                          <Clock className="h-3 w-3 text-muted-foreground" />
+                          {event.time}
+                        </span>
+                        {tzComparison.hasDifference && (
+                          <span
+                            className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1 py-0.2 rounded border border-amber-300 dark:border-amber-700/50 truncate max-w-[65px]"
+                            title={tzComparison.tooltip ?? undefined}
+                          >
+                            <Globe className="h-2 w-2 shrink-0" />
+                            {tzComparison.originTime}
+                          </span>
+                        )}
+                      </div>
 
                       <div className="flex items-center gap-1 shrink-0">
                         {isThisPatient ? (

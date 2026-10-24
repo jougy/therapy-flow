@@ -14,6 +14,10 @@ export interface AgendaEventQueryResult {
   status: string | null;
   title: string;
   duration_minutes?: number | null;
+  origin_timezone?: string | null;
+  origin_lat?: number | null;
+  origin_lng?: number | null;
+  origin_city?: string | null;
 }
 
 export interface AgendaMemoryCacheEntry {
@@ -35,5 +39,9 @@ export function mapRawEventToItem(ev: AgendaEventQueryResult): AgendaEventItem {
     date: parseISO(ev.scheduled_for),
     time: format(parseISO(ev.scheduled_for), "HH:mm"),
     durationMinutes: ev.duration_minutes ?? 60,
+    originTimezone: ev.origin_timezone ?? null,
+    originLat: ev.origin_lat ?? null,
+    originLng: ev.origin_lng ?? null,
+    originCity: ev.origin_city ?? null,
   };
 }

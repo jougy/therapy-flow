@@ -64,6 +64,7 @@ describe("NovoPaciente", () => {
       clinic: { name: "Clínica Teste", route_key: "clinica-teste" },
       clinicId: "clinic-1",
       user: { id: "user-1" },
+      can: () => false,
     } as ReturnType<typeof useAuth>);
     navigateMock.mockClear();
   });
