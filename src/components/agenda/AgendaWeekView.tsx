@@ -8,11 +8,12 @@ import {
   eachDayOfInterval,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Plus, Clock, Sun, Sunset, Moon, CloudMoon } from "lucide-react";
+import { Plus, Clock, Sun, Sunset, Moon, CloudMoon, Globe } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getRelativeTimezoneComparison } from "@/lib/geo-timezone";
 import type { AgendaPatientOption } from "@/lib/agenda-events";
 import {
   type AgendaEventItem,
@@ -30,6 +31,7 @@ interface AgendaWeekViewProps {
   patients: AgendaPatientOption[];
   onOpenAddModal: (presetDate?: Date, presetTime?: string) => void;
   onOpenEditModal: (event: AgendaEventItem) => void;
+  compact?: boolean;
 }
 
 interface AgendaWeekDayCardProps {
@@ -42,6 +44,7 @@ interface AgendaWeekDayCardProps {
   onNavigateToDay: (date: Date) => void;
   onOpenAddModal: (presetDate?: Date, presetTime?: string) => void;
   onOpenEditModal: (event: AgendaEventItem) => void;
+  compact?: boolean;
 }
 
 /**
@@ -57,6 +60,7 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
   onNavigateToDay,
   onOpenAddModal,
   onOpenEditModal,
+  compact = false,
 }) => {
   // Estado local de turnos filtrados no card (multiseleção)
   const [selectedLocalShifts, setSelectedLocalShifts] = React.useState<AgendaShift[]>([]);
@@ -99,7 +103,8 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
     <Card
       onClick={() => onSelectDate(day)}
       className={cn(
-        "group relative flex flex-col min-h-[360px] rounded-2xl border transition-all duration-200 bg-card overflow-hidden cursor-pointer",
+        "group relative flex flex-col rounded-2xl border transition-all duration-200 bg-card overflow-hidden cursor-pointer",
+        compact ? "min-h-[190px]" : "min-h-[360px]",
         isSelected
           ? "ring-2 ring-primary border-primary shadow-sm"
           : "border-border/80 hover:border-primary/40 hover:shadow-xs",
@@ -107,7 +112,12 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
       )}
     >
       {/* Cabeçalho do Dia */}
-      <div className="p-3 border-b border-border/60 bg-muted/20 flex items-center justify-between">
+      <div
+        className={cn(
+          "border-b border-border/60 bg-muted/20 flex items-center justify-between",
+          compact ? "p-2" : "p-3"
+        )}
+      >
         <button
           type="button"
           onClick={(e) => {
@@ -123,7 +133,8 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           </span>
           <span
             className={cn(
-              "text-lg font-bold leading-tight block",
+              "font-bold leading-tight block",
+              compact ? "text-base" : "text-lg",
               isDayToday ? "text-primary" : "text-foreground"
             )}
           >
@@ -161,13 +172,19 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
       </div>
 
       {/* Resumo interativo dos 4 turnos (Madrugada, Manhã, Tarde, Noite) - Multisselecionáveis */}
-      <div className="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-border/40 bg-muted/10 text-center">
+      <div
+        className={cn(
+          "grid grid-cols-4 border-b border-border/40 bg-muted/10 text-center",
+          compact ? "gap-0.5 px-1 py-0.5" : "gap-1 px-2 py-1.5"
+        )}
+      >
         {/* Madrugada */}
         <button
           type="button"
           onClick={(e) => handleToggleLocalShift("dawn", e)}
           className={cn(
-            "flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-lg text-[10px] font-medium border transition-all select-none cursor-pointer",
+            "flex items-center justify-center rounded-lg font-medium border transition-all select-none cursor-pointer",
+            compact ? "gap-0.5 py-0.5 px-0.5 text-[9px] h-5" : "gap-0.5 py-1 px-0.5 text-[10px]",
             selectedLocalShifts.includes("dawn")
               ? "bg-indigo-600 text-white border-indigo-700 shadow-xs font-bold ring-1 ring-indigo-400"
               : shiftsSummary.dawn > 0
@@ -176,7 +193,7 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           )}
           title={`Madrugada: ${shiftsSummary.dawn} compromisso(s). Clique para filtrar.`}
         >
-          <CloudMoon className="h-3 w-3 shrink-0" />
+          <CloudMoon className={cn(compact ? "h-2.5 w-2.5" : "h-3 w-3", "shrink-0")} />
           <span>{shiftsSummary.dawn}</span>
         </button>
 
@@ -185,7 +202,8 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           type="button"
           onClick={(e) => handleToggleLocalShift("morning", e)}
           className={cn(
-            "flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-lg text-[10px] font-medium border transition-all select-none cursor-pointer",
+            "flex items-center justify-center rounded-lg font-medium border transition-all select-none cursor-pointer",
+            compact ? "gap-0.5 py-0.5 px-0.5 text-[9px] h-5" : "gap-0.5 py-1 px-0.5 text-[10px]",
             selectedLocalShifts.includes("morning")
               ? "bg-amber-600 text-white border-amber-700 shadow-xs font-bold ring-1 ring-amber-400"
               : shiftsSummary.morning > 0
@@ -194,7 +212,7 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           )}
           title={`Manhã: ${shiftsSummary.morning} compromisso(s). Clique para filtrar.`}
         >
-          <Sun className="h-3 w-3 shrink-0" />
+          <Sun className={cn(compact ? "h-2.5 w-2.5" : "h-3 w-3", "shrink-0")} />
           <span>{shiftsSummary.morning}</span>
         </button>
 
@@ -203,7 +221,8 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           type="button"
           onClick={(e) => handleToggleLocalShift("afternoon", e)}
           className={cn(
-            "flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-lg text-[10px] font-medium border transition-all select-none cursor-pointer",
+            "flex items-center justify-center rounded-lg font-medium border transition-all select-none cursor-pointer",
+            compact ? "gap-0.5 py-0.5 px-0.5 text-[9px] h-5" : "gap-0.5 py-1 px-0.5 text-[10px]",
             selectedLocalShifts.includes("afternoon")
               ? "bg-blue-600 text-white border-blue-700 shadow-xs font-bold ring-1 ring-blue-400"
               : shiftsSummary.afternoon > 0
@@ -212,7 +231,7 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           )}
           title={`Tarde: ${shiftsSummary.afternoon} compromisso(s). Clique para filtrar.`}
         >
-          <Sunset className="h-3 w-3 shrink-0" />
+          <Sunset className={cn(compact ? "h-2.5 w-2.5" : "h-3 w-3", "shrink-0")} />
           <span>{shiftsSummary.afternoon}</span>
         </button>
 
@@ -221,7 +240,8 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           type="button"
           onClick={(e) => handleToggleLocalShift("evening", e)}
           className={cn(
-            "flex items-center justify-center gap-0.5 py-1 px-0.5 rounded-lg text-[10px] font-medium border transition-all select-none cursor-pointer",
+            "flex items-center justify-center rounded-lg font-medium border transition-all select-none cursor-pointer",
+            compact ? "gap-0.5 py-0.5 px-0.5 text-[9px] h-5" : "gap-0.5 py-1 px-0.5 text-[10px]",
             selectedLocalShifts.includes("evening")
               ? "bg-purple-600 text-white border-purple-700 shadow-xs font-bold ring-1 ring-purple-400"
               : shiftsSummary.evening > 0
@@ -230,16 +250,26 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
           )}
           title={`Noite: ${shiftsSummary.evening} compromisso(s). Clique para filtrar.`}
         >
-          <Moon className="h-3 w-3 shrink-0" />
+          <Moon className={cn(compact ? "h-2.5 w-2.5" : "h-3 w-3", "shrink-0")} />
           <span>{shiftsSummary.evening}</span>
         </button>
       </div>
 
       {/* Lista dos compromissos no card semanal */}
-      <div className="flex-1 p-2 space-y-1.5 overflow-y-auto max-h-[220px]">
+      <div
+        className={cn(
+          "flex-1 overflow-y-auto",
+          compact ? "p-1.5 space-y-1 max-h-[120px]" : "p-2 space-y-1.5 max-h-[220px]"
+        )}
+      >
         {displayedEvents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full py-8 text-center text-muted-foreground/50">
-            <p className="text-[11px]">
+          <div
+            className={cn(
+              "flex flex-col items-center justify-center h-full text-center text-muted-foreground/50",
+              compact ? "py-3" : "py-8"
+            )}
+          >
+            <p className={cn(compact ? "text-[10px]" : "text-[11px]")}>
               {dayEvents.length > 0 ? "Nenhum no turno selecionado" : "Nenhum horário"}
             </p>
             {selectedLocalShifts.length > 0 && selectedLocalShifts.length < 4 && (
@@ -260,6 +290,7 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
             const typeStyle = eventTypeColors[e.eventType];
             const patient = e.patientId ? patientById.get(e.patientId) : null;
             const displayTitle = e.title || (patient ? patient.name : "Compromisso");
+            const tzInfo = getRelativeTimezoneComparison(e.scheduledFor, e.originTimezone);
 
             return (
               <div
@@ -269,17 +300,29 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
                   onOpenEditModal(e);
                 }}
                 className={cn(
-                  "group/card p-2 rounded-xl border text-left text-xs transition-all duration-150 hover:shadow-xs hover:border-primary/40",
+                  "group/card border text-left transition-all duration-150 hover:shadow-xs hover:border-primary/40",
+                  compact ? "p-1.5 rounded-lg text-[10px]" : "p-2 rounded-xl text-xs",
                   e.eventType === "atendimento"
                     ? "bg-primary/[0.04] border-primary/20"
                     : "bg-muted/40 border-border/60"
                 )}
               >
                 <div className="flex items-center justify-between gap-1">
-                  <span className="inline-flex items-center gap-1 font-bold text-[11px] text-foreground">
-                    <Clock className="h-2.5 w-2.5 text-muted-foreground" />
-                    {e.time}
-                  </span>
+                  <div className="flex items-center gap-1 min-w-0">
+                    <span className="inline-flex items-center gap-1 font-bold text-[11px] text-foreground shrink-0">
+                      <Clock className="h-2.5 w-2.5 text-muted-foreground" />
+                      {e.time}
+                    </span>
+                    {tzInfo.hasDifference && (
+                      <span
+                        className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-1 py-0.2 rounded border border-amber-300 dark:border-amber-700/50 truncate max-w-[65px]"
+                        title={tzInfo.tooltip ?? undefined}
+                      >
+                        <Globe className="h-2 w-2 shrink-0" />
+                        {tzInfo.originTime}
+                      </span>
+                    )}
+                  </div>
                   <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", typeStyle.dot)} />
                 </div>
                 <p className="font-semibold text-[11px] text-foreground truncate mt-0.5" title={displayTitle}>
@@ -292,12 +335,15 @@ const AgendaWeekDayCard = React.memo<AgendaWeekDayCardProps>(({
       </div>
 
       {/* Rodapé com botão Adicionar */}
-      <div className="p-2 border-t border-border/50 mt-auto bg-muted/10">
+      <div className={cn("border-t border-border/50 mt-auto bg-muted/10", compact ? "p-1.5" : "p-2")}>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="w-full h-7 text-[11px] font-semibold gap-1 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg"
+          className={cn(
+            "w-full font-semibold gap-1 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg",
+            compact ? "h-6 text-[10px]" : "h-7 text-[11px]"
+          )}
           onClick={(ev) => {
             ev.stopPropagation();
             onOpenAddModal(day);
@@ -325,6 +371,7 @@ export const AgendaWeekView = React.memo<AgendaWeekViewProps>(({
   patients,
   onOpenAddModal,
   onOpenEditModal,
+  compact = false,
 }) => {
   // Dias da semana corrente (Segunda a Domingo)
   const weekDays = useMemo(() => {
@@ -374,7 +421,12 @@ export const AgendaWeekView = React.memo<AgendaWeekViewProps>(({
       </div>
 
       {/* Visão Semanal Clássica Desktop (Grade de 7 Colunas Expandidas) */}
-      <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-7 gap-3 w-full">
+      <div
+        className={cn(
+          "hidden md:grid md:grid-cols-3 lg:grid-cols-7 w-full",
+          compact ? "gap-2" : "gap-3"
+        )}
+      >
         {weekDays.map((day) => {
           const isDayToday = isToday(day);
           const isSelected = isSameDay(day, currentDate);
@@ -393,6 +445,7 @@ export const AgendaWeekView = React.memo<AgendaWeekViewProps>(({
               onNavigateToDay={onNavigateToDay}
               onOpenAddModal={onOpenAddModal}
               onOpenEditModal={onOpenEditModal}
+              compact={compact}
             />
           );
         })}

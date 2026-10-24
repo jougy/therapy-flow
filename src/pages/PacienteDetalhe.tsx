@@ -58,6 +58,7 @@ import { ToastAction } from "@/components/ui/toast";
 import { createTrashToastAction } from "@/lib/trashUtils";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { cn } from "@/lib/utils";
+import { ExclusivePatientBadge } from "@/components/patients/ExclusivePatientBadge";
 import { fetchPatientByRef, getPatientRouteKey, getClinicPatientPath, getPatientPath, getPatientSessionPath } from "@/lib/patient-routing";
 import {
   usePatientDetailQuery,
@@ -2175,6 +2176,9 @@ const PacienteDetalhe = () => {
                 />
                 <span>{patient.status}</span>
               </button>
+
+              {/* Badge de Paciente Exclusivo */}
+              <ExclusivePatientBadge patient={patient} />
 
               <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
                 {patient.age ? (

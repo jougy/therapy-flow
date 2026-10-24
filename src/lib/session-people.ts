@@ -9,6 +9,58 @@ type SessionEditHistoryLike = {
   id: string;
 };
 
+const NAME_CONNECTIVES = new Set([
+  "de",
+  "da",
+  "do",
+  "das",
+  "dos",
+  "e",
+]);
+
+/**
+ * Abrevia nomes longos para caber confortavelmente em cards e badges de atendimento:
+ * Mantém o primeiro nome intacto e o restante como inicial (ex: "João Paulo Taddeo do Val" -> "João P.T.V.").
+ * Conectivos comuns ("de", "da", "do", "das", "dos", "e") são descartados.
+ */
+export const formatAbbreviatedName = (name: string | null | undefined): string => {
+  if (!name) return "";
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+
+  // Se for e-mail (ex: fallback sem full_name), preserva ou retorna a parte antes do @
+  if (trimmed.includes("@") && !trimmed.includes(" ")) {
+    return trimmed;
+  }
+
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) {
+    return trimmed;
+  }
+
+  const firstName = parts[0];
+  const middleAndLast = parts.slice(1);
+  const initials: string[] = [];
+
+  for (const part of middleAndLast) {
+    const lower = part.toLowerCase();
+    if (NAME_CONNECTIVES.has(lower)) {
+      continue;
+    }
+    // Pega o primeiro caractere alfabético/válido
+    const firstChar = part.charAt(0).toUpperCase();
+    if (firstChar) {
+      initials.push(`${firstChar}.`);
+    }
+  }
+
+  if (initials.length === 0) {
+    return firstName;
+  }
+
+  return `${firstName} ${initials.join("")}`;
+};
+
 export const getSessionPersonLabel = (
   person: SessionPersonLike | null | undefined,
   fallback = "Colaborador"

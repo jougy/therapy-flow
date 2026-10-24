@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ClinicalSpellcheckInput, ClinicalSpellcheckTextarea } from "@/components/spellcheck";
 import { AddressBlockInput } from "@/components/anamnesis/AddressBlockInput";
 import { DateFieldInput } from "@/components/anamnesis/DateFieldInput";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
@@ -372,9 +373,9 @@ export const SessionAnamnesisRuntime = ({
       return (
         <div key={field.id} className="space-y-2">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
-          <Input
+          <ClinicalSpellcheckInput
             value={typeof value === "string" ? value : ""}
-            onChange={(event) => updateFormResponse(field.id, event.target.value)}
+            onChangeValue={(val) => updateFormResponse(field.id, val)}
             placeholder={field.placeholder}
             disabled={locked}
           />
@@ -386,9 +387,9 @@ export const SessionAnamnesisRuntime = ({
       return (
         <div key={field.id} className="space-y-2">
           <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
-          <Textarea
+          <ClinicalSpellcheckTextarea
             value={typeof value === "string" ? value : ""}
-            onChange={(event) => updateFormResponse(field.id, event.target.value)}
+            onChangeValue={(val) => updateFormResponse(field.id, val)}
             placeholder={field.placeholder}
             disabled={locked}
             rows={4}

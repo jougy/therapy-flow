@@ -73,6 +73,10 @@ export const PatientPersonalInfoTab: React.FC<PatientPersonalInfoTabProps> = ({
         },
         { label: "Status operacional", value: patient.status },
         {
+          label: "Privacidade e Exclusividade",
+          value: patient.is_exclusive ? "Paciente Exclusivo (Acesso restrito)" : "Padrão (Equipe autorizada)",
+        },
+        {
           label: "Situação do cadastro",
           value: patient.registration_complete ? "Cadastro Completo" : "Cadastro Preliminar",
         },

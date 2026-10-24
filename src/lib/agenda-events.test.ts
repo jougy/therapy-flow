@@ -184,6 +184,43 @@ describe("agenda event helpers", () => {
     });
     expect(excessivePayload.duration_minutes).toBe(60);
   });
+
+  it("populates origin_timezone and geolocation fields in buildAgendaEventPayload", () => {
+    const payloadWithCustomTz = buildAgendaEventPayload({
+      clinicId: "clinic-1",
+      eventType: "reuniao",
+      selectedDate: new Date("2099-03-24T00:00:00.000Z"),
+      selectedPatient: null,
+      time: "10:00",
+      title: "Reunião Remota",
+      userId: "user-1",
+      originTimezone: "America/Manaus",
+      originLat: -3.119,
+      originLng: -60.0217,
+      originCity: "Manaus",
+    });
+
+    expect(payloadWithCustomTz.origin_timezone).toBe("America/Manaus");
+    expect(payloadWithCustomTz.origin_lat).toBe(-3.119);
+    expect(payloadWithCustomTz.origin_lng).toBe(-60.0217);
+    expect(payloadWithCustomTz.origin_city).toBe("Manaus");
+
+    const payloadWithDefaultTz = buildAgendaEventPayload({
+      clinicId: "clinic-1",
+      eventType: "reuniao",
+      selectedDate: new Date("2099-03-24T00:00:00.000Z"),
+      selectedPatient: null,
+      time: "10:00",
+      title: "Reunião Padrão",
+      userId: "user-1",
+    });
+
+    expect(typeof payloadWithDefaultTz.origin_timezone).toBe("string");
+    expect(payloadWithDefaultTz.origin_timezone?.length).toBeGreaterThan(0);
+    expect(payloadWithDefaultTz.origin_lat).toBeNull();
+    expect(payloadWithDefaultTz.origin_lng).toBeNull();
+    expect(payloadWithDefaultTz.origin_city).toBeNull();
+  });
 });
 
 describe("session duration helpers", () => {

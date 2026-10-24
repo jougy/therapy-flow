@@ -101,7 +101,7 @@ export function buildReminderNotificationPayload(options: AgendaReminderNotifica
     (patientId ? `/sessao/nova?pacienteId=${patientId}` : "/");
   const pacienteUrl =
     options.pacienteUrl ??
-    (patientId ? `/paciente/${patientId}` : "/");
+    (patientId ? `/pacientes/${patientId}` : "/");
   const defaultUrl = options.url ?? "/";
 
   const data = {

@@ -52,6 +52,7 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useClinicPlanQuota } from "@/hooks/useClinicPlanQuota";
+import { ExclusivePatientSelector } from "@/components/patients/ExclusivePatientSelector";
 import { TrialReadOnlyModal } from "@/components/TrialReadOnlyModal";
 import {
   calculateAgeDetails,
@@ -148,7 +149,7 @@ const PRONOUN_OPTIONS = [
 
 const NovoPaciente = () => {
   const navigate = useNavigate();
-  const { clinic, clinicId, user } = useAuth();
+  const { clinic, clinicId, user, can } = useAuth();
   const quota = useClinicPlanQuota(clinicId);
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
 
@@ -168,6 +169,9 @@ const NovoPaciente = () => {
   const [email, setEmail] = useState("");
   const [nomeResponsavel, setNomeResponsavel] = useState("");
   const [parentescoResponsavel, setParentescoResponsavel] = useState("");
+
+  const [isExclusive, setIsExclusive] = useState(false);
+  const [exclusiveUserIds, setExclusiveUserIds] = useState<string[]>([]);
 
   const [checkingExistingPatient, setCheckingExistingPatient] = useState(false);
   const [existingPatient, setExistingPatient] = useState<ExistingPatientMatch | null>(null);
@@ -412,6 +416,14 @@ const NovoPaciente = () => {
         navigate(patientPagePath(data.patient_code || data.id));
         setSubmitting(false);
         return;
+      }
+
+      if (can("patients.manage_exclusive") && isExclusive) {
+        const { error: exclusiveErr } = await supabase
+          .from("patients")
+          .update({ is_exclusive: true, exclusive_user_ids: exclusiveUserIds })
+          .eq("id", data.id);
+        if (exclusiveErr) throw exclusiveErr;
       }
 
       const patientData: SharePatientData = {
@@ -911,6 +923,19 @@ const NovoPaciente = () => {
                 )}
               </div>
             </div>
+
+            {can("patients.manage_exclusive") && (
+              <div className="pt-2 border-t border-border/60">
+                <ExclusivePatientSelector
+                  isExclusive={isExclusive}
+                  onChangeIsExclusive={setIsExclusive}
+                  exclusiveUserIds={exclusiveUserIds}
+                  onChangeExclusiveUserIds={setExclusiveUserIds}
+                  clinicId={clinicId ?? undefined}
+                  disabled={submitting}
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
 

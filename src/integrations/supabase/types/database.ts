@@ -45,6 +45,10 @@ export type Database = {
           notified_colleague_ids: string[]
           notify_patient: boolean
           notify_team: boolean
+          origin_city?: string | null
+          origin_lat?: number | null
+          origin_lng?: number | null
+          origin_timezone?: string | null
           patient_id: string | null
           payment_plan_id: string | null
           payment_plan_session_index: number | null
@@ -66,6 +70,10 @@ export type Database = {
           notified_colleague_ids?: string[]
           notify_patient?: boolean
           notify_team?: boolean
+          origin_city?: string | null
+          origin_lat?: number | null
+          origin_lng?: number | null
+          origin_timezone?: string | null
           patient_id?: string | null
           payment_plan_id?: string | null
           payment_plan_session_index?: number | null
@@ -87,6 +95,10 @@ export type Database = {
           notified_colleague_ids?: string[]
           notify_patient?: boolean
           notify_team?: boolean
+          origin_city?: string | null
+          origin_lat?: number | null
+          origin_lng?: number | null
+          origin_timezone?: string | null
           patient_id?: string | null
           payment_plan_id?: string | null
           payment_plan_session_index?: number | null
@@ -1718,9 +1730,11 @@ export type Database = {
           deleted_by_user_id: string | null
           email: string | null
           emergency_contact: Json | null
+          exclusive_user_ids: string[]
           gender: string | null
           guardian_consent: Json | null
           id: string
+          is_exclusive: boolean
           is_recurring: boolean
           name: string
           neighborhood: string | null
@@ -1772,9 +1786,11 @@ export type Database = {
           deleted_by_user_id?: string | null
           email?: string | null
           emergency_contact?: Json | null
+          exclusive_user_ids?: string[]
           gender?: string | null
           guardian_consent?: Json | null
           id?: string
+          is_exclusive?: boolean
           is_recurring?: boolean
           name: string
           neighborhood?: string | null
@@ -1826,9 +1842,11 @@ export type Database = {
           deleted_by_user_id?: string | null
           email?: string | null
           emergency_contact?: Json | null
+          exclusive_user_ids?: string[]
           gender?: string | null
           guardian_consent?: Json | null
           id?: string
+          is_exclusive?: boolean
           is_recurring?: boolean
           name?: string
           neighborhood?: string | null

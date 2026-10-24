@@ -187,3 +187,10 @@ export const SHIFT_FILTER_OPTIONS: readonly ShiftFilterOption[] = [
   { key: "afternoon", label: "Tarde", range: "12h – 18h" },
   { key: "evening", label: "Noite", range: "18h – 24h" },
 ] as const;
+
+/**
+ * Propriedade comum para renderização em modo compacto (ex.: dentro de fichas de pacientes).
+ */
+export interface AgendaViewCompactProps {
+  compact?: boolean;
+}

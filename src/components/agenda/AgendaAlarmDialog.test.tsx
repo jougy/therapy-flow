@@ -129,7 +129,7 @@ describe("AgendaAlarmDialog", () => {
     });
   });
 
-  it("handles [Ver paciente] action and navigates to /paciente/:id", () => {
+  it("handles [Ver paciente] action and navigates to /pacientes/:id", () => {
     const onOpenChange = vi.fn();
     render(
       <AgendaAlarmDialog
@@ -145,7 +145,7 @@ describe("AgendaAlarmDialog", () => {
     fireEvent.click(viewPatientButton);
 
     expect(stopAlarmLoopSpy).toHaveBeenCalled();
-    expect(navigateMock).toHaveBeenCalledWith("/paciente/pac-202");
+    expect(navigateMock).toHaveBeenCalledWith("/pacientes/pac-202");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 

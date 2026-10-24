@@ -11,16 +11,10 @@
             "id": "832fa72ed7879d24",
             "type": "leaf",
             "state": {
-              "type": "kanban",
-              "state": {
-                "file": "00 - Navegacao/Kanban de Tarefas.md",
-                "kanbanViewState": {
-                  "kanban-plugin": "board",
-                  "list-collapse": []
-                }
-              },
-              "icon": "lucide-trello",
-              "title": "Kanban de Tarefas"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Visualização em gráfico"
             }
           }
         ]
@@ -43,7 +37,9 @@
               "type": "file-explorer",
               "state": {
                 "sortOrder": "alphabetical",
-                "autoReveal": false
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
               },
               "icon": "lucide-folder-closed",
               "title": "Explorador de arquivos"
@@ -188,8 +184,10 @@
   },
   "active": "832fa72ed7879d24",
   "lastOpenFiles": [
-    "00 - Navegacao/Kanban de Tarefas.md",
     "00 - Navegacao/Mapa da vault.md",
+    "00 - Navegacao/Kanban de Tarefas.md",
+    "00 - Navegacao/Arquivo Kanban/Historico Concluidos.md",
+    "Temas Personalizados.md",
     "40 - Prompts/Prompt - Homepage filtro e ordenacao de pacientes.md",
     "00 - Navegacao/Codex Brain.md",
     "Projetos 1/Harness IA/Prompts/Index.md",
@@ -222,8 +220,6 @@
     "Projetos/Harness IA/Especificacoes/Index.md",
     "Projetos/Harness IA/Conversas/Index.md",
     "Projetos/Harness IA/02 - Sumario Executivo.md",
-    "Projetos/Harness IA/01 - Mapa do Sistema.md",
-    "core/Pluri-Health/90 - Legal e LGPD/Prompts por documento - Governanca Interna.md",
     "Sem título.canvas"
   ]
 }

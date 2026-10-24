@@ -9,6 +9,7 @@ import {
   User,
   Plus,
   ArrowRightLeft,
+  Globe,
 } from "lucide-react";
 import {
   Accordion,
@@ -20,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getRelativeTimezoneComparison } from "@/lib/geo-timezone";
 import type { AgendaPatientOption } from "@/lib/agenda-events";
 import {
   type AgendaEventItem,
@@ -74,6 +76,9 @@ const AgendaOccupiedSlotCard = React.memo<{
   const event = slot.event;
   const typeStyle = eventTypeColors[event.eventType];
   const isSpanning = Boolean(slot.spanning?.isSpanning);
+  const tzComparison = useMemo(() => {
+    return getRelativeTimezoneComparison(event.scheduledFor, event.originTimezone);
+  }, [event.scheduledFor, event.originTimezone]);
 
   return (
     <Card
@@ -98,6 +103,15 @@ const AgendaOccupiedSlotCard = React.memo<{
             <span className="text-[10px] text-muted-foreground font-medium">
               {slot.durationMinutes} min
             </span>
+            {tzComparison.hasDifference && (
+              <span
+                className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-amber-600 dark:text-amber-400 mt-1 max-w-[70px] truncate"
+                title={tzComparison.tooltip ?? undefined}
+              >
+                <Globe className="h-2.5 w-2.5 shrink-0" />
+                {tzComparison.originTime}
+              </span>
+            )}
           </div>
 
           {/* Detalhes do compromisso */}
@@ -115,6 +129,17 @@ const AgendaOccupiedSlotCard = React.memo<{
               >
                 {agendaStatusLabels[event.status]}
               </Badge>
+
+              {tzComparison.hasDifference && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] px-1.5 py-0 border-amber-300 dark:border-amber-700 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium inline-flex items-center gap-1 shrink-0"
+                  title={tzComparison.tooltip ?? undefined}
+                >
+                  <Globe className="h-2.5 w-2.5" />
+                  Origem: {tzComparison.originTime} ({tzComparison.originTimezoneName})
+                </Badge>
+              )}
 
               {/* Tag contextual caso o evento invada múltiplos períodos */}
               {isSpanning && slot.spanning?.spanLabel && (

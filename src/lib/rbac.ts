@@ -35,6 +35,7 @@ export type AccessCapability =
   | "patients.read"
   | "patients.write"
   | "patients.delete"
+  | "patients.manage_exclusive"
   | "patients_groups.read"
   | "patients.manage_groups"
   | "schedule.read"
@@ -73,6 +74,7 @@ export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "patients.read",
   "patients.write",
   "patients.delete",
+  "patients.manage_exclusive",
   "patients_groups.read",
   "patients.manage_groups",
   "schedule.read",
@@ -121,6 +123,10 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
   "patients.delete": {
     description: "Pode remover e excluir cadastros de pacientes da clínica.",
     label: "Excluir pacientes",
+  },
+  "patients.manage_exclusive": {
+    description: "Pode definir pacientes como exclusivos e gerenciar colaboradores autorizados.",
+    label: "Gerenciar pacientes exclusivos",
   },
   "patients.manage_groups": {
     description: "Pode criar, alterar e organizar grupos e categorias de pacientes.",
@@ -304,6 +310,9 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "subscription_billing.read":
     case "subscription_billing.manage":
       return false;
+
+    case "patients.manage_exclusive":
+      return hasOperationalRole(context, ["owner"]);
 
     case "patients.read":
     case "patients.write":

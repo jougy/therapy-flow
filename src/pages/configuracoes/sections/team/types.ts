@@ -121,11 +121,12 @@ export const ROLE_PERMISSION_ITEMS: RolePermissionItem[] = [
     key: "patients",
     title: "Pacientes",
     description: "Cadastro, contato e dados operacionais dos pacientes.",
-    details: "Controla visualização da lista e cadastro, edição de informações e exclusão de fichas de pacientes.",
+    details: "Controla visualização da lista e cadastro, edição de informações, exclusão e gestão de exclusividade de pacientes.",
     actions: [
       { kind: "view", capability: "patients.read", label: "Ver" },
       { kind: "edit", capability: "patients.write", label: "Editar" },
       { kind: "delete", capability: "patients.delete", label: "Excluir" },
+      { kind: "manage", capability: "patients.manage_exclusive", label: "Exclusividade" },
     ],
   },
   {

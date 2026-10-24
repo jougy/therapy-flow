@@ -70,6 +70,7 @@ describe("hasCapability", () => {
     expect(hasCapability(adminContext, "treasury.manage")).toBe(true);
     expect(hasCapability(adminContext, "subscription_billing.read")).toBe(false);
     expect(hasCapability(adminContext, "subscription_billing.manage")).toBe(false);
+    expect(hasCapability(adminContext, "patients.manage_exclusive")).toBe(false);
     expect(hasCapability(adminContext, "schedule.read_all")).toBe(true);
     expect(hasCapability(adminContext, "sessions.read_all")).toBe(true);
     expect(hasCapability(adminContext, "sessions.write_others")).toBe(true);
@@ -84,6 +85,7 @@ describe("hasCapability", () => {
     expect(hasCapability(professionalContext, "clinic_terms.manage")).toBe(false);
     expect(hasCapability(professionalContext, "treasury.read")).toBe(false);
     expect(hasCapability(professionalContext, "treasury.manage")).toBe(false);
+    expect(hasCapability(professionalContext, "patients.manage_exclusive")).toBe(false);
     expect(hasCapability(professionalContext, "schedule.read_all")).toBe(false);
     expect(hasCapability(professionalContext, "sessions.read_all")).toBe(false);
     expect(hasCapability(professionalContext, "sessions.write_others")).toBe(false);
@@ -95,6 +97,7 @@ describe("hasCapability", () => {
     expect(hasCapability(assistantContext, "schedule.write")).toBe(true);
     expect(hasCapability(assistantContext, "patients.write")).toBe(true);
     expect(hasCapability(assistantContext, "patients_groups.read")).toBe(true);
+    expect(hasCapability(assistantContext, "patients.manage_exclusive")).toBe(false);
     expect(hasCapability(assistantContext, "sessions.write")).toBe(false);
     expect(hasCapability(assistantContext, "forms.read")).toBe(false);
     expect(hasCapability(assistantContext, "forms.manage")).toBe(false);
@@ -104,6 +107,7 @@ describe("hasCapability", () => {
   it("keeps estagiario limited to profile/security context and own-session workflows", () => {
     expect(hasCapability(internContext, "patients.read")).toBe(true);
     expect(hasCapability(internContext, "patients.write")).toBe(true);
+    expect(hasCapability(internContext, "patients.manage_exclusive")).toBe(false);
     expect(hasCapability(internContext, "patients_groups.read")).toBe(true);
     expect(hasCapability(internContext, "sessions.read")).toBe(true);
     expect(hasCapability(internContext, "sessions.write")).toBe(true);

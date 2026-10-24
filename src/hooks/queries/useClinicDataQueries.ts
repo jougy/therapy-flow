@@ -423,8 +423,7 @@ export function useClinicCollaboratorsQuery(clinicId: string | null | undefined,
           .eq("clinic_id", clinicId),
         supabase
           .from("profiles")
-          .select("id, full_name, email, job_title")
-          .eq("clinic_id", clinicId),
+          .select("id, full_name, email, job_title"),
       ]);
 
       if (membershipsRes.error) throw membershipsRes.error;

@@ -111,7 +111,7 @@ describe("PWA Notifications & Service Worker Integration", () => {
       expect(data.eventId).toBe("event-123");
       expect(data.patientId).toBe("pac-99");
       expect(data.iniciarUrl).toBe("/sessao/nova?pacienteId=pac-99");
-      expect(data.pacienteUrl).toBe("/paciente/pac-99");
+      expect(data.pacienteUrl).toBe("/pacientes/pac-99");
     });
 
     it("respects custom actions and explicit urls", () => {

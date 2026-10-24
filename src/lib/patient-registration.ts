@@ -461,6 +461,8 @@ export interface PatientRegistrationFormValues extends PatientOriginFormValues {
   street: string;
   surgeries: string;
   continuousMedications: string;
+  isExclusive?: boolean;
+  exclusiveUserIds?: string[];
 }
 
 const trimToNull = (value: string | null | undefined) => {
@@ -549,6 +551,8 @@ export const buildPatientRegistrationPutPayload = (
     state: trimSingleLineToNull(formValues.state, INPUT_LIMITS.state),
     street: trimSingleLineToNull(formValues.street, INPUT_LIMITS.street),
     surgeries: trimMultilineToNull(formValues.surgeries),
+    is_exclusive: formValues.isExclusive !== undefined ? formValues.isExclusive : (patient.is_exclusive ?? false),
+    exclusive_user_ids: formValues.exclusiveUserIds !== undefined ? formValues.exclusiveUserIds : (patient.exclusive_user_ids ?? []),
   };
 };
 

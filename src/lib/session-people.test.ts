@@ -1,9 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSessionEditHistoryView,
+  formatAbbreviatedName,
   formatSessionAuditDateTime,
   getSessionPersonLabel,
 } from "@/lib/session-people";
+
+describe("formatAbbreviatedName", () => {
+  it("abbreviates middle and last names with initials, removing connectives like do, da, de", () => {
+    expect(formatAbbreviatedName("João Paulo Taddeo do Val")).toBe("João P.T.V.");
+  });
+
+  it("handles various Portuguese connectives properly", () => {
+    expect(formatAbbreviatedName("Maria da Silva de Souza dos Santos")).toBe("Maria S.S.S.");
+    expect(formatAbbreviatedName("Lucas e Silva")).toBe("Lucas S.");
+  });
+
+  it("returns single names as-is", () => {
+    expect(formatAbbreviatedName("Jougy")).toBe("Jougy");
+    expect(formatAbbreviatedName("")).toBe("");
+  });
+
+  it("preserves emails without breakage", () => {
+    expect(formatAbbreviatedName("usuario@pluri.health")).toBe("usuario@pluri.health");
+  });
+});
 
 describe("getSessionPersonLabel", () => {
   it("prefers the full name before the email", () => {

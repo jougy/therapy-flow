@@ -375,5 +375,57 @@ describe("Agenda Modular Components", () => {
       expect(resetBtn).toBeInTheDocument();
     });
   });
+
+  describe("Compact mode & Patient inline agenda integration", () => {
+    it("renders AgendaWeekView, AgendaMonthView and AgendaYearView in compact mode without errors", () => {
+      const onSelectDate = vi.fn();
+      const onNavigateToDay = vi.fn();
+      const onNavigateToView = vi.fn();
+      const onOpenAddModal = vi.fn();
+      const onOpenEditModal = vi.fn();
+
+      // Week View compact
+      const { container: weekContainer } = render(
+        <AgendaWeekView
+          currentDate={new Date(2026, 8, 26)}
+          onSelectDate={onSelectDate}
+          onNavigateToDay={onNavigateToDay}
+          events={mockEvents}
+          patients={mockPatients}
+          onOpenAddModal={onOpenAddModal}
+          onOpenEditModal={onOpenEditModal}
+          compact
+        />
+      );
+      expect(weekContainer.querySelector(".min-h-\\[190px\\]")).toBeInTheDocument();
+
+      // Month View compact
+      const { container: monthContainer } = render(
+        <AgendaMonthView
+          currentDate={new Date(2026, 8, 26)}
+          onSelectDate={onSelectDate}
+          events={mockEvents}
+          patients={mockPatients}
+          onOpenAddModal={onOpenAddModal}
+          onOpenEditModal={onOpenEditModal}
+          onNavigateToDay={onNavigateToDay}
+          compact
+        />
+      );
+      expect(monthContainer.querySelector(".min-h-\\[36px\\]")).toBeInTheDocument();
+
+      // Year View compact
+      const { container: yearContainer } = render(
+        <AgendaYearView
+          currentDate={new Date(2026, 8, 26)}
+          onSelectDate={onSelectDate}
+          onNavigateToView={onNavigateToView}
+          events={mockEvents}
+          compact
+        />
+      );
+      expect(yearContainer.querySelector(".gap-2\\.5")).toBeInTheDocument();
+    });
+  });
 });
 

@@ -166,7 +166,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] end_clinic_user_security_sessions (schema.sql L3382-L3429)
+-- [RPC/FUNCTION] end_clinic_user_security_sessions (schema.sql L3387-L3434)
 CREATE OR REPLACE FUNCTION "public"."end_clinic_user_security_sessions"("_target_user_id" "uuid", "_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -216,7 +216,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] end_current_security_session (schema.sql L3435-L3495)
+-- [RPC/FUNCTION] end_current_security_session (schema.sql L3440-L3500)
 CREATE OR REPLACE FUNCTION "public"."end_current_security_session"("_session_key" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -279,7 +279,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] end_other_security_sessions (schema.sql L3501-L3540)
+-- [RPC/FUNCTION] end_other_security_sessions (schema.sql L3506-L3545)
 CREATE OR REPLACE FUNCTION "public"."end_other_security_sessions"("_current_session_key" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -321,7 +321,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] expire_abandoned_security_sessions (schema.sql L4007-L4027)
+-- [RPC/FUNCTION] expire_abandoned_security_sessions (schema.sql L4012-L4032)
 CREATE OR REPLACE FUNCTION "public"."expire_abandoned_security_sessions"("_abandoned_window" interval DEFAULT '7 days'::interval) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -344,7 +344,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_personal_portfolio_session_detail (schema.sql L5601-L5700)
+-- [RPC/FUNCTION] get_personal_portfolio_session_detail (schema.sql L5606-L5705)
 CREATE OR REPLACE FUNCTION "public"."get_personal_portfolio_session_detail"("_session_id" "uuid") RETURNS TABLE("session_id" "uuid", "session_date" timestamp with time zone, "session_status" "text", "clinic_id" "uuid", "clinic_name" "text", "clinic_route_key" "text", "clinic_logo_url" "text", "patient_id" "uuid", "patient_ref" "text", "patient_name" "text", "patient_pseudonym" "text", "patient_demographics" "text", "notes_sanitized" "text", "treatment_sanitized" "text", "pain_score" integer, "complexity_score" integer, "created_at" timestamp with time zone, "anamnesis_form_response" "jsonb", "care_lines" "jsonb", "anamnesis_base_schema" "jsonb", "anamnesis_data" "jsonb")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -446,7 +446,7 @@ BEGIN
 END;
 $_$;
 
--- [RPC/FUNCTION] get_personal_professional_sessions_portfolio (schema.sql L5706-L5845)
+-- [RPC/FUNCTION] get_personal_professional_sessions_portfolio (schema.sql L5711-L5850)
 CREATE OR REPLACE FUNCTION "public"."get_personal_professional_sessions_portfolio"("_query" "text" DEFAULT NULL::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_limit" integer DEFAULT 100, "_offset" integer DEFAULT 0) RETURNS TABLE("session_id" "uuid", "session_date" timestamp with time zone, "session_status" "text", "clinic_id" "uuid", "clinic_name" "text", "clinic_route_key" "text", "patient_id" "uuid", "patient_ref" "text", "patient_name" "text", "patient_pseudonym" "text", "patient_demographics" "text", "notes_sanitized" "text", "treatment_sanitized" "text", "pain_score" integer, "complexity_score" integer, "created_at" timestamp with time zone, "anamnesis_form_response" "jsonb", "care_lines" "jsonb", "anamnesis_base_schema" "jsonb")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -588,7 +588,7 @@ BEGIN
 END;
 $_$;
 
--- [RPC/FUNCTION] get_session_share_recipients (schema.sql L6404-L6433)
+-- [RPC/FUNCTION] get_session_share_recipients (schema.sql L6409-L6438)
 CREATE OR REPLACE FUNCTION "public"."get_session_share_recipients"("_session_id" "uuid") RETURNS json
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -620,7 +620,7 @@ CREATE OR REPLACE FUNCTION "public"."get_session_share_recipients"("_session_id"
     and public.can_read_session(_session_id);
 $$;
 
--- [RPC/FUNCTION] get_session_share_summary (schema.sql L6439-L6477)
+-- [RPC/FUNCTION] get_session_share_summary (schema.sql L6444-L6482)
 CREATE OR REPLACE FUNCTION "public"."get_session_share_summary"("_session_ids" "uuid"[]) RETURNS json
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -661,7 +661,7 @@ CREATE OR REPLACE FUNCTION "public"."get_session_share_summary"("_session_ids" "
   ) AS summaries;
 $$;
 
--- [RPC/FUNCTION] handle_whatsapp_chat_sessions_updated_at (schema.sql L7199-L7206)
+-- [RPC/FUNCTION] handle_whatsapp_chat_sessions_updated_at (schema.sql L7204-L7211)
 CREATE OR REPLACE FUNCTION "public"."handle_whatsapp_chat_sessions_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -671,7 +671,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] log_session_edit_history (schema.sql L8702-L8794)
+-- [RPC/FUNCTION] log_session_edit_history (schema.sql L8731-L8823)
 CREATE OR REPLACE FUNCTION "public"."log_session_edit_history"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -766,7 +766,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] notify_clinic_access_session_created (schema.sql L9150-L9195)
+-- [RPC/FUNCTION] notify_clinic_access_session_created (schema.sql L9179-L9224)
 CREATE OR REPLACE FUNCTION "public"."notify_clinic_access_session_created"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -814,7 +814,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] notify_session_created (schema.sql L9288-L9343)
+-- [RPC/FUNCTION] notify_session_created (schema.sql L9317-L9372)
 CREATE OR REPLACE FUNCTION "public"."notify_session_created"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -872,7 +872,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] register_current_security_session (schema.sql L9976-L10147)
+-- [RPC/FUNCTION] register_current_security_session (schema.sql L10005-L10176)
 CREATE OR REPLACE FUNCTION "public"."register_current_security_session"("_session_key" "text", "_browser" "text" DEFAULT NULL::"text", "_platform" "text" DEFAULT NULL::"text", "_device_label" "text" DEFAULT NULL::"text", "_user_agent" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1046,7 +1046,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] reset_whatsapp_chat_sessions (schema.sql L10402-L10436)
+-- [RPC/FUNCTION] reset_whatsapp_chat_sessions (schema.sql L10431-L10465)
 CREATE OR REPLACE FUNCTION "public"."reset_whatsapp_chat_sessions"("_phone" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1083,7 +1083,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] revoke_session_share (schema.sql L10631-L10659)
+-- [RPC/FUNCTION] revoke_session_share (schema.sql L10660-L10688)
 CREATE OR REPLACE FUNCTION "public"."revoke_session_share"("_session_id" "uuid", "_user_id" "uuid") RETURNS json
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1114,7 +1114,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] share_sessions_with_collaborators (schema.sql L10838-L10920)
+-- [RPC/FUNCTION] share_sessions_with_collaborators (schema.sql L10867-L10949)
 CREATE OR REPLACE FUNCTION "public"."share_sessions_with_collaborators"("_session_ids" "uuid"[], "_user_ids" "uuid"[], "_access_level" "text" DEFAULT 'can_evolve'::"text") RETURNS json
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1199,7 +1199,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] sync_payment_plan_used_sessions (schema.sql L11430-L11454)
+-- [RPC/FUNCTION] sync_payment_plan_used_sessions (schema.sql L11459-L11483)
 CREATE OR REPLACE FUNCTION "public"."sync_payment_plan_used_sessions"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1226,7 +1226,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] sync_session_to_billing (schema.sql L11460-L11514)
+-- [RPC/FUNCTION] sync_session_to_billing (schema.sql L11489-L11543)
 CREATE OR REPLACE FUNCTION "public"."sync_session_to_billing"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1283,7 +1283,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] clinical_session_billings (schema.sql L13839-L13865)
+-- [TABLE] clinical_session_billings (schema.sql L13872-L13898)
 CREATE TABLE IF NOT EXISTS "public"."clinical_session_billings" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "session_id" "uuid" NOT NULL,
@@ -1312,7 +1312,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinical_session_billings" (
     CONSTRAINT "clinical_session_billings_payment_status_check" CHECK (("payment_status" = ANY (ARRAY['nao_cobrado'::"text", 'pendente'::"text", 'parcial'::"text", 'pago'::"text", 'credito'::"text", 'cortesia'::"text"])))
 );
 
--- [TABLE] platform_clinic_access_sessions (schema.sql L14301-L14309)
+-- [TABLE] platform_clinic_access_sessions (schema.sql L14336-L14344)
 CREATE TABLE IF NOT EXISTS "public"."platform_clinic_access_sessions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "actor_user_id" "uuid" NOT NULL,
@@ -1323,7 +1323,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_clinic_access_sessions" (
     "last_seen_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] session_edit_history (schema.sql L14495-L14506)
+-- [TABLE] session_edit_history (schema.sql L14530-L14541)
 CREATE TABLE IF NOT EXISTS "public"."session_edit_history" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "session_id" "uuid" NOT NULL,
@@ -1337,7 +1337,7 @@ CREATE TABLE IF NOT EXISTS "public"."session_edit_history" (
     "ip_address" "text"
 );
 
--- [TABLE] session_shares (schema.sql L14516-L14527)
+-- [TABLE] session_shares (schema.sql L14551-L14562)
 CREATE TABLE IF NOT EXISTS "public"."session_shares" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -1351,7 +1351,7 @@ CREATE TABLE IF NOT EXISTS "public"."session_shares" (
     CONSTRAINT "session_shares_access_level_check" CHECK (("access_level" = ANY (ARRAY['read'::"text", 'read_only'::"text", 'can_evolve'::"text"])))
 );
 
--- [TABLE] sessions (schema.sql L14533-L14586)
+-- [TABLE] sessions (schema.sql L14568-L14621)
 CREATE TABLE IF NOT EXISTS "public"."sessions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -1407,7 +1407,7 @@ CREATE TABLE IF NOT EXISTS "public"."sessions" (
     CONSTRAINT "sessions_scheduled_start_at_reasonable" CHECK ((("scheduled_start_at" IS NULL) OR (("scheduled_start_at" >= '2000-01-01 00:00:00+00'::timestamp with time zone) AND ("scheduled_start_at" < '2101-01-01 00:00:00+00'::timestamp with time zone))))
 );
 
--- [TABLE] user_security_sessions (schema.sql L14786-L14802)
+-- [TABLE] user_security_sessions (schema.sql L14821-L14837)
 CREATE TABLE IF NOT EXISTS "public"."user_security_sessions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -1426,7 +1426,7 @@ CREATE TABLE IF NOT EXISTS "public"."user_security_sessions" (
     "forced_out_by" "uuid"
 );
 
--- [TABLE] whatsapp_chat_sessions (schema.sql L14849-L14862)
+-- [TABLE] whatsapp_chat_sessions (schema.sql L14884-L14897)
 CREATE TABLE IF NOT EXISTS "public"."whatsapp_chat_sessions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "phone" "text" NOT NULL,
@@ -1442,65 +1442,65 @@ CREATE TABLE IF NOT EXISTS "public"."whatsapp_chat_sessions" (
     "is_authenticated" boolean DEFAULT false NOT NULL
 );
 
--- [POLICY] Platform admins podem visualizar whatsapp_chat_sessions ON whatsapp_chat_sessions (schema.sql L16911-L16913)
+-- [POLICY] Platform admins podem visualizar whatsapp_chat_sessions ON whatsapp_chat_sessions (schema.sql L16954-L16956)
 CREATE POLICY "Platform admins podem visualizar whatsapp_chat_sessions" ON "public"."whatsapp_chat_sessions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform owners read support sessions ON platform_clinic_access_sessions (schema.sql L16975-L16975)
+-- [POLICY] Platform owners read support sessions ON platform_clinic_access_sessions (schema.sql L17018-L17018)
 CREATE POLICY "Platform owners read support sessions" ON "public"."platform_clinic_access_sessions" FOR SELECT TO "authenticated" USING (("public"."is_platform_owner_mfa_verified"("auth"."uid"()) AND ("actor_user_id" = "auth"."uid"())));
 
--- [POLICY] Service role tem acesso total a whatsapp_chat_sessions ON whatsapp_chat_sessions (schema.sql L16983-L16983)
+-- [POLICY] Service role tem acesso total a whatsapp_chat_sessions ON whatsapp_chat_sessions (schema.sql L17026-L17026)
 CREATE POLICY "Service role tem acesso total a whatsapp_chat_sessions" ON "public"."whatsapp_chat_sessions" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Super admins manage all session edit history ON session_edit_history (schema.sql L17023-L17023)
+-- [POLICY] Super admins manage all session edit history ON session_edit_history (schema.sql L17066-L17066)
 CREATE POLICY "Super admins manage all session edit history" ON "public"."session_edit_history" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all sessions ON sessions (schema.sql L17027-L17027)
+-- [POLICY] Super admins manage all sessions ON sessions (schema.sql L17070-L17070)
 CREATE POLICY "Super admins manage all sessions" ON "public"."sessions" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users delete clinic draft sessions ON sessions (schema.sql L17063-L17065)
+-- [POLICY] Users delete clinic draft sessions ON sessions (schema.sql L17106-L17108)
 CREATE POLICY "Users delete clinic draft sessions" ON "public"."sessions" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('session.delete_draft'::"text", "clinic_id") AND ("public"."current_user_is_clinic_manager"("clinic_id") OR (("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND (EXISTS ( SELECT 1
    FROM "public"."clinic_memberships"
   WHERE (("clinic_memberships"."clinic_id" = "sessions"."clinic_id") AND ("clinic_memberships"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("clinic_memberships"."is_active" = true) AND ("clinic_memberships"."membership_status" = 'active'::"public"."membership_status_type"))))))));
 
--- [POLICY] Users insert allowed session shares ON session_shares (schema.sql L17085-L17085)
+-- [POLICY] Users insert allowed session shares ON session_shares (schema.sql L17128-L17128)
 CREATE POLICY "Users insert allowed session shares" ON "public"."session_shares" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND ("shared_by_user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("revoked_at" IS NULL) AND "public"."can_share_session"("session_id") AND "public"."is_active_clinic_member"("clinic_id", "shared_with_user_id")));
 
--- [POLICY] Users insert clinic session edit history ON session_edit_history (schema.sql L17089-L17089)
+-- [POLICY] Users insert clinic session edit history ON session_edit_history (schema.sql L17132-L17132)
 CREATE POLICY "Users insert clinic session edit history" ON "public"."session_edit_history" FOR INSERT TO "authenticated" WITH CHECK ((("editor_user_id" = "auth"."uid"()) OR ("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR true));
 
--- [POLICY] Users insert clinic sessions ON sessions (schema.sql L17093-L17093)
+-- [POLICY] Users insert clinic sessions ON sessions (schema.sql L17136-L17136)
 CREATE POLICY "Users insert clinic sessions" ON "public"."sessions" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('sessions.write'::"text", "clinic_id")));
 
--- [POLICY] Users manage clinic session billings ON clinical_session_billings (schema.sql L17109-L17113)
+-- [POLICY] Users manage clinic session billings ON clinical_session_billings (schema.sql L17152-L17156)
 CREATE POLICY "Users manage clinic session billings" ON "public"."clinical_session_billings" TO "authenticated" USING (((("clinic_id" IS NULL) AND ("session_id" IN ( SELECT "sessions"."id"
    FROM "public"."sessions"
   WHERE ("sessions"."user_id" = "auth"."uid"())))) OR (("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND ("public"."current_user_can"('treasury.manage'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id"))))) WITH CHECK (((("clinic_id" IS NULL) AND ("session_id" IN ( SELECT "sessions"."id"
    FROM "public"."sessions"
   WHERE ("sessions"."user_id" = "auth"."uid"())))) OR (("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND ("public"."current_user_can"('treasury.manage'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id")))));
 
--- [POLICY] Users read clinic session billings ON clinical_session_billings (schema.sql L17160-L17162)
+-- [POLICY] Users read clinic session billings ON clinical_session_billings (schema.sql L17203-L17205)
 CREATE POLICY "Users read clinic session billings" ON "public"."clinical_session_billings" FOR SELECT TO "authenticated" USING (((("clinic_id" IS NULL) AND ("session_id" IN ( SELECT "sessions"."id"
    FROM "public"."sessions"
   WHERE ("sessions"."user_id" = "auth"."uid"())))) OR (("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND ("public"."current_user_can"('treasury.read'::"text", "clinic_id") OR "public"."current_user_can"('sessions.read'::"text", "clinic_id")))));
 
--- [POLICY] Users read clinic session edit history ON session_edit_history (schema.sql L17166-L17166)
+-- [POLICY] Users read clinic session edit history ON session_edit_history (schema.sql L17209-L17209)
 CREATE POLICY "Users read clinic session edit history" ON "public"."session_edit_history" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR ("editor_user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Users read clinic sessions ON sessions (schema.sql L17170-L17172)
+-- [POLICY] Users read clinic sessions ON sessions (schema.sql L17213-L17215)
 CREATE POLICY "Users read clinic sessions" ON "public"."sessions" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."current_user_can"('sessions.read'::"text", "clinic_id") AND ("public"."current_user_is_clinic_manager"("clinic_id") OR ("user_id" = "auth"."uid"()) OR ("provider_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
    FROM "public"."session_shares"
   WHERE (("session_shares"."session_id" = "sessions"."id") AND ("session_shares"."clinic_id" = "sessions"."clinic_id") AND ("session_shares"."shared_with_user_id" = "auth"."uid"()) AND ("session_shares"."revoked_at" IS NULL)))))));
 
--- [POLICY] Users read session shares they can access ON session_shares (schema.sql L17216-L17216)
+-- [POLICY] Users read session shares they can access ON session_shares (schema.sql L17259-L17259)
 CREATE POLICY "Users read session shares they can access" ON "public"."session_shares" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."can_read_session"("session_id")));
 
--- [POLICY] Users update clinic sessions ON sessions (schema.sql L17232-L17232)
+-- [POLICY] Users update clinic sessions ON sessions (schema.sql L17275-L17275)
 CREATE POLICY "Users update clinic sessions" ON "public"."sessions" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('sessions.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('sessions.write'::"text", "clinic_id")));
 
--- [POLICY] Usuarios autenticados podem visualizar sua propria sessao de wh ON whatsapp_chat_sessions (schema.sql L17288-L17288)
+-- [POLICY] Usuarios autenticados podem visualizar sua propria sessao de wh ON whatsapp_chat_sessions (schema.sql L17331-L17331)
 CREATE POLICY "Usuarios autenticados podem visualizar sua propria sessao de wh" ON "public"."whatsapp_chat_sessions" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] users can read own security sessions ON user_security_sessions (schema.sql L17546-L17546)
+-- [POLICY] users can read own security sessions ON user_security_sessions (schema.sql L17589-L17589)
 CREATE POLICY "users can read own security sessions" ON "public"."user_security_sessions" FOR SELECT USING (("user_id" = "auth"."uid"()));
