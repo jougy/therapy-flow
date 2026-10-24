@@ -30,7 +30,8 @@ CREATE POLICY "Membros da clinica podem visualizar palavras do corretor"
       SELECT 1 FROM public.clinic_memberships cm
       WHERE cm.clinic_id = clinic_custom_words.clinic_id
         AND cm.user_id = auth.uid()
-        AND cm.status = 'active'
+        AND cm.is_active = true
+        AND cm.membership_status = 'active'
     )
   );
 
@@ -43,7 +44,8 @@ CREATE POLICY "Membros da clinica podem adicionar palavras ao corretor"
       SELECT 1 FROM public.clinic_memberships cm
       WHERE cm.clinic_id = clinic_custom_words.clinic_id
         AND cm.user_id = auth.uid()
-        AND cm.status = 'active'
+        AND cm.is_active = true
+        AND cm.membership_status = 'active'
     )
   );
 
@@ -56,7 +58,8 @@ CREATE POLICY "Administradores da clinica podem excluir palavras do corretor"
       SELECT 1 FROM public.clinic_memberships cm
       WHERE cm.clinic_id = clinic_custom_words.clinic_id
         AND cm.user_id = auth.uid()
-        AND cm.status = 'active'
+        AND cm.is_active = true
+        AND cm.membership_status = 'active'
         AND cm.operational_role IN ('admin', 'owner')
     )
   );
