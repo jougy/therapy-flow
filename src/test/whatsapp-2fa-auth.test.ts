@@ -99,7 +99,7 @@ describe("WhatsApp Bot 2FA TOTP (Ente Auth) & Auth Session Engine", () => {
 
   it("extrai corretamente o comando de login com token inline ou em mensagens separadas", () => {
     const parseLogin = (text: string) => {
-      const match = text.match(/^\s*(?:login|entrar)(?:[\s:\-]+(\d{6}))?\s*$/i);
+      const match = text.match(/^\s*(?:login|entrar)(?:[\s:-]+(\d{6}))?\s*$/i);
       return {
         isLogin: Boolean(match),
         token: match?.[1] || null,
