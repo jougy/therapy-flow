@@ -96,4 +96,54 @@ describe("WhatsApp Bot 2FA TOTP (Ente Auth) & Auth Session Engine", () => {
     expect(alreadyAuthMessage).toContain("já está conectado");
     expect(alreadyAuthMessage).toContain("sair");
   });
+
+  it("extrai corretamente o comando de login com token inline ou em mensagens separadas", () => {
+    const parseLogin = (text: string) => {
+      const match = text.match(/^\s*(?:login|entrar)(?:[\s:-]+(\d{6}))?\s*$/i);
+      return {
+        isLogin: Boolean(match),
+        token: match?.[1] || null,
+      };
+    };
+
+    expect(parseLogin("login")).toEqual({ isLogin: true, token: null });
+    expect(parseLogin("entrar")).toEqual({ isLogin: true, token: null });
+    expect(parseLogin("LOGIN")).toEqual({ isLogin: true, token: null });
+    expect(parseLogin("ENTRAR")).toEqual({ isLogin: true, token: null });
+
+    // Inline com espaço
+    expect(parseLogin("login 167611")).toEqual({ isLogin: true, token: "167611" });
+    expect(parseLogin("entrar 167611")).toEqual({ isLogin: true, token: "167611" });
+
+    // Inline com quebra de linha
+    expect(parseLogin("login\n167611")).toEqual({ isLogin: true, token: "167611" });
+    expect(parseLogin("entrar\n167611")).toEqual({ isLogin: true, token: "167611" });
+
+    // Inline com hífen ou dois pontos
+    expect(parseLogin("login - 167611")).toEqual({ isLogin: true, token: "167611" });
+    expect(parseLogin("login: 167611")).toEqual({ isLogin: true, token: "167611" });
+
+    // Mensagens não relacionadas
+    expect(parseLogin("bom dia login").isLogin).toBe(false);
+    expect(parseLogin("quero login agora").isLogin).toBe(false);
+  });
+
+  it("reconhece tokens de 6 dígitos soltos para validação direta e comandos de reset", () => {
+    const isStandaloneToken = (text: string) => /^\d{6}$/.test(text.trim());
+    expect(isStandaloneToken("933717")).toBe(true);
+    expect(isStandaloneToken(" 167611 ")).toBe(true);
+    expect(isStandaloneToken("12345")).toBe(false);
+    expect(isStandaloneToken("1234567")).toBe(false);
+    expect(isStandaloneToken("abc123")).toBe(false);
+
+    const isReset = (text: string) => {
+      const lower = text.trim().toLowerCase();
+      return lower === "reset" || lower === "reiniciar" || lower === "destravar" || lower === "limpar";
+    };
+    expect(isReset("reset")).toBe(true);
+    expect(isReset("REINICIAR")).toBe(true);
+    expect(isReset("destravar")).toBe(true);
+    expect(isReset("limpar")).toBe(true);
+    expect(isReset("sair")).toBe(false);
+  });
 });
