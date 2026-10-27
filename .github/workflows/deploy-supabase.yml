@@ -57,4 +57,4 @@ jobs:
       - name: Deploy Edge Functions
         shell: bash
         run: |
-          supabase functions deploy --project-ref "$PROJECT_ID"
+          supabase functions deploy --project-ref "$PROJECT_ID" --use-api
