@@ -335,7 +335,7 @@ describe("ClinicAgendaPage", () => {
     const patientComboboxButton = within(dialog).getByText(/selecionar paciente/i);
     fireEvent.click(patientComboboxButton);
 
-    const patientOption = await screen.findByText("João da Silva");
+    const patientOption = (await screen.findAllByText("João da Silva")).slice(-1)[0];
     fireEvent.click(patientOption);
 
     const submitButton = within(dialog).getByRole("button", { name: /^agendar$/i });
