@@ -1214,7 +1214,6 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         });
       }
     }
-    }
 
     // D. Usuário está na etapa de seleção de clínica
     if (currentStep === 'waiting_clinic_selection') {
