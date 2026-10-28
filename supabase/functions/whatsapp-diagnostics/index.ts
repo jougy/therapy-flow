@@ -47,8 +47,12 @@ Deno.serve(async (req)=>{
       }, 401);
     }
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey);
-    // 1. Dados do perfil do usuário
-    const { data: profile, error: profileErr } = await adminSupabase.from("profiles").select("id, full_name, phone, totp_enabled, totp_enabled_at").eq("id", user.id).maybeSingle();
+    // 1. Dados do perfil do usuário e credencial MFA isolada
+    const [{ data: profile, error: profileErr }, { data: mfaCred }] = await Promise.all([
+      adminSupabase.from("profiles").select("id, full_name, phone, totp_enabled, totp_enabled_at").eq("id", user.id).maybeSingle(),
+      adminSupabase.from("user_mfa_credentials").select("totp_secret, totp_enabled").eq("user_id", user.id).maybeSingle(),
+    ]);
+
     if (profileErr) {
       return json({
         success: false,
@@ -83,10 +87,37 @@ Deno.serve(async (req)=>{
     const { data: auditEvents } = await adminSupabase.from("platform_audit_events").select("id, event_type, created_at, payload").eq("target_user_id", user.id).ilike("event_type", "%whatsapp%").order("created_at", {
       ascending: false
     }).limit(5);
-    // 5. Se o usuário solicitou um ping / envio de teste no body
+    // 5. Se o usuário solicitou um ping / envio de teste no body ou purge de mfa travado
     let testSendResult = null;
+    let mfaPurgeResult = null;
     const reqBody = await req.json().catch(()=>null);
-    if (reqBody && reqBody.action === "test_ping" && cleanPhone) {
+    if (reqBody && reqBody.action === "purge_mfa_factors") {
+      try {
+        const { data: factorData } = await adminSupabase.auth.admin.mfa.listFactors({
+          userId: user.id,
+        });
+        const deletedFactors: string[] = [];
+        if (factorData?.factors) {
+          for (const factor of factorData.factors) {
+            await adminSupabase.auth.admin.mfa.deleteFactor({
+              userId: user.id,
+              id: factor.id,
+            });
+            deletedFactors.push(factor.id);
+          }
+        }
+        await adminSupabase.from("user_mfa_credentials").delete().eq("user_id", user.id);
+        await adminSupabase.from("profiles").update({
+          totp_secret: null,
+          totp_enabled: false,
+          totp_enabled_at: null,
+        }).eq("id", user.id);
+
+        mfaPurgeResult = { success: true, deletedFactors };
+      } catch (purgeErr: unknown) {
+        mfaPurgeResult = { success: false, error: purgeErr instanceof Error ? purgeErr.message : String(purgeErr) };
+      }
+    } else if (reqBody && reqBody.action === "test_ping" && cleanPhone) {
       if (!isConfigured) {
         testSendResult = {
           success: false,
@@ -108,7 +139,8 @@ Deno.serve(async (req)=>{
           full_name: profile?.full_name || null,
           phone: profile?.phone || null,
           clean_phone: cleanPhone,
-          totp_enabled: !!profile?.totp_enabled,
+          totp_enabled: Boolean(mfaCred?.totp_enabled || profile?.totp_enabled),
+          totp_secret_present: Boolean(mfaCred?.totp_secret),
           totp_enabled_at: profile?.totp_enabled_at || null
         },
         whatsapp_config: {
@@ -121,6 +153,7 @@ Deno.serve(async (req)=>{
           admin_commercial_phone: adminCommercialPhone
         },
         session: sessionData,
+        mfa_purge_result: mfaPurgeResult,
         test_send_result: testSendResult,
         recent_error_logs: errorLogs || [],
         recent_audit_events: auditEvents || []

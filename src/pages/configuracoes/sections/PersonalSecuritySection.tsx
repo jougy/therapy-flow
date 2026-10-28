@@ -220,13 +220,29 @@ export const PersonalSecuritySection = () => {
     setTotpEnrolling(true);
     setTotpCode("");
     try {
-      const { data, error } = await supabase.auth.mfa.enroll({
+      let enrollRes = await supabase.auth.mfa.enroll({
         factorType: "totp",
         issuer: "Pluri Fisio",
         friendlyName: "Pluri Fisio",
       });
 
-      if (error) throw error;
+      // Se falhar com AAL2 required (fatores zumbis presos), purga via função administrativa e retenta
+      if (enrollRes.error && enrollRes.error.message?.includes("AAL2")) {
+        console.warn("[PersonalSecurity] AAL2 error detectado. Purgando fatores residuais via whatsapp-diagnostics...");
+        await supabase.functions.invoke("whatsapp-diagnostics", {
+          body: { action: "purge_mfa_factors" },
+        });
+
+        // Retenta após a purga de fatores
+        enrollRes = await supabase.auth.mfa.enroll({
+          factorType: "totp",
+          issuer: "Pluri Fisio",
+          friendlyName: "Pluri Fisio",
+        });
+      }
+
+      if (enrollRes.error) throw enrollRes.error;
+      const data = enrollRes.data;
 
       setTotpFactor({
         id: data.id,
