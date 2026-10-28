@@ -726,11 +726,25 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       }
 
       let memberships: Array<{ id: string; clinic_id: string; operational_role: string | null; role_key: string | null; is_active: boolean }> = [];
+      let mfaCredentialSecret: string | null = null;
+      let mfaCredentialEnabled: boolean = false;
 
       if (profileData) {
         userId = profileData.id;
         if (profileData.full_name) userName = sanitizeInput(profileData.full_name, 100);
         if (profileData.email) userEmail = sanitizeInput(profileData.email, 150);
+
+        // Busca segredo isolado na tabela user_mfa_credentials (Hardening de Segurança)
+        const { data: mfaCred } = await supabase
+          .from('user_mfa_credentials')
+          .select('totp_secret, totp_enabled')
+          .eq('user_id', profileData.id)
+          .maybeSingle();
+
+        if (mfaCred?.totp_secret) {
+          mfaCredentialSecret = mfaCred.totp_secret;
+          mfaCredentialEnabled = Boolean(mfaCred.totp_enabled);
+        }
 
         const profParts = [profileData.profession, profileData.council_name, profileData.professional_license]
           .filter(Boolean)
@@ -853,6 +867,9 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         planLower.includes('prof');
       const isClinicPlan = !isSoloPlan;
 
+      const effectiveTotpSecret = mfaCredentialSecret || profileData?.totp_secret || null;
+      const effectiveTotpEnabled = mfaCredentialEnabled || Boolean(profileData?.totp_enabled || profileData?.totp_secret);
+
       return {
         userId,
         clinicId,
@@ -865,8 +882,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         isSoloPlan,
         isClinicPlan,
         activeRole,
-        totpEnabled: !!(profileData?.totp_enabled || profileData?.totp_secret),
-        totpSecret: profileData?.totp_secret || null,
+        totpEnabled: effectiveTotpEnabled && Boolean(effectiveTotpSecret),
+        totpSecret: effectiveTotpSecret,
         memberships: memberships || [],
       };
     })();
