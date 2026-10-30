@@ -57,23 +57,23 @@ import {
   storePlatformClinicKey,
 } from "@/components/platform/platform-api";
 
-const getMembershipOperationScope = (memberships: Array<Record<string, unknown>>, isPending = false): AccountOperation[] => {
+const getMembershipOperationScope = (_memberships: Array<Record<string, unknown>>, isPending = false): AccountOperation[] => {
   if (isPending) {
-    return ["resend_invitation", "confirm_user_email_manually", "delete_user_attempt", "assign_user_to_clinic", "update_subaccount_access"];
-  }
-  const firstMembership = memberships[0];
-  if (firstMembership?.account_role === "account_owner" || firstMembership?.operational_role === "owner") {
-    return ["update_owner_access", "assign_user_to_clinic", "confirm_user_email_manually"];
+    return [
+      "resend_invitation",
+      "confirm_user_email_manually",
+      "delete_user_attempt",
+      "assign_user_to_clinic",
+    ];
   }
   return [
+    "reset_user_password",
     "update_membership_role",
     "assign_user_to_clinic",
     "remove_user_from_clinic",
-    "update_subaccount_access",
-    "resend_invitation",
     "confirm_user_email_manually",
+    "resend_invitation",
     "delete_user_attempt",
-    "delete_subaccount",
   ];
 };
 
@@ -715,9 +715,10 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
               compact
               defaultIdentifier={itemType === "account" ? String(entity?.email ?? entity?.id ?? "") : undefined}
               defaultPatientId={itemType === "patient" ? itemId : undefined}
+              availableMemberships={memberships as Array<{ clinic_id?: string; clinic_name?: string; operational_role?: string; account_role?: string }>}
               onDone={() => setReloadKey((value) => value + 1)}
               subaccountLimit={String(detail?.clinic?.subaccount_limit ?? 4)}
-              title={itemType === "account" ? "Operações master desta conta" : "Operações master deste paciente"}
+              title={itemType === "account" ? "Operações master deste usuário" : "Operações master deste paciente"}
             />
           </div>
           {itemType === "account" && (

@@ -43,7 +43,8 @@ type Action =
   | "delete_patient"
   | "resend_invitation"
   | "confirm_user_email_manually"
-  | "delete_user_attempt";
+  | "delete_user_attempt"
+  | "reset_user_password";
 
 const accountStatuses = new Set(["active", "payment_pending", "temporarily_paused", "banned"]);
 const operationalRoles = new Set(["admin", "professional", "assistant", "estagiario"]);
@@ -945,6 +946,50 @@ const updateOwnerAccess = async (payload: Record<string, unknown>) => {
   return { user_id: account.id, clinic_id: account.clinic_id };
 };
 
+const resetUserPassword = async (payload: Record<string, unknown>) => {
+  const account = await getAccountProfile(payload.identifier ?? payload.userId);
+  const password = normalizePassword(payload.password, false);
+  const isTemporary = payload.temporary !== false;
+
+  await updateAuthAccess(account.id, { password });
+
+  const { error: profileError } = await admin
+    .from("profiles")
+    .update({
+      password_temporary: isTemporary,
+      last_password_changed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", account.id);
+
+  if (profileError) {
+    console.warn(`[resetUserPassword] Erro ao atualizar status temporário no perfil de ${account.id}:`, profileError.message);
+  }
+
+  // Registra evento de segurança auditável
+  try {
+    await admin.from("security_events").insert({
+      actor_user_id: account.id,
+      target_user_id: account.id,
+      event_type: "password_reset_by_admin",
+      visibility_scope: "personal",
+      payload: {
+        method: "platform_backoffice_admin_reset",
+        temporary: isTemporary,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (secErr) {
+    console.warn(`[resetUserPassword] Não foi possível registrar evento de auditoria:`, secErr);
+  }
+
+  return {
+    user_id: account.id,
+    email: account.email,
+    password_temporary: isTemporary,
+  };
+};
+
 const updateSubaccountAccess = async (payload: Record<string, unknown>) => {
   const account = await getAccountProfile(payload.identifier);
   const { data: membership, error: membershipLookupError } = await admin
@@ -1651,6 +1696,7 @@ const handlers: Record<Action, (payload: Record<string, unknown>, context?: Hand
   delete_user_attempt: deleteUserAttempt,
   remove_user_from_clinic: removeUserFromClinic,
   resend_invitation: resendInvitation,
+  reset_user_password: resetUserPassword,
   update_clinic_access: updateClinicAccess,
   update_membership_role: updateMembershipRole,
   update_owner_access: updateOwnerAccess,

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChartConfig } from "@/components/ui/chart";
 import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
+import { TemporaryPasswordPromptModal } from "@/components/TemporaryPasswordPromptModal";
 import { PersonalClinicalPortfolioTab } from "@/components/personal/PersonalClinicalPortfolioTab";
 import { PersonalWelcomeModal } from "@/components/personal/PersonalWelcomeModal";
 import { supabase } from "@/integrations/supabase/client";
@@ -886,6 +887,7 @@ const SelecionarClinica = () => {
 
       <PersonalWelcomeModal userId={user?.id} userName={displayName} />
       <TermsUpdatePromptModal />
+      <TemporaryPasswordPromptModal />
     </div>
   );
 };
