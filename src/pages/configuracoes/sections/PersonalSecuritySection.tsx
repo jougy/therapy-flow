@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
+  Eye,
+  EyeOff,
   History,
   KeyRound,
   Laptop,
@@ -51,6 +53,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
+import { ChangePasswordDialog } from "./personal/ChangePasswordDialog";
 
 interface SecuritySessionRow {
   id: string;
@@ -151,6 +154,8 @@ export const PersonalSecuritySection = () => {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [verifyingCurrent, setVerifyingCurrent] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
   const [sendingResetEmail, setSendingResetEmail] = useState(false);
@@ -945,121 +950,27 @@ export const PersonalSecuritySection = () => {
       </Dialog>
 
       {/* Modal Seguro de Troca de Senha */}
-      <Dialog open={changePasswordModalOpen} onOpenChange={setChangePasswordModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="h-5 w-5 text-primary" />
-              Trocar Senha de Acesso
-            </DialogTitle>
-            <DialogDescription>
-              {step === "verify_current"
-                ? "Por segurança, confirme sua senha atual antes de prosseguir com a alteração."
-                : "Defina sua nova senha forte para proteger seu login em todas as clínicas."}
-            </DialogDescription>
-          </DialogHeader>
-
-          {step === "verify_current" ? (
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Senha atual</Label>
-                <Input
-                  type="password"
-                  placeholder="Digite sua senha atual"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleVerifyCurrentPassword();
-                  }}
-                />
-              </div>
-
-              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-                Esqueceu sua senha atual? Você pode receber um link de redefinição seguro por e-mail.
-              </div>
-
-              <DialogFooter className="flex-col sm:flex-row gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handleSendResetEmail()}
-                  disabled={sendingResetEmail || verifyingCurrent}
-                  className="gap-1.5 w-full sm:w-auto text-xs"
-                >
-                  {sendingResetEmail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                  Enviar link por e-mail
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void handleVerifyCurrentPassword()}
-                  disabled={verifyingCurrent || !currentPassword}
-                  className="gap-1.5 w-full sm:w-auto text-xs bg-primary text-primary-foreground"
-                >
-                  {verifyingCurrent ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-                  Verificar e prosseguir
-                </Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Nova senha</Label>
-                <Input
-                  type="password"
-                  placeholder="Mínimo 8 caracteres"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Confirmar nova senha</Label>
-                <Input
-                  type="password"
-                  placeholder="Repita a nova senha"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleUpdatePassword();
-                  }}
-                />
-              </div>
-
-              <DismissibleInfoTip
-                id="personal-security-password-rule-tip"
-                variant="muted"
-              >
-                Sua nova senha deve ter no mínimo 8 caracteres. Ao salvar, se você estiver usando senha provisória, ela será marcada como definitiva.
-              </DismissibleInfoTip>
-
-              <DialogFooter className="pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setStep("verify_current")}
-                  disabled={updatingPassword}
-                >
-                  Voltar
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void handleUpdatePassword()}
-                  disabled={updatingPassword || !newPassword || !confirmPassword}
-                  className="gap-1.5 bg-primary text-primary-foreground"
-                >
-                  {updatingPassword ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
-                  Salvar nova senha
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ChangePasswordDialog
+        open={changePasswordModalOpen}
+        onOpenChange={setChangePasswordModalOpen}
+        step={step}
+        currentPassword={currentPassword}
+        onCurrentPasswordChange={setCurrentPassword}
+        newPassword={newPassword}
+        onNewPasswordChange={setNewPassword}
+        confirmPassword={confirmPassword}
+        onConfirmPasswordChange={setConfirmPassword}
+        showCurrentPassword={showCurrentPassword}
+        onToggleShowCurrentPassword={() => setShowCurrentPassword((prev) => !prev)}
+        showNewPassword={showNewPassword}
+        onToggleShowNewPassword={() => setShowNewPassword((prev) => !prev)}
+        verifyingCurrent={verifyingCurrent}
+        updatingPassword={updatingPassword}
+        sendingResetEmail={sendingResetEmail}
+        onVerifyCurrentPassword={() => void handleVerifyCurrentPassword()}
+        onUpdatePassword={() => void handleUpdatePassword()}
+        onSendResetEmail={() => void handleSendResetEmail()}
+      />
 
       {/* Diálogo de Confirmação para Encerrar Sessões */}
       <AlertDialog open={endSessionsDialogOpen} onOpenChange={setEndSessionsDialogOpen}>
