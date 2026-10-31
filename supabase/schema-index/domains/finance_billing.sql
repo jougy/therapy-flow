@@ -158,7 +158,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] toggle_subscription_auto_renew (schema.sql L11588-L11616)
+-- [RPC/FUNCTION] toggle_subscription_auto_renew (schema.sql L11612-L11640)
 CREATE OR REPLACE FUNCTION "public"."toggle_subscription_auto_renew"("_clinic_id" "uuid", "_auto_renew" boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -189,7 +189,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L13073-L13148)
+-- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L13115-L13190)
 CREATE OR REPLACE FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -267,7 +267,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L13154-L13434)
+-- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L13196-L13476)
 CREATE OR REPLACE FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_billing_cycle" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -550,7 +550,7 @@ begin
 end;
 $$;
 
--- [TABLE] asaas_webhook_events (schema.sql L13578-L13588)
+-- [TABLE] asaas_webhook_events (schema.sql L13620-L13630)
 CREATE TABLE IF NOT EXISTS "public"."asaas_webhook_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "asaas_event_id" "text" NOT NULL,
@@ -563,7 +563,7 @@ CREATE TABLE IF NOT EXISTS "public"."asaas_webhook_events" (
     "signature" "text"
 );
 
--- [TABLE] subscription_coupons (schema.sql L14630-L14654)
+-- [TABLE] subscription_coupons (schema.sql L14672-L14696)
 CREATE TABLE IF NOT EXISTS "public"."subscription_coupons" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "code" "text" NOT NULL,
@@ -590,7 +590,7 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_coupons" (
     CONSTRAINT "subscription_coupons_times_redeemed_check" CHECK (("times_redeemed" >= 0))
 );
 
--- [TABLE] subscription_invoices (schema.sql L14672-L14708)
+-- [TABLE] subscription_invoices (schema.sql L14714-L14750)
 CREATE TABLE IF NOT EXISTS "public"."subscription_invoices" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -629,25 +629,25 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_invoices" (
     CONSTRAINT "subscription_invoices_status_check" CHECK (("status" = ANY (ARRAY['PENDING'::"text", 'RECEIVED'::"text", 'CONFIRMED'::"text", 'OVERDUE'::"text", 'REFUNDED'::"text", 'DELETED'::"text", 'DUNNING_RECEIVED'::"text", 'RECEIVED_IN_CASH'::"text", 'AWAITING_PAYMENT'::"text"])))
 );
 
--- [POLICY] Owners e gestores podem ver as faturas ON subscription_invoices (schema.sql L16908-L16910)
+-- [POLICY] Owners e gestores podem ver as faturas ON subscription_invoices (schema.sql L16955-L16957)
 CREATE POLICY "Owners e gestores podem ver as faturas" ON "public"."subscription_invoices" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "subscription_invoices"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR "public"."current_user_can"('subscription_billing.read'::"text", "subscription_invoices"."clinic_id"))))));
 
--- [POLICY] Platform admins podem ver eventos de webhook ON asaas_webhook_events (schema.sql L16926-L16928)
+-- [POLICY] Platform admins podem ver eventos de webhook ON asaas_webhook_events (schema.sql L16973-L16975)
 CREATE POLICY "Platform admins podem ver eventos de webhook" ON "public"."asaas_webhook_events" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform admins podem ver todas as faturas ON subscription_invoices (schema.sql L16948-L16950)
+-- [POLICY] Platform admins podem ver todas as faturas ON subscription_invoices (schema.sql L16995-L16997)
 CREATE POLICY "Platform admins podem ver todas as faturas" ON "public"."subscription_invoices" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform admins possuem controle total dos cupons ON subscription_coupons (schema.sql L16960-L16962)
+-- [POLICY] Platform admins possuem controle total dos cupons ON subscription_coupons (schema.sql L17007-L17009)
 CREATE POLICY "Platform admins possuem controle total dos cupons" ON "public"."subscription_coupons" TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Todos autenticados e anonimos podem consultar cupons ativos ON subscription_coupons (schema.sql L17074-L17074)
+-- [POLICY] Todos autenticados e anonimos podem consultar cupons ativos ON subscription_coupons (schema.sql L17121-L17121)
 CREATE POLICY "Todos autenticados e anonimos podem consultar cupons ativos" ON "public"."subscription_coupons" FOR SELECT USING ((("is_active" = true) AND (("valid_until" IS NULL) OR ("valid_until" >= "now"()))));

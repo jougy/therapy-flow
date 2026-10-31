@@ -10024,8 +10024,6 @@ BEGIN
     RAISE EXCEPTION 'Sessao invalida.';
   END IF;
 
-  PERFORM public.cleanup_user_security_sessions(_user_id);
-
   _normalized_device_label := COALESCE(
     NULLIF(trim(_device_label), ''),
     NULLIF(trim(CONCAT_WS(' • ', NULLIF(trim(_browser), ''), NULLIF(trim(_platform), ''))), ''),
@@ -10044,6 +10042,26 @@ BEGIN
 
   IF FOUND AND _existing_row.force_signed_out_at IS NOT NULL THEN
     RAISE EXCEPTION 'Sessao encerrada pela administracao da clinica. Entre novamente para continuar.';
+  END IF;
+
+  -- Se a sessão já existe, está ativa, com mesma clínica e mesmo dispositivo, e foi vista nos últimos 4 min: pula UPDATE
+  IF FOUND
+     AND _existing_row.ended_at IS NULL
+     AND _existing_row.force_signed_out_at IS NULL
+     AND COALESCE(_existing_row.clinic_id, '00000000-0000-0000-0000-000000000000'::uuid) = COALESCE(_clinic_id, _existing_row.clinic_id, '00000000-0000-0000-0000-000000000000'::uuid)
+     AND COALESCE(_existing_row.device_label, '') = _normalized_device_label
+     AND _existing_row.last_seen_at >= now() - INTERVAL '4 minutes'
+  THEN
+    RETURN jsonb_build_object(
+      'session_id', _existing_row.id,
+      'user_id', _user_id,
+      'skipped_write', true
+    );
+  END IF;
+
+  -- Só executa limpeza se for nova sessão (NOT FOUND), reativação ou inatividade prolongada (> 10 min)
+  IF NOT FOUND OR _existing_row.ended_at IS NOT NULL OR _existing_row.last_seen_at < now() - INTERVAL '10 minutes' THEN
+    PERFORM public.cleanup_user_security_sessions(_user_id);
   END IF;
 
   IF NOT FOUND THEN
@@ -10103,6 +10121,12 @@ BEGIN
     updated_at = now()
   WHERE id = _existing_row.id
   RETURNING * INTO _existing_row;
+
+  -- Sincroniza last_seen_at do perfil com throttle de 4 minutos
+  UPDATE public.profiles
+  SET last_seen_at = now()
+  WHERE id = _user_id
+    AND (last_seen_at IS NULL OR last_seen_at < now() - INTERVAL '4 minutes');
 
   -- 1. Alerta de Segurança: Notificar APENAS se for login em NOVO / OUTRO dispositivo
   IF _reactivated THEN
@@ -12939,7 +12963,7 @@ $$;
 ALTER FUNCTION "public"."upsert_feature_flag"("_key" "text", "_scope" "public"."feature_flag_scope", "_clinic_id" "uuid", "_tag_id" "uuid", "_value" "jsonb", "_description" "text", "_starts_at" timestamp with time zone, "_expires_at" timestamp with time zone, "_reason" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean DEFAULT false, "_spam_reason" "text" DEFAULT NULL::"text", "_clinical_records_saved" integer DEFAULT 0, "_forms_completed" integer DEFAULT 0, "_upgrade_views" integer DEFAULT 0, "_form_validation_errors" integer DEFAULT 0, "_recent_errors" "jsonb" DEFAULT '[]'::"jsonb") RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean DEFAULT false, "_spam_reason" "text" DEFAULT NULL::"text", "_clinical_records_saved" integer DEFAULT 0, "_forms_completed" integer DEFAULT 0, "_upgrade_views" integer DEFAULT 0, "_form_validation_errors" integer DEFAULT 0, "_recent_errors" "jsonb" DEFAULT '[]'::"jsonb", "_page_dwell_matrix" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
     AS $_$
@@ -12964,6 +12988,7 @@ BEGIN
     pdf_exported_count,
     dwell_time_seconds,
     top_routes,
+    page_dwell_matrix,
     is_spam_flagged,
     spam_reason,
     clinical_records_saved_count,
@@ -12984,6 +13009,7 @@ BEGIN
     GREATEST(0, COALESCE(_pdf_exported, 0)),
     GREATEST(0, COALESCE(_dwell_seconds, 0)),
     COALESCE(_top_routes, '{}'::jsonb),
+    COALESCE(_page_dwell_matrix, '{}'::jsonb),
     COALESCE(_is_spam_flagged, false),
     LEFT(v_clean_spam_reason, 500),
     GREATEST(0, COALESCE(_clinical_records_saved, 0)),
@@ -13033,6 +13059,22 @@ BEGIN
         GROUP BY key
       ) summed
     ),
+    page_dwell_matrix = (
+      SELECT COALESCE(
+        jsonb_object_agg(key, sum_val),
+        '{}'::jsonb
+      )
+      FROM (
+        SELECT key, sum(value::numeric)::int AS sum_val
+        FROM (
+          SELECT key, value FROM jsonb_each_text(COALESCE(user_telemetry_summaries.page_dwell_matrix, '{}'::jsonb))
+          UNION ALL
+          SELECT key, value FROM jsonb_each_text(COALESCE(EXCLUDED.page_dwell_matrix, '{}'::jsonb))
+        ) combined
+        WHERE value ~ '^-?[0-9]+$'
+        GROUP BY key
+      ) summed
+    ),
     is_spam_flagged = user_telemetry_summaries.is_spam_flagged OR EXCLUDED.is_spam_flagged,
     spam_reason = COALESCE(EXCLUDED.spam_reason, user_telemetry_summaries.spam_reason),
     updated_at = now();
@@ -13040,7 +13082,7 @@ END;
 $_$;
 
 
-ALTER FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb") OWNER TO "postgres";
+ALTER FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb", "_page_dwell_matrix" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."user_has_active_clinic_membership"("_user_id" "uuid", "_clinic_id" "uuid") RETURNS boolean
@@ -14874,7 +14916,8 @@ CREATE TABLE IF NOT EXISTS "public"."user_telemetry_summaries" (
     "forms_completed_count" integer DEFAULT 0 NOT NULL,
     "upgrade_views_count" integer DEFAULT 0 NOT NULL,
     "form_validation_errors_count" integer DEFAULT 0 NOT NULL,
-    "recent_errors" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL
+    "recent_errors" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "page_dwell_matrix" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL
 );
 
 
@@ -15744,6 +15787,10 @@ CREATE INDEX "idx_security_events_clinic_id" ON "public"."security_events" USING
 
 
 CREATE INDEX "idx_security_events_target_user_id" ON "public"."security_events" USING "btree" ("target_user_id", "created_at" DESC);
+
+
+
+CREATE INDEX "idx_security_events_target_user_type_created" ON "public"."security_events" USING "btree" ("target_user_id", "event_type", "created_at" DESC);
 
 
 
@@ -18722,9 +18769,9 @@ GRANT ALL ON FUNCTION "public"."upsert_feature_flag"("_key" "text", "_scope" "pu
 
 
 
-REVOKE ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb") TO "service_role";
-GRANT ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb") TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb", "_page_dwell_matrix" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb", "_page_dwell_matrix" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean, "_spam_reason" "text", "_clinical_records_saved" integer, "_forms_completed" integer, "_upgrade_views" integer, "_form_validation_errors" integer, "_recent_errors" "jsonb", "_page_dwell_matrix" "jsonb") TO "authenticated";
 
 
 

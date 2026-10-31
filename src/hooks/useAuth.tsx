@@ -630,105 +630,80 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => subscription.unsubscribe();
   }, [fetchAuthState]);
 
+  const lastHeartbeatAtRef = useRef<number>(0);
+  const activeSessionRef = useRef<Session | null>(session);
+  const fetchAuthStateRef = useRef(fetchAuthState);
+  const fetchRoleCapabilityOverridesRef = useRef(fetchRoleCapabilityOverrides);
+  activeSessionRef.current = session;
+  fetchAuthStateRef.current = fetchAuthState;
+  fetchRoleCapabilityOverridesRef.current = fetchRoleCapabilityOverrides;
+
   useEffect(() => {
-    if (!session?.user || !session.access_token || !clinic) {
+    const currentSession = activeSessionRef.current;
+    if (!currentSession?.user?.id || !currentSession.access_token || !clinic?.id) {
       return;
     }
 
-    const heartbeat = () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-        return;
-      }
+    const heartbeat = (isVisibilityTrigger = false) => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
 
-      void supabase
-        .from("profiles")
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq("id", session.user.id);
-      void registerSecuritySession(session).catch((error) => {
-        logRuntimeError("auth.register_current_security_session.heartbeat", error, {
-          userId: session.user.id,
-        });
+      const now = Date.now();
+      if (isVisibilityTrigger && now - lastHeartbeatAtRef.current < 2 * 60 * 1000) return;
+      lastHeartbeatAtRef.current = now;
 
+      void supabase.from("profiles").update({ last_seen_at: new Date().toISOString() }).eq("id", currentSession.user.id);
+      void registerSecuritySession(currentSession).catch((error) => {
+        logRuntimeError("auth.register_current_security_session.heartbeat", error, { userId: currentSession.user.id });
         if (isForcedSignOutError(error)) {
           void supabase.auth.signOut();
-          toast({
-            title: "Sessão encerrada",
-            description: getErrorMessage(error),
-            variant: "destructive",
-          });
+          toast({ title: "Sessão encerrada", description: getErrorMessage(error), variant: "destructive" });
         }
       });
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        heartbeat();
-      }
+      if (document.visibilityState === "visible") heartbeat(true);
     };
 
-    const interval = window.setInterval(heartbeat, 60 * 1000);
-    heartbeat();
+    const interval = window.setInterval(() => heartbeat(false), 5 * 60 * 1000);
+    heartbeat(false);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [clinic, endCurrentSecuritySession, registerSecuritySession, session]);
+  }, [clinic?.id, session?.user?.id, session?.access_token, registerSecuritySession]);
 
   useEffect(() => {
-    if (!session?.user || !clinic?.id || typeof supabase.channel !== "function") {
+    if (!session?.user?.id || !clinic?.id || typeof supabase.channel !== "function") {
       return;
     }
 
+    const clinicId = clinic.id;
+    const userId = session.user.id;
+
     const refreshRoleCapabilityOverrides = () => {
-      void fetchRoleCapabilityOverrides(clinic.id).then(setRoleCapabilityOverrides);
+      void fetchRoleCapabilityOverridesRef.current(clinicId).then(setRoleCapabilityOverrides);
       void appQueryClient.invalidateQueries();
     };
 
     const channel = supabase
-      .channel(`clinic-role-capabilities:${clinic.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "clinic_operational_role_capabilities",
-          filter: `clinic_id=eq.${clinic.id}`,
-        },
-        refreshRoleCapabilityOverrides,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "clinic_operational_roles",
-          filter: `clinic_id=eq.${clinic.id}`,
-        },
-        () => {
-          refreshRoleCapabilityOverrides();
-          if (session?.user?.id) {
-            void fetchAuthState(session.user.id, session);
-          }
-        },
-      )
+      .channel(`clinic-role-capabilities:${clinicId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "clinic_operational_role_capabilities", filter: `clinic_id=eq.${clinicId}` }, refreshRoleCapabilityOverrides)
+      .on("postgres_changes", { event: "*", schema: "public", table: "clinic_operational_roles", filter: `clinic_id=eq.${clinicId}` }, () => {
+        refreshRoleCapabilityOverrides();
+        if (userId) void fetchAuthStateRef.current(userId, activeSessionRef.current);
+      })
       .subscribe((status, error) => {
         if (error && status !== "CLOSED" && status !== "TIMED_OUT") {
           const errorMessage = getErrorMessage(error).toLowerCase();
           const isNormalClosureOrReconnect =
-            errorMessage.includes("closed") ||
-            errorMessage.includes("unsubscribed") ||
-            errorMessage.includes("websocket") ||
-            errorMessage.includes("network error") ||
-            errorMessage.includes("transport failure") ||
+            ["closed", "unsubscribed", "websocket", "network error", "transport failure"].some((t) => errorMessage.includes(t)) ||
             (status === "CHANNEL_ERROR" && errorMessage.includes("transport"));
 
           if (!isNormalClosureOrReconnect) {
-            logRuntimeError("auth.clinic_operational_role_capabilities.realtime", error, {
-              clinicId: clinic.id,
-              status,
-            });
+            logRuntimeError("auth.clinic_operational_role_capabilities.realtime", error, { clinicId, status });
           }
         }
       });
@@ -738,7 +713,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         void supabase.removeChannel(channel);
       }
     };
-  }, [clinic?.id, fetchAuthState, fetchRoleCapabilityOverrides, session]);
+  }, [clinic?.id, session?.user?.id]);
 
 
   const [simulatedRoleCapabilityOverrides, setSimulatedRoleCapabilityOverrides] = useState<Partial<Record<AccessCapability, boolean>>>({});
@@ -763,7 +738,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const roleOverrides = {
       ...Object.fromEntries(
         roleCapabilityOverrides
-          .filter((row) => row.operational_role === effectiveRoleKey)
+          .filter((row) => Object.is(row.operational_role, effectiveRoleKey))
           .map((row) => [row.capability, row.enabled]),
       ),
       ...simulatedRoleCapabilityOverrides,

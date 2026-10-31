@@ -77,7 +77,7 @@ CREATE OR REPLACE FUNCTION "public"."list_feature_flags"("_clinic_id" "uuid" DEF
   order by feature_flags.scope, feature_flags.key
 $$;
 
--- [RPC/FUNCTION] upsert_feature_flag (schema.sql L12749-L12936)
+-- [RPC/FUNCTION] upsert_feature_flag (schema.sql L12773-L12960)
 CREATE OR REPLACE FUNCTION "public"."upsert_feature_flag"("_key" "text", "_scope" "public"."feature_flag_scope", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_tag_id" "uuid" DEFAULT NULL::"uuid", "_value" "jsonb" DEFAULT 'false'::"jsonb", "_description" "text" DEFAULT NULL::"text", "_starts_at" timestamp with time zone DEFAULT NULL::timestamp with time zone, "_expires_at" timestamp with time zone DEFAULT NULL::timestamp with time zone, "_reason" "text" DEFAULT NULL::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -267,7 +267,7 @@ begin
 end;
 $$;
 
--- [TABLE] feature_flags (schema.sql L14004-L14021)
+-- [TABLE] feature_flags (schema.sql L14046-L14063)
 CREATE TABLE IF NOT EXISTS "public"."feature_flags" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "key" "text" NOT NULL,
@@ -287,14 +287,14 @@ CREATE TABLE IF NOT EXISTS "public"."feature_flags" (
     CONSTRAINT "feature_flags_scope_check" CHECK ((((("scope")::"text" = 'global'::"text") AND ("clinic_id" IS NULL) AND ("tag_id" IS NULL)) OR ((("scope")::"text" = 'clinic'::"text") AND ("clinic_id" IS NOT NULL) AND ("tag_id" IS NULL)) OR ((("scope")::"text" = 'tag'::"text") AND ("tag_id" IS NOT NULL) AND ("clinic_id" IS NULL))))
 );
 
--- [TABLE] governance_rules (schema.sql L14031-L14035)
+-- [TABLE] governance_rules (schema.sql L14073-L14077)
 CREATE TABLE IF NOT EXISTS "public"."governance_rules" (
     "key" "text" NOT NULL,
     "value" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] telemetry_events (schema.sql L14744-L14755)
+-- [TABLE] telemetry_events (schema.sql L14786-L14797)
 CREATE TABLE IF NOT EXISTS "public"."telemetry_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -308,17 +308,17 @@ CREATE TABLE IF NOT EXISTS "public"."telemetry_events" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [POLICY] Anyone authenticated can view governance rules ON governance_rules (schema.sql L16812-L16812)
+-- [POLICY] Anyone authenticated can view governance rules ON governance_rules (schema.sql L16859-L16859)
 CREATE POLICY "Anyone authenticated can view governance rules" ON "public"."governance_rules" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Authenticated users can insert telemetry events ON telemetry_events (schema.sql L16832-L16832)
+-- [POLICY] Authenticated users can insert telemetry events ON telemetry_events (schema.sql L16879-L16879)
 CREATE POLICY "Authenticated users can insert telemetry events" ON "public"."telemetry_events" FOR INSERT TO "authenticated" WITH CHECK (true);
 
--- [POLICY] Platform owners can manage governance rules ON governance_rules (schema.sql L16974-L16974)
+-- [POLICY] Platform owners can manage governance rules ON governance_rules (schema.sql L17021-L17021)
 CREATE POLICY "Platform owners can manage governance rules" ON "public"."governance_rules" TO "authenticated" USING ("public"."is_platform_owner"()) WITH CHECK ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners can view all telemetry events ON telemetry_events (schema.sql L16986-L16986)
+-- [POLICY] Platform owners can view all telemetry events ON telemetry_events (schema.sql L17033-L17033)
 CREATE POLICY "Platform owners can view all telemetry events" ON "public"."telemetry_events" FOR SELECT TO "authenticated" USING ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners manage feature flags ON feature_flags (schema.sql L16998-L16998)
+-- [POLICY] Platform owners manage feature flags ON feature_flags (schema.sql L17045-L17045)
 CREATE POLICY "Platform owners manage feature flags" ON "public"."feature_flags" TO "authenticated" USING ("public"."is_platform_owner_mfa_verified"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner_mfa_verified"("auth"."uid"()));
