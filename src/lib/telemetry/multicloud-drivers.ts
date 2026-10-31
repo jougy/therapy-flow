@@ -67,8 +67,8 @@ export function getObservabilityMulticloudConfig(): ObservabilityMulticloudConfi
   }
 
   inMemoryConfig = {
-    metricsDriver: stored.metricsDriver || "supabase_optimized",
-    errorLogsDriver: stored.errorLogsDriver || (isTestEnv ? "supabase_optimized" : "local_buffer"),
+    metricsDriver: stored.metricsDriver || "upstash_redis",
+    errorLogsDriver: stored.errorLogsDriver || (isTestEnv ? "supabase_optimized" : "axiom"),
     samplingRatePercent: stored.samplingRatePercent ?? 100,
     upstashRestUrl: stored.upstashRestUrl || envUrl,
     upstashRestToken: stored.upstashRestToken || envToken,

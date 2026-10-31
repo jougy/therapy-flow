@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { queryAxiomLogs, type AxiomLogRecord } from "@/lib/telemetry/axiom-client";
 import { PlatformCouponsManager, type SubscriptionCouponItem } from "@/components/platform/PlatformCouponsManager";
 import { PlatformTelegramAlerts } from "@/components/platform/PlatformTelegramAlerts";
 import { PlatformWhatsAppAlerts } from "@/components/platform/PlatformWhatsAppAlerts";
@@ -244,6 +245,35 @@ export function PlatformBillingMaster() {
 
   const fetchWebhookLogs = useCallback(async () => {
     try {
+      // 1. Tentar carregar logs de webhook do Asaas diretamente do Axiom Cloud (Zero-Touch Supabase)
+      const axiomLogs = await queryAxiomLogs({
+        service: "asaas-webhook",
+        limit: 50,
+      });
+
+      if (axiomLogs && axiomLogs.length > 0) {
+        const formatted = axiomLogs.map((item: AxiomLogRecord) => {
+          const payload = (item.context || {}) as Record<string, unknown>;
+          const payment = (payload.payment || {}) as Record<string, unknown>;
+          const subscription = (payload.subscription || {}) as Record<string, unknown>;
+
+          return {
+            id: item.id,
+            event: item.event_type || (payload.event as string) || "DESCONHECIDO",
+            payment_id: (payment.id as string) || (payload.payment_id as string) || (payload.paymentId as string) || null,
+            customer_id: (payment.customer as string) || (payload.customer as string) || null,
+            subscription_id: (payment.subscription as string) || (subscription.id as string) || null,
+            error_message: item.stack || (payload.error_message as string) || null,
+            signature: (payload.signature as string) || null,
+            created_at: item._time,
+            payload: payload || null,
+          };
+        });
+        setWebhookLogs(formatted);
+        return;
+      }
+
+      // 2. Fallback para RPC se Axiom não retornar dados
       const { data, error } = await supabase.rpc("get_asaas_webhook_logs", {
         _limit: 50,
         _offset: 0,

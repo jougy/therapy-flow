@@ -51,6 +51,7 @@ import {
 } from "@/lib/runtime-debug";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
 import { supabase } from "@/integrations/supabase/client";
+import { queryAxiomLogs, type AxiomLogRecord } from "@/lib/telemetry/axiom-client";
 
 // Modular subcomponents
 import type { GroupedIssue, WhatsAppBugContext } from "./errors-logs/types";
@@ -85,11 +86,49 @@ export const PlatformErrorsLogsPage: React.FC = () => {
   // Read telemetry local store state
   const telemetryStore = localTelemetryManager.getStore();
 
-  // Load persistent errors from Supabase platform_error_logs
+  // Load persistent errors from Axiom Cloud (with fallback to Supabase if Axiom not configured)
   useEffect(() => {
     let isMounted = true;
-    const fetchDbLogs = async () => {
+    const fetchLogs = async () => {
       try {
+        // 1. Tentar consultar Axiom Cloud em tempo real
+        const axiomLogs = await queryAxiomLogs({ limit: 100 });
+        if (axiomLogs && axiomLogs.length > 0 && isMounted) {
+          const mapped: RuntimeDebugEvent[] = axiomLogs.map((item: AxiomLogRecord) => {
+            const date = new Date(item._time);
+            const timeString = `${date.getHours().toString().padStart(2, "0")}:${date
+              .getMinutes()
+              .toString()
+              .padStart(2, "0")}:${date.getSeconds().toString().padStart(2, "0")}`;
+
+            return {
+              id: item.id,
+              timestamp: date.getTime(),
+              timeString,
+              type: (item.event_type as DebugEventType) || "error",
+              scope: item.scope || "runtime",
+              message: item.message || "Evento sem mensagem",
+              context: {
+                ...(typeof item.context === "object" && item.context !== null ? item.context : {}),
+                user_id: item.user_id,
+                clinic_id: item.clinic_id,
+                route: item.route,
+                service: item.service,
+                environment: item.environment,
+              },
+              errorDetails: item.stack
+                ? {
+                    message: item.message || "Erro",
+                    stack: item.stack,
+                  }
+                : undefined,
+            };
+          });
+          setDbEvents(mapped);
+          return;
+        }
+
+        // 2. Fallback caso Axiom não esteja configurado localmente
         const { data, error } = await supabase.rpc("list_platform_error_logs", {
           _limit: 100,
           _error_type: null,
@@ -136,11 +175,11 @@ export const PlatformErrorsLogsPage: React.FC = () => {
           setDbEvents(mapped);
         }
       } catch (err) {
-        console.warn("[PlatformErrorsLogsPage] Exceção ao consultar logs do Supabase:", err);
+        console.warn("[PlatformErrorsLogsPage] Exceção ao consultar logs:", err);
       }
     };
 
-    void fetchDbLogs();
+    void fetchLogs();
     return () => {
       isMounted = false;
     };
