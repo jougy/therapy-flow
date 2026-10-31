@@ -31,9 +31,25 @@ jobs:
         uses: pulumi/setup-pulumi@v2
 
       - name: Pull Production Secrets from Pulumi ESC
+        shell: bash
         run: |
           pulumi env open joao-tdoval-gmail-com-org/plurihealth/pluri-prod --format dotenv > /tmp/prod.env
-          cat /tmp/prod.env >> "$GITHUB_ENV"
+          node -e '
+            const fs = require("fs");
+            const envContent = fs.readFileSync("/tmp/prod.env", "utf8");
+            for (const line of envContent.split("\n")) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith("#")) continue;
+              const eqIdx = trimmed.indexOf("=");
+              if (eqIdx === -1) continue;
+              const key = trimmed.slice(0, eqIdx).trim();
+              let val = trimmed.slice(eqIdx + 1).trim();
+              if ((val.startsWith("\"") && val.endsWith("\"")) || (val.startsWith("\x27") && val.endsWith("\x27"))) {
+                val = val.slice(1, -1);
+              }
+              fs.appendFileSync(process.env.GITHUB_ENV, `${key}=${val}\n`);
+            }
+          '
           rm -f /tmp/prod.env
 
       - name: Setup Supabase CLI
