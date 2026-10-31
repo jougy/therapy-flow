@@ -119,7 +119,7 @@ export const PlatformAccountOperations = ({
       status: clinicAccessStatus || prev.status,
       subaccountLimit: subaccountLimit || prev.subaccountLimit,
     }));
-  }, [clinicId, clinicAccessStatus, concurrentAccessLimit, subaccountLimit, availableMemberships]);
+  }, [clinicId, clinicAccessStatus, concurrentAccessLimit, subaccountLimit]);
 
   const generateRandomPassword = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*";

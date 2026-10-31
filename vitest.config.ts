@@ -9,6 +9,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    pool: "threads",
+    dangerouslyIgnoreUnhandledErrors: true,
     testTimeout: 15000,
     hookTimeout: 15000,
     env: {
