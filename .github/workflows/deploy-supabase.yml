@@ -24,7 +24,7 @@ jobs:
         uses: pulumi/auth-actions@v1
         with:
           organization: joao-tdoval-gmail-com-org
-          requested-token-type: urn:pulumi:token-type:personal
+          requested-token-type: urn:pulumi:token-type:access_token:organization
 
       - name: Setup Pulumi ESC CLI
         uses: pulumi/setup-pulumi@v2
