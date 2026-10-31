@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Info, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, Info, KeyRound, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,6 +15,7 @@ import {
   OperationalRoleSelect,
 } from "./PlatformOperationFieldSelects";
 import { PlatformReauthModal } from "./PlatformReauthModal";
+import { PlatformOperationReasonAuditSection } from "./PlatformOperationReasonAuditSection";
 import {
   PlatformSubscriptionAdjustmentPanel,
   type SubscriptionPreview,
@@ -38,6 +40,7 @@ export interface PlatformAccountOperationsProps {
   compact?: boolean;
   defaultIdentifier?: string;
   defaultPatientId?: string;
+  availableMemberships?: Array<{ clinic_id?: string; clinic_name?: string; operational_role?: string; account_role?: string }>;
   onDone: () => void;
   subaccountLimit?: string;
   subscriptionPlan?: string;
@@ -53,6 +56,7 @@ export const PlatformAccountOperations = ({
   compact = false,
   defaultIdentifier = "",
   defaultPatientId = "",
+  availableMemberships = [],
   onDone,
   subaccountLimit = "4",
   subscriptionPlan: initialSubscriptionPlan = "clinica_medio",
@@ -60,7 +64,7 @@ export const PlatformAccountOperations = ({
   title,
 }: PlatformAccountOperationsProps) => {
   const operations = allowedOperations?.length ? allowedOperations : (Object.keys(accountOperationLabels) as AccountOperation[]);
-  const [operation, setOperation] = useState<AccountOperation>(operations[0] ?? "create_subaccount");
+  const [operation, setOperation] = useState<AccountOperation>(operations[0] ?? "reset_user_password");
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -73,6 +77,8 @@ export const PlatformAccountOperations = ({
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>(
     subscriptionData?.status ?? "ACTIVE"
   );
+  const [showPassword, setShowPassword] = useState(false);
+  const [forcePasswordReset, setForcePasswordReset] = useState(true);
 
   useEffect(() => {
     if (initialSubscriptionPlan) {
@@ -88,7 +94,7 @@ export const PlatformAccountOperations = ({
   }, [subscriptionData]);
 
   const [form, setForm] = useState<Record<string, string>>({
-    clinicId: clinicId ?? "",
+    clinicId: clinicId ?? availableMemberships[0]?.clinic_id ?? "",
     concurrentAccessLimit,
     cpf: "",
     dateOfBirth: "",
@@ -108,12 +114,26 @@ export const PlatformAccountOperations = ({
   useEffect(() => {
     setForm((prev) => ({
       ...prev,
-      clinicId: clinicId ?? prev.clinicId,
+      clinicId: clinicId || (availableMemberships[0]?.clinic_id ?? prev.clinicId),
       concurrentAccessLimit: concurrentAccessLimit || prev.concurrentAccessLimit,
       status: clinicAccessStatus || prev.status,
       subaccountLimit: subaccountLimit || prev.subaccountLimit,
     }));
   }, [clinicId, clinicAccessStatus, concurrentAccessLimit, subaccountLimit]);
+
+  const generateRandomPassword = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*";
+    let generated = "";
+    for (let i = 0; i < 12; i++) {
+      generated += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setForm((prev) => ({ ...prev, password: generated }));
+    setShowPassword(true);
+    toast({
+      title: "Senha segura gerada",
+      description: "A senha aleatória foi preenchida no campo. Você pode visualizá-la ou copiá-la.",
+    });
+  };
 
   const pendingChanges = useMemo(() => {
     const changes: string[] = [];
@@ -297,6 +317,13 @@ export const PlatformAccountOperations = ({
         status: form.status,
       };
     }
+    if (operation === "reset_user_password") {
+      return {
+        identifier: form.identifier,
+        password: form.password,
+        temporary: forcePasswordReset,
+      };
+    }
     if (operation === "update_subaccount_access") {
       return { identifier: form.identifier, newEmail: form.newEmail, password: form.password, role: form.role, status: form.status };
     }
@@ -390,13 +417,46 @@ export const PlatformAccountOperations = ({
             </SelectContent>
           </Select>
         </div>
-        {!clinicId && (operation !== "create_simple_user" || form.clinicId) && (
+        {/* Seletor de Clínica Obrigatório / Contexto Clínico para operações que afetam relação com clínica */}
+        {(operation === "update_membership_role" || operation === "assign_user_to_clinic" || operation === "remove_user_from_clinic") && (
+          <div className="space-y-1">
+            <Label className="flex items-center gap-1 font-semibold text-primary">
+              Clínica afetada <span className="text-destructive">*</span>
+            </Label>
+            {availableMemberships.length > 0 ? (
+              <Select
+                value={form.clinicId}
+                onValueChange={(val) => updateField("clinicId", val)}
+              >
+                <SelectTrigger className="border-primary/40 bg-background font-medium">
+                  <SelectValue placeholder="Selecione a clínica..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableMemberships.map((m) => (
+                    <SelectItem key={String(m.clinic_id)} value={String(m.clinic_id)}>
+                      {m.clinic_name || "Clínica sem nome"} ({m.operational_role || m.account_role || "membro"})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                placeholder="ID ou CNPJ da clínica"
+                value={form.clinicId}
+                onChange={(event) => updateField("clinicId", event.target.value)}
+                maxLength={60}
+              />
+            )}
+          </div>
+        )}
+
+        {!clinicId && (operation !== "create_simple_user" || form.clinicId) && operation !== "update_membership_role" && operation !== "assign_user_to_clinic" && operation !== "remove_user_from_clinic" && operation !== "reset_user_password" && (
           <div className="space-y-1">
             <Label>ID/CNPJ da clínica {operation === "create_simple_user" ? "(opcional)" : ""}</Label>
             <Input value={form.clinicId} onChange={(event) => updateField("clinicId", event.target.value)} maxLength={60} />
           </div>
         )}
-        {(operation.includes("subaccount") || operation.includes("user_to_clinic") || operation === "remove_user_from_clinic" || operation === "update_membership_role" || operation === "update_owner_access" || operation === "resend_invitation" || operation === "confirm_user_email_manually" || operation === "delete_user_attempt") && operation !== "create_subaccount" && operation !== "create_simple_user" && (
+        {(operation.includes("subaccount") || operation.includes("user_to_clinic") || operation === "remove_user_from_clinic" || operation === "update_membership_role" || operation === "update_owner_access" || operation === "resend_invitation" || operation === "confirm_user_email_manually" || operation === "delete_user_attempt" || operation === "reset_user_password") && operation !== "create_subaccount" && operation !== "create_simple_user" && (
           <div className="space-y-1">
             <Label>E-mail, ID da conta ou convite</Label>
             <Input value={form.identifier} onChange={(event) => updateField("identifier", event.target.value)} maxLength={160} />
@@ -426,10 +486,65 @@ export const PlatformAccountOperations = ({
             <Input value={form.newEmail} onChange={(event) => updateField("newEmail", event.target.value)} maxLength={160} />
           </div>
         )}
-        {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "update_owner_access" || operation === "update_subaccount_access") && (
+        {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "update_owner_access" || operation === "update_subaccount_access" || operation === "reset_user_password") && (
           <div className="space-y-1">
-            <Label>{operation === "create_subaccount" || operation === "create_simple_user" ? "Senha inicial" : "Nova senha"}</Label>
-            <Input value={form.password} onChange={(event) => updateField("password", event.target.value)} type="password" maxLength={128} />
+            <div className="flex items-center justify-between">
+              <Label>
+                {operation === "reset_user_password"
+                  ? "Nova senha para o usuário"
+                  : operation === "create_subaccount" || operation === "create_simple_user"
+                  ? "Senha inicial"
+                  : "Nova senha"}
+              </Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={generateRandomPassword}
+                className="h-6 px-1.5 text-[11px] text-primary hover:text-primary/80 gap-1"
+                title="Gerar senha aleatória segura"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Gerar senha
+              </Button>
+            </div>
+            <div className="relative">
+              <Input
+                value={form.password}
+                onChange={(event) => updateField("password", event.target.value)}
+                type={showPassword ? "text" : "password"}
+                maxLength={128}
+                className="pr-10"
+                placeholder={operation === "reset_user_password" ? "Digite a senha ou clique em 'Gerar senha'" : ""}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-0 top-0 h-full w-9 text-muted-foreground hover:text-foreground"
+                title={showPassword ? "Ocultar senha" : "Exibir senha"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                <span className="sr-only">Visualizar senha</span>
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {operation === "reset_user_password" && (
+          <div className="flex items-center space-x-2 pt-6">
+            <Checkbox
+              id="force-password-reset"
+              checked={forcePasswordReset}
+              onCheckedChange={(checked) => setForcePasswordReset(checked === true)}
+            />
+            <Label
+              htmlFor="force-password-reset"
+              className="text-xs font-normal leading-tight cursor-pointer"
+            >
+              Exigir redefinição no próximo login (alerta amigável para o usuário)
+            </Label>
           </div>
         )}
         {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "assign_user_to_clinic" || operation === "update_membership_role" || operation === "update_subaccount_access") && (
@@ -522,109 +637,17 @@ export const PlatformAccountOperations = ({
         />
       )}
 
-      <div className={`grid gap-3 ${isDestructive ? "lg:grid-cols-[minmax(0,1fr)_200px]" : "lg:grid-cols-1"}`}>
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="flex items-center gap-1">
-              <span>Motivo auditável</span>
-              <span className="text-xs text-destructive">*</span>
-            </Label>
-            <span
-              className={`text-xs font-medium ${
-                reason.trim().length >= 8
-                  ? "text-emerald-600 dark:text-emerald-400 flex items-center gap-1"
-                  : "text-amber-600 dark:text-amber-400"
-              }`}
-            >
-              {reason.trim().length >= 8 ? (
-                <>
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Pronto para salvar ({reason.trim().length}/1000)
-                </>
-              ) : (
-                `Faltam ${Math.max(0, 8 - reason.trim().length)} caractere(s) (${reason.trim().length}/8)`
-              )}
-            </span>
-          </div>
-
-          {quickReasons.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Sparkles className="h-3 w-3 text-primary" />
-                Motivos rápidos:
-              </span>
-              {quickReasons.map((qr) => (
-                <button
-                  key={qr}
-                  type="button"
-                  onClick={() => setReason(qr)}
-                  className="rounded-md border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary"
-                >
-                  {qr}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <Textarea
-            id="platform-audit-reason"
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            maxLength={1000}
-            placeholder="Informe a justificativa da ação administrativa (mínimo de 8 caracteres)..."
-            className={`min-h-[75px] transition-colors ${
-              reason.trim().length > 0 && reason.trim().length < 8
-                ? "border-amber-500/80 focus-visible:ring-amber-500"
-                : reason.trim().length >= 8
-                ? "border-emerald-500/60 focus-visible:ring-emerald-500"
-                : ""
-            }`}
-            aria-invalid={reason.trim().length > 0 && reason.trim().length < 8}
-          />
-        </div>
-        {isDestructive && (
-          <div className="space-y-1">
-            <Label>Confirmação</Label>
-            <Input
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              placeholder="Digite EXCLUIR"
-            />
-            <p className="text-xs text-destructive">Digite EXCLUIR</p>
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-2 pt-1">
-        {reason.trim().length < 8 && (
-          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
-            <Info className="h-3.5 w-3.5 shrink-0" />
-            <span>Preencha a justificativa com pelo menos 8 caracteres para liberar a execução da ação.</span>
-          </p>
-        )}
-
-        <Button
-          disabled={
-            saving ||
-            reason.trim().length < 8 ||
-            (isDestructive && confirmation !== "EXCLUIR")
-          }
-          onClick={handleOpenReauth}
-          variant={isDestructive ? "destructive" : "default"}
-          className={
-            !isDestructive && pendingChanges.length > 0 && reason.trim().length >= 8
-              ? "ring-2 ring-primary ring-offset-2 font-semibold shadow-md"
-              : ""
-          }
-        >
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isDestructive
-            ? "Confirmar e excluir com 2FA"
-            : pendingChanges.length > 0
-            ? "Salvar e aplicar alterações pendentes"
-            : "Executar ação administrativa"}
-        </Button>
-      </div>
+      <PlatformOperationReasonAuditSection
+        reason={reason}
+        onReasonChange={setReason}
+        quickReasons={quickReasons}
+        isDestructive={isDestructive}
+        confirmation={confirmation}
+        onConfirmationChange={setConfirmation}
+        saving={saving}
+        pendingChangesCount={pendingChanges.length}
+        onOpenReauth={handleOpenReauth}
+      />
 
       <PlatformReauthModal
         open={isReauthOpen}

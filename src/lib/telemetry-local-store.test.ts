@@ -1,10 +1,40 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveCanonicalPageColumn } from "@/lib/telemetry/canonical-matrix";
+import {
+  scrubSensitiveHealthData,
+  shouldSkipDuplicateError,
+} from "@/lib/telemetry/lgpd-scrubber";
+import { setObservabilityMulticloudConfig } from "@/lib/telemetry/multicloud-drivers";
+
+const { mockRpc, mockFrom, mockInsert, mockGetSession } = vi.hoisted(() => {
+  const insert = vi.fn(() => Promise.resolve({ data: null, error: null }));
+  const from = vi.fn(() => ({
+    insert,
+  }));
+  const getSession = vi.fn(() =>
+    Promise.resolve({ data: { session: null }, error: null })
+  );
+  const rpc = vi.fn(() =>
+    Promise.resolve({ data: { success: true }, error: null })
+  );
+
+  return {
+    mockRpc: rpc,
+    mockInsert: insert,
+    mockFrom: from,
+    mockGetSession: getSession,
+  };
+});
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    rpc: vi.fn(() => Promise.resolve({ data: { success: true }, error: null })),
+    rpc: mockRpc,
+    from: mockFrom,
+    auth: {
+      getSession: mockGetSession,
+    },
   },
 }));
 
@@ -16,7 +46,18 @@ describe("ClientTelemetryManager & Triggers", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
+    setObservabilityMulticloudConfig({
+      errorLogsDriver: "supabase_optimized",
+      metricsDriver: "supabase_optimized",
+    });
     localTelemetryManager.resetLocalStore();
+  });
+
+  afterEach(() => {
+    setObservabilityMulticloudConfig({
+      errorLogsDriver: "supabase_optimized",
+      metricsDriver: "supabase_optimized",
+    });
   });
 
   it("records all actions including new domain actions and updates store counters", () => {
@@ -169,5 +210,139 @@ describe("ClientTelemetryManager & Triggers", () => {
     expect(supabase.rpc).toHaveBeenCalledTimes(2);
     const storeAfter = localTelemetryManager.getStore();
     expect(storeAfter.pageViews).toBe(0);
+  });
+
+  it("accumulates dynamic routes in the canonical 'pacientes' column without creating dynamic sub-columns", () => {
+    // Verificação de resolução direta de colunas canônicas
+    expect(resolveCanonicalPageColumn("/clinica/vitalis/pacientes/PAC-9021")).toBe("pacientes");
+    expect(resolveCanonicalPageColumn("/pacientes/123e4567-e89b-12d3-a456-426614174000/editar")).toBe("pacientes");
+    expect(resolveCanonicalPageColumn("/pacientes")).toBe("pacientes");
+
+    // Registro de permanência em sub-rotas dinâmicas variadas
+    localTelemetryManager.recordPageDwell("/clinica/vitalis/pacientes/PAC-9021", 15);
+    localTelemetryManager.recordPageDwell("/pacientes/123e4567-e89b-12d3-a456-426614174000/editar", 25);
+    localTelemetryManager.recordPageDwell("/pacientes", 20);
+
+    const store = localTelemetryManager.getStore();
+
+    // Todo o tempo deve acumular na mesma coluna canônica "pacientes"
+    expect(store.pageDwellMatrix.pacientes).toBe(60);
+    expect(store.dwellTimeSeconds).toBe(60);
+
+    // Não deve criar colunas avulsas para códigos PAC ou sub-rotas completas
+    expect((store.pageDwellMatrix as Record<string, unknown>)["PAC-9021"]).toBeUndefined();
+    expect((store.pageDwellMatrix as Record<string, unknown>)["/clinica/vitalis/pacientes/PAC-9021"]).toBeUndefined();
+    expect(Object.keys(store.pageDwellMatrix)).toEqual(["pacientes"]);
+  });
+
+  it("scrubs CPF, email, PAC codes and Bearer/JWT tokens via scrubSensitiveHealthData and recordError", () => {
+    const rawSensitive =
+      "Paciente PAC-4421 (CPF 123.456.789-00, email paciente@saude.com.br) autenticado com Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.xyz";
+
+    const scrubbed = scrubSensitiveHealthData(rawSensitive);
+    expect(scrubbed).toContain("[CPF_REDACTED]");
+    expect(scrubbed).toContain("[EMAIL_REDACTED]");
+    expect(scrubbed).toContain("PAC-[REDACTED]");
+    expect(scrubbed).toContain("Bearer [TOKEN_REDACTED]");
+    expect(scrubbed).not.toContain("123.456.789-00");
+    expect(scrubbed).not.toContain("paciente@saude.com.br");
+    expect(scrubbed).not.toContain("PAC-4421");
+    expect(scrubbed).not.toContain("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9");
+
+    localTelemetryManager.recordError({
+      scope: "prontuario.salvar",
+      message: "Erro ao salvar PAC-4421 do paciente com CPF 123.456.789-00 e email paciente@saude.com.br",
+      stack: "Error: Token Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.xyz expirou",
+      context: {
+        pacienteCpf: "123.456.789-00",
+        contato: "paciente@saude.com.br",
+        codigoProntuario: "PAC-4421",
+      },
+    });
+
+    const store = localTelemetryManager.getStore();
+    const latestError = store.recentErrors[0];
+
+    expect(latestError.message).toBe("Erro ao salvar PAC-[REDACTED] do paciente com CPF [CPF_REDACTED] e email [EMAIL_REDACTED]");
+    expect(latestError.message).not.toContain("123.456.789-00");
+    expect(latestError.message).not.toContain("paciente@saude.com.br");
+    expect(latestError.message).not.toContain("PAC-4421");
+
+    expect(latestError.stack).toContain("Bearer [TOKEN_REDACTED]");
+    expect(latestError.stack).not.toContain("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9");
+
+    const scrubbedContext = latestError.context as Record<string, unknown>;
+    expect(scrubbedContext.pacienteCpf).toBe("[CPF_REDACTED]");
+    expect(scrubbedContext.contato).toBe("[EMAIL_REDACTED]");
+    expect(scrubbedContext.codigoProntuario).toBe("PAC-[REDACTED]");
+  });
+
+  it("does not duplicate network calls when triggering the same error 3 times within 5 minutes", async () => {
+    setObservabilityMulticloudConfig({ errorLogsDriver: "supabase_optimized" });
+
+    const duplicateError = {
+      scope: "auth.login",
+      message: "Falha de conexão com provedor OAuth",
+      stack: "Error: timeout at oauth.ts:15",
+    };
+
+    // Teste unitário da função shouldSkipDuplicateError
+    expect(shouldSkipDuplicateError("auth.login", "Falha de conexão com provedor OAuth", "/login")).toBe(false);
+    expect(shouldSkipDuplicateError("auth.login", "Falha de conexão com provedor OAuth", "/login")).toBe(true);
+    expect(shouldSkipDuplicateError("auth.login", "Falha de conexão com provedor OAuth", "/login")).toBe(true);
+
+    // Reseta store e mocks antes do teste de integração do localTelemetryManager
+    localTelemetryManager.resetLocalStore();
+    vi.clearAllMocks();
+
+    // Dispara o mesmo erro 3 vezes consecutivas
+    localTelemetryManager.recordError(duplicateError);
+    localTelemetryManager.recordError(duplicateError);
+    localTelemetryManager.recordError(duplicateError);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const store = localTelemetryManager.getStore();
+    // No store local, as 3 ocorrências são devidamente bufferizadas no histórico recente de erros
+    expect(store.recentErrors.length).toBe(3);
+
+    // Na rede, apenas 1 chamada de insert direto e 1 de sync RPC devem ter sido despachadas
+    expect(mockFrom).toHaveBeenCalledTimes(1);
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT execute supabase.from('platform_error_logs').insert when errorLogsDriver is 'local_buffer'", async () => {
+    setObservabilityMulticloudConfig({ errorLogsDriver: "local_buffer" });
+
+    localTelemetryManager.recordError({
+      scope: "financeiro.faturas",
+      message: "Erro temporário de cálculo de split",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // O erro é gravado no buffer local de telemetria
+    const store = localTelemetryManager.getStore();
+    expect(store.recentErrors.length).toBe(1);
+    expect(store.recentErrors[0].scope).toBe("financeiro.faturas");
+
+    // Supabase platform_error_logs NÃO é acionado, poupando Disk I/O
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("executes supabase.from('platform_error_logs').insert when errorLogsDriver is 'supabase_optimized'", async () => {
+    setObservabilityMulticloudConfig({ errorLogsDriver: "supabase_optimized" });
+
+    localTelemetryManager.recordError({
+      scope: "financeiro.faturas",
+      message: "Erro crítico no banco de dados",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mockFrom).toHaveBeenCalledWith("platform_error_logs");
+    expect(mockInsert).toHaveBeenCalledTimes(1);
   });
 });

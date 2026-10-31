@@ -137,7 +137,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L11622-L11630)
+-- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L11646-L11654)
 CREATE OR REPLACE FUNCTION "public"."touch_notification_preferences_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -148,7 +148,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] app_notifications (schema.sql L13552-L13572)
+-- [TABLE] app_notifications (schema.sql L13594-L13614)
 CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -171,14 +171,14 @@ CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     CONSTRAINT "app_notifications_title_check" CHECK ((("char_length"("title") >= 1) AND ("char_length"("title") <= 160)))
 );
 
--- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L17120-L17120)
+-- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L17167-L17167)
 CREATE POLICY "Users delete own app notifications" ON "public"."app_notifications" FOR DELETE USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L17160-L17160)
+-- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L17207-L17207)
 CREATE POLICY "Users manage own notification preferences" ON "public"."notification_preferences" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own app notifications ON app_notifications (schema.sql L17231-L17231)
+-- [POLICY] Users read own app notifications ON app_notifications (schema.sql L17278-L17278)
 CREATE POLICY "Users read own app notifications" ON "public"."app_notifications" FOR SELECT USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users update own app notifications ON app_notifications (schema.sql L17287-L17287)
+-- [POLICY] Users update own app notifications ON app_notifications (schema.sql L17334-L17334)
 CREATE POLICY "Users update own app notifications" ON "public"."app_notifications" FOR UPDATE USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));

@@ -116,6 +116,7 @@ export type AccountOperation =
   | "assign_user_to_clinic"
   | "remove_user_from_clinic"
   | "update_membership_role"
+  | "reset_user_password"
   | "update_clinic_access"
   | "update_owner_access"
   | "update_subaccount_access"

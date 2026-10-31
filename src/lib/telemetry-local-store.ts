@@ -1,143 +1,104 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import {
+  type CanonicalPageColumn,
+  type PageDwellMatrix,
+  resolveCanonicalPageColumn,
+} from "@/lib/telemetry/canonical-matrix";
+import {
+  sanitizeErrorEntryForCloud,
+  shouldSkipDuplicateError,
+  resetErrorDeduplicator,
+} from "@/lib/telemetry/lgpd-scrubber";
+import {
+  getObservabilityMulticloudConfig,
+  dispatchMatrixToUpstash,
+  dispatchErrorToAxiom,
+} from "@/lib/telemetry/multicloud-drivers";
 
 const STORAGE_KEY = "therapy-flow.clientTelemetryStore";
 const SPAM_BLOCK_DURATION_MS = 15 * 60 * 1000;
-const MAX_ACTIONS_PER_5_MINUTES = 80; // Rate limit threshold
-const ACTION_SYNC_THRESHOLD = 15; // Auto-sync batch threshold
+const MAX_ACTIONS_PER_5_MINUTES = 80;
+const ACTION_SYNC_THRESHOLD = 15;
+
+const METRIC_KEYS = [
+  "pageViews", "printsDetected", "docsPrinted", "pdfExported", "jsonExported",
+  "clinicalRecordsSaved", "formsCompleted", "upgradeViews", "formValidationErrors", "errorEventsCount",
+] as const;
 
 export interface ErrorLogEntry {
-  id: string;
-  timestamp: number;
-  timeString?: string;
-  scope: string;
-  message: string;
-  stack?: string;
-  context?: unknown;
+  id: string; timestamp: number; timeString?: string;
+  scope: string; message: string; stack?: string; context?: unknown;
 }
 
 export interface ClientTelemetryData {
-  pageViews: number;
-  printsDetected: number;
-  docsPrinted: number;
-  pdfExported: number;
-  jsonExported: number;
-  clinicalRecordsSaved: number;
-  formsCompleted: number;
-  upgradeViews: number;
-  formValidationErrors: number;
-  errorEventsCount: number;
-  dwellTimeSeconds: number;
-  routes: Record<string, number>;
-  actionHistory: number[]; // timestamps
-  lastSyncTime: number;
-  unsyncedActionsCount: number;
-  recentErrors: ErrorLogEntry[];
-  isSpamBlocked: boolean;
-  spamBlockedUntil: number | null;
-  spamReason: string | null;
+  pageViews: number; printsDetected: number; docsPrinted: number; pdfExported: number; jsonExported: number;
+  clinicalRecordsSaved: number; formsCompleted: number; upgradeViews: number; formValidationErrors: number;
+  errorEventsCount: number; dwellTimeSeconds: number; routes: Record<string, number>;
+  pageDwellMatrix: PageDwellMatrix; actionHistory: number[]; lastSyncTime: number;
+  unsyncedActionsCount: number; recentErrors: ErrorLogEntry[]; isSpamBlocked: boolean;
+  spamBlockedUntil: number | null; spamReason: string | null;
 }
 
 export type TelemetryActionType =
-  | "page_view"
-  | "print_screen"
-  | "document_print"
-  | "export_pdf"
-  | "export_json"
-  | "clinical_records_saved"
-  | "clinical_record_saved"
-  | "forms_completed"
-  | "form_completed"
-  | "upgrade_views"
-  | "upgrade_view"
-  | "form_validation_errors"
-  | "form_validation_error"
-  | "error_event";
+  | "page_view" | "print_screen" | "document_print" | "export_pdf" | "export_json"
+  | "clinical_records_saved" | "clinical_record_saved" | "forms_completed" | "form_completed"
+  | "upgrade_views" | "upgrade_view" | "form_validation_errors" | "form_validation_error" | "error_event";
+
+const ACTION_COUNTER_MAP: Record<string, (typeof METRIC_KEYS)[number]> = {
+  page_view: "pageViews", print_screen: "printsDetected", document_print: "docsPrinted",
+  export_pdf: "pdfExported", export_json: "jsonExported", clinical_records_saved: "clinicalRecordsSaved",
+  clinical_record_saved: "clinicalRecordsSaved", forms_completed: "formsCompleted", form_completed: "formsCompleted",
+  upgrade_views: "upgradeViews", upgrade_view: "upgradeViews", form_validation_errors: "formValidationErrors",
+  form_validation_error: "formValidationErrors", error_event: "errorEventsCount",
+};
+
+const createDefaultStore = (): ClientTelemetryData => ({
+  pageViews: 0, printsDetected: 0, docsPrinted: 0, pdfExported: 0, jsonExported: 0,
+  clinicalRecordsSaved: 0, formsCompleted: 0, upgradeViews: 0, formValidationErrors: 0,
+  errorEventsCount: 0, dwellTimeSeconds: 0, routes: {}, pageDwellMatrix: {},
+  actionHistory: [], lastSyncTime: 0, unsyncedActionsCount: 0, recentErrors: [],
+  isSpamBlocked: false, spamBlockedUntil: null, spamReason: null,
+});
 
 const getInitialStore = (): ClientTelemetryData => {
+  const base = createDefaultStore();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<ClientTelemetryData>;
-      return {
-        pageViews: parsed.pageViews || 0,
-        printsDetected: parsed.printsDetected || 0,
-        docsPrinted: parsed.docsPrinted || 0,
-        pdfExported: parsed.pdfExported || 0,
-        jsonExported: parsed.jsonExported || 0,
-        clinicalRecordsSaved: parsed.clinicalRecordsSaved || 0,
-        formsCompleted: parsed.formsCompleted || 0,
-        upgradeViews: parsed.upgradeViews || 0,
-        formValidationErrors: parsed.formValidationErrors || 0,
-        errorEventsCount: parsed.errorEventsCount || 0,
-        dwellTimeSeconds: parsed.dwellTimeSeconds || 0,
-        routes: parsed.routes || {},
-        actionHistory: Array.isArray(parsed.actionHistory) ? parsed.actionHistory : [],
-        lastSyncTime: parsed.lastSyncTime || 0,
-        unsyncedActionsCount: parsed.unsyncedActionsCount || 0,
-        recentErrors: Array.isArray(parsed.recentErrors) ? parsed.recentErrors : [],
-        isSpamBlocked: parsed.isSpamBlocked || false,
-        spamBlockedUntil: parsed.spamBlockedUntil || null,
-        spamReason: parsed.spamReason || null,
-      };
-    }
+    if (!raw) return base;
+    const parsed = JSON.parse(raw) as Partial<ClientTelemetryData>;
+    return {
+      ...base, ...parsed,
+      routes: parsed.routes || {}, pageDwellMatrix: parsed.pageDwellMatrix || {},
+      actionHistory: Array.isArray(parsed.actionHistory) ? parsed.actionHistory : [],
+      recentErrors: Array.isArray(parsed.recentErrors) ? parsed.recentErrors : [],
+    };
   } catch (e) {
-    console.warn("[LocalTelemetry] Error reading localStorage store:", e);
+    console.warn("[LocalTelemetry] Erro ao ler store do localStorage:", e);
+    return base;
   }
-
-  return {
-    pageViews: 0,
-    printsDetected: 0,
-    docsPrinted: 0,
-    pdfExported: 0,
-    jsonExported: 0,
-    clinicalRecordsSaved: 0,
-    formsCompleted: 0,
-    upgradeViews: 0,
-    formValidationErrors: 0,
-    errorEventsCount: 0,
-    dwellTimeSeconds: 0,
-    routes: {},
-    actionHistory: [],
-    lastSyncTime: 0,
-    unsyncedActionsCount: 0,
-    recentErrors: [],
-    isSpamBlocked: false,
-    spamBlockedUntil: null,
-    spamReason: null,
-  };
 };
 
 export type TelemetryTriggerReason =
-  | "login"
-  | "logout"
-  | "app_exit"
-  | "periodic"
-  | "domain_event"
-  | "manual"
-  | "threshold_batch"
-  | "online"
-  | "error_occurred";
+  | "login" | "logout" | "app_exit" | "periodic" | "domain_event"
+  | "manual" | "threshold_batch" | "online" | "error_occurred";
 
 export interface TelemetrySyncOptions {
-  clinicId?: string | null;
-  userName?: string;
-  force?: boolean;
-  isSpamAlert?: boolean;
-  triggerReason?: TelemetryTriggerReason;
-  keepalive?: boolean;
+  clinicId?: string | null; userName?: string; force?: boolean;
+  isSpamAlert?: boolean; triggerReason?: TelemetryTriggerReason; keepalive?: boolean;
+}
+
+export interface RecordErrorInfo {
+  scope?: string; message: string; stack?: string; context?: unknown;
+  syncImmediately?: boolean; forceDirectInsert?: boolean;
 }
 
 export const sanitizeTelemetryRoute = (path: string): string => {
   if (!path) return "/";
-  // Remove query params and hash fragments
-  const cleanPath = path.split("?")[0].split("#")[0].trim();
-  if (!cleanPath) return "/";
-
-  return cleanPath
-    // Replace UUIDs with :id to prevent PHI exposure / table bloating
+  const clean = path.split("?")[0].split("#")[0].trim();
+  if (!clean) return "/";
+  return clean
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ":id")
-    // Replace numeric IDs in path segments
     .replace(/\/\d+(?=\/|$)/g, "/:id");
 };
 
@@ -145,7 +106,7 @@ class ClientTelemetryManager {
   private store: ClientTelemetryData;
   private inFlightSyncPromise: Promise<void> | null = null;
   private cachedClinicId: string | null = null;
-  private cachedUserName: string = "Usuário";
+  private cachedUserName = "Usuário";
 
   constructor() {
     this.store = getInitialStore();
@@ -155,20 +116,15 @@ class ClientTelemetryManager {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.store));
     } catch (e) {
-      console.warn("[LocalTelemetry] Error saving to localStorage:", e);
+      console.warn("[LocalTelemetry] Erro ao salvar store no localStorage:", e);
     }
   }
 
   public setContext(clinicId?: string | null, userName?: string) {
-    if (clinicId !== undefined) {
-      this.cachedClinicId = clinicId;
-    }
-    if (userName) {
-      this.cachedUserName = userName;
-    }
+    if (clinicId !== undefined) this.cachedClinicId = clinicId;
+    if (userName) this.cachedUserName = userName;
   }
 
-  // Check if spam block has expired
   private checkSpamBlockStatus(): boolean {
     if (this.store.isSpamBlocked && this.store.spamBlockedUntil) {
       if (Date.now() >= this.store.spamBlockedUntil) {
@@ -178,69 +134,51 @@ class ClientTelemetryManager {
         this.save();
         return false;
       }
-      return true; // Still blocked
+      return true;
     }
     return false;
   }
 
-  // Accumulate local action
   public recordAction(
     type: TelemetryActionType,
     pathname: string,
     metadata: { dwell_time_seconds?: number } = {}
   ) {
     const now = Date.now();
-
-    // Check if blocked by anti-spam rate limiter
     if (this.checkSpamBlockStatus()) {
-      console.warn("[LocalTelemetry] Action ignored due to active anti-spam block.");
+      console.warn("[LocalTelemetry] Ação ignorada devido a bloqueio anti-spam ativo.");
       return;
     }
 
-    // Clean old action timestamps (keep only last 10 minutes)
     const tenMinsAgo = now - 10 * 60 * 1000;
     this.store.actionHistory = this.store.actionHistory.filter((t) => t >= tenMinsAgo);
     this.store.actionHistory.push(now);
 
     const safeRoute = sanitizeTelemetryRoute(pathname);
+    const canonicalCol = resolveCanonicalPageColumn(pathname);
 
-    // Increment specific counters
+    const counterKey = ACTION_COUNTER_MAP[type];
+    if (counterKey) this.store[counterKey] += 1;
+
     if (type === "page_view") {
-      this.store.pageViews += 1;
-      const currentRouteCount = this.store.routes[safeRoute] || 0;
-      this.store.routes[safeRoute] = currentRouteCount + 1;
+      this.store.routes[safeRoute] = (this.store.routes[safeRoute] || 0) + 1;
+      if (metadata.dwell_time_seconds) this.store.dwellTimeSeconds += metadata.dwell_time_seconds;
+    }
 
+    if (type === "page_view" || metadata.dwell_time_seconds) {
+      if (!(canonicalCol in this.store.pageDwellMatrix)) this.store.pageDwellMatrix[canonicalCol] = 0;
       if (metadata.dwell_time_seconds) {
-        this.store.dwellTimeSeconds += metadata.dwell_time_seconds;
+        this.store.pageDwellMatrix[canonicalCol] =
+          (this.store.pageDwellMatrix[canonicalCol] || 0) + metadata.dwell_time_seconds;
       }
-    } else if (type === "print_screen") {
-      this.store.printsDetected += 1;
-    } else if (type === "document_print") {
-      this.store.docsPrinted += 1;
-    } else if (type === "export_pdf") {
-      this.store.pdfExported += 1;
-    } else if (type === "export_json") {
-      this.store.jsonExported += 1;
-    } else if (type === "clinical_records_saved" || type === "clinical_record_saved") {
-      this.store.clinicalRecordsSaved += 1;
-    } else if (type === "forms_completed" || type === "form_completed") {
-      this.store.formsCompleted += 1;
-    } else if (type === "upgrade_views" || type === "upgrade_view") {
-      this.store.upgradeViews += 1;
-    } else if (type === "form_validation_errors" || type === "form_validation_error") {
-      this.store.formValidationErrors += 1;
-    } else if (type === "error_event") {
-      this.store.errorEventsCount += 1;
     }
 
     this.store.unsyncedActionsCount = (this.store.unsyncedActionsCount || 0) + 1;
 
-    // Anti-Spam Defense Check (actions in last 5 minutes)
     const fiveMinsAgo = now - 5 * 60 * 1000;
     const recentActionsIn5Mins = this.store.actionHistory.filter((t) => t >= fiveMinsAgo).length;
 
     if (recentActionsIn5Mins >= MAX_ACTIONS_PER_5_MINUTES && !this.store.isSpamBlocked) {
-      // Trigger Anti-Spam Defense!
       this.store.isSpamBlocked = true;
       this.store.spamBlockedUntil = now + SPAM_BLOCK_DURATION_MS;
       this.store.spamReason = `Rate limit excedido: ${recentActionsIn5Mins} ações em 5 minutos. Conexão pausada por 15 minutos.`;
@@ -249,53 +187,51 @@ class ClientTelemetryManager {
       try {
         toast({
           title: "Alerta de Segurança Pluri-Health",
-          description: "Frequência anormal de ações por minuto detectada. Sua sincronização foi pausada temporariamente por 15 minutos.",
+          description: "Frequência anormal de ações detectada. A sincronização foi pausada temporariamente.",
           variant: "destructive",
         });
       } catch {
-        // Safe fallback
+        // Fallback silencioso
       }
 
-      // Dispatch emergency single RPC alert to Backoffice
       void this.syncToServer({ isSpamAlert: true });
       return;
     }
 
     this.save();
 
-    // Auto-sync threshold trigger (15 actions batch)
     if (this.store.unsyncedActionsCount >= ACTION_SYNC_THRESHOLD) {
       void this.syncToServer({
-        clinicId: this.cachedClinicId,
-        userName: this.cachedUserName,
-        force: true,
-        triggerReason: "threshold_batch",
+        clinicId: this.cachedClinicId, userName: this.cachedUserName,
+        force: true, triggerReason: "threshold_batch",
       });
     }
   }
 
-  // Record an error event and immediately trigger telemetry synchronization
-  public recordError(errorInfo: {
-    scope?: string;
-    message: string;
-    stack?: string;
-    context?: unknown;
-  }) {
+  public recordPageDwell(pathname: string, seconds: number) {
+    if (seconds <= 0) return;
+    this.store.dwellTimeSeconds += seconds;
+    const col = resolveCanonicalPageColumn(pathname);
+    this.store.pageDwellMatrix[col] = (this.store.pageDwellMatrix[col] || 0) + seconds;
+    this.store.unsyncedActionsCount = (this.store.unsyncedActionsCount || 0) + 1;
+    this.save();
+  }
+
+  public recordError(errorInfo: RecordErrorInfo) {
+    const route = typeof window !== "undefined" ? window.location.pathname : "/";
+    const sanitized = sanitizeErrorEntryForCloud({
+      scope: errorInfo.scope || "runtime", message: errorInfo.message,
+      stack: errorInfo.stack, context: errorInfo.context,
+    });
+
     const now = Date.now();
-    const date = new Date(now);
-    const timeString = `${date.getHours().toString().padStart(2, "0")}:${date
-      .getMinutes()
-      .toString()
-      .padStart(2, "0")}:${date.getSeconds().toString().padStart(2, "0")}`;
+    const d = new Date(now);
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    const timeString = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 
     const errorItem: ErrorLogEntry = {
-      id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: now,
-      timeString,
-      scope: errorInfo.scope || "runtime",
-      message: errorInfo.message || "Erro desconhecido",
-      stack: errorInfo.stack,
-      context: errorInfo.context,
+      id: `${now}-${Math.random().toString(36).slice(2, 7)}`, timestamp: now, timeString,
+      scope: sanitized.scope, message: sanitized.message, stack: sanitized.stack, context: sanitized.context,
     };
 
     this.store.errorEventsCount = (this.store.errorEventsCount || 0) + 1;
@@ -304,140 +240,126 @@ class ClientTelemetryManager {
     this.store.recentErrors = [errorItem, ...currentRecent.slice(0, 49)];
     this.save();
 
-    // Persistência direta em nuvem (platform_error_logs) via Supabase
-    void (async () => {
-      try {
-        const { data: authData } = await supabase.auth.getSession();
-        const currentUserId = authData?.session?.user?.id || null;
+    if (shouldSkipDuplicateError(errorItem.scope, errorItem.message, route)) return;
 
-        const route = typeof window !== "undefined" ? window.location.pathname : "/";
-        const { error } = await supabase.from("platform_error_logs").insert({
-          user_id: currentUserId,
-          clinic_id: this.cachedClinicId || null,
-          error_type: "runtime",
-          scope: errorItem.scope,
-          message: errorItem.message,
-          stack_trace: errorItem.stack || null,
-          context: (errorItem.context as Record<string, unknown>) || {},
-          route,
-        });
+    const config = getObservabilityMulticloudConfig();
+    const driver = config.errorLogsDriver;
 
-        if (error) {
-          // Não relançar como erro de telemetria para evitar loops infinitos
-          console.warn("[LocalTelemetry] RLS ou falha ao persistir erro em platform_error_logs:", error.message);
+    if (driver === "axiom") {
+      void dispatchErrorToAxiom({
+        timestamp: new Date(now).toISOString(), scope: errorItem.scope,
+        message: errorItem.message, stack: errorItem.stack, context: errorItem.context,
+        route, clinic_id: this.cachedClinicId,
+      });
+      return;
+    }
+
+    if (driver === "supabase_optimized" || errorInfo.forceDirectInsert) {
+      void (async () => {
+        try {
+          const { data: authData } = await supabase.auth.getSession();
+          const { error } = await supabase.from("platform_error_logs").insert({
+            user_id: authData?.session?.user?.id || null, clinic_id: this.cachedClinicId || null,
+            error_type: "runtime", scope: errorItem.scope, message: errorItem.message,
+            stack_trace: errorItem.stack || null, context: (errorItem.context as Record<string, unknown>) || {}, route,
+          });
+          if (error) console.warn("[LocalTelemetry] Falha ao persistir erro em platform_error_logs:", error.message);
+        } catch (err) {
+          console.warn("[LocalTelemetry] Erro de rede ao persistir log:", err);
         }
-      } catch (err) {
-        console.warn("[LocalTelemetry] Falha ao persistir erro em platform_error_logs:", err);
-      }
-    })();
+      })();
 
-    void this.syncToServer({
-      clinicId: this.cachedClinicId,
-      userName: this.cachedUserName,
-      force: true,
-      triggerReason: "error_occurred",
-    });
+      void this.syncToServer({
+        clinicId: this.cachedClinicId, userName: this.cachedUserName, force: true, triggerReason: "error_occurred",
+      });
+      return;
+    }
+
+    if (errorInfo.syncImmediately) {
+      void this.syncToServer({
+        clinicId: this.cachedClinicId, userName: this.cachedUserName, force: true, triggerReason: "error_occurred",
+      });
+    }
   }
 
-  // Idempotent & Concurrency-Safe Sync to Server via single RPC upsert
   public async syncToServer({
-    clinicId,
-    userName,
-    force = false,
-    isSpamAlert = false,
-    triggerReason = "domain_event",
+    clinicId, userName, force = false, isSpamAlert = false, triggerReason = "domain_event",
   }: TelemetrySyncOptions = {}): Promise<void> {
     const activeClinicId = clinicId !== undefined ? clinicId : this.cachedClinicId;
     const activeUserName = userName || this.cachedUserName || "Usuário";
 
-    // If a sync is already in flight, wait for it before evaluating next sync pass
-    if (this.inFlightSyncPromise) {
-      await this.inFlightSyncPromise;
-    }
+    if (this.inFlightSyncPromise) await this.inFlightSyncPromise;
 
     const syncExecution = async () => {
       const now = Date.now();
-
-      // Check if spam block is active and not an emergency spam alert
       if (!isSpamAlert && this.checkSpamBlockStatus()) {
-        console.warn("[LocalTelemetry] Sync skipped because user is currently rate-limited.");
+        console.warn("[LocalTelemetry] Sincronização ignorada: usuário com rate limit ativo.");
         return;
       }
 
-      // Check if there is anything to sync
+      const hasMatrixData = Object.values(this.store.pageDwellMatrix).some((v) => (v || 0) > 0);
       const hasDataToSync =
-        this.store.pageViews > 0 ||
-        this.store.printsDetected > 0 ||
-        this.store.docsPrinted > 0 ||
-        this.store.pdfExported > 0 ||
-        this.store.jsonExported > 0 ||
-        this.store.clinicalRecordsSaved > 0 ||
-        this.store.formsCompleted > 0 ||
-        this.store.upgradeViews > 0 ||
-        this.store.formValidationErrors > 0 ||
-        this.store.errorEventsCount > 0 ||
-        this.store.isSpamBlocked;
+        this.store.dwellTimeSeconds > 0 || this.store.isSpamBlocked ||
+        hasMatrixData || METRIC_KEYS.some((key) => this.store[key] > 0);
 
-      if (!hasDataToSync && !isSpamAlert && triggerReason !== "login") {
-        return;
-      }
+      if (!hasDataToSync && !isSpamAlert && triggerReason !== "login") return;
 
-      // Extract delta snapshot and immediately subtract to allow new concurrent actions
       const delta = {
-        pageViews: this.store.pageViews,
-        printsDetected: this.store.printsDetected,
-        docsPrinted: this.store.docsPrinted,
-        pdfExported: this.store.pdfExported,
-        jsonExported: this.store.jsonExported,
-        clinicalRecordsSaved: this.store.clinicalRecordsSaved,
-        formsCompleted: this.store.formsCompleted,
-        upgradeViews: this.store.upgradeViews,
-        formValidationErrors: this.store.formValidationErrors,
-        errorEventsCount: this.store.errorEventsCount,
-        dwellTimeSeconds: this.store.dwellTimeSeconds,
-        unsyncedActionsCount: this.store.unsyncedActionsCount,
-        routes: { ...this.store.routes },
-        isSpamFlagged: this.store.isSpamBlocked,
-        spamReason: this.store.spamReason,
+        pageViews: this.store.pageViews, printsDetected: this.store.printsDetected,
+        docsPrinted: this.store.docsPrinted, pdfExported: this.store.pdfExported,
+        jsonExported: this.store.jsonExported, clinicalRecordsSaved: this.store.clinicalRecordsSaved,
+        formsCompleted: this.store.formsCompleted, upgradeViews: this.store.upgradeViews,
+        formValidationErrors: this.store.formValidationErrors, errorEventsCount: this.store.errorEventsCount,
+        dwellTimeSeconds: this.store.dwellTimeSeconds, unsyncedActionsCount: this.store.unsyncedActionsCount,
+        routes: { ...this.store.routes }, pageDwellMatrix: { ...this.store.pageDwellMatrix },
+        isSpamFlagged: this.store.isSpamBlocked, spamReason: this.store.spamReason,
       };
 
-      this.store.pageViews -= delta.pageViews;
-      this.store.printsDetected -= delta.printsDetected;
-      this.store.docsPrinted -= delta.docsPrinted;
-      this.store.pdfExported -= delta.pdfExported;
-      this.store.jsonExported -= delta.jsonExported;
-      this.store.clinicalRecordsSaved -= delta.clinicalRecordsSaved;
-      this.store.formsCompleted -= delta.formsCompleted;
-      this.store.upgradeViews -= delta.upgradeViews;
-      this.store.formValidationErrors -= delta.formValidationErrors;
-      this.store.errorEventsCount -= delta.errorEventsCount;
+      for (const key of METRIC_KEYS) this.store[key] -= delta[key];
       this.store.dwellTimeSeconds -= delta.dwellTimeSeconds;
       this.store.unsyncedActionsCount = Math.max(0, (this.store.unsyncedActionsCount || 0) - delta.unsyncedActionsCount);
       this.store.routes = {};
+      this.store.pageDwellMatrix = {};
       this.store.lastSyncTime = now;
       this.save();
 
-      try {
-        const { error } = await supabase.rpc("upsert_user_telemetry_summary", {
-          _clinic_id: activeClinicId || null,
-          _user_name: activeUserName || "Usuário",
-          _page_views: delta.pageViews,
-          _prints_detected: delta.printsDetected,
-          _docs_printed: delta.docsPrinted,
-          _pdf_exported: delta.pdfExported,
-          _dwell_seconds: delta.dwellTimeSeconds,
-          _top_routes: delta.routes,
-          _is_spam_flagged: delta.isSpamFlagged,
-          _spam_reason: delta.spamReason,
-        });
+      const config = getObservabilityMulticloudConfig();
+      if (config.metricsDriver === "upstash_redis") {
+        try {
+          const authData = await supabase.auth.getSession();
+          const userId = authData?.data?.session?.user?.id || "anonymous";
+          const counters: Record<string, number> = {
+            pageViews: delta.pageViews, printsDetected: delta.printsDetected,
+            docsPrinted: delta.docsPrinted, pdfExported: delta.pdfExported,
+            clinicalRecordsSaved: delta.clinicalRecordsSaved, formsCompleted: delta.formsCompleted,
+            dwellTimeSeconds: delta.dwellTimeSeconds,
+          };
+          await dispatchMatrixToUpstash(userId, activeClinicId || null, delta.pageDwellMatrix, counters);
+          return;
+        } catch (err) {
+          console.warn("[LocalTelemetry] Falha no driver Upstash, fallback para RPC:", err);
+        }
+      }
 
+      try {
+        const rpcPayload: Record<string, unknown> = {
+          _clinic_id: activeClinicId || null, _user_name: activeUserName || "Usuário",
+          _page_views: delta.pageViews, _prints_detected: delta.printsDetected,
+          _docs_printed: delta.docsPrinted, _pdf_exported: delta.pdfExported,
+          _dwell_seconds: delta.dwellTimeSeconds, _top_routes: delta.routes,
+          _is_spam_flagged: delta.isSpamFlagged, _spam_reason: delta.spamReason,
+        };
+        if (Object.keys(delta.pageDwellMatrix).length > 0) {
+          rpcPayload._page_dwell_matrix = delta.pageDwellMatrix;
+        }
+
+        const { error } = await supabase.rpc("upsert_user_telemetry_summary", rpcPayload);
         if (error) {
-          console.warn("[LocalTelemetry] Sync RPC failed:", error.message);
-          // Rollback delta counters back into store on RPC error
+          console.warn("[LocalTelemetry] RPC falhou:", error.message);
           this.rollbackDelta(delta);
         }
       } catch (err) {
-        console.warn("[LocalTelemetry] Error calling sync RPC:", err);
+        console.warn("[LocalTelemetry] Erro ao chamar sync RPC:", err);
         this.rollbackDelta(delta);
       }
     };
@@ -450,34 +372,20 @@ class ClientTelemetryManager {
   }
 
   private rollbackDelta(delta: {
-    pageViews: number;
-    printsDetected: number;
-    docsPrinted: number;
-    pdfExported: number;
-    jsonExported: number;
-    clinicalRecordsSaved: number;
-    formsCompleted: number;
-    upgradeViews: number;
-    formValidationErrors: number;
-    errorEventsCount: number;
-    dwellTimeSeconds: number;
-    unsyncedActionsCount: number;
-    routes: Record<string, number>;
+    pageViews: number; printsDetected: number; docsPrinted: number; pdfExported: number;
+    jsonExported: number; clinicalRecordsSaved: number; formsCompleted: number; upgradeViews: number;
+    formValidationErrors: number; errorEventsCount: number; dwellTimeSeconds: number;
+    unsyncedActionsCount: number; routes: Record<string, number>; pageDwellMatrix?: PageDwellMatrix;
   }) {
-    this.store.pageViews += delta.pageViews;
-    this.store.printsDetected += delta.printsDetected;
-    this.store.docsPrinted += delta.docsPrinted;
-    this.store.pdfExported += delta.pdfExported;
-    this.store.jsonExported += delta.jsonExported;
-    this.store.clinicalRecordsSaved += delta.clinicalRecordsSaved;
-    this.store.formsCompleted += delta.formsCompleted;
-    this.store.upgradeViews += delta.upgradeViews;
-    this.store.formValidationErrors += delta.formValidationErrors;
-    this.store.errorEventsCount += delta.errorEventsCount;
+    for (const key of METRIC_KEYS) this.store[key] += delta[key];
     this.store.dwellTimeSeconds += delta.dwellTimeSeconds;
     this.store.unsyncedActionsCount = (this.store.unsyncedActionsCount || 0) + delta.unsyncedActionsCount;
-    for (const [r, c] of Object.entries(delta.routes)) {
-      this.store.routes[r] = (this.store.routes[r] || 0) + c;
+    for (const [r, c] of Object.entries(delta.routes)) this.store.routes[r] = (this.store.routes[r] || 0) + c;
+    if (delta.pageDwellMatrix) {
+      for (const [col, s] of Object.entries(delta.pageDwellMatrix)) {
+        const k = col as CanonicalPageColumn;
+        this.store.pageDwellMatrix[k] = (this.store.pageDwellMatrix[k] || 0) + (s || 0);
+      }
     }
     this.save();
   }
@@ -487,27 +395,8 @@ class ClientTelemetryManager {
   }
 
   public resetLocalStore() {
-    this.store = {
-      pageViews: 0,
-      printsDetected: 0,
-      docsPrinted: 0,
-      pdfExported: 0,
-      jsonExported: 0,
-      clinicalRecordsSaved: 0,
-      formsCompleted: 0,
-      upgradeViews: 0,
-      formValidationErrors: 0,
-      errorEventsCount: 0,
-      dwellTimeSeconds: 0,
-      routes: {},
-      actionHistory: [],
-      lastSyncTime: 0,
-      unsyncedActionsCount: 0,
-      recentErrors: [],
-      isSpamBlocked: false,
-      spamBlockedUntil: null,
-      spamReason: null,
-    };
+    resetErrorDeduplicator();
+    this.store = createDefaultStore();
     this.save();
   }
 

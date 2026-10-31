@@ -13,10 +13,28 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Build & Deploy to Cloudflare Workers
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Authenticate to Pulumi ESC via OIDC
+        uses: pulumi/auth-actions@v1
+        with:
+          organization: joao-tdoval-gmail-com-org
+          requested-token-type: urn:pulumi:token-type:personal
+
+      - name: Setup Pulumi ESC CLI
+        uses: pulumi/setup-pulumi@v2
+
+      - name: Pull Production Secrets from Pulumi ESC
+        run: |
+          pulumi env open joao-tdoval-gmail-com-org/plurihealth/pluri-prod --format dotenv > /tmp/prod.env
+          cat /tmp/prod.env >> "$GITHUB_ENV"
+          rm -f /tmp/prod.env
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -32,12 +50,6 @@ jobs:
 
       - name: Run Pre-Deploy Quality Gate & Smoke Test
         run: bash scripts/dev/pre-deploy-guard.sh
-        env:
-          VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID || 'ggytwbnintrftgzvjczs' }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_F7V65WGemlo74ZBKuzawbg_UdmXzaRO' }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://ggytwbnintrftgzvjczs.supabase.co' }}
 
       - name: Deploy to Cloudflare Workers
         run: npx wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

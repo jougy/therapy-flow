@@ -1,6 +1,6 @@
 # 🗄️ Índice Modular do Schema Supabase (SSOT Index)
 
-> **Gerado automaticamente** a partir de `supabase/schema.sql` (19183 linhas).
+> **Gerado automaticamente** a partir de `supabase/schema.sql` (19230 linhas).
 > **Regra de Economia de Tokens:** Nunca leia `supabase/schema.sql` inteiro. Consulte este índice ou abra diretamente `supabase/schema-index/domains/<dominio>.sql` ou use `view_file` com `StartLine`/`EndLine` exatos abaixo.
 
 ## 📊 Resumo Estrutural
@@ -21,65 +21,65 @@
 ## 📋 Catálogo de Tabelas (com linhas exatas em `supabase/schema.sql`)
 | Tabela | Domínio | Linhas (`schema.sql`) | Colunas `_cents` | Soft Delete (`deleted_at`) | Qtd Colunas |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `agenda_events` | `core_misc` | `L13490-L13518` | — | — | 11 |
-| `anamnesis_form_templates` | `anamnesis_forms` | `L13528-L13546` | — | ✅ Sim | 7 |
-| `app_notifications` | `whatsapp_notifications` | `L13552-L13572` | — | — | 3 |
-| `asaas_webhook_events` | `finance_billing` | `L13578-L13588` | — | — | 3 |
-| `clinic_collaborator_invitations` | `clinics_rbac` | `L13594-L13618` | — | — | 6 |
-| `clinic_daily_metrics` | `clinics_rbac` | `L13624-L13634` | `revenue_paid_cents`, `revenue_open_cents`, `revenue_credit_cents` | — | 7 |
-| `clinic_group_color_slots` | `clinics_rbac` | `L13640-L13651` | — | — | 4 |
-| `clinic_health_insurances` | `clinics_rbac` | `L13657-L13670` | — | ✅ Sim | 7 |
-| `clinic_insurance_procedures` | `clinics_rbac` | `L13676-L13689` | `session_unit_amount_cents`, `copay_amount_cents` | — | 5 |
-| `clinic_memberships` | `clinics_rbac` | `L13695-L13712` | — | — | 5 |
-| `clinic_operational_role_capabilities` | `clinics_rbac` | `L13730-L13740` | — | — | 3 |
-| `clinic_operational_roles` | `clinics_rbac` | `L13748-L13762` | — | — | 4 |
-| `clinic_subscriptions` | `clinics_rbac` | `L13770-L13822` | — | — | 27 |
-| `clinic_tag_relations` | `clinics_rbac` | `L13828-L13833` | — | — | 1 |
-| `clinic_tags` | `clinics_rbac` | `L13839-L13845` | — | — | 2 |
-| `clinic_terms` | `clinics_rbac` | `L13851-L13866` | — | — | 5 |
-| `clinical_session_billings` | `sessions` | `L13872-L13898` | `amount_charged_cents`, `amount_paid_cents`, `amount_original_cents` | — | 7 |
-| `clinics` | `clinics_rbac` | `L13904-L13934` | — | — | 9 |
-| `community_form_template_comments` | `anamnesis_forms` | `L13952-L13963` | — | — | 3 |
-| `community_form_template_likes` | `anamnesis_forms` | `L13969-L13973` | — | — | 1 |
-| `community_form_templates` | `anamnesis_forms` | `L13979-L13998` | — | — | 7 |
-| `feature_flags` | `platform_admin` | `L14004-L14021` | — | — | 4 |
-| `governance_rules` | `platform_admin` | `L14031-L14035` | — | — | 1 |
+| `agenda_events` | `core_misc` | `L13532-L13560` | — | — | 11 |
+| `anamnesis_form_templates` | `anamnesis_forms` | `L13570-L13588` | — | ✅ Sim | 7 |
+| `app_notifications` | `whatsapp_notifications` | `L13594-L13614` | — | — | 3 |
+| `asaas_webhook_events` | `finance_billing` | `L13620-L13630` | — | — | 3 |
+| `clinic_collaborator_invitations` | `clinics_rbac` | `L13636-L13660` | — | — | 6 |
+| `clinic_daily_metrics` | `clinics_rbac` | `L13666-L13676` | `revenue_paid_cents`, `revenue_open_cents`, `revenue_credit_cents` | — | 7 |
+| `clinic_group_color_slots` | `clinics_rbac` | `L13682-L13693` | — | — | 4 |
+| `clinic_health_insurances` | `clinics_rbac` | `L13699-L13712` | — | ✅ Sim | 7 |
+| `clinic_insurance_procedures` | `clinics_rbac` | `L13718-L13731` | `session_unit_amount_cents`, `copay_amount_cents` | — | 5 |
+| `clinic_memberships` | `clinics_rbac` | `L13737-L13754` | — | — | 5 |
+| `clinic_operational_role_capabilities` | `clinics_rbac` | `L13772-L13782` | — | — | 3 |
+| `clinic_operational_roles` | `clinics_rbac` | `L13790-L13804` | — | — | 4 |
+| `clinic_subscriptions` | `clinics_rbac` | `L13812-L13864` | — | — | 27 |
+| `clinic_tag_relations` | `clinics_rbac` | `L13870-L13875` | — | — | 1 |
+| `clinic_tags` | `clinics_rbac` | `L13881-L13887` | — | — | 2 |
+| `clinic_terms` | `clinics_rbac` | `L13893-L13908` | — | — | 5 |
+| `clinical_session_billings` | `sessions` | `L13914-L13940` | `amount_charged_cents`, `amount_paid_cents`, `amount_original_cents` | — | 7 |
+| `clinics` | `clinics_rbac` | `L13946-L13976` | — | — | 9 |
+| `community_form_template_comments` | `anamnesis_forms` | `L13994-L14005` | — | — | 3 |
+| `community_form_template_likes` | `anamnesis_forms` | `L14011-L14015` | — | — | 1 |
+| `community_form_templates` | `anamnesis_forms` | `L14021-L14040` | — | — | 7 |
+| `feature_flags` | `platform_admin` | `L14046-L14063` | — | — | 4 |
+| `governance_rules` | `platform_admin` | `L14073-L14077` | — | — | 1 |
 | `notification_preferences` | `whatsapp_notifications` | `L3890-L3904` | — | — | 8 |
-| `patient_clinical_snapshots` | `patients` | `L14041-L14051` | — | — | 1 |
-| `patient_evolution_groups` | `patients` | `L14057-L14064` | — | — | 2 |
-| `patient_file_uploads` | `patients` | `L14070-L14114` | — | ✅ Sim | 12 |
-| `patient_group_templates` | `patients` | `L14120-L14134` | — | — | 2 |
-| `patient_groups` | `patients` | `L14140-L14154` | — | — | 2 |
-| `patient_health_insurances` | `patients` | `L14160-L14171` | — | — | 2 |
-| `patient_payment_plans` | `patients` | `L14177-L14206` | `total_amount_cents`, `session_unit_amount_cents` | — | 7 |
-| `patient_registration_links` | `patients` | `L14212-L14222` | — | — | 3 |
-| `patients` | `patients` | `L14228-L14287` | — | ✅ Sim | 10 |
-| `platform_admins` | `anamnesis_forms` | `L14306-L14313` | — | — | 3 |
-| `platform_audit_events` | `anamnesis_forms` | `L14319-L14330` | — | — | 1 |
-| `platform_clinic_access_sessions` | `sessions` | `L14336-L14344` | — | — | 3 |
-| `platform_error_logs` | `anamnesis_forms` | `L14350-L14361` | — | — | 1 |
-| `platform_feedbacks` | `anamnesis_forms` | `L14367-L14385` | — | — | 3 |
-| `platform_onboarding_meetings` | `anamnesis_forms` | `L14391-L14407` | — | — | 4 |
-| `platform_release_note_items` | `anamnesis_forms` | `L14417-L14426` | — | — | 2 |
-| `platform_releases` | `anamnesis_forms` | `L14432-L14445` | — | — | 5 |
-| `profiles` | `clinics_rbac` | `L14451-L14484` | — | — | 8 |
-| `security_events` | `core_misc` | `L14514-L14524` | — | — | 1 |
-| `session_edit_history` | `sessions` | `L14530-L14541` | — | — | 1 |
-| `session_shares` | `sessions` | `L14551-L14562` | — | — | 2 |
-| `sessions` | `sessions` | `L14568-L14621` | `amount_charged_cents`, `amount_paid_cents`, `amount_original_cents` | ✅ Sim | 15 |
-| `subscription_coupons` | `finance_billing` | `L14630-L14654` | — | — | 9 |
-| `subscription_invoices` | `finance_billing` | `L14672-L14708` | — | — | 10 |
-| `team_development_profiles` | `clinics_rbac` | `L14722-L14738` | — | — | 4 |
-| `telemetry_events` | `platform_admin` | `L14744-L14755` | — | — | 1 |
-| `user_active_clinic_contexts` | `clinics_rbac` | `L14761-L14765` | — | — | 1 |
-| `user_governance_overrides` | `clinics_rbac` | `L14771-L14776` | — | — | 3 |
-| `user_punishments` | `clinics_rbac` | `L14782-L14792` | — | — | 4 |
-| `user_release_note_states` | `clinics_rbac` | `L14798-L14805` | — | — | 4 |
-| `user_roles` | `clinics_rbac` | `L14811-L14815` | — | — | 0 |
-| `user_security_sessions` | `sessions` | `L14821-L14837` | — | — | 6 |
-| `user_security_settings` | `clinics_rbac` | `L14843-L14852` | — | — | 6 |
-| `user_telemetry_summaries` | `clinics_rbac` | `L14858-L14878` | — | — | 11 |
-| `whatsapp_chat_sessions` | `sessions` | `L14884-L14897` | — | — | 6 |
+| `patient_clinical_snapshots` | `patients` | `L14083-L14093` | — | — | 1 |
+| `patient_evolution_groups` | `patients` | `L14099-L14106` | — | — | 2 |
+| `patient_file_uploads` | `patients` | `L14112-L14156` | — | ✅ Sim | 12 |
+| `patient_group_templates` | `patients` | `L14162-L14176` | — | — | 2 |
+| `patient_groups` | `patients` | `L14182-L14196` | — | — | 2 |
+| `patient_health_insurances` | `patients` | `L14202-L14213` | — | — | 2 |
+| `patient_payment_plans` | `patients` | `L14219-L14248` | `total_amount_cents`, `session_unit_amount_cents` | — | 7 |
+| `patient_registration_links` | `patients` | `L14254-L14264` | — | — | 3 |
+| `patients` | `patients` | `L14270-L14329` | — | ✅ Sim | 10 |
+| `platform_admins` | `anamnesis_forms` | `L14348-L14355` | — | — | 3 |
+| `platform_audit_events` | `anamnesis_forms` | `L14361-L14372` | — | — | 1 |
+| `platform_clinic_access_sessions` | `sessions` | `L14378-L14386` | — | — | 3 |
+| `platform_error_logs` | `anamnesis_forms` | `L14392-L14403` | — | — | 1 |
+| `platform_feedbacks` | `anamnesis_forms` | `L14409-L14427` | — | — | 3 |
+| `platform_onboarding_meetings` | `anamnesis_forms` | `L14433-L14449` | — | — | 4 |
+| `platform_release_note_items` | `anamnesis_forms` | `L14459-L14468` | — | — | 2 |
+| `platform_releases` | `anamnesis_forms` | `L14474-L14487` | — | — | 5 |
+| `profiles` | `clinics_rbac` | `L14493-L14526` | — | — | 8 |
+| `security_events` | `core_misc` | `L14556-L14566` | — | — | 1 |
+| `session_edit_history` | `sessions` | `L14572-L14583` | — | — | 1 |
+| `session_shares` | `sessions` | `L14593-L14604` | — | — | 2 |
+| `sessions` | `sessions` | `L14610-L14663` | `amount_charged_cents`, `amount_paid_cents`, `amount_original_cents` | ✅ Sim | 15 |
+| `subscription_coupons` | `finance_billing` | `L14672-L14696` | — | — | 9 |
+| `subscription_invoices` | `finance_billing` | `L14714-L14750` | — | — | 10 |
+| `team_development_profiles` | `clinics_rbac` | `L14764-L14780` | — | — | 4 |
+| `telemetry_events` | `platform_admin` | `L14786-L14797` | — | — | 1 |
+| `user_active_clinic_contexts` | `clinics_rbac` | `L14803-L14807` | — | — | 1 |
+| `user_governance_overrides` | `clinics_rbac` | `L14813-L14818` | — | — | 3 |
+| `user_punishments` | `clinics_rbac` | `L14824-L14834` | — | — | 4 |
+| `user_release_note_states` | `clinics_rbac` | `L14840-L14847` | — | — | 4 |
+| `user_roles` | `clinics_rbac` | `L14853-L14857` | — | — | 0 |
+| `user_security_sessions` | `sessions` | `L14863-L14879` | — | — | 6 |
+| `user_security_settings` | `clinics_rbac` | `L14885-L14894` | — | — | 6 |
+| `user_telemetry_summaries` | `clinics_rbac` | `L14900-L14921` | — | — | 11 |
+| `whatsapp_chat_sessions` | `sessions` | `L14927-L14940` | — | — | 6 |
 
 ## ⚡ Catálogo de Views
 | View | Domínio | Linhas (`schema.sql`) |
@@ -219,110 +219,110 @@
 | `raise_exception_json` | `core_misc` | `L9780-L9786` | `"_message" "text"` |
 | `reconcile_legacy_users_solo_clinic` | `clinics_rbac` | `L9792-L9947` | `` |
 | `record_asaas_webhook_event` | `finance_billing` | `L9953-L9999` | `"_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text" DEFAULT ` |
-| `register_current_security_session` | `sessions` | `L10005-L10176` | `"_session_key" "text", "_browser" "text" DEFAULT NULL::"text", "_platform" "text" DEFAULT ` |
-| `request_account_recovery_status` | `core_misc` | `L10182-L10318` | `"_identifier" "text"` |
-| `resend_clinic_collaborator_invitation` | `clinics_rbac` | `L10324-L10425` | `"_invitation_id" "uuid"` |
-| `reset_whatsapp_chat_sessions` | `sessions` | `L10431-L10465` | `"_phone" "text" DEFAULT NULL::"text"` |
-| `restore_entity_from_trash` | `core_misc` | `L10471-L10575` | `"_entity_type" "text", "_entity_ids" "uuid"[]` |
-| `revoke_clinic_member_access` | `clinics_rbac` | `L10581-L10654` | `"_membership_id" "uuid"` |
-| `revoke_session_share` | `sessions` | `L10660-L10688` | `"_session_id" "uuid", "_user_id" "uuid"` |
-| `revoke_user_punishment` | `clinics_rbac` | `L10694-L10709` | `"_punishment_id" "uuid", "_reason" "text"` |
-| `sanitize_clinical_free_text` | `clinics_rbac` | `L10715-L10752` | `"_text" "text"` |
-| `set_clinic_subscriptions_updated_at` | `clinics_rbac` | `L10758-L10765` | `` |
-| `set_current_user_active_clinic` | `clinics_rbac` | `L10771-L10793` | `"_clinic_id" "uuid"` |
-| `set_current_user_active_clinic_by_route_key` | `clinics_rbac` | `L10799-L10817` | `"_route_key" "text"` |
-| `set_updated_at` | `core_misc` | `L10823-L10830` | `` |
-| `setup_user_totp` | `clinics_rbac` | `L10836-L10861` | `"_totp_secret" "text"` |
-| `share_sessions_with_collaborators` | `sessions` | `L10867-L10949` | `"_session_ids" "uuid"[], "_user_ids" "uuid"[], "_access_level" "text" DEFAULT 'can_evolve'` |
-| `slugify_text` | `core_misc` | `L10955-L10979` | `"_val" "text"` |
-| `start_platform_clinic_access` | `anamnesis_forms` | `L10985-L11045` | `"_clinic_id" "uuid", "_reason" "text"` |
-| `submit_patient_registration_form` | `patients` | `L11051-L11257` | `"_token" "text", "_password" "text", "_payload" "jsonb"` |
-| `submit_user_platform_feedback` | `anamnesis_forms` | `L11263-L11344` | `"_clinic_id" "uuid", "_ratings" "jsonb", "_problem_report" "text" DEFAULT NULL::"text", "_` |
-| `sync_clinic_daily_metrics` | `clinics_rbac` | `L11350-L11399` | `` |
-| `sync_clinic_limits_from_subscription` | `clinics_rbac` | `L11405-L11453` | `` |
-| `sync_payment_plan_used_sessions` | `sessions` | `L11459-L11483` | `` |
-| `sync_session_to_billing` | `sessions` | `L11489-L11543` | `` |
-| `toggle_community_template_like` | `anamnesis_forms` | `L11549-L11582` | `"p_template_id" "uuid"` |
-| `toggle_subscription_auto_renew` | `finance_billing` | `L11588-L11616` | `"_clinic_id" "uuid", "_auto_renew" boolean` |
-| `touch_notification_preferences_updated_at` | `whatsapp_notifications` | `L11622-L11630` | `` |
-| `touch_platform_feedbacks_updated_at` | `anamnesis_forms` | `L11636-L11643` | `` |
-| `trg_auto_assign_patient_code` | `patients` | `L11649-L11662` | `` |
-| `trg_increment_row_version` | `core_misc` | `L11668-L11675` | `` |
-| `trg_patient_groups_set_clinic_id` | `patients` | `L11681-L11691` | `` |
-| `trim_user_notifications` | `clinics_rbac` | `L11697-L11714` | `"_user_id" "uuid"` |
-| `update_clinic_billing_due_window` | `clinics_rbac` | `L11720-L11846` | `"_clinic_id" "uuid", "_window" "text"` |
-| `update_clinic_collaborator_invitation` | `clinics_rbac` | `L11852-L11896` | `"_invitation_id" "uuid", "_operational_role" "public"."operational_role_type" DEFAULT 'pro` |
-| `update_clinic_concurrent_accesses` | `clinics_rbac` | `L11902-L11978` | `"_clinic_id" "uuid", "_extra_concurrent" integer` |
-| `update_clinic_member_operational_fields` | `clinics_rbac` | `L11984-L12088` | `"_membership_id" "uuid", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEF` |
-| `update_clinic_subaccount` | `clinics_rbac` | `L12094-L12210` | `"_membership_id" "uuid", "_full_name" "text" DEFAULT NULL::"text", "_email" "text" DEFAULT` |
-| `update_clinic_subaccount_profile` | `clinics_rbac` | `L12216-L12383` | `"_membership_id" "uuid", "_full_name" "text" DEFAULT NULL::"text", "_social_name" "text" D` |
-| `update_current_profile` | `clinics_rbac` | `L12389-L12510` | `"_full_name" "text" DEFAULT NULL::"text", "_social_name" "text" DEFAULT NULL::"text", "_em` |
-| `update_current_user_notification_preferences` | `clinics_rbac` | `L12516-L12543` | `"_sound_mode" "text" DEFAULT NULL::"text", "_sound_key" "text" DEFAULT NULL::"text", "_not` |
-| `update_patient_guardian_consent` | `patients` | `L12549-L12598` | `"_patient_id" "uuid", "_consent_payload" "jsonb"` |
-| `update_team_development_profile` | `clinics_rbac` | `L12604-L12670` | `"_user_id" "uuid", "_development_status" "text" DEFAULT NULL::"text", "_internal_level" "t` |
-| `update_updated_at_column` | `core_misc` | `L12676-L12684` | `` |
-| `upsert_current_user_security_settings` | `clinics_rbac` | `L12690-L12743` | `"_alert_password_changed" boolean DEFAULT NULL::boolean, "_alert_new_login" boolean DEFAUL` |
-| `upsert_feature_flag` | `platform_admin` | `L12749-L12936` | `"_key" "text", "_scope" "public"."feature_flag_scope", "_clinic_id" "uuid" DEFAULT NULL::"` |
-| `upsert_user_telemetry_summary` | `clinics_rbac` | `L12942-L13040` | `"_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" intege` |
-| `user_has_active_clinic_membership` | `clinics_rbac` | `L13046-L13067` | `"_user_id" "uuid", "_clinic_id" "uuid"` |
-| `validate_subscription_coupon` | `finance_billing` | `L13073-L13148` | `"_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text"` |
-| `validate_subscription_coupon` | `finance_billing` | `L13154-L13434` | `"_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text", "_clinic_id" "uuid" DEFAULT ` |
-| `validate_user_clinic` | `clinics_rbac` | `L13440-L13453` | `"_user_id" "uuid", "_cnpj" "text"` |
-| `verify_password_recovery_identity` | `core_misc` | `L13459-L13484` | `"_email" "text", "_cpf" "text"` |
+| `register_current_security_session` | `sessions` | `L10005-L10200` | `"_session_key" "text", "_browser" "text" DEFAULT NULL::"text", "_platform" "text" DEFAULT ` |
+| `request_account_recovery_status` | `core_misc` | `L10206-L10342` | `"_identifier" "text"` |
+| `resend_clinic_collaborator_invitation` | `clinics_rbac` | `L10348-L10449` | `"_invitation_id" "uuid"` |
+| `reset_whatsapp_chat_sessions` | `sessions` | `L10455-L10489` | `"_phone" "text" DEFAULT NULL::"text"` |
+| `restore_entity_from_trash` | `core_misc` | `L10495-L10599` | `"_entity_type" "text", "_entity_ids" "uuid"[]` |
+| `revoke_clinic_member_access` | `clinics_rbac` | `L10605-L10678` | `"_membership_id" "uuid"` |
+| `revoke_session_share` | `sessions` | `L10684-L10712` | `"_session_id" "uuid", "_user_id" "uuid"` |
+| `revoke_user_punishment` | `clinics_rbac` | `L10718-L10733` | `"_punishment_id" "uuid", "_reason" "text"` |
+| `sanitize_clinical_free_text` | `clinics_rbac` | `L10739-L10776` | `"_text" "text"` |
+| `set_clinic_subscriptions_updated_at` | `clinics_rbac` | `L10782-L10789` | `` |
+| `set_current_user_active_clinic` | `clinics_rbac` | `L10795-L10817` | `"_clinic_id" "uuid"` |
+| `set_current_user_active_clinic_by_route_key` | `clinics_rbac` | `L10823-L10841` | `"_route_key" "text"` |
+| `set_updated_at` | `core_misc` | `L10847-L10854` | `` |
+| `setup_user_totp` | `clinics_rbac` | `L10860-L10885` | `"_totp_secret" "text"` |
+| `share_sessions_with_collaborators` | `sessions` | `L10891-L10973` | `"_session_ids" "uuid"[], "_user_ids" "uuid"[], "_access_level" "text" DEFAULT 'can_evolve'` |
+| `slugify_text` | `core_misc` | `L10979-L11003` | `"_val" "text"` |
+| `start_platform_clinic_access` | `anamnesis_forms` | `L11009-L11069` | `"_clinic_id" "uuid", "_reason" "text"` |
+| `submit_patient_registration_form` | `patients` | `L11075-L11281` | `"_token" "text", "_password" "text", "_payload" "jsonb"` |
+| `submit_user_platform_feedback` | `anamnesis_forms` | `L11287-L11368` | `"_clinic_id" "uuid", "_ratings" "jsonb", "_problem_report" "text" DEFAULT NULL::"text", "_` |
+| `sync_clinic_daily_metrics` | `clinics_rbac` | `L11374-L11423` | `` |
+| `sync_clinic_limits_from_subscription` | `clinics_rbac` | `L11429-L11477` | `` |
+| `sync_payment_plan_used_sessions` | `sessions` | `L11483-L11507` | `` |
+| `sync_session_to_billing` | `sessions` | `L11513-L11567` | `` |
+| `toggle_community_template_like` | `anamnesis_forms` | `L11573-L11606` | `"p_template_id" "uuid"` |
+| `toggle_subscription_auto_renew` | `finance_billing` | `L11612-L11640` | `"_clinic_id" "uuid", "_auto_renew" boolean` |
+| `touch_notification_preferences_updated_at` | `whatsapp_notifications` | `L11646-L11654` | `` |
+| `touch_platform_feedbacks_updated_at` | `anamnesis_forms` | `L11660-L11667` | `` |
+| `trg_auto_assign_patient_code` | `patients` | `L11673-L11686` | `` |
+| `trg_increment_row_version` | `core_misc` | `L11692-L11699` | `` |
+| `trg_patient_groups_set_clinic_id` | `patients` | `L11705-L11715` | `` |
+| `trim_user_notifications` | `clinics_rbac` | `L11721-L11738` | `"_user_id" "uuid"` |
+| `update_clinic_billing_due_window` | `clinics_rbac` | `L11744-L11870` | `"_clinic_id" "uuid", "_window" "text"` |
+| `update_clinic_collaborator_invitation` | `clinics_rbac` | `L11876-L11920` | `"_invitation_id" "uuid", "_operational_role" "public"."operational_role_type" DEFAULT 'pro` |
+| `update_clinic_concurrent_accesses` | `clinics_rbac` | `L11926-L12002` | `"_clinic_id" "uuid", "_extra_concurrent" integer` |
+| `update_clinic_member_operational_fields` | `clinics_rbac` | `L12008-L12112` | `"_membership_id" "uuid", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEF` |
+| `update_clinic_subaccount` | `clinics_rbac` | `L12118-L12234` | `"_membership_id" "uuid", "_full_name" "text" DEFAULT NULL::"text", "_email" "text" DEFAULT` |
+| `update_clinic_subaccount_profile` | `clinics_rbac` | `L12240-L12407` | `"_membership_id" "uuid", "_full_name" "text" DEFAULT NULL::"text", "_social_name" "text" D` |
+| `update_current_profile` | `clinics_rbac` | `L12413-L12534` | `"_full_name" "text" DEFAULT NULL::"text", "_social_name" "text" DEFAULT NULL::"text", "_em` |
+| `update_current_user_notification_preferences` | `clinics_rbac` | `L12540-L12567` | `"_sound_mode" "text" DEFAULT NULL::"text", "_sound_key" "text" DEFAULT NULL::"text", "_not` |
+| `update_patient_guardian_consent` | `patients` | `L12573-L12622` | `"_patient_id" "uuid", "_consent_payload" "jsonb"` |
+| `update_team_development_profile` | `clinics_rbac` | `L12628-L12694` | `"_user_id" "uuid", "_development_status" "text" DEFAULT NULL::"text", "_internal_level" "t` |
+| `update_updated_at_column` | `core_misc` | `L12700-L12708` | `` |
+| `upsert_current_user_security_settings` | `clinics_rbac` | `L12714-L12767` | `"_alert_password_changed" boolean DEFAULT NULL::boolean, "_alert_new_login" boolean DEFAUL` |
+| `upsert_feature_flag` | `platform_admin` | `L12773-L12960` | `"_key" "text", "_scope" "public"."feature_flag_scope", "_clinic_id" "uuid" DEFAULT NULL::"` |
+| `upsert_user_telemetry_summary` | `clinics_rbac` | `L12966-L13082` | `"_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" intege` |
+| `user_has_active_clinic_membership` | `clinics_rbac` | `L13088-L13109` | `"_user_id" "uuid", "_clinic_id" "uuid"` |
+| `validate_subscription_coupon` | `finance_billing` | `L13115-L13190` | `"_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text"` |
+| `validate_subscription_coupon` | `finance_billing` | `L13196-L13476` | `"_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text", "_clinic_id" "uuid" DEFAULT ` |
+| `validate_user_clinic` | `clinics_rbac` | `L13482-L13495` | `"_user_id" "uuid", "_cnpj" "text"` |
+| `verify_password_recovery_identity` | `core_misc` | `L13501-L13526` | `"_email" "text", "_cpf" "text"` |
 
 ## 🛡️ Resumo de Políticas RLS com Capabilities
 | Tabela | Policy | Linhas | Capabilities Detectadas |
 | :--- | :--- | :--- | :--- |
-| `agenda_events` | `Users delete clinic agenda events` | `L17098-L17098` | `agenda.delete_events` |
-| `agenda_events` | `Users read clinic agenda events` | `L17164-L17164` | `agenda.read` |
-| `agenda_events` | `Users update clinic agenda events` | `L17263-L17263` | `agenda.write` |
-| `agenda_events` | `Users write clinic agenda events` | `L17299-L17299` | `agenda.write` |
-| `anamnesis_form_templates` | `Users delete clinic anamnesis forms` | `L17102-L17102` | `forms.manage` |
-| `anamnesis_form_templates` | `Users read clinic anamnesis forms` | `L17168-L17168` | `forms.read`, `anamnesis_forms.read` |
-| `anamnesis_form_templates` | `Users update clinic anamnesis forms` | `L17267-L17267` | `forms.manage` |
-| `anamnesis_form_templates` | `Users write clinic anamnesis forms` | `L17303-L17303` | `forms.manage` |
-| `clinic_collaborator_invitations` | `Managers read clinic collaborator invitations` | `L16892-L16892` | `subaccounts.read`, `subaccounts.write`, `subaccounts.manage` |
-| `clinic_daily_metrics` | `Users read clinic daily metrics` | `L17172-L17172` | `treasury.read`, `sessions.read` |
-| `clinic_group_color_slots` | `Users read clinic_group_color_slots` | `L17223-L17223` | `patients.read` |
-| `clinic_group_color_slots` | `Users write clinic_group_color_slots` | `L17323-L17323` | `patients.write` |
-| `clinic_health_insurances` | `clinic_health_insurances_delete` | `L17367-L17367` | `treasury.manage` |
-| `clinic_health_insurances` | `clinic_health_insurances_insert` | `L17371-L17371` | `treasury.manage` |
-| `clinic_health_insurances` | `clinic_health_insurances_update` | `L17379-L17379` | `treasury.manage` |
-| `clinic_insurance_procedures` | `clinic_insurance_procedures_all` | `L17386-L17386` | `treasury.manage` |
-| `clinic_memberships` | `Managers insert clinic memberships` | `L16886-L16888` | `subaccounts.write`, `subaccounts.manage` |
-| `clinic_memberships` | `Managers update clinic memberships` | `L16896-L16896` | `subaccounts.manage` |
-| `clinic_operational_role_capabilities` | `role capabilities are manageable by role admins` | `L17525-L17525` | `subaccounts_roles.manage` |
-| `clinic_operational_roles` | `operational roles are manageable by role admins` | `L17439-L17439` | `subaccounts_roles.manage` |
-| `clinic_subscriptions` | `Owners e gestores podem ver a assinatura` | `L16904-L16904` | `subscription_billing.read` |
-| `clinic_terms` | `Users delete clinic terms` | `L17116-L17116` | `clinic_terms.manage` |
-| `clinic_terms` | `Users insert clinic terms` | `L17140-L17140` | `clinic_terms.manage` |
-| `clinic_terms` | `Users read clinic terms` | `L17219-L17219` | `patients.read`, `clinic_terms.manage`, `clinic_profile.read` |
-| `clinic_terms` | `Users update clinic terms` | `L17279-L17279` | `clinic_terms.manage` |
-| `clinical_session_billings` | `Users manage clinic session billings` | `L17152-L17156` | `treasury.manage`, `sessions.write` |
-| `clinical_session_billings` | `Users read clinic session billings` | `L17203-L17205` | `treasury.read`, `sessions.read` |
-| `clinics` | `Users update managed clinic` | `L17283-L17283` | `clinic_profile.manage` |
-| `patient_clinical_snapshots` | `Users read patient_clinical_snapshots` | `L17255-L17255` | `patients.read` |
-| `patient_clinical_snapshots` | `Users write patient_clinical_snapshots` | `L17327-L17327` | `patients.write` |
-| `patient_evolution_groups` | `Users read clinic evolution groups` | `L17176-L17176` | `sessions.read` |
-| `patient_evolution_groups` | `Users write clinic evolution groups` | `L17307-L17307` | `sessions.write` |
-| `patient_file_uploads` | `Users delete patient file uploads` | `L17124-L17124` | `patients.delete`, `patients.write` |
-| `patient_file_uploads` | `Users insert patient file uploads` | `L17144-L17144` | `patients.write` |
-| `patient_file_uploads` | `Users read patient file uploads` | `L17251-L17251` | `patients.read` |
-| `patient_file_uploads` | `Users update patient file uploads` | `L17295-L17295` | `patients.write` |
-| `patient_group_templates` | `Users read clinic patient_group_templates` | `L17184-L17184` | `patients.read` |
-| `patient_group_templates` | `Users write clinic patient_group_templates` | `L17311-L17311` | `patients.write` |
-| `patient_groups` | `Users read clinic patient_groups` | `L17188-L17188` | `patient_groups.read`, `patients_groups.read`, `patients.read`, `sessions.read` |
-| `patient_groups` | `Users write clinic patient_groups` | `L17315-L17315` | `patients.manage_groups`, `patient_groups.write`, `sessions.write` |
-| `patient_health_insurances` | `patient_health_insurances_all` | `L17465-L17465` | `patients.manage`, `sessions.create` |
-| `patients` | `Users delete clinic patients` | `L17112-L17112` | `patients.delete` |
-| `patients` | `Users read clinic patients` | `L17192-L17192` | `patients.read` |
-| `patients` | `Users update clinic patients` | `L17271-L17271` | `patients.write` |
-| `patients` | `Users write clinic patients` | `L17319-L17319` | `patients.write` |
-| `profiles` | `Managers update clinic profiles` | `L16900-L16900` | `subaccounts.manage` |
-| `security_events` | `admins can read clinic security events` | `L17339-L17339` | `subaccounts.manage` |
-| `sessions` | `Users delete clinic draft sessions` | `L17106-L17108` | `session.delete_draft` |
-| `sessions` | `Users insert clinic sessions` | `L17136-L17136` | `sessions.write` |
-| `sessions` | `Users read clinic sessions` | `L17213-L17215` | `sessions.read` |
-| `sessions` | `Users update clinic sessions` | `L17275-L17275` | `sessions.write` |
-| `subscription_invoices` | `Owners e gestores podem ver as faturas` | `L16908-L16910` | `subscription_billing.read` |
-| `team_development_profiles` | `team development readable by clinic admins or self` | `L17551-L17551` | `subaccounts_analytics.read` |
+| `agenda_events` | `Users delete clinic agenda events` | `L17145-L17145` | `agenda.delete_events` |
+| `agenda_events` | `Users read clinic agenda events` | `L17211-L17211` | `agenda.read` |
+| `agenda_events` | `Users update clinic agenda events` | `L17310-L17310` | `agenda.write` |
+| `agenda_events` | `Users write clinic agenda events` | `L17346-L17346` | `agenda.write` |
+| `anamnesis_form_templates` | `Users delete clinic anamnesis forms` | `L17149-L17149` | `forms.manage` |
+| `anamnesis_form_templates` | `Users read clinic anamnesis forms` | `L17215-L17215` | `forms.read`, `anamnesis_forms.read` |
+| `anamnesis_form_templates` | `Users update clinic anamnesis forms` | `L17314-L17314` | `forms.manage` |
+| `anamnesis_form_templates` | `Users write clinic anamnesis forms` | `L17350-L17350` | `forms.manage` |
+| `clinic_collaborator_invitations` | `Managers read clinic collaborator invitations` | `L16939-L16939` | `subaccounts.read`, `subaccounts.write`, `subaccounts.manage` |
+| `clinic_daily_metrics` | `Users read clinic daily metrics` | `L17219-L17219` | `treasury.read`, `sessions.read` |
+| `clinic_group_color_slots` | `Users read clinic_group_color_slots` | `L17270-L17270` | `patients.read` |
+| `clinic_group_color_slots` | `Users write clinic_group_color_slots` | `L17370-L17370` | `patients.write` |
+| `clinic_health_insurances` | `clinic_health_insurances_delete` | `L17414-L17414` | `treasury.manage` |
+| `clinic_health_insurances` | `clinic_health_insurances_insert` | `L17418-L17418` | `treasury.manage` |
+| `clinic_health_insurances` | `clinic_health_insurances_update` | `L17426-L17426` | `treasury.manage` |
+| `clinic_insurance_procedures` | `clinic_insurance_procedures_all` | `L17433-L17433` | `treasury.manage` |
+| `clinic_memberships` | `Managers insert clinic memberships` | `L16933-L16935` | `subaccounts.write`, `subaccounts.manage` |
+| `clinic_memberships` | `Managers update clinic memberships` | `L16943-L16943` | `subaccounts.manage` |
+| `clinic_operational_role_capabilities` | `role capabilities are manageable by role admins` | `L17572-L17572` | `subaccounts_roles.manage` |
+| `clinic_operational_roles` | `operational roles are manageable by role admins` | `L17486-L17486` | `subaccounts_roles.manage` |
+| `clinic_subscriptions` | `Owners e gestores podem ver a assinatura` | `L16951-L16951` | `subscription_billing.read` |
+| `clinic_terms` | `Users delete clinic terms` | `L17163-L17163` | `clinic_terms.manage` |
+| `clinic_terms` | `Users insert clinic terms` | `L17187-L17187` | `clinic_terms.manage` |
+| `clinic_terms` | `Users read clinic terms` | `L17266-L17266` | `patients.read`, `clinic_terms.manage`, `clinic_profile.read` |
+| `clinic_terms` | `Users update clinic terms` | `L17326-L17326` | `clinic_terms.manage` |
+| `clinical_session_billings` | `Users manage clinic session billings` | `L17199-L17203` | `treasury.manage`, `sessions.write` |
+| `clinical_session_billings` | `Users read clinic session billings` | `L17250-L17252` | `treasury.read`, `sessions.read` |
+| `clinics` | `Users update managed clinic` | `L17330-L17330` | `clinic_profile.manage` |
+| `patient_clinical_snapshots` | `Users read patient_clinical_snapshots` | `L17302-L17302` | `patients.read` |
+| `patient_clinical_snapshots` | `Users write patient_clinical_snapshots` | `L17374-L17374` | `patients.write` |
+| `patient_evolution_groups` | `Users read clinic evolution groups` | `L17223-L17223` | `sessions.read` |
+| `patient_evolution_groups` | `Users write clinic evolution groups` | `L17354-L17354` | `sessions.write` |
+| `patient_file_uploads` | `Users delete patient file uploads` | `L17171-L17171` | `patients.delete`, `patients.write` |
+| `patient_file_uploads` | `Users insert patient file uploads` | `L17191-L17191` | `patients.write` |
+| `patient_file_uploads` | `Users read patient file uploads` | `L17298-L17298` | `patients.read` |
+| `patient_file_uploads` | `Users update patient file uploads` | `L17342-L17342` | `patients.write` |
+| `patient_group_templates` | `Users read clinic patient_group_templates` | `L17231-L17231` | `patients.read` |
+| `patient_group_templates` | `Users write clinic patient_group_templates` | `L17358-L17358` | `patients.write` |
+| `patient_groups` | `Users read clinic patient_groups` | `L17235-L17235` | `patient_groups.read`, `patients_groups.read`, `patients.read`, `sessions.read` |
+| `patient_groups` | `Users write clinic patient_groups` | `L17362-L17362` | `patients.manage_groups`, `patient_groups.write`, `sessions.write` |
+| `patient_health_insurances` | `patient_health_insurances_all` | `L17512-L17512` | `patients.manage`, `sessions.create` |
+| `patients` | `Users delete clinic patients` | `L17159-L17159` | `patients.delete` |
+| `patients` | `Users read clinic patients` | `L17239-L17239` | `patients.read` |
+| `patients` | `Users update clinic patients` | `L17318-L17318` | `patients.write` |
+| `patients` | `Users write clinic patients` | `L17366-L17366` | `patients.write` |
+| `profiles` | `Managers update clinic profiles` | `L16947-L16947` | `subaccounts.manage` |
+| `security_events` | `admins can read clinic security events` | `L17386-L17386` | `subaccounts.manage` |
+| `sessions` | `Users delete clinic draft sessions` | `L17153-L17155` | `session.delete_draft` |
+| `sessions` | `Users insert clinic sessions` | `L17183-L17183` | `sessions.write` |
+| `sessions` | `Users read clinic sessions` | `L17260-L17262` | `sessions.read` |
+| `sessions` | `Users update clinic sessions` | `L17322-L17322` | `sessions.write` |
+| `subscription_invoices` | `Owners e gestores podem ver as faturas` | `L16955-L16957` | `subscription_billing.read` |
+| `team_development_profiles` | `team development readable by clinic admins or self` | `L17598-L17598` | `subaccounts_analytics.read` |

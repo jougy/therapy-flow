@@ -60,6 +60,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Backup do Supabase antes de deploy]]
 
 - [[Dicionario de Dados e Catalogo do Supabase]]
+- [[Arquitetura de Telemetria Multicloud 10k CCU, LGPD Zero-PHI e Otimizacao de Disk IO]]
 - [[Plano Diretor de Modernizacao e Governanca do Banco de Dados]]
 - [[Roadmap Tecnico e Otimizacoes Avancadas do Banco de Dados]]
 - [[TDD e checks]]

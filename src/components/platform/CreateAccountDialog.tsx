@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,6 +34,7 @@ export const CreateAccountDialog = ({
   const [accountType, setAccountType] = useState<"clinic_owner" | "solo_owner" | "simple_user">("clinic_owner");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [document, setDocument] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -230,7 +231,28 @@ export const CreateAccountDialog = ({
 
             <div className="space-y-1">
               <Label>Senha inicial</Label>
-              <Input value={password} onChange={(event) => setPassword(event.target.value)} type="password" minLength={6} maxLength={128} required />
+              <div className="relative">
+                <Input
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  type={showPassword ? "text" : "password"}
+                  minLength={6}
+                  maxLength={128}
+                  className="pr-10"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-0 top-0 h-full w-9 text-muted-foreground hover:text-foreground"
+                  title={showPassword ? "Ocultar senha" : "Exibir senha"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  <span className="sr-only">Visualizar senha</span>
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-1">

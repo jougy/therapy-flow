@@ -311,6 +311,14 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     hasToggle: true,
   },
   {
+    key: 'observability_multicloud_engine',
+    label: 'Motor de Telemetria Multicloud & Proteção de Disk I/O (10k+ CCU)',
+    description: 'Controla o roteamento da matriz canônica de tempo por tela (Upstash Redis / Buffer Local / Supabase Batch), ingestão de erros (Axiom 500GB Free / Buffer Local), sanitizador LGPD Zero-PHI e taxa de amostragem para alta escala.',
+    category: 'Governança',
+    hasConfiguration: true,
+    hasToggle: true,
+  },
+  {
     key: 'ui_animations_toggle',
     label: 'Ligar/Desligar Animações UI',
     description: 'Habilita opções para o usuário final reduzir ou desligar micro-animações do sistema.',
