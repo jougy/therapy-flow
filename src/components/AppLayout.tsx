@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
 import ReleaseNotesDialog from "@/components/ReleaseNotesDialog";
 import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
+import { TemporaryPasswordPromptModal } from "@/components/TemporaryPasswordPromptModal";
 import { UserFeedbackModal } from "@/components/UserFeedbackModal";
 import { useFeedbackTrigger } from "@/hooks/useFeedbackTrigger";
 import { SimulationFeatureFlagsModal } from "@/components/SimulationFeatureFlagsModal";
@@ -416,6 +417,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         <>
           <ReleaseNotesDialog />
           <TermsUpdatePromptModal />
+          <TemporaryPasswordPromptModal />
           <UserFeedbackModal
             open={feedbackModalOpen}
             onOpenChange={setFeedbackModalOpen}

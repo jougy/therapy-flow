@@ -1517,7 +1517,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] start_platform_clinic_access (schema.sql L10985-L11045)
+-- [RPC/FUNCTION] start_platform_clinic_access (schema.sql L11009-L11069)
 CREATE OR REPLACE FUNCTION "public"."start_platform_clinic_access"("_clinic_id" "uuid", "_reason" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1580,7 +1580,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] submit_user_platform_feedback (schema.sql L11263-L11344)
+-- [RPC/FUNCTION] submit_user_platform_feedback (schema.sql L11287-L11368)
 CREATE OR REPLACE FUNCTION "public"."submit_user_platform_feedback"("_clinic_id" "uuid", "_ratings" "jsonb", "_problem_report" "text" DEFAULT NULL::"text", "_opinion" "text" DEFAULT NULL::"text", "_page_url" "text" DEFAULT NULL::"text", "_user_agent" "text" DEFAULT NULL::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1664,7 +1664,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] toggle_community_template_like (schema.sql L11549-L11582)
+-- [RPC/FUNCTION] toggle_community_template_like (schema.sql L11573-L11606)
 CREATE OR REPLACE FUNCTION "public"."toggle_community_template_like"("p_template_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1700,7 +1700,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] touch_platform_feedbacks_updated_at (schema.sql L11636-L11643)
+-- [RPC/FUNCTION] touch_platform_feedbacks_updated_at (schema.sql L11660-L11667)
 CREATE OR REPLACE FUNCTION "public"."touch_platform_feedbacks_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -1710,7 +1710,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] anamnesis_form_templates (schema.sql L13528-L13546)
+-- [TABLE] anamnesis_form_templates (schema.sql L13570-L13588)
 CREATE TABLE IF NOT EXISTS "public"."anamnesis_form_templates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -1731,7 +1731,7 @@ CASE
 END))
 );
 
--- [TABLE] community_form_template_comments (schema.sql L13952-L13963)
+-- [TABLE] community_form_template_comments (schema.sql L13994-L14005)
 CREATE TABLE IF NOT EXISTS "public"."community_form_template_comments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "template_id" "uuid" NOT NULL,
@@ -1745,14 +1745,14 @@ CREATE TABLE IF NOT EXISTS "public"."community_form_template_comments" (
     CONSTRAINT "community_form_template_comments_rating_check" CHECK ((("rating" >= 1) AND ("rating" <= 5)))
 );
 
--- [TABLE] community_form_template_likes (schema.sql L13969-L13973)
+-- [TABLE] community_form_template_likes (schema.sql L14011-L14015)
 CREATE TABLE IF NOT EXISTS "public"."community_form_template_likes" (
     "template_id" "uuid" NOT NULL,
     "user_id" "uuid" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] community_form_templates (schema.sql L13979-L13998)
+-- [TABLE] community_form_templates (schema.sql L14021-L14040)
 CREATE TABLE IF NOT EXISTS "public"."community_form_templates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -1774,7 +1774,7 @@ CREATE TABLE IF NOT EXISTS "public"."community_form_templates" (
     "fields_count" smallint DEFAULT 0 NOT NULL
 );
 
--- [TABLE] platform_admins (schema.sql L14306-L14313)
+-- [TABLE] platform_admins (schema.sql L14348-L14355)
 CREATE TABLE IF NOT EXISTS "public"."platform_admins" (
     "user_id" "uuid" NOT NULL,
     "role" "public"."platform_admin_role" DEFAULT 'platform_owner'::"public"."platform_admin_role" NOT NULL,
@@ -1784,7 +1784,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_admins" (
     "last_used_at" timestamp with time zone
 );
 
--- [TABLE] platform_audit_events (schema.sql L14319-L14330)
+-- [TABLE] platform_audit_events (schema.sql L14361-L14372)
 CREATE TABLE IF NOT EXISTS "public"."platform_audit_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "actor_user_id" "uuid" NOT NULL,
@@ -1798,7 +1798,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_audit_events" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] platform_error_logs (schema.sql L14350-L14361)
+-- [TABLE] platform_error_logs (schema.sql L14392-L14403)
 CREATE TABLE IF NOT EXISTS "public"."platform_error_logs" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -1812,7 +1812,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_error_logs" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] platform_feedbacks (schema.sql L14367-L14385)
+-- [TABLE] platform_feedbacks (schema.sql L14409-L14427)
 CREATE TABLE IF NOT EXISTS "public"."platform_feedbacks" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -1833,7 +1833,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_feedbacks" (
     CONSTRAINT "platform_feedbacks_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'reviewed'::"text", 'archived'::"text"])))
 );
 
--- [TABLE] platform_onboarding_meetings (schema.sql L14391-L14407)
+-- [TABLE] platform_onboarding_meetings (schema.sql L14433-L14449)
 CREATE TABLE IF NOT EXISTS "public"."platform_onboarding_meetings" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "lead_name" "text" NOT NULL,
@@ -1852,7 +1852,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_onboarding_meetings" (
     CONSTRAINT "platform_onboarding_meetings_status_check" CHECK (("status" = ANY (ARRAY['scheduled'::"text", 'completed'::"text", 'canceled'::"text", 'rescheduled'::"text", 'no_show'::"text"])))
 );
 
--- [TABLE] platform_release_note_items (schema.sql L14417-L14426)
+-- [TABLE] platform_release_note_items (schema.sql L14459-L14468)
 CREATE TABLE IF NOT EXISTS "public"."platform_release_note_items" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "release_id" "uuid" NOT NULL,
@@ -1864,7 +1864,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_release_note_items" (
     CONSTRAINT "platform_release_note_items_title_not_blank" CHECK (("btrim"("title") <> ''::"text"))
 );
 
--- [TABLE] platform_releases (schema.sql L14432-L14445)
+-- [TABLE] platform_releases (schema.sql L14474-L14487)
 CREATE TABLE IF NOT EXISTS "public"."platform_releases" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "version" "text" NOT NULL,
@@ -1880,98 +1880,98 @@ CREATE TABLE IF NOT EXISTS "public"."platform_releases" (
     CONSTRAINT "platform_releases_version_order_positive" CHECK (("version_order" > 0))
 );
 
--- [POLICY] Anon can insert error logs ON platform_error_logs (schema.sql L16808-L16808)
+-- [POLICY] Anon can insert error logs ON platform_error_logs (schema.sql L16855-L16855)
 CREATE POLICY "Anon can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "anon" WITH CHECK (("user_id" IS NULL));
 
--- [POLICY] Anyone authenticated can view published community templates ON community_form_templates (schema.sql L16816-L16816)
+-- [POLICY] Anyone authenticated can view published community templates ON community_form_templates (schema.sql L16863-L16863)
 CREATE POLICY "Anyone authenticated can view published community templates" ON "public"."community_form_templates" FOR SELECT TO "authenticated" USING ((("is_published" = true) OR ("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authenticated users can insert comments ON community_form_template_comments (schema.sql L16820-L16820)
+-- [POLICY] Authenticated users can insert comments ON community_form_template_comments (schema.sql L16867-L16867)
 CREATE POLICY "Authenticated users can insert comments" ON "public"."community_form_template_comments" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can insert error logs ON platform_error_logs (schema.sql L16824-L16824)
+-- [POLICY] Authenticated users can insert error logs ON platform_error_logs (schema.sql L16871-L16871)
 CREATE POLICY "Authenticated users can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "authenticated" WITH CHECK ((("auth"."uid"() IS NULL) OR ("user_id" = "auth"."uid"())));
 
--- [POLICY] Authenticated users can manage their own likes ON community_form_template_likes (schema.sql L16836-L16836)
+-- [POLICY] Authenticated users can manage their own likes ON community_form_template_likes (schema.sql L16883-L16883)
 CREATE POLICY "Authenticated users can manage their own likes" ON "public"."community_form_template_likes" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can publish community templates ON community_form_templates (schema.sql L16840-L16840)
+-- [POLICY] Authenticated users can publish community templates ON community_form_templates (schema.sql L16887-L16887)
 CREATE POLICY "Authenticated users can publish community templates" ON "public"."community_form_templates" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can read comments ON community_form_template_comments (schema.sql L16844-L16844)
+-- [POLICY] Authenticated users can read comments ON community_form_template_comments (schema.sql L16891-L16891)
 CREATE POLICY "Authenticated users can read comments" ON "public"."community_form_template_comments" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Authenticated users can remove their own likes ON community_form_template_likes (schema.sql L16848-L16848)
+-- [POLICY] Authenticated users can remove their own likes ON community_form_template_likes (schema.sql L16895-L16895)
 CREATE POLICY "Authenticated users can remove their own likes" ON "public"."community_form_template_likes" FOR DELETE TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can view template likes ON community_form_template_likes (schema.sql L16856-L16856)
+-- [POLICY] Authenticated users can view template likes ON community_form_template_likes (schema.sql L16903-L16903)
 CREATE POLICY "Authenticated users can view template likes" ON "public"."community_form_template_likes" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Authenticated users insert own feedback ON platform_feedbacks (schema.sql L16864-L16864)
+-- [POLICY] Authenticated users insert own feedback ON platform_feedbacks (schema.sql L16911-L16911)
 CREATE POLICY "Authenticated users insert own feedback" ON "public"."platform_feedbacks" FOR INSERT TO "authenticated" WITH CHECK (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR ("user_id" IS NULL)));
 
--- [POLICY] Authenticated users read platform releases ON platform_releases (schema.sql L16868-L16868)
+-- [POLICY] Authenticated users read platform releases ON platform_releases (schema.sql L16915-L16915)
 CREATE POLICY "Authenticated users read platform releases" ON "public"."platform_releases" FOR SELECT TO "authenticated" USING ((("is_active" = true) OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authenticated users read release note items ON platform_release_note_items (schema.sql L16872-L16874)
+-- [POLICY] Authenticated users read release note items ON platform_release_note_items (schema.sql L16919-L16921)
 CREATE POLICY "Authenticated users read release note items" ON "public"."platform_release_note_items" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_releases"
   WHERE (("platform_releases"."id" = "platform_release_note_items"."release_id") AND (("platform_releases"."is_active" = true) OR "public"."is_platform_owner"("auth"."uid"()))))));
 
--- [POLICY] Authors, super admins and platform owners can delete community  ON community_form_templates (schema.sql L16878-L16878)
+-- [POLICY] Authors, super admins and platform owners can delete community  ON community_form_templates (schema.sql L16925-L16925)
 CREATE POLICY "Authors, super admins and platform owners can delete community " ON "public"."community_form_templates" FOR DELETE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authors, super admins and platform owners can update community  ON community_form_templates (schema.sql L16882-L16882)
+-- [POLICY] Authors, super admins and platform owners can update community  ON community_form_templates (schema.sql L16929-L16929)
 CREATE POLICY "Authors, super admins and platform owners can update community " ON "public"."community_form_templates" FOR UPDATE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"()))) WITH CHECK ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Platform admins can view platform error logs ON platform_error_logs (schema.sql L16914-L16914)
+-- [POLICY] Platform admins can view platform error logs ON platform_error_logs (schema.sql L16961-L16961)
 CREATE POLICY "Platform admins can view platform error logs" ON "public"."platform_error_logs" FOR SELECT TO "authenticated" USING (("public"."is_platform_admin"("auth"."uid"()) OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Platform admins podem gerenciar platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L16918-L16922)
+-- [POLICY] Platform admins podem gerenciar platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L16965-L16969)
 CREATE POLICY "Platform admins podem gerenciar platform_onboarding_meetings" ON "public"."platform_onboarding_meetings" TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform owner manage feedbacks ON platform_feedbacks (schema.sql L16966-L16966)
+-- [POLICY] Platform owner manage feedbacks ON platform_feedbacks (schema.sql L17013-L17013)
 CREATE POLICY "Platform owner manage feedbacks" ON "public"."platform_feedbacks" TO "authenticated" USING ("public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid"))) WITH CHECK ("public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid")));
 
--- [POLICY] Platform owners manage platform release note items ON platform_release_note_items (schema.sql L17002-L17002)
+-- [POLICY] Platform owners manage platform release note items ON platform_release_note_items (schema.sql L17049-L17049)
 CREATE POLICY "Platform owners manage platform release note items" ON "public"."platform_release_note_items" TO "authenticated" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Platform owners manage platform releases ON platform_releases (schema.sql L17006-L17006)
+-- [POLICY] Platform owners manage platform releases ON platform_releases (schema.sql L17053-L17053)
 CREATE POLICY "Platform owners manage platform releases" ON "public"."platform_releases" TO "authenticated" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Platform owners read platform admins ON platform_admins (schema.sql L17010-L17010)
+-- [POLICY] Platform owners read platform admins ON platform_admins (schema.sql L17057-L17057)
 CREATE POLICY "Platform owners read platform admins" ON "public"."platform_admins" FOR SELECT TO "authenticated" USING (("public"."is_platform_owner_mfa_verified"("auth"."uid"()) OR ("user_id" = "auth"."uid"())));
 
--- [POLICY] Platform owners read platform audit ON platform_audit_events (schema.sql L17014-L17014)
+-- [POLICY] Platform owners read platform audit ON platform_audit_events (schema.sql L17061-L17061)
 CREATE POLICY "Platform owners read platform audit" ON "public"."platform_audit_events" FOR SELECT TO "authenticated" USING ("public"."is_platform_owner_mfa_verified"("auth"."uid"()));
 
--- [POLICY] Service role tem acesso total a platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L17022-L17022)
+-- [POLICY] Service role tem acesso total a platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L17069-L17069)
 CREATE POLICY "Service role tem acesso total a platform_onboarding_meetings" ON "public"."platform_onboarding_meetings" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Super admins manage all anamnesis form templates ON anamnesis_form_templates (schema.sql L17034-L17034)
+-- [POLICY] Super admins manage all anamnesis form templates ON anamnesis_form_templates (schema.sql L17081-L17081)
 CREATE POLICY "Super admins manage all anamnesis form templates" ON "public"."anamnesis_form_templates" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users and admins can delete own comments ON community_form_template_comments (schema.sql L17078-L17078)
+-- [POLICY] Users and admins can delete own comments ON community_form_template_comments (schema.sql L17125-L17125)
 CREATE POLICY "Users and admins can delete own comments" ON "public"."community_form_template_comments" FOR DELETE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Users delete clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17102-L17102)
+-- [POLICY] Users delete clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17149-L17149)
 CREATE POLICY "Users delete clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17168-L17168)
+-- [POLICY] Users read clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17215-L17215)
 CREATE POLICY "Users read clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('forms.read'::"text", "clinic_id") OR "public"."current_user_can"('anamnesis_forms.read'::"text", "clinic_id"))));
 
--- [POLICY] Users read own feedback ON platform_feedbacks (schema.sql L17239-L17239)
+-- [POLICY] Users read own feedback ON platform_feedbacks (schema.sql L17286-L17286)
 CREATE POLICY "Users read own feedback" ON "public"."platform_feedbacks" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR "public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid"))));
 
--- [POLICY] Users update clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17267-L17267)
+-- [POLICY] Users update clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17314-L17314)
 CREATE POLICY "Users update clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users write clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17303-L17303)
+-- [POLICY] Users write clinic anamnesis forms ON anamnesis_form_templates (schema.sql L17350-L17350)
 CREATE POLICY "Users write clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Usuarios autenticados podem visualizar suas reunioes de onboard ON platform_onboarding_meetings (schema.sql L17335-L17335)
+-- [POLICY] Usuarios autenticados podem visualizar suas reunioes de onboard ON platform_onboarding_meetings (schema.sql L17382-L17382)
 CREATE POLICY "Usuarios autenticados podem visualizar suas reunioes de onboard" ON "public"."platform_onboarding_meetings" FOR SELECT TO "authenticated" USING (("created_by" = "auth"."uid"()));

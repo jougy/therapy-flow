@@ -12,13 +12,28 @@ on:
 jobs:
   push-migrations:
     runs-on: ubuntu-latest
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Authenticate to Pulumi ESC via OIDC
+        uses: pulumi/auth-actions@v1
+        with:
+          organization: joao-tdoval-gmail-com-org
+          requested-token-type: urn:pulumi:token-type:personal
+
+      - name: Setup Pulumi ESC CLI
+        uses: pulumi/setup-pulumi@v2
+
+      - name: Pull Production Secrets from Pulumi ESC
+        run: |
+          pulumi env open joao-tdoval-gmail-com-org/plurihealth/pluri-prod --format dotenv > /tmp/prod.env
+          cat /tmp/prod.env >> "$GITHUB_ENV"
+          rm -f /tmp/prod.env
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
