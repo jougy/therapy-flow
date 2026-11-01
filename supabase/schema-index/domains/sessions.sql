@@ -1529,8 +1529,8 @@ CREATE POLICY "Usuarios autenticados podem visualizar sua propria sessao de wh" 
 -- [POLICY] users can read own security sessions ON user_security_sessions (schema.sql L17636-L17636)
 CREATE POLICY "users can read own security sessions" ON "public"."user_security_sessions" FOR SELECT USING (("user_id" = "auth"."uid"()));
 
--- [RPC/FUNCTION] rpc_book_appointment_atomic (schema.sql L19320-L19333)
-CREATE OR REPLACE FUNCTION public.rpc_book_appointment_atomic(
+-- [RPC/FUNCTION] rpc_book_appointment_safe (schema.sql L19320-L19333)
+CREATE OR REPLACE FUNCTION public.rpc_book_appointment_safe(
   _clinic_id uuid,
   _provider_id uuid,
   _patient_id uuid DEFAULT NULL,
