@@ -1913,6 +1913,14 @@ const PacienteDetalhe = () => {
 
       const data = insertedResult.data;
 
+      if (data?.id && (newEventData.notifyPatient || newEventData.notifyTeam)) {
+        void supabase.functions.invoke("agenda-whatsapp-reminders", {
+          body: { action: "notify_new_booking", eventId: data.id },
+        }).catch((err) => {
+          console.warn("[PacienteDetalhe] Falha ao disparar notificação de WhatsApp:", err);
+        });
+      }
+
       if (data) {
         optimisticAddAgendaEvent(data as AgendaEvent);
       }

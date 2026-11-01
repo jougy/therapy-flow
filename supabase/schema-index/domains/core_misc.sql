@@ -1523,3 +1523,13 @@ CREATE POLICY "admins can read clinic security events" ON "public"."security_eve
 
 -- [POLICY] users can read own security events ON security_events (schema.sql L17632-L17632)
 CREATE POLICY "users can read own security events" ON "public"."security_events" FOR SELECT USING ((("actor_user_id" = "auth"."uid"()) OR ("target_user_id" = "auth"."uid"())));
+
+-- [RPC/FUNCTION] rpc_get_available_slots (schema.sql L19245-L19252)
+CREATE OR REPLACE FUNCTION public.rpc_get_available_slots(
+  _clinic_id uuid,
+  _provider_id uuid,
+  _date date
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER

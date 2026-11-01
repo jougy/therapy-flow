@@ -1,10 +1,10 @@
 # 🗄️ Índice Modular do Schema Supabase (SSOT Index)
 
-> **Gerado automaticamente** a partir de `supabase/schema.sql` (19230 linhas).
+> **Gerado automaticamente** a partir de `supabase/schema.sql` (19486 linhas).
 > **Regra de Economia de Tokens:** Nunca leia `supabase/schema.sql` inteiro. Consulte este índice ou abra diretamente `supabase/schema-index/domains/<dominio>.sql` ou use `view_file` com `StartLine`/`EndLine` exatos abaixo.
 
 ## 📊 Resumo Estrutural
-- **Tabelas:** 59 | **Views:** 0 | **RPCs/Funções:** 181 | **Políticas RLS:** 144
+- **Tabelas:** 59 | **Views:** 0 | **RPCs/Funções:** 183 | **Políticas RLS:** 144
 - **Overloads detectados (Risco PGRST203):** activate_clinic_free_trial (2x), handle_signup (4x), validate_subscription_coupon (2x)
 
 ## 📁 Arquivos de Domínio (`supabase/schema-index/domains/`)
@@ -227,6 +227,8 @@
 | `revoke_clinic_member_access` | `clinics_rbac` | `L10605-L10678` | `"_membership_id" "uuid"` |
 | `revoke_session_share` | `sessions` | `L10684-L10712` | `"_session_id" "uuid", "_user_id" "uuid"` |
 | `revoke_user_punishment` | `clinics_rbac` | `L10718-L10733` | `"_punishment_id" "uuid", "_reason" "text"` |
+| `rpc_book_appointment_atomic` | `sessions` | `L19320-L19333` | `` |
+| `rpc_get_available_slots` | `core_misc` | `L19245-L19252` | `` |
 | `sanitize_clinical_free_text` | `clinics_rbac` | `L10739-L10776` | `"_text" "text"` |
 | `set_clinic_subscriptions_updated_at` | `clinics_rbac` | `L10782-L10789` | `` |
 | `set_current_user_active_clinic` | `clinics_rbac` | `L10795-L10817` | `"_clinic_id" "uuid"` |

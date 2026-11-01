@@ -85,12 +85,9 @@ const getDateInputValue = (date = new Date()) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
-
   return `${year}-${month}-${day}`;
 };
-
 const getLocalDay = (date = new Date()) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
 const getLocalDayTimestamp = (date = new Date()) => getLocalDay(date).getTime();
 
 const getTimeInputValue = (value: string) => {
@@ -412,13 +409,14 @@ const AgendaWidget = ({
           .single();
       }
 
-      if (insertedResult.error) {
-        throw insertedResult.error;
-      }
-
+      if (insertedResult.error) throw insertedResult.error;
       const data = insertedResult.data;
-
       if (data) {
+        if (data.id && (formData.notifyPatient || formData.notifyTeam)) {
+          void supabase.functions.invoke("agenda-whatsapp-reminders", {
+            body: { action: "notify_new_booking", eventId: data.id },
+          }).catch(() => {});
+        }
         setEvents((previous) => [
           ...previous,
           {

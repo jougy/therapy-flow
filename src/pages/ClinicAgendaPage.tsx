@@ -554,6 +554,15 @@ export default function ClinicAgendaPage() {
       const inserted = insertedResult.data;
 
       if (inserted) {
+        // Dispara lembretes / notificações automáticas via WhatsApp se configurado
+        if (inserted.id && (data.notifyPatient || data.notifyTeam)) {
+          void supabase.functions.invoke("agenda-whatsapp-reminders", {
+            body: { action: "notify_new_booking", eventId: inserted.id },
+          }).catch((err) => {
+            console.warn("[ClinicAgendaPage] Falha ao disparar notificação de WhatsApp:", err);
+          });
+        }
+
         const newEvent: AgendaEventItem = {
           id: inserted.id,
           eventType: inserted.event_type as AgendaEventType,

@@ -11,10 +11,14 @@
             "id": "832fa72ed7879d24",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Visualização em gráfico"
+              "type": "markdown",
+              "state": {
+                "file": "10 - Produto/Marketing de Afiliados/Features CRM/00 - Indice de Features do CRM.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "00 - Indice de Features do CRM"
             }
           }
         ]
@@ -184,6 +188,8 @@
   },
   "active": "832fa72ed7879d24",
   "lastOpenFiles": [
+    "40 - Modulos/Filtros Sob Demanda e Reset de Cadastros no Backoffice.md",
+    "40 - Modulos/Campo Modular de Lista Simples e Agrupamentos.md",
     "00 - Navegacao/Mapa da vault.md",
     "00 - Navegacao/Kanban de Tarefas.md",
     "00 - Navegacao/Arquivo Kanban/Historico Concluidos.md",
@@ -218,8 +224,6 @@
     "Projetos/Harness IA/Ferramentas/Index.md",
     "Projetos/Harness IA/Ferramentas",
     "Projetos/Harness IA/Especificacoes/Index.md",
-    "Projetos/Harness IA/Conversas/Index.md",
-    "Projetos/Harness IA/02 - Sumario Executivo.md",
     "Sem título.canvas"
   ]
 }

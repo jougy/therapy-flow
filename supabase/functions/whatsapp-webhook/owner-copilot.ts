@@ -13,6 +13,10 @@ import {
   getBrasiliaMinutesOfDay,
   ExistingMeeting,
 } from '../_shared/calendar-utils.ts';
+import {
+  getAvailableSlotsCached,
+  invalidateSlotCache,
+} from '../_shared/schedule-cache.ts';
 
 export interface OwnerCustomerContext {
   userId: string | null;
@@ -1910,22 +1914,41 @@ export async function handleAgendaCreationFlow(
     updatedData.dateIso = dateIso;
     updatedData.dateDisplay = dateDisplay;
 
-    // Calcular horários disponíveis com calendar-utils
-    const existingMeetings = clinicId
-      ? await loadExistingMeetingsForClinicDay(supabase, clinicId, dateIso)
-      : [];
+    // Consulta horários disponíveis protegidos por Cache Read-Through no Upstash Redis
+    let windowsText = 'Agenda livre para agendamento.';
+    if (clinicId) {
+      try {
+        const { slots: cachedSlots } = await getAvailableSlotsCached(
+          supabase,
+          clinicId,
+          userId,
+          dateIso
+        );
+        if (cachedSlots && cachedSlots.length > 0) {
+          windowsText = `• ${cachedSlots.slice(0, 14).join(', ')}${cachedSlots.length > 14 ? '...' : ''}`;
+        }
+      } catch (cacheErr) {
+        console.warn('[owner-copilot] Falha ao ler cache de horários, fallback para calendar-utils:', cacheErr);
+      }
+    }
 
-    const { availableWindows } = getAvailableWindowsForDay(dateIso, existingMeetings, 30, {
-      mode: 'clinic_owner',
-      applyThursdayBlock: false,
-      applyLunchBlock: false,
-      allowWeekends: true,
-      bufferMinutes: 0,
-    });
+    if (windowsText === 'Agenda livre para agendamento.') {
+      const existingMeetings = clinicId
+        ? await loadExistingMeetingsForClinicDay(supabase, clinicId, dateIso)
+        : [];
 
-    const windowsText = existingMeetings.length === 0
-      ? 'Agenda 100% livre! Você pode agendar em qualquer horário (06:00 às 22:00).'
-      : formatAvailableWindowsText(availableWindows);
+      const { availableWindows } = getAvailableWindowsForDay(dateIso, existingMeetings, 30, {
+        mode: 'clinic_owner',
+        applyThursdayBlock: false,
+        applyLunchBlock: false,
+        allowWeekends: true,
+        bufferMinutes: 0,
+      });
+
+      windowsText = existingMeetings.length === 0
+        ? 'Agenda 100% livre! Você pode agendar em qualquer horário (06:00 às 22:00).'
+        : formatAvailableWindowsText(availableWindows);
+    }
 
     const promptHorario =
       `📅 *Data Selecionada:* ${dateDisplay} (${dateIso})\n\n` +
@@ -2049,47 +2072,112 @@ async function executeSaveAgendaEvent(
   const eventTitle = title || (patientName ? `Atendimento: ${patientName}` : 'Compromisso Clínico');
   const eventType = subType === 'patient' ? 'atendimento' : subType === 'meeting' ? 'reuniao' : 'evento';
 
-  // 1. Gravação na tabela agenda_events da clínica
-  const { data: insertedEvent, error: insertError } = await supabase
-    .from('agenda_events')
-    .insert({
-      clinic_id: clinicId,
-      user_id: userId,
-      patient_id: patientId || null,
-      event_type: eventType,
-      title: eventTitle,
-      scheduled_for: scheduledIso,
-      duration_minutes: duration,
-      status: 'confirmado',
-    })
-    .select('id')
-    .single();
+  // 1 & 2. Gravação atômica com pessimistic lock prevenindo race conditions e criando agenda_events + sessions
+  let insertError: { message: string } | null = null;
+  let createdEventId: string | null = null;
+  if (typeof supabase?.rpc === 'function') {
+    const { data: atomicResult, error: atomicError } = await supabase.rpc('rpc_book_appointment_atomic', {
+      _clinic_id: clinicId,
+      _provider_id: userId,
+      _patient_id: patientId || null,
+      _start_time: scheduledIso,
+      _event_type: eventType,
+      _title: eventTitle,
+      _notes: collaborators ? `Colaboradores: ${collaborators}` : null,
+      _duration_minutes: duration,
+    });
+    if (atomicError) {
+      insertError = atomicError;
+    } else if (atomicResult && (atomicResult as any).event_id) {
+      createdEventId = (atomicResult as any).event_id;
+    }
+  } else {
+    // Fallback gracioso para ambientes mockados / legados
+    const insertRes = await supabase
+      .from('agenda_events')
+      .insert({
+        clinic_id: clinicId,
+        user_id: userId,
+        patient_id: patientId || null,
+        event_type: eventType,
+        title: eventTitle,
+        scheduled_for: scheduledIso,
+        duration_minutes: duration,
+        status: 'confirmado',
+      });
+    const fallbackInsertErr = insertRes?.error || null;
+    if (fallbackInsertErr) {
+      insertError = fallbackInsertErr;
+    } else {
+      createdEventId = (insertRes?.data as any)?.id || null;
+      if (subType === 'patient' && patientId && userId) {
+        await supabase.from('sessions').insert({
+          clinic_id: clinicId,
+          user_id: userId,
+          patient_id: patientId,
+          scheduled_start_at: scheduledIso,
+          session_date: scheduledIso,
+          status: 'rascunho',
+          notes: collaborators ? `Colaboradores: ${collaborators}` : null,
+        });
+      }
+    }
+  }
 
   if (insertError) {
-    console.error('[owner-copilot] Erro ao salvar agenda_events:', insertError);
+    console.error('[owner-copilot] Erro ao agendar compromisso:', insertError);
+    const isConflict = String(insertError.message).includes('SLOT_ALREADY_BOOKED');
     await whatsAppClient.sendTextMessage(
       phone,
-      `⚠️ Desculpe, não conseguimos gravar o agendamento no momento: ${insertError.message}. Tente novamente.`
+      isConflict
+        ? `⚠️ *Horário Indisponível!* Este horário acabou de ser agendado por outro profissional ou paciente. Por favor, escolha outro horário livre.`
+        : `⚠️ Desculpe, não conseguimos gravar o agendamento no momento: ${insertError.message}. Tente novamente.`
     );
     return { handled: true, nextStep: 'initial', updatedStateData: {} };
   }
 
-  // 2. Se for Atendimento de Paciente, cria também o registro correspondente em sessions
-  if (subType === 'patient' && patientId && userId) {
-    const { error: sessionError } = await supabase
-      .from('sessions')
-      .insert({
-        clinic_id: clinicId,
-        user_id: userId,
-        patient_id: patientId,
-        scheduled_start_at: scheduledIso,
-        session_date: scheduledIso,
-        status: 'rascunho',
-        notes: collaborators ? `Colaboradores: ${collaborators}` : null,
-      });
+  // Invalidação imediata do Cache no Upstash Redis (DEL)
+  if (clinicId && dateIso) {
+    try {
+      await invalidateSlotCache(clinicId, userId, dateIso);
+    } catch (invErr) {
+      console.warn('[owner-copilot] Aviso ao invalidar cache do Redis pós-agendamento:', invErr);
+    }
+  }
 
-    if (sessionError) {
-      console.warn('[owner-copilot] Aviso ao criar sessão complementar para paciente:', sessionError);
+  // Notificação imediata para o paciente via WhatsApp caso haja paciente selecionado
+  if (subType === 'patient' && patientId) {
+    try {
+      // 1. Busca telefone do paciente para confirmação instantânea
+      const { data: pData } = await supabase
+        .from('patients')
+        .select('name, phone')
+        .eq('id', patientId)
+        .maybeSingle();
+
+      const cleanPatPhone = sanitizeWhatsAppNumber(pData?.phone);
+      if (cleanPatPhone && cleanPatPhone !== phone) {
+        const patientGreeting = pData?.name ? `Olá, *${pData.name}*!` : `Olá!`;
+        const patientBookingMsg =
+          `${patientGreeting} 👋\n\n` +
+          `Seu atendimento foi agendado pela equipe da *${clinicName}*:\n\n` +
+          `🗓️ *Data:* ${data.dateDisplay || dateIso}\n` +
+          `⏰ *Horário:* ${time} (Duração: ${duration} min)\n` +
+          `🩺 *Profissional:* ${userName}\n` +
+          `🏥 *Local:* ${clinicName}\n\n` +
+          `Em caso de dúvidas ou necessidade de reagendamento, basta responder a esta mensagem. Até logo! 😊`;
+
+        await whatsAppClient.sendTextMessage(cleanPatPhone, patientBookingMsg);
+      }
+
+      // Se temos o ID do evento, aciona a Edge Function para gravar histórico em reminder_dispatches
+      if (createdEventId && typeof supabase.functions?.invoke === 'function') {
+        void supabase.functions.invoke('agenda-whatsapp-reminders', {
+          body: { action: 'notify_new_booking', eventId: createdEventId },
+        });
+      }
+    } catch (patNotifyErr) {
+      console.warn('[owner-copilot] Aviso ao disparar confirmação de WhatsApp para o paciente:', patNotifyErr);
     }
   }
 
@@ -2602,7 +2690,7 @@ export async function handleAppointmentEditFlow(
   selectedButtonId: string,
   stateData: AgendaStateData
 ): Promise<{ handled: boolean; nextStep: string; updatedStateData: AgendaStateData }> {
-  const { clinicId } = context;
+  const { clinicId, userId } = context;
   if (!clinicId) {
     await whatsAppClient.sendTextMessage(phone, '⚠️ Clínica não identificada para editar este agendamento.');
     return { handled: true, nextStep: 'initial', updatedStateData: {} };
@@ -2718,6 +2806,15 @@ export async function handleAppointmentEditFlow(
             .eq('clinic_id', clinicId)
             .eq('patient_id', existingEvent.patient_id)
             .eq('scheduled_start_at', existingEvent.scheduled_for);
+        }
+
+        // Invalida cache do Redis para a nova data e a data anterior
+        if (clinicId && dateIso) {
+          void invalidateSlotCache(clinicId, userId, dateIso);
+          const prevDateIso = String(existingEvent.scheduled_for).slice(0, 10);
+          if (prevDateIso && prevDateIso !== dateIso) {
+            void invalidateSlotCache(clinicId, userId, prevDateIso);
+          }
         }
 
         await whatsAppClient.sendButtonsMessage(
