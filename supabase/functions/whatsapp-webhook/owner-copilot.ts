@@ -2076,7 +2076,7 @@ async function executeSaveAgendaEvent(
   let insertError: { message: string } | null = null;
   let createdEventId: string | null = null;
   if (typeof supabase?.rpc === 'function') {
-    const { data: atomicResult, error: atomicError } = await supabase.rpc('rpc_book_appointment_atomic', {
+    const { data: atomicResult, error: atomicError } = await supabase.rpc('rpc_book_appointment_safe', {
       _clinic_id: clinicId,
       _provider_id: userId,
       _patient_id: patientId || null,

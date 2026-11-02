@@ -1,10 +1,10 @@
 -- ==============================================================================
--- Migration: 20261031163500_schedule_cache_and_atomic_booking.sql
+-- Migration: 20261031163500_schedule_cache_and_safe_booking.sql
 -- Descrição:
 -- 1. RPC public.rpc_get_available_slots(_clinic_id uuid, _provider_id uuid, _date date):
 --    Consulta horários vagos (08:00 às 20:00, slots de 30 min) verificando conflito
 --    com agenda_events e sessions para a data e profissional informados.
--- 2. RPC public.rpc_book_appointment_atomic(...):
+-- 2. RPC public.rpc_book_appointment_safe(...):
 --    Executa reserva atômica com pessimistic lock (SELECT FOR UPDATE) prevenindo
 --    duplo agendamento concorrente e insere em agenda_events + sessions ('rascunho').
 -- ==============================================================================
@@ -84,8 +84,8 @@ GRANT EXECUTE ON FUNCTION public.rpc_get_available_slots(uuid, uuid, date) TO se
 GRANT EXECUTE ON FUNCTION public.rpc_get_available_slots(uuid, uuid, date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.rpc_get_available_slots(uuid, uuid, date) TO anon;
 
--- 2. RPC: rpc_book_appointment_atomic
-CREATE OR REPLACE FUNCTION public.rpc_book_appointment_atomic(
+-- 2. RPC: rpc_book_appointment_safe
+CREATE OR REPLACE FUNCTION public.rpc_book_appointment_safe(
   _clinic_id uuid,
   _provider_id uuid,
   _patient_id uuid DEFAULT NULL,
@@ -220,9 +220,9 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.rpc_book_appointment_atomic(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) IS
+COMMENT ON FUNCTION public.rpc_book_appointment_safe(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) IS
 'Reserva atômica de agendamento com trava pessimista para prevenção de concorrência e duplo agendamento.';
 
-REVOKE ALL ON FUNCTION public.rpc_book_appointment_atomic(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.rpc_book_appointment_atomic(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.rpc_book_appointment_atomic(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.rpc_book_appointment_safe(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.rpc_book_appointment_safe(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.rpc_book_appointment_safe(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) TO authenticated;

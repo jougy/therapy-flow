@@ -227,7 +227,7 @@
 | `revoke_clinic_member_access` | `clinics_rbac` | `L10605-L10678` | `"_membership_id" "uuid"` |
 | `revoke_session_share` | `sessions` | `L10684-L10712` | `"_session_id" "uuid", "_user_id" "uuid"` |
 | `revoke_user_punishment` | `clinics_rbac` | `L10718-L10733` | `"_punishment_id" "uuid", "_reason" "text"` |
-| `rpc_book_appointment_atomic` | `sessions` | `L19320-L19333` | `` |
+| `rpc_book_appointment_safe` | `sessions` | `L19320-L19333` | `` |
 | `rpc_get_available_slots` | `core_misc` | `L19245-L19252` | `` |
 | `sanitize_clinical_free_text` | `clinics_rbac` | `L10739-L10776` | `"_text" "text"` |
 | `set_clinic_subscriptions_updated_at` | `clinics_rbac` | `L10782-L10789` | `` |
