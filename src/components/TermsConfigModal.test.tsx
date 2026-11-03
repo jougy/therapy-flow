@@ -94,3 +94,20 @@ describe("TermsConfigModal", () => {
     expect(handleClose).toHaveBeenCalled();
   });
 });
+
+  it("renders download button for each document and bulk download button", () => {
+    render(
+      <TermsConfigModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />
+    );
+
+    // Bulk download button in the header
+    expect(screen.getByText("Baixar Todos (.zip)")).toBeInTheDocument();
+
+    // Individual download buttons (there are multiple 'Baixar' buttons)
+    const downloadButtons = screen.getAllByRole("button", { name: /Baixar/i });
+    expect(downloadButtons.length).toBeGreaterThanOrEqual(1);
+  });

@@ -258,13 +258,13 @@ export const HELPERS_PAGE_GROUPS: HelperPageGroup[] = [
       {
         id: "settings-billing-block",
         name: "Assinatura & Faturamento Asaas",
-        description: "Plano Pluri-Health ativo e dados de cobrança.",
+        description: "Plano Pluri Health ativo e dados de cobrança.",
         targetSelector: "[data-tutorial='settings-billing-block']",
       },
       {
         id: "settings-support-block",
         name: "Central de Suporte",
-        description: "Canais de contato direto com o time Pluri-Health.",
+        description: "Canais de contato direto com o time Pluri Health.",
         targetSelector: "[data-tutorial='settings-support-block']",
       },
     ],

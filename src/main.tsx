@@ -4,7 +4,9 @@ import "./index.css";
 import { installGlobalRuntimeDebugHandlers } from "@/lib/runtime-debug";
 import { registerServiceWorker } from "@/lib/register-sw";
 import { registerChunkReloadHandler } from "@/lib/chunk-reload";
+import { initializeDocumentBrand } from "@/hooks/useActiveBrand";
 
+initializeDocumentBrand();
 registerChunkReloadHandler();
 installGlobalRuntimeDebugHandlers();
 registerServiceWorker();

@@ -94,7 +94,7 @@ export const PublishFormTemplateModal: React.FC<PublishFormTemplateModalProps> =
       setDescription(match.description || "");
     }
 
-    const defaultAuthor = profile?.full_name?.trim() || user?.email?.split("@")[0] || "Profissional Pluri-Health";
+    const defaultAuthor = profile?.full_name?.trim() || user?.email?.split("@")[0] || "Profissional Pluri Health";
     setAuthorName(defaultAuthor);
     setTags([]);
     setTagInput("");
@@ -167,7 +167,7 @@ export const PublishFormTemplateModal: React.FC<PublishFormTemplateModalProps> =
         tags,
         schema: selectedTemplate.schema,
         kind: selectedTemplate.kind,
-        author_name: authorName.trim() || "Profissional Pluri-Health",
+        author_name: authorName.trim() || "Profissional Pluri Health",
         clinic_name: includeClinicName ? clinic?.name || null : null,
         clinic_id: clinic?.id || null,
         user_id: user.id,

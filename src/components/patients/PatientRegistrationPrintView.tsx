@@ -93,10 +93,10 @@ export const PatientRegistrationPrintView: React.FC<PatientRegistrationPrintView
           {clinic?.logo_url ? (
             <img src={clinic.logo_url} alt="" className="h-12 max-w-[140px] object-contain rounded" />
           ) : (
-            <img src="/branding/logo/pluri_health_icon_gradient.svg" alt="Pluri-Health" className="h-12 w-12 object-contain" />
+            <img src="/branding/logo/pluri_health_icon_gradient.svg" alt="Pluri Health" className="h-12 w-12 object-contain" />
           )}
           <div>
-            <h1 className="text-xl font-bold text-slate-900 leading-tight uppercase tracking-tight">{clinic?.name ?? "Pluri-Health"}</h1>
+            <h1 className="text-xl font-bold text-slate-900 leading-tight uppercase tracking-tight">{clinic?.name ?? "Pluri Health"}</h1>
             <p className="text-xs font-semibold text-slate-700">Dossiê de Dados Cadastrais e Perfil de Saúde do Paciente</p>
             <p className="text-[10px] text-slate-500 mt-0.5">
               Conformidade LGPD — Lei Federal nº 13.709/2018 (Art. 18: Livre Acesso e Portabilidade de Dados Pessoais)
@@ -376,7 +376,7 @@ export const PatientRegistrationPrintView: React.FC<PatientRegistrationPrintView
         </div>
 
         <div className="border-t border-slate-200 pt-2 flex justify-between items-center text-[9px] text-slate-400">
-          <span>Pluri-Health • Sistema de Gestão em Saúde • https://pluri.health</span>
+          <span>Pluri Health • Sistema de Gestão em Saúde • https://pluri.health</span>
           <span>Documento confidencial — Protegido por sigilo profissional e LGPD</span>
         </div>
       </footer>

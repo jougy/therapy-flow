@@ -174,11 +174,11 @@ export const PlatformLayout = ({
           <div className="flex items-center gap-3 min-w-0">
             <img
               src="/branding/logo/pluri_health_icon_gradient.svg"
-              alt="Pluri-Health"
+              alt="Pluri Health"
               className="h-10 w-10 shrink-0 drop-shadow-xs"
             />
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pluri-Health</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pluri Health</p>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground truncate">{title}</h1>
               {subtitle && <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>}
             </div>

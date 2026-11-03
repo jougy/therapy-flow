@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
+import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCpf, formatPhone } from "@/lib/profile-settings";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
@@ -542,7 +543,20 @@ const CadastroContaAlfa = () => {
                 </div>
               </div>
             ) : (
-              <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5">
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <GoogleAuthButton mode="signup" />
+                  <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-border" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card px-2 text-muted-foreground font-medium">ou preencha seus dados</span>
+                    </div>
+                  </div>
+                </div>
+
+                <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                   {/* Nome Completo (span 2 colunas) */}
                   <div className="space-y-2 sm:col-span-2">
@@ -926,6 +940,7 @@ const CadastroContaAlfa = () => {
                   </Button>
                 </div>
               </form>
+              </div>
             )}
           </CardContent>
         </Card>

@@ -955,10 +955,10 @@ export const PatientStatsPrintView = ({
           {clinic?.logo_url ? (
             <img src={clinic.logo_url} alt="" className="h-10 max-w-[130px] object-contain rounded" />
           ) : (
-            <img src="/branding/logo/pluri_health_icon_gradient.svg" alt="Pluri-Health" className="h-10 w-10 object-contain" />
+            <img src="/branding/logo/pluri_health_icon_gradient.svg" alt="Pluri Health" className="h-10 w-10 object-contain" />
           )}
           <div>
-            <h1 className="text-xl font-bold text-slate-900 leading-tight">{clinic?.name ?? "Pluri-Health"}</h1>
+            <h1 className="text-xl font-bold text-slate-900 leading-tight">{clinic?.name ?? "Pluri Health"}</h1>
             <h2 className="text-xs text-slate-600 font-medium">Relatório de Evolução e Estatísticas de Anamnese</h2>
           </div>
         </div>

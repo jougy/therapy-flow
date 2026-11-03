@@ -10,6 +10,7 @@ import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
 import { TemporaryPasswordPromptModal } from "@/components/TemporaryPasswordPromptModal";
 import { PersonalClinicalPortfolioTab } from "@/components/personal/PersonalClinicalPortfolioTab";
 import { PersonalWelcomeModal } from "@/components/personal/PersonalWelcomeModal";
+import { CompleteProfileModal } from "@/components/personal/CompleteProfileModal";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
@@ -82,6 +83,15 @@ const SelecionarClinica = () => {
   const [mobileDockTooltip, setMobileDockTooltip] = useState<{ title: string; x: number } | null>(null);
   const mobileDockScrollResetTimerRef = useRef<number | null>(null);
   const hasAttemptedReconciliation = useRef(false);
+
+  const isOAuthUser = Boolean(
+    user?.app_metadata?.provider === "google" ||
+    (Array.isArray(user?.identities) && user?.identities.some((id: any) => id.provider === "google"))
+  );
+
+  const isProfileIncomplete = Boolean(
+    user && !authLoading && isOAuthUser && (!profile?.cpf || !profile?.phone)
+  );
 
   const displayName = profile?.full_name || profile?.email || user?.email || "Usuário";
   const initials = getInitials(displayName || "U");
@@ -211,12 +221,24 @@ const SelecionarClinica = () => {
           return;
         }
 
-        // 2. Se já possui clínicas acessíveis, não precisa provisionar consultório solo legado
+        // 2. Se o usuário veio de autenticação social (OAuth/Google) e ainda não possui perfil, garantir o perfil
+        if (user && (!profile || !profile.email)) {
+          const userMeta = (user.user_metadata || {}) as Record<string, unknown>;
+          const rawName = (userMeta.full_name as string) || (userMeta.name as string) || "";
+          await supabase.rpc("handle_personal_signup", {
+            _user_id: user.id,
+            _email: user.email || "",
+            _full_name: rawName || null,
+          } as any);
+          await refreshAuthState();
+        }
+
+        // 3. Se já possui clínicas acessíveis, não precisa provisionar consultório solo legado
         if (accessibleClinics && accessibleClinics.length > 0) {
           return;
         }
 
-        // 3. Se não houver nenhuma clínica acessível, reconciliar consultório solo gratuito
+        // 4. Se não houver nenhuma clínica acessível, reconciliar consultório solo gratuito
         const { data, error } = await supabase.rpc("reconcile_legacy_users_solo_clinic");
         if (!error && data && data > 0 && isSubscribed) {
           console.info(`[SoloClinic] Auto-provisioned solo clinic (${data}) for user.`);
@@ -885,6 +907,15 @@ const SelecionarClinica = () => {
         onFinishInteraction={finishMobileDockInteraction}
       />
 
+      <CompleteProfileModal
+        isOpen={isProfileIncomplete}
+        userId={user?.id || ""}
+        userEmail={user?.email || ""}
+        currentName={profile?.full_name || (user?.user_metadata?.full_name as string) || (user?.user_metadata?.name as string) || ""}
+        onCompleted={async () => {
+          await refreshAuthState();
+        }}
+      />
       <PersonalWelcomeModal userId={user?.id} userName={displayName} />
       <TermsUpdatePromptModal />
       <TemporaryPasswordPromptModal />

@@ -236,7 +236,7 @@ export function PlatformTelegramAlerts() {
             {/* Card Mockup Telegram 1: Novo Cadastro */}
             <div className="rounded-2xl border bg-slate-900 text-slate-100 p-4 font-sans space-y-3 shadow-md">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-xs text-slate-400">
-                <span className="font-semibold text-sky-400">🤖 Pluri-Health Bot</span>
+                <span className="font-semibold text-sky-400">🤖 Pluri Health Bot</span>
                 <span>agora</span>
               </div>
               <div className="text-xs space-y-2 leading-relaxed">
@@ -284,7 +284,7 @@ export function PlatformTelegramAlerts() {
             {/* Card Mockup Telegram 2: Nova Venda */}
             <div className="rounded-2xl border bg-slate-900 text-slate-100 p-4 font-sans space-y-3 shadow-md">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-xs text-slate-400">
-                <span className="font-semibold text-sky-400">🤖 Pluri-Health Bot</span>
+                <span className="font-semibold text-sky-400">🤖 Pluri Health Bot</span>
                 <span>agora</span>
               </div>
               <div className="text-xs space-y-2 leading-relaxed">

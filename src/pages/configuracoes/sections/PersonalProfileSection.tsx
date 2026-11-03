@@ -368,7 +368,7 @@ export const PersonalProfileSection = () => {
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <p>
-                Os novos dados cadastrais serão atualizados na sua identidade global Pluri-Health e refletidos em seus vínculos profissionais.
+                Os novos dados cadastrais serão atualizados na sua identidade global Pluri Health e refletidos em seus vínculos profissionais.
               </p>
               <p className="text-xs text-muted-foreground">
                 Alterações em dados preenchidos serão registradas no seu histórico de segurança pessoal para sua proteção.
@@ -400,7 +400,7 @@ export const PersonalProfileSection = () => {
               <div>
                 <CardTitle className="text-xl">Perfil Pessoal</CardTitle>
                 <CardDescription className="text-xs">
-                  Dados cadastrais da sua identidade global na plataforma Pluri-Health.
+                  Dados cadastrais da sua identidade global na plataforma Pluri Health.
                 </CardDescription>
               </div>
             </div>

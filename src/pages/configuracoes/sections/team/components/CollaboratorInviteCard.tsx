@@ -205,7 +205,7 @@ export const CollaboratorInviteCard: React.FC<CollaboratorInviteCardProps> = ({
                 <Button size="sm" variant="outline" asChild>
                   <a
                     href={`https://wa.me/?text=${encodeURIComponent(
-                      `Olá! Você foi convidado para participar da equipe de ${clinicName || "nossa clínica"} na Pluri-Health. Acesse seu convite pelo link: ${lastGeneratedInviteUrl}`
+                      `Olá! Você foi convidado para participar da equipe de ${clinicName || "nossa clínica"} na Pluri Health. Acesse seu convite pelo link: ${lastGeneratedInviteUrl}`
                     )}`}
                     target="_blank"
                     rel="noreferrer"

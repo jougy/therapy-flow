@@ -32,7 +32,7 @@ export const PrintGuardianConsentModal: React.FC<PrintGuardianConsentModalProps>
   onOpenChange,
   patient,
   clinicId,
-  clinicName = "Pluri-Health",
+  clinicName = "Pluri Health",
   onPrinted,
 }) => {
   const [termsContent, setTermsContent] = useState<string>("");
