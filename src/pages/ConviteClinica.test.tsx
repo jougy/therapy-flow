@@ -233,7 +233,7 @@ describe("ConviteClinica", () => {
     await waitFor(() => {
       expect(toast).toHaveBeenCalledWith({
         title: "Conta já cadastrada",
-        description: "Você já possui uma conta no Pluri-Health. Basta digitar sua senha para ativar seu acesso à clínica.",
+        description: "Você já possui uma conta no Pluri Health. Basta digitar sua senha para ativar seu acesso à clínica.",
       });
       expect(screen.getByText(/sua senha de acesso/i)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /entrar e aceitar convite/i })).toBeInTheDocument();
