@@ -331,7 +331,7 @@ const ConviteClinica = () => {
       if (isAlreadyRegistered) {
         toast({
           title: "Conta já cadastrada",
-          description: "Você já possui uma conta no Pluri-Health. Basta digitar sua senha para ativar seu acesso à clínica.",
+          description: "Você já possui uma conta no Pluri Health. Basta digitar sua senha para ativar seu acesso à clínica.",
         });
         setMode("login");
         setSubmitting(false);
@@ -356,7 +356,7 @@ const ConviteClinica = () => {
           if (rpcError) {
             const rpcMsg = rpcError.message?.toLowerCase() || "";
             if (rpcMsg.includes("cpf já está cadastrado") || rpcError.code === "23505") {
-              throw new Error("Este CPF já está cadastrado em outra conta no Pluri-Health. Verifique os dados informados.");
+              throw new Error("Este CPF já está cadastrado em outra conta no Pluri Health. Verifique os dados informados.");
             }
             console.warn("[ConviteClinica] Aviso não-bloqueante no handle_personal_signup:", rpcError);
           }

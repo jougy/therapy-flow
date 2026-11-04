@@ -146,7 +146,7 @@ export const PersonalPortfolioSessionView: React.FC = () => {
           score: typeof ind.score === "number" ? ind.score : 0,
         })),
         anamnesisSummary: session.notesSanitized || "",
-        appName: "Pluri-Health",
+        appName: "Pluri Health",
         clinic: {
           address: "",
           businessHours: "",

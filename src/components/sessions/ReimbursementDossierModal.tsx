@@ -147,7 +147,7 @@ export const ReimbursementDossierModal = ({
           <div className="pt-8 border-t flex flex-col items-center justify-center text-center">
             <div className="w-64 border-b border-foreground/40 mb-2"></div>
             <p className="text-xs font-medium text-foreground">Assinatura e Carimbo do Responsável Técnico</p>
-            <p className="text-[10px] text-muted-foreground">Documento emitido digitalmente pela plataforma PluriHealth</p>
+            <p className="text-[10px] text-muted-foreground">Documento emitido digitalmente pela plataforma Pluri Health</p>
           </div>
         </div>
 

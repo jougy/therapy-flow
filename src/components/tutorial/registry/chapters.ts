@@ -15,7 +15,7 @@ export const TUTORIAL_CHAPTERS: TutorialChapter[] = [
       {
         id: "welcome-hero",
         targetSelector: "[data-tutorial='personal-welcome']",
-        title: "Boas-vindas ao Pluri-Health! 👋",
+        title: "Boas-vindas ao Pluri Health! 👋",
         description: "Este é o seu centro de comando pessoal. Aqui você gerencia seus acessos profissionais e todas as clínicas das quais faz parte.",
         tip: "Você pode atuar em múltiplas clínicas com papéis independentes (Proprietário, Fisioterapeuta ou Administrador).",
         placement: "bottom",

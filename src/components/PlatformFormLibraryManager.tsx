@@ -146,7 +146,7 @@ export const PlatformFormLibraryManager = () => {
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formCategory, setFormCategory] = useState<CommunityFormCategory>("Geral");
-  const [formAuthor, setFormAuthor] = useState("Equipe Pluri-Health");
+  const [formAuthor, setFormAuthor] = useState("Equipe Pluri Health");
   const [formClinic, setFormClinic] = useState("Comunidade Oficial");
   const [formTags, setFormTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
@@ -199,7 +199,7 @@ export const PlatformFormLibraryManager = () => {
       if (openModalAfter) {
         setIsEditingExisting(false);
         setEditingTemplateId(null);
-        setFormAuthor("Equipe Pluri-Health");
+        setFormAuthor("Equipe Pluri Health");
         setFormClinic("Comunidade Oficial");
         setFormTags(["oficial", "importado"]);
         setFormIsFeatured(true);
@@ -400,7 +400,7 @@ export const PlatformFormLibraryManager = () => {
     setFormTitle("");
     setFormDescription("");
     setFormCategory("Psicologia");
-    setFormAuthor("Equipe Pluri-Health");
+    setFormAuthor("Equipe Pluri Health");
     setFormClinic("Comunidade Oficial");
     setFormTags(["oficial", "padrao"]);
     setFormIsFeatured(true);

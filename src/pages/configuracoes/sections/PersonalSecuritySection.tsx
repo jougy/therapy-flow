@@ -53,7 +53,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
+import type { UserIdentity } from "@supabase/supabase-js";
 import { ChangePasswordDialog } from "./personal/ChangePasswordDialog";
+import { ConnectedAccountsCard } from "./personal/ConnectedAccountsCard";
 
 interface SecuritySessionRow {
   id: string;
@@ -127,6 +129,7 @@ export const PersonalSecuritySection = () => {
   // Estados de dados
   const [loading, setLoading] = useState(true);
   const [sessionsList, setSessionsList] = useState<SecuritySessionRow[]>([]);
+  const [identities, setIdentities] = useState<UserIdentity[]>([]);
   const [eventsList, setEventsList] = useState<SecurityEventRow[]>([]);
   const [endingOtherSessions, setEndingOtherSessions] = useState(false);
   const [endSessionsDialogOpen, setEndSessionsDialogOpen] = useState(false);
@@ -165,7 +168,7 @@ export const PersonalSecuritySection = () => {
     setLoading(true);
 
     try {
-      const [sessionsRes, eventsRes, totpRes] = await Promise.all([
+      const [sessionsRes, eventsRes, totpRes, identitiesRes] = await Promise.all([
         supabase
           .from("user_security_sessions")
           .select("*")
@@ -181,7 +184,12 @@ export const PersonalSecuritySection = () => {
           .order("created_at", { ascending: false })
           .limit(8),
         supabase.rpc("get_user_totp_status"),
+        supabase.auth.getUserIdentities(),
       ]);
+
+      if (identitiesRes?.data?.identities) {
+        setIdentities(identitiesRes.data.identities);
+      }
 
       if (totpRes.data && typeof totpRes.data === "object") {
         const d = totpRes.data as { success?: boolean; totp_enabled?: boolean; totp_enabled_at?: string };
@@ -1086,6 +1094,13 @@ export const PersonalSecuritySection = () => {
                 </Button>
               </div>
             </div>
+
+            {/* Card de Contas Conectadas e Login Social (Google) */}
+            <ConnectedAccountsCard
+              identities={identities}
+              onRefresh={loadSecurityData}
+              hasPassword={!isPasswordTemporary}
+            />
 
             {/* Card de Autenticação em Dois Fatores (2FA) & WhatsApp Bot */}
             <div className="rounded-xl border p-5 bg-card space-y-4">

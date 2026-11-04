@@ -41,6 +41,7 @@ import { FreeTrialUsageBanner } from "@/components/FreeTrialUsageBanner";
 import { TrialReadOnlyBanner } from "@/components/TrialReadOnlyBanner";
 import { AgendaAlarmDialog } from "@/components/agenda/AgendaAlarmDialog";
 import { useAgendaReminderPoller } from "@/hooks/useAgendaReminderPoller";
+import { useActiveBrand } from "@/hooks/useActiveBrand";
 
 
 interface AppLayoutProps {
@@ -48,6 +49,7 @@ interface AppLayoutProps {
 }
 
 const AppLayout = ({ children }: AppLayoutProps) => {
+  const brand = useActiveBrand();
   const { clinic, endPlatformClinicAccess, leaveClinic, platformAccess, profile, setPlatformSupportRole, setPlatformSimulatedPlan, signOut, subscriptionPlan, simulatedRoleCapabilityOverrides = {} } = useAuth();
   const { flagOverrides } = useFeatureFlags();
   const location = useLocation();
@@ -273,12 +275,12 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                   ) : (
                     <img
                       src="/branding/logo/pluri_health_icon_gradient.svg"
-                      alt="Pluri-Health"
+                      alt={brand.name}
                       className="h-8 w-8 shrink-0 drop-shadow-xs"
                     />
                   )}
                   <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
-                    {isPersonalOriginSettings ? "Pluri-Health" : clinicBrandName}
+                    {isPersonalOriginSettings ? brand.name : clinicBrandName}
                   </span>
                 </div>
               </button>

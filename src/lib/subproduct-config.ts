@@ -202,6 +202,16 @@ export function resolveCurrentSubproduct(): SubproductConfig {
   }
 
   const hostname = window.location.hostname.toLowerCase();
+  const searchParams = typeof window.location.search === "string" ? new URLSearchParams(window.location.search) : null;
+  const brandParam = searchParams?.get("brand")?.toLowerCase();
+
+  // Permite forçar marca via query param em desenvolvimento/testes (?brand=fisio ou ?brand=health)
+  if (brandParam === "fisio" || brandParam === "plurifisio") {
+    return SUBPRODUCTS_CATALOG.plurifisio;
+  }
+  if (brandParam === "health" || brandParam === "plurihealth") {
+    return SUBPRODUCTS_CATALOG.plurihealth;
+  }
 
   if (hostname.includes("plurifisio") || hostname.includes("fisioterapia")) {
     return SUBPRODUCTS_CATALOG.plurifisio;
@@ -223,8 +233,8 @@ export function resolveCurrentSubproduct(): SubproductConfig {
     return SUBPRODUCTS_CATALOG.plurihealth;
   }
 
-  // Em localhost / dev, default para Pluri Fisio (foco prioritário)
-  return SUBPRODUCTS_CATALOG.plurifisio;
+  // Em localhost / dev sem query param, padrão oficial do ecossistema Pluri Health
+  return SUBPRODUCTS_CATALOG.plurihealth;
 }
 
 /**

@@ -30,7 +30,7 @@ export const SupportSection = () => {
           </div>
           <Button asChild className="gap-2 shrink-0">
             <a
-              href="https://wa.me/5511999999999?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20com%20o%20Pluri-Health"
+              href="https://wa.me/5511999999999?text=Ol%C3%A1%2C%20preciso%20de%20ajuda%20com%20o%20Pluri%20Health"
               target="_blank"
               rel="noreferrer"
             >

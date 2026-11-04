@@ -216,7 +216,7 @@ export const FormTemplateDetailPage = () => {
       const authorName =
         user?.user_metadata?.full_name ||
         user?.email?.split("@")[0] ||
-        "Profissional Pluri-Health";
+        "Profissional Pluri Health";
 
       const res = await createTemplateComment({
         template_id: template.id,
@@ -364,7 +364,7 @@ export const FormTemplateDetailPage = () => {
                   <ShieldCheck className="h-4 w-4 text-primary" title="Profissional Verificado" />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {template.clinic_name || "Comunidade Pluri-Health"} • Publicado em{" "}
+                  {template.clinic_name || "Comunidade Pluri Health"} • Publicado em{" "}
                   {new Date(template.created_at).toLocaleDateString("pt-BR", {
                     day: "2-digit",
                     month: "short",

@@ -31,7 +31,7 @@ export const PrintAdultConsentModal: React.FC<PrintAdultConsentModalProps> = ({
   onOpenChange,
   patient,
   clinicId,
-  clinicName = "Pluri-Health",
+  clinicName = "Pluri Health",
   onPrinted,
 }) => {
   const [termsContent, setTermsContent] = useState<string>("");
