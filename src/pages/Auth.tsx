@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Download, Eye, EyeOff, Loader2, LogIn, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -236,6 +236,21 @@ const Auth = () => {
                       Baixar aplicativo (Windows, Mac, Linux, Celular)
                     </button>
                   )}
+                  <div className="flex items-center justify-center gap-2 pt-2 text-[11px] text-muted-foreground border-t border-border/50">
+                    <Link
+                      to="/termos"
+                      className="hover:text-foreground transition-colors underline underline-offset-2"
+                    >
+                      Termos de Uso
+                    </Link>
+                    <span>•</span>
+                    <Link
+                      to="/privacidade"
+                      className="hover:text-foreground transition-colors underline underline-offset-2"
+                    >
+                      Privacidade (LGPD)
+                    </Link>
+                  </div>
                 </div>
               </form>
             )}
