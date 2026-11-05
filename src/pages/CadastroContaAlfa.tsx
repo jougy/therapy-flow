@@ -886,27 +886,25 @@ const CadastroContaAlfa = () => {
                       className="text-xs leading-relaxed text-muted-foreground cursor-pointer select-none"
                     >
                       Li, compreendi e concordo integralmente com os{" "}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setTermsModalOpen(true);
-                        }}
+                      <a
+                        href="/termos"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         Termos de Uso
-                      </button>{" "}
+                      </a>{" "}
                       e a{" "}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setTermsModalOpen(true);
-                        }}
+                      <a
+                        href="/privacidade"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         Política de Privacidade e Proteção de Dados (LGPD)
-                      </button>
+                      </a>
                       .
                     </label>
                   </div>

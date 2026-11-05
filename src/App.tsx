@@ -23,6 +23,7 @@ const CadastroCompleto = lazy(() => import("./pages/CadastroCompleto"));
 const CadastroContaAlfa = lazy(() => import("./pages/CadastroContaAlfa"));
 const CadastroPacienteCompartilhado = lazy(() => import("./pages/CadastroPacienteCompartilhado"));
 const AutorizacaoMenorPublica = lazy(() => import("./pages/AutorizacaoMenorPublica"));
+const PublicLegalDocuments = lazy(() => import("./pages/PublicLegalDocuments"));
 const ClinicDashboard = lazy(() => import("./pages/ClinicDashboard"));
 const ClinicAgendaPage = lazy(() => import("./pages/ClinicAgendaPage"));
 import {
@@ -236,6 +237,10 @@ const App = () => (
                       <Route path="/cadastro/conta-alfa" element={<Navigate to="/auth/cadastro" replace />} />
                       <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
                       <Route path="/autorizacao-menor/:token" element={<AutorizacaoMenorPublica />} />
+                      <Route path="/termos" element={<PublicLegalDocuments initialTab="termos" />} />
+                      <Route path="/privacidade" element={<PublicLegalDocuments initialTab="privacidade" />} />
+                      <Route path="/terms" element={<Navigate to="/termos" replace />} />
+                      <Route path="/privacy" element={<Navigate to="/privacidade" replace />} />
                       <Route path="/espacopessoal" element={<ProtectedRoute><SelecionarClinica /></ProtectedRoute>} />
                       <Route
                         path="/espacopessoal/portfolio/:sessionId"

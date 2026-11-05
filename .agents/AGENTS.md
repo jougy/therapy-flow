@@ -155,3 +155,13 @@ Para manter a janela de contexto limpa, rápida e evitar estouro de tokens em th
      (a) Concluir a tarefa no Kanban e atualizar o walkthrough;
      (b) Recomendar ou orientar expressamente o usuário a disparar o comando **/compact** na interface antes do próximo envio de mensagem, evitando o acúmulo desnecessário de turnos passados na janela de contexto ativo.
 
+
+
+## 10. Gestão de Segredos, Telemetria, Métricas e Logs (Pulumi ESC, Axiom, Upstash)
+
+- **Gestão de Chaves e Variáveis de Ambiente (Pulumi ESC):**
+  - Sempre que precisar de qualquer operação, consulta, configuração ou injeção referente a chaves de API, variáveis de ambiente e segredos (`keys` e `variables`), os agentes devem utilizar o **Pulumi ESC** (`pulumi esc`).
+  - Nunca hardcodear segredos ou expor variáveis sensíveis diretamente no código.
+
+- **Métricas, Telemetria, Logs e Debug (Axiom & Upstash):**
+  - Sempre que for necessário lidar com métricas operacionais, telemetria estruturada, logs de auditoria, eventos analíticos ou fluxos de debug, os agentes devem priorizar e utilizar o **Axiom** e o **Upstash** (ex.: Upstash Redis para cache/rate-limiting/telemetria rápida e Axiom para ingestão centralizada e consulta de logs/telemetria).
