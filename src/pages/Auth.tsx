@@ -92,7 +92,7 @@ const Auth = () => {
 
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <main id="main-content" role="main" className="min-h-screen flex flex-col bg-background">
       <BrowserAppDownloadBanner variant="top" />
       <div className="flex-1 flex items-center justify-center p-4">
         <motion.div
@@ -221,14 +221,14 @@ const Auth = () => {
                   <button
                     type="button"
                     onClick={() => setMode("recovery")}
-                    className="w-full text-center text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                    className="w-full min-h-[44px] py-2 px-3 text-center text-sm font-medium text-primary transition-colors hover:text-primary/80 flex items-center justify-center"
                   >
                     Esqueci minha senha
                   </button>
                   <button
                     type="button"
                     onClick={() => navigate(signupCadastroUrl)}
-                    className="w-full text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    className="w-full min-h-[44px] py-2 px-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground flex items-center justify-center"
                   >
                     Não tem uma conta? Criar conta
                   </button>
@@ -236,27 +236,27 @@ const Auth = () => {
                     <button
                       type="button"
                       onClick={() => navigate("/download")}
-                      className="w-full text-center text-xs font-medium text-primary/80 transition-colors hover:text-primary inline-flex items-center justify-center gap-1.5 pt-1"
+                      className="w-full min-h-[44px] py-2 px-3 text-center text-xs font-medium text-primary/80 transition-colors hover:text-primary inline-flex items-center justify-center gap-1.5"
                     >
-                      <Download className="h-3.5 w-3.5" />
+                      <Download className="h-4 w-4" />
                       Baixar aplicativo (Windows, Mac, Linux, Celular)
                     </button>
                   )}
-                  <div className="flex items-center justify-center gap-2 pt-2 text-[11px] text-muted-foreground border-t border-border/50">
+                  <nav aria-label="Documentos Legais" className="flex items-center justify-center gap-4 pt-3 text-xs text-muted-foreground border-t border-border/50">
                     <Link
                       to="/termos"
-                      className="hover:text-foreground transition-colors underline underline-offset-2"
+                      className="min-h-[44px] py-2 px-2 inline-flex items-center hover:text-foreground transition-colors underline underline-offset-2"
                     >
                       Termos de Uso
                     </Link>
-                    <span>•</span>
+                    <span aria-hidden="true">•</span>
                     <Link
                       to="/privacidade"
-                      className="hover:text-foreground transition-colors underline underline-offset-2"
+                      className="min-h-[44px] py-2 px-2 inline-flex items-center hover:text-foreground transition-colors underline underline-offset-2"
                     >
                       Privacidade (LGPD)
                     </Link>
-                  </div>
+                  </nav>
                 </div>
               </form>
             )}
@@ -264,7 +264,7 @@ const Auth = () => {
         </Card>
         </motion.div>
       </div>
-    </div>
+    </main>
   );
 };
 

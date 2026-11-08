@@ -1,34 +1,5 @@
 import { useEffect } from "react";
 import { Navigate, useLocation, useParams } from "react-router-dom";
-import { SettingsLayout } from "./SettingsLayout";
-import { ClinicProfileSection } from "./sections/ClinicProfileSection";
-import { ClinicTeamSection } from "./sections/ClinicTeamSection";
-import { ClinicSecuritySection } from "./sections/ClinicSecuritySection";
-import { ClinicBillingSection } from "./sections/ClinicBillingSection";
-import { ClinicFormsSection } from "./sections/ClinicFormsSection";
-import { ClinicInsurancesSection } from "./sections/ClinicInsurancesSection";
-import { ClinicTermsSection } from "./sections/ClinicTermsSection";
-import { ClinicTrashSection } from "./sections/ClinicTrashSection";
-import { PersonalProfileSection } from "./sections/PersonalProfileSection";
-import { PersonalSecuritySection } from "./sections/PersonalSecuritySection";
-import { PersonalNotificationsSection } from "./sections/PersonalNotificationsSection";
-import { SupportSection } from "./sections/SupportSection";
-
-export {
-  SettingsLayout,
-  ClinicProfileSection,
-  ClinicTeamSection,
-  ClinicSecuritySection,
-  ClinicBillingSection,
-  ClinicInsurancesSection,
-  ClinicFormsSection,
-  ClinicTermsSection,
-  ClinicTrashSection,
-  PersonalProfileSection,
-  PersonalSecuritySection,
-  PersonalNotificationsSection,
-  SupportSection,
-};
 
 export const ConfiguracoesLegacyRedirect = () => {
   const { clinicKey } = useParams<{ clinicKey: string }>();

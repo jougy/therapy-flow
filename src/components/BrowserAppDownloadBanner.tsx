@@ -106,9 +106,11 @@ export function BrowserAppDownloadBanner({ variant = "top", className = "" }: Br
             </Button>
           </Link>
           <button
+            type="button"
             onClick={handleDismiss}
-            aria-label="Fechar aviso"
-            className="h-7 w-7 rounded-md text-white/80 hover:text-white hover:bg-white/10 flex items-center justify-center transition"
+            aria-label="Fechar aviso de instalação do aplicativo"
+            title="Fechar aviso de instalação do aplicativo"
+            className="h-8 w-8 min-h-[32px] min-w-[32px] rounded-md text-white/90 hover:text-white hover:bg-white/20 flex items-center justify-center transition"
           >
             <X className="h-4 w-4" />
           </button>
