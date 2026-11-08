@@ -107,9 +107,9 @@ const Auth = () => {
             <img
               src="/branding/logo/pluri_health_icon_gradient.svg"
               alt="Pluri-Health"
-              width="64"
-              height="64"
-              fetchPriority="high"
+              width={64}
+              height={64}
+              {...{ fetchpriority: "high" }}
               decoding="async"
               className="h-16 w-16 drop-shadow-md transition-transform hover:scale-105"
             />
