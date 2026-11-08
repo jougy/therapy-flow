@@ -1,25 +1,39 @@
 {
-  "$schema": "https://agent-catalog.org/schemas/v1/catalog.json",
-  "name": "Pluri Health / Pluri Fisio",
-  "version": "1.0.0",
-  "description": "Plataforma de prontuário eletrônico, governança clínica, agendamento por salas e gestão para clínicas e equipes de saúde.",
-  "homepage": "https://app.plurifisio.com.br",
-  "publisher": {
-    "name": "Pluri Health Tecnologia em Saúde",
-    "url": "https://pluri.health"
+  "$schema": "https://raw.githubusercontent.com/ards-project/ard-spec/main/spec/schemas/ai-catalog.schema.json",
+  "specVersion": "1.0",
+  "host": {
+    "displayName": "Pluri Health / Pluri Fisio",
+    "identifier": "https://pluri.health",
+    "documentationUrl": "https://pluri.health/llms.txt",
+    "logoUrl": "https://pluri.health/branding/logo/pluri_health_icon_gradient.svg"
   },
-  "capabilities": [
-    "electronic_health_records",
-    "clinical_appointments",
-    "patient_management",
-    "whatsapp_automation",
-    "lgpd_compliance"
-  ],
-  "endpoints": {
-    "auth": "https://app.plurifisio.com.br/auth",
-    "signup": "https://app.plurifisio.com.br/auth/cadastro",
-    "plans": "https://app.plurifisio.com.br/planos",
-    "download": "https://app.plurifisio.com.br/download",
-    "terms": "https://app.plurifisio.com.br/termos"
-  }
+  "entries": [
+    {
+      "identifier": "urn:pluri:health:web-app",
+      "mediaType": "text/html",
+      "displayName": "Pluri Health SaaS Application",
+      "description": "Plataforma de prontuário eletrônico, governança clínica, agendamento por salas e gestão integrada para clínicas e equipes de saúde.",
+      "tags": ["healthcare", "ehr", "clinical-management", "appointments", "lgpd"],
+      "url": "https://app.plurifisio.com.br",
+      "updatedAt": "2026-11-08T12:00:00Z"
+    },
+    {
+      "identifier": "urn:pluri:health:auth",
+      "mediaType": "text/html",
+      "displayName": "Pluri Health Portal de Autenticação",
+      "description": "Ponto de autenticação, login de profissionais e acesso ao prontuário eletrônico.",
+      "tags": ["auth", "login"],
+      "url": "https://app.plurifisio.com.br/auth",
+      "updatedAt": "2026-11-08T12:00:00Z"
+    },
+    {
+      "identifier": "urn:pluri:health:llms-manifest",
+      "mediaType": "text/markdown",
+      "displayName": "Pluri Health LLM Context Directory",
+      "description": "Contexto estruturado e diretório canônico da plataforma para sistemas e agentes de IA.",
+      "tags": ["llms-txt", "ai-context"],
+      "url": "https://app.plurifisio.com.br/llms.txt",
+      "updatedAt": "2026-11-08T12:00:00Z"
+    }
+  ]
 }

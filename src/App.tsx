@@ -26,22 +26,20 @@ const AutorizacaoMenorPublica = lazy(() => import("./pages/AutorizacaoMenorPubli
 const PublicLegalDocuments = lazy(() => import("./pages/PublicLegalDocuments"));
 const ClinicDashboard = lazy(() => import("./pages/ClinicDashboard"));
 const ClinicAgendaPage = lazy(() => import("./pages/ClinicAgendaPage"));
-import {
-  SettingsLayout,
-  ConfiguracoesLegacyRedirect,
-  ClinicProfileSection,
-  ClinicTeamSection,
-  ClinicSecuritySection,
-  ClinicBillingSection,
-  ClinicInsurancesSection,
-  ClinicFormsSection,
-  ClinicTermsSection,
-  ClinicTrashSection,
-  PersonalProfileSection,
-  PersonalSecuritySection,
-  PersonalNotificationsSection,
-  SupportSection,
-} from "./pages/configuracoes/index";
+const SettingsLayout = lazy(() => import("./pages/configuracoes/SettingsLayout").then(m => ({ default: m.SettingsLayout })));
+const ClinicProfileSection = lazy(() => import("./pages/configuracoes/sections/ClinicProfileSection").then(m => ({ default: m.ClinicProfileSection })));
+const ClinicTeamSection = lazy(() => import("./pages/configuracoes/sections/ClinicTeamSection").then(m => ({ default: m.ClinicTeamSection })));
+const ClinicSecuritySection = lazy(() => import("./pages/configuracoes/sections/ClinicSecuritySection").then(m => ({ default: m.ClinicSecuritySection })));
+const ClinicBillingSection = lazy(() => import("./pages/configuracoes/sections/ClinicBillingSection").then(m => ({ default: m.ClinicBillingSection })));
+const ClinicInsurancesSection = lazy(() => import("./pages/configuracoes/sections/ClinicInsurancesSection").then(m => ({ default: m.ClinicInsurancesSection })));
+const ClinicFormsSection = lazy(() => import("./pages/configuracoes/sections/ClinicFormsSection").then(m => ({ default: m.ClinicFormsSection })));
+const ClinicTermsSection = lazy(() => import("./pages/configuracoes/sections/ClinicTermsSection").then(m => ({ default: m.ClinicTermsSection })));
+const ClinicTrashSection = lazy(() => import("./pages/configuracoes/sections/ClinicTrashSection").then(m => ({ default: m.ClinicTrashSection })));
+const PersonalProfileSection = lazy(() => import("./pages/configuracoes/sections/PersonalProfileSection").then(m => ({ default: m.PersonalProfileSection })));
+const PersonalSecuritySection = lazy(() => import("./pages/configuracoes/sections/PersonalSecuritySection").then(m => ({ default: m.PersonalSecuritySection })));
+const PersonalNotificationsSection = lazy(() => import("./pages/configuracoes/sections/PersonalNotificationsSection").then(m => ({ default: m.PersonalNotificationsSection })));
+const SupportSection = lazy(() => import("./pages/configuracoes/sections/SupportSection").then(m => ({ default: m.SupportSection })));
+import { ConfiguracoesLegacyRedirect } from "./pages/configuracoes/index";
 const ContaConfirmada = lazy(() => import("./pages/ContaConfirmada"));
 const ConviteClinica = lazy(() => import("./pages/ConviteClinica"));
 const BibliotecaFormularios = lazy(() => import("./pages/BibliotecaFormularios"));

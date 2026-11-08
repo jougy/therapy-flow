@@ -1,21 +1,24 @@
 # Pluri Health & Pluri Fisio
 
-> Plataforma brasileira de prontuário eletrônico, governança clínica, agendamento por salas e faturamento integrada para clínicas e profissionais de saúde.
+> Plataforma brasileira de prontuário eletrônico, governança clínica, agendamento por salas e faturamento para clínicas e profissionais de saúde.
 
-## Sobre a Plataforma
-O Pluri Health (operando também na vertical especializada Pluri Fisio sob `app.plurifisio.com.br`) é um SaaS voltado para conformidade clínica, sigilo profissional (LGPD / CFM 1.821), gestão financeira atômica e inteligência operacional para clínicas médicas, fisioterapia e equipes multidisciplinares.
+O Pluri Health (operando também na vertical especializada Pluri Fisio sob `app.plurifisio.com.br`) é um ecossistema SaaS voltado para conformidade clínica, sigilo profissional (LGPD / CFM 1.821), gestão financeira em centavos e inteligência operacional para clínicas médicas, fisioterapia e equipes multidisciplinares.
 
-## Recursos e Funcionalidades Principais
-- **Prontuário Eletrônico:** Registros clínicos com histórico imutável, retenção legal de 20 anos e modelos anatômicos.
-- **Agenda Inteligente:** Agendamento por profissional, salas e recursos com lembretes automatizados via WhatsApp.
-- **Governança e RBAC:** Controle de acessos soberano baseado em capabilities (`can(capability)`).
-- **Subprodutos Verticais:** Experiência dedicada com divisória dinâmica de marcas para Fisioterapia (`Pluri Fisio`) e Saúde Geral (`Pluri Health`).
+## Recursos Principais
 
-## Links Canônicos e Documentação
-- [Página de Autenticação e Login](https://app.plurifisio.com.br/auth)
-- [Cadastro e Degustação Gratuita](https://app.plurifisio.com.br/auth/cadastro)
-- [Planos e Assinaturas](https://app.plurifisio.com.br/planos)
-- [Download do Aplicativo (PWA / Desktop)](https://app.plurifisio.com.br/download)
-- [Termos de Uso e Consentimento Clínico](https://app.plurifisio.com.br/termos)
-- [Portal Institucional Pluri Health](https://pluri.health)
-- [Sitemap Oficial](https://app.plurifisio.com.br/sitemap.xml)
+- [Página de Autenticação e Login](https://app.plurifisio.com.br/auth): Acesso seguro de profissionais e membros de clínicas.
+- [Cadastro e Degustação Gratuita](https://app.plurifisio.com.br/auth/cadastro): Registro inicial de novas contas e clínicas.
+- [Planos e Assinaturas](https://app.plurifisio.com.br/planos): Detalhes de contratação, planos solo e corporativos.
+- [Download do Aplicativo PWA e Desktop](https://app.plurifisio.com.br/download): Aplicativos instaláveis para Windows, Mac, Linux, Android e iOS.
+- [Portal Institucional Pluri Health](https://pluri.health): Portal institucional e apresentação de soluções de saúde.
+
+## Documentação e Conformidade
+
+- [Termos de Uso e Consentimento Clínico](https://app.plurifisio.com.br/termos): Diretrizes de uso, responsabilidade técnica e prontuários.
+- [Política de Privacidade e LGPD](https://app.plurifisio.com.br/privacidade): Proteção de dados sensíveis e conformidade legal de retenção por 20 anos.
+- [Catálogo de Recursos de IA](https://app.plurifisio.com.br/ai-catalog.json): Manifesto estruturado ARD / Agent-Card para descoberta agêntica.
+- [Sitemap XML Oficial](https://app.plurifisio.com.br/sitemap.xml): Mapeamento hierárquico e canônico de rotas públicas.
+
+## Optional
+
+- [Verificação de Conta](https://app.plurifisio.com.br/auth/confirmado): Tela de confirmação e boas-vindas pós-cadastro.
