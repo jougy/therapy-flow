@@ -1,0 +1,21 @@
+# Pluri Health & Pluri Fisio
+
+> Plataforma brasileira de prontuário eletrônico, governança clínica, agendamento por salas e faturamento integrada para clínicas e profissionais de saúde.
+
+## Sobre a Plataforma
+O Pluri Health (operando também na vertical especializada Pluri Fisio sob `app.plurifisio.com.br`) é um SaaS voltado para conformidade clínica, sigilo profissional (LGPD / CFM 1.821), gestão financeira atômica e inteligência operacional para clínicas médicas, fisioterapia e equipes multidisciplinares.
+
+## Recursos e Funcionalidades Principais
+- **Prontuário Eletrônico:** Registros clínicos com histórico imutável, retenção legal de 20 anos e modelos anatômicos.
+- **Agenda Inteligente:** Agendamento por profissional, salas e recursos com lembretes automatizados via WhatsApp.
+- **Governança e RBAC:** Controle de acessos soberano baseado em capabilities (`can(capability)`).
+- **Subprodutos Verticais:** Experiência dedicada com divisória dinâmica de marcas para Fisioterapia (`Pluri Fisio`) e Saúde Geral (`Pluri Health`).
+
+## Links Canônicos e Documentação
+- [Página de Autenticação e Login](https://app.plurifisio.com.br/auth)
+- [Cadastro e Degustação Gratuita](https://app.plurifisio.com.br/auth/cadastro)
+- [Planos e Assinaturas](https://app.plurifisio.com.br/planos)
+- [Download do Aplicativo (PWA / Desktop)](https://app.plurifisio.com.br/download)
+- [Termos de Uso e Consentimento Clínico](https://app.plurifisio.com.br/termos)
+- [Portal Institucional Pluri Health](https://pluri.health)
+- [Sitemap Oficial](https://app.plurifisio.com.br/sitemap.xml)

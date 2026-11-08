@@ -103,10 +103,14 @@ const Auth = () => {
         >
         <div className="text-center mb-6 flex flex-col items-center">
           <div className="mb-3 flex justify-center">
-            {/* Logo adaptável: Gradiente ciano/azul com ícone nítido */}
+            {/* Logo adaptável: Gradiente ciano/azul com ícone nítido e otimização LCP */}
             <img
               src="/branding/logo/pluri_health_icon_gradient.svg"
               alt="Pluri-Health"
+              width="64"
+              height="64"
+              fetchPriority="high"
+              decoding="async"
               className="h-16 w-16 drop-shadow-md transition-transform hover:scale-105"
             />
           </div>
@@ -183,6 +187,8 @@ const Auth = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
+                    title={showPassword ? "Ocultar senha" : "Ver senha"}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
