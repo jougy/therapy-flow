@@ -95,11 +95,11 @@ export function BrowserAppDownloadBanner({ variant = "top", className = "" }: Br
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <Link to="/download">
+          <Link to="/download" className="inline-flex items-center">
             <Button
               size="sm"
               variant="secondary"
-              className="h-7 px-2.5 sm:px-3 text-xs font-bold text-primary bg-white hover:bg-white/90 shadow-xs"
+              className="min-h-[44px] sm:min-h-[36px] px-3 text-xs font-bold text-sky-800 bg-white hover:bg-white/90 shadow-xs"
             >
               <span className="hidden sm:inline">Baixar Aplicativo</span>
               <span className="sm:hidden">Baixar App</span>
@@ -110,7 +110,7 @@ export function BrowserAppDownloadBanner({ variant = "top", className = "" }: Br
             onClick={handleDismiss}
             aria-label="Fechar aviso de instalação do aplicativo"
             title="Fechar aviso de instalação do aplicativo"
-            className="h-8 w-8 min-h-[32px] min-w-[32px] rounded-md text-white/90 hover:text-white hover:bg-white/20 flex items-center justify-center transition"
+            className="h-11 w-11 min-h-[44px] min-w-[44px] rounded-md text-white/90 hover:text-white hover:bg-white/20 flex items-center justify-center transition"
           >
             <X className="h-4 w-4" />
           </button>

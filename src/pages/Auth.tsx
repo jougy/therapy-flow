@@ -221,14 +221,14 @@ const Auth = () => {
                   <button
                     type="button"
                     onClick={() => setMode("recovery")}
-                    className="w-full min-h-[44px] py-2 px-3 text-center text-sm font-medium text-primary transition-colors hover:text-primary/80 flex items-center justify-center"
+                    className="w-full min-h-[44px] py-2 px-3 text-center text-sm font-semibold text-sky-800 dark:text-sky-300 transition-colors hover:text-sky-900 dark:hover:text-sky-200 flex items-center justify-center underline underline-offset-4"
                   >
                     Esqueci minha senha
                   </button>
                   <button
                     type="button"
                     onClick={() => navigate(signupCadastroUrl)}
-                    className="w-full min-h-[44px] py-2 px-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground flex items-center justify-center"
+                    className="w-full min-h-[44px] py-2 px-3 text-center text-sm font-semibold text-foreground transition-colors hover:text-foreground/80 flex items-center justify-center"
                   >
                     Não tem uma conta? Criar conta
                   </button>
@@ -236,7 +236,7 @@ const Auth = () => {
                     <button
                       type="button"
                       onClick={() => navigate("/download")}
-                      className="w-full min-h-[44px] py-2 px-3 text-center text-xs font-medium text-primary/80 transition-colors hover:text-primary inline-flex items-center justify-center gap-1.5"
+                      className="w-full min-h-[44px] py-2 px-3 text-center text-xs font-semibold text-sky-800 dark:text-sky-300 transition-colors hover:text-sky-900 dark:hover:text-sky-200 inline-flex items-center justify-center gap-1.5"
                     >
                       <Download className="h-4 w-4" />
                       Baixar aplicativo (Windows, Mac, Linux, Celular)

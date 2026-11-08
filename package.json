@@ -55,7 +55,9 @@
     "supabase:env:local": "sh scripts/write-supabase-env.sh",
     "security:attack:local": "node scripts/security/run-local-attack-suite.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "qa:perf": "node scripts/qa/audit-bundle-perf.mjs",
+    "qa:agent": "node scripts/qa/audit-agent-readiness.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
