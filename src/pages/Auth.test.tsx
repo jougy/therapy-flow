@@ -89,7 +89,7 @@ describe("Auth", () => {
     );
 
     fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: "owner@example.com" } });
-    fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: /entrar/i }));
 
     await waitFor(() => {
@@ -130,7 +130,7 @@ describe("Auth", () => {
     );
 
     fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: "pendente@example.com" } });
-    fireEvent.change(screen.getByLabelText(/senha/i), { target: { value: "senha123" } });
+    fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "senha123" } });
     fireEvent.click(screen.getByRole("button", { name: /entrar/i }));
 
     await waitFor(() => {

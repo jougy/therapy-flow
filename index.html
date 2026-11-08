@@ -11,9 +11,18 @@
     <!-- Webmaster Verification Tags (Google Search Console & Bing Webmaster Tools) -->
     <meta name="google-site-verification" content="google-site-verification-token" />
     <meta name="msvalidate.01" content="msvalidate-token" />
+
+    <!-- Otimização Crítica LCP (Descoberta Imediata da Logo no Documento Inicial) -->
+    <link rel="preload" as="image" href="/branding/logo/pluri_health_icon_gradient.svg" type="image/svg+xml" fetchpriority="high">
+
+    <!-- Carregamento Assíncrono Não-Bloqueante de Fontes (Eliminação de Render-Blocking Resources) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+    </noscript>
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Pluri Health" />

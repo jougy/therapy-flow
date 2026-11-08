@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-catalog.org/schemas/v1/catalog.json",
+  "name": "Pluri Health / Pluri Fisio",
+  "version": "1.0.0",
+  "description": "Plataforma de prontuário eletrônico, governança clínica, agendamento por salas e gestão para clínicas e equipes de saúde.",
+  "homepage": "https://app.plurifisio.com.br",
+  "publisher": {
+    "name": "Pluri Health Tecnologia em Saúde",
+    "url": "https://pluri.health"
+  },
+  "capabilities": [
+    "electronic_health_records",
+    "clinical_appointments",
+    "patient_management",
+    "whatsapp_automation",
+    "lgpd_compliance"
+  ],
+  "endpoints": {
+    "auth": "https://app.plurifisio.com.br/auth",
+    "signup": "https://app.plurifisio.com.br/auth/cadastro",
+    "plans": "https://app.plurifisio.com.br/planos",
+    "download": "https://app.plurifisio.com.br/download",
+    "terms": "https://app.plurifisio.com.br/termos"
+  }
+}

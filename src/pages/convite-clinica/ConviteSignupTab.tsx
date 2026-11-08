@@ -157,6 +157,8 @@ export const ConviteSignupTab = ({
               type="button"
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
+              title={showPassword ? "Ocultar senha" : "Ver senha"}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
@@ -181,6 +183,8 @@ export const ConviteSignupTab = ({
               type="button"
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Ver confirmação de senha"}
+              title={showConfirmPassword ? "Ocultar confirmação de senha" : "Ver confirmação de senha"}
             >
               {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
