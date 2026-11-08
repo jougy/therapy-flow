@@ -5,7 +5,6 @@ import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ChartConfig } from "@/components/ui/chart";
 import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
 import { TemporaryPasswordPromptModal } from "@/components/TemporaryPasswordPromptModal";
 import { PersonalClinicalPortfolioTab } from "@/components/personal/PersonalClinicalPortfolioTab";
@@ -45,11 +44,12 @@ import {
   PersonalHeader,
   PersonalDesktopNav,
   PersonalMobileNav,
-  PersonalDashboardTab,
   PersonalNewsTab,
   ClinicInvitationsList,
   ClinicSelectionList,
 } from "./selecionar-clinica";
+
+const PersonalDashboardTab = lazy(() => import("./selecionar-clinica/PersonalDashboardTab").then(m => ({ default: m.PersonalDashboardTab })));
 
 const SelecionarClinica = () => {
   const { accessibleClinics, isPlatformOwner, loading: authLoading, profile, refreshAuthState, selectClinic, signOut, user } = useAuth();
@@ -623,7 +623,7 @@ const SelecionarClinica = () => {
           label: group.name,
         },
       ]),
-    ) satisfies ChartConfig;
+    );
 
     return {
       attendanceBuckets: buildAttendanceBuckets(),

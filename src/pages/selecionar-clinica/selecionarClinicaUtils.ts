@@ -10,7 +10,6 @@ import {
   Trash2,
 } from "lucide-react";
 import type { AccessibleClinic } from "@/hooks/useAuth";
-import type { ChartConfig } from "@/components/ui/chart";
 import type {
   AttendanceRange,
   DashboardSession,
@@ -70,7 +69,7 @@ export const attendanceChartConfig = {
     color: "#0ea5e9",
     label: "Atendimentos",
   },
-} satisfies ChartConfig;
+};
 
 export const isReleaseNoteCategory = (value: unknown): value is ReleaseNoteCategory =>
   value === "fixed" || value === "added" || value === "changed" || value === "removed";

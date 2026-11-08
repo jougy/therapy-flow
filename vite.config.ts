@@ -86,27 +86,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
+    // Rolldown handles automated chunk splitting naturally
     chunkSizeWarningLimit: 1000,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/")) {
-            return "vendor-react";
-          }
-          if (id.includes("node_modules/recharts") || id.includes("node_modules/victory-vendor") || id.includes("node_modules/d3-") || id.includes("node_modules/react-smooth")) {
-            return "vendor-charts";
-          }
-          if (id.includes("node_modules/lucide-react")) {
-            return "vendor-icons";
-          }
-          if (id.includes("node_modules/@tanstack/react-query")) {
-            return "vendor-query";
-          }
-          if (id.includes("node_modules/@supabase/supabase-js")) {
-            return "vendor-supabase";
-          }
-        },
-      },
-    },
   },
 }));

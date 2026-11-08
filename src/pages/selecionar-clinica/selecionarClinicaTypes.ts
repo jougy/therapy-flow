@@ -1,5 +1,3 @@
-import type { ChartConfig } from "@/components/ui/chart";
-
 export type PersonalSection = "clinics" | "dashboard" | "portfolio" | "news" | "settings";
 export type ReleaseNoteCategory = "fixed" | "added" | "changed" | "removed";
 export type AttendanceRange = "week" | "month" | "year";
@@ -78,7 +76,7 @@ export interface ClinicSubscriptionSummary {
 export interface DashboardComputedData {
   attendanceBuckets: AttendanceBucket[];
   completedSessions: DashboardSession[];
-  groupChartConfig: ChartConfig;
+  groupChartConfig: Record<string, { label?: React.ReactNode; icon?: React.ComponentType; color?: string; theme?: Record<string, string> }>;
   groupWeeks: Array<Record<string, number | string>>;
   topGroups: GroupCount[];
   totalAttendedPatients: number;
