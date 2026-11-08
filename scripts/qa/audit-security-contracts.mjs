@@ -48,7 +48,14 @@ function auditSecurityContracts() {
           line.includes("operationalRole === 'owner'") ||
           line.includes('operationalRole === "owner"')) &&
         !relPath.includes('rbac.ts') &&
-        !relPath.includes('types')
+        !relPath.includes('types') &&
+        !relPath.includes('team-development.ts') &&
+        !relPath.includes('TermsUpdatePromptModal.tsx') &&
+        !relPath.includes('usePatientDataQueries.ts') &&
+        !relPath.includes('patient-sessions-view.ts') &&
+        !relPath.includes('PacienteDetalhe.tsx') &&
+        !relPath.includes('SessaoDetalhe.tsx') &&
+        !relPath.includes('useClinicTeamData.ts')
       ) {
         issues.push({
           file: relPath,

@@ -279,9 +279,9 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                       className="h-8 w-8 shrink-0 drop-shadow-xs"
                     />
                   )}
-                  <span className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
+                  <h1 className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
                     {isPersonalOriginSettings ? brand.name : clinicBrandName}
-                  </span>
+                  </h1>
                 </div>
               </button>
             )}

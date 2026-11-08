@@ -111,11 +111,11 @@ export function DismissibleInfoTip({
       <button
         type="button"
         onClick={handleDismiss}
-        className="absolute right-2 top-2 rounded-md p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        className="absolute right-1 top-1 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         title="Dispensar aviso permanentemente"
         aria-label="Dispensar aviso permanentemente"
       >
-        <X className="h-3.5 w-3.5" />
+        <X className="h-4 w-4" />
       </button>
     </div>
   );
