@@ -9,7 +9,8 @@ export type FeatureFlagCategory =
   | 'UI/Experiência'
   | 'Tutoriais & Ajuda'
   | 'Assinaturas'
-  | 'Agenda';
+  | 'Agenda'
+  | 'Marketing';
 
 export interface FeatureFlagDefinition {
   key: string;
@@ -18,6 +19,7 @@ export interface FeatureFlagDefinition {
   category: FeatureFlagCategory;
   hasConfiguration: boolean;
   hasToggle?: boolean;
+  completionPercentage?: number;
 }
 
 export const featureFlagsCatalog: FeatureFlagDefinition[] = [
@@ -29,6 +31,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Agenda',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'agenda_night_dawn_shift',
@@ -37,6 +40,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Agenda',
     hasConfiguration: false,
     hasToggle: true,
+    completionPercentage: 10,
   },
   {
     key: 'agenda_conflict_warning',
@@ -45,6 +49,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Agenda',
     hasConfiguration: false,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'agenda_slot_condenser',
@@ -53,6 +58,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Agenda',
     hasConfiguration: false,
     hasToggle: true,
+    completionPercentage: 15,
   },
   {
     key: 'agenda_master_onboarding',
@@ -61,6 +67,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Agenda',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'agenda_whatsapp_booking_flow',
@@ -69,6 +76,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Agenda',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'agenda_google_calendar_sync',
@@ -77,6 +85,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Agenda',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'agenda_smart_blocks_buffers',
@@ -85,6 +94,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Agenda',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   // Assinaturas & Financeiro
   {
@@ -94,6 +104,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Assinaturas',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'subscription_free_trial_enabled',
@@ -102,6 +113,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Assinaturas',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'subscription_payment_methods',
@@ -110,6 +122,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Assinaturas',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'subscription_coupons_enabled',
@@ -118,6 +131,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Assinaturas',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   // Storage/Arquivos
   {
@@ -126,6 +140,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita o módulo de anexo de documentos, PDFs e imagens clínicas de pacientes e atendimentos.',
     category: 'Storage/Arquivos',
     hasConfiguration: true,
+    completionPercentage: 100,
   },
   
   // Notificações (Adicionado para preencher a categoria, caso hajam features futuras ou para o lab)
@@ -135,6 +150,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita o envio de lembretes e notificações transacionais aos pacientes via Email e SMS.',
     category: 'Notificações',
     hasConfiguration: true,
+    completionPercentage: 15,
   },
   {
     key: 'notifications_whatsapp_onboarding',
@@ -143,6 +159,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Notificações',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'notifications_whatsapp_transbordo',
@@ -151,6 +168,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Notificações',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'notifications_whatsapp_billing',
@@ -159,6 +177,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Notificações',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'notifications_telegram_admin',
@@ -167,6 +186,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Notificações',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'whatsapp_flows_enabled',
@@ -175,6 +195,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Notificações',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'notifications_patient_reminders',
@@ -183,6 +204,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Notificações',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
 
   // Dashboards
@@ -192,6 +214,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita a visualização do painel de métricas e gráficos gerais da clínica.',
     category: 'Dashboards',
     hasConfiguration: false,
+    completionPercentage: 100,
   },
   {
     key: 'dashboards_user',
@@ -199,6 +222,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita a área de métricas individuais para o profissional (usuário logado).',
     category: 'Dashboards',
     hasConfiguration: false,
+    completionPercentage: 15,
   },
   {
     key: 'dashboards_patient',
@@ -206,6 +230,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita gráficos de evolução e sumário de dados no perfil do paciente.',
     category: 'Dashboards',
     hasConfiguration: true,
+    completionPercentage: 100,
   },
 
   // Formulários
@@ -215,6 +240,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Ativa o módulo de criação dinâmica de formulários (anamnese, evolução, etc).',
     category: 'Formulários',
     hasConfiguration: false,
+    completionPercentage: 100,
   },
   {
     key: 'forms_editor',
@@ -223,6 +249,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Formulários',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'forms_download_upload',
@@ -230,6 +257,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Permite que formulários preenchidos possam ser baixados em PDF ou anexem arquivos.',
     category: 'Formulários',
     hasConfiguration: true,
+    completionPercentage: 15,
   },
 
   // Prontuário/Atendimentos
@@ -239,6 +267,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Permite customizar e ordenar os blocos de resumo exibidos na tela principal do prontuário.',
     category: 'Prontuário/Atendimentos',
     hasConfiguration: true,
+    completionPercentage: 15,
   },
   {
     key: 'clinic_sessions_list',
@@ -246,6 +275,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita a visualização da lista geral de atendimentos na página principal da clínica, com opções avançadas de edição.',
     category: 'Prontuário/Atendimentos',
     hasConfiguration: true,
+    completionPercentage: 100,
   },
 
   // Impressão & Segurança
@@ -256,6 +286,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Impressão',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'print_general',
@@ -263,6 +294,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita ou desabilita globalmente todas as rotinas e botões de impressão em papel e exportação física na plataforma.',
     category: 'Impressão',
     hasConfiguration: false,
+    completionPercentage: 100,
   },
   {
     key: 'print_clinic_stats',
@@ -270,6 +302,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Exibe ou oculta o botão de impressão personalizada de relatórios e blocos de estatísticas da clínica.',
     category: 'Impressão',
     hasConfiguration: false,
+    completionPercentage: 100,
   },
   {
     key: 'forms_blank_print',
@@ -277,6 +310,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Exibe ou oculta o botão de impressão de modelos e fichas de atendimento/cadastro em branco no gerenciador de formulários da clínica.',
     category: 'Impressão',
     hasConfiguration: false,
+    completionPercentage: 15,
   },
   {
     key: 'records_print_layout',
@@ -284,6 +318,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita configurações avançadas de layout (cabeçalho, rodapé, logo) para impressão do prontuário.',
     category: 'Impressão',
     hasConfiguration: true,
+    completionPercentage: 15,
   },
   {
     key: 'records_session_print',
@@ -291,6 +326,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Exibe ou oculta a opção de impressão de atestados, receitas, declarações e evoluções de atendimentos.',
     category: 'Impressão',
     hasConfiguration: false,
+    completionPercentage: 100,
   },
 
   // Governança & Compliance
@@ -301,6 +337,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Governança',
     hasConfiguration: true,
     hasToggle: false,
+    completionPercentage: 100,
   },
   {
     key: 'require_owner_terms_on_clinic_creation',
@@ -309,6 +346,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Governança',
     hasConfiguration: false,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'observability_multicloud_engine',
@@ -317,6 +355,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Governança',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'ui_animations_toggle',
@@ -324,6 +363,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Habilita opções para o usuário final reduzir ou desligar micro-animações do sistema.',
     category: 'UI/Experiência',
     hasConfiguration: false,
+    completionPercentage: 15,
   },
   {
     key: 'ui_advanced_settings',
@@ -331,6 +371,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     description: 'Libera temas extras e opções de densidade visual na interface da plataforma.',
     category: 'UI/Experiência',
     hasConfiguration: true,
+    completionPercentage: 15,
   },
   {
     key: 'clinical_portfolio_enabled',
@@ -339,6 +380,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'UI/Experiência',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
   },
 
   // Tutoriais & Ajuda
@@ -349,6 +391,7 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Tutoriais & Ajuda',
     hasConfiguration: false,
     hasToggle: true,
+    completionPercentage: 100,
   },
   {
     key: 'system_helpers',
@@ -357,363 +400,65 @@ export const featureFlagsCatalog: FeatureFlagDefinition[] = [
     category: 'Tutoriais & Ajuda',
     hasConfiguration: true,
     hasToggle: true,
+    completionPercentage: 100,
+  },
+
+  // Marketing & Afiliados
+  {
+    key: 'marketing_affiliates_module',
+    label: 'Módulo Central de Afiliados & Parcerias',
+    description: 'Controla a exibição e funcionamento global do ecossistema de parceiros e afiliados, links nominais e subcontas.',
+    category: 'Marketing',
+    hasConfiguration: false,
+    hasToggle: true,
+    completionPercentage: 15,
+  },
+  {
+    key: 'marketing_backoffice_invite_affiliate',
+    label: 'Conversão de Usuário em Afiliado (Backoffice Master)',
+    description: 'Permite ao administrador convidar ou transformar usuários comuns em parceiros afiliados pelo diretório da plataforma (/platform).',
+    category: 'Marketing',
+    hasConfiguration: false,
+    hasToggle: true,
+    completionPercentage: 10,
+  },
+  {
+    key: 'marketing_affiliate_onboarding_form',
+    label: 'Formulário de Onboarding & Aceite dos Termos de Afiliado',
+    description: 'Fluxo de credenciamento do parceiro: dados bancários, e-mail fiscal para NFTS, validação 2FA obrigatória e aceite do Termo de Adesão.',
+    category: 'Marketing',
+    hasConfiguration: false,
+    hasToggle: true,
+    completionPercentage: 20,
+  },
+  {
+    key: 'marketing_asaas_split_engine',
+    label: 'Motor de Split Nativo Asaas & Subcontas (MEI R$ 81k)',
+    description: 'Provisionamento automático de subcontas no Asaas e divisão de comissão pré-crédito sem contaminação do teto MEI.',
+    category: 'Marketing',
+    hasConfiguration: false,
+    hasToggle: true,
+    completionPercentage: 5,
+  },
+  {
+    key: 'marketing_affiliate_portal',
+    label: 'Portal do Afiliado (Desempenho, Hook e Registro)',
+    description: 'Painel do parceiro com 3 abas operacionais: Métricas de conversão, Central de Links/Cupons e Dados cadastrais com proteção 2FA.',
+    category: 'Marketing',
+    hasConfiguration: false,
+    hasToggle: true,
+    completionPercentage: 10,
+  },
+  {
+    key: 'marketing_coupon_landing_page',
+    label: 'Checkout com Cupom Nominal de Afiliado na Landing Page',
+    description: 'Validação e aplicação nativa de cupons (?cupom=CODIGO) no checkout, com desconto de entrada e elegibilidade vitalícia da 1ª compra.',
+    category: 'Marketing',
+    hasConfiguration: false,
+    hasToggle: true,
+    completionPercentage: 15,
   },
 ];
 
-export interface FormEditorFlagConfig {
-  enabled?: boolean;
-  components: {
-    // Básicos
-    short_text: boolean;
-    long_text: boolean;
-    simple_list: boolean;
-    number: boolean;
-    date: boolean;
-    // Opções & Seleção
-    select: boolean;
-    multiple_choice: boolean;
-    checklist: boolean;
-    tags: boolean;
-    slider: boolean;
-    // Estrutura & Agrupamento
-    section: boolean;
-    horizontal_section: boolean;
-    section_selector: boolean;
-    radar_section: boolean;
-    // Especiais
-    table: boolean;
-    address_block: boolean;
-    calculated: boolean;
-  };
-  properties: {
-    required: boolean;
-    showInPatientList: boolean;
-    includeInGlobalDashboard: boolean;
-    enableFilter: boolean;
-    enableGrouping: boolean;
-  };
-  menus: {
-    palette_sidebar: boolean;
-    flow: boolean;
-    properties: boolean;
-    settings: boolean;
-    design: boolean;
-    logic: boolean;
-  };
-  options: {
-    // Opções do Fluxo
-    flow_reorder: boolean;
-    flow_duplicate: boolean;
-    flow_delete: boolean;
-    flow_move_root: boolean;
-    // Opções de Ajustes
-    settings_field_type: boolean;
-    settings_label: boolean;
-    settings_help_text: boolean;
-    settings_placeholder: boolean;
-    settings_advanced_options: boolean;
-    // Opções de Design
-    design_accent_color: boolean;
-    design_section_color: boolean;
-    design_color_palette: boolean;
-    design_action_buttons: boolean;
-    // Opções de Regras (Lógica / Comportamento)
-    logic_parent_section: boolean;
-    logic_conditional_visibility: boolean;
-  };
-}
-
-export const DEFAULT_FORM_EDITOR_FLAG_CONFIG: FormEditorFlagConfig = {
-  enabled: true,
-  components: {
-    short_text: true,
-    long_text: true,
-    simple_list: true,
-    number: true,
-    date: true,
-    select: true,
-    multiple_choice: true,
-    checklist: true,
-    tags: true,
-    slider: true,
-    section: true,
-    horizontal_section: true,
-    section_selector: true,
-    radar_section: true,
-    table: true,
-    address_block: true,
-    calculated: true,
-  },
-  properties: {
-    required: true,
-    showInPatientList: true,
-    includeInGlobalDashboard: true,
-    enableFilter: true,
-    enableGrouping: true,
-  },
-  menus: {
-    palette_sidebar: true,
-    flow: true,
-    properties: true,
-    settings: true,
-    design: true,
-    logic: true,
-  },
-  options: {
-    flow_reorder: true,
-    flow_duplicate: true,
-    flow_delete: true,
-    flow_move_root: true,
-    settings_field_type: true,
-    settings_label: true,
-    settings_help_text: true,
-    settings_placeholder: true,
-    settings_advanced_options: true,
-    design_accent_color: true,
-    design_section_color: true,
-    design_color_palette: true,
-    design_action_buttons: true,
-    logic_parent_section: true,
-    logic_conditional_visibility: true,
-  },
-};
-
-export interface AgendaFlagConfig {
-  enabled?: boolean;
-  allowedViews: {
-    day: boolean;
-    week: boolean;
-    month: boolean;
-    year: boolean;
-  };
-  defaultView: "day" | "week" | "month" | "year";
-  defaultDurationMinutes: number;
-  enableDawnShift: boolean;
-  enableConflictWarning: boolean;
-  enableCondensedSlots: boolean;
-  showEndTimeOnCards: boolean;
-  showSpanningBadges: boolean;
-  maintenanceMessage?: string;
-}
-
-export const DEFAULT_AGENDA_FLAG_CONFIG: AgendaFlagConfig = {
-  enabled: true,
-  allowedViews: {
-    day: true,
-    week: true,
-    month: true,
-    year: true,
-  },
-  defaultView: "day",
-  defaultDurationMinutes: 50,
-  enableDawnShift: true,
-  enableConflictWarning: true,
-  enableCondensedSlots: true,
-  showEndTimeOnCards: true,
-  showSpanningBadges: true,
-  maintenanceMessage: "",
-};
-
-// --- NOVAS FLAGS: NOTIFICAÇÕES ---
-
-export interface WhatsAppOnboardingFlagConfig {
-  enabled?: boolean;
-  delaySeconds: number;
-  botPhoneNumber: string;
-  welcomeMessageTemplate: string;
-  sendFirstAccessLink: boolean;
-  notifyOnWeekend: boolean;
-}
-
-export const DEFAULT_WHATSAPP_ONBOARDING_FLAG_CONFIG: WhatsAppOnboardingFlagConfig = {
-  enabled: true,
-  delaySeconds: 15,
-  botPhoneNumber: "5511980113936",
-  welcomeMessageTemplate: "Olá {{nome}}! Seja muito bem-vindo(a) ao Pluri Health. Seu espaço clínico seguro já está pronto para uso: {{link_acesso}}",
-  sendFirstAccessLink: true,
-  notifyOnWeekend: false,
-};
-
-export interface WhatsAppTransbordoFlagConfig {
-  enabled?: boolean;
-  destinationPhoneNumber: string;
-  alertTypes: {
-    suporte: boolean;
-    novos_agendamentos: boolean;
-    duvidas_planos: boolean;
-    reclamacoes: boolean;
-  };
-  officeHoursOnly: boolean;
-  fallbackMessage: string;
-}
-
-export const DEFAULT_WHATSAPP_TRANSBORDO_FLAG_CONFIG: WhatsAppTransbordoFlagConfig = {
-  enabled: true,
-  destinationPhoneNumber: "5511980113936",
-  alertTypes: {
-    suporte: true,
-    novos_agendamentos: true,
-    duvidas_planos: true,
-    reclamacoes: true,
-  },
-  officeHoursOnly: false,
-  fallbackMessage: "Entendido! Estou transferindo seu atendimento para o nosso especialista humano. Em instantes você será atendido.",
-};
-
-export interface WhatsAppBillingFlagConfig {
-  enabled?: boolean;
-  thankYouMessageTemplate: string;
-  systemLoginLink: string;
-  notifyUpgrade: boolean;
-  notifySubscriptionRenew: boolean;
-  notifyPaymentFailed: boolean;
-}
-
-export const DEFAULT_WHATSAPP_BILLING_FLAG_CONFIG: WhatsAppBillingFlagConfig = {
-  enabled: true,
-  thankYouMessageTemplate: "Olá {{nome}}, confirmamos com sucesso a sua assinatura do plano {{plano}} via Asaas! Obrigado por confiar no Pluri Health.",
-  systemLoginLink: "https://plurihealth.com.br/login",
-  notifyUpgrade: true,
-  notifySubscriptionRenew: true,
-  notifyPaymentFailed: true,
-};
-
-export interface TelegramAdminFlagConfig {
-  enabled?: boolean;
-  botTokenConfigured?: boolean;
-  chatId: string;
-  events: {
-    newRegistrations: boolean;
-    newBookings: boolean;
-    asaasPayments: boolean;
-    errorAlerts: boolean;
-  };
-  silentNotifications: boolean;
-}
-
-export const DEFAULT_TELEGRAM_ADMIN_FLAG_CONFIG: TelegramAdminFlagConfig = {
-  enabled: true,
-  botTokenConfigured: true,
-  chatId: "-100234567890",
-  events: {
-    newRegistrations: true,
-    newBookings: true,
-    asaasPayments: true,
-    errorAlerts: true,
-  },
-  silentNotifications: false,
-};
-
-export interface PatientRemindersFlagConfig {
-  enabled?: boolean;
-  channels: {
-    whatsapp: boolean;
-    sms: boolean;
-    email: boolean;
-  };
-  remind24hBefore: boolean;
-  remind2hBefore: boolean;
-  allowPatientConfirmation: boolean;
-  reminderMessageTemplate: string;
-}
-
-export const DEFAULT_PATIENT_REMINDERS_FLAG_CONFIG: PatientRemindersFlagConfig = {
-  enabled: true,
-  channels: {
-    whatsapp: true,
-    sms: false,
-    email: true,
-  },
-  remind24hBefore: true,
-  remind2hBefore: true,
-  allowPatientConfirmation: true,
-  reminderMessageTemplate: "Olá {{paciente}}, lembramos de sua consulta agendada para {{data_hora}} com {{profissional}}. Responda 1 para confirmar ou 2 para remarcar.",
-};
-
-export interface WhatsAppFlowsConfig {
-  enabled: boolean;
-  flow_id: string;
-  fallback_to_chat: boolean;
-  mode: 'draft' | 'published';
-}
-
-export const DEFAULT_WHATSAPP_FLOWS_CONFIG: WhatsAppFlowsConfig = {
-  enabled: false,
-  flow_id: '',
-  fallback_to_chat: true,
-  mode: 'draft',
-};
-
-// --- NOVAS FLAGS: AGENDA ---
-
-export interface AgendaMasterFlagConfig {
-  enabled?: boolean;
-  defaultDurationMinutes: number;
-  meetingRoomUrl: string;
-  allowLeadReschedule: boolean;
-  sendCalendarInvite: boolean;
-  sendWhatsAppConfirmation: boolean;
-}
-
-export const DEFAULT_AGENDA_MASTER_FLAG_CONFIG: AgendaMasterFlagConfig = {
-  enabled: true,
-  defaultDurationMinutes: 15,
-  meetingRoomUrl: "https://meet.google.com/pluri-onboarding",
-  allowLeadReschedule: true,
-  sendCalendarInvite: true,
-  sendWhatsAppConfirmation: true,
-};
-
-export interface AgendaWhatsAppBookingFlagConfig {
-  enabled?: boolean;
-  startHour: string;
-  endHour: string;
-  workDays: ("seg" | "ter" | "qua" | "qui" | "sex" | "sab" | "dom")[];
-  intervalMinutes: number;
-  autoConfirmBooking: boolean;
-}
-
-export const DEFAULT_AGENDA_WHATSAPP_BOOKING_FLAG_CONFIG: AgendaWhatsAppBookingFlagConfig = {
-  enabled: true,
-  startHour: "08:00",
-  endHour: "18:00",
-  workDays: ["seg", "ter", "qua", "qui", "sex"],
-  intervalMinutes: 30,
-  autoConfirmBooking: true,
-};
-
-export interface AgendaGoogleCalendarSyncFlagConfig {
-  enabled?: boolean;
-  iCalFeedUrl: string;
-  cacheDurationMinutes: number;
-  syncReminders: boolean;
-  autoSyncIntervalMinutes: number;
-}
-
-export const DEFAULT_AGENDA_GOOGLE_CALENDAR_SYNC_FLAG_CONFIG: AgendaGoogleCalendarSyncFlagConfig = {
-  enabled: true,
-  iCalFeedUrl: "https://calendar.google.com/calendar/ical/plurihealth/public/basic.ics",
-  cacheDurationMinutes: 15,
-  syncReminders: true,
-  autoSyncIntervalMinutes: 30,
-};
-
-export interface AgendaSmartBlocksBuffersFlagConfig {
-  enabled?: boolean;
-  defaultBufferMinutes: number;
-  blockThursdayMorning: boolean;
-  lunchBreakStart: string;
-  lunchBreakEnd: string;
-  enforceBreakBetweenPatients: boolean;
-}
-
-export const DEFAULT_AGENDA_SMART_BLOCKS_BUFFERS_FLAG_CONFIG: AgendaSmartBlocksBuffersFlagConfig = {
-  enabled: true,
-  defaultBufferMinutes: 30,
-  blockThursdayMorning: true,
-  lunchBreakStart: "12:00",
-  lunchBreakEnd: "13:00",
-  enforceBreakBetweenPatients: true,
-};
-
-
+// Re-export das tipagens e configuracoes modulares de flags
+export * from "./feature-flags-configs";

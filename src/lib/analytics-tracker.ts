@@ -63,13 +63,42 @@ export function initGlobalAnalytics(subproductOverride?: SubproductConfig): Subp
   }
   isAnalyticsInitialized = true;
 
-  // Função auxiliar para adiar injeção de scripts pesados de terceiros sem bloquear o LCP/FCP
+  // Adiar injeção de scripts pesados de terceiros até que o usuário interaja ou após tempo limite estendido (não impacta PageSpeed de primeira carga)
   const scheduleThirdPartyScript = (injector: () => void) => {
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(injector, { timeout: 3000 });
-    } else {
-      setTimeout(injector, 2000);
-    }
+    if (typeof window === "undefined") return;
+
+    let executed = false;
+    const run = () => {
+      if (executed) return;
+      executed = true;
+      cleanup();
+      injector();
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("scroll", run);
+      window.removeEventListener("mousemove", run);
+      window.removeEventListener("touchstart", run);
+      window.removeEventListener("keydown", run);
+      window.removeEventListener("click", run);
+    };
+
+    window.addEventListener("scroll", run, { passive: true, once: true });
+    window.addEventListener("mousemove", run, { passive: true, once: true });
+    window.addEventListener("touchstart", run, { passive: true, once: true });
+    window.addEventListener("keydown", run, { passive: true, once: true });
+    window.addEventListener("click", run, { passive: true, once: true });
+
+    // Fallback: se o usuário não interagir após 6 segundos, carrega calmamente em tempo ocioso
+    setTimeout(() => {
+      if (!executed) {
+        if ("requestIdleCallback" in window) {
+          (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(run, { timeout: 3000 });
+        } else {
+          run();
+        }
+      }
+    }, 6000);
   };
 
   // 2. Injetar Google Analytics 4 (gtag.js)

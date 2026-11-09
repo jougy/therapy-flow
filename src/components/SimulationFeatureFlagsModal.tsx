@@ -128,6 +128,20 @@ export function SimulationFeatureFlagsModal({ open, onOpenChange }: SimulationFe
                       <Badge variant="secondary" className="text-[10px] py-0 h-4 px-1.5 font-normal">
                         {flag.category}
                       </Badge>
+                      {typeof flag.completionPercentage === "number" && (
+                        <Badge 
+                          variant="outline" 
+                          className={`text-[10px] py-0 h-4 px-1.5 font-medium ${
+                            flag.completionPercentage === 100
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300"
+                              : flag.completionPercentage > 0
+                              ? "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300"
+                              : "bg-neutral-100 text-neutral-600 border-neutral-300"
+                          }`}
+                        >
+                          {flag.completionPercentage}% pronto
+                        </Badge>
+                      )}
                       {isOverridden && (
                         <Badge className="text-[10px] py-0 h-4 px-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium">
                           Modificado
