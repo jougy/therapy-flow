@@ -10,8 +10,8 @@
   "entries": [
     {
       "identifier": "urn:pluri:health:web-app",
-      "mediaType": "text/html",
       "displayName": "Pluri Health SaaS Application",
+      "type": "text/html",
       "description": "Plataforma de prontuário eletrônico, governança clínica, agendamento por salas e gestão integrada para clínicas e equipes de saúde.",
       "tags": ["healthcare", "ehr", "clinical-management", "appointments", "lgpd"],
       "url": "https://app.plurifisio.com.br",
@@ -19,8 +19,8 @@
     },
     {
       "identifier": "urn:pluri:health:auth",
-      "mediaType": "text/html",
       "displayName": "Pluri Health Portal de Autenticação",
+      "type": "text/html",
       "description": "Ponto de autenticação, login de profissionais e acesso ao prontuário eletrônico.",
       "tags": ["auth", "login"],
       "url": "https://app.plurifisio.com.br/auth",
@@ -28,8 +28,8 @@
     },
     {
       "identifier": "urn:pluri:health:llms-manifest",
-      "mediaType": "text/markdown",
       "displayName": "Pluri Health LLM Context Directory",
+      "type": "text/markdown",
       "description": "Contexto estruturado e diretório canônico da plataforma para sistemas e agentes de IA.",
       "tags": ["llms-txt", "ai-context"],
       "url": "https://app.plurifisio.com.br/llms.txt",
