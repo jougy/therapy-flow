@@ -374,7 +374,7 @@ export const HomeMobileDock = memo(function HomeMobileDock({
                   <Building2 className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-semibold text-foreground leading-snug">Configurações da clínica</h4>
+                  <span className="block text-sm font-semibold text-foreground leading-snug">Configurações da clínica</span>
                   <p className="text-xs text-muted-foreground leading-normal mt-0.5 line-clamp-2 sm:line-clamp-1">
                     Perfil da clínica, logo, equipe, planos e preferências
                   </p>
@@ -400,7 +400,7 @@ export const HomeMobileDock = memo(function HomeMobileDock({
                   <UserCog className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-semibold text-foreground leading-snug">Configurações da sua conta pessoal</h4>
+                  <span className="block text-sm font-semibold text-foreground leading-snug">Configurações da sua conta pessoal</span>
                   <p className="text-xs text-muted-foreground leading-normal mt-0.5 line-clamp-2 sm:line-clamp-1">
                     Seu perfil, segurança, e-mail, senha e notificações
                   </p>

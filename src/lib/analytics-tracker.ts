@@ -63,6 +63,15 @@ export function initGlobalAnalytics(subproductOverride?: SubproductConfig): Subp
   }
   isAnalyticsInitialized = true;
 
+  // Função auxiliar para adiar injeção de scripts pesados de terceiros sem bloquear o LCP/FCP
+  const scheduleThirdPartyScript = (injector: () => void) => {
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(injector, { timeout: 3000 });
+    } else {
+      setTimeout(injector, 2000);
+    }
+  };
+
   // 2. Injetar Google Analytics 4 (gtag.js)
   if (subproduct.gaMeasurementId && !document.getElementById("ga-gtag-script")) {
     window.dataLayer = window.dataLayer || [];
@@ -78,11 +87,14 @@ export function initGlobalAnalytics(subproductOverride?: SubproductConfig): Subp
       cookie_flags: "SameSite=None;Secure",
     });
 
-    const gaScript = document.createElement("script");
-    gaScript.id = "ga-gtag-script";
-    gaScript.async = true;
-    gaScript.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(subproduct.gaMeasurementId)}`;
-    document.head.appendChild(gaScript);
+    scheduleThirdPartyScript(() => {
+      if (document.getElementById("ga-gtag-script")) return;
+      const gaScript = document.createElement("script");
+      gaScript.id = "ga-gtag-script";
+      gaScript.async = true;
+      gaScript.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(subproduct.gaMeasurementId)}`;
+      document.head.appendChild(gaScript);
+    });
   }
 
   // 3. Injetar Meta Pixel (fbevents.js)
@@ -106,11 +118,14 @@ export function initGlobalAnalytics(subproductOverride?: SubproductConfig): Subp
 
     window.fbq("init", subproduct.metaPixelId);
 
-    const metaScript = document.createElement("script");
-    metaScript.id = "meta-pixel-script";
-    metaScript.async = true;
-    metaScript.src = "https://connect.facebook.net/en_US/fbevents.js";
-    document.head.appendChild(metaScript);
+    scheduleThirdPartyScript(() => {
+      if (document.getElementById("meta-pixel-script")) return;
+      const metaScript = document.createElement("script");
+      metaScript.id = "meta-pixel-script";
+      metaScript.async = true;
+      metaScript.src = "https://connect.facebook.net/en_US/fbevents.js";
+      document.head.appendChild(metaScript);
+    });
   }
 
   // 4. Injetar Microsoft Clarity / Heatmap
@@ -124,17 +139,20 @@ export function initGlobalAnalytics(subproductOverride?: SubproductConfig): Subp
       window.clarity = clarity;
     }
 
-    const clarityScript = document.createElement("script");
-    clarityScript.id = "clarity-heatmap-script";
-    clarityScript.async = true;
-    clarityScript.src = `https://www.clarity.ms/tag/${encodeURIComponent(subproduct.clarityProjectId)}`;
-    document.head.appendChild(clarityScript);
+    scheduleThirdPartyScript(() => {
+      if (document.getElementById("clarity-heatmap-script")) return;
+      const clarityScript = document.createElement("script");
+      clarityScript.id = "clarity-heatmap-script";
+      clarityScript.async = true;
+      clarityScript.src = `https://www.clarity.ms/tag/${encodeURIComponent(subproduct.clarityProjectId)}`;
+      document.head.appendChild(clarityScript);
 
-    // Tag de contexto do subproduto no Heatmap
-    if (typeof window.clarity === "function") {
-      window.clarity("set", "subproduct", subproduct.key);
-      window.clarity("set", "domain", window.location.hostname);
-    }
+      // Tag de contexto do subproduto no Heatmap
+      if (typeof window.clarity === "function") {
+        window.clarity("set", "subproduct", subproduct.key);
+        window.clarity("set", "domain", window.location.hostname);
+      }
+    });
   }
 
   return subproduct;
