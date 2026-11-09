@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Award, ShieldCheck } from "lucide-react";
 import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
@@ -818,14 +818,9 @@ const SelecionarClinica = () => {
   const renderActiveSection = () => {
     if (activeSection === "dashboard") {
       return (
-        <PersonalDashboardTab
-          loadingDashboard={loadingDashboard}
-          dashboardData={dashboardData}
-          attendanceRange={attendanceRange}
-          setAttendanceRange={setAttendanceRange}
-          isPlatformOwner={isPlatformOwner}
-          onNavigateToPlatform={() => navigate("/platform")}
-        />
+        <Suspense fallback={<div className="h-48 w-full animate-pulse rounded-lg bg-muted/40" />}>
+          <PersonalDashboardTab loadingDashboard={loadingDashboard} dashboardData={dashboardData} attendanceRange={attendanceRange} setAttendanceRange={setAttendanceRange} isPlatformOwner={isPlatformOwner} onNavigateToPlatform={() => navigate("/platform")} />
+        </Suspense>
       );
     }
     if (activeSection === "portfolio") return renderPortfolio();
