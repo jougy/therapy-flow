@@ -25,7 +25,17 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Browsers (for Smoke Test)
-        run: npx playwright install --with-deps chromium
+        run: |
+          for i in 1 2 3; do
+            echo "Attempt $i: Installing Playwright chromium with deps..."
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "Attempt $i failed. Retrying in 10s..."
+            sleep 10
+          done
+          echo "All attempts failed to install with deps, trying fallback without --with-deps..."
+          npx playwright install chromium
 
       - name: Run Full Pre-Merge Quality Gate & Smoke Test
         run: bash scripts/dev/pre-deploy-guard.sh
