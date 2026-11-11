@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Award,
   Building2,
   Clock3,
   Filter,
@@ -25,6 +26,8 @@ import { CreateAccountDialog } from "@/components/platform/CreateAccountDialog";
 import { ResetRegistrationDialog } from "@/components/platform/ResetRegistrationDialog";
 import { PlatformAuditList } from "@/components/platform/PlatformAuditList";
 import { DirectoryCard, DirectoryPill } from "@/components/platform/DirectoryCard";
+import { PlatformInviteAffiliateModal, type PlatformInviteAffiliateUser } from "@/components/platform/PlatformInviteAffiliateModal";
+import { PlatformAffiliateManagementModal } from "@/components/platform/PlatformAffiliateManagementModal";
 import { consolidateDirectoryItems } from "@/components/platform/directory-utils";
 import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import type {
@@ -65,7 +68,21 @@ export const PlatformDirectoryPage = () => {
   const [createClinicOpen, setCreateClinicOpen] = useState(false);
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [affiliateUser, setAffiliateUser] = useState<PlatformInviteAffiliateUser | null>(null);
+  const [inviteAffiliateOpen, setInviteAffiliateOpen] = useState(false);
+  const [affiliateManagementOpen, setAffiliateManagementOpen] = useState(false);
   const navigate = useNavigate();
+
+  const handleInviteAffiliate = useCallback((item: PlatformDirectoryItem) => {
+    setAffiliateUser({
+      id: item.item_id,
+      fullName: item.title,
+      email: (item.metadata?.email as string) || (item.subtitle?.includes("@") ? item.subtitle : undefined),
+      phone: (item.metadata?.phone as string) || item.secondary_document || undefined,
+      clinicId: item.clinic_id || undefined,
+    });
+    setInviteAffiliateOpen(true);
+  }, []);
 
   // Carregar tags disponíveis
   useEffect(() => {
@@ -387,6 +404,15 @@ export const PlatformDirectoryPage = () => {
               <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
               Resetar cadastro
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1 border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-50"
+              onClick={() => setAffiliateManagementOpen(true)}
+            >
+              <Award className="h-3.5 w-3.5 text-amber-500" />
+              Gestão de Afiliados
+            </Button>
             <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => setCreateClinicOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
               Nova clínica
@@ -475,6 +501,7 @@ export const PlatformDirectoryPage = () => {
                     key={`${item.item_type}-${item.item_id}`}
                     item={item}
                     onClick={() => openDirectoryItem(item)}
+                    onInviteAffiliate={handleInviteAffiliate}
                   />
                 ))}
               </div>
@@ -500,29 +527,24 @@ export const PlatformDirectoryPage = () => {
       <ResetRegistrationDialog
         open={resetDialogOpen}
         onOpenChange={setResetDialogOpen}
-        onSuccess={() => {
-          if (hasSearched) void loadDirectory();
-          void loadAuditEvents();
-        }}
+        onSuccess={() => { if (hasSearched) void loadDirectory(); void loadAuditEvents(); }}
       />
       <CreateClinicDialog
         open={createClinicOpen}
         onOpenChange={setCreateClinicOpen}
-        onCreated={(clinicRouteKey) => {
+        onCreated={(key) => {
           setCreateClinicOpen(false);
-          storePlatformClinicKey(clinicRouteKey);
-          navigate(PLATFORM_CLINIC_DETAIL_ROUTE, { state: { clinicKey: clinicRouteKey } });
+          storePlatformClinicKey(key);
+          navigate(PLATFORM_CLINIC_DETAIL_ROUTE, { state: { clinicKey: key } });
         }}
       />
       <CreateAccountDialog
         open={createAccountOpen}
         onOpenChange={setCreateAccountOpen}
-        onCreated={() => {
-          setCreateAccountOpen(false);
-          void loadDirectory();
-          void loadAuditEvents();
-        }}
+        onCreated={() => { setCreateAccountOpen(false); void loadDirectory(); void loadAuditEvents(); }}
       />
+      <PlatformInviteAffiliateModal user={affiliateUser} isOpen={inviteAffiliateOpen} onClose={() => setInviteAffiliateOpen(false)} onInviteSuccess={() => void loadAuditEvents()} />
+      <PlatformAffiliateManagementModal affiliateId={null} isOpen={affiliateManagementOpen} onClose={() => setAffiliateManagementOpen(false)} />
     </div>
   );
 };

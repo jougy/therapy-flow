@@ -193,6 +193,7 @@ export const formatClinicAccessStatus = (value: string) => clinicAccessStatusLab
 
 export const accountOperationLabels: Record<AccountOperation, string> = {
   assign_user_to_clinic: "Vincular à clínica",
+  change_user_email: "Trocar e-mail de acesso",
   confirm_user_email_manually: "Confirmar e-mail manualmente",
   create_patient: "Criar paciente",
   create_simple_user: "Criar usuário",

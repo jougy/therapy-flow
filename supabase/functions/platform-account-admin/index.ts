@@ -44,7 +44,8 @@ type Action =
   | "resend_invitation"
   | "confirm_user_email_manually"
   | "delete_user_attempt"
-  | "reset_user_password";
+  | "reset_user_password"
+  | "change_user_email";
 
 const accountStatuses = new Set(["active", "payment_pending", "temporarily_paused", "banned"]);
 const operationalRoles = new Set(["admin", "professional", "assistant", "estagiario"]);
@@ -990,6 +991,66 @@ const resetUserPassword = async (payload: Record<string, unknown>) => {
   };
 };
 
+const changeUserEmail = async (payload: Record<string, unknown>) => {
+  const account = await getAccountProfile(payload.identifier ?? payload.userId);
+  const newEmail = normalizeEmail(payload.newEmail ?? payload.email);
+  if (!newEmail || !newEmail.includes("@")) {
+    throw new Error("Novo e-mail de acesso válido é obrigatório.");
+  }
+
+  const currentEmail = normalizeEmail(account.email);
+  if (currentEmail === newEmail) {
+    throw new Error("O novo e-mail informado é idêntico ao e-mail atual do usuário.");
+  }
+
+  // Verificar se o novo e-mail já está em uso por outro usuário
+  const existingUser = await findAuthUserByEmail(newEmail);
+  if (existingUser && existingUser.id !== account.id) {
+    throw new Error(`O e-mail ${newEmail} já está em uso por outra conta.`);
+  }
+
+  // 1. Atualizar e-mail em auth.users via Supabase Auth Admin
+  await updateAuthAccess(account.id, { email: newEmail });
+
+  // 2. Atualizar tabela profiles
+  const { error: profileError } = await admin
+    .from("profiles")
+    .update({
+      email: newEmail,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", account.id);
+
+  if (profileError) {
+    console.warn(`[changeUserEmail] Erro ao sincronizar novo e-mail no perfil de ${account.id}:`, profileError.message);
+  }
+
+  // 3. Registrar evento de segurança auditável
+  try {
+    await admin.from("security_events").insert({
+      actor_user_id: account.id,
+      target_user_id: account.id,
+      event_type: "email_changed_by_admin",
+      visibility_scope: "personal",
+      payload: {
+        method: "platform_backoffice_admin_email_change",
+        old_email: currentEmail,
+        new_email: newEmail,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (secErr) {
+    console.warn(`[changeUserEmail] Não foi possível registrar evento de auditoria:`, secErr);
+  }
+
+  return {
+    user_id: account.id,
+    clinic_id: account.clinic_id,
+    old_email: currentEmail,
+    new_email: newEmail,
+  };
+};
+
 const updateSubaccountAccess = async (payload: Record<string, unknown>) => {
   const account = await getAccountProfile(payload.identifier);
   const { data: membership, error: membershipLookupError } = await admin
@@ -1685,6 +1746,7 @@ type HandlerContext = { userClient?: ReturnType<typeof createClient>; user?: { i
 
 const handlers: Record<Action, (payload: Record<string, unknown>, context?: HandlerContext) => Promise<Record<string, unknown>>> = {
   assign_user_to_clinic: assignUserToClinic,
+  change_user_email: changeUserEmail,
   confirm_user_email_manually: confirmUserEmailManually,
   create_owner_account: createOwnerAccount,
   create_patient: createPatient,

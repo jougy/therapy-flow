@@ -37,6 +37,7 @@ import { PlatformRolesManagementModal } from "@/components/platform/PlatformRole
 import { PlatformRoleModularSummary } from "@/components/platform/PlatformRoleModularSummary";
 import { PlatformUserGovernancePanel } from "@/components/PlatformUserGovernancePanel";
 import { PlatformUserStatistics } from "@/components/PlatformUserStatistics";
+import { PlatformUserAffiliateCard } from "@/components/platform/person-detail/PlatformUserAffiliateCard";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
@@ -68,6 +69,7 @@ const getMembershipOperationScope = (_memberships: Array<Record<string, unknown>
   }
   return [
     "reset_user_password",
+    "change_user_email",
     "update_membership_role",
     "assign_user_to_clinic",
     "remove_user_from_clinic",
@@ -597,115 +599,127 @@ export const PlatformPersonDetailPage = ({ itemType, itemId }: { itemType: "acco
               />
             </CardContent>
           </Card>
-          <Card className="w-full max-w-full min-w-0">
-            <CardHeader><CardTitle>Contexto</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {itemType === "patient" ? (
-                <>
-                  <PlatformInfoGrid
-                    items={[
-                      ["Clínica", String(detail?.clinic?.name ?? "-")],
-                      ["Atendimentos", String(detail?.counts?.sessions ?? 0)],
-                      ["Concluídos", String(detail?.counts?.completed ?? 0)],
-                      ["Rascunhos", String(detail?.counts?.drafts ?? 0)],
-                    ]}
-                  />
-                  {detail?.clinic?.route_key && (
-                    <Button className="w-full" onClick={() => openClinicDetail(detail.clinic?.route_key)}>
-                      Abrir clínica
-                    </Button>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-muted-foreground">{memberships.length} vínculo(s) com clínica.</p>
-                  </div>
-                  {memberships.map((membership) => {
-                    const isOwner = membership.account_role === "account_owner" || membership.operational_role === "owner";
-                    return (
-                      <div
-                        key={String(membership.membership_id)}
-                        className="w-full rounded-lg border p-3 space-y-2.5 bg-card transition-colors hover:border-primary/50 shadow-sm"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <button
-                              type="button"
-                              className="text-left font-medium hover:underline text-foreground truncate block max-w-full"
-                              onClick={() => openClinicDetail(membership.clinic_route_key)}
-                              disabled={!membership.clinic_route_key}
-                            >
-                              {String(membership.clinic_name ?? "Clínica")}
-                            </button>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {String(membership.account_role ?? "membro")} • Status: {String(membership.membership_status ?? "ativo")}
-                            </p>
+          <div className="space-y-4 w-full max-w-full min-w-0">
+            <Card className="w-full max-w-full min-w-0">
+              <CardHeader><CardTitle>Contexto</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {itemType === "patient" ? (
+                  <>
+                    <PlatformInfoGrid
+                      items={[
+                        ["Clínica", String(detail?.clinic?.name ?? "-")],
+                        ["Atendimentos", String(detail?.counts?.sessions ?? 0)],
+                        ["Concluídos", String(detail?.counts?.completed ?? 0)],
+                        ["Rascunhos", String(detail?.counts?.drafts ?? 0)],
+                      ]}
+                    />
+                    {detail?.clinic?.route_key && (
+                      <Button className="w-full" onClick={() => openClinicDetail(detail.clinic?.route_key)}>
+                        Abrir clínica
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">{memberships.length} vínculo(s) com clínica.</p>
+                    </div>
+                    {memberships.map((membership) => {
+                      const isOwner = membership.account_role === "account_owner" || membership.operational_role === "owner";
+                      return (
+                        <div
+                          key={String(membership.membership_id)}
+                          className="w-full rounded-lg border p-3 space-y-2.5 bg-card transition-colors hover:border-primary/50 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <button
+                                type="button"
+                                className="text-left font-medium hover:underline text-foreground truncate block max-w-full"
+                                onClick={() => openClinicDetail(membership.clinic_route_key)}
+                                disabled={!membership.clinic_route_key}
+                              >
+                                {String(membership.clinic_name ?? "Clínica")}
+                              </button>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {String(membership.account_role ?? "membro")} • Status: {String(membership.membership_status ?? "ativo")}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                                isOwner
+                                  ? "bg-purple-500/10 text-purple-700 border-purple-300 dark:text-purple-300"
+                                  : "bg-primary/10 text-primary border-primary/20"
+                              }`}>
+                                {String(membership.operational_role ?? "-")}
+                              </span>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-accent"
+                                title="Alterar relação com a clínica"
+                                onClick={() => handleOpenEditMembership(membership as Record<string, unknown>)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                <span className="sr-only">Alterar relação</span>
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                title={isOwner ? "Owner não pode ser desvinculado diretamente" : "Desvincular usuário desta clínica"}
+                                onClick={() => handleOpenDeleteMembership(membership as Record<string, unknown>)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span className="sr-only">Desvincular</span>
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                              isOwner
-                                ? "bg-purple-500/10 text-purple-700 border-purple-300 dark:text-purple-300"
-                                : "bg-primary/10 text-primary border-primary/20"
-                            }`}>
-                              {String(membership.operational_role ?? "-")}
-                            </span>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-accent"
-                              title="Alterar relação com a clínica"
-                              onClick={() => handleOpenEditMembership(membership as Record<string, unknown>)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                              <span className="sr-only">Alterar relação</span>
-                            </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              title={isOwner ? "Owner não pode ser desvinculado diretamente" : "Desvincular usuário desta clínica"}
-                              onClick={() => handleOpenDeleteMembership(membership as Record<string, unknown>)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              <span className="sr-only">Desvincular</span>
-                            </Button>
-                          </div>
-                        </div>
 
-                        <div className="flex items-center justify-between pt-1 border-t">
-                          {membership.clinic_route_key ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 text-xs px-2 text-muted-foreground hover:text-primary"
-                              onClick={() => openClinicDetail(membership.clinic_route_key)}
-                            >
-                              Abrir clínica
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Sem rota mascarada</span>
-                          )}
+                          <div className="flex items-center justify-between pt-1 border-t">
+                            {membership.clinic_route_key ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs px-2 text-muted-foreground hover:text-primary"
+                                onClick={() => openClinicDetail(membership.clinic_route_key)}
+                              >
+                                Abrir clínica
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Sem rota mascarada</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full gap-2 border-dashed border-primary/40 hover:border-primary hover:bg-primary/5 text-primary text-sm font-medium py-2 shadow-sm"
-                    onClick={() => void handleOpenAddClinic()}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Adicionar a uma clínica
-                  </Button>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                      );
+                    })}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full gap-2 border-dashed border-primary/40 hover:border-primary hover:bg-primary/5 text-primary text-sm font-medium py-2 shadow-sm"
+                      onClick={() => void handleOpenAddClinic()}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Adicionar a uma clínica
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            {itemType === "account" && (
+              <PlatformUserAffiliateCard
+                userId={itemId}
+                userName={title}
+                userEmail={String(entity?.email ?? "") || undefined}
+                userPhone={String(entity?.phone ?? "") || undefined}
+                primaryClinicId={String(detail?.clinic?.id ?? entity?.clinic_id ?? memberships[0]?.clinic_id ?? "") || undefined}
+                onAffiliateStatusChange={() => setReloadKey((value) => value + 1)}
+              />
+            )}
+          </div>
           <div className="w-full max-w-full min-w-0 lg:col-span-2">
             <PlatformAccountOperations
               allowedOperations={itemType === "account" ? getMembershipOperationScope(memberships, isPending) : ["update_patient", "delete_patient"]}

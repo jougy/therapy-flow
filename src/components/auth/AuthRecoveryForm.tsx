@@ -72,9 +72,12 @@ export const AuthRecoveryForm = ({ initialEmail, onSuccess }: AuthRecoveryFormPr
         });
 
         if (resetError) {
+          const isSmtpLimit = /Error sending recovery email|rate limit|email rate limit/i.test(resetError.message);
           toast({
             title: "Erro ao enviar e-mail",
-            description: resetError.message,
+            description: isSmtpLimit
+              ? "Serviço de envio de e-mails momentaneamente ocupado. Por favor, aguarde alguns instantes antes de tentar novamente."
+              : resetError.message,
             variant: "destructive",
           });
           setRecovering(false);
@@ -142,9 +145,12 @@ export const AuthRecoveryForm = ({ initialEmail, onSuccess }: AuthRecoveryFormPr
           });
 
           if (resetError) {
+            const isSmtpLimit = /Error sending recovery email|rate limit|email rate limit/i.test(resetError.message);
             toast({
               title: "Erro ao enviar e-mail",
-              description: resetError.message,
+              description: isSmtpLimit
+                ? "Serviço de envio de e-mails momentaneamente ocupado. Por favor, aguarde alguns instantes antes de tentar novamente."
+                : resetError.message,
               variant: "destructive",
             });
             setRecovering(false);
@@ -165,9 +171,12 @@ export const AuthRecoveryForm = ({ initialEmail, onSuccess }: AuthRecoveryFormPr
         });
 
         if (resetError) {
+          const isSmtpLimit = /Error sending recovery email|rate limit|email rate limit/i.test(resetError.message);
           toast({
             title: "Erro ao enviar recuperação",
-            description: resetError.message,
+            description: isSmtpLimit
+              ? "Serviço de envio de e-mails momentaneamente ocupado. Por favor, aguarde alguns instantes antes de tentar novamente."
+              : resetError.message,
             variant: "destructive",
           });
           setRecovering(false);

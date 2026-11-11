@@ -74,6 +74,9 @@ describe("hasCapability", () => {
     expect(hasCapability(adminContext, "schedule.read_all")).toBe(true);
     expect(hasCapability(adminContext, "sessions.read_all")).toBe(true);
     expect(hasCapability(adminContext, "sessions.write_others")).toBe(true);
+    expect(hasCapability(adminContext, "marketing.affiliates.view")).toBe(true);
+    expect(hasCapability(adminContext, "marketing.affiliates.manage")).toBe(true);
+    expect(hasCapability(adminContext, "marketing.affiliates.withdraw")).toBe(false);
   });
 
   it("keeps professional focused on clinical work", () => {
@@ -89,6 +92,9 @@ describe("hasCapability", () => {
     expect(hasCapability(professionalContext, "schedule.read_all")).toBe(false);
     expect(hasCapability(professionalContext, "sessions.read_all")).toBe(false);
     expect(hasCapability(professionalContext, "sessions.write_others")).toBe(false);
+    expect(hasCapability(professionalContext, "marketing.affiliates.view")).toBe(false);
+    expect(hasCapability(professionalContext, "marketing.affiliates.manage")).toBe(false);
+    expect(hasCapability(professionalContext, "marketing.affiliates.withdraw")).toBe(false);
   });
 
   it("keeps assistant out of clinical and financial sensitive areas", () => {
@@ -102,6 +108,9 @@ describe("hasCapability", () => {
     expect(hasCapability(assistantContext, "forms.read")).toBe(false);
     expect(hasCapability(assistantContext, "forms.manage")).toBe(false);
     expect(hasCapability(assistantContext, "treasury.read")).toBe(false);
+    expect(hasCapability(assistantContext, "marketing.affiliates.view")).toBe(false);
+    expect(hasCapability(assistantContext, "marketing.affiliates.manage")).toBe(false);
+    expect(hasCapability(assistantContext, "marketing.affiliates.withdraw")).toBe(false);
   });
 
   it("keeps estagiario limited to profile/security context and own-session workflows", () => {
@@ -121,6 +130,34 @@ describe("hasCapability", () => {
     expect(hasCapability(internContext, "forms.manage")).toBe(false);
     expect(hasCapability(internContext, "subaccounts.manage")).toBe(false);
     expect(hasCapability(internContext, "treasury.read")).toBe(false);
+    expect(hasCapability(internContext, "marketing.affiliates.view")).toBe(false);
+    expect(hasCapability(internContext, "marketing.affiliates.manage")).toBe(false);
+    expect(hasCapability(internContext, "marketing.affiliates.withdraw")).toBe(false);
+  });
+
+  it("governs marketing affiliates capabilities strictly", () => {
+    // Owner can view, manage, and withdraw
+    expect(hasCapability(ownerContext, "marketing.affiliates.view")).toBe(true);
+    expect(hasCapability(ownerContext, "marketing.affiliates.manage")).toBe(true);
+    expect(hasCapability(ownerContext, "marketing.affiliates.withdraw")).toBe(true);
+
+    // Admin can view and manage, but CANNOT withdraw
+    expect(hasCapability(adminContext, "marketing.affiliates.view")).toBe(true);
+    expect(hasCapability(adminContext, "marketing.affiliates.manage")).toBe(true);
+    expect(hasCapability(adminContext, "marketing.affiliates.withdraw")).toBe(false);
+
+    // Professional, assistant, and intern cannot view/manage/withdraw
+    expect(hasCapability(professionalContext, "marketing.affiliates.view")).toBe(false);
+    expect(hasCapability(assistantContext, "marketing.affiliates.manage")).toBe(false);
+    expect(hasCapability(internContext, "marketing.affiliates.withdraw")).toBe(false);
+
+    // Role overrides allow custom configuration for subaccounts
+    expect(
+      hasCapability(professionalContext, "marketing.affiliates.view", { "marketing.affiliates.view": true }),
+    ).toBe(true);
+    expect(
+      hasCapability(adminContext, "marketing.affiliates.manage", { "marketing.affiliates.manage": false }),
+    ).toBe(false);
   });
 
   it("blocks inactive memberships", () => {

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
 import { EmptyClinicsCallout } from "@/components/personal/EmptyClinicsCallout";
+import { EmptyClinicsRecovery } from "./EmptyClinicsRecovery";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 import { evaluateClinicTrialStatus } from "@/lib/trial";
 import type { AccessibleClinic } from "@/hooks/useAuth";
@@ -34,6 +35,10 @@ export interface ClinicSelectionListProps {
   onSelectClinic: (clinicId: string) => void | Promise<void>;
   onLeaveClinic: (clinicOption: AccessibleClinic) => void | Promise<void>;
   onCreateClinic: () => void;
+  isSearchingClinics?: boolean;
+  searchClinicsAttempt?: number;
+  searchClinicsStatusMessage?: string;
+  onSearchClinics?: () => void | Promise<void>;
 }
 
 export function ClinicSelectionList({
@@ -48,6 +53,10 @@ export function ClinicSelectionList({
   onSelectClinic,
   onLeaveClinic,
   onCreateClinic,
+  isSearchingClinics = false,
+  searchClinicsAttempt = 0,
+  searchClinicsStatusMessage,
+  onSearchClinics,
 }: ClinicSelectionListProps) {
   return (
     <Card className="overflow-hidden">
@@ -98,7 +107,15 @@ export function ClinicSelectionList({
               userEmail={userEmail}
               onCreateClinic={onCreateClinic}
             />
-          ) : null
+          ) : (
+            <EmptyClinicsRecovery
+              isSearching={isSearchingClinics}
+              searchAttempt={searchClinicsAttempt}
+              maxAttempts={3}
+              statusMessage={searchClinicsStatusMessage}
+              onSearchClinics={onSearchClinics || (() => {})}
+            />
+          )
         ) : (
           <div className="grid gap-3">
             {sortedAccessibleClinics.map((clinicOption, index) => {

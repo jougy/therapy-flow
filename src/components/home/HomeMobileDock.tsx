@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
-import { BarChart3, CalendarDays, FileText, Plus, UsersRound, Settings, Building2, UserCog, ChevronRight } from "lucide-react";
+import { BarChart3, CalendarDays, FileText, Plus, Share2, UsersRound, Settings, Building2, UserCog, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { HomeListMode } from "@/components/home/PatientSearchToolbar";
 import {
@@ -10,15 +10,17 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 
-export type ClinicMobileDockAction = "patients" | "sessions" | "new-patient" | "agenda" | "stats" | "settings";
+export type ClinicMobileDockAction = "patients" | "sessions" | "affiliates" | "new-patient" | "agenda" | "stats" | "settings";
 
 interface HomeMobileDockProps {
   listMode: HomeListMode;
   onListModeChange: (mode: HomeListMode) => void;
   hasClinicSessionsList: boolean;
+  canViewAffiliates?: boolean;
   canViewFinancialData: boolean;
   clinicHomePath?: string;
   onOpenNewPatient: () => void;
+  onInviteAffiliate?: () => void;
   onOpenAgenda: () => void;
   onOpenDashboard: () => void;
 }
@@ -27,9 +29,11 @@ export const HomeMobileDock = memo(function HomeMobileDock({
   listMode,
   onListModeChange,
   hasClinicSessionsList,
+  canViewAffiliates,
   canViewFinancialData,
   clinicHomePath = "",
   onOpenNewPatient,
+  onInviteAffiliate,
   onOpenAgenda,
   onOpenDashboard,
 }: HomeMobileDockProps) {
@@ -195,8 +199,17 @@ export const HomeMobileDock = memo(function HomeMobileDock({
         return;
       }
 
+      if (action === "affiliates") {
+        onListModeChange("affiliates");
+        return;
+      }
+
       if (action === "new-patient") {
-        onOpenNewPatient();
+        if (listMode === "affiliates" && onInviteAffiliate) {
+          onInviteAffiliate();
+        } else {
+          onOpenNewPatient();
+        }
         return;
       }
 
@@ -214,7 +227,7 @@ export const HomeMobileDock = memo(function HomeMobileDock({
         setSettingsSheetOpen(true);
       }
     },
-    [canViewFinancialData, onListModeChange, onOpenAgenda, onOpenDashboard, onOpenNewPatient]
+    [canViewFinancialData, listMode, onInviteAffiliate, onListModeChange, onOpenAgenda, onOpenDashboard, onOpenNewPatient]
   );
 
   useEffect(() => {
@@ -252,7 +265,14 @@ export const HomeMobileDock = memo(function HomeMobileDock({
   const dockItems = [
     { action: "patients" as const, title: "Pacientes", icon: UsersRound, active: listMode === "patients" },
     ...(hasClinicSessionsList ? [{ action: "sessions" as const, title: "Atendimentos", icon: FileText, active: listMode === "sessions" }] : []),
-    { action: "new-patient" as const, title: "Novo paciente", icon: Plus, active: false, primary: true },
+    ...(canViewAffiliates ? [{ action: "affiliates" as const, title: "Afiliados", icon: Share2, active: listMode === "affiliates" }] : []),
+    {
+      action: "new-patient" as const,
+      title: listMode === "affiliates" ? "Convidar" : "Novo paciente",
+      icon: listMode === "affiliates" ? Share2 : Plus,
+      active: false,
+      primary: true,
+    },
     { action: "agenda" as const, title: "Agenda", icon: CalendarDays, active: false },
     { action: "stats" as const, title: "Estatísticas", icon: BarChart3, active: false, disabled: !canViewFinancialData },
     { action: "settings" as const, title: "Configurações", icon: Settings, active: false },

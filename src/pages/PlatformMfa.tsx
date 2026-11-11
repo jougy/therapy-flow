@@ -257,18 +257,30 @@ const PlatformMfa = () => {
                       autoFocus
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={submitting || code.length !== 6}>
+                  <Button type="submit" className="w-full min-h-[44px]" disabled={submitting || code.length !== 6}>
                     {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Entrar no painel master"}
                   </Button>
                 </form>
               )}
 
+              {!isSetupMode && (
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => navigate("/platform/mfa/recuperacao")}
+                    className="text-xs text-primary hover:underline min-h-[44px] inline-flex items-center justify-center px-2"
+                  >
+                    Não tem acesso ao Ente Auth? Recuperar por WhatsApp ou E-mail
+                  </button>
+                </div>
+              )}
+
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Button type="button" variant="outline" className="w-full" onClick={() => navigate("/auth")}>
+                <Button type="button" variant="outline" className="w-full min-h-[44px]" onClick={() => navigate("/auth")}>
                   <ArrowLeft className="h-4 w-4" />
                   Voltar
                 </Button>
-                <Button type="button" variant="ghost" className="w-full" onClick={signOut}>
+                <Button type="button" variant="ghost" className="w-full min-h-[44px]" onClick={signOut}>
                   Sair da conta
                 </Button>
               </div>

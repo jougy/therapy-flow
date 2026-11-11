@@ -4,18 +4,21 @@ import { FlagSourceInfo } from "./types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { RotateCcw, Loader2, Settings, RefreshCw, MessageSquare } from "lucide-react";
+import { RotateCcw, Loader2, Settings, RefreshCw, MessageSquare, Users, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface FeatureFlagCardProps {
   feature: FeatureFlagDefinition;
   isOn: boolean;
+  visibility?: "all" | "testers";
   isModified: boolean;
   contextType: "global" | "tag" | "clinic";
   flagSource?: FlagSourceInfo;
   pendingRawFlags: Record<string, unknown>;
   resettingKey: string | null;
   onToggleDraft: (key: string) => void;
+  onChangeVisibilityDraft?: (key: string, visibility: "all" | "testers") => void;
   onResetOverride: (key: string) => Promise<void>;
   onOpenTermsModal: () => void;
   onPublishTermsVersion: () => Promise<void>;
@@ -26,12 +29,14 @@ interface FeatureFlagCardProps {
 export const FeatureFlagCard: React.FC<FeatureFlagCardProps> = ({
   feature,
   isOn,
+  visibility = "all",
   isModified,
   contextType,
   flagSource,
   pendingRawFlags,
   resettingKey,
   onToggleDraft,
+  onChangeVisibilityDraft,
   onResetOverride,
   onOpenTermsModal,
   onPublishTermsVersion,
@@ -109,6 +114,18 @@ export const FeatureFlagCard: React.FC<FeatureFlagCardProps> = ({
           {isModified && (
             <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-mono">
               Alterado (Pendente)
+            </Badge>
+          )}
+
+          {visibility === "testers" ? (
+            <Badge variant="outline" className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-300 text-[10px] inline-flex items-center gap-1 font-medium">
+              <FlaskConical className="w-2.5 h-2.5" />
+              Apenas Testers
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 text-[10px] inline-flex items-center gap-1">
+              <Users className="w-2.5 h-2.5" />
+              Todos
             </Badge>
           )}
 
@@ -202,18 +219,47 @@ export const FeatureFlagCard: React.FC<FeatureFlagCardProps> = ({
             </Button>
 
             {feature.hasToggle !== false && (
-              <div className="flex items-center gap-2">
-                <span className={cn(
-                  "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider",
-                  isOn ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-                )}>
-                  {isOn ? 'On' : 'Off'}
-                </span>
-                <Switch 
-                  checked={isOn} 
-                  onCheckedChange={() => onToggleDraft(feature.key)} 
-                  className="data-[state=checked]:bg-emerald-500"
-                />
+              <div className="flex items-center gap-3 pl-1">
+                {onChangeVisibilityDraft && (
+                  <div className="flex items-center gap-1.5" title="Definir visibilidade da feature flag">
+                    <Select
+                      value={visibility}
+                      onValueChange={(val: "all" | "testers") => onChangeVisibilityDraft(feature.key, val)}
+                    >
+                      <SelectTrigger className="h-8 px-2 text-xs border-dashed gap-1 bg-background w-[124px] focus:ring-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">
+                          <span className="flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-neutral-500" />
+                            <span>Todos</span>
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="testers" className="text-xs">
+                          <span className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 font-medium">
+                            <FlaskConical className="w-3.5 h-3.5" />
+                            <span>Apenas Testers</span>
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider",
+                    isOn ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                  )}>
+                    {isOn ? 'On' : 'Off'}
+                  </span>
+                  <Switch 
+                    checked={isOn} 
+                    onCheckedChange={() => onToggleDraft(feature.key)} 
+                    className="data-[state=checked]:bg-emerald-500"
+                  />
+                </div>
               </div>
             )}
           </>

@@ -4,6 +4,7 @@ import { AsaasClient } from '../_shared/asaas-client.ts';
 import { TelegramClient } from '../_shared/telegram-client.ts';
 import { WhatsAppClient } from '../_shared/whatsapp-client.ts';
 import { getGlobalFeatureFlag } from '../_shared/feature-flags-client.ts';
+import { handleAffiliatePaymentReceived, handleAffiliatePaymentRefunded } from '../_shared/affiliate-split.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -165,6 +166,20 @@ Deno.serve(async (req) => {
             net_value: payment.netValue || null,
           })
           .eq('asaas_payment_id', payment.id);
+      }
+
+      // Processar motor de Split de Afiliados (Fase 3)
+      try {
+        const asaasClientForSplit = new AsaasClient();
+        await handleAffiliatePaymentReceived({
+          supabase,
+          asaasClient: asaasClientForSplit,
+          payment,
+          targetSubId,
+          targetClinicId,
+        });
+      } catch (affiliateErr) {
+        console.error('[asaas-webhook] Erro ao processar split de afiliados (fail-safe ativado):', affiliateErr);
       }
 
       // Tentativa de emissão de NFS-e de forma 100% isolada com fail-safe
@@ -368,12 +383,26 @@ Deno.serve(async (req) => {
           .update({ access_status: 'payment_pending', updated_at: new Date().toISOString() })
           .eq('id', targetClinicId);
       }
-    } else if (eventType === 'PAYMENT_REFUNDED' || eventType === 'PAYMENT_CHARGEBACK') {
+    } else if (
+      eventType === 'PAYMENT_REFUNDED' ||
+      eventType === 'PAYMENT_CHARGEBACK' ||
+      eventType === 'PAYMENT_CHARGEBACK_REQUESTED' ||
+      eventType === 'PAYMENT_CHARGEBACK_DISPUTE'
+    ) {
       if (payment.id) {
         await supabase
           .from('subscription_invoices')
           .update({ status: 'REFUNDED', updated_at: new Date().toISOString() })
           .eq('asaas_payment_id', payment.id);
+
+        try {
+          await handleAffiliatePaymentRefunded({
+            supabase,
+            paymentId: payment.id,
+          });
+        } catch (affRefundErr) {
+          console.error('[asaas-webhook] Erro ao estornar comissão de afiliado (fail-safe ativado):', affRefundErr);
+        }
       }
     } else if (eventType === 'PAYMENT_DELETED') {
       if (payment.id) {

@@ -51,7 +51,7 @@ interface AppLayoutProps {
 const AppLayout = ({ children }: AppLayoutProps) => {
   const brand = useActiveBrand();
   const { clinic, endPlatformClinicAccess, leaveClinic, platformAccess, profile, setPlatformSupportRole, setPlatformSimulatedPlan, signOut, subscriptionPlan, simulatedRoleCapabilityOverrides = {} } = useAuth();
-  const { flagOverrides } = useFeatureFlags();
+  const { flagOverrides, simulationAudienceMode, setSimulationAudienceMode } = useFeatureFlags();
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -213,6 +213,8 @@ const AppLayout = ({ children }: AppLayoutProps) => {
           onPlanChange={(plan) => {
             setPlatformSimulatedPlan?.(plan);
           }}
+          audienceMode={simulationAudienceMode}
+          onAudienceModeChange={setSimulationAudienceMode}
           activeRoleOverridesCount={activeRoleOverridesCount}
           onOpenRoleModal={() => setRoleModalOpen(true)}
           activeOverrideCount={activeOverrideCount}

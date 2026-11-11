@@ -131,7 +131,7 @@ export function useAgendaReminderPoller(
 ): UseAgendaReminderPollerReturn {
   const {
     enabled = true,
-    pollIntervalMs = 20000,
+    pollIntervalMs = 60000,
     clinicId: optionsClinicId,
     events: overrideEvents,
     soundKey = "urgent_alarm",

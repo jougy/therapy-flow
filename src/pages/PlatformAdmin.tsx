@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { PlatformLayout } from "@/components/platform/PlatformLayout";
 import { PlatformDirectoryPage } from "@/pages/platform/PlatformDirectoryPage";
+import { PlatformAffiliatesPage } from "@/pages/platform/PlatformAffiliatesPage";
 import { PlatformClinicDetailPage } from "@/pages/platform/PlatformClinicDetailPage";
 import { PlatformPersonDetailPage } from "@/pages/platform/PlatformPersonDetailPage";
 import { PlatformFeedbacksManager } from "@/components/PlatformFeedbacksManager";
@@ -63,6 +64,17 @@ const PlatformAdmin = () => {
         element={
           <PlatformLayout>
             <PlatformDirectoryPage />
+          </PlatformLayout>
+        }
+      />
+      <Route
+        path="afiliados"
+        element={
+          <PlatformLayout
+            title="Afiliados & Parceiros"
+            subtitle="Gestão global do programa de afiliados, tiers e comissões"
+          >
+            <PlatformAffiliatesPage />
           </PlatformLayout>
         }
       />

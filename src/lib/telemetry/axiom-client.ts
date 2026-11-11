@@ -1,8 +1,10 @@
 /**
  * Cliente de Consulta e Ingestão Direta Axiom Cloud
- * Permite buscar logs, erros de runtime e traces no dataset pluri-health-logs sem tocar no Supabase.
+ * Em produção e ambiente autenticado, delega as consultas para a Edge Function segura `platform-observability`,
+ * eliminando bloqueios de CORS, adblockers e protegendo credenciais.
  */
 
+import { supabase } from "@/integrations/supabase/client";
 import { getObservabilityMulticloudConfig } from "./multicloud-drivers";
 
 export interface AxiomLogRecord {
@@ -33,9 +35,37 @@ export interface AxiomQueryParams {
 }
 
 /**
- * Executa uma consulta APL no Axiom e retorna os registros mapeados.
+ * Executa consulta de logs do Axiom.
+ * Prioriza a Edge Function autenticada `platform-observability`.
  */
 export async function queryAxiomLogs(params: AxiomQueryParams = {}): Promise<AxiomLogRecord[]> {
+  try {
+    // 1. Rota Segura via Edge Function (Supabase / Produção)
+    const { data, error } = await supabase.functions.invoke("platform-observability", {
+      body: {
+        action: "query_axiom_logs",
+        limit: params.limit || 100,
+        scope: params.scope,
+        eventType: params.eventType,
+        search: params.search,
+        clinicId: params.clinicId,
+        userId: params.userId,
+        service: params.service,
+      },
+    });
+
+    if (!error && data?.records && Array.isArray(data.records)) {
+      return data.records as AxiomLogRecord[];
+    }
+
+    if (error) {
+      console.warn("[AxiomClient] Edge function platform-observability retornou erro:", error.message);
+    }
+  } catch (fnErr) {
+    console.warn("[AxiomClient] Falha ao invocar platform-observability:", fnErr);
+  }
+
+  // 2. Fallback direto via REST caso esteja em ambiente com token direto configurado
   const config = getObservabilityMulticloudConfig();
   const dataset = config.axiomDataset;
   const token = config.axiomToken;
@@ -81,7 +111,7 @@ export async function queryAxiomLogs(params: AxiomQueryParams = {}): Promise<Axi
     });
 
     if (!res.ok) {
-      console.warn("[AxiomClient] Erro ao consultar Axiom:", res.status, res.statusText);
+      console.warn("[AxiomClient] Erro ao consultar Axiom direto:", res.status, res.statusText);
       return [];
     }
 
@@ -121,7 +151,11 @@ export async function queryAxiomLogs(params: AxiomQueryParams = {}): Promise<Axi
 
     return records;
   } catch (err) {
-    console.warn("[AxiomClient] Exceção ao consultar Axiom:", err);
+    // Se for bloqueio de rede pelo navegador (CORS, adblocker, NetworkError), silencia o warning invasivo
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (!/NetworkError|Failed to fetch|Load failed/i.test(errMsg)) {
+      console.warn("[AxiomClient] Exceção ao consultar Axiom direto:", err);
+    }
     return [];
   }
 }

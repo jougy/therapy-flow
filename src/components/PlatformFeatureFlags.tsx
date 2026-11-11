@@ -36,6 +36,8 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   // Draft state (Pending user confirmation via Salvar/Cancelar buttons)
   const [pendingFlags, setPendingFlags] = useState<Record<string, boolean>>({});
   const [pendingRawFlags, setPendingRawFlags] = useState<Record<string, unknown>>({});
+  const [pendingVisibility, setPendingVisibility] = useState<Record<string, "all" | "testers">>({});
+  const [activeVisibility, setActiveVisibility] = useState<Record<string, "all" | "testers">>({});
   const [modifiedKeys, setModifiedKeys] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
@@ -176,6 +178,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       // 4. Calcular estado efetivo e origem (Global vs Tag vs Clínica)
       const effectiveFlagsMap: Record<string, boolean> = {};
       const effectiveRawMap: Record<string, unknown> = {};
+      const effectiveVisibilityMap: Record<string, "all" | "testers"> = {};
       const sourcesMap: Record<string, FlagSourceInfo> = {};
 
       featureFlagsCatalog.forEach((feature) => {
@@ -220,12 +223,21 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
           effectiveRawMap[key] = globalRawMap[key];
           sourcesMap[key] = { type: "global", label: "Global" };
         }
+
+        const rawVal = effectiveRawMap[key];
+        if (rawVal && typeof rawVal === "object" && (rawVal as Record<string, unknown>).visibility === "testers") {
+          effectiveVisibilityMap[key] = "testers";
+        } else {
+          effectiveVisibilityMap[key] = "all";
+        }
       });
 
       setActiveFlags(effectiveFlagsMap);
       setPendingFlags(effectiveFlagsMap);
       setRawFlags(effectiveRawMap);
       setPendingRawFlags(effectiveRawMap);
+      setActiveVisibility(effectiveVisibilityMap);
+      setPendingVisibility(effectiveVisibilityMap);
       setFlagSources(sourcesMap);
       setModifiedKeys(new Set());
     } catch (error: unknown) {
@@ -254,26 +266,66 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     const currentPendingValue = !!pendingFlags[key];
     const newState = !currentPendingValue;
     const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
+    const currentVis = pendingVisibility[key] || "all";
 
-    let newRawValue: unknown = newState;
+    let newRawValue: unknown;
     if (isConfigurable) {
       const currentRaw = pendingRawFlags[key] || {};
       if (typeof currentRaw === 'object' && currentRaw !== null) {
-        newRawValue = { ...currentRaw, enabled: newState };
+        newRawValue = { ...currentRaw, enabled: newState, visibility: currentVis };
       } else {
-        newRawValue = { enabled: newState };
+        newRawValue = { enabled: newState, visibility: currentVis };
       }
+    } else {
+      newRawValue = { enabled: newState, visibility: currentVis };
     }
 
     setPendingFlags(prev => ({ ...prev, [key]: newState }));
-    if (isConfigurable) {
-      setPendingRawFlags(prev => ({ ...prev, [key]: newRawValue }));
-    }
+    setPendingRawFlags(prev => ({ ...prev, [key]: newRawValue }));
 
     setModifiedKeys(prev => {
       const next = new Set(prev);
       const originalValue = !!activeFlags[key];
-      if (newState === originalValue) {
+      const originalVis = activeVisibility[key] || "all";
+      if (newState === originalValue && currentVis === originalVis) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Handle local draft visibility change (Todos vs Apenas Testers)
+  const handleChangeVisibilityDraft = (key: string, newVisibility: "all" | "testers") => {
+    if (contextType === "tag" && !selectedTagId) {
+      toast({ title: "Selecione uma tag", description: "Você precisa selecionar uma tag para configurar suas flags.", variant: "destructive" });
+      return;
+    }
+
+    const currentState = !!pendingFlags[key];
+    const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
+
+    let newRawValue: unknown;
+    if (isConfigurable) {
+      const currentRaw = pendingRawFlags[key] || {};
+      if (typeof currentRaw === 'object' && currentRaw !== null) {
+        newRawValue = { ...currentRaw, enabled: currentState, visibility: newVisibility };
+      } else {
+        newRawValue = { enabled: currentState, visibility: newVisibility };
+      }
+    } else {
+      newRawValue = { enabled: currentState, visibility: newVisibility };
+    }
+
+    setPendingVisibility(prev => ({ ...prev, [key]: newVisibility }));
+    setPendingRawFlags(prev => ({ ...prev, [key]: newRawValue }));
+
+    setModifiedKeys(prev => {
+      const next = new Set(prev);
+      const originalValue = !!activeFlags[key];
+      const originalVis = activeVisibility[key] || "all";
+      if (currentState === originalValue && newVisibility === originalVis) {
         next.delete(key);
       } else {
         next.add(key);
@@ -286,6 +338,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   const handleCancelDrafts = () => {
     setPendingFlags({ ...activeFlags });
     setPendingRawFlags({ ...rawFlags });
+    setPendingVisibility({ ...activeVisibility });
     setModifiedKeys(new Set());
     toast({ title: "Alterações Canceladas", description: "As modificações pendentes foram descartadas." });
   };
@@ -327,9 +380,9 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     try {
       const keysToSave = Array.from(modifiedKeys);
       for (const key of keysToSave) {
-        const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
-        const newState = pendingFlags[key];
-        const valueToSave = isConfigurable ? pendingRawFlags[key] : newState;
+        const valueToSave = pendingRawFlags[key] !== undefined
+          ? pendingRawFlags[key]
+          : { enabled: pendingFlags[key], visibility: pendingVisibility[key] || "all" };
 
         const { error } = await supabase.rpc("upsert_feature_flag", {
           _key: key,
@@ -373,21 +426,22 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     const key = selectedFlagKey;
     const newState = targetState;
     const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
+    const currentVis = pendingVisibility[key] || "all";
     
-    let valueToSave: unknown = newState;
+    let valueToSave: unknown;
     if (isConfigurable) {
       const raw = pendingRawFlags[key] || {};
       if (typeof raw === 'object' && raw !== null) {
-        valueToSave = { ...raw, enabled: newState };
+        valueToSave = { ...raw, enabled: newState, visibility: currentVis };
       } else {
-        valueToSave = { enabled: newState };
+        valueToSave = { enabled: newState, visibility: currentVis };
       }
+    } else {
+      valueToSave = { enabled: newState, visibility: currentVis };
     }
 
     setPendingFlags(prev => ({ ...prev, [key]: newState }));
-    if (isConfigurable) {
-      setPendingRawFlags(prev => ({ ...prev, [key]: valueToSave }));
-    }
+    setPendingRawFlags(prev => ({ ...prev, [key]: valueToSave }));
     setJustificationModalOpen(false);
 
     try {
@@ -605,12 +659,14 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                       key={feature.key}
                       feature={feature}
                       isOn={!!pendingFlags[feature.key]}
+                      visibility={pendingVisibility[feature.key] || "all"}
                       isModified={modifiedKeys.has(feature.key)}
                       contextType={contextType}
                       flagSource={flagSources[feature.key]}
                       pendingRawFlags={pendingRawFlags}
                       resettingKey={resettingKey}
                       onToggleDraft={handleToggleDraft}
+                      onChangeVisibilityDraft={handleChangeVisibilityDraft}
                       onResetOverride={handleResetOverride}
                       onOpenTermsModal={() => setTermsModalOpen(true)}
                       onPublishTermsVersion={handlePublishNewTermsVersion}

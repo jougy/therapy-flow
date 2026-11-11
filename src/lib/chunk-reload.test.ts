@@ -18,6 +18,8 @@ describe("chunk-reload", () => {
       expect(isChunkLoadError("importing a module script failed")).toBe(true);
       expect(isChunkLoadError("Loading chunk 42 failed")).toBe(true);
       expect(isChunkLoadError("Unable to preload CSS for /assets/index.css")).toBe(true);
+      expect(isChunkLoadError(new Error("can't access property \"default\", e._result is undefined"))).toBe(true);
+      expect(isChunkLoadError("Cannot read properties of undefined (reading 'default')")).toBe(true);
     });
 
     it("returns false for regular application errors", () => {

@@ -569,7 +569,7 @@ BEGIN
         WHERE cm_active.clinic_id = s.clinic_id
           AND cm_active.user_id = _authenticated_user_id
           AND cm_active.is_active = true
-          AND (cm_active.membership_status = 'active' OR cm_active.status = 'active')
+          AND cm_active.membership_status = 'active'
       )
     )
     AND (

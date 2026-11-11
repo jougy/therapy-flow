@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { ArrowUpDown, BarChart3, CalendarDays, FileText, ListFilter, Plus, Search, UsersRound } from "lucide-react";
+import { ArrowUpDown, BarChart3, CalendarDays, FileText, ListFilter, Plus, Search, Share2, UsersRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,13 +15,14 @@ import {
 } from "@/lib/home-patients-view";
 import { getDesignLabButtonClass, designLabIconClass, designLabLabelClass } from "@/lib/design-animations";
 
-export type HomeListMode = "patients" | "sessions";
+export type HomeListMode = "patients" | "sessions" | "affiliates";
 
 interface PatientSearchToolbarProps {
   searchInputRef?: React.RefObject<HTMLInputElement>;
   listMode: HomeListMode;
   onListModeChange: (mode: HomeListMode) => void;
   hasClinicSessionsList: boolean;
+  canViewAffiliates?: boolean;
   search: string;
   onSearchChange: (value: string) => void;
   activeFilterCount: number;
@@ -30,6 +31,7 @@ interface PatientSearchToolbarProps {
   sessionSortKey: HomeSessionSortKey;
   onSessionSortKeyChange: (key: HomeSessionSortKey) => void;
   onOpenNewPatient: () => void;
+  onInviteAffiliate?: () => void;
   onOpenAgenda: () => void;
   onOpenDashboard: () => void;
   canViewFinancialData: boolean;
@@ -49,6 +51,7 @@ export const PatientSearchToolbar = memo(function PatientSearchToolbar({
   listMode,
   onListModeChange,
   hasClinicSessionsList,
+  canViewAffiliates,
   search,
   onSearchChange,
   activeFilterCount,
@@ -57,6 +60,7 @@ export const PatientSearchToolbar = memo(function PatientSearchToolbar({
   sessionSortKey,
   onSessionSortKeyChange,
   onOpenNewPatient,
+  onInviteAffiliate,
   onOpenAgenda,
   onOpenDashboard,
   canViewFinancialData,
@@ -90,6 +94,18 @@ export const PatientSearchToolbar = memo(function PatientSearchToolbar({
               },
             ]
           : []),
+        ...(canViewAffiliates
+          ? [
+              {
+                id: "affiliates",
+                label: compact ? "" : "Afiliados",
+                icon: Share2,
+                buttonClass: compact ? "" : getDesignLabButtonClass("hover:w-[136px]"),
+                labelClass: compact ? "" : designLabLabelClass,
+                iconClass: compact ? "" : designLabIconClass,
+              },
+            ]
+          : []),
       ]}
       activeTab={listMode}
       onChange={(val) => onListModeChange(val as HomeListMode)}
@@ -106,13 +122,25 @@ export const PatientSearchToolbar = memo(function PatientSearchToolbar({
           <div className="relative min-w-0 flex-1 transition-[flex-basis,width] duration-200 ease-out">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder={listMode === "patients" ? "Buscar paciente..." : "Buscar atendimento..."}
+              placeholder={
+                listMode === "patients"
+                  ? "Buscar paciente..."
+                  : listMode === "sessions"
+                    ? "Buscar atendimento..."
+                    : "Buscar afiliado..."
+              }
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               onFocus={() => onMobileSearchFocusChange(true)}
               onBlur={() => onMobileSearchFocusChange(false)}
               className="h-10 rounded-xl border-muted-foreground/20 bg-muted/20 pl-10 text-[16px] shadow-none"
-              aria-label={listMode === "patients" ? "Busca mobile de pacientes" : "Busca mobile de atendimentos"}
+              aria-label={
+                listMode === "patients"
+                  ? "Busca mobile de pacientes"
+                  : listMode === "sessions"
+                    ? "Busca mobile de atendimentos"
+                    : "Busca mobile de afiliados"
+              }
             />
           </div>
           {!mobileSearchFocused && (
@@ -168,11 +196,23 @@ export const PatientSearchToolbar = memo(function PatientSearchToolbar({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               ref={searchInputRef}
-              placeholder={listMode === "patients" ? "Buscar paciente, CPF ou telefone..." : "Buscar atendimento, paciente, status ou data..."}
+              placeholder={
+                listMode === "patients"
+                  ? "Buscar paciente, CPF ou telefone..."
+                  : listMode === "sessions"
+                    ? "Buscar atendimento, paciente, status ou data..."
+                    : "Buscar afiliado..."
+              }
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               className="pl-9 pr-12"
-              aria-label={listMode === "patients" ? "Buscar paciente por nome, CPF ou telefone" : "Buscar atendimento por paciente, status ou data"}
+              aria-label={
+                listMode === "patients"
+                  ? "Buscar paciente por nome, CPF ou telefone"
+                  : listMode === "sessions"
+                    ? "Buscar atendimento por paciente, status ou data"
+                    : "Buscar afiliado por nome ou cupom"
+              }
             />
             {!search && (
               <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-70 md:inline-flex">
@@ -229,16 +269,28 @@ export const PatientSearchToolbar = memo(function PatientSearchToolbar({
         {/* List Mode Switch */}
         <div className="shrink-0">{renderListModeSwitch()}</div>
 
-        {/* New Patient Action */}
-        <Button
-          data-tutorial="patient-add-btn"
-          className={designLabPrimaryActionButtonClass}
-          onClick={onOpenNewPatient}
-          aria-label="Novo Paciente"
-        >
-          <Plus className={designLabIconClass} />
-          <span className={designLabLabelClass}>Novo Paciente</span>
-        </Button>
+        {/* Primary Action Button (New Patient or Invite Affiliate) */}
+        {listMode === "affiliates" ? (
+          <Button
+            data-tutorial="affiliate-invite-btn"
+            className={designLabPrimaryActionButtonClass}
+            onClick={onInviteAffiliate}
+            aria-label="Convidar Afiliado"
+          >
+            <Share2 className={designLabIconClass} />
+            <span className={designLabLabelClass}>Convidar Afiliado</span>
+          </Button>
+        ) : (
+          <Button
+            data-tutorial="patient-add-btn"
+            className={designLabPrimaryActionButtonClass}
+            onClick={onOpenNewPatient}
+            aria-label="Novo Paciente"
+          >
+            <Plus className={designLabIconClass} />
+            <span className={designLabLabelClass}>Novo Paciente</span>
+          </Button>
+        )}
 
         {/* Far Right Actions */}
         <div className="ml-auto flex items-center gap-3">

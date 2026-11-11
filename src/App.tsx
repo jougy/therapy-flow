@@ -59,6 +59,8 @@ const PersonalPortfolioSessionView = lazy(() => import("./pages/personal/Persona
 const SessaoDetalhe = lazy(() => import("./pages/SessaoDetalhe"));
 const PlatformAdmin = lazy(() => import("./pages/PlatformAdmin"));
 const PlatformMfa = lazy(() => import("./pages/PlatformMfa"));
+const PlatformMfaRecovery = lazy(() => import("./pages/PlatformMfaRecovery"));
+const AuthMfaRecovery = lazy(() => import("./pages/AuthMfaRecovery"));
 const PlanosAssinatura = lazy(() => import("./pages/PlanosAssinatura"));
 const DesignLabApp = lazy(() => import("./pages/DesignLabPlaceholder"));
 
@@ -229,6 +231,7 @@ const App = () => (
                       <Route path="/auth/cadastro-usuario" element={<Navigate to="/auth/cadastro" replace />} />
                       <Route path="/auth/confirmado" element={<ContaConfirmada />} />
                       <Route path="/auth/redefinir-senha" element={<RedefinirSenha />} />
+                      <Route path="/auth/mfa/recuperacao" element={<AuthMfaRecovery />} />
                       <Route path="/convite/clinica/:token" element={<ConviteClinica />} />
                       <Route path="/convite/:token" element={<ConviteClinica />} />
                       <Route path="/cadastro" element={<Navigate to="/auth/cadastro" replace />} />
@@ -254,6 +257,7 @@ const App = () => (
                       <Route path="/pagamento" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                       <Route path="/clinicas" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                       <Route path="/platform/mfa" element={<PlatformMfaRoute><PlatformMfa /></PlatformMfaRoute>} />
+                      <Route path="/platform/mfa/recuperacao" element={<PlatformMfaRoute><PlatformMfaRecovery /></PlatformMfaRoute>} />
                       <Route path="/platform/*" element={<PlatformRoute><PlatformAdmin /></PlatformRoute>} />
                       <Route
                         path="/configuracoes"

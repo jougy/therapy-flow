@@ -50,6 +50,8 @@ export interface FeatureFlagRecord {
 
 export type FlagSourceType = "global" | "tag" | "clinic" | "default";
 
+export type FeatureFlagVisibility = "all" | "testers";
+
 export interface FlagSourceInfo {
   type: FlagSourceType;
   label: string;

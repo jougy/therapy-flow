@@ -49,7 +49,10 @@ export type AccessCapability =
   | "sessions.share"
   | "sessions.delete"
   | "session.delete_draft"
-  | "system.print";
+  | "system.print"
+  | "marketing.affiliates.view"
+  | "marketing.affiliates.manage"
+  | "marketing.affiliates.withdraw";
 
 export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "clinic_profile.read",
@@ -89,6 +92,9 @@ export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "sessions.delete",
   "session.delete_draft",
   "system.print",
+  "marketing.affiliates.view",
+  "marketing.affiliates.manage",
+  "marketing.affiliates.withdraw",
 ];
 
 export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: string; label: string }> = {
@@ -119,6 +125,18 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
   "forms.manage": {
     description: "Pode criar, editar, importar e remover modelos de formulários.",
     label: "Gerenciar formulários",
+  },
+  "marketing.affiliates.view": {
+    description: "Pode visualizar o painel, métricas e indicações de afiliados da clínica.",
+    label: "Visualizar afiliados",
+  },
+  "marketing.affiliates.manage": {
+    description: "Pode configurar links, disparar convites e gerenciar campanhas de afiliados.",
+    label: "Gerenciar afiliados",
+  },
+  "marketing.affiliates.withdraw": {
+    description: "Pode configurar dados bancários, PIX e solicitar transferências de comissões.",
+    label: "Saque e split de afiliados",
   },
   "patients.delete": {
     description: "Pode remover e excluir cadastros de pacientes da clínica.",
@@ -294,7 +312,12 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "sessions.write_others":
     case "sessions.delete":
     case "patients.delete":
+    case "marketing.affiliates.view":
+    case "marketing.affiliates.manage":
       return hasOperationalRole(context, ["owner", "admin"]);
+
+    case "marketing.affiliates.withdraw":
+      return isAccountOwner(context);
 
     case "forms.read":
       return hasOperationalRole(context, ["owner", "admin", "professional"]);

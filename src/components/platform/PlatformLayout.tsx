@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
+  Award,
   BookOpen,
   Bug,
   CalendarDays,
@@ -40,6 +41,12 @@ export const PLATFORM_NAV_ITEMS: PlatformNavItem[] = [
     path: "/platform/diretorio",
     label: "Diretório Mestre",
     icon: UsersRound,
+  },
+  {
+    id: "affiliates",
+    path: "/platform/afiliados",
+    label: "Afiliados & Parceiros",
+    icon: Award,
   },
   {
     id: "agenda",

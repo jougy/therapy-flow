@@ -1,8 +1,10 @@
 /**
- * Cliente de Consulta e Agregação Direta Upstash Redis
- * Permite buscar métricas de telemetria, contadores instantâneos e matrizes de permanência sem tocar no Supabase.
+ * Cliente de Consulta e Agregação Upstash Redis
+ * Em produção e ambiente autenticado, delega as consultas para a Edge Function segura `platform-observability`,
+ * eliminando bloqueios de CORS, adblockers e protegendo credenciais.
  */
 
+import { supabase } from "@/integrations/supabase/client";
 import { getObservabilityMulticloudConfig } from "./multicloud-drivers";
 
 export interface UpstashUserTelemetry {
@@ -44,11 +46,50 @@ function parseHashResult(arr: unknown[]): Record<string, number> {
  * Consulta a telemetria em tempo real de um usuário específico no Upstash Redis.
  */
 export async function queryUpstashUserTelemetry(userId: string): Promise<UpstashUserTelemetry | null> {
+  if (!userId) return null;
+
+  // 1. Prioriza chamada segura via Edge Function platform-observability
+  try {
+    const { data, error } = await supabase.functions.invoke("platform-observability", {
+      body: {
+        action: "query_upstash_telemetry",
+        userId,
+      },
+    });
+
+    if (!error && data?.telemetry && Array.isArray(data.telemetry) && data.telemetry.length >= 2) {
+      const dwellRaw = Array.isArray(data.telemetry[0]?.result) ? (data.telemetry[0].result as unknown[]) : [];
+      const countersRaw = Array.isArray(data.telemetry[1]?.result) ? (data.telemetry[1].result as unknown[]) : [];
+
+      const pageDwellMatrix = parseHashResult(dwellRaw);
+      const counters = parseHashResult(countersRaw);
+
+      let totalDwell = 0;
+      Object.values(pageDwellMatrix).forEach((sec) => {
+        totalDwell += sec;
+      });
+
+      return {
+        pageViews: counters.pageViews || 0,
+        printsDetected: counters.printsDetected || 0,
+        docsPrinted: counters.docsPrinted || 0,
+        pdfExported: counters.pdfExported || 0,
+        clinicalRecordsSaved: counters.clinicalRecordsSaved || 0,
+        formsCompleted: counters.formsCompleted || 0,
+        dwellTimeSeconds: totalDwell || counters.dwellTimeSeconds || 0,
+        pageDwellMatrix,
+      };
+    }
+  } catch (err) {
+    console.warn("[UpstashClient] Falha ao consultar via Edge Function platform-observability:", err);
+  }
+
+  // 2. Fallback direto via REST se configurado localmente
   const config = getObservabilityMulticloudConfig();
   const url = config.upstashRestUrl;
   const token = config.upstashRestToken;
 
-  if (!url || !token || !userId) {
+  if (!url || !token) {
     return null;
   }
 
@@ -109,11 +150,45 @@ export async function queryUpstashUserTelemetry(userId: string): Promise<Upstash
  * Consulta a telemetria em tempo real de uma clínica no Upstash Redis.
  */
 export async function queryUpstashClinicTelemetry(clinicId: string): Promise<UpstashClinicTelemetry | null> {
+  if (!clinicId) return null;
+
+  // 1. Prioriza chamada segura via Edge Function platform-observability
+  try {
+    const { data, error } = await supabase.functions.invoke("platform-observability", {
+      body: {
+        action: "query_upstash_telemetry",
+        clinicId,
+      },
+    });
+
+    if (!error && data?.telemetry && Array.isArray(data.telemetry) && data.telemetry.length >= 1) {
+      const dwellRaw = Array.isArray(data.telemetry[0]?.result) ? (data.telemetry[0].result as unknown[]) : [];
+      const pageDwellMatrix = parseHashResult(dwellRaw);
+
+      let totalDwell = 0;
+      Object.values(pageDwellMatrix).forEach((sec) => {
+        totalDwell += sec;
+      });
+
+      return {
+        pageViews: 0,
+        printsDetected: 0,
+        docsPrinted: 0,
+        pdfExported: 0,
+        dwellTimeSeconds: totalDwell,
+        pageDwellMatrix,
+      };
+    }
+  } catch (err) {
+    console.warn("[UpstashClient] Falha ao consultar clinic telemetria via Edge Function:", err);
+  }
+
+  // 2. Fallback direto via REST
   const config = getObservabilityMulticloudConfig();
   const url = config.upstashRestUrl;
   const token = config.upstashRestToken;
 
-  if (!url || !token || !clinicId) {
+  if (!url || !token) {
     return null;
   }
 

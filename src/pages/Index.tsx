@@ -63,6 +63,8 @@ import type { EditablePatientStatus } from "@/lib/patient-statuses";
 import type { PatientCardData } from "@/components/PatientCard";
 import { HomeMobileDock } from "@/components/home/HomeMobileDock";
 import { HomeDashboardModal } from "@/components/home/HomeDashboardModal";
+import { MarketingCrmEngine } from "@/modules/marketing/components/MarketingCrmEngine";
+import { useB2bAffiliateCrm } from "@/modules/marketing/adapters/useB2bAffiliateCrm";
 
 const container = {
   hidden: { opacity: 0 },
@@ -201,12 +203,13 @@ const Index = () => {
   const clinicSessionsListConfig = flags["clinic_sessions_list"] || {};
   const canUseBulkSelection = hasClinicSessionsList && clinicSessionsListConfig.bulk_selection !== false;
   const canViewFinancialData = can("treasury.manage");
+  const canViewAffiliates = Boolean(isFeatureEnabled("marketing_affiliates_module") && typeof can === "function" && can("marketing.affiliates.view"));
+  const affiliateAdapter = useB2bAffiliateCrm({ enabled: canViewAffiliates && listMode === "affiliates" });
 
   useEffect(() => {
-    if (!hasClinicSessionsList && listMode === "sessions") {
-      setListMode("patients");
-    }
-  }, [hasClinicSessionsList, listMode]);
+    if (!hasClinicSessionsList && listMode === "sessions") setListMode("patients");
+    if (!canViewAffiliates && listMode === "affiliates") setListMode("patients");
+  }, [hasClinicSessionsList, canViewAffiliates, listMode]);
 
   // Handle deleted patient from navigation state optimistically
   useEffect(() => {
@@ -709,6 +712,16 @@ const Index = () => {
     setQuickActionsOpen(true);
   }, []);
 
+  const handleInviteAffiliate = useCallback(() => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(`${window.location.origin}/auth?ref=affiliate`);
+    }
+    toast({
+      title: "Convite de Parceiro",
+      description: "Link de indicação copiado! Compartilhe com novos parceiros ou profissionais.",
+    });
+  }, [toast]);
+
   // Render individual session card
   const renderSessionCard = (session: HomeSessionRecord) => {
     const patient = patientById.get(session.patient_id);
@@ -881,6 +894,7 @@ const Index = () => {
             listMode={listMode}
             onListModeChange={setListMode}
             hasClinicSessionsList={hasClinicSessionsList}
+            canViewAffiliates={canViewAffiliates}
             search={search}
             onSearchChange={setSearch}
             activeFilterCount={activeFilterCount}
@@ -889,6 +903,7 @@ const Index = () => {
             sessionSortKey={sessionSortKey}
             onSessionSortKeyChange={setSessionSortKey}
             onOpenNewPatient={() => navigate("/pacientes/novo")}
+            onInviteAffiliate={handleInviteAffiliate}
             onOpenAgenda={() => setAgendaDialogOpen(true)}
             onOpenDashboard={() => setDashboardDialogOpen(true)}
             canViewFinancialData={canViewFinancialData}
@@ -990,7 +1005,7 @@ const Index = () => {
         </Dialog>
 
         {/* Dashboard Modal */}
-        {canViewFinancialData && isFeatureEnabled("dashboards_general") && (
+        {(canViewFinancialData || (listMode === "affiliates" && canViewAffiliates)) && isFeatureEnabled("dashboards_general") && (
           <HomeDashboardModal
             open={dashboardDialogOpen}
             onOpenChange={setDashboardDialogOpen}
@@ -998,6 +1013,7 @@ const Index = () => {
             patients={patients}
             sessions={sessions}
             agendaEvents={agendaEvents}
+            listMode={listMode}
             onNavigateForms={() => {
               const formsPath = effectiveClinicKey
                 ? isDesignLab
@@ -1007,6 +1023,10 @@ const Index = () => {
               navigate(formsPath);
             }}
             onNavigateDashboard={() => {
+              if (listMode === "affiliates") {
+                navigate("/estatisticas?tab=afiliados");
+                return;
+              }
               const dashPath = effectiveClinicKey
                 ? isDesignLab
                   ? `/designlab/clinica/${effectiveClinicKey}/dashboard`
@@ -1023,89 +1043,48 @@ const Index = () => {
         listMode={listMode}
         onListModeChange={setListMode}
         hasClinicSessionsList={hasClinicSessionsList}
+        canViewAffiliates={canViewAffiliates}
         canViewFinancialData={canViewFinancialData}
         clinicHomePath={effectiveClinicKey ? `/clinica/${effectiveClinicKey}` : "/espacopessoal"}
         onOpenNewPatient={() => navigate("/pacientes/novo")}
+        onInviteAffiliate={handleInviteAffiliate}
         onOpenAgenda={() => setAgendaDialogOpen(true)}
         onOpenDashboard={() => setDashboardDialogOpen(true)}
       />
 
       {/* Active Filter Badges */}
-      {filtersAreActive && (
+      {filtersAreActive && listMode !== "affiliates" && (
         <div className="flex items-center gap-2 flex-wrap">
-          {selectedGroupNames.length > 0 && (
-            <Badge variant="secondary">Grupos: {selectedGroupNames.join(", ")}</Badge>
-          )}
-          {selectedColors.length > 0 && (
-            <Badge variant="secondary">Cores: {selectedColors.join(", ")}</Badge>
-          )}
+          {selectedGroupNames.length > 0 && <Badge variant="secondary">Grupos: {selectedGroupNames.join(", ")}</Badge>}
+          {selectedColors.length > 0 && <Badge variant="secondary">Cores: {selectedColors.join(", ")}</Badge>}
           {selectedCollaboratorIds.length > 0 && (
             <Badge variant="secondary">
-              Colaborador:{" "}
-              {selectedCollaboratorIds
-                .map(
-                  (id) =>
-                    collaborators.find((c) => c.id === id)?.full_name ??
-                    collaborators.find((c) => c.id === id)?.email ??
-                    id
-                )
-                .join(", ")}
+              Colaborador: {selectedCollaboratorIds.map((id) => collaborators.find((c) => c.id === id)?.full_name ?? collaborators.find((c) => c.id === id)?.email ?? id).join(", ")}
             </Badge>
           )}
           {selectedStatuses.length > 0 && (
             <Badge variant="secondary">
-              Status:{" "}
-              {selectedStatuses
-                .map((status) => PATIENT_STATUS_OPTIONS.find((opt) => opt.value === status)?.label ?? status)
-                .join(", ")}
+              Status: {selectedStatuses.map((status) => PATIENT_STATUS_OPTIONS.find((opt) => opt.value === status)?.label ?? status).join(", ")}
             </Badge>
           )}
           {selectedOriginTypes.length > 0 && (
             <Badge variant="secondary">
-              Origem:{" "}
-              {PATIENT_ORIGIN_OPTIONS.filter((opt) => selectedOriginTypes.includes(opt.value))
-                .map((opt) => opt.label)
-                .join(", ")}
+              Origem: {PATIENT_ORIGIN_OPTIONS.filter((opt) => selectedOriginTypes.includes(opt.value)).map((opt) => opt.label).join(", ")}
             </Badge>
           )}
-          {selectedPaymentStatuses.length > 0 && (
-            <Badge variant="secondary">
-              Pagamento: {selectedPaymentStatuses.join(", ")}
-            </Badge>
-          )}
-          {selectedAgendaStatuses.length > 0 && (
-            <Badge variant="secondary">
-              Agendamento: {selectedAgendaStatuses.join(", ")}
-            </Badge>
-          )}
+          {selectedPaymentStatuses.length > 0 && <Badge variant="secondary">Pagamento: {selectedPaymentStatuses.join(", ")}</Badge>}
+          {selectedAgendaStatuses.length > 0 && <Badge variant="secondary">Agendamento: {selectedAgendaStatuses.join(", ")}</Badge>}
           {selectedAgendaShifts.length > 0 && (
             <Badge variant="secondary">
-              Turno:{" "}
-              {HOME_PATIENT_AGENDA_SHIFT_OPTIONS.filter((opt) => selectedAgendaShifts.includes(opt.value))
-                .map((opt) => opt.label)
-                .join(", ")}
+              Turno: {HOME_PATIENT_AGENDA_SHIFT_OPTIONS.filter((opt) => selectedAgendaShifts.includes(opt.value)).map((opt) => opt.label).join(", ")}
             </Badge>
           )}
-          {selectedRecurrenceStatuses.length > 0 && (
-            <Badge variant="secondary">
-              Recorrência: {selectedRecurrenceStatuses.join(", ")}
-            </Badge>
-          )}
-          {selectedRecurringWeekdays.length > 0 && (
-            <Badge variant="secondary">
-              Dias recorrentes: {selectedRecurringWeekdays.join(", ")}
-            </Badge>
-          )}
+          {selectedRecurrenceStatuses.length > 0 && <Badge variant="secondary">Recorrência: {selectedRecurrenceStatuses.join(", ")}</Badge>}
+          {selectedRecurringWeekdays.length > 0 && <Badge variant="secondary">Dias recorrentes: {selectedRecurringWeekdays.join(", ")}</Badge>}
           {(sessionDateFrom || sessionDateTo) && (
-            <Badge variant="secondary">
-              Intervalo de datas: {sessionDateFrom || "início"} até {sessionDateTo || "hoje"}
-            </Badge>
+            <Badge variant="secondary">Intervalo de datas: {sessionDateFrom || "início"} até {sessionDateTo || "hoje"}</Badge>
           )}
-          {selectedWeekdays.length > 0 && (
-            <Badge variant="secondary">
-              Dias dos atendimentos: {selectedWeekdays.join(", ")}
-            </Badge>
-          )}
+          {selectedWeekdays.length > 0 && <Badge variant="secondary">Dias dos atendimentos: {selectedWeekdays.join(", ")}</Badge>}
           <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
             <X className="h-4 w-4" />
             Limpar filtros
@@ -1113,8 +1092,12 @@ const Index = () => {
         </div>
       )}
 
-      {/* Main Content Area: Sessions Mode or Patients Mode */}
-      {listMode === "sessions" ? (
+      {/* Main Content Area: Affiliates Mode, Sessions Mode or Patients Mode */}
+      {listMode === "affiliates" && canViewAffiliates ? (
+        <motion.div key="affiliates-crm" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="space-y-4">
+          <MarketingCrmEngine adapter={affiliateAdapter} searchQuery={search} onSearchQueryChange={setSearch} />
+        </motion.div>
+      ) : listMode === "sessions" ? (
         <div className="space-y-3">
           <HomeSessionsBulkActionBar
             selectedSessionIds={selectedSessionIds}

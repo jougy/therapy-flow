@@ -17,6 +17,32 @@
  *    - Normaliza erros HTTP retornados pela API Asaas em mensagens legíveis e padronizadas.
  */
 
+export interface AsaasSplitItem {
+  walletId: string;
+  fixedValue?: number;
+  percentualValue?: number;
+  description?: string;
+}
+
+export interface AsaasSubAccountData {
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  birthDate?: string;
+  companyType?: 'MEI' | 'LIMITED' | 'INDIVIDUAL' | 'ASSOCIATION';
+  phone?: string;
+  mobilePhone?: string;
+  address?: string;
+  addressNumber?: string;
+  complement?: string;
+  province?: string;
+  postalCode?: string;
+  accountOwner?: {
+    cpfCnpj?: string;
+    name?: string;
+  };
+}
+
 export interface AsaasCustomerData {
   name: string;
   email: string;
@@ -81,6 +107,7 @@ export interface AsaasSubscriptionData {
     mobilePhone?: string;
   };
   externalReference?: string;
+  split?: AsaasSplitItem[];
 }
 
 export interface AsaasOneTimePaymentData {
@@ -109,6 +136,7 @@ export interface AsaasOneTimePaymentData {
     addressNumber: string;
     phone: string;
   };
+  split?: AsaasSplitItem[];
 }
 
 export interface AsaasInvoiceData {
@@ -258,6 +286,13 @@ export class AsaasClient {
     });
   }
 
+  async updateSubscriptionSplit(subscriptionId: string, split: AsaasSplitItem[]): Promise<unknown> {
+    return this.request(`/subscriptions/${subscriptionId}`, {
+      method: 'POST',
+      body: JSON.stringify({ split }),
+    });
+  }
+
   async cancelSubscription(id: string): Promise<{ id: string; deleted: boolean }> {
     return this.request(`/subscriptions/${id}`, {
       method: 'DELETE',
@@ -356,6 +391,14 @@ export class AsaasClient {
   async getInvoice(invoiceId: string): Promise<AsaasInvoiceResponse> {
     return this.request<AsaasInvoiceResponse>(`/invoices/${invoiceId}`, {
       method: 'GET',
+    });
+  }
+
+  // Subcontas / Parceiros e Afiliados
+  async createSubAccount(data: AsaasSubAccountData): Promise<{ id: string; apiKey?: string; walletId?: string; [key: string]: unknown }> {
+    return this.request('/accounts', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 }
