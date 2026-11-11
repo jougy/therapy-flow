@@ -120,4 +120,70 @@ describe("HomeDashboardModal", () => {
     fireEvent.click(statsBtn);
     expect(onNavigateDashboard).toHaveBeenCalled();
   });
+
+  it("renders AffiliateFinancialStatsBlock when listMode is affiliates", async () => {
+    const onOpenChange = vi.fn();
+    const onNavigateForms = vi.fn();
+    const onNavigateDashboard = vi.fn();
+
+    renderWithClient(
+      <HomeDashboardModal
+        open={true}
+        onOpenChange={onOpenChange}
+        clinicId="clinic-1"
+        listMode="affiliates"
+        onNavigateForms={onNavigateForms}
+        onNavigateDashboard={onNavigateDashboard}
+      />
+    );
+
+    expect(screen.getByText("Resumo Geral de Afiliados")).toBeInTheDocument();
+    expect(
+      screen.getByText("Indicadores financeiros de comissões, saldo Asaas e compliance fiscal do programa de parceiros.")
+    ).toBeInTheDocument();
+
+    // Verify affiliate cards and sections are present
+    expect(screen.getByText("Saldo Disponível Asaas")).toBeInTheDocument();
+    expect(screen.getByText("Saldo em Garantia")).toBeInTheDocument();
+    expect(screen.getByText("MRR de Afiliados")).toBeInTheDocument();
+    expect(screen.getByText("Extrato Resumido de Comissões e Splits")).toBeInTheDocument();
+    expect(screen.getByText("Módulo Fiscal & Informe de Rendimentos")).toBeInTheDocument();
+
+    const statsBtn = screen.getByRole("button", { name: /Estatísticas completas de afiliados/i });
+    fireEvent.click(statsBtn);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onNavigateDashboard).toHaveBeenCalled();
+  });
+
+  it("allows switching between clinical view and affiliate view via tabs", async () => {
+    const onOpenChange = vi.fn();
+    const onNavigateForms = vi.fn();
+    const onNavigateDashboard = vi.fn();
+
+    renderWithClient(
+      <HomeDashboardModal
+        open={true}
+        onOpenChange={onOpenChange}
+        clinicId="clinic-1"
+        onNavigateForms={onNavigateForms}
+        onNavigateDashboard={onNavigateDashboard}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Visão Clínica")).toBeInTheDocument();
+    });
+
+    const affiliateTabBtn = screen.getByRole("button", { name: /Afiliados & Parcerias/i });
+    fireEvent.click(affiliateTabBtn);
+
+    expect(screen.getByText("Resumo Geral de Afiliados")).toBeInTheDocument();
+    expect(screen.getByText("Saldo Disponível Asaas")).toBeInTheDocument();
+
+    const clinicalTabBtn = screen.getByRole("button", { name: /Visão Clínica/i });
+    fireEvent.click(clinicalTabBtn);
+
+    expect(screen.getByText("Resumo geral")).toBeInTheDocument();
+    expect(screen.getByText("Total de atendimentos")).toBeInTheDocument();
+  });
 });

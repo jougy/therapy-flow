@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Eye, EyeOff, Info, KeyRound, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { PlatformOperationPendingChanges } from "./PlatformOperationPendingChanges";
@@ -124,9 +123,7 @@ export const PlatformAccountOperations = ({
   const generateRandomPassword = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*";
     let generated = "";
-    for (let i = 0; i < 12; i++) {
-      generated += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (let i = 0; i < 12; i++) generated += chars.charAt(Math.floor(Math.random() * chars.length));
     setForm((prev) => ({ ...prev, password: generated }));
     setShowPassword(true);
     toast({
@@ -140,26 +137,18 @@ export const PlatformAccountOperations = ({
     if (operation === "update_clinic_access") {
       const currentPlan = initialSubscriptionPlan ?? "clinic";
       if (subscriptionPlan !== currentPlan) {
-        changes.push(
-          `Tipo de plano: ${planLabels[currentPlan] || currentPlan} ➔ ${planLabels[subscriptionPlan] || subscriptionPlan}`
-        );
+        changes.push(`Tipo de plano: ${planLabels[currentPlan] || currentPlan} ➔ ${planLabels[subscriptionPlan] || subscriptionPlan}`);
       }
       const initialCourtesy = subscriptionData?.is_courtesy === true || subscriptionData?.status === "COURTESY";
       if (isCourtesy !== initialCourtesy) {
-        changes.push(
-          `Cortesia Parceira: ${initialCourtesy ? "Ativada" : "Desativada"} ➔ ${isCourtesy ? "Ativada" : "Desativada"}`
-        );
+        changes.push(`Cortesia Parceira: ${initialCourtesy ? "Ativada" : "Desativada"} ➔ ${isCourtesy ? "Ativada" : "Desativada"}`);
       }
       if (daysAdjustment && daysAdjustment !== "0") {
         const days = Number(daysAdjustment);
-        if (Number.isFinite(days) && days !== 0) {
-          changes.push(`Dias de assinatura: ${days > 0 ? `+${days}` : days} dia(s)`);
-        }
+        if (Number.isFinite(days) && days !== 0) changes.push(`Dias de assinatura: ${days > 0 ? `+${days}` : days} dia(s)`);
       }
       if (form.status !== clinicAccessStatus) {
-        changes.push(
-          `Status da clínica: ${clinicStatusLabels[clinicAccessStatus] || clinicAccessStatus} ➔ ${clinicStatusLabels[form.status] || form.status}`
-        );
+        changes.push(`Status da clínica: ${clinicStatusLabels[clinicAccessStatus] || clinicAccessStatus} ➔ ${clinicStatusLabels[form.status] || form.status}`);
       }
       if (form.concurrentAccessLimit !== concurrentAccessLimit) {
         changes.push(`Acessos simultâneos: ${concurrentAccessLimit} ➔ ${form.concurrentAccessLimit}`);
@@ -167,6 +156,9 @@ export const PlatformAccountOperations = ({
       if (form.subaccountLimit !== subaccountLimit) {
         changes.push(`Limite de subcontas: ${subaccountLimit} ➔ ${form.subaccountLimit}`);
       }
+    }
+    if (operation === "change_user_email" && form.newEmail.trim()) {
+      changes.push(`Novo e-mail de acesso: ${form.newEmail.trim()}`);
     }
     return changes;
   }, [
@@ -179,6 +171,7 @@ export const PlatformAccountOperations = ({
     form.status,
     form.concurrentAccessLimit,
     form.subaccountLimit,
+    form.newEmail,
     clinicAccessStatus,
     concurrentAccessLimit,
     subaccountLimit,
@@ -210,9 +203,7 @@ export const PlatformAccountOperations = ({
         "Ajuste operacional de acesso e limites",
       ];
       for (const fb of fallbacks) {
-        if (!suggestions.includes(fb) && suggestions.length < 5) {
-          suggestions.push(fb);
-        }
+        if (!suggestions.includes(fb) && suggestions.length < 5) suggestions.push(fb);
       }
       return suggestions.slice(0, 5);
     }
@@ -322,6 +313,12 @@ export const PlatformAccountOperations = ({
         identifier: form.identifier,
         password: form.password,
         temporary: forcePasswordReset,
+      };
+    }
+    if (operation === "change_user_email") {
+      return {
+        identifier: form.identifier,
+        newEmail: form.newEmail,
       };
     }
     if (operation === "update_subaccount_access") {
@@ -450,13 +447,13 @@ export const PlatformAccountOperations = ({
           </div>
         )}
 
-        {!clinicId && (operation !== "create_simple_user" || form.clinicId) && operation !== "update_membership_role" && operation !== "assign_user_to_clinic" && operation !== "remove_user_from_clinic" && operation !== "reset_user_password" && (
+        {!clinicId && (operation !== "create_simple_user" || form.clinicId) && operation !== "update_membership_role" && operation !== "assign_user_to_clinic" && operation !== "remove_user_from_clinic" && operation !== "reset_user_password" && operation !== "change_user_email" && (
           <div className="space-y-1">
             <Label>ID/CNPJ da clínica {operation === "create_simple_user" ? "(opcional)" : ""}</Label>
             <Input value={form.clinicId} onChange={(event) => updateField("clinicId", event.target.value)} maxLength={60} />
           </div>
         )}
-        {(operation.includes("subaccount") || operation.includes("user_to_clinic") || operation === "remove_user_from_clinic" || operation === "update_membership_role" || operation === "update_owner_access" || operation === "resend_invitation" || operation === "confirm_user_email_manually" || operation === "delete_user_attempt" || operation === "reset_user_password") && operation !== "create_subaccount" && operation !== "create_simple_user" && (
+        {(operation.includes("subaccount") || operation.includes("user_to_clinic") || operation === "remove_user_from_clinic" || operation === "update_membership_role" || operation === "update_owner_access" || operation === "resend_invitation" || operation === "confirm_user_email_manually" || operation === "delete_user_attempt" || operation === "reset_user_password" || operation === "change_user_email") && operation !== "create_subaccount" && operation !== "create_simple_user" && (
           <div className="space-y-1">
             <Label>E-mail, ID da conta ou convite</Label>
             <Input value={form.identifier} onChange={(event) => updateField("identifier", event.target.value)} maxLength={160} />
@@ -480,10 +477,16 @@ export const PlatformAccountOperations = ({
             <Input value={form.email} onChange={(event) => updateField("email", event.target.value)} maxLength={160} />
           </div>
         )}
-        {(operation === "update_owner_access" || operation === "update_subaccount_access") && (
+        {(operation === "update_owner_access" || operation === "update_subaccount_access" || operation === "change_user_email") && (
           <div className="space-y-1">
-            <Label>Novo e-mail</Label>
-            <Input value={form.newEmail} onChange={(event) => updateField("newEmail", event.target.value)} maxLength={160} />
+            <Label>Novo e-mail de acesso</Label>
+            <Input
+              value={form.newEmail}
+              onChange={(event) => updateField("newEmail", event.target.value)}
+              placeholder="novo.email@exemplo.com"
+              type="email"
+              maxLength={160}
+            />
           </div>
         )}
         {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "update_owner_access" || operation === "update_subaccount_access" || operation === "reset_user_password") && (

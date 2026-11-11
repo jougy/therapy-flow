@@ -177,7 +177,7 @@ export const PersonalSecuritySection = () => {
           .order("last_seen_at", { ascending: false })
           .limit(5),
         supabase
-          .from("platform_audit_events")
+          .from("security_events")
           .select("id, event_type, created_at, visibility_scope, payload")
           .eq("target_user_id", user.id)
           .neq("event_type", "login_success")
@@ -233,6 +233,19 @@ export const PersonalSecuritySection = () => {
     setTotpEnrolling(true);
     setTotpCode("");
     try {
+      // 1. Checa se já existem fatores TOTP residuais na conta e remove-os antes do enroll
+      const { data: factorsData } = await supabase.auth.mfa.listFactors();
+      const existingFactors = factorsData?.all || factorsData?.totp || [];
+      if (Array.isArray(existingFactors) && existingFactors.length > 0) {
+        for (const factor of existingFactors) {
+          try {
+            await supabase.auth.mfa.unenroll({ factorId: factor.id });
+          } catch {
+            // Se falhar o unenroll direto (ex: AAL1), segue para purga administrativa
+          }
+        }
+      }
+
       let enrollRes = await supabase.auth.mfa.enroll({
         factorType: "totp",
         issuer: "Pluri Fisio",
@@ -240,11 +253,15 @@ export const PersonalSecuritySection = () => {
       });
 
       // Se falhar com AAL2 required (fatores zumbis presos), purga via função administrativa e retenta
-      if (enrollRes.error && enrollRes.error.message?.includes("AAL2")) {
+      if (enrollRes.error && (enrollRes.error.message?.includes("AAL2") || enrollRes.error.message?.includes("aal2"))) {
         console.warn("[PersonalSecurity] AAL2 error detectado. Purgando fatores residuais via whatsapp-diagnostics...");
-        await supabase.functions.invoke("whatsapp-diagnostics", {
-          body: { action: "purge_mfa_factors" },
-        });
+        try {
+          await supabase.functions.invoke("whatsapp-diagnostics", {
+            body: { action: "purge_mfa_factors" },
+          });
+        } catch {
+          // ignora erro da edge function caso indisponível
+        }
 
         // Retenta após a purga de fatores
         enrollRes = await supabase.auth.mfa.enroll({
@@ -254,7 +271,12 @@ export const PersonalSecuritySection = () => {
         });
       }
 
-      if (enrollRes.error) throw enrollRes.error;
+      if (enrollRes.error) {
+        if (enrollRes.error.message?.includes("AAL2") || enrollRes.error.message?.includes("aal2")) {
+          throw new Error("Você já possui um autenticador 2FA ativo nesta conta. Desative o 2FA existente antes de cadastrar um novo.");
+        }
+        throw enrollRes.error;
+      }
       const data = enrollRes.data;
 
       setTotpFactor({
@@ -550,8 +572,13 @@ export const PersonalSecuritySection = () => {
 
       setChangePasswordModalOpen(false);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Erro ao enviar e-mail";
-      toast({ title: "Erro ao enviar", description: message, variant: "destructive" });
+      const rawMessage = err instanceof Error ? err.message : "Erro ao enviar e-mail";
+      const isSmtpLimit = /Error sending recovery email|rate limit|email rate limit/i.test(rawMessage);
+      const description = isSmtpLimit
+        ? "O serviço de envio de e-mails está momentaneamente ocupado. Por favor, aguarde alguns minutos ou altere sua senha diretamente pelo formulário acima."
+        : rawMessage;
+
+      toast({ title: "Erro ao enviar", description, variant: "destructive" });
     } finally {
       setSendingResetEmail(false);
     }

@@ -89,9 +89,9 @@ export function DismissibleInfoTip({
   };
 
   const variantStyles = {
-    default: "border-primary/20 bg-primary/5 text-muted-foreground",
-    muted: "border-border bg-muted/30 text-muted-foreground",
-    subtle: "border-sky-500/20 bg-sky-50/50 dark:bg-sky-950/20 text-muted-foreground",
+    default: "border-primary/20 bg-primary/5 text-foreground/80 dark:text-muted-foreground",
+    muted: "border-border bg-muted/30 text-foreground/80 dark:text-muted-foreground",
+    subtle: "border-sky-500/20 bg-sky-50/50 dark:bg-sky-950/20 text-slate-800 dark:text-slate-200",
   };
 
   return (

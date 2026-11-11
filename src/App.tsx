@@ -2,18 +2,18 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { appQueryClient } from "@/lib/query-client";
 import { BrowserRouter, Route, Routes, Navigate, useLocation, useParams } from "react-router-dom";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { Toaster } from "@/components/ui/toaster";
+const Sonner = lazy(() => import("@/components/ui/sonner").then(m => ({ default: m.Toaster })));
+const Toaster = lazy(() => import("@/components/ui/toaster").then(m => ({ default: m.Toaster })));
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
-import AppLayout from "@/components/AppLayout";
+const AppLayout = lazy(() => import("@/components/AppLayout"));
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { Loader2 } from "lucide-react";
 import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 import { TutorialProvider } from "@/contexts/TutorialContext";
-import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
-import { EmailConfirmationRequiredModal } from "@/components/EmailConfirmationRequiredModal";
+const TutorialOverlay = lazy(() => import("@/components/tutorial/TutorialOverlay").then(m => ({ default: m.TutorialOverlay })));
+const EmailConfirmationRequiredModal = lazy(() => import("@/components/EmailConfirmationRequiredModal").then(m => ({ default: m.EmailConfirmationRequiredModal })));
 import { AnalyticsRouteTracker } from "@/components/AnalyticsRouteTracker";
 
 
@@ -39,7 +39,7 @@ const PersonalProfileSection = lazy(() => import("./pages/configuracoes/sections
 const PersonalSecuritySection = lazy(() => import("./pages/configuracoes/sections/PersonalSecuritySection").then(m => ({ default: m.PersonalSecuritySection })));
 const PersonalNotificationsSection = lazy(() => import("./pages/configuracoes/sections/PersonalNotificationsSection").then(m => ({ default: m.PersonalNotificationsSection })));
 const SupportSection = lazy(() => import("./pages/configuracoes/sections/SupportSection").then(m => ({ default: m.SupportSection })));
-import { ConfiguracoesLegacyRedirect } from "./pages/configuracoes/index";
+const ConfiguracoesLegacyRedirect = lazy(() => import("./pages/configuracoes/index").then(m => ({ default: m.ConfiguracoesLegacyRedirect })));
 const ContaConfirmada = lazy(() => import("./pages/ContaConfirmada"));
 const ConviteClinica = lazy(() => import("./pages/ConviteClinica"));
 const BibliotecaFormularios = lazy(() => import("./pages/BibliotecaFormularios"));
@@ -59,6 +59,8 @@ const PersonalPortfolioSessionView = lazy(() => import("./pages/personal/Persona
 const SessaoDetalhe = lazy(() => import("./pages/SessaoDetalhe"));
 const PlatformAdmin = lazy(() => import("./pages/PlatformAdmin"));
 const PlatformMfa = lazy(() => import("./pages/PlatformMfa"));
+const PlatformMfaRecovery = lazy(() => import("./pages/PlatformMfaRecovery"));
+const AuthMfaRecovery = lazy(() => import("./pages/AuthMfaRecovery"));
 const PlanosAssinatura = lazy(() => import("./pages/PlanosAssinatura"));
 const DesignLabApp = lazy(() => import("./pages/DesignLabPlaceholder"));
 
@@ -229,6 +231,7 @@ const App = () => (
                       <Route path="/auth/cadastro-usuario" element={<Navigate to="/auth/cadastro" replace />} />
                       <Route path="/auth/confirmado" element={<ContaConfirmada />} />
                       <Route path="/auth/redefinir-senha" element={<RedefinirSenha />} />
+                      <Route path="/auth/mfa/recuperacao" element={<AuthMfaRecovery />} />
                       <Route path="/convite/clinica/:token" element={<ConviteClinica />} />
                       <Route path="/convite/:token" element={<ConviteClinica />} />
                       <Route path="/cadastro" element={<Navigate to="/auth/cadastro" replace />} />
@@ -254,6 +257,7 @@ const App = () => (
                       <Route path="/pagamento" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                       <Route path="/clinicas" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
                       <Route path="/platform/mfa" element={<PlatformMfaRoute><PlatformMfa /></PlatformMfaRoute>} />
+                      <Route path="/platform/mfa/recuperacao" element={<PlatformMfaRoute><PlatformMfaRecovery /></PlatformMfaRoute>} />
                       <Route path="/platform/*" element={<PlatformRoute><PlatformAdmin /></PlatformRoute>} />
                       <Route
                         path="/configuracoes"

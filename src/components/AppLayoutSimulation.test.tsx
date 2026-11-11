@@ -47,6 +47,9 @@ describe("AppLayout Simulation Mode TopBar", () => {
     // Check Role select trigger
     expect(screen.getAllByText("Owner")[0]).toBeInTheDocument();
 
+    // Check Audience mode trigger
+    expect(screen.getAllByText(/Tester \(Todos\)/i)[0]).toBeInTheDocument();
+
     // Check Feature Flags button
     const flagsButton = screen.getAllByRole("button", { name: /Flags/i })[0];
     expect(flagsButton).toBeInTheDocument();

@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Check,
   Sparkles,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,14 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { SubscriptionPlan } from "@/integrations/supabase/types";
+import { SimulationAudienceMode } from "@/contexts/FeatureFlagsContext";
+import {
+  SimulationMobileRoleDialog,
+  SimulationMobilePlanDialog,
+  SimulationMobileAudienceDialog,
+} from "./simulation";
 
 interface SimulationTopDockProps {
   clinicBrandName: string;
@@ -37,6 +37,8 @@ interface SimulationTopDockProps {
   onRoleChange: (role: string) => void;
   subscriptionPlan: SubscriptionPlan | null | undefined;
   onPlanChange: (plan: SubscriptionPlan) => void;
+  audienceMode?: SimulationAudienceMode;
+  onAudienceModeChange?: (mode: SimulationAudienceMode) => void;
   activeRoleOverridesCount: number;
   onOpenRoleModal: () => void;
   activeOverrideCount: number;
@@ -69,6 +71,8 @@ export const SimulationTopDock = ({
   onRoleChange,
   subscriptionPlan,
   onPlanChange,
+  audienceMode = "tester",
+  onAudienceModeChange,
   activeRoleOverridesCount,
   onOpenRoleModal,
   activeOverrideCount,
@@ -82,6 +86,7 @@ export const SimulationTopDock = ({
 }: SimulationTopDockProps) => {
   const [mobileRoleDialogOpen, setMobileRoleDialogOpen] = useState(false);
   const [mobilePlanDialogOpen, setMobilePlanDialogOpen] = useState(false);
+  const [mobileAudienceDialogOpen, setMobileAudienceDialogOpen] = useState(false);
 
   // Floating tooltip for mobile long press
   const [mobileTooltip, setMobileTooltip] = useState<{ title: string; x: number } | null>(null);
@@ -187,6 +192,28 @@ export const SimulationTopDock = ({
               </span>
               <ChevronDown className="h-3 w-3 opacity-60 ml-0.5" />
             </button>
+
+            {/* Visão de Público Mobile */}
+            {isSimulationMode && onAudienceModeChange && (
+              <button
+                type="button"
+                className="flex items-center gap-1 h-7 px-2 rounded-lg bg-background/90 border border-amber-300 text-xs font-medium text-amber-950 dark:text-amber-200 shrink-0 active:scale-95 transition-transform"
+                onClick={() => setMobileAudienceDialogOpen(true)}
+                onTouchStart={(e) => handleTouchStart(e, "Visão Tester vs Comum")}
+                onTouchEnd={handleTouchEnd}
+                aria-label="Alternar Visão Tester vs Comum"
+              >
+                {audienceMode === "tester" ? (
+                  <FlaskConical className="h-3 w-3 text-purple-600 dark:text-purple-400" />
+                ) : (
+                  <Users className="h-3 w-3 text-neutral-600 dark:text-neutral-400" />
+                )}
+                <span className="font-semibold text-amber-900 dark:text-amber-200">
+                  {audienceMode === "tester" ? "Tester" : "Comum"}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60 ml-0.5" />
+              </button>
+            )}
 
             {/* Flags */}
             <button
@@ -336,6 +363,37 @@ export const SimulationTopDock = ({
               </Select>
             </div>
 
+            {/* Visão de Público: Tester vs Usuário Comum */}
+            {isSimulationMode && onAudienceModeChange && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-amber-800 dark:text-amber-400">
+                  Visão:
+                </span>
+                <Select
+                  value={audienceMode}
+                  onValueChange={(value) => onAudienceModeChange(value as SimulationAudienceMode)}
+                >
+                  <SelectTrigger className="h-8 w-[145px] border-amber-300 bg-background text-foreground text-xs font-medium">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tester" className="text-xs font-medium">
+                      <span className="flex items-center gap-1.5 text-purple-700 dark:text-purple-300">
+                        <FlaskConical className="h-3.5 w-3.5" />
+                        <span>Tester (Todos)</span>
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="common" className="text-xs">
+                      <span className="flex items-center gap-1.5 text-neutral-700 dark:text-neutral-300">
+                        <Users className="h-3.5 w-3.5" />
+                        <span>Comum (Padrão)</span>
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {/* Feature Flags */}
             <Button
               type="button"
@@ -430,86 +488,30 @@ export const SimulationTopDock = ({
       </div>
 
       {/* Touch-Friendly Mobile Role Selection Modal */}
-      <Dialog open={mobileRoleDialogOpen} onOpenChange={setMobileRoleDialogOpen}>
-        <DialogContent className="sm:max-w-md w-[92vw] max-w-sm rounded-2xl p-4">
-          <DialogHeader className="pb-2">
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <UserCog className="h-5 w-5 text-amber-600" />
-              Selecionar Papel Simulado
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Alterne instantaneamente a visualização de permissões para o papel selecionado.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2 py-2">
-            {Object.entries(platformRoleLabels).map(([key, label]) => {
-              const isSelected = simulatedRole === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => {
-                    onRoleChange(key);
-                    setMobileRoleDialogOpen(false);
-                  }}
-                  className={`flex items-center justify-between p-3 rounded-xl border text-left text-sm font-medium transition-colors ${
-                    isSelected
-                      ? "border-amber-500 bg-amber-500/15 text-amber-950 dark:text-amber-200 font-bold"
-                      : "border-border hover:bg-muted/60 text-foreground"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    <span>{label}</span>
-                  </div>
-                  {isSelected && <Check className="h-4 w-4 text-amber-600" />}
-                </button>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <SimulationMobileRoleDialog
+        open={mobileRoleDialogOpen}
+        onOpenChange={setMobileRoleDialogOpen}
+        simulatedRole={simulatedRole}
+        onRoleChange={onRoleChange}
+      />
 
       {/* Touch-Friendly Mobile Plan Selection Modal */}
-      <Dialog open={mobilePlanDialogOpen} onOpenChange={setMobilePlanDialogOpen}>
-        <DialogContent className="sm:max-w-md w-[92vw] max-w-sm rounded-2xl p-4">
-          <DialogHeader className="pb-2">
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-5 w-5 text-amber-600" />
-              Selecionar Plano Simulado
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Simule a experiência e os recursos disponíveis para cada plano.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2 py-2">
-            {Object.entries(platformPlanLabels).map(([key, label]) => {
-              const isSelected = (subscriptionPlan ?? "clinic") === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => {
-                    onPlanChange(key as SubscriptionPlan);
-                    setMobilePlanDialogOpen(false);
-                  }}
-                  className={`flex items-center justify-between p-3 rounded-xl border text-left text-sm font-medium transition-colors ${
-                    isSelected
-                      ? "border-amber-500 bg-amber-500/15 text-amber-950 dark:text-amber-200 font-bold"
-                      : "border-border hover:bg-muted/60 text-foreground"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    <span>{label}</span>
-                  </div>
-                  {isSelected && <Check className="h-4 w-4 text-amber-600" />}
-                </button>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <SimulationMobilePlanDialog
+        open={mobilePlanDialogOpen}
+        onOpenChange={setMobilePlanDialogOpen}
+        subscriptionPlan={subscriptionPlan}
+        onPlanChange={onPlanChange}
+      />
+
+      {/* Touch-Friendly Mobile Audience Selection Modal */}
+      {isSimulationMode && onAudienceModeChange && (
+        <SimulationMobileAudienceDialog
+          open={mobileAudienceDialogOpen}
+          onOpenChange={setMobileAudienceDialogOpen}
+          audienceMode={audienceMode}
+          onAudienceModeChange={onAudienceModeChange}
+        />
+      )}
     </>
   );
 };

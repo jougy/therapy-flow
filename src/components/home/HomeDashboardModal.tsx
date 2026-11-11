@@ -1,5 +1,5 @@
-import { memo, useMemo } from "react";
-import { BarChart3, ClipboardList, Package } from "lucide-react";
+import { memo, useMemo, useState, useEffect } from "react";
+import { BarChart3, ClipboardList } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,8 +10,11 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   useClinicDashboardAnalyticsQuery,
   DEFAULT_CLINIC_ANALYTICS,
+  type ClinicDashboardAnalytics,
 } from "@/hooks/queries/useClinicDataQueries";
 import type { HomeAgendaEventRecord, HomePatientRecord, HomeSessionRecord } from "@/lib/home-patients-view";
+import { DashboardProportionCard, formatPercentage } from "./DashboardProportionCard";
+import { AffiliateFinancialStatsBlock } from "@/components/marketing/stats/AffiliateFinancialStatsBlock";
 
 const dashboardColors = {
   amber: "#f59e0b",
@@ -28,78 +31,7 @@ const dashboardColors = {
   zinc: "#a1a1aa",
 };
 
-const formatPercentage = (value: number) => `${Math.round(Number.isFinite(value) ? value : 0)}%`;
-
 const formatMoney = (cents: number) => formatMoneyCents(Number.isFinite(cents) ? cents : 0);
-
-const sanitizeDashboardSegmentValue = (value: number) => (Number.isFinite(value) && value > 0 ? value : 0);
-
-type DashboardSegment = {
-  color: string;
-  label: string;
-  value: number;
-};
-
-const DashboardProportionCard = ({
-  formatSegmentValue,
-  segments,
-  subtitle,
-  title,
-  value,
-}: {
-  formatSegmentValue?: (value: number) => string;
-  segments: DashboardSegment[];
-  subtitle: string;
-  title: string;
-  value: string;
-}) => {
-  const normalizedSegments = segments
-    .map((segment) => ({ ...segment, value: sanitizeDashboardSegmentValue(segment.value) }))
-    .filter((segment) => segment.value > 0);
-  const total = normalizedSegments.reduce((sum, segment) => sum + segment.value, 0);
-  const visibleSegments = total > 0 ? normalizedSegments : [{ color: "#d6d3d1", label: "Sem dados", value: 1 }];
-  const visibleTotal = visibleSegments.reduce((sum, item) => sum + item.value, 0);
-
-  return (
-    <Card className="p-4">
-      <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">{title}</p>
-      <p className="mt-2 text-4xl font-semibold leading-none text-foreground sm:text-5xl">{value}</p>
-      <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
-      <div className="mt-4 flex h-7 overflow-hidden rounded-full bg-muted">
-        {visibleSegments.map((segment) => {
-          const width = `${Math.max(4, (segment.value / visibleTotal) * 100)}%`;
-
-          return (
-            <div
-              key={segment.label}
-              className="h-full"
-              style={{ backgroundColor: segment.color, width }}
-              title={`${segment.label}: ${segment.value}`}
-            />
-          );
-        })}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-        {normalizedSegments.length > 0 ? (
-          normalizedSegments.map((segment) => (
-            <span key={segment.label} className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: segment.color }} />
-              {segment.label}:{" "}
-              {formatSegmentValue
-                ? `${formatSegmentValue(segment.value)} (${formatPercentage((segment.value / total) * 100)})`
-                : formatPercentage((segment.value / total) * 100)}
-            </span>
-          ))
-        ) : (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
-            Sem dados suficientes
-          </span>
-        )}
-      </div>
-    </Card>
-  );
-};
 
 interface HomeDashboardModalProps {
   open: boolean;
@@ -108,6 +40,7 @@ interface HomeDashboardModalProps {
   patients?: HomePatientRecord[];
   sessions?: HomeSessionRecord[];
   agendaEvents?: HomeAgendaEventRecord[];
+  listMode?: string;
   onNavigateForms: () => void;
   onNavigateDashboard: () => void;
 }
@@ -119,25 +52,36 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
   patients: propPatients,
   sessions: propSessions,
   agendaEvents: propAgendaEvents,
+  listMode,
   onNavigateForms,
   onNavigateDashboard,
 }: HomeDashboardModalProps) {
-  const { clinicId: authClinicId, user } = useAuth();
+  const { clinicId: authClinicId, user, can } = useAuth();
   const clinicId = propClinicId ?? authClinicId;
+  const canViewAffiliates = Boolean(typeof can === "function" && can("marketing.affiliates.view"));
+  const isAffiliatesListMode = listMode === "affiliates";
+
+  const [activeTab, setActiveTab] = useState<"general" | "affiliates">(
+    isAffiliatesListMode ? "affiliates" : "general"
+  );
+
+  useEffect(() => {
+    if (isAffiliatesListMode) {
+      setActiveTab("affiliates");
+    }
+  }, [isAffiliatesListMode]);
 
   const { data: analyticsData = DEFAULT_CLINIC_ANALYTICS, isLoading } = useClinicDashboardAnalyticsQuery(
     clinicId,
     undefined,
-    open && Boolean(clinicId) && Boolean(user)
+    open && activeTab === "general" && Boolean(clinicId) && Boolean(user)
   );
 
   const resolvedAnalytics = useMemo<ClinicDashboardAnalytics>(() => {
-    // Se a RPC retornou dados agregados com pacientes ou sessões, prioriza a RPC
     if (analyticsData && (analyticsData.totalPatients > 0 || analyticsData.totalSessions > 0)) {
       return analyticsData;
     }
 
-    // Se a RPC retornou vazia ou está carregando mas temos propPatients da homepage, constrói fallback resiliente
     if (propPatients && propPatients.length > 0) {
       const patientStatusCounts: Record<string, number> = {};
       let recurringPatients = 0;
@@ -229,7 +173,7 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
   }, [analyticsData, propPatients, propSessions, propAgendaEvents]);
 
   const data = useMemo(() => {
-    if (!open) return null;
+    if (!open || activeTab !== "general") return null;
 
     const totalPatients = resolvedAnalytics.totalPatients;
     const totalSessions = resolvedAnalytics.totalSessions;
@@ -370,47 +314,104 @@ export const HomeDashboardModal = memo(function HomeDashboardModal({
         },
       ],
     };
-  }, [open, resolvedAnalytics]);
+  }, [open, activeTab, resolvedAnalytics]);
 
   if (!open) return null;
+
+  const showTabToggle = canViewAffiliates || isAffiliatesListMode;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-4xl sm:p-6">
         <DialogHeader className="gap-3 text-left sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <DialogTitle>Resumo geral</DialogTitle>
-            <DialogDescription>Indicadores rápidos da clínica para acompanhar operação, atendimentos e pagamentos.</DialogDescription>
+          <div className="space-y-1">
+            <DialogTitle>
+              {activeTab === "affiliates" ? "Resumo Geral de Afiliados" : "Resumo geral"}
+            </DialogTitle>
+            <DialogDescription>
+              {activeTab === "affiliates"
+                ? "Indicadores financeiros de comissões, saldo Asaas e compliance fiscal do programa de parceiros."
+                : "Indicadores rápidos da clínica para acompanhar operação, atendimentos e pagamentos."}
+            </DialogDescription>
+            {showTabToggle && (
+              <div className="pt-1">
+                <div className="flex items-center gap-1 p-1 rounded-lg bg-muted border w-fit">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={activeTab === "general" ? "default" : "ghost"}
+                    onClick={() => setActiveTab("general")}
+                    className="min-h-[44px] sm:min-h-[36px] text-xs h-9 touch-manipulation"
+                  >
+                    Visão Clínica
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={activeTab === "affiliates" ? "default" : "ghost"}
+                    onClick={() => setActiveTab("affiliates")}
+                    className="min-h-[44px] sm:min-h-[36px] text-xs h-9 touch-manipulation"
+                  >
+                    Afiliados & Parcerias
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="w-fit gap-2"
-              onClick={() => {
-                onOpenChange(false);
-                onNavigateForms();
-              }}
-            >
-              <ClipboardList className="h-4 w-4 text-primary" />
-              Formulários & Anamneses
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-fit gap-2"
-              onClick={() => {
-                onOpenChange(false);
-                onNavigateDashboard();
-              }}
-            >
-              <BarChart3 className="h-4 w-4" />
-              Estatísticas completas
-            </Button>
+            {activeTab === "general" ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-fit gap-2 min-h-[44px] touch-manipulation"
+                  onClick={() => {
+                    onOpenChange(false);
+                    onNavigateForms();
+                  }}
+                >
+                  <ClipboardList className="h-4 w-4 text-primary" />
+                  Formulários & Anamneses
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-fit gap-2 min-h-[44px] touch-manipulation"
+                  onClick={() => {
+                    onOpenChange(false);
+                    onNavigateDashboard();
+                  }}
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  Estatísticas completas
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-fit gap-2 min-h-[44px] touch-manipulation"
+                onClick={() => {
+                  onOpenChange(false);
+                  onNavigateDashboard();
+                }}
+              >
+                <BarChart3 className="h-4 w-4" />
+                Estatísticas completas de afiliados
+              </Button>
+            )}
           </div>
         </DialogHeader>
 
-        {isLoading ? (
+        {activeTab === "affiliates" ? (
+          <AffiliateFinancialStatsBlock
+            clinicId={clinicId}
+            onNavigateFullStats={() => {
+              onOpenChange(false);
+              onNavigateDashboard();
+            }}
+          />
+        ) : isLoading ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <Skeleton className="h-40 w-full sm:col-span-2" />
             <Skeleton className="h-32 w-full" />

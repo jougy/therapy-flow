@@ -47,6 +47,8 @@ import {
   PersonalNewsTab,
   ClinicInvitationsList,
   ClinicSelectionList,
+  useClinicsRecovery,
+  usePersonalMobileDock,
 } from "./selecionar-clinica";
 
 const PersonalDashboardTab = lazy(() => import("./selecionar-clinica/PersonalDashboardTab").then(m => ({ default: m.PersonalDashboardTab })));
@@ -77,11 +79,6 @@ const SelecionarClinica = () => {
   const [decliningInvitation, setDecliningInvitation] = useState<ClinicInvitation | null>(null);
   const [leavingClinicId, setLeavingClinicId] = useState<string | null>(null);
   const [clinicSubscriptions, setClinicSubscriptions] = useState<Record<string, ClinicSubscriptionSummary>>({});
-  const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
-  const [mobileDockPressedSection, setMobileDockPressedSection] = useState<PersonalSection | null>(null);
-  const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
-  const [mobileDockTooltip, setMobileDockTooltip] = useState<{ title: string; x: number } | null>(null);
-  const mobileDockScrollResetTimerRef = useRef<number | null>(null);
   const hasAttemptedReconciliation = useRef(false);
 
   const isOAuthUser = Boolean(
@@ -108,6 +105,33 @@ const SelecionarClinica = () => {
       ? sectionItems
       : sectionItems.filter((item) => item.value !== "portfolio");
   }, [isPortfolioEnabled]);
+
+  const {
+    mobileDockExpanded,
+    mobileDockPressedSection,
+    mobileDockPointerActive,
+    mobileDockTooltip,
+    setMobileDockExpanded,
+    setMobileDockPressedSection,
+    setMobileDockPointerActive,
+    updateMobileDockTooltipForButton,
+    finishMobileDockInteraction,
+    updateMobileDockPressedSectionFromPoint,
+  } = usePersonalMobileDock(visibleSectionItems);
+
+  const {
+    isSearchingClinics,
+    searchClinicsAttempt,
+    searchClinicsStatusMessage,
+    handleSearchClinics,
+  } = useClinicsRecovery({
+    authLoading,
+    userId: user?.id,
+    accessibleClinics,
+    hasEnterpriseAccess,
+    isPlatformOwner,
+    refreshAuthState,
+  });
 
   useEffect(() => {
     if (!user?.id) {
@@ -705,64 +729,6 @@ const SelecionarClinica = () => {
     navigate("/onboarding-clinica?mode=create");
   }, [navigate]);
 
-  const updateMobileDockTooltipForButton = (button: HTMLButtonElement, title: string) => {
-    const rect = button.getBoundingClientRect();
-    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || rect.right;
-    const safeInset = 68;
-    const x = Math.min(Math.max(rect.left + rect.width / 2, safeInset), Math.max(safeInset, viewportWidth - safeInset));
-    setMobileDockTooltip({ title, x });
-  };
-
-  const finishMobileDockInteraction = () => {
-    setMobileDockPointerActive(false);
-    setMobileDockExpanded(true);
-    setMobileDockPressedSection(null);
-    setMobileDockTooltip(null);
-  };
-
-  const updateMobileDockPressedSectionFromPoint = (clientX: number, clientY: number) => {
-    if (!mobileDockPointerActive) {
-      return;
-    }
-
-    const element = document.elementFromPoint(clientX, clientY);
-    const button = element?.closest<HTMLButtonElement>("[data-personal-mobile-section]");
-    const sectionId = button?.dataset.personalMobileSection as PersonalSection | undefined;
-    const section = visibleSectionItems.find((item) => item.value === sectionId);
-
-    if (!button || !section) {
-      return;
-    }
-
-    setMobileDockPressedSection(section.value);
-    updateMobileDockTooltipForButton(button, section.label);
-  };
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (mobileDockScrollResetTimerRef.current !== null) {
-        window.clearTimeout(mobileDockScrollResetTimerRef.current);
-      }
-
-      mobileDockScrollResetTimerRef.current = window.setTimeout(() => {
-        setMobileDockExpanded(false);
-        setMobileDockPressedSection(null);
-        setMobileDockPointerActive(false);
-        setMobileDockTooltip(null);
-        mobileDockScrollResetTimerRef.current = null;
-      }, 80);
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-
-      if (mobileDockScrollResetTimerRef.current !== null) {
-        window.clearTimeout(mobileDockScrollResetTimerRef.current);
-      }
-    };
-  }, []);
-
   const renderClinics = (): ReactNode => (
     <>
       {isPlatformOwner ? (
@@ -803,6 +769,10 @@ const SelecionarClinica = () => {
             onSelectClinic={handleSelectClinic}
             onLeaveClinic={handleLeaveClinic}
             onCreateClinic={handleCreateClinicFromEmpty}
+            isSearchingClinics={isSearchingClinics}
+            searchClinicsAttempt={searchClinicsAttempt}
+            searchClinicsStatusMessage={searchClinicsStatusMessage}
+            onSearchClinics={handleSearchClinics}
           />
         </div>
       )}

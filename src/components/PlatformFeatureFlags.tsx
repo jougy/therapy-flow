@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { featureFlagsCatalog, FeatureFlagCategory } from "@/lib/feature-flags-catalog";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Settings, ShieldAlert, Sparkles, Box, LayoutDashboard, FileText, ClipboardList, MessageSquare, Globe, Tag, RefreshCw, CreditCard, Printer, Save, X, AlertTriangle, CheckCircle2, Loader2, Shield, RotateCcw, HelpCircle, Calendar } from "lucide-react";
+import { Globe, Tag, Save, X, AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -15,45 +14,15 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { FeatureConfigModal } from "@/components/FeatureConfigModal";
 import { TermsConfigModal } from "@/components/TermsConfigModal";
+import {
+  getCategoryIcon,
+  TagItem,
+  FeatureFlagRecord,
+  FlagSourceInfo,
+  FeatureFlagCard,
+} from "./platform-feature-flags";
 
-const getCategoryIcon = (category: FeatureFlagCategory) => {
-  switch (category) {
-    case 'Governança': return <Shield className="w-4 h-4 text-emerald-600" />;
-    case 'Storage/Arquivos': return <Box className="w-4 h-4" />;
-    case 'Notificações': return <ShieldAlert className="w-4 h-4" />;
-    case 'Dashboards': return <LayoutDashboard className="w-4 h-4" />;
-    case 'Formulários': return <FileText className="w-4 h-4" />;
-    case 'Prontuário/Atendimentos': return <ClipboardList className="w-4 h-4" />;
-    case 'Impressão': return <Printer className="w-4 h-4" />;
-    case 'UI/Experiência': return <Sparkles className="w-4 h-4" />;
-    case 'Tutoriais & Ajuda': return <HelpCircle className="w-4 h-4 text-sky-500" />;
-    case 'Assinaturas': return <CreditCard className="w-4 h-4" />;
-    case 'Agenda': return <Calendar className="w-4 h-4 text-primary" />;
-    default: return <Settings className="w-4 h-4" />;
-  }
-};
-
-interface TagItem {
-  id: string;
-  name: string;
-  color: string;
-}
-
-interface FeatureFlagRecord {
-  key: string;
-  value: unknown;
-  scope?: string;
-  tag_id?: string | null;
-  clinic_id?: string | null;
-}
-
-export type FlagSourceType = "global" | "tag" | "clinic" | "default";
-
-export interface FlagSourceInfo {
-  type: FlagSourceType;
-  label: string;
-  tagName?: string;
-}
+export type { FlagSourceType, FlagSourceInfo } from "./platform-feature-flags";
 
 export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   const categories = Array.from(new Set(featureFlagsCatalog.map(f => f.category)));
@@ -67,6 +36,8 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   // Draft state (Pending user confirmation via Salvar/Cancelar buttons)
   const [pendingFlags, setPendingFlags] = useState<Record<string, boolean>>({});
   const [pendingRawFlags, setPendingRawFlags] = useState<Record<string, unknown>>({});
+  const [pendingVisibility, setPendingVisibility] = useState<Record<string, "all" | "testers">>({});
+  const [activeVisibility, setActiveVisibility] = useState<Record<string, "all" | "testers">>({});
   const [modifiedKeys, setModifiedKeys] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
@@ -207,6 +178,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
       // 4. Calcular estado efetivo e origem (Global vs Tag vs Clínica)
       const effectiveFlagsMap: Record<string, boolean> = {};
       const effectiveRawMap: Record<string, unknown> = {};
+      const effectiveVisibilityMap: Record<string, "all" | "testers"> = {};
       const sourcesMap: Record<string, FlagSourceInfo> = {};
 
       featureFlagsCatalog.forEach((feature) => {
@@ -251,12 +223,21 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
           effectiveRawMap[key] = globalRawMap[key];
           sourcesMap[key] = { type: "global", label: "Global" };
         }
+
+        const rawVal = effectiveRawMap[key];
+        if (rawVal && typeof rawVal === "object" && (rawVal as Record<string, unknown>).visibility === "testers") {
+          effectiveVisibilityMap[key] = "testers";
+        } else {
+          effectiveVisibilityMap[key] = "all";
+        }
       });
 
       setActiveFlags(effectiveFlagsMap);
       setPendingFlags(effectiveFlagsMap);
       setRawFlags(effectiveRawMap);
       setPendingRawFlags(effectiveRawMap);
+      setActiveVisibility(effectiveVisibilityMap);
+      setPendingVisibility(effectiveVisibilityMap);
       setFlagSources(sourcesMap);
       setModifiedKeys(new Set());
     } catch (error: unknown) {
@@ -285,26 +266,66 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     const currentPendingValue = !!pendingFlags[key];
     const newState = !currentPendingValue;
     const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
+    const currentVis = pendingVisibility[key] || "all";
 
-    let newRawValue: unknown = newState;
+    let newRawValue: unknown;
     if (isConfigurable) {
       const currentRaw = pendingRawFlags[key] || {};
       if (typeof currentRaw === 'object' && currentRaw !== null) {
-        newRawValue = { ...currentRaw, enabled: newState };
+        newRawValue = { ...currentRaw, enabled: newState, visibility: currentVis };
       } else {
-        newRawValue = { enabled: newState };
+        newRawValue = { enabled: newState, visibility: currentVis };
       }
+    } else {
+      newRawValue = { enabled: newState, visibility: currentVis };
     }
 
     setPendingFlags(prev => ({ ...prev, [key]: newState }));
-    if (isConfigurable) {
-      setPendingRawFlags(prev => ({ ...prev, [key]: newRawValue }));
-    }
+    setPendingRawFlags(prev => ({ ...prev, [key]: newRawValue }));
 
     setModifiedKeys(prev => {
       const next = new Set(prev);
       const originalValue = !!activeFlags[key];
-      if (newState === originalValue) {
+      const originalVis = activeVisibility[key] || "all";
+      if (newState === originalValue && currentVis === originalVis) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  // Handle local draft visibility change (Todos vs Apenas Testers)
+  const handleChangeVisibilityDraft = (key: string, newVisibility: "all" | "testers") => {
+    if (contextType === "tag" && !selectedTagId) {
+      toast({ title: "Selecione uma tag", description: "Você precisa selecionar uma tag para configurar suas flags.", variant: "destructive" });
+      return;
+    }
+
+    const currentState = !!pendingFlags[key];
+    const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
+
+    let newRawValue: unknown;
+    if (isConfigurable) {
+      const currentRaw = pendingRawFlags[key] || {};
+      if (typeof currentRaw === 'object' && currentRaw !== null) {
+        newRawValue = { ...currentRaw, enabled: currentState, visibility: newVisibility };
+      } else {
+        newRawValue = { enabled: currentState, visibility: newVisibility };
+      }
+    } else {
+      newRawValue = { enabled: currentState, visibility: newVisibility };
+    }
+
+    setPendingVisibility(prev => ({ ...prev, [key]: newVisibility }));
+    setPendingRawFlags(prev => ({ ...prev, [key]: newRawValue }));
+
+    setModifiedKeys(prev => {
+      const next = new Set(prev);
+      const originalValue = !!activeFlags[key];
+      const originalVis = activeVisibility[key] || "all";
+      if (currentState === originalValue && newVisibility === originalVis) {
         next.delete(key);
       } else {
         next.add(key);
@@ -317,6 +338,7 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
   const handleCancelDrafts = () => {
     setPendingFlags({ ...activeFlags });
     setPendingRawFlags({ ...rawFlags });
+    setPendingVisibility({ ...activeVisibility });
     setModifiedKeys(new Set());
     toast({ title: "Alterações Canceladas", description: "As modificações pendentes foram descartadas." });
   };
@@ -358,9 +380,9 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     try {
       const keysToSave = Array.from(modifiedKeys);
       for (const key of keysToSave) {
-        const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
-        const newState = pendingFlags[key];
-        const valueToSave = isConfigurable ? pendingRawFlags[key] : newState;
+        const valueToSave = pendingRawFlags[key] !== undefined
+          ? pendingRawFlags[key]
+          : { enabled: pendingFlags[key], visibility: pendingVisibility[key] || "all" };
 
         const { error } = await supabase.rpc("upsert_feature_flag", {
           _key: key,
@@ -404,21 +426,22 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
     const key = selectedFlagKey;
     const newState = targetState;
     const isConfigurable = featureFlagsCatalog.find(f => f.key === key)?.hasConfiguration;
+    const currentVis = pendingVisibility[key] || "all";
     
-    let valueToSave: unknown = newState;
+    let valueToSave: unknown;
     if (isConfigurable) {
       const raw = pendingRawFlags[key] || {};
       if (typeof raw === 'object' && raw !== null) {
-        valueToSave = { ...raw, enabled: newState };
+        valueToSave = { ...raw, enabled: newState, visibility: currentVis };
       } else {
-        valueToSave = { enabled: newState };
+        valueToSave = { enabled: newState, visibility: currentVis };
       }
+    } else {
+      valueToSave = { enabled: newState, visibility: currentVis };
     }
 
     setPendingFlags(prev => ({ ...prev, [key]: newState }));
-    if (isConfigurable) {
-      setPendingRawFlags(prev => ({ ...prev, [key]: valueToSave }));
-    }
+    setPendingRawFlags(prev => ({ ...prev, [key]: valueToSave }));
     setJustificationModalOpen(false);
 
     try {
@@ -631,161 +654,29 @@ export function PlatformFeatureFlags({ clinicId }: { clinicId?: string }) {
                 </div>
 
                 <div className="flex flex-col gap-4">
-                  {filteredFeatures.map((feature) => {
-                    const isOn = !!pendingFlags[feature.key];
-                    const isModified = modifiedKeys.has(feature.key);
-
-                    return (
-                      <div 
-                        key={feature.key} 
-                        className={cn(
-                          "flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-5 rounded-xl border transition-colors",
-                          isModified
-                            ? "border-amber-300 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-800"
-                            : "border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 hover:bg-neutral-50 dark:hover:bg-neutral-800/70"
-                        )}
-                      >
-                        <div className="flex-1 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 text-base">{feature.label}</h3>
-                            {feature.key === "terms_of_service_management" && (
-                              <>
-                                <Badge variant="secondary" className="text-[10px] font-mono">
-                                  {[
-                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.owner_br,
-                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.user_br,
-                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.owner_intl,
-                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.user_intl,
-                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.print_terms,
-                                    (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.minor_terms ||
-                                      (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.minor_consent,
-                                  ].filter(Boolean).length}/6 docs customizados
-                                </Badge>
-                                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300 border-sky-300">
-                                  {(pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.minor_terms ||
-                                  (pendingRawFlags["terms_of_service_management"] as Record<string, unknown> | undefined)?.minor_consent
-                                    ? "Menor LGPD: Customizado"
-                                    : "Menor LGPD: Padrão Ativo"}
-                                </Badge>
-                              </>
-                            )}
-                            {isModified && (
-                              <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-mono">
-                                Alterado (Pendente)
-                              </Badge>
-                            )}
-                            {contextType !== "global" && flagSources[feature.key] && (
-                              <>
-                                {flagSources[feature.key].type === "clinic" ? (
-                                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px]">
-                                    Sobrescrito nesta Clínica
-                                  </Badge>
-                                ) : flagSources[feature.key].type === "tag" ? (
-                                  <Badge variant="outline" className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-300 text-[10px]">
-                                    {flagSources[feature.key].label}
-                                  </Badge>
-                                ) : flagSources[feature.key].type === "global" ? (
-                                  <Badge variant="outline" className="bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-300 text-[10px]">
-                                    Herdado do Global
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-neutral-500 text-[10px]">
-                                    Padrão
-                                  </Badge>
-                                )}
-                              </>
-                            )}
-                          </div>
-                          <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                            {feature.description}
-                          </p>
-                        </div>
-                        
-                        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-                          {contextType !== "global" && flagSources[feature.key]?.type === "clinic" && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={resettingKey === feature.key}
-                              className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground gap-1"
-                              onClick={() => void handleResetOverride(feature.key)}
-                              title="Restaurar herança padrão (remover sobrescrita da clínica)"
-                            >
-                              {resettingKey === feature.key ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <RotateCcw className="w-3.5 h-3.5" />
-                              )}
-                              <span>Restaurar Herança</span>
-                            </Button>
-                          )}
-                          {feature.key === "terms_of_service_management" ? (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-9 px-3"
-                                onClick={() => setTermsModalOpen(true)}
-                              >
-                                <Settings className="w-3.5 h-3.5 mr-2" /> Configurar Termos
-                              </Button>
-
-                              <Button
-                                variant="default"
-                                size="sm"
-                                className="h-9 px-3 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                onClick={() => void handlePublishNewTermsVersion()}
-                              >
-                                <RefreshCw className="w-3.5 h-3.5 mr-2" /> Atualizar Versão
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              {feature.hasConfiguration && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="h-9 px-3"
-                                  onClick={() => {
-                                    setConfigFlagKey(feature.key);
-                                    setConfigModalOpen(true);
-                                  }}
-                                >
-                                  <Settings className="w-3.5 h-3.5 mr-2" /> Configurar
-                                </Button>
-                              )}
-
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-9 px-2 text-neutral-500 hover:text-primary"
-                                onClick={() => openJustificationModal(feature.key)}
-                                title="Auditoria Avançada / Justificativa"
-                              >
-                                <MessageSquare className="w-4 h-4" />
-                              </Button>
-
-                              {feature.hasToggle !== false && (
-                                <div className="flex items-center gap-2">
-                                  <span className={cn(
-                                    "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider",
-                                    isOn ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-                                  )}>
-                                    {isOn ? 'On' : 'Off'}
-                                  </span>
-                                  <Switch 
-                                    checked={isOn} 
-                                    onCheckedChange={() => handleToggleDraft(feature.key)} 
-                                    className="data-[state=checked]:bg-emerald-500"
-                                  />
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {filteredFeatures.map((feature) => (
+                    <FeatureFlagCard
+                      key={feature.key}
+                      feature={feature}
+                      isOn={!!pendingFlags[feature.key]}
+                      visibility={pendingVisibility[feature.key] || "all"}
+                      isModified={modifiedKeys.has(feature.key)}
+                      contextType={contextType}
+                      flagSource={flagSources[feature.key]}
+                      pendingRawFlags={pendingRawFlags}
+                      resettingKey={resettingKey}
+                      onToggleDraft={handleToggleDraft}
+                      onChangeVisibilityDraft={handleChangeVisibilityDraft}
+                      onResetOverride={handleResetOverride}
+                      onOpenTermsModal={() => setTermsModalOpen(true)}
+                      onPublishTermsVersion={handlePublishNewTermsVersion}
+                      onOpenConfigModal={(key) => {
+                        setConfigFlagKey(key);
+                        setConfigModalOpen(true);
+                      }}
+                      onOpenJustificationModal={openJustificationModal}
+                    />
+                  ))}
                 </div>
               </motion.div>
             </AnimatePresence>

@@ -13,6 +13,7 @@ vi.mock("./platform-api", () => ({
   accountOperationLabels: {
     update_clinic_access: "Editar acesso da clínica",
     create_subaccount: "Criar subconta",
+    change_user_email: "Trocar e-mail de acesso",
   },
   callPlatformAccountAdmin: vi.fn(),
   destructiveOperations: new Set(["delete_subaccount"]),
@@ -321,6 +322,53 @@ describe("PlatformAccountOperations - Gestão de Clínica, Planos, Dias e Cortes
     expect(screen.getByText(/Faltam 3 caractere\(s\)/i)).toBeInTheDocument();
     expect(submitBtn).toBeDisabled();
     expect(screen.queryByText("Reautenticação 2FA Requerida")).not.toBeInTheDocument();
+  });
+
+  it("renderiza campos para trocar e-mail de acesso e executa com sucesso", async () => {
+    render(
+      <PlatformAccountOperations
+        allowedOperations={["change_user_email"]}
+        defaultIdentifier="usuario@clinica.com"
+        onDone={vi.fn()}
+        title="Trocar e-mail de acesso"
+      />
+    );
+
+    expect(screen.getByDisplayValue("usuario@clinica.com")).toBeInTheDocument();
+    const newEmailInput = screen.getByPlaceholderText("novo.email@exemplo.com");
+    expect(newEmailInput).toBeInTheDocument();
+
+    fireEvent.change(newEmailInput, { target: { value: "novo@clinica.com" } });
+    expect(screen.getByText(/Novo e-mail de acesso: novo@clinica.com/i)).toBeInTheDocument();
+
+    const textarea = screen.getByPlaceholderText(/Informe a justificativa da ação administrativa/i);
+    fireEvent.change(textarea, { target: { value: "Troca solicitada pelo usuário" } });
+
+    const submitBtn = screen.getByRole("button", { name: "Salvar e aplicar alterações pendentes" });
+    expect(submitBtn).toBeEnabled();
+    fireEvent.click(submitBtn);
+
+    const mfaInput = screen.getByTestId("platform-reauth-input");
+    fireEvent.change(mfaInput, { target: { value: "123456" } });
+
+    const confirmBtn = screen.getByRole("button", { name: "Confirmar e aplicar alterações" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(callPlatformAccountAdmin).toHaveBeenCalledWith(
+        "change_user_email",
+        {
+          identifier: "usuario@clinica.com",
+          newEmail: "novo@clinica.com",
+        },
+        "Troca solicitada pelo usuário"
+      );
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Operação concluída com sucesso",
+        })
+      );
+    });
   });
 
   it("trata erro se a sessão estiver inválida após o 2FA", async () => {

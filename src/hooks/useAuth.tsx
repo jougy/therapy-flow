@@ -6,6 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { appQueryClient } from "@/lib/query-client";
 import { clearLocalCache } from "@/lib/indexed-db-persister";
+import { getUserClinicsFromLocalCache, saveUserClinicsToLocalCache, clearUserClinicsLocalCache } from "@/lib/clinics-local-cache";
 import { clearSecuritySessionKey, createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
@@ -20,26 +21,7 @@ import { localTelemetryManager } from "@/lib/telemetry-local-store";
 
 type Profile = Pick<
   Database["public"]["Tables"]["profiles"]["Row"],
-  | "address"
-  | "avatar_url"
-  | "cpf"
-  | "bio"
-  | "clinic_id"
-  | "email"
-  | "full_name"
-  | "job_title"
-  | "last_password_changed_at"
-  | "last_seen_at"
-  | "password_temporary"
-  | "phone"
-  | "professional_license"
-  | "public_code"
-  | "social_name"
-  | "specialty"
-  | "working_hours"
-  | "birth_date"
-  | "profession"
-  | "council_name"
+  "address" | "avatar_url" | "cpf" | "bio" | "clinic_id" | "email" | "full_name" | "job_title" | "last_password_changed_at" | "last_seen_at" | "password_temporary" | "phone" | "professional_license" | "public_code" | "social_name" | "specialty" | "working_hours" | "birth_date" | "profession" | "council_name"
 >;
 
 export type Membership = Database["public"]["Tables"]["clinic_memberships"]["Row"] & {
@@ -332,13 +314,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const endCurrentSecuritySession = useCallback(async (options?: { keepalive?: boolean; session?: Session | null }) => {
     const nextSession = options?.session ?? session;
     const accessToken = nextSession?.access_token;
+    const userId = session?.user?.id ?? null;
     if (!accessToken) {
-      clearSecuritySessionKey();
+      clearSecuritySessionKey(userId);
       currentSecuritySessionKeyRef.current = null;
       return;
     }
 
-    const sessionKey = currentSecuritySessionKeyRef.current ?? await createSecuritySessionKey();
+    const sessionKey = currentSecuritySessionKeyRef.current ?? await createSecuritySessionKey(userId);
     currentSecuritySessionKeyRef.current = sessionKey;
 
     const request = fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/end_current_security_session`, {
@@ -357,25 +340,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch {
       // Best-effort shutdown for abandoned tabs.
     } finally {
-      clearSecuritySessionKey();
+      clearSecuritySessionKey(userId);
       currentSecuritySessionKeyRef.current = null;
     }
   }, [session]);
 
   const registerSecuritySession = useCallback(async (nextSession: Session) => {
+    const userId = nextSession?.user?.id ?? null;
     const browserInfo = parseSecurityUserAgent(
       typeof navigator === "undefined" ? null : navigator.userAgent
     );
-    const sessionKey = currentSecuritySessionKeyRef.current ?? await createSecuritySessionKey();
+    let sessionKey = currentSecuritySessionKeyRef.current ?? await createSecuritySessionKey(userId);
     currentSecuritySessionKeyRef.current = sessionKey;
 
-    const { error } = await supabase.rpc("register_current_security_session", {
+    let { error } = await supabase.rpc("register_current_security_session", {
       _browser: browserInfo.browser,
       _device_label: `${browserInfo.browser} • ${browserInfo.platform}`,
       _platform: browserInfo.platform,
       _session_key: sessionKey,
       _user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
     });
+
+    // Se o banco rejeitou por sessão inválida (ex: colisão de chave de outro usuário no mesmo browser),
+    // regenera a chave escopada para o usuário atual e retenta uma vez
+    if (error && (error.message?.includes("Sessao invalida") || error.details?.includes("Sessao invalida"))) {
+      clearSecuritySessionKey(userId);
+      sessionKey = await createSecuritySessionKey(userId);
+      currentSecuritySessionKeyRef.current = sessionKey;
+
+      const retryRes = await supabase.rpc("register_current_security_session", {
+        _browser: browserInfo.browser,
+        _device_label: `${browserInfo.browser} • ${browserInfo.platform}`,
+        _platform: browserInfo.platform,
+        _session_key: sessionKey,
+        _user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
+      });
+      error = retryRes.error;
+    }
 
     if (error) {
       if (isDuplicateSecuritySessionError(error)) {
@@ -391,10 +392,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (error) {
       logRuntimeError("auth.list_current_user_clinics", error);
+      // Fallback local-first em caso de erro transitório de rede/rpc
+      const cached = await getUserClinicsFromLocalCache(userId);
+      if (cached && cached.length > 0) {
+        return cached;
+      }
       return [];
     }
 
-    return (data ?? []).map((row) => {
+    const fetchedOptions = (data ?? []).map((row) => {
       const subscriptionPlan = row.clinic_subscription_plan as SubscriptionPlan;
       const subaccountLimit = row.clinic_subaccount_limit ?? DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN[subscriptionPlan];
 
@@ -437,6 +443,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         },
       };
     });
+
+    if (fetchedOptions.length > 0) {
+      // Salva no cache local para resiliência local-first O(1)
+      void saveUserClinicsToLocalCache(userId, fetchedOptions);
+      return fetchedOptions;
+    }
+
+    // Se a RPC retornou 0 registros (ex: latência de autenticação ou sessão fria), consulta o cache local
+    const cached = await getUserClinicsFromLocalCache(userId);
+    if (cached && cached.length > 0) {
+      return cached;
+    }
+
+    return [];
   }, []);
 
   const fetchRoleCapabilityOverrides = useCallback(async (clinicId: string) => {
@@ -682,34 +702,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const clinicId = clinic.id;
     const userId = session.user.id;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const refreshRoleCapabilityOverrides = () => {
       void fetchRoleCapabilityOverridesRef.current(clinicId).then(setRoleCapabilityOverrides);
       void appQueryClient.invalidateQueries();
     };
 
-    const channel = supabase
-      .channel(`clinic-role-capabilities:${clinicId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "clinic_operational_role_capabilities", filter: `clinic_id=eq.${clinicId}` }, refreshRoleCapabilityOverrides)
-      .on("postgres_changes", { event: "*", schema: "public", table: "clinic_operational_roles", filter: `clinic_id=eq.${clinicId}` }, () => {
-        refreshRoleCapabilityOverrides();
-        if (userId) void fetchAuthStateRef.current(userId, activeSessionRef.current);
-      })
-      .subscribe((status, error) => {
-        if (error && status !== "CLOSED" && status !== "TIMED_OUT") {
-          const errorMessage = getErrorMessage(error).toLowerCase();
-          const isNormalClosureOrReconnect =
-            ["closed", "unsubscribed", "websocket", "network error", "transport failure"].some((t) => errorMessage.includes(t)) ||
-            (status === "CHANNEL_ERROR" && errorMessage.includes("transport"));
+    // Debounce leve de 500ms para evitar criação e destruição precipitada de canais WebSocket em renders intermediários
+    const timer = window.setTimeout(() => {
+      channel = supabase
+        .channel(`clinic-role-capabilities:${clinicId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "clinic_operational_role_capabilities", filter: `clinic_id=eq.${clinicId}` }, refreshRoleCapabilityOverrides)
+        .on("postgres_changes", { event: "*", schema: "public", table: "clinic_operational_roles", filter: `clinic_id=eq.${clinicId}` }, () => {
+          refreshRoleCapabilityOverrides();
+          if (userId) void fetchAuthStateRef.current(userId, activeSessionRef.current);
+        })
+        .subscribe((status, error) => {
+          if (error && status !== "CLOSED" && status !== "TIMED_OUT") {
+            const errorMessage = getErrorMessage(error).toLowerCase();
+            const isNormalClosureOrReconnect =
+              ["closed", "unsubscribed", "websocket", "network error", "transport failure"].some((t) => errorMessage.includes(t)) ||
+              (status === "CHANNEL_ERROR" && errorMessage.includes("transport"));
 
-          if (!isNormalClosureOrReconnect) {
-            logRuntimeError("auth.clinic_operational_role_capabilities.realtime", error, { clinicId, status });
+            if (!isNormalClosureOrReconnect) {
+              logRuntimeError("auth.clinic_operational_role_capabilities.realtime", error, { clinicId, status });
+            }
           }
-        }
-      });
+        });
+    }, 500);
 
     return () => {
-      if (typeof supabase.removeChannel === "function") {
+      window.clearTimeout(timer);
+      if (channel && typeof supabase.removeChannel === "function") {
         void supabase.removeChannel(channel);
       }
     };
@@ -778,6 +803,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsPasswordRecovery(false);
     appQueryClient.clear();
     void clearLocalCache();
+    void clearUserClinicsLocalCache(session?.user?.id);
     await supabase.auth.signOut();
   };
 

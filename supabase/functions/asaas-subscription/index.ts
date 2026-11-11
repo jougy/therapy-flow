@@ -25,7 +25,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
-import { AsaasClient } from '../_shared/asaas-client.ts';
+import { AsaasClient, AsaasSplitItem } from '../_shared/asaas-client.ts';
+import { resolveAffiliateForCheckout, recordAffiliateConversion } from '../_shared/affiliate-split.ts';
 
 const PLAN_PRICING_CONFIG = {
   // --- Novos Planos: Profissional Individual ---
@@ -338,6 +339,9 @@ Deno.serve(async (req) => {
       credit_card_token,
       installment_count,
       coupon_code,
+      couponCode,
+      affiliate_id,
+      affiliateId,
       cpf_cnpj,
       billing_name,
       billing_email,
@@ -347,6 +351,9 @@ Deno.serve(async (req) => {
       clinic_data,
       allow_duplicate_cnpj,
     } = body;
+
+    const effectiveCouponCode = coupon_code || couponCode;
+    const effectiveAffiliateId = affiliate_id || affiliateId;
 
     const getPlanLimits = (p: string) => {
       const plan = (p || '').toLowerCase();
@@ -889,7 +896,7 @@ Deno.serve(async (req) => {
     // =========================================================================
     // AÇÃO 1: CREATE (Criação ou Atualização de Assinatura com Ciclos e Cupons)
     // =========================================================================
-    if (action === 'CREATE') {
+    if (action === 'CREATE' || action === 'CREATE_SUBSCRIPTION') {
       const selectedPlan = normalizePlanKey(plan_type);
       const isIndividualPlan = selectedPlan === 'prof_basico' || selectedPlan === 'prof_medio' || selectedPlan === 'prof_top' || selectedPlan === 'solo';
       const cycleKey = (billing_cycle || 'annual').toLowerCase() as 'annual' | 'quarterly' | 'monthly';
@@ -913,9 +920,9 @@ Deno.serve(async (req) => {
       let trialEndsAt: string | null = null;
       let trialDays = 0;
 
-      if (coupon_code && String(coupon_code).trim() !== '') {
+      if (effectiveCouponCode && String(effectiveCouponCode).trim() !== '') {
         const { data: couponRes, error: couponErr } = await supabase.rpc('validate_subscription_coupon', {
-          _code: coupon_code,
+          _code: effectiveCouponCode,
           _plan_type: selectedPlan,
           _clinic_id: clinic_id,
           _billing_cycle: cycle,
@@ -951,6 +958,32 @@ Deno.serve(async (req) => {
           .from('subscription_coupons')
           .update({ times_redeemed: (couponRes.times_redeemed || 0) + 1, updated_at: new Date().toISOString() })
           .eq('id', appliedCouponId);
+      }
+
+      // Resolver motor de Split de Afiliados (Fase 3)
+      let resolvedAffiliate: any = null;
+      let affiliateSplit: AsaasSplitItem[] | undefined = undefined;
+
+      if (effectiveCouponCode || effectiveAffiliateId) {
+        const affResolution = await resolveAffiliateForCheckout({
+          supabase,
+          couponCode: effectiveCouponCode,
+          affiliateId: effectiveAffiliateId,
+          clinicId: clinic_id,
+          customerUserId: user.id,
+        });
+
+        if (affResolution.error) {
+          return new Response(JSON.stringify({ error: affResolution.error }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (affResolution.result) {
+          resolvedAffiliate = affResolution.result.affiliate;
+          affiliateSplit = affResolution.result.splitPayload;
+        }
       }
 
       // Desconto de 5% no PIX
@@ -1100,6 +1133,10 @@ Deno.serve(async (req) => {
           installmentPaymentData.creditCardHolderInfo = cardHolderPayload;
         }
 
+        if (affiliateSplit && affiliateSplit.length > 0) {
+          installmentPaymentData.split = affiliateSplit;
+        }
+
         if (subscription?.asaas_subscription_id) {
           try {
             await asaas.cancelSubscription(subscription.asaas_subscription_id);
@@ -1129,6 +1166,10 @@ Deno.serve(async (req) => {
           asaasSubData.creditCardHolderInfo = cardHolderPayload;
         }
 
+        if (affiliateSplit && affiliateSplit.length > 0) {
+          asaasSubData.split = affiliateSplit;
+        }
+
         console.log('[asaas-subscription] Processando assinatura no Asaas:', JSON.stringify(maskSensitiveForLogs(asaasSubData)));
         
         if (billing_type === 'CREDIT_CARD') {
@@ -1153,6 +1194,22 @@ Deno.serve(async (req) => {
         }
       }
 
+      const createdAsaasSubId = asaasSub?.id || asaasPaymentDirect?.installment || asaasPaymentDirect?.id || null;
+
+      // Gravar registro em public.affiliate_conversions (Fase 3)
+      if (resolvedAffiliate && createdAsaasSubId) {
+        await recordAffiliateConversion({
+          supabase,
+          affiliateId: resolvedAffiliate.id,
+          customerUserId: user.id,
+          clinicId: clinic_id,
+          asaasSubscriptionId: createdAsaasSubId,
+          planType: selectedPlan,
+          billingCycle: cycle.toUpperCase(),
+          isTrial: trialDays > 0,
+        });
+      }
+
       // Salvar em clinic_subscriptions (com duração de 365 dias para ciclo anual)
       const durationDays = cycle === 'annual' ? 365 : cycle === 'quarterly' ? 90 : 30;
       const planLimits = getPlanLimits(selectedPlan);
@@ -1160,7 +1217,7 @@ Deno.serve(async (req) => {
         clinic_id: clinic_id,
         account_owner_user_id: user.id,
         asaas_customer_id: customerId,
-        asaas_subscription_id: asaasSub?.id || asaasPaymentDirect?.installment || asaasPaymentDirect?.id || null,
+        asaas_subscription_id: createdAsaasSubId,
         plan_type: selectedPlan,
         billing_cycle: cycle.toUpperCase(),
         payment_method: billing_type || 'PIX',

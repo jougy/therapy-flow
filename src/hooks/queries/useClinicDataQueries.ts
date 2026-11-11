@@ -407,6 +407,9 @@ export function useClinicAgendaEventsQuery(clinicId: string | null | undefined, 
       return (data ?? []) as HomeAgendaEventRecord[];
     },
     enabled: Boolean(clinicId) && enabled,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -20,7 +20,10 @@ export function isChunkLoadError(error: unknown): boolean {
     /failed to fetch dynamically imported module/i.test(msg) ||
     /importing a module script failed/i.test(msg) ||
     /loading chunk [\d\w_-]+ failed/i.test(msg) ||
-    /unable to preload css/i.test(msg)
+    /unable to preload css/i.test(msg) ||
+    /can't access property "default"/i.test(msg) ||
+    /cannot read properties of undefined \(reading ['"]default['"]\)/i.test(msg) ||
+    /_result is undefined/i.test(msg)
   );
 }
 

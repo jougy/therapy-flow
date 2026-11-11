@@ -1,6 +1,13 @@
 import React from "react";
-import { Building2, Clock3, Stethoscope, UsersRound, type LucideIcon } from "lucide-react";
+import { Award, Building2, Clock3, MoreVertical, Stethoscope, UsersRound, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { PlatformDirectoryItem } from "./types";
 import { compactDocument, getClinicCategory, itemLabels, metadataNumber } from "./platform-api";
 import { getEntityTheme } from "./directory-utils";
@@ -32,9 +39,10 @@ export const DirectoryPill: React.FC<DirectoryPillProps> = ({
 export interface DirectoryCardProps {
   item: PlatformDirectoryItem;
   onClick: () => void;
+  onInviteAffiliate?: (item: PlatformDirectoryItem) => void;
 }
 
-export const DirectoryCard: React.FC<DirectoryCardProps> = ({ item, onClick }) => {
+export const DirectoryCard: React.FC<DirectoryCardProps> = ({ item, onClick, onInviteAffiliate }) => {
   const isPending = Boolean(item.metadata?.is_pending_registration);
   const isOwner = Boolean(item.metadata?.is_owner);
   const Icon = item.item_type === "clinic" ? Building2 : item.item_type === "account" ? (isPending ? Clock3 : UsersRound) : Stethoscope;
@@ -84,9 +92,16 @@ export const DirectoryCard: React.FC<DirectoryCardProps> = ({ item, onClick }) =
   };
 
   return (
-    <button
-      type="button"
-      className={`grid w-full gap-3 rounded-xl border p-4 text-left shadow-sm transition-colors ${theme.cardBorderHover} hover:bg-accent/40 grid-cols-[auto_minmax(0,1fr)] md:grid-cols-[auto_minmax(0,1fr)_auto] ${
+    <div
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={`grid w-full gap-3 rounded-xl border p-4 text-left shadow-sm transition-colors cursor-pointer ${theme.cardBorderHover} hover:bg-accent/40 grid-cols-[auto_minmax(0,1fr)] md:grid-cols-[auto_minmax(0,1fr)_auto] ${
         theme.cardBg ?? "bg-card"
       }`}
       onClick={onClick}
@@ -168,6 +183,34 @@ export const DirectoryCard: React.FC<DirectoryCardProps> = ({ item, onClick }) =
           <span><strong className="block text-sm text-foreground">{metadataNumber(item.metadata, "sessions_count")}</strong>atend.</span>
         </div>
       )}
-    </button>
+      {item.item_type === "account" && onInviteAffiliate && (
+        <div
+          className="col-span-2 md:col-span-1 flex items-center justify-end pt-2 md:pt-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-10 w-10 p-0 min-h-[44px] min-w-[44px] text-muted-foreground hover:text-foreground"
+                aria-label="Ações do usuário"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem
+                className="cursor-pointer gap-2 py-2.5 text-xs font-medium min-h-[44px]"
+                onClick={() => onInviteAffiliate(item)}
+              >
+                <Award className="h-4 w-4 text-amber-500" />
+                <span>Convidar para Afiliado</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+    </div>
   );
 };

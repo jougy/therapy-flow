@@ -99,7 +99,7 @@ export function BrowserAppDownloadBanner({ variant = "top", className = "" }: Br
             <Button
               size="sm"
               variant="secondary"
-              className="min-h-[44px] sm:min-h-[36px] px-3 text-xs font-bold text-sky-800 bg-white hover:bg-white/90 shadow-xs"
+              className="min-h-[44px] sm:min-h-[36px] px-3 text-xs font-bold text-sky-950 bg-white hover:bg-white/90 shadow-xs"
             >
               <span className="hidden sm:inline">Baixar Aplicativo</span>
               <span className="sm:hidden">Baixar App</span>

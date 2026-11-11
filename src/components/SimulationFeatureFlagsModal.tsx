@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SlidersHorizontal, RotateCcw, Search } from "lucide-react";
+import { SlidersHorizontal, RotateCcw, Search, FlaskConical, Users } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ interface SimulationFeatureFlagsModalProps {
 }
 
 export function SimulationFeatureFlagsModal({ open, onOpenChange }: SimulationFeatureFlagsModalProps) {
-  const { flagOverrides, isFeatureEnabled, resetFlagOverrides, setFlagOverride } = useFeatureFlags();
+  const { flags, flagOverrides, isFeatureEnabled, resetFlagOverrides, setFlagOverride, simulationAudienceMode } = useFeatureFlags();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
@@ -49,8 +49,15 @@ export function SimulationFeatureFlagsModal({ open, onOpenChange }: SimulationFe
                 <DialogTitle className="text-lg font-semibold tracking-tight">
                   Feature Flags da Simulação
                 </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground">
-                  Alterne instantaneamente o comportamento das funcionalidades nesta sessão de teste.
+                <DialogDescription className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                  <span>Alterne o comportamento das funcionalidades nesta sessão.</span>
+                  <Badge variant="outline" className={`text-[10px] py-0 h-4 px-1.5 font-medium ${
+                    simulationAudienceMode === "tester"
+                      ? "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-300"
+                      : "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 border-neutral-300"
+                  }`}>
+                    {simulationAudienceMode === "tester" ? "Visão Tester Ativa" : "Visão Comum Ativa"}
+                  </Badge>
                 </DialogDescription>
               </div>
             </div>
@@ -110,6 +117,8 @@ export function SimulationFeatureFlagsModal({ open, onOpenChange }: SimulationFe
             filteredFlags.map((flag) => {
               const isOverridden = flag.key in flagOverrides;
               const enabled = isFeatureEnabled(flag.key);
+              const rawVal = flags[flag.key];
+              const isTestersOnly = rawVal && typeof rawVal === "object" && (rawVal as Record<string, unknown>).visibility === "testers";
 
               return (
                 <div
@@ -128,6 +137,31 @@ export function SimulationFeatureFlagsModal({ open, onOpenChange }: SimulationFe
                       <Badge variant="secondary" className="text-[10px] py-0 h-4 px-1.5 font-normal">
                         {flag.category}
                       </Badge>
+                      {isTestersOnly ? (
+                        <Badge variant="outline" className="text-[10px] py-0 h-4 px-1.5 font-medium bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-300 inline-flex items-center gap-1">
+                          <FlaskConical className="w-2.5 h-2.5" />
+                          Apenas Testers
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] py-0 h-4 px-1.5 font-normal text-muted-foreground inline-flex items-center gap-1">
+                          <Users className="w-2.5 h-2.5" />
+                          Todos
+                        </Badge>
+                      )}
+                      {typeof flag.completionPercentage === "number" && (
+                        <Badge 
+                          variant="outline" 
+                          className={`text-[10px] py-0 h-4 px-1.5 font-medium ${
+                            flag.completionPercentage === 100
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300"
+                              : flag.completionPercentage > 0
+                              ? "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300"
+                              : "bg-neutral-100 text-neutral-600 border-neutral-300"
+                          }`}
+                        >
+                          {flag.completionPercentage}% pronto
+                        </Badge>
+                      )}
                       {isOverridden && (
                         <Badge className="text-[10px] py-0 h-4 px-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium">
                           Modificado
