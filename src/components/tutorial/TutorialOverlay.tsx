@@ -4,6 +4,7 @@ import { useTutorial } from "@/contexts/TutorialContext";
 import { TutorialCard } from "./TutorialCard";
 import { TutorialChapterModal } from "./TutorialChapterModal";
 import { MousePointerClick } from "lucide-react";
+import "./tutorial-overlay.css";
 
 interface TargetRect {
   top: number;

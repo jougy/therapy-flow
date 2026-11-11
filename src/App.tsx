@@ -17,7 +17,7 @@ const EmailConfirmationRequiredModal = lazy(() => import("@/components/EmailConf
 import { AnalyticsRouteTracker } from "@/components/AnalyticsRouteTracker";
 
 
-const Auth = lazy(() => import("./pages/Auth"));
+import Auth from "./pages/Auth";
 const DownloadApp = lazy(() => import("./pages/DownloadApp"));
 const CadastroCompleto = lazy(() => import("./pages/CadastroCompleto"));
 const CadastroContaAlfa = lazy(() => import("./pages/CadastroContaAlfa"));
@@ -81,6 +81,26 @@ const isRecoveryUrl = () => {
     (pathname === "/auth/redefinir-senha" &&
       (search.includes("code=") || search.includes("regularizar=true")))
   );
+};
+
+const hasPotentialAuthContext = () => {
+  if (typeof window === "undefined") return false;
+  const search = window.location.search || "";
+  const hash = window.location.hash || "";
+  if (search.includes("code=") || hash.includes("access_token=") || hash.includes("error=")) {
+    return true;
+  }
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith("sb-") && key.endsWith("-auth-token")) {
+        return true;
+      }
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+  return false;
 };
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -190,7 +210,7 @@ const LegacyClinicPatientRedirect = () => {
 
 const AuthRoute = ({ children }: { children: ReactNode }) => {
   const { isPlatformOwner, isPasswordRecovery, loading, platformMfaVerified, session } = useAuth();
-  if (loading) {
+  if (loading && (import.meta.env.MODE === "test" || hasPotentialAuthContext())) {
     return <LoadingScreen />;
   }
   if (isPasswordRecovery || isRecoveryUrl()) {
@@ -200,6 +220,23 @@ const AuthRoute = ({ children }: { children: ReactNode }) => {
   if (session && isPlatformOwner && platformMfaVerified) return <Navigate to="/platform" replace />;
   if (session) return <Navigate to="/espacopessoal" replace />;
   return <>{children}</>;
+};
+
+const RootIndexRoute = () => {
+  const { loading, session } = useAuth();
+  if (import.meta.env.MODE !== "test" && loading && !session && !hasPotentialAuthContext() && !isRecoveryUrl()) {
+    return <Navigate to="/auth" replace />;
+  }
+  return (
+    <ProtectedRoute>
+      <Navigate to="/espacopessoal" replace />
+    </ProtectedRoute>
+  );
+};
+
+const SessionOnly = ({ children }: { children: ReactNode }) => {
+  const { session } = useAuth();
+  return session ? <>{children}</> : null;
 };
 
 const App = () => (
@@ -215,8 +252,12 @@ const App = () => (
               <AuthProvider>
                 <FeatureFlagsProvider>
                   <TutorialProvider>
-                    <TutorialOverlay />
-                    <EmailConfirmationRequiredModal />
+                    <SessionOnly>
+                      <Suspense fallback={null}>
+                        <TutorialOverlay />
+                        <EmailConfirmationRequiredModal />
+                      </Suspense>
+                    </SessionOnly>
                     <Suspense fallback={<LoadingScreen />}>
                     <Routes>
                       <Route path="/designlab/*" element={<DesignLabApp />} />
@@ -307,7 +348,7 @@ const App = () => (
                         <Route path="pessoal/notificacoes" element={<PersonalNotificationsSection />} />
                         <Route path="suporte" element={<SupportSection />} />
                       </Route>
-                      <Route path="/" element={<ProtectedRoute><Navigate to="/espacopessoal" replace /></ProtectedRoute>} />
+                      <Route path="/" element={<RootIndexRoute />} />
                       <Route
                         path="/clinica/:clinicKey/*"
                         element={

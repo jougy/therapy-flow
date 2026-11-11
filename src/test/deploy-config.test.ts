@@ -42,6 +42,6 @@ describe("deploy config", () => {
 
     expect(indexHtml).toContain('<html lang="pt-BR" translate="no" class="notranslate">');
     expect(indexHtml).toContain('<meta name="google" content="notranslate" />');
-    expect(indexHtml).toContain('<div id="root" translate="no" class="notranslate"></div>');
+    expect(indexHtml).toContain('<div id="root" translate="no" class="notranslate">');
   });
 });

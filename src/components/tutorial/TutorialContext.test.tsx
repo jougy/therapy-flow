@@ -2,8 +2,11 @@ import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { TutorialProvider, useTutorial } from "../../contexts/TutorialContext";
+import * as tutorialRegistry from "./tutorial-registry";
 import { TUTORIAL_CHAPTERS, TUTORIAL_REGISTRY, getTutorialConfigForPath } from "./tutorial-registry";
 import React from "react";
+
+(globalThis as any).__TUTORIAL_REGISTRY__ = tutorialRegistry;
 
 // Mock localStorage
 const localStorageMock = (() => {

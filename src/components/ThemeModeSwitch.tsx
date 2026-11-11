@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import "./theme-mode-switch.css";
 
 interface ThemeModeSwitchProps {
   checked: boolean;

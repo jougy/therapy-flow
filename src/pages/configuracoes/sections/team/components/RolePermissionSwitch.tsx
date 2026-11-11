@@ -1,4 +1,5 @@
 import React from "react";
+import "./role-permission-switch.css";
 import {
   Coins,
   Eye,

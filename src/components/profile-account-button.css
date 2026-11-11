@@ -1,0 +1,248 @@
+@keyframes profile-account-border-in {
+  0% {
+    box-shadow:
+      0 0 0 0 hsl(var(--primary) / 0),
+      0 0 0 0 hsl(var(--primary) / 0);
+  }
+  55% {
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.14),
+      0 4px 16px hsl(var(--primary) / 0.1);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.1),
+      0 4px 14px hsl(var(--primary) / 0.08);
+  }
+}
+
+@keyframes profile-account-avatar-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.07);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes profile-account-label-in {
+  0% {
+    opacity: 0;
+    letter-spacing: 0;
+    transform: translate(-6px, -50%);
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: 0;
+    transform: translate(0, -50%);
+  }
+}
+
+.profile-account-button {
+  --profile-account-avatar-size: 2rem;
+  --profile-account-gap: 0.625rem;
+  --profile-account-pad-x: 0.5rem;
+  --profile-account-pad-y: 0.25rem;
+  --profile-account-width: calc(var(--profile-account-avatar-size) + var(--profile-account-pad-x) * 2);
+  --profile-account-avatar-travel: 0px;
+  --profile-account-motion: 700ms ease-in-out;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: stretch;
+  width: var(--profile-account-width);
+  min-height: calc(var(--profile-account-avatar-size) + var(--profile-account-pad-y) * 2);
+  padding: var(--profile-account-pad-y) var(--profile-account-pad-x);
+  border: 1px solid hsl(var(--border) / 0.45);
+  border-radius: calc(var(--radius) + 2px);
+  background: hsl(var(--background) / 0.65);
+  color: inherit;
+  cursor: pointer;
+  outline: none;
+  overflow: hidden;
+  transition:
+    border-color var(--profile-account-motion),
+    background-color var(--profile-account-motion),
+    box-shadow var(--profile-account-motion),
+    transform var(--profile-account-motion);
+}
+
+.profile-account-button:focus-visible {
+  border-color: hsl(var(--ring) / 0.55);
+  box-shadow:
+    0 0 0 2px hsl(var(--background)),
+    0 0 0 4px hsl(var(--ring) / 0.35);
+}
+
+.profile-account-button:active {
+  transform: scale(0.975);
+  border-color: hsl(var(--primary) / 0.52);
+  background: hsl(var(--muted) / 0.72);
+  box-shadow:
+    0 0 0 1px hsl(var(--primary) / 0.16),
+    inset 0 1px 3px hsl(var(--foreground) / 0.06);
+  transition-duration: 220ms;
+}
+
+.profile-account-button__avatar {
+  position: absolute;
+  top: 50%;
+  right: var(--profile-account-pad-x);
+  z-index: 2;
+  transform: translateY(-50%) translateX(0);
+  transition:
+    transform var(--profile-account-motion);
+}
+
+.profile-account-button__avatar-ring {
+  transition:
+    box-shadow var(--profile-account-motion),
+    transform var(--profile-account-motion);
+}
+
+.profile-account-button__text {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: var(--profile-account-avatar-size);
+  overflow: hidden;
+}
+
+.profile-account-button__identity {
+  position: absolute;
+  inset-block: 50% auto;
+  left: var(--profile-account-pad-x);
+  right: calc(var(--profile-account-pad-x) + var(--profile-account-avatar-size) + var(--profile-account-gap));
+  align-items: flex-end;
+  min-width: 0;
+  transform: translateY(-50%);
+  transition:
+    opacity var(--profile-account-motion),
+    transform var(--profile-account-motion);
+}
+
+.profile-account-button__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    opacity var(--profile-account-motion),
+    transform var(--profile-account-motion);
+}
+
+.profile-account-button__subtitle {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  transition:
+    opacity var(--profile-account-motion),
+    transform var(--profile-account-motion);
+}
+
+.profile-account-button__hover-label {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--profile-account-pad-x) + var(--profile-account-avatar-size) + var(--profile-account-gap));
+  right: var(--profile-account-pad-x);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  color: hsl(var(--foreground));
+  opacity: 0;
+  transform: translate(-8px, -50%);
+  transition:
+    opacity var(--profile-account-motion),
+    transform var(--profile-account-motion);
+}
+
+@media (min-width: 640px) {
+  .profile-account-button {
+    --profile-account-width: 12rem;
+    --profile-account-avatar-travel: calc(
+      var(--profile-account-width) - var(--profile-account-avatar-size) - var(--profile-account-pad-x) * 2
+    );
+  }
+
+  .profile-account-button:hover {
+    border-color: hsl(var(--primary) / 0.38);
+    background: hsl(var(--muted) / 0.52);
+    animation: profile-account-border-in 700ms ease-in-out forwards;
+  }
+
+  .profile-account-button:hover .profile-account-button__avatar {
+    transform: translateY(-50%) translateX(calc(-1 * var(--profile-account-avatar-travel)));
+  }
+
+  .profile-account-button:hover .profile-account-button__avatar-ring {
+    box-shadow:
+      0 0 0 2px hsl(var(--primary) / 0.22),
+      0 4px 10px hsl(var(--primary) / 0.12);
+    transform: scale(1.03);
+    animation: profile-account-avatar-pop 700ms ease-in-out;
+  }
+
+  .profile-account-button:hover .profile-account-button__identity {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-14px);
+    pointer-events: none;
+  }
+
+  .profile-account-button:hover .profile-account-button__name,
+  .profile-account-button:hover .profile-account-button__subtitle {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+
+  .profile-account-button:hover .profile-account-button__hover-label {
+    opacity: 1;
+    transform: translate(0, -50%);
+    animation: profile-account-label-in 700ms ease-in-out forwards;
+  }
+
+  .profile-account-button:active .profile-account-button__avatar-ring {
+    transform: scale(0.94);
+    box-shadow:
+      0 0 0 2px hsl(var(--primary) / 0.34),
+      inset 0 1px 2px hsl(var(--foreground) / 0.08);
+  }
+}
+
+@media (max-width: 639px) {
+  .profile-account-button {
+    width: var(--profile-account-width);
+  }
+
+  .profile-account-button:hover .profile-account-button__avatar-ring,
+  .profile-account-button:focus-visible .profile-account-button__avatar-ring {
+    box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+    transform: scale(1.04);
+  }
+
+  .profile-account-button:active .profile-account-button__avatar-ring {
+    transform: scale(0.94);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-account-button,
+  .profile-account-button * {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}

@@ -1,0 +1,735 @@
+@keyframes designlab-icon-dance {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  24% {
+    transform: translateY(-1px) rotate(-8deg) scale(1.08);
+  }
+  52% {
+    transform: translateY(1px) rotate(7deg) scale(0.98);
+  }
+  76% {
+    transform: translateY(-1px) rotate(-3deg) scale(1.04);
+  }
+}
+
+@keyframes designlab-liquid-transfer {
+  0% {
+    transform: scaleX(1) scaleY(1) skewX(0deg);
+    border-radius: 0.75rem;
+    filter: saturate(1);
+  }
+  28% {
+    transform: scaleX(1.22) scaleY(0.9) skewX(-3deg);
+    border-radius: 999px 68% 68% 999px;
+    filter: saturate(1.08);
+  }
+  58% {
+    transform: scaleX(0.94) scaleY(1.04) skewX(2deg);
+    border-radius: 68% 999px 999px 68%;
+    filter: saturate(1.05);
+  }
+  100% {
+    transform: scaleX(1) scaleY(1) skewX(0deg);
+    border-radius: 0.75rem;
+    filter: saturate(1);
+  }
+}
+
+@keyframes pluri-switch-fill-in {
+  0% {
+    clip-path: ellipse(48% 80% at 24% 50%);
+    filter: saturate(0.95);
+  }
+  42% {
+    clip-path: ellipse(72% 54% at 58% 50%);
+    filter: saturate(1.12);
+  }
+  72% {
+    clip-path: ellipse(92% 72% at 58% 50%);
+  }
+  100% {
+    clip-path: ellipse(120% 120% at 50% 50%);
+    filter: saturate(1);
+  }
+}
+
+@keyframes pluri-switch-fill-out {
+  0% {
+    clip-path: ellipse(120% 120% at 50% 50%);
+    filter: saturate(1);
+  }
+  34% {
+    clip-path: ellipse(72% 54% at 42% 50%);
+    filter: saturate(1.08);
+  }
+  100% {
+    clip-path: ellipse(34% 74% at 26% 50%);
+    filter: saturate(0.95);
+  }
+}
+
+@keyframes pluri-switch-glow {
+  0%,
+  100% {
+    transform: translateX(var(--pluri-switch-x, 0)) scaleX(1) scaleY(1);
+    opacity: 0.42;
+  }
+  44% {
+    transform: translateX(var(--pluri-switch-x, 0)) scaleX(1.85) scaleY(0.62);
+    opacity: 0.76;
+  }
+  72% {
+    transform: translateX(var(--pluri-switch-x, 0)) scaleX(0.9) scaleY(1.08);
+    opacity: 0.5;
+  }
+}
+
+@keyframes pluri-switch-liquid-checked {
+  0% {
+    transform: translateX(0) scale(1);
+    background-color: hsl(var(--muted-foreground) / 0.55);
+    border-radius: 999px;
+  }
+  48% {
+    transform: translateX(0.62rem) scaleX(0.44) scaleY(0.7);
+    background-color: hsl(var(--success));
+    border-radius: 999px;
+  }
+  74% {
+    transform: translateX(1.25rem) scaleX(1.16) scaleY(0.9);
+    background-color: hsl(var(--primary));
+    border-radius: 72% 999px 999px 72%;
+  }
+  100% {
+    transform: translateX(1.25rem) scale(1);
+    background-color: hsl(var(--primary));
+    border-radius: 999px;
+  }
+}
+
+@keyframes pluri-switch-liquid-unchecked {
+  0% {
+    transform: translateX(1.25rem) scale(1);
+    background-color: hsl(var(--primary));
+    border-radius: 999px;
+  }
+  48% {
+    transform: translateX(0.62rem) scaleX(0.44) scaleY(0.7);
+    background-color: hsl(var(--success));
+    border-radius: 999px;
+  }
+  74% {
+    transform: translateX(0) scaleX(1.16) scaleY(0.9);
+    background-color: hsl(var(--muted-foreground) / 0.55);
+    border-radius: 999px 72% 72% 999px;
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    background-color: hsl(var(--muted-foreground) / 0.55);
+    border-radius: 999px;
+  }
+}
+
+@keyframes designlab-neon-border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes designlab-collapse-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 hsl(198 93% 60% / 0);
+    transform: translateY(0);
+  }
+  50% {
+    box-shadow: 0 0 24px hsl(198 93% 60% / 0.2);
+    transform: translateY(-1px);
+  }
+}
+
+.designlab-settings-menu-item {
+  isolation: isolate;
+  overflow: visible;
+  will-change: transform;
+}
+
+.designlab-settings-menu-item::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  background:
+    linear-gradient(
+      90deg,
+      hsl(198 93% 60% / 0.2),
+      hsl(198 93% 60% / 0.95),
+      hsl(158 74% 48% / 0.9),
+      hsl(43 96% 58% / 0.9),
+      hsl(266 88% 68% / 0.95),
+      hsl(198 93% 60% / 0.95),
+      hsl(198 93% 60% / 0.2)
+    );
+  background-size: 200% 100%;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 420ms ease;
+}
+
+.designlab-settings-menu-item::after {
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  content: "";
+  border-radius: calc(0.75rem - 1px);
+  background: hsl(var(--card));
+}
+
+.designlab-settings-menu-item:hover::before,
+.designlab-settings-menu-item:focus-visible::before,
+.designlab-settings-menu-item.is-active::before {
+  opacity: 1;
+  animation: designlab-neon-border-flow 1.9s linear infinite;
+}
+
+.designlab-settings-menu-surface {
+  position: relative;
+  z-index: 1;
+  background: hsl(var(--card)) !important;
+  box-shadow: 0 10px 26px hsl(214 32% 91% / 0.22);
+}
+
+.designlab-settings-menu-item .designlab-settings-menu-surface,
+.designlab-settings-menu-item.is-active .designlab-settings-menu-surface {
+  background: hsl(var(--card)) !important;
+}
+
+.designlab-settings-menu-icon {
+  position: relative;
+  overflow: hidden;
+}
+
+.designlab-settings-menu-icon::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      135deg,
+      hsl(198 93% 60% / 0.22),
+      hsl(158 74% 48% / 0.16),
+      hsl(266 88% 68% / 0.2)
+    );
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.designlab-settings-menu-icon svg {
+  position: relative;
+  z-index: 1;
+}
+
+.designlab-settings-menu-item:hover .designlab-settings-menu-icon,
+.designlab-settings-menu-item:focus-visible .designlab-settings-menu-icon,
+.designlab-settings-menu-item.is-active .designlab-settings-menu-icon {
+  animation: designlab-icon-dance 560ms ease-in-out;
+}
+
+.designlab-settings-menu-item:hover .designlab-settings-menu-icon::before,
+.designlab-settings-menu-item:focus-visible .designlab-settings-menu-icon::before,
+.designlab-settings-menu-item.is-active .designlab-settings-menu-icon::before {
+  opacity: 1;
+}
+
+.designlab-settings-menu-item:hover .designlab-settings-menu-icon svg,
+.designlab-settings-menu-item:focus-visible .designlab-settings-menu-icon svg,
+.designlab-settings-menu-item.is-active .designlab-settings-menu-icon svg {
+  filter:
+    drop-shadow(0 0 5px hsl(198 93% 60% / 0.58))
+    drop-shadow(0 0 12px hsl(266 88% 68% / 0.2));
+}
+
+.designlab-settings-menu-item:hover .designlab-settings-menu-surface,
+.designlab-settings-menu-item:focus-visible .designlab-settings-menu-surface {
+  box-shadow:
+    0 0 0 1px hsl(198 93% 60% / 0.2),
+    0 14px 30px hsl(198 93% 60% / 0.14);
+}
+
+.designlab-settings-collapse-button:hover,
+.designlab-settings-collapse-button:focus-visible {
+  animation: designlab-collapse-pulse 900ms ease-in-out;
+}
+
+.designlab-settings-collapse-button:hover svg,
+.designlab-settings-collapse-button:focus-visible svg {
+  animation: designlab-icon-dance 560ms ease-in-out;
+}
+
+.designlab-settings-drawer-handle {
+  isolation: isolate;
+  overflow: hidden;
+  filter: drop-shadow(0 12px 22px hsl(198 93% 60% / 0.18));
+  transform: translateY(-50%) translateX(0) scaleX(1);
+  transform-origin: left center;
+  transition:
+    opacity 260ms ease 180ms,
+    transform 300ms ease 180ms,
+    filter 260ms ease 180ms;
+}
+
+.designlab-settings-drawer-handle::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  background:
+    linear-gradient(
+      180deg,
+      hsl(198 93% 60% / 0.2),
+      hsl(198 93% 60% / 0.95),
+      hsl(158 74% 48% / 0.72),
+      hsl(266 88% 68% / 0.85),
+      hsl(198 93% 60% / 0.2)
+    );
+  background-size: 100% 220%;
+  opacity: 0.85;
+  animation: designlab-neon-border-flow 2.7s linear infinite;
+}
+
+.designlab-settings-drawer-handle-surface {
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.65),
+    0 0 18px hsl(198 93% 60% / 0.12);
+}
+
+.designlab-settings-drawer-handle:hover svg,
+.designlab-settings-drawer-handle:focus-visible svg {
+  animation: designlab-icon-dance 560ms ease-in-out;
+  filter:
+    drop-shadow(0 0 5px hsl(198 93% 60% / 0.62))
+    drop-shadow(0 0 12px hsl(266 88% 68% / 0.22));
+}
+
+.group\/designlab-settings-drawer:hover .designlab-settings-drawer-handle,
+.group\/designlab-settings-drawer:focus-within .designlab-settings-drawer-handle {
+  opacity: 0;
+  filter: drop-shadow(0 4px 10px hsl(198 93% 60% / 0));
+  transform: translateY(-50%) translateX(-0.75rem) scaleX(0.42);
+  transition-delay: 80ms;
+}
+
+.designlab-settings-mobile-nav {
+  overflow: visible;
+  box-shadow:
+    0 -1px 0 hsl(198 93% 60% / 0.12),
+    0 -16px 42px hsl(198 93% 60% / 0.12);
+  transition:
+    padding 180ms ease-in-out,
+    box-shadow 180ms ease-in-out,
+    transform 180ms ease-in-out;
+}
+
+@media (min-width: 1024px) {
+  .designlab-settings-mobile-nav {
+    box-shadow: none;
+  }
+}
+
+.designlab-settings-mobile-dock {
+  align-items: flex-end;
+  justify-content: safe center;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  padding-inline: 0.75rem;
+  padding-top: 0.35rem;
+  scroll-padding-inline: 0.75rem;
+  transition:
+    gap 180ms ease-in-out,
+    padding-top 180ms ease-in-out,
+    transform 180ms ease-in-out;
+}
+
+.designlab-settings-mobile-dock.is-scrollable {
+  justify-content: safe center;
+  padding-inline: 0.75rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-state="medium"] .designlab-settings-mobile-dock {
+  padding-top: 0.45rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-pressing="true"] .designlab-settings-mobile-dock {
+  padding-top: 0.45rem;
+}
+
+.designlab-settings-mobile-floating-tooltip {
+  position: absolute;
+  left: var(--mobile-dock-tooltip-x, 50%);
+  bottom: calc(100% + 0.4rem);
+  z-index: 6;
+  display: block;
+  width: max-content;
+  max-width: min(12rem, calc(100vw - 2rem));
+  padding: 0.42rem 0.62rem;
+  border: 1px solid hsl(198 93% 60% / 0.32);
+  border-radius: 9999px;
+  background: hsl(var(--popover) / 0.98);
+  color: hsl(var(--foreground));
+  box-shadow:
+    0 0 0 1px hsl(var(--background) / 0.84),
+    0 12px 28px hsl(214 32% 8% / 0.2),
+    0 0 24px hsl(198 93% 60% / 0.18);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.1;
+  pointer-events: none;
+  text-align: center;
+  transform: translateX(-50%);
+  transition:
+    left 120ms ease-out,
+    opacity 120ms ease-in-out,
+    transform 180ms ease-in-out;
+}
+
+.designlab-settings-mobile-floating-tooltip::after {
+  position: absolute;
+  left: 50%;
+  bottom: -0.28rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  content: "";
+  border-right: 1px solid hsl(198 93% 60% / 0.26);
+  border-bottom: 1px solid hsl(198 93% 60% / 0.26);
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.designlab-settings-mobile-item {
+  isolation: isolate;
+  overflow: visible;
+  width: auto;
+  min-width: 3.45rem;
+  min-height: 2.85rem;
+  will-change: transform;
+  transform: translateY(0) scale(1);
+  transform-origin: bottom center;
+  transition:
+    filter 130ms ease-out,
+    width 130ms ease-out,
+    min-height 130ms ease-out,
+    transform 130ms ease-out;
+}
+
+.designlab-settings-mobile-item::before {
+  position: absolute;
+  inset: 0.18rem;
+  z-index: 0;
+  content: "";
+  background:
+    linear-gradient(
+      90deg,
+      hsl(198 93% 60% / 0.18),
+      hsl(198 93% 60% / 0.95),
+      hsl(158 74% 48% / 0.86),
+      hsl(266 88% 68% / 0.9),
+      hsl(198 93% 60% / 0.95),
+      hsl(198 93% 60% / 0.18)
+    );
+  background-size: 220% 100%;
+  border-radius: inherit;
+  opacity: 0.22;
+  transition:
+    inset 130ms ease-out,
+    opacity 130ms ease-out;
+}
+
+.designlab-settings-mobile-item::after {
+  position: absolute;
+  inset: calc(0.18rem + 1px);
+  z-index: 0;
+  content: "";
+  border-radius: calc(0.75rem - 1px);
+  background: hsl(var(--background) / 0.78);
+  transition: inset 130ms ease-out;
+}
+
+.designlab-settings-mobile-item:hover::before,
+.designlab-settings-mobile-item:focus-visible::before,
+.designlab-settings-mobile-item:active::before,
+.designlab-settings-mobile-item.is-active::before {
+  opacity: 1;
+  animation: designlab-neon-border-flow 2.4s linear infinite;
+}
+
+.designlab-settings-mobile-item.is-primary::before {
+  opacity: 0.68;
+}
+
+.designlab-settings-mobile-surface {
+  position: relative;
+  z-index: 1;
+  min-height: 2.7rem;
+  background: hsl(var(--card)) !important;
+  box-shadow: 0 8px 24px hsl(214 32% 8% / 0.18);
+  transition:
+    min-height 130ms ease-out,
+    padding 130ms ease-out,
+    box-shadow 130ms ease-out,
+    transform 130ms ease-out;
+}
+
+.designlab-settings-mobile-item .designlab-settings-mobile-surface,
+.designlab-settings-mobile-item.is-active .designlab-settings-mobile-surface,
+.designlab-settings-mobile-item.is-primary .designlab-settings-mobile-surface {
+  background: hsl(var(--card)) !important;
+}
+
+.designlab-settings-mobile-icon {
+  position: relative;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  transition:
+    width 130ms ease-out,
+    height 130ms ease-out,
+    transform 130ms ease-out,
+    color 130ms ease-out,
+    background-color 130ms ease-out;
+}
+
+.designlab-settings-mobile-icon::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      135deg,
+      hsl(198 93% 60% / 0.2),
+      hsl(158 74% 48% / 0.16),
+      hsl(266 88% 68% / 0.2)
+    );
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.designlab-settings-mobile-icon svg {
+  position: relative;
+  z-index: 1;
+  width: 1rem;
+  height: 1rem;
+  transition:
+    width 130ms ease-out,
+    height 130ms ease-out,
+    filter 130ms ease-out,
+    transform 130ms ease-out;
+}
+
+.designlab-settings-mobile-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.55rem);
+  z-index: 5;
+  display: block;
+  width: max-content;
+  max-width: min(11rem, 32vw);
+  padding: 0.35rem 0.55rem;
+  border: 1px solid hsl(198 93% 60% / 0.3);
+  border-radius: 9999px;
+  background: hsl(var(--popover) / 0.96);
+  color: hsl(var(--foreground));
+  box-shadow:
+    0 0 0 1px hsl(var(--background) / 0.78),
+    0 12px 28px hsl(214 32% 8% / 0.18),
+    0 0 24px hsl(198 93% 60% / 0.16);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.1;
+  opacity: 0;
+  pointer-events: none;
+  text-align: center;
+  transform: translate(-50%, 0.4rem) scale(0.92);
+  transition:
+    opacity 120ms ease-in-out,
+    transform 180ms ease-in-out;
+}
+
+.designlab-settings-mobile-tooltip::after {
+  position: absolute;
+  left: 50%;
+  bottom: -0.28rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  content: "";
+  border-right: 1px solid hsl(198 93% 60% / 0.26);
+  border-bottom: 1px solid hsl(198 93% 60% / 0.26);
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.designlab-settings-mobile-item:first-child .designlab-settings-mobile-tooltip {
+  left: 0;
+  transform: translate(0, 0.4rem) scale(0.92);
+}
+
+.designlab-settings-mobile-item:first-child .designlab-settings-mobile-tooltip::after {
+  left: 1.45rem;
+}
+
+.designlab-settings-mobile-item:last-child .designlab-settings-mobile-tooltip {
+  right: 0;
+  left: auto;
+  transform: translate(0, 0.4rem) scale(0.92);
+}
+
+.designlab-settings-mobile-item:last-child .designlab-settings-mobile-tooltip::after {
+  right: 1.45rem;
+  left: auto;
+  transform: rotate(45deg);
+}
+
+.designlab-settings-mobile-nav[data-dock-state="compact"] .designlab-settings-mobile-dock {
+  gap: 0.35rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-state="compact"] .designlab-settings-mobile-item {
+  width: auto;
+  min-width: 3.35rem;
+  min-height: 2.75rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-state="compact"] .designlab-settings-mobile-surface {
+  min-height: 2.65rem;
+  padding-block: 0.38rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-state="compact"] .designlab-settings-mobile-icon {
+  width: 1.72rem;
+  height: 1.72rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-state="medium"] .designlab-settings-mobile-dock {
+  gap: 0.58rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-state="medium"] .designlab-settings-mobile-item {
+  width: auto;
+  min-width: 4.15rem;
+  min-height: 3.28rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-state="medium"] .designlab-settings-mobile-surface {
+  min-height: 3.16rem;
+  padding-block: 0.48rem;
+}
+
+.designlab-settings-mobile-nav[data-dock-state="medium"] .designlab-settings-mobile-icon {
+  width: 2.05rem;
+  height: 2.05rem;
+}
+
+.designlab-settings-mobile-item.is-pressed {
+  z-index: 2;
+  transform: translateY(0) scale(1.03);
+}
+
+.designlab-settings-mobile-nav[data-dock-state="medium"] .designlab-settings-mobile-item.is-pressed {
+  width: 6.2rem;
+}
+
+.designlab-settings-mobile-item.is-pressed::before {
+  inset: 0;
+}
+
+.designlab-settings-mobile-item.is-pressed::after {
+  inset: 1px;
+}
+
+.designlab-settings-mobile-item.is-pressed .designlab-settings-mobile-surface {
+  min-height: 4.05rem;
+  box-shadow:
+    0 0 0 1px hsl(198 93% 60% / 0.26),
+    0 0 30px hsl(198 93% 60% / 0.2),
+    0 16px 34px hsl(214 32% 8% / 0.18);
+}
+
+.designlab-settings-mobile-item.is-pressed .designlab-settings-mobile-icon {
+  width: 2.65rem;
+  height: 2.65rem;
+  transform: translateY(-0.08rem);
+}
+
+.designlab-settings-mobile-item.is-pressed .designlab-settings-mobile-icon svg {
+  width: 1.28rem;
+  height: 1.28rem;
+}
+
+.designlab-settings-mobile-item.is-pressed .designlab-settings-mobile-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.designlab-settings-mobile-item.is-pressed:first-child .designlab-settings-mobile-tooltip,
+.designlab-settings-mobile-item.is-pressed:last-child .designlab-settings-mobile-tooltip {
+  transform: translate(0, 0) scale(1);
+}
+
+.designlab-settings-mobile-item.is-active .designlab-settings-mobile-surface {
+  box-shadow:
+    0 0 0 1px hsl(198 93% 60% / 0.22),
+    0 0 28px hsl(198 93% 60% / 0.18),
+    inset 0 1px 0 hsl(0 0% 100% / 0.08);
+}
+
+.designlab-settings-mobile-item:hover .designlab-settings-mobile-icon,
+.designlab-settings-mobile-item:focus-visible .designlab-settings-mobile-icon,
+.designlab-settings-mobile-item:active .designlab-settings-mobile-icon,
+.designlab-settings-mobile-item.is-active .designlab-settings-mobile-icon {
+  animation: designlab-icon-dance 720ms ease-in-out;
+}
+
+.designlab-settings-mobile-item:hover .designlab-settings-mobile-icon::before,
+.designlab-settings-mobile-item:focus-visible .designlab-settings-mobile-icon::before,
+.designlab-settings-mobile-item:active .designlab-settings-mobile-icon::before,
+.designlab-settings-mobile-item.is-active .designlab-settings-mobile-icon::before,
+.designlab-settings-mobile-item.is-primary .designlab-settings-mobile-icon::before {
+  opacity: 1;
+}
+
+.designlab-settings-mobile-item:hover .designlab-settings-mobile-icon svg,
+.designlab-settings-mobile-item:focus-visible .designlab-settings-mobile-icon svg,
+.designlab-settings-mobile-item:active .designlab-settings-mobile-icon svg,
+.designlab-settings-mobile-item.is-active .designlab-settings-mobile-icon svg,
+.designlab-settings-mobile-item.is-primary .designlab-settings-mobile-icon svg {
+  filter:
+    drop-shadow(0 0 5px hsl(198 93% 60% / 0.58))
+    drop-shadow(0 0 12px hsl(266 88% 68% / 0.2));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .designlab-settings-menu-item,
+  .designlab-settings-menu-item *,
+  .designlab-settings-mobile-item,
+  .designlab-settings-mobile-item *,
+  .designlab-settings-collapse-button,
+  .designlab-settings-collapse-button *,
+  .designlab-liquid-toggle-indicator,
+  .pluri-liquid-switch-fill,
+  .pluri-liquid-switch-dot,
+  .pluri-liquid-switch-thumb,
+  .pluri-liquid-switch-glow {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}

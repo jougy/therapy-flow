@@ -1,0 +1,274 @@
+.role-permission-switch {
+  --role-permission-color: hsl(var(--primary));
+  position: relative;
+  display: inline-flex;
+  width: 5.75rem;
+  height: 2.25rem;
+  align-items: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 9999px;
+  overflow: hidden;
+  background: hsl(var(--background) / 0.88);
+  color: hsl(var(--muted-foreground));
+  box-shadow:
+    inset 0 0 0 1px hsl(var(--background) / 0.56),
+    0 5px 14px hsl(var(--foreground) / 0.06);
+  transition:
+    border-color 300ms ease-in-out,
+    box-shadow 300ms ease-in-out,
+    color 300ms ease-in-out,
+    opacity 300ms ease-in-out;
+}
+
+.role-permission-switch[data-kind="edit"] {
+  --role-permission-color: hsl(var(--success));
+}
+
+.role-permission-switch[data-kind="delete"] {
+  --role-permission-color: hsl(var(--destructive));
+}
+
+.role-permission-switch[data-kind="share"] {
+  --role-permission-color: #a855f7;
+}
+
+.role-permission-switch[data-kind="finance"] {
+  --role-permission-color: #f59e0b;
+}
+
+.role-permission-switch[data-kind="print"] {
+  --role-permission-color: #3b82f6;
+}
+
+.role-permission-switch[data-kind="manage"] {
+  --role-permission-color: #f97316;
+}
+
+.role-permission-switch--checked {
+  border-color: color-mix(in srgb, var(--role-permission-color) 58%, transparent);
+  color: var(--role-permission-color);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--role-permission-color) 12%, transparent),
+    0 0 16px color-mix(in srgb, var(--role-permission-color) 18%, transparent);
+}
+
+.role-permission-switch--disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.role-permission-switch__track {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--role-permission-color) 18%, transparent), transparent 48%),
+    hsl(var(--muted) / 0.38);
+  opacity: 0;
+  transform: translateX(-32%);
+  transition:
+    opacity 300ms ease-in-out,
+    transform 300ms ease-in-out;
+}
+
+.role-permission-switch--checked .role-permission-switch__track {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.role-permission-switch__label {
+  position: absolute;
+  right: 0.65rem;
+  z-index: 1;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  transition:
+    opacity 300ms ease-in-out,
+    transform 300ms ease-in-out;
+}
+
+.role-permission-switch--checked .role-permission-switch__label {
+  transform: translateX(-1.75rem);
+}
+
+.role-permission-switch__thumb {
+  position: absolute;
+  left: 0.25rem;
+  z-index: 2;
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 36% 28%, hsl(var(--background)) 0 22%, transparent 23%),
+    hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  box-shadow:
+    inset 0 0 0 1px hsl(var(--background) / 0.64),
+    0 5px 12px hsl(var(--foreground) / 0.16);
+  transition:
+    background-color 300ms ease-in-out,
+    box-shadow 300ms ease-in-out,
+    color 300ms ease-in-out,
+    transform 300ms ease-in-out;
+}
+
+.role-permission-switch--checked .role-permission-switch__thumb {
+  color: var(--role-permission-color);
+  background:
+    radial-gradient(circle at 36% 28%, hsl(var(--background)) 0 20%, transparent 21%),
+    color-mix(in srgb, var(--role-permission-color) 16%, hsl(var(--background)));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--role-permission-color) 24%, transparent),
+    0 6px 16px color-mix(in srgb, var(--role-permission-color) 25%, transparent);
+  transform: translateX(3.5rem);
+}
+
+.role-permission-switch__icon {
+  position: absolute;
+  width: 1rem;
+  height: 1rem;
+  transition:
+    opacity 700ms ease-in-out,
+    transform 700ms ease-in-out;
+}
+
+.role-permission-switch__icon--on {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.role-permission-switch--checked .role-permission-switch__icon--off {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.role-permission-switch--checked .role-permission-switch__icon--on {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--on,
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--off {
+  animation: role-permission-eye-blink 900ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--edit {
+  animation: role-permission-pencil-write 900ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--delete {
+  animation: role-permission-trash-shake 600ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--share {
+  animation: role-permission-share-pulse 800ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--finance {
+  animation: role-permission-coin-spin 800ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--print {
+  animation: role-permission-print-slide 800ms ease-in-out;
+}
+
+.role-permission-switch:not(:disabled):hover .role-permission-switch__icon--manage {
+  animation: role-permission-shield-pulse 800ms ease-in-out;
+}
+
+@keyframes role-permission-eye-blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(0.2);
+  }
+  65% {
+    transform: scaleY(1.05);
+  }
+}
+
+@keyframes role-permission-pencil-write {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  35% {
+    transform: translate(1px, -1px) rotate(-8deg);
+  }
+  70% {
+    transform: translate(-1px, 1px) rotate(8deg);
+  }
+}
+
+@keyframes role-permission-trash-shake {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(-6deg) scale(1.08);
+  }
+  50% {
+    transform: rotate(6deg) scale(1.08);
+  }
+  75% {
+    transform: rotate(-3deg) scale(1.04);
+  }
+}
+
+@keyframes role-permission-share-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2) rotate(6deg);
+  }
+}
+
+@keyframes role-permission-coin-spin {
+  0% {
+    transform: rotateY(0deg);
+  }
+  50% {
+    transform: rotateY(180deg) scale(1.15);
+  }
+  100% {
+    transform: rotateY(360deg);
+  }
+}
+
+@keyframes role-permission-print-slide {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.08);
+  }
+}
+
+@keyframes role-permission-shield-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .role-permission-switch,
+  .role-permission-switch * {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}

@@ -1,15 +1,11 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import {
-  getTutorialConfigForPath,
-  TUTORIAL_CHAPTERS,
-  TUTORIAL_REGISTRY,
-  COMPONENT_HELP_REGISTRY,
-  type PageTutorialConfig,
-  type TutorialChapter,
-  type TutorialStep,
-  type TutorialLearnMoreAction,
-  type HelpersFeatureFlagValue,
+import type {
+  PageTutorialConfig,
+  TutorialChapter,
+  TutorialStep,
+  TutorialLearnMoreAction,
+  HelpersFeatureFlagValue,
 } from "@/components/tutorial/tutorial-registry";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -63,7 +59,13 @@ const DEMO_PATIENT_STORAGE_KEY = "therapy_flow_tutorial_demo_patient_id";
 
 const TutorialContext = createContext<TutorialContextType | undefined>(undefined);
 
-export const TutorialProvider = ({ children }: { children: ReactNode }) => {
+export const TutorialProvider = ({
+  children,
+  initialRegistry,
+}: {
+  children: ReactNode;
+  initialRegistry?: typeof import("@/components/tutorial/tutorial-registry") | null;
+}) => {
   const location = useLocation();
   const navigate = useNavigate();
   const auth = useAuth();
@@ -103,6 +105,23 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isChapterModalOpen, setIsChapterModalOpen] = useState(false);
+
+  const [registryModule, setRegistryModule] = useState<typeof import("@/components/tutorial/tutorial-registry") | null>(
+    () => initialRegistry ?? (typeof globalThis !== "undefined" && (globalThis as any).__TUTORIAL_REGISTRY__) ?? null
+  );
+
+  const loadRegistry = useCallback(async () => {
+    if (registryModule) return registryModule;
+    const mod = await import("@/components/tutorial/tutorial-registry");
+    setRegistryModule(mod);
+    return mod;
+  }, [registryModule]);
+
+  useEffect(() => {
+    if (Boolean(auth?.session) && !registryModule) {
+      void loadRegistry();
+    }
+  }, [auth?.session, registryModule, loadRegistry]);
 
   const setTutorialDemoPatientId = useCallback((id: string | null) => {
     setTutorialDemoPatientIdState(id);
@@ -144,8 +163,8 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
 
   // Identify tutorial for current path
   const availableTutorialForCurrentRoute = useMemo(() => {
-    return getTutorialConfigForPath(location.pathname);
-  }, [location.pathname]);
+    return registryModule?.getTutorialConfigForPath(location.pathname) ?? null;
+  }, [location.pathname, registryModule]);
 
   // Persist completed tutorials
   const saveCompleted = useCallback((nextCompleted: Record<string, boolean>) => {
@@ -166,8 +185,9 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
 
   const activeChapter = useMemo(() => {
     if (!activeTutorial || isSingleHelpMode) return null;
-    return TUTORIAL_CHAPTERS.find((c) => c.id === activeTutorial.pageId) ?? null;
-  }, [activeTutorial, isSingleHelpMode]);
+    const chapters = registryModule?.TUTORIAL_CHAPTERS ?? [];
+    return chapters.find((c) => c.id === activeTutorial.pageId) ?? null;
+  }, [activeTutorial, isSingleHelpMode, registryModule]);
 
   const startChapter = useCallback(
     (chapterId: string, force = true) => {
@@ -179,40 +199,46 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      const chapter = TUTORIAL_CHAPTERS.find((c) => c.id === chapterId);
-      if (!chapter || chapter.steps.length === 0) return;
+      const run = async () => {
+        const mod = registryModule ?? (await loadRegistry());
+        const chapters = mod?.TUTORIAL_CHAPTERS ?? [];
+        const chapter = chapters.find((c) => c.id === chapterId);
+        if (!chapter || chapter.steps.length === 0) return;
 
-      if (chapter.requiredPermission && !canPermission(chapter.requiredPermission)) {
-        toast({
-          title: "Acesso Restrito ao Módulo 🔒",
-          description: "Seu cargo operacional não possui permissão para acessar este módulo de treinamento.",
+        if (chapter.requiredPermission && !canPermission(chapter.requiredPermission)) {
+          toast({
+            title: "Acesso Restrito ao Módulo 🔒",
+            description: "Seu cargo operacional não possui permissão para acessar este módulo de treinamento.",
+          });
+          return;
+        }
+
+        if (!force && completedTutorials[chapter.id]) {
+          return;
+        }
+
+        const filteredSteps = chapter.steps.filter((s) => canPermission(s.requiredPermission));
+        if (filteredSteps.length === 0) return;
+
+        const chapterIndex = chapters.findIndex((c) => c.id === chapterId);
+        setActiveChapterIndex(chapterIndex >= 0 ? chapterIndex : 0);
+        setIsSingleHelpMode(false);
+        setActiveTutorial({
+          pageId: chapter.id,
+          title: chapter.title,
+          description: chapter.description,
+          badge: chapter.badge,
+          steps: filteredSteps,
         });
-        return;
-      }
+        setCurrentStepIndex(0);
+        setIsOpen(true);
+        setIsPaused(false);
+        setIsChapterModalOpen(false);
+      };
 
-      if (!force && completedTutorials[chapter.id]) {
-        return;
-      }
-
-      const filteredSteps = chapter.steps.filter((s) => canPermission(s.requiredPermission));
-      if (filteredSteps.length === 0) return;
-
-      const chapterIndex = TUTORIAL_CHAPTERS.findIndex((c) => c.id === chapterId);
-      setActiveChapterIndex(chapterIndex >= 0 ? chapterIndex : 0);
-      setIsSingleHelpMode(false);
-      setActiveTutorial({
-        pageId: chapter.id,
-        title: chapter.title,
-        description: chapter.description,
-        badge: chapter.badge,
-        steps: filteredSteps,
-      });
-      setCurrentStepIndex(0);
-      setIsOpen(true);
-      setIsPaused(false);
-      setIsChapterModalOpen(false);
+      void run();
     },
-    [completedTutorials, canPermission, isFeatureEnabled]
+    [completedTutorials, canPermission, isFeatureEnabled, registryModule, loadRegistry]
   );
 
   const showComponentHelp = useCallback(
@@ -221,89 +247,95 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      let resolvedSteps: TutorialStep[];
+      const run = async () => {
+        const mod = registryModule ?? (await loadRegistry());
+        let resolvedSteps: TutorialStep[];
 
-      if (typeof stepOrConfig === "string") {
-        const helpersVal = flags["system_helpers"] as HelpersFeatureFlagValue | undefined;
-        const customConfig = helpersVal?.helpers?.[stepOrConfig];
+        if (typeof stepOrConfig === "string") {
+          const helpersVal = flags["system_helpers"] as HelpersFeatureFlagValue | undefined;
+          const customConfig = helpersVal?.helpers?.[stepOrConfig];
 
-        // Se estiver explicitamente oculto, não abre
-        if (customConfig?.hidden) {
-          return;
-        }
+          // Se estiver explicitamente oculto, não abre
+          if (customConfig?.hidden) {
+            return;
+          }
 
-        const found = COMPONENT_HELP_REGISTRY[stepOrConfig];
-        if (Array.isArray(found)) {
-          resolvedSteps = [...found];
-        } else if (found) {
-          resolvedSteps = [found];
+          const componentHelpRegistry = mod?.COMPONENT_HELP_REGISTRY ?? {};
+          const found = componentHelpRegistry[stepOrConfig];
+          if (Array.isArray(found)) {
+            resolvedSteps = [...found];
+          } else if (found) {
+            resolvedSteps = [found];
+          } else {
+            resolvedSteps = [
+              {
+                id: `help-${stepOrConfig}`,
+                targetSelector: `[data-tutorial='${stepOrConfig}']`,
+                title: "Ajuda do Componente 💡",
+                description: "Este componente faz parte do fluxo operacional da clínica.",
+                placement: "bottom",
+                animation: "glow",
+              },
+            ];
+          }
+
+          // Aplica textos customizados se existirem
+          if (customConfig && resolvedSteps.length > 0) {
+            resolvedSteps = [
+              {
+                ...resolvedSteps[0],
+                title: customConfig.title || resolvedSteps[0].title,
+                description: customConfig.description || resolvedSteps[0].description,
+                tip: customConfig.tip !== undefined ? customConfig.tip : resolvedSteps[0].tip,
+              },
+              ...resolvedSteps.slice(1),
+            ];
+          }
+        } else if (Array.isArray(stepOrConfig)) {
+          resolvedSteps = stepOrConfig;
         } else {
           resolvedSteps = [
             {
-              id: `help-${stepOrConfig}`,
-              targetSelector: `[data-tutorial='${stepOrConfig}']`,
-              title: "Ajuda do Componente 💡",
-              description: "Este componente faz parte do fluxo operacional da clínica.",
-              placement: "bottom",
-              animation: "glow",
+              id: stepOrConfig.id || "help-custom",
+              targetSelector: stepOrConfig.targetSelector,
+              title: stepOrConfig.title || "Ajuda do Componente 💡",
+              description: stepOrConfig.description || "",
+              tip: stepOrConfig.tip,
+              actionPrompt: stepOrConfig.actionPrompt,
+              requiresAction: stepOrConfig.requiresAction,
+              interactive: stepOrConfig.interactive,
+              placement: stepOrConfig.placement || "bottom",
+              animation: stepOrConfig.animation || "glow",
+              visualPreview: stepOrConfig.visualPreview,
+              learnMoreAction: stepOrConfig.learnMoreAction,
+              requiredPermission: stepOrConfig.requiredPermission,
+              requiredRole: stepOrConfig.requiredRole,
+              isDemoNotice: stepOrConfig.isDemoNotice,
             },
           ];
         }
 
-        // Aplica textos customizados se existirem
-        if (customConfig && resolvedSteps.length > 0) {
-          resolvedSteps = [
-            {
-              ...resolvedSteps[0],
-              title: customConfig.title || resolvedSteps[0].title,
-              description: customConfig.description || resolvedSteps[0].description,
-              tip: customConfig.tip !== undefined ? customConfig.tip : resolvedSteps[0].tip,
-            },
-            ...resolvedSteps.slice(1),
-          ];
-        }
-      } else if (Array.isArray(stepOrConfig)) {
-        resolvedSteps = stepOrConfig;
-      } else {
-        resolvedSteps = [
-          {
-            id: stepOrConfig.id || "help-custom",
-            targetSelector: stepOrConfig.targetSelector,
-            title: stepOrConfig.title || "Ajuda do Componente 💡",
-            description: stepOrConfig.description || "",
-            tip: stepOrConfig.tip,
-            actionPrompt: stepOrConfig.actionPrompt,
-            requiresAction: stepOrConfig.requiresAction,
-            interactive: stepOrConfig.interactive,
-            placement: stepOrConfig.placement || "bottom",
-            animation: stepOrConfig.animation || "glow",
-            visualPreview: stepOrConfig.visualPreview,
-            learnMoreAction: stepOrConfig.learnMoreAction,
-            requiredPermission: stepOrConfig.requiredPermission,
-            requiredRole: stepOrConfig.requiredRole,
-            isDemoNotice: stepOrConfig.isDemoNotice,
-          },
-        ];
-      }
+        const filteredResolvedSteps = resolvedSteps.filter((s) => canPermission(s.requiredPermission));
+        if (filteredResolvedSteps.length === 0) return;
 
-      const filteredResolvedSteps = resolvedSteps.filter((s) => canPermission(s.requiredPermission));
-      if (filteredResolvedSteps.length === 0) return;
+        setIsSingleHelpMode(true);
+        setIsMasterJourneyActive(false);
+        setActiveTutorial({
+          pageId: typeof stepOrConfig === "string" ? stepOrConfig : "component-help",
+          title: filteredResolvedSteps[0]?.title || "Guia do Bloco 💡",
+          description: filteredResolvedSteps[0]?.description || "",
+          badge: filteredResolvedSteps.length > 1 ? "Guia do Bloco (?)" : "Ajuda Rápida (?)",
+          steps: filteredResolvedSteps,
+        });
+        setCurrentStepIndex(0);
+        setIsOpen(true);
+        setIsPaused(false);
+        setIsChapterModalOpen(false);
+      };
 
-      setIsSingleHelpMode(true);
-      setIsMasterJourneyActive(false);
-      setActiveTutorial({
-        pageId: typeof stepOrConfig === "string" ? stepOrConfig : "component-help",
-        title: filteredResolvedSteps[0]?.title || "Guia do Bloco 💡",
-        description: filteredResolvedSteps[0]?.description || "",
-        badge: filteredResolvedSteps.length > 1 ? "Guia do Bloco (?)" : "Ajuda Rápida (?)",
-        steps: filteredResolvedSteps,
-      });
-      setCurrentStepIndex(0);
-      setIsOpen(true);
-      setIsPaused(false);
-      setIsChapterModalOpen(false);
+      void run();
     },
-    [canPermission, isFeatureEnabled, flags]
+    [canPermission, isFeatureEnabled, flags, registryModule, loadRegistry]
   );
 
   const startMasterJourney = useCallback(
@@ -316,14 +348,20 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      setIsMasterJourneyActive(true);
-      setIsSingleHelpMode(false);
-      const firstChapter = TUTORIAL_CHAPTERS[0];
-      if (firstChapter) {
-        startChapter(firstChapter.id, force);
-      }
+      const run = async () => {
+        const mod = registryModule ?? (await loadRegistry());
+        setIsMasterJourneyActive(true);
+        setIsSingleHelpMode(false);
+        const chapters = mod?.TUTORIAL_CHAPTERS ?? [];
+        const firstChapter = chapters[0];
+        if (firstChapter) {
+          startChapter(firstChapter.id, force);
+        }
+      };
+
+      void run();
     },
-    [startChapter]
+    [isFeatureEnabled, registryModule, loadRegistry, startChapter]
   );
 
   const startTutorial = useCallback(
@@ -333,13 +371,19 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      if (availableTutorialForCurrentRoute) {
-        startChapter(availableTutorialForCurrentRoute.pageId, force);
-      } else {
-        setIsChapterModalOpen(true);
-      }
+      const run = async () => {
+        const mod = registryModule ?? (await loadRegistry());
+        const config = mod?.getTutorialConfigForPath(location.pathname) ?? null;
+        if (config) {
+          startChapter(config.pageId, force);
+        } else {
+          setIsChapterModalOpen(true);
+        }
+      };
+
+      void run();
     },
-    [availableTutorialForCurrentRoute, startChapter]
+    [location.pathname, registryModule, loadRegistry, startChapter]
   );
 
   const finishTutorial = useCallback(() => {
@@ -352,9 +396,10 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
 
       // If in Master Journey, advance to next chapter
       if (isMasterJourneyActive) {
+        const chapters = registryModule?.TUTORIAL_CHAPTERS ?? [];
         const nextChapterIndex = activeChapterIndex + 1;
-        if (nextChapterIndex < TUTORIAL_CHAPTERS.length) {
-          const nextChapter = TUTORIAL_CHAPTERS[nextChapterIndex];
+        if (nextChapterIndex < chapters.length) {
+          const nextChapter = chapters[nextChapterIndex];
           setActiveChapterIndex(nextChapterIndex);
           setActiveTutorial({
             pageId: nextChapter.id,
@@ -376,7 +421,7 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
     setActiveTutorial(null);
     setCurrentStepIndex(0);
     setIsSingleHelpMode(false);
-  }, [activeTutorial, isSingleHelpMode, completedTutorials, isMasterJourneyActive, activeChapterIndex, saveCompleted, cleanupTutorialDemoPatient]);
+  }, [activeTutorial, isSingleHelpMode, completedTutorials, isMasterJourneyActive, activeChapterIndex, saveCompleted, cleanupTutorialDemoPatient, registryModule]);
 
   const executeLearnMoreAction = useCallback(
     (action: TutorialLearnMoreAction) => {
@@ -473,11 +518,12 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
   const totalSteps = activeTutorial ? activeTutorial.steps.length : 0;
 
   const completionPercentage = useMemo(() => {
-    const totalChapters = TUTORIAL_CHAPTERS.length;
+    const chapters = registryModule?.TUTORIAL_CHAPTERS ?? [];
+    const totalChapters = chapters.length;
     if (totalChapters === 0) return 0;
-    const completedCount = TUTORIAL_CHAPTERS.filter((c) => completedTutorials[c.id]).length;
+    const completedCount = chapters.filter((c) => completedTutorials[c.id]).length;
     return Math.round((completedCount / totalChapters) * 100);
-  }, [completedTutorials]);
+  }, [completedTutorials, registryModule]);
 
   return (
     <TutorialContext.Provider
@@ -526,42 +572,16 @@ export const TutorialProvider = ({ children }: { children: ReactNode }) => {
 };
 
 const NOOP_TUTORIAL_CONTEXT: TutorialContextType = {
-  activeTutorial: null,
-  activeTutorialId: null,
-  activeChapter: null,
-  activeChapterIndex: 0,
-  isMasterJourneyActive: false,
-  isSingleHelpMode: false,
-  currentStepIndex: 0,
-  currentStep: null,
-  totalSteps: 0,
-  isOpen: false,
-  isPaused: false,
-  isChapterModalOpen: false,
-  setIsChapterModalOpen: () => {},
-  completedTutorials: {},
-  startTutorial: () => {},
-  startChapter: () => {},
-  startMasterJourney: () => {},
-  showComponentHelp: () => {},
-  executeLearnMoreAction: () => {},
-  canPermission: () => true,
-  nextStep: () => {},
-  prevStep: () => {},
-  goToStep: () => {},
-  handleTargetClick: () => {},
-  skipTutorial: () => {},
-  finishTutorial: () => {},
-  pauseTutorial: () => {},
-  resumeTutorial: () => {},
-  resetTutorial: () => {},
-  resetAllTutorials: () => {},
-  isTutorialCompleted: () => false,
-  availableTutorialForCurrentRoute: null,
-  completionPercentage: 0,
-  tutorialDemoPatientId: null,
-  setTutorialDemoPatientId: () => {},
-  cleanupTutorialDemoPatient: async () => {},
+  activeTutorial: null, activeTutorialId: null, activeChapter: null, activeChapterIndex: 0,
+  isMasterJourneyActive: false, isSingleHelpMode: false, currentStepIndex: 0, currentStep: null,
+  totalSteps: 0, isOpen: false, isPaused: false, isChapterModalOpen: false,
+  setIsChapterModalOpen: () => {}, completedTutorials: {},
+  startTutorial: () => {}, startChapter: () => {}, startMasterJourney: () => {}, showComponentHelp: () => {},
+  executeLearnMoreAction: () => {}, canPermission: () => true, nextStep: () => {}, prevStep: () => {},
+  goToStep: () => {}, handleTargetClick: () => {}, skipTutorial: () => {}, finishTutorial: () => {},
+  pauseTutorial: () => {}, resumeTutorial: () => {}, resetTutorial: () => {}, resetAllTutorials: () => {},
+  isTutorialCompleted: () => false, availableTutorialForCurrentRoute: null, completionPercentage: 0,
+  tutorialDemoPatientId: null, setTutorialDemoPatientId: () => {}, cleanupTutorialDemoPatient: async () => {},
 };
 
 export const useTutorial = () => {

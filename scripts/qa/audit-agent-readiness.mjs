@@ -3,7 +3,7 @@
  * QA Agent & Machine-Readability Auditor
  * 
  * Audita a prontidão de IA e conformidade agêntica:
- * 1. public/ai-catalog.json: Deve seguir a especificação ARD 1.0 (WebMCP / Agent-Card).
+ * 1. public/.well-known/ard.json e public/ai-catalog.json: Devem seguir a especificação ARD 1.0 (urn:air:<domain>:..., sem propriedades proibidas).
  * 2. public/llms.txt: Deve possuir cabeçalho H1, resumo, listas H2 de links e seção Optional.
  * 3. Robôs e metadados: Verifica ausência de bloqueios acidentais e conformidade de rotas.
  */
@@ -13,10 +13,10 @@ import path from 'path';
 
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
 
-function auditAiCatalog() {
-  const filePath = path.join(PUBLIC_DIR, 'ai-catalog.json');
+function auditManifestFile(relPath) {
+  const filePath = path.join(PUBLIC_DIR, relPath);
   if (!fs.existsSync(filePath)) {
-    return { ok: false, error: 'Arquivo public/ai-catalog.json não encontrado.' };
+    return { ok: false, error: `Arquivo public/${relPath} não encontrado.` };
   }
 
   try {
@@ -24,22 +24,38 @@ function auditAiCatalog() {
     const data = JSON.parse(raw);
 
     if (data.specVersion !== '1.0') {
-      return { ok: false, error: `specVersion deve ser "1.0", encontrado: "${data.specVersion}"` };
+      return { ok: false, error: `${relPath}: specVersion deve ser "1.0", encontrado: "${data.specVersion}"` };
     }
 
     if (!Array.isArray(data.entries) || data.entries.length === 0) {
-      return { ok: false, error: 'ai-catalog.json deve conter um array "entries" não vazio.' };
+      return { ok: false, error: `${relPath}: deve conter um array "entries" não vazio.` };
     }
 
-    const first = data.entries[0];
-    if (!first.identifier || !first.displayName || !first.description || !first.url) {
-      return { ok: false, error: 'Entrada no catálogo incompleta. Requer identifier, displayName, description e url conforme ARD 1.0.' };
+    for (const entry of data.entries) {
+      if (!entry.identifier || !entry.displayName || !entry.description || !entry.url || !entry.type) {
+        return { ok: false, error: `${relPath}: Entrada incompleta. Requer identifier, displayName, type, description e url conforme ARD 1.0.` };
+      }
+      if (!/^urn:air:[a-zA-Z0-9.-]+(:[a-zA-Z0-9._-]+)+$/.test(entry.identifier)) {
+        return { ok: false, error: `${relPath}: identifier "${entry.identifier}" deve seguir o formato URN ancorado "urn:air:<domain>:...".` };
+      }
+      if ('updatedAt' in entry) {
+        return { ok: false, error: `${relPath}: propriedade legada "updatedAt" não é permitida pelo schema ARD (additionalProperties: false).` };
+      }
     }
 
     return { ok: true, entriesCount: data.entries.length };
   } catch (err) {
-    return { ok: false, error: `JSON inválido em ai-catalog.json: ${err.message}` };
+    return { ok: false, error: `JSON inválido em ${relPath}: ${err.message}` };
   }
+}
+
+function auditAiCatalog() {
+  const paths = ['ai-catalog.json', '.well-known/ai-catalog.json', 'ard.json', '.well-known/ard.json'];
+  for (const rel of paths) {
+    const res = auditManifestFile(rel);
+    if (!res.ok) return res;
+  }
+  return auditManifestFile('.well-known/ard.json');
 }
 
 function auditLlmsTxt() {
@@ -81,9 +97,9 @@ function runAudit() {
 
   if (!catResult.ok) {
     hasError = true;
-    console.log(`❌ ai-catalog.json: ${catResult.error}`);
+    console.log(`❌ ARD / ai-catalog.json: ${catResult.error}`);
   } else {
-    console.log(`✅ ai-catalog.json: Válido (ARD 1.0 com ${catResult.entriesCount} entradas).`);
+    console.log(`✅ ARD (.well-known/ard.json & ai-catalog.json): Válidos (ARD 1.0 com ${catResult.entriesCount} entradas).`);
   }
 
   if (!llmResult.ok) {

@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { TutorialProvider, useTutorial } from "@/contexts/TutorialContext";
+import * as tutorialRegistry from "@/components/tutorial/tutorial-registry";
+
+(globalThis as any).__TUTORIAL_REGISTRY__ = tutorialRegistry;
 import { TutorialCard } from "./TutorialCard";
 import { TutorialChapterModal } from "./TutorialChapterModal";
 import { TutorialVisualPreview } from "./TutorialVisualPreview";

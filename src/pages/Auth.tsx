@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { motion } from "framer-motion";
 import { ArrowLeft, Download, Eye, EyeOff, Loader2, LogIn, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getSignupIntent, clearSignupIntent, saveSignupIntent } from "@/lib/signup-intent";
@@ -95,12 +94,7 @@ const Auth = () => {
     <main id="main-content" role="main" className="min-h-screen flex flex-col bg-background">
       <BrowserAppDownloadBanner variant="top" />
       <div className="flex-1 flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="w-full max-w-sm"
-        >
+        <div className="w-full max-w-sm">
         <div className="text-center mb-6 flex flex-col items-center">
           <div className="mb-3 flex justify-center">
             {/* Logo adaptável: Gradiente ciano/azul com ícone nítido e otimização LCP */}
@@ -110,7 +104,7 @@ const Auth = () => {
               width={64}
               height={64}
               {...{ fetchpriority: "high" }}
-              decoding="async"
+              decoding="sync"
               className="h-16 w-16 drop-shadow-md transition-transform hover:scale-105"
             />
           </div>
@@ -165,7 +159,7 @@ const Auth = () => {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="seu@email.com"
                     required
-                    className="pl-9"
+                    className="pl-9 h-11"
                     autoFocus
                   />
                 </div>
@@ -182,14 +176,14 @@ const Auth = () => {
                     placeholder="••••••••"
                     required
                     minLength={6}
-                    className="pr-10"
+                    className="pr-12 h-11"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
                     title={showPassword ? "Ocultar senha" : "Ver senha"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -262,7 +256,7 @@ const Auth = () => {
             )}
           </CardContent>
         </Card>
-        </motion.div>
+        </div>
       </div>
     </main>
   );
