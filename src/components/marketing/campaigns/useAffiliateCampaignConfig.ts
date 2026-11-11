@@ -95,9 +95,13 @@ export function useAffiliateCampaignConfig() {
       return;
     }
 
+    // Identificador único por instância do hook para evitar colisão no realtime client
+    // caso múltiplos componentes ou modais montem o hook simultaneamente
+    const channelId = `governance-affiliate-campaign-${Math.random().toString(36).substring(2, 9)}`;
+
     // Inscrição em tempo real para propagar alterações instantaneamente
     const channel = supabase
-      .channel("governance-affiliate-campaign-realtime")
+      .channel(channelId)
       .on(
         "postgres_changes",
         {

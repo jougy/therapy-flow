@@ -91,8 +91,10 @@ export const PlatformAgendaMaster: React.FC = () => {
   useEffect(() => {
     if (!supabase || typeof supabase.channel !== "function") return;
 
+    const channelId = `platform-onboarding-meetings-${Math.random().toString(36).substring(2, 9)}`;
+
     const channel = supabase
-      .channel("platform-onboarding-meetings-realtime")
+      .channel(channelId)
       .on(
         "postgres_changes",
         {

@@ -30,7 +30,7 @@ const FeatureFlagsContext = createContext<FeatureFlagsContextType>({
 export const useFeatureFlags = () => useContext(FeatureFlagsContext);
 
 export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
-  const { clinicId, platformAccess, isPlatformOwner } = useAuth();
+  const { clinicId, platformAccess, isPlatformOwner, session } = useAuth();
   const [flags, setFlags] = useState<Record<string, unknown>>({});
   const [flagOverrides, setFlagOverrides] = useState<Record<string, boolean>>({});
   const [simulationAudienceMode, setSimulationAudienceMode] = useState<SimulationAudienceMode>("tester");
@@ -40,6 +40,12 @@ export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
 
     if (!clinicId) {
+      if (!session && !isPlatformOwner && import.meta.env.MODE !== "test") {
+        setFlags({});
+        setLoading(false);
+        return;
+      }
+
       // Quando clinicId não está definido (ex: Espaço Pessoal / rotas do profissional),
       // buscar as feature flags de escopo global para aplicar as diretrizes da plataforma
       supabase
@@ -78,7 +84,7 @@ export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
       .finally(() => {
         setLoading(false);
       });
-  }, [clinicId]);
+  }, [clinicId, session]);
 
   const setFlagOverride = (key: string, enabled: boolean) => {
     setFlagOverrides((prev) => ({ ...prev, [key]: enabled }));

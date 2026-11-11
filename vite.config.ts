@@ -70,6 +70,21 @@ function cepDevPlugin() {
   };
 }
 
+function nonBlockingCssPlugin() {
+  return {
+    name: "vite-plugin-non-blocking-css",
+    enforce: "post" as const,
+    transformIndexHtml(html: string) {
+      return html.replace(
+        /<link rel="stylesheet" crossorigin href="(\/assets\/[^"]+\.css)">/g,
+        '<link rel="preload" as="style" crossorigin href="$1">' +
+          '<link rel="stylesheet" crossorigin href="$1" media="print" data-async-css="true">' +
+          '<noscript><link rel="stylesheet" crossorigin href="$1"></noscript>'
+      );
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
@@ -79,7 +94,7 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
-  plugins: [react(), cepDevPlugin()].filter(Boolean),
+  plugins: [react(), cepDevPlugin(), nonBlockingCssPlugin()].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

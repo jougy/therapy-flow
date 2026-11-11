@@ -12,18 +12,79 @@
     <meta name="google-site-verification" content="google-site-verification-token" />
     <meta name="msvalidate.01" content="msvalidate-token" />
 
+    <!-- Preconnect para Origens Críticas (Fontes) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
     <!-- Otimização Crítica LCP (Descoberta Imediata da Logo no Documento Inicial) -->
     <link rel="preload" as="image" href="/branding/logo/pluri_health_icon_gradient.svg" type="image/svg+xml" fetchpriority="high">
 
-    <!-- Descoberta de Agentes Autônomos (WebMCP / ARD 1.0) -->
-    <link rel="agent-description" href="/ai-catalog.json" type="application/json">
+    <!-- Descoberta de Agentes Autônomos (ARD 1.0 / WebMCP) -->
+    <link rel="ard" href="/.well-known/ard.json" type="application/json">
+    <link rel="ai-catalog" href="/.well-known/ai-catalog.json" type="application/json">
 
-    <!-- Carregamento Assíncrono Não-Bloqueante de Fontes -->
+    <!-- Carregamento Assíncrono Não-Bloqueante de Fontes (CSP-safe: sem inline onload, ativado via main.tsx) -->
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
+    <link id="google-fonts-inter" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" media="print">
     <noscript>
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
     </noscript>
+
+    <!-- Critical CSS Inline para Pintura Imediata do App Shell e LCP antes do Bundle JS -->
+    <style>
+      :root {
+        --bg-shell: #f8fafc;
+        --fg-shell: #1e293b;
+        --muted-shell: #475569;
+      }
+      html.dark {
+        --bg-shell: #151923;
+        --fg-shell: #f1f5f9;
+        --muted-shell: #94a3b8;
+      }
+      body {
+        margin: 0;
+        background-color: var(--bg-shell);
+        color: var(--fg-shell);
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .pluri-initial-shell {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        box-sizing: border-box;
+      }
+      .pluri-initial-brand {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .pluri-initial-logo {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 0.75rem;
+        filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.07)) drop-shadow(0 2px 2px rgb(0 0 0 / 0.06));
+      }
+      .pluri-initial-title {
+        margin: 0;
+        font-size: 1.5rem;
+        line-height: 2rem;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        color: var(--fg-shell);
+      }
+      .pluri-initial-subtitle {
+        margin: 0.125rem 0 0;
+        font-size: 0.875rem;
+        line-height: 1.25rem;
+        color: var(--muted-shell);
+      }
+    </style>
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Pluri Health" />
@@ -118,7 +179,23 @@
   </head>
 
   <body translate="no" class="notranslate">
-    <div id="root" translate="no" class="notranslate"></div>
+    <div id="root" translate="no" class="notranslate">
+      <div class="pluri-initial-shell" aria-busy="true">
+        <div class="pluri-initial-brand">
+          <img
+            src="/branding/logo/pluri_health_icon_gradient.svg"
+            alt="Pluri-Health"
+            width="64"
+            height="64"
+            fetchpriority="high"
+            decoding="sync"
+            class="pluri-initial-logo"
+          />
+          <h1 class="pluri-initial-title">Pluri-Health</h1>
+          <p class="pluri-initial-subtitle">Gestão clínica simplificada</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

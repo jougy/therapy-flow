@@ -1,0 +1,80 @@
+@keyframes tutorial-focus-dance {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  20% {
+    transform: translateY(-2px) rotate(-3deg) scale(1.05);
+  }
+  40% {
+    transform: translateY(1px) rotate(3deg) scale(1.03);
+  }
+  60% {
+    transform: translateY(-2px) rotate(-2deg) scale(1.04);
+  }
+  80% {
+    transform: translateY(1px) rotate(2deg) scale(1.02);
+  }
+}
+
+@keyframes tutorial-focus-bounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-6px) scale(1.04);
+  }
+  50% {
+    transform: translateY(0) scale(0.98);
+  }
+  70% {
+    transform: translateY(-3px) scale(1.02);
+  }
+}
+
+@keyframes tutorial-focus-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(198 93% 60% / 0.7), 0 0 20px hsl(198 93% 60% / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 12px hsl(198 93% 60% / 0), 0 0 35px hsl(198 93% 60% / 0.6);
+  }
+}
+
+@keyframes tutorial-neon-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.tutorial-dancing-target {
+  animation: tutorial-focus-dance 1.4s ease-in-out infinite !important;
+  transform-origin: center center;
+}
+
+.tutorial-bouncing-target {
+  animation: tutorial-focus-bounce 1.3s ease-in-out infinite !important;
+  transform-origin: center center;
+}
+
+.tutorial-pulsing-target {
+  animation: tutorial-focus-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+
+.tutorial-spotlight-ring {
+  position: absolute;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    hsl(198 93% 60% / 0.9),
+    hsl(158 74% 48% / 0.9),
+    hsl(43 96% 58% / 0.9),
+    hsl(266 88% 68% / 0.9),
+    hsl(198 93% 60% / 0.9)
+  );
+  background-size: 200% 100%;
+  animation: tutorial-neon-flow 2s linear infinite;
+}

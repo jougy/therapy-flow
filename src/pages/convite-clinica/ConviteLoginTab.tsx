@@ -54,11 +54,11 @@ export const ConviteLoginTab = ({
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Digite sua senha"
             required
-            className="pl-9 pr-10"
+            className="pl-9 pr-12 h-11"
           />
           <button
             type="button"
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground"
             onClick={() => setShowPassword(!showPassword)}
             aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
             title={showPassword ? "Ocultar senha" : "Ver senha"}

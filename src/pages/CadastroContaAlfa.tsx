@@ -817,7 +817,7 @@ const CadastroContaAlfa = () => {
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
                         onBlur={() => markTouched("password")}
-                        className={`pl-9 pr-10 ${touched.password && fieldErrors.password ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                        className={`pl-9 pr-12 h-11 ${touched.password && fieldErrors.password ? "border-destructive focus-visible:ring-destructive" : ""}`}
                         minLength={8}
                         maxLength={128}
                         placeholder="••••••••"
@@ -826,7 +826,7 @@ const CadastroContaAlfa = () => {
                       <button
                         type="button"
                         onClick={() => setShowPassword((value) => !value)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                        className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground"
                         aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
                       >
                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -851,7 +851,7 @@ const CadastroContaAlfa = () => {
                         value={passwordConfirmation}
                         onChange={(event) => setPasswordConfirmation(event.target.value)}
                         onBlur={() => markTouched("passwordConfirmation")}
-                        className={`pl-9 pr-10 ${touched.passwordConfirmation && fieldErrors.passwordConfirmation ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                        className={`pl-9 pr-12 h-11 ${touched.passwordConfirmation && fieldErrors.passwordConfirmation ? "border-destructive focus-visible:ring-destructive" : ""}`}
                         minLength={8}
                         maxLength={128}
                         placeholder="••••••••"
@@ -860,7 +860,7 @@ const CadastroContaAlfa = () => {
                       <button
                         type="button"
                         onClick={() => setShowConfirmPassword((value) => !value)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                        className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground"
                         aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Ver confirmação de senha"}
                       >
                         {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

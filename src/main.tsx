@@ -6,6 +6,16 @@ import { registerServiceWorker } from "@/lib/register-sw";
 import { registerChunkReloadHandler } from "@/lib/chunk-reload";
 import { initializeDocumentBrand } from "@/hooks/useActiveBrand";
 
+if (typeof document !== "undefined") {
+  document
+    .querySelectorAll<HTMLLinkElement>('link[data-async-css="true"], #google-fonts-inter')
+    .forEach((link) => {
+      if (link.media !== "all") {
+        link.media = "all";
+      }
+    });
+}
+
 initializeDocumentBrand();
 registerChunkReloadHandler();
 installGlobalRuntimeDebugHandlers();

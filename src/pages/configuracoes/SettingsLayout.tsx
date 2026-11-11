@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, CSSProperties } from "react";
+import "./settings-layout.css";
 import {
   BellRing,
   Building2,

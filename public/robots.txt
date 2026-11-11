@@ -11,6 +11,11 @@ Allow: /planos$
 Allow: /download$
 Allow: /baixar$
 Allow: /termos$
+Allow: /llms.txt$
+Allow: /ard.json$
+Allow: /ai-catalog.json$
+Allow: /.well-known/ard.json$
+Allow: /.well-known/ai-catalog.json$
 
 # Áreas Clínicas Privadas e Protegidas (Sigilo Médico e Prontuários LGPD - Proibido Indexar)
 Disallow: /clinica/
@@ -22,6 +27,7 @@ Disallow: /pagamento/
 Disallow: /onboarding-clinica/
 Disallow: /convite/
 Disallow: /autorizacao-menor/
+
 
 # Sitemaps Oficiais para Google Search Console
 Sitemap: https://plurifisio.com.br/sitemap.xml

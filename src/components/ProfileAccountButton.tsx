@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import "./profile-account-button.css";
 
 interface ProfileAccountButtonProps {
   displayName: string;
