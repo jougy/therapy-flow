@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "include": [
+    "/api/*",
+    "/ard.json",
+    "/.well-known/ard.json",
+    "/ai-catalog.json",
+    "/.well-known/ai-catalog.json"
+  ],
+  "exclude": [
+    "/assets/*",
+    "/branding/*",
+    "/brand/*",
+    "/fonts/*",
+    "/images/*",
+    "/favicon*",
+    "/apple-touch-icon.png",
+    "/manifest.webmanifest",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/llms.txt"
+  ]
+}
