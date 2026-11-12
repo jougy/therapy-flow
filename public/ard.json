@@ -7,33 +7,9 @@
   },
   "entries": [
     {
-      "identifier": "urn:air:app.plurifisio.com.br:web:app",
-      "displayName": "Pluri Health SaaS Application",
-      "type": "text/html",
-      "description": "Plataforma de prontuário eletrônico, governança clínica, agendamento por salas e gestão integrada para clínicas e equipes de saúde.",
-      "tags": ["healthcare", "ehr", "clinical-management", "appointments", "lgpd"],
-      "representativeQueries": [
-        "Acessar prontuário eletrônico e agenda clínica na Pluri Fisio",
-        "Gerenciar pacientes, sessões de fisioterapia e faturamento da clínica"
-      ],
-      "url": "https://app.plurifisio.com.br"
-    },
-    {
-      "identifier": "urn:air:app.plurifisio.com.br:web:auth",
-      "displayName": "Pluri Health Portal de Autenticação",
-      "type": "text/html",
-      "description": "Ponto de autenticação, login de profissionais e acesso seguro ao prontuário eletrônico.",
-      "tags": ["auth", "login"],
-      "representativeQueries": [
-        "Fazer login no sistema Pluri Health ou Pluri Fisio",
-        "Criar conta profissional ou recuperar senha de acesso clínico"
-      ],
-      "url": "https://app.plurifisio.com.br/auth"
-    },
-    {
       "identifier": "urn:air:app.plurifisio.com.br:docs:llms",
       "displayName": "Pluri Health LLM Context Directory",
-      "type": "text/markdown",
+      "type": "text/markdown; profile=\"urn:air:agent-skills\"",
       "description": "Contexto estruturado e diretório canônico da plataforma para sistemas e agentes de IA.",
       "tags": ["llms-txt", "ai-context"],
       "representativeQueries": [
@@ -41,6 +17,17 @@
         "Descobrir funcionalidades e políticas LGPD do ecossistema Pluri Health"
       ],
       "url": "https://app.plurifisio.com.br/llms.txt"
+    },
+    {
+      "identifier": "urn:air:app.plurifisio.com.br:catalog:sub",
+      "displayName": "Pluri Health AI Resource Catalog",
+      "type": "application/ai-catalog+json",
+      "description": "Catálogo de recursos e pontos de integração para agentes de IA.",
+      "tags": ["ai-catalog", "agentic-web"],
+      "representativeQueries": [
+        "Consultar catálogo de agentes e serviços da Pluri Health"
+      ],
+      "url": "https://app.plurifisio.com.br/.well-known/ai-catalog.json"
     }
   ]
 }
