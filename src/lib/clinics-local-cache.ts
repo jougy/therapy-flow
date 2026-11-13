@@ -46,18 +46,36 @@ export async function saveUserClinicsToLocalCache(userId: string, clinics: Acces
 }
 
 /**
- * Recupera as clínicas salvas localmente para o usuário.
- * Estratégia O(1):
- * 1. Tenta localStorage primeiro (acesso síncrono ultra-rápido, 0ms).
- * 2. Em paralelo ou fallback, recupera do IndexedDB caso localStorage esteja vazio.
+ * Recupera as clínicas de qualquer usuário logado anteriormente salvas no localStorage (0ms).
+ * Útil para hidratar a UI instantaneamente durante o boot do App antes de autenticar.
  */
-export async function getUserClinicsFromLocalCache(userId: string): Promise<AccessibleClinic[] | null> {
+export function getAnyUserClinicsSyncFromLocalStorage(): AccessibleClinic[] | null {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(LOCAL_STORAGE_PREFIX)) {
+        const raw = window.localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.data) && parsed.data.length > 0) {
+            return parsed.data as AccessibleClinic[];
+          }
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return null;
+}
+
+/**
+ * Recupera as clínicas salvas de forma estritamente síncrona do localStorage (0ms).
+ */
+export function getUserClinicsSyncFromLocalStorage(userId: string): AccessibleClinic[] | null {
   if (!userId) return null;
-
   const lsKey = `${LOCAL_STORAGE_PREFIX}${userId}`;
-  const cacheKey = `${CLINICS_CACHE_PREFIX}${userId}`;
-
-  // 1. Tenta síncrono no localStorage (0ms)
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       const raw = window.localStorage.getItem(lsKey);
@@ -69,10 +87,28 @@ export async function getUserClinicsFromLocalCache(userId: string): Promise<Acce
       }
     }
   } catch {
-    // fallback para IndexedDB
+    // fallback
+  }
+  return null;
+}
+
+/**
+ * Recupera as clínicas salvas localmente para o usuário.
+ * Estratégia O(1):
+ * 1. Tenta localStorage primeiro (acesso síncrono ultra-rápido, 0ms).
+ * 2. Em paralelo ou fallback, recupera do IndexedDB caso localStorage esteja vazio.
+ */
+export async function getUserClinicsFromLocalCache(userId: string): Promise<AccessibleClinic[] | null> {
+  if (!userId) return null;
+
+  // 1. Tenta síncrono no localStorage (0ms)
+  const syncData = getUserClinicsSyncFromLocalStorage(userId);
+  if (syncData && syncData.length > 0) {
+    return syncData;
   }
 
   // 2. Fallback assíncrono para IndexedDB
+  const cacheKey = `${CLINICS_CACHE_PREFIX}${userId}`;
   try {
     const cached = await getLocalCacheItem<AccessibleClinic[]>(cacheKey);
     if (cached && Array.isArray(cached) && cached.length > 0) {

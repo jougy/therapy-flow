@@ -223,6 +223,7 @@ import { getLocalCacheItem, setLocalCacheItem } from "@/lib/indexed-db-persister
 
 const PATIENTS_CACHE_KEY = (clinicId: string) => `clinic_patients_${clinicId}`;
 const PATIENTS_SYNC_KEY = (clinicId: string) => `clinic_patients_sync_${clinicId}`;
+const SESSIONS_CACHE_KEY = (clinicId: string) => `clinic_sessions_summary_${clinicId}`;
 
 export function useClinicPatientsQuery(clinicId: string | null | undefined, enabled = true) {
   return useQuery({
@@ -292,6 +293,8 @@ export function useClinicPatientsQuery(clinicId: string | null | undefined, enab
       return records;
     },
     enabled: Boolean(clinicId) && enabled,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -301,15 +304,28 @@ export function useClinicSessionsSummaryQuery(clinicId: string | null | undefine
     queryFn: async (): Promise<HomeSessionRecord[]> => {
       if (!clinicId) return [];
 
+      // Consulta cache local persistente para pintura instantânea O(1)
+      const cached = await getLocalCacheItem<HomeSessionRecord[]>(SESSIONS_CACHE_KEY(clinicId));
+
       const { data, error } = await supabase
         .from("sessions")
         .select("id, patient_id, clinic_id, group_id, session_date, status, amount_charged_cents, amount_paid_cents, payment_status, payment_method, provider_id, user_id, scheduled_start_at")
-        .eq("clinic_id", clinicId);
+        .eq("clinic_id", clinicId)
+        .order("session_date", { ascending: false })
+        .limit(2000);
 
-      if (error) throw error;
-      return (data ?? []) as HomeSessionRecord[];
+      if (error) {
+        if (cached && cached.length > 0) return cached;
+        throw error;
+      }
+
+      const records = (data ?? []) as HomeSessionRecord[];
+      void setLocalCacheItem(SESSIONS_CACHE_KEY(clinicId), records);
+      return records;
     },
     enabled: Boolean(clinicId) && enabled,
+    staleTime: 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -368,6 +384,8 @@ export function useClinicPatientGroupsQuery(clinicId: string | null | undefined,
       }));
     },
     enabled: Boolean(clinicId) && enabled,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -387,6 +405,8 @@ export function useClinicGroupColorSlotsQuery(clinicId: string | null | undefine
       return data ?? [];
     },
     enabled: Boolean(clinicId) && enabled,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -450,6 +470,8 @@ export function useClinicCollaboratorsQuery(clinicId: string | null | undefined,
       });
     },
     enabled: Boolean(clinicId) && enabled,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
   });
 }
 
@@ -698,6 +720,3 @@ export function usePrefetchPatientDetail(clinicId?: string | null) {
     [clinicId, queryClient]
   );
 }
-
-
-

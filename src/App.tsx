@@ -15,6 +15,7 @@ import { TutorialProvider } from "@/contexts/TutorialContext";
 const TutorialOverlay = lazy(() => import("@/components/tutorial/TutorialOverlay").then(m => ({ default: m.TutorialOverlay })));
 const EmailConfirmationRequiredModal = lazy(() => import("@/components/EmailConfirmationRequiredModal").then(m => ({ default: m.EmailConfirmationRequiredModal })));
 import { AnalyticsRouteTracker } from "@/components/AnalyticsRouteTracker";
+import { SyncProgressBanner } from "@/components/SyncProgressBanner";
 
 
 import Auth from "./pages/Auth";
@@ -250,6 +251,7 @@ const App = () => (
             <BrowserRouter>
               <AnalyticsRouteTracker />
               <AuthProvider>
+                <SyncProgressBanner />
                 <FeatureFlagsProvider>
                   <TutorialProvider>
                     <SessionOnly>

@@ -6,7 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { appQueryClient } from "@/lib/query-client";
 import { clearLocalCache } from "@/lib/indexed-db-persister";
-import { getUserClinicsFromLocalCache, saveUserClinicsToLocalCache, clearUserClinicsLocalCache } from "@/lib/clinics-local-cache";
+import { getUserClinicsFromLocalCache, getUserClinicsSyncFromLocalStorage, getAnyUserClinicsSyncFromLocalStorage, saveUserClinicsToLocalCache, clearUserClinicsLocalCache } from "@/lib/clinics-local-cache";
 import { clearSecuritySessionKey, createSecuritySessionKey, parseSecurityUserAgent } from "@/lib/security-settings";
 import {
   ACCESS_CAPABILITIES,
@@ -230,7 +230,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [clinic, setClinic] = useState<ClinicSummary | null>(null);
-  const [accessibleClinics, setAccessibleClinics] = useState<AccessibleClinic[]>([]);
+  const [accessibleClinics, setAccessibleClinics] = useState<AccessibleClinic[]>(() => {
+    // Hidratação instantânea O(1) do cache local antes mesmo da resposta de rede
+    return getAnyUserClinicsSyncFromLocalStorage() ?? [];
+  });
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isPlatformOwner, setIsPlatformOwner] = useState(false);
   const [platformMfaVerified, setPlatformMfaVerified] = useState(false);
@@ -840,7 +843,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setMembership(null);
     setClinic(null);
     setRoleCapabilityOverrides([]);
-    void clearLocalCache();
+    // Preserva o cache local (Local-First) entre navegações para evitar recarregar clínicas e pacientes do zero
   };
 
   const activateClinic = async (

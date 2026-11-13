@@ -313,7 +313,7 @@ export const ClinicProfileSection = () => {
           </div>
         </div>
 
-        <div className="rounded-xl border p-4 sm:p-5 space-y-4 shadow-sm bg-card">
+        <div className="rounded-xl border p-4 sm:p-5 space-y-4 shadow-sm bg-card w-full min-w-0">
           <div>
             <p className="font-semibold text-foreground">Identidade e Marca</p>
             <p className="text-xs text-muted-foreground">
@@ -321,131 +321,144 @@ export const ClinicProfileSection = () => {
             </p>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[auto,1fr] items-start pt-1">
-            <ImageUploadSquare
-              value={clinicLogoUrl}
-              fallbackText={`Logo da ${getClinicBrandName(clinicName)}`}
-              disabled={saving}
-              isProcessing={uploadingLogo}
-              metrics={logoMetrics}
-              onImageSelected={handleLogoSelected}
-              onImageRemoved={handleLogoRemoved}
-            />
+          <div className="flex flex-col xl:flex-row gap-6 items-start pt-1 w-full min-w-0">
+            <div className="w-full xl:w-auto xl:max-w-md shrink-0 min-w-0">
+              <ImageUploadSquare
+                value={clinicLogoUrl}
+                fallbackText={`Logo da ${getClinicBrandName(clinicName)}`}
+                disabled={saving}
+                isProcessing={uploadingLogo}
+                metrics={logoMetrics}
+                onImageSelected={handleLogoSelected}
+                onImageRemoved={handleLogoRemoved}
+              />
+            </div>
 
-            <div className="grid gap-3.5 sm:grid-cols-2">
-              <div className="space-y-1.5 sm:col-span-2">
+            <div className="grid gap-3.5 sm:grid-cols-2 flex-1 w-full min-w-0">
+              <div className="space-y-1.5 sm:col-span-2 min-w-0">
                 <Label>Nome fantasia da clínica</Label>
                 <Input
                   value={clinicName}
                   onChange={(e) => setClinicName(e.target.value)}
                   placeholder="Ex.: Clínica Bem Viver"
+                  className="w-full"
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label>E-mail institucional</Label>
                 <Input
                   value={clinicEmail}
                   onChange={(e) => setClinicEmail(e.target.value)}
                   placeholder="contato@clinica.com"
+                  className="w-full"
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label>Telefone institucional</Label>
                 <Input
                   value={clinicPhone}
                   onChange={(e) => setClinicPhone(e.target.value)}
                   placeholder="(11) 99999-9999"
+                  className="w-full"
                 />
               </div>
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl border p-4 space-y-4 shadow-sm bg-card">
+        <div className="rounded-xl border p-4 space-y-4 shadow-sm bg-card w-full min-w-0">
           <div>
             <p className="font-semibold text-foreground">Dados Institucionais</p>
             <p className="text-xs text-muted-foreground">Informações formais e operacionais para contratos e recibos.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 w-full min-w-0">
+            <div className="space-y-1.5 min-w-0">
               <Label>Razão social</Label>
-              <Input value={clinicLegalName} onChange={(e) => setClinicLegalName(e.target.value)} />
+              <Input value={clinicLegalName} onChange={(e) => setClinicLegalName(e.target.value)} className="w-full" />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>CNPJ</Label>
-              <Input value={clinicCnpj || "Não informado"} disabled className="bg-muted/50" />
+              <Input value={clinicCnpj || "Não informado"} disabled className="bg-muted/50 w-full" />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0 sm:col-span-2 xl:col-span-1">
               <Label>Plano contratado</Label>
-              <Input value={formattedPlan} disabled className="bg-muted/50" />
+              <Input value={formattedPlan} disabled className="bg-muted/50 w-full" />
             </div>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             <Label>Horário de funcionamento</Label>
             <Textarea
               value={clinicBusinessHours.summary}
               onChange={(e) => setClinicBusinessHours({ summary: e.target.value })}
               placeholder="Ex.: seg-sex 08h-18h; sábado 08h-12h"
               rows={2}
+              className="w-full"
             />
           </div>
         </div>
 
-        <div className="rounded-xl border p-4 space-y-4 shadow-sm bg-card">
+        <div className="rounded-xl border p-4 space-y-4 shadow-sm bg-card w-full min-w-0">
           <div>
             <p className="font-semibold text-foreground">Endereço da Clínica</p>
             <p className="text-xs text-muted-foreground">Preenchimento estruturado para identificação em declarações e relatórios.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 w-full min-w-0">
+            <div className="space-y-1.5 min-w-0">
               <Label>CEP</Label>
               <Input
                 value={clinicAddress.cep}
                 onChange={(e) => setClinicAddress((prev) => ({ ...prev, cep: e.target.value }))}
                 placeholder="00000-000"
+                className="w-full"
               />
             </div>
-            <div className="space-y-1.5 lg:col-span-2">
+            <div className="space-y-1.5 sm:col-span-2 xl:col-span-2 min-w-0">
               <Label>Rua / Logradouro</Label>
               <Input
                 value={clinicAddress.street}
                 onChange={(e) => setClinicAddress((prev) => ({ ...prev, street: e.target.value }))}
+                className="w-full"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Número</Label>
               <Input
                 value={clinicAddress.number}
                 onChange={(e) => setClinicAddress((prev) => ({ ...prev, number: e.target.value }))}
+                className="w-full"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Complemento</Label>
               <Input
                 value={clinicAddress.complement}
                 onChange={(e) => setClinicAddress((prev) => ({ ...prev, complement: e.target.value }))}
+                className="w-full"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Bairro</Label>
               <Input
                 value={clinicAddress.neighborhood}
                 onChange={(e) => setClinicAddress((prev) => ({ ...prev, neighborhood: e.target.value }))}
+                className="w-full"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Cidade</Label>
               <Input
                 value={clinicAddress.city}
                 onChange={(e) => setClinicAddress((prev) => ({ ...prev, city: e.target.value }))}
+                className="w-full"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 min-w-0">
               <Label>Estado (UF)</Label>
               <Input
                 value={clinicAddress.state}
                 onChange={(e) => setClinicAddress((prev) => ({ ...prev, state: e.target.value.toUpperCase() }))}
                 maxLength={2}
+                className="w-full"
               />
             </div>
           </div>

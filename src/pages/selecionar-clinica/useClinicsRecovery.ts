@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { AccessibleClinic } from "@/hooks/useAuth";
+import { getUserClinicsSyncFromLocalStorage } from "@/lib/clinics-local-cache";
 
 export interface UseClinicsRecoveryOptions {
   authLoading: boolean;
@@ -79,12 +80,16 @@ export function useClinicsRecovery({
   );
 
   useEffect(() => {
+    // Se o usuário já possui clínicas em memória ou no cache local síncrono, aborta a busca forçada
+    const hasLocalClinics = userId ? (getUserClinicsSyncFromLocalStorage(userId)?.length ?? 0) > 0 : false;
+
     if (
       authLoading ||
       !userId ||
       isPlatformOwner ||
       hasEnterpriseAccess ||
       (accessibleClinics && accessibleClinics.length > 0) ||
+      hasLocalClinics ||
       autoSearchAttemptedRef.current
     ) {
       return;
@@ -93,7 +98,7 @@ export function useClinicsRecovery({
     autoSearchAttemptedRef.current = true;
     const timer = window.setTimeout(() => {
       void handleSearchClinics(false);
-    }, 700);
+    }, 1200);
 
     return () => {
       window.clearTimeout(timer);
