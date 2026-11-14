@@ -161,6 +161,7 @@ vi.mock("@/integrations/supabase/client", () => {
     const builder = {
       eq: () => builder,
       gte: () => builder,
+      limit: () => builder,
       neq: () => builder,
       order: () => builder,
       select: () => builder,

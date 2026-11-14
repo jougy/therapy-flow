@@ -1111,8 +1111,7 @@ const Index = () => {
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-medium text-muted-foreground">Atendimentos</h2>
             <p className="text-sm text-muted-foreground">
-              {visibleSessions.length} atendimento{visibleSessions.length !== 1 ? "s" : ""} encontrado
-              {visibleSessions.length !== 1 ? "s" : ""}
+              {visibleSessions.length} atendimento{visibleSessions.length !== 1 ? "s" : ""} encontrado{visibleSessions.length !== 1 ? "s" : ""}
             </p>
           </div>
           {visibleSessions.map((session) => (
@@ -1143,8 +1142,7 @@ const Index = () => {
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-sm font-medium text-muted-foreground">{selectedPatientSortLabel}</h2>
                 <p className="text-sm text-muted-foreground">
-                  {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado
-                  {visiblePatients.length !== 1 ? "s" : ""}
+                  {visiblePatients.length} paciente{visiblePatients.length !== 1 ? "s" : ""} encontrado{visiblePatients.length !== 1 ? "s" : ""}
                 </p>
               </div>
               {visiblePatients.map((patient, index) => (
@@ -1176,8 +1174,7 @@ const Index = () => {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h2 className="text-sm font-medium text-muted-foreground">Pacientes recentes</h2>
                     <p className="text-sm text-muted-foreground">
-                      {recentPatients.length} paciente{recentPatients.length !== 1 ? "s" : ""} encontrado
-                      {recentPatients.length !== 1 ? "s" : ""}
+                      {recentPatients.length} paciente{recentPatients.length !== 1 ? "s" : ""} encontrado{recentPatients.length !== 1 ? "s" : ""}
                     </p>
                   </div>
                   <div className="space-y-2">
