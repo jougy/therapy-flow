@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createTestQueryClient } from "@/test/harness";
 import AppLayout from "./AppLayout";
 import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 
@@ -29,16 +31,25 @@ vi.mock("@/hooks/useAuth", () => ({
   }),
 }));
 
-describe("AppLayout Simulation Mode TopBar", () => {
-  it("renders simulation mode bar with role, plan, feature flags, and viewport controls", () => {
-    render(
+const renderWithProviders = (ui: React.ReactElement) => {
+  const queryClient = createTestQueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <FeatureFlagsProvider>
-          <AppLayout>
-            <div>Conteúdo da Clínica de Teste</div>
-          </AppLayout>
+          {ui}
         </FeatureFlagsProvider>
       </MemoryRouter>
+    </QueryClientProvider>
+  );
+};
+
+describe("AppLayout Simulation Mode TopBar", () => {
+  it("renders simulation mode bar with role, plan, feature flags, and viewport controls", () => {
+    renderWithProviders(
+      <AppLayout>
+        <div>Conteúdo da Clínica de Teste</div>
+      </AppLayout>
     );
 
     expect(screen.getByText(/Modo Simulação Backoffice/i)).toBeInTheDocument();
@@ -59,14 +70,10 @@ describe("AppLayout Simulation Mode TopBar", () => {
   });
 
   it("toggles mobile viewport layout when clicking Vertical (Mobile)", () => {
-    render(
-      <MemoryRouter>
-        <FeatureFlagsProvider>
-          <AppLayout>
-            <div>Conteúdo Mobile Teste</div>
-          </AppLayout>
-        </FeatureFlagsProvider>
-      </MemoryRouter>
+    renderWithProviders(
+      <AppLayout>
+        <div>Conteúdo Mobile Teste</div>
+      </AppLayout>
     );
 
     const mobileBtn = screen.getAllByText("Vertical (Mobile)")[0];
@@ -78,14 +85,10 @@ describe("AppLayout Simulation Mode TopBar", () => {
   });
 
   it("opens Feature Flags Modal when clicking Flags button", () => {
-    render(
-      <MemoryRouter>
-        <FeatureFlagsProvider>
-          <AppLayout>
-            <div>Conteúdo Modal Teste</div>
-          </AppLayout>
-        </FeatureFlagsProvider>
-      </MemoryRouter>
+    renderWithProviders(
+      <AppLayout>
+        <div>Conteúdo Modal Teste</div>
+      </AppLayout>
     );
 
     const flagsButton = screen.getAllByRole("button", { name: /Flags/i })[0];
@@ -95,14 +98,10 @@ describe("AppLayout Simulation Mode TopBar", () => {
   });
 
   it("opens Role Permissions Modal when clicking Permissões button next to role selector", () => {
-    render(
-      <MemoryRouter>
-        <FeatureFlagsProvider>
-          <AppLayout>
-            <div>Conteúdo Role Modal Teste</div>
-          </AppLayout>
-        </FeatureFlagsProvider>
-      </MemoryRouter>
+    renderWithProviders(
+      <AppLayout>
+        <div>Conteúdo Role Modal Teste</div>
+      </AppLayout>
     );
 
     const permissionsButton = screen.getAllByRole("button", { name: /Permissões/i })[0];
@@ -112,14 +111,10 @@ describe("AppLayout Simulation Mode TopBar", () => {
   });
 
   it("opens Simulation Test Patient Generator Dialog when clicking + Paciente Teste button", () => {
-    render(
-      <MemoryRouter>
-        <FeatureFlagsProvider>
-          <AppLayout>
-            <div>Conteúdo Paciente Teste</div>
-          </AppLayout>
-        </FeatureFlagsProvider>
-      </MemoryRouter>
+    renderWithProviders(
+      <AppLayout>
+        <div>Conteúdo Paciente Teste</div>
+      </AppLayout>
     );
 
     const testPatientButton = screen.getAllByRole("button", { name: /\+ Paciente Teste/i })[0];

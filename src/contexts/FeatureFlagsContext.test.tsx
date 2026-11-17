@@ -1,6 +1,8 @@
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import React from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createTestQueryClient } from "@/test/harness";
 import { FeatureFlagsProvider, useFeatureFlags } from "./FeatureFlagsContext";
 
 // Mock useAuth
@@ -36,15 +38,18 @@ describe("FeatureFlagsContext - Visibility & Audience Resolution", () => {
       isPlatformOwner: true,
     });
 
+    const queryClient = createTestQueryClient();
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FeatureFlagsProvider>{children}</FeatureFlagsProvider>
+      <QueryClientProvider client={queryClient}>
+        <FeatureFlagsProvider>{children}</FeatureFlagsProvider>
+      </QueryClientProvider>
     );
 
     const { result } = renderHook(() => useFeatureFlags(), { wrapper });
 
-    // Wait for flags to load
-    await act(async () => {
-      await Promise.resolve();
+    // Wait for flags to load from query
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
     });
 
     expect(result.current.simulationAudienceMode).toBe("tester");
@@ -60,14 +65,17 @@ describe("FeatureFlagsContext - Visibility & Audience Resolution", () => {
       isPlatformOwner: true,
     });
 
+    const queryClient = createTestQueryClient();
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FeatureFlagsProvider>{children}</FeatureFlagsProvider>
+      <QueryClientProvider client={queryClient}>
+        <FeatureFlagsProvider>{children}</FeatureFlagsProvider>
+      </QueryClientProvider>
     );
 
     const { result } = renderHook(() => useFeatureFlags(), { wrapper });
 
-    await act(async () => {
-      await Promise.resolve();
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
     });
 
     act(() => {
