@@ -3,4 +3,7 @@ export * from "./campaignCountdown";
 export * from "./CampaignRulesModal";
 export * from "./useAffiliateCampaignConfig";
 export * from "./PlatformCampaignEditorModal";
-export * from "./AffiliateSeasonalCampaignCard";
+export {
+  AffiliateSeasonalCampaignCard,
+  type AffiliateSeasonalCampaignCardProps,
+} from "./AffiliateSeasonalCampaignCard";

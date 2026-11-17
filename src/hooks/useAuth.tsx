@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Loader2 } from "lucide-react";
 import { type Session, type User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -20,176 +19,28 @@ import {
 } from "@/lib/rbac";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
 import { withTransientRetry } from "@/lib/supabase-resilience";
+import {
+  ACTIVE_CLINIC_STORAGE_KEY,
+  emptyCapabilities,
+  type AccessibleClinic,
+  type AuthContextType,
+  type ClinicSummary,
+  type Membership,
+  type PlatformClinicAccess,
+  type PlatformSupportRole,
+  type Profile,
+  type RoleCapabilityOverride,
+} from "./auth/authTypes";
+import {
+  deriveConcurrentAccessLimit,
+  getErrorMessage,
+  isDuplicateSecuritySessionError,
+  isForcedSignOutError,
+  isSimultaneousAccessLimitError,
+} from "./auth/authHelpers";
+import { AuthFeedbackOverlay } from "./auth/AuthFeedbackOverlay";
 
-type Profile = Pick<
-  Database["public"]["Tables"]["profiles"]["Row"],
-  "address" | "avatar_url" | "cpf" | "bio" | "clinic_id" | "email" | "full_name" | "job_title" | "last_password_changed_at" | "last_seen_at" | "password_temporary" | "phone" | "professional_license" | "public_code" | "social_name" | "specialty" | "working_hours" | "birth_date" | "profession" | "council_name"
->;
-
-export type Membership = Database["public"]["Tables"]["clinic_memberships"]["Row"] & {
-  role_key?: string | null;
-};
-type PlatformSupportRole = NonNullable<OperationalRole>;
-type ClinicSummary = Pick<
-  Database["public"]["Tables"]["clinics"]["Row"],
-  | "account_owner_user_id"
-  | "concurrent_access_limit"
-  | "id"
-  | "logo_url"
-  | "name"
-  | "route_key"
-  | "subaccount_limit"
-  | "subscription_plan"
-> & {
-  subscription_status?: string | null;
-  trial_ends_at?: string | null;
-};
-
-export interface AccessibleClinic {
-  membership: Membership;
-  clinic: ClinicSummary;
-  activeAccessCount: number;
-  activeAccessUsers: Array<{
-    device_label?: string | null;
-    email?: string | null;
-    full_name?: string | null;
-    last_seen_at?: string | null;
-    user_id: string;
-  }>;
-}
-
-export interface PlatformClinicAccess {
-  clinic: ClinicSummary;
-  reason: string;
-  simulatedRole: PlatformSupportRole;
-  simulatedPlan?: SubscriptionPlan;
-  isSimulation?: boolean;
-}
-
-interface AuthContextType {
-  accountRole: AccountRole;
-  accessibleClinics: AccessibleClinic[];
-  can: (capability: AccessCapability) => boolean;
-  capabilities: Record<AccessCapability, boolean>;
-  clinic: ClinicSummary | null;
-  clinicId: string | null;
-  endPlatformClinicAccess?: () => Promise<void>;
-  isSuperAdmin: boolean;
-  isPlatformOwner?: boolean;
-  isPasswordRecovery?: boolean;
-  clearPasswordRecovery?: () => void;
-  platformMfaVerified?: boolean;
-  loading: boolean;
-  membership: Membership | null;
-  membershipStatus: MembershipStatus | null;
-  operationalRole: OperationalRole;
-  platformAccess?: PlatformClinicAccess | null;
-  setPlatformSupportRole?: (role: PlatformSupportRole) => Promise<void>;
-  setPlatformSimulatedPlan?: (plan: SubscriptionPlan) => void;
-  startPlatformClinicSimulation?: (clinicId?: string) => Promise<PlatformClinicAccess>;
-  simulatedRoleCapabilityOverrides?: Partial<Record<AccessCapability, boolean>>;
-  setPlatformRoleCapabilityOverride?: (capability: AccessCapability, enabled: boolean) => void;
-  resetPlatformRoleCapabilityOverrides?: () => void;
-  profile: Profile | null;
-  leaveClinic: () => Promise<void>;
-  refreshMfaAssurance: () => Promise<void>;
-  refreshAuthState: () => Promise<void>;
-  selectClinic: (clinicId: string) => Promise<void>;
-  selectClinicByRouteKey: (routeKey: string) => Promise<void>;
-  session: Session | null;
-  isSigningOut?: boolean;
-  signOut: () => Promise<void>;
-  startPlatformClinicAccess?: (clinicId: string, reason: string, simulatedRole?: PlatformSupportRole) => Promise<PlatformClinicAccess>;
-  subscriptionPlan: SubscriptionPlan | null;
-  user: User | null;
-}
-
-const emptyCapabilities = Object.fromEntries(
-  ACCESS_CAPABILITIES.map((capability) => [capability, false])
-) as Record<AccessCapability, boolean>;
-
-const DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN: Record<SubscriptionPlan, number> = {
-  solo: 1,
-  prof_basico: 1,
-  prof_medio: 1,
-  prof_top: 2,
-  clinica_basico: 2,
-  clinica_medio: 4,
-  clinic: 4,
-  clinica_top: 8,
-  enterprise: 8,
-};
-const ACTIVE_CLINIC_STORAGE_KEY = "therapy-flow.activeClinicId";
-
-type RoleCapabilityOverride = {
-  capability: AccessCapability;
-  enabled: boolean;
-  operational_role: string;
-};
-
-const getErrorMessage = (error: unknown) => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    return typeof message === "string" ? message : String(message);
-  }
-
-  return String(error);
-};
-
-const isSimultaneousAccessLimitError = (error: unknown) => {
-  const message = getErrorMessage(error).toLowerCase();
-  return message.includes("limite de acessos simultaneos");
-};
-
-const isForcedSignOutError = (error: unknown) => {
-  const message = getErrorMessage(error).toLowerCase();
-  return message.includes("sessao encerrada") || message.includes("sessão encerrada");
-};
-
-const isDuplicateSecuritySessionError = (error: unknown) => {
-  const message = getErrorMessage(error).toLowerCase();
-  return (
-    message.includes("duplicate key value") &&
-    message.includes("user_security_sessions_session_key_key")
-  );
-};
-
-const deriveConcurrentAccessLimit = (clinicSummary: {
-  concurrent_access_limit?: number | null;
-  subaccount_limit: number | null;
-  subscription_plan: SubscriptionPlan;
-}) => {
-  if (
-    typeof clinicSummary.concurrent_access_limit === "number" &&
-    Number.isFinite(clinicSummary.concurrent_access_limit) &&
-    clinicSummary.concurrent_access_limit > 0
-  ) {
-    return Math.max(1, Math.trunc(clinicSummary.concurrent_access_limit));
-  }
-
-  const defaultForPlan = DEFAULT_CONCURRENT_ACCESS_LIMIT_BY_PLAN[clinicSummary.subscription_plan] ?? 1;
-  if (
-    clinicSummary.subscription_plan === "solo" ||
-    clinicSummary.subscription_plan === "prof_basico" ||
-    clinicSummary.subscription_plan === "prof_medio"
-  ) {
-    return defaultForPlan;
-  }
-
-  if (
-    typeof clinicSummary.subaccount_limit === "number" &&
-    clinicSummary.subaccount_limit > 0 &&
-    clinicSummary.subaccount_limit <= 20
-  ) {
-    return Math.max(clinicSummary.subaccount_limit, defaultForPlan);
-  }
-
-  return defaultForPlan;
-};
+export type { AccessibleClinic, Membership, PlatformClinicAccess };
 
 const AuthContext = createContext<AuthContextType>({
   accountRole: null,
@@ -1171,25 +1022,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }}
     >
       {children}
-      {(isSigningOut || isLeavingClinic) && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-3 bg-background/95 backdrop-blur-sm"
-        >
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <div className="text-center space-y-1">
-            <p className="text-base font-semibold text-foreground">
-              {isSigningOut ? "Saindo da conta..." : "Saindo da clínica..."}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {isSigningOut
-                ? "Encerrando sua sessão com segurança."
-                : "Liberando seu acesso e voltando ao painel pessoal."}
-            </p>
-          </div>
-        </div>
-      )}
+      <AuthFeedbackOverlay isSigningOut={isSigningOut} isLeavingClinic={isLeavingClinic} />
     </AuthContext.Provider>
   );
 };
