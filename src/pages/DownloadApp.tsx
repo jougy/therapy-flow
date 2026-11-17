@@ -68,7 +68,7 @@ export default function DownloadApp() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate(-1)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Voltar
@@ -87,13 +87,13 @@ export default function DownloadApp() {
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link to="/auth">
-              <Button variant="outline" size="sm" className="h-8 sm:h-9 text-xs sm:text-sm px-2.5 sm:px-3 font-medium">
+              <Button variant="outline" size="sm" className="min-h-[44px] sm:h-10 text-xs sm:text-sm px-2.5 sm:px-3 font-medium">
                 <span className="hidden xs:inline">Já tenho conta</span>
                 <span className="xs:hidden">Entrar</span>
               </Button>
             </Link>
             <Link to="/auth/cadastro">
-              <Button size="sm" className="h-8 sm:h-9 text-xs sm:text-sm px-2.5 sm:px-3 gap-1 sm:gap-1.5 font-medium shadow-xs">
+              <Button size="sm" className="min-h-[44px] sm:h-10 text-xs sm:text-sm px-2.5 sm:px-3 gap-1 sm:gap-1.5 font-medium shadow-xs">
                 <span>Criar Conta</span>
                 <ArrowRight className="h-3.5 w-3.5 hidden xs:inline" />
               </Button>

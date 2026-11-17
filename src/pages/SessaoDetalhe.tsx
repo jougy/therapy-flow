@@ -138,7 +138,7 @@ const SessaoDetalhe = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { accountRole, can, user, clinic, clinicId, operationalRole, profile } = useAuth();
-  const isAccountOwner = accountRole === "account_owner" || clinic?.account_owner_user_id === user?.id || operationalRole === "owner";
+  const isAccountOwner = accountRole === "account_owner" || clinic?.account_owner_user_id === user?.id;
   const quota = useClinicPlanQuota(clinicId);
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const isNew = sessionId === "novo";

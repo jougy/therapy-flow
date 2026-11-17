@@ -57,6 +57,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "qa:perf": "node scripts/qa/audit-bundle-perf.mjs",
+    "qa:perf:pages": "node scripts/qa/audit-internal-pages-perf.mjs",
+    "qa:perf:vault": "node scripts/qa/audit-vault-pages-benchmark.mjs",
+    "bench": "node scripts/qa/audit-vault-pages-benchmark.mjs",
     "qa:agent": "node scripts/qa/audit-agent-readiness.mjs"
   },
   "dependencies": {
@@ -119,6 +122,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^9.32.0",
     "@playwright/test": "^1.57.0",
     "@tailwindcss/typography": "^0.5.20",
@@ -137,6 +141,7 @@
     "fast-check": "^4.10.2",
     "globals": "^15.15.0",
     "jsdom": "^20.0.3",
+    "lighthouse": "^13.6.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",

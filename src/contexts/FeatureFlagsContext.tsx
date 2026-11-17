@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { withTransientRetry } from "@/lib/supabase-resilience";
 
 export type SimulationAudienceMode = "tester" | "common";
 
@@ -31,60 +33,49 @@ export const useFeatureFlags = () => useContext(FeatureFlagsContext);
 
 export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
   const { clinicId, platformAccess, isPlatformOwner, session } = useAuth();
-  const [flags, setFlags] = useState<Record<string, unknown>>({});
   const [flagOverrides, setFlagOverrides] = useState<Record<string, boolean>>({});
   const [simulationAudienceMode, setSimulationAudienceMode] = useState<SimulationAudienceMode>("tester");
-  const [loading, setLoading] = useState(true);
+  const hasAuthContext = Boolean(session?.user?.id || isPlatformOwner || import.meta.env.MODE === "test");
 
-  useEffect(() => {
-    setLoading(true);
+  const { data: flags = {}, isLoading: loading } = useQuery<Record<string, unknown>>({
+    queryKey: ["feature-flags", clinicId ?? "global", hasAuthContext],
+    enabled: Boolean(clinicId) || hasAuthContext,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      if (!clinicId) {
+        const { data, error } = await withTransientRetry(async () =>
+          await supabase
+            .from("feature_flags")
+            .select("key, value")
+            .eq("scope", "global")
+        );
 
-    if (!clinicId) {
-      if (!session && !isPlatformOwner && import.meta.env.MODE !== "test") {
-        setFlags({});
-        setLoading(false);
-        return;
+        if (error) {
+          console.error("Erro ao carregar feature flags globais:", error);
+          return {};
+        }
+
+        const globalFlags: Record<string, unknown> = {};
+        data?.forEach((item) => {
+          if (item.key) {
+            globalFlags[item.key] = item.value;
+          }
+        });
+        return globalFlags;
       }
 
-      // Quando clinicId não está definido (ex: Espaço Pessoal / rotas do profissional),
-      // buscar as feature flags de escopo global para aplicar as diretrizes da plataforma
-      supabase
-        .from("feature_flags")
-        .select("key, value")
-        .eq("scope", "global")
-        .then(({ data, error }) => {
-          if (error) {
-            console.error("Erro ao carregar feature flags globais:", error);
-            setFlags({});
-          } else {
-            const globalFlags: Record<string, unknown> = {};
-            data?.forEach((item) => {
-              if (item.key) {
-                globalFlags[item.key] = item.value;
-              }
-            });
-            setFlags(globalFlags);
-          }
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-      return;
-    }
+      const { data, error } = await withTransientRetry(async () =>
+        await supabase.rpc("get_clinic_feature_flags", { _clinic_id: clinicId })
+      );
 
-    supabase.rpc("get_clinic_feature_flags", { _clinic_id: clinicId })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Erro ao carregar feature flags:", error);
-          setFlags({});
-        } else {
-          setFlags((data as Record<string, unknown>) || {});
-        }
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [clinicId, session]);
+      if (error) {
+        console.error("Erro ao carregar feature flags:", error);
+        return {};
+      }
+
+      return (data as Record<string, unknown>) || {};
+    },
+  });
 
   const setFlagOverride = (key: string, enabled: boolean) => {
     setFlagOverrides((prev) => ({ ...prev, [key]: enabled }));

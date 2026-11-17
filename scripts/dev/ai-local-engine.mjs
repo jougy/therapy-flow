@@ -15,16 +15,15 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 
 const ROOT = process.cwd();
 const OLLAMA_HOST = process.env.OLLAMA_HOST || '127.0.0.1';
 const OLLAMA_PORT = Number(process.env.OLLAMA_PORT || 11434);
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4:cloud';
 
-const OPENCODE_HOST = process.env.OPENCODE_HOST || '127.0.0.1';
-const OPENCODE_PORT = Number(process.env.OPENCODE_PORT || 3000);
-const OPENCODE_MODEL = process.env.OPENCODE_MODEL || 'mimo';
+const OPENCODE_BIN = process.env.OPENCODE_BIN || (fs.existsSync('/Users/jougy/.opencode/bin/opencode') ? '/Users/jougy/.opencode/bin/opencode' : 'opencode');
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL || 'opencode/big-pickle';
 
 function postJson(host, port, reqPath, payload, timeoutMs = 4500) {
   return new Promise((resolve, reject) => {
@@ -84,20 +83,31 @@ export async function askLocalLLM(systemPrompt, userContent, maxTokens = 160) {
     // Fallback to OpenCode
   }
 
-  // 2. Try OpenCode (mimo)
+  // 2. Try OpenCode CLI (opencode/big-pickle or configured model)
   try {
-    const res = await postJson(OPENCODE_HOST, OPENCODE_PORT, '/v1/chat/completions', {
-      model: OPENCODE_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent.slice(0, 6000) },
-      ],
-      max_tokens: maxTokens,
-      temperature: 0.1,
+    const prompt = `${systemPrompt}\n\n${userContent.slice(0, 6000)}`;
+    const stdout = await new Promise((resolve, reject) => {
+      const child = spawn(OPENCODE_BIN, ['run', '-m', OPENCODE_MODEL, prompt], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let out = '';
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error('timeout'));
+      }, 30000);
+      child.stdout.on('data', (d) => { out += d.toString(); });
+      child.on('error', (err) => { clearTimeout(timer); reject(err); });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve(out);
+        else reject(new Error(`exit ${code}`));
+      });
     });
-    const text = res?.choices?.[0]?.message?.content?.trim();
-    if (text) {
-      return { provider: `opencode:${OPENCODE_MODEL}`, text };
+    const text = stdout
+      .replace(/^>\s*build\s*·.*$/gm, '')
+      .trim();
+    if (text && !text.startsWith('Error:')) {
+      return { provider: OPENCODE_MODEL, text };
     }
   } catch {
     // Fallback deterministic
@@ -465,4 +475,7 @@ async function runCli() {
   }
 }
 
-runCli();
+import { fileURLToPath } from 'url';
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  runCli();
+}

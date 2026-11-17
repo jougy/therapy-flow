@@ -224,7 +224,7 @@ const PacienteDetalhe = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { accountRole, can, clinic, clinicId, operationalRole, profile, user } = useAuth();
-  const isAccountOwner = accountRole === "account_owner" || clinic?.account_owner_user_id === user?.id || operationalRole === "owner";
+  const isAccountOwner = accountRole === "account_owner" || clinic?.account_owner_user_id === user?.id;
   const { isFeatureEnabled } = useFeatureFlags();
   const { trackDocumentPrint, trackExportJson } = useTelemetry();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Loader2 } from "lucide-react";
 import { type Session, type User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -18,6 +19,7 @@ import {
   type SubscriptionPlan,
 } from "@/lib/rbac";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
+import { withTransientRetry } from "@/lib/supabase-resilience";
 
 type Profile = Pick<
   Database["public"]["Tables"]["profiles"]["Row"],
@@ -95,6 +97,7 @@ interface AuthContextType {
   selectClinic: (clinicId: string) => Promise<void>;
   selectClinicByRouteKey: (routeKey: string) => Promise<void>;
   session: Session | null;
+  isSigningOut?: boolean;
   signOut: () => Promise<void>;
   startPlatformClinicAccess?: (clinicId: string, reason: string, simulatedRole?: PlatformSupportRole) => Promise<PlatformClinicAccess>;
   subscriptionPlan: SubscriptionPlan | null;
@@ -213,6 +216,7 @@ const AuthContext = createContext<AuthContextType>({
   selectClinic: async () => {},
   selectClinicByRouteKey: async () => {},
   session: null,
+  isSigningOut: false,
   signOut: async () => {},
   setPlatformSupportRole: async () => {},
   startPlatformClinicAccess: async () => {
@@ -227,6 +231,8 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isLeavingClinic, setIsLeavingClinic] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [clinic, setClinic] = useState<ClinicSummary | null>(null);
@@ -391,7 +397,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const fetchAccessibleClinics = useCallback(async (userId: string): Promise<AccessibleClinic[]> => {
-    const { data, error } = await supabase.rpc("list_current_user_clinics");
+    const { data, error } = await withTransientRetry(() => supabase.rpc("list_current_user_clinics"));
 
     if (error) {
       logRuntimeError("auth.list_current_user_clinics", error);
@@ -501,24 +507,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       const platformOwnerRequest = async () => {
         try {
-          return await supabase.rpc("is_platform_owner" as never, { _user_id: userId } as never) as {
-            data: unknown;
-            error: unknown;
-          };
+          return await withTransientRetry(() =>
+            supabase.rpc("is_platform_owner" as never, { _user_id: userId } as never) as Promise<{ data: unknown; error: unknown }>
+          );
         } catch {
           return { data: false, error: null };
         }
       };
 
       const [profileRes, roleRes, clinicOptions, platformOwnerRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select(
-            "address, avatar_url, bio, birth_date, clinic_id, cpf, email, full_name, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours, profession, council_name"
-          )
-          .eq("id", userId)
-          .maybeSingle(),
-        supabase.from("user_roles").select("role").eq("user_id", userId),
+        withTransientRetry(() =>
+          supabase
+            .from("profiles")
+            .select("address, avatar_url, bio, birth_date, clinic_id, cpf, email, full_name, job_title, last_password_changed_at, last_seen_at, password_temporary, phone, professional_license, public_code, social_name, specialty, working_hours, profession, council_name")
+            .eq("id", userId)
+            .maybeSingle()
+        ),
+        withTransientRetry(() => supabase.from("user_roles").select("role").eq("user_id", userId)),
         fetchAccessibleClinics(userId),
         platformOwnerRequest(),
       ]);
@@ -789,25 +794,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signOut = async () => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
     try {
-      await localTelemetryManager.syncToServer({
-        force: true,
-        triggerReason: "logout",
-        clinicId: clinic?.id ?? null,
-        userName: profile?.full_name || profile?.email || session?.user?.email || "Usuário",
-      });
-    } catch {
-      // Best-effort telemetry sync on logout
+      const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | void> =>
+        Promise.race([
+          promise,
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, ms);
+          }),
+        ]);
+
+      await withTimeout(
+        Promise.allSettled([
+          localTelemetryManager.syncToServer({
+            force: true,
+            triggerReason: "logout",
+            clinicId: clinic?.id ?? null,
+            userName: profile?.full_name || profile?.email || session?.user?.email || "Usuário",
+          }),
+          endCurrentSecuritySession({ session }),
+        ]),
+        1500,
+      );
+
+      setStoredActiveClinicId(null);
+      setPlatformAccess(null);
+      setPlatformMfaVerified(false);
+      setIsPasswordRecovery(false);
+      appQueryClient.clear();
+      void clearLocalCache();
+      void clearUserClinicsLocalCache(session?.user?.id);
+      await withTimeout(supabase.auth.signOut(), 2500);
+    } finally {
+      setIsSigningOut(false);
     }
-    await endCurrentSecuritySession({ session });
-    setStoredActiveClinicId(null);
-    setPlatformAccess(null);
-    setPlatformMfaVerified(false);
-    setIsPasswordRecovery(false);
-    appQueryClient.clear();
-    void clearLocalCache();
-    void clearUserClinicsLocalCache(session?.user?.id);
-    await supabase.auth.signOut();
   };
 
   const refreshAuthState = async () => {
@@ -837,13 +858,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const can = useCallback((capability: AccessCapability) => capabilities[capability], [capabilities]);
 
   const leaveClinic = async () => {
-    await endCurrentSecuritySession({ session });
-    setStoredActiveClinicId(null);
-    setPlatformAccess(null);
-    setMembership(null);
-    setClinic(null);
-    setRoleCapabilityOverrides([]);
-    // Preserva o cache local (Local-First) entre navegações para evitar recarregar clínicas e pacientes do zero
+    if (isLeavingClinic) return;
+    setIsLeavingClinic(true);
+    try {
+      await Promise.race([
+        endCurrentSecuritySession({ session }),
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, 1500);
+        }),
+      ]);
+      setStoredActiveClinicId(null);
+      setPlatformAccess(null);
+      setMembership(null);
+      setClinic(null);
+      setRoleCapabilityOverrides([]);
+      // Preserva o cache local (Local-First) entre navegações para evitar recarregar clínicas e pacientes do zero
+    } finally {
+      setIsLeavingClinic(false);
+    }
   };
 
   const activateClinic = async (
@@ -1125,6 +1157,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         selectClinic,
         selectClinicByRouteKey,
         session,
+        isSigningOut,
         signOut,
         setPlatformSupportRole,
         setPlatformSimulatedPlan,
@@ -1138,6 +1171,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }}
     >
       {children}
+      {(isSigningOut || isLeavingClinic) && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-3 bg-background/95 backdrop-blur-sm"
+        >
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="text-center space-y-1">
+            <p className="text-base font-semibold text-foreground">
+              {isSigningOut ? "Saindo da conta..." : "Saindo da clínica..."}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {isSigningOut
+                ? "Encerrando sua sessão com segurança."
+                : "Liberando seu acesso e voltando ao painel pessoal."}
+            </p>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 };

@@ -64,6 +64,8 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Plano Diretor de Modernizacao e Governanca do Banco de Dados]]
 - [[Roadmap Tecnico e Otimizacoes Avancadas do Banco de Dados]]
 - [[TDD e checks]]
+- [[00 - Indice de Benchmarks por Pagina]]
+- [[01 - Resumo Geral do SaaS]]
 
 ### Seguranca e vulnerabilidades
 
@@ -88,7 +90,9 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[00 - Roteiro de Execucao e Indice Mestre|Marketing e Afiliados]]: roteiro mestre e índice técnico completo do módulo de Marketing, CRM B2B/B2C, Afiliados e Splits Asaas.
 - [[00 - Hub de Tutoriais da Plataforma]]: roteiros, mapeamento e guias passo a passo de todas as páginas da plataforma.
 - [[Ambiente e operacao]]: ambiente local, fluxo tecnico e deploy.
-- [[TDD e checks]]: estrategia de protecao contra regressao.
+- [[TDD e checks]]
+- [[00 - Indice de Benchmarks por Pagina]]
+- [[01 - Resumo Geral do SaaS]]: estrategia de protecao contra regressao.
 - [[Plano de seguranca - hub]]: plano de auditoria, vulnerabilidades e subplanos por camada.
 - [[Mapa de skills do Codex]]: indice das skills disponiveis, gatilhos de uso e notas individuais por habilidade.
 - [[Kanban de Tarefas]]: quadro kanban vivo de demandas, tarefas, ideias, melhorias e releases.
@@ -130,6 +134,8 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Empacotamento PWA Mobile e Desktop Cross-Platform]]
 - [[Backup do Supabase antes de deploy]]
 - [[TDD e checks]]
+- [[00 - Indice de Benchmarks por Pagina]]
+- [[01 - Resumo Geral do SaaS]]
 - [[Inventario de inputs]]
 - [[Feature Flags - Guia]]
 - [[Prevencao de TDZ e ordem de hooks no React]]

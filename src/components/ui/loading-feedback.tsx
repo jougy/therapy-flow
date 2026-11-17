@@ -87,7 +87,7 @@ export function LoadingFeedback({
         tone: "slow" as const,
         icon: <Wifi className="h-6 w-6 text-amber-500 animate-pulse" />,
         title: "A conexão parece um pouco lenta",
-        subtitle: "Estamos finalizando o carregamento. Obrigado pela paciência!",
+        subtitle: "Estamos finalizando a sincronização com o servidor. Obrigado pela paciência!",
       };
     }
 
@@ -95,7 +95,7 @@ export function LoadingFeedback({
       tone: "delayed" as const,
       icon: <Wifi className="h-6 w-6 text-amber-500" />,
       title: "O carregamento está demorando mais do que o esperado",
-      subtitle: "Verifique sua conexão de internet se a demora persistir.",
+      subtitle: "Pode ser uma instabilidade temporária no servidor ou na sua rede. Tente novamente em instantes.",
     };
   };
 

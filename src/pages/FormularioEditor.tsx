@@ -80,7 +80,7 @@ const FormularioEditor = () => {
         </div>
 
         {/* Right Column: Unified Flow & Inspector */}
-        <div className="hidden lg:block lg:w-[332px]" onClick={(e) => e.stopPropagation()}>
+        <div className="hidden lg:block lg:w-[332px]" onClick={(e) => e.stopPropagation()} role="presentation">
           <div
             className="fixed right-6 z-20 flex flex-col w-[332px] space-y-3"
             style={{
