@@ -21,7 +21,7 @@ services:
       '
 
   minio:
-    image: minio/minio:RELEASE.2024-07-04T14-25-45Z
+    image: elestio/minio:latest
     container_name: therapy-flow-minio
     restart: unless-stopped
     ports:
@@ -32,7 +32,7 @@ services:
       MINIO_ROOT_PASSWORD: devminio123
     command: server /data --console-address ":9001"
     volumes:
-      - ./minio-data:/data
+      - ./minio-data:/data:z
 
 volumes:
   local_node_modules:

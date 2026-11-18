@@ -16,4 +16,6 @@ export * from "./LinkSessionEvolutionGroupDialog";
 export * from "./MobileFilterDrawer";
 export * from "./MobileStatusSheet";
 export * from "./MobileTermsSheet";
+export * from "./MobileShareSheet";
+export * from "./PatientDocumentsDropdown";
 export * from "./PatientBentoOverview";

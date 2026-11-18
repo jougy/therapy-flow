@@ -1,7 +1,24 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClinicTeamSection } from "./ClinicTeamSection";
+
+const fastWaitFor = <T,>(cb: () => T) => waitFor(cb, { interval: 5 });
+
+const openRolesModal = async () => {
+  const titleEl = await screen.findByText("Colaboradores e acessos", {}, { interval: 5 });
+  const headerEl = titleEl.closest("div")!.parentElement!.parentElement!;
+  const openRolesBtn = within(headerEl).getByRole("button", { name: /^gerenciar papéis operacionais$/i });
+  expect(openRolesBtn).toBeInTheDocument();
+  fireEvent.click(openRolesBtn);
+  const hierarquiasEl = await screen.findByText("Hierarquias", {}, { interval: 5 });
+  const dialogEl = hierarquiasEl.closest('[role="dialog"]') as HTMLElement;
+  const rolesAside = dialogEl.querySelector("aside") as HTMLElement;
+  const sectionEl = dialogEl.querySelector("section") as HTMLElement;
+  const tabsBar = sectionEl.querySelector(".no-scrollbar") as HTMLElement;
+  const permList = sectionEl.lastElementChild as HTMLElement;
+  return { dialogEl, rolesAside, sectionEl, tabsBar, permList };
+};
 
 const supabaseMocks = vi.hoisted(() => ({
   from: vi.fn(),
@@ -95,32 +112,25 @@ describe("ClinicTeamSection", () => {
   it("renders the team section and opens the operational roles modal", async () => {
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-
-    const openRolesBtn = screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i });
-    expect(openRolesBtn).toBeInTheDocument();
-    fireEvent.click(openRolesBtn);
-
-    await waitFor(() => expect(screen.getByText("Hierarquias")).toBeInTheDocument());
+    await openRolesModal();
     expect(screen.getByDisplayValue("Administrador(a)")).toBeInTheDocument();
   });
 
   it("allows owner to edit permissions and toggle switches with smart coupling", async () => {
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i }));
+    const { permList } = await openRolesModal();
 
-    await waitFor(() => expect(screen.getByDisplayValue("Administrador(a)")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByDisplayValue("Administrador(a)")).toBeInTheDocument());
 
     // Switch should not be disabled for Owner
-    const switches = screen.getAllByRole("switch");
+    const switches = within(permList).getAllByRole("switch");
     expect(switches.length).toBeGreaterThan(0);
     expect(switches[0]).not.toBeDisabled();
 
     // Click a switch to toggle permission
     fireEvent.click(switches[0]);
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(supabaseMocks.from).toHaveBeenCalledWith("clinic_operational_role_capabilities");
     });
   });
@@ -128,12 +138,11 @@ describe("ClinicTeamSection", () => {
   it("allows owner to rename any role including owner role", async () => {
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i }));
+    const { rolesAside } = await openRolesModal();
 
     // Select Owner role
-    fireEvent.click(screen.getByRole("button", { name: /Proprietário\(a\)/i }));
-    await waitFor(() => expect(screen.getByDisplayValue("Proprietário(a)")).toBeInTheDocument());
+    fireEvent.click(within(rolesAside).getByRole("button", { name: /Proprietário\(a\)/i }));
+    await fastWaitFor(() => expect(screen.getByDisplayValue("Proprietário(a)")).toBeInTheDocument());
 
     const input = screen.getByDisplayValue("Proprietário(a)");
     expect(input).not.toBeDisabled();
@@ -141,7 +150,7 @@ describe("ClinicTeamSection", () => {
     fireEvent.change(input, { target: { value: "Diretor Geral" } });
     fireEvent.blur(input);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(supabaseMocks.from).toHaveBeenCalledWith("clinic_operational_roles");
     });
   });
@@ -158,17 +167,16 @@ describe("ClinicTeamSection", () => {
 
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i }));
+    const { rolesAside } = await openRolesModal();
 
     // Admin opens modal -> Administrador(a) is selected by default -> Admin cannot edit same level (Admin)
-    await waitFor(() => expect(screen.getByDisplayValue("Administrador(a)")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByDisplayValue("Administrador(a)")).toBeInTheDocument());
     expect(screen.getByDisplayValue("Administrador(a)")).toBeDisabled();
     expect(screen.getByText(/somente leitura/i)).toBeInTheDocument();
 
     // Select lower role: Profissional -> Admin can edit Profissional
-    fireEvent.click(screen.getByRole("button", { name: /Profissional/i }));
-    await waitFor(() => expect(screen.getByDisplayValue("Profissional")).toBeInTheDocument());
+    fireEvent.click(within(rolesAside).getByRole("button", { name: /Profissional/i }));
+    await fastWaitFor(() => expect(screen.getByDisplayValue("Profissional")).toBeInTheDocument());
     expect(screen.getByDisplayValue("Profissional")).not.toBeDisabled();
   });
 
@@ -311,7 +319,7 @@ describe("ClinicTeamSection", () => {
 
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Dra. Beatriz Santos")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByText("Dra. Beatriz Santos")).toBeInTheDocument());
 
     const menuBtn = screen.getByRole("button", { name: /opções para dra\. beatriz santos/i });
     expect(menuBtn).toBeInTheDocument();
@@ -321,16 +329,17 @@ describe("ClinicTeamSection", () => {
     expect(editItem).toBeInTheDocument();
     fireEvent.click(editItem);
 
-    await waitFor(() => expect(screen.getByText("Editar Colaborador")).toBeInTheDocument());
-    expect(screen.getByDisplayValue("Psicóloga")).toBeInTheDocument();
+    const editTitle = await screen.findByText("Editar Colaborador", {}, { interval: 5 });
+    const editDialog = editTitle.closest('[role="dialog"]') as HTMLElement;
+    expect(within(editDialog).getByDisplayValue("Psicóloga")).toBeInTheDocument();
 
-    const jobInput = screen.getByDisplayValue("Psicóloga");
+    const jobInput = within(editDialog).getByDisplayValue("Psicóloga");
     fireEvent.change(jobInput, { target: { value: "Neuropsicóloga" } });
 
-    const saveBtn = screen.getByRole("button", { name: /salvar alterações/i });
+    const saveBtn = within(editDialog).getByRole("button", { name: /salvar alterações/i });
     fireEvent.click(saveBtn);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(supabaseMocks.rpc).toHaveBeenCalledWith("update_clinic_member_operational_fields", expect.objectContaining({
         _membership_id: "mem-2",
         _job_title: "Neuropsicóloga",
@@ -397,7 +406,7 @@ describe("ClinicTeamSection", () => {
 
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Dra. Beatriz Santos")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByText("Dra. Beatriz Santos")).toBeInTheDocument());
 
     const menuBtn = screen.getByRole("button", { name: /opções para dra\. beatriz santos/i });
     fireEvent.click(menuBtn);
@@ -405,12 +414,13 @@ describe("ClinicTeamSection", () => {
     const revokeMenuItem = screen.getByText("Revogar acesso");
     fireEvent.click(revokeMenuItem);
 
-    await waitFor(() => expect(screen.getByText("Revogar Acesso à Clínica")).toBeInTheDocument());
+    const revokeTitle = await screen.findByText("Revogar Acesso à Clínica", {}, { interval: 5 });
+    const revokeDialog = revokeTitle.closest('[role="dialog"], [role="alertdialog"]') as HTMLElement;
 
-    const confirmBtn = screen.getByRole("button", { name: /revogar acesso/i });
+    const confirmBtn = within(revokeDialog).getByRole("button", { name: /revogar acesso/i });
     fireEvent.click(confirmBtn);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(supabaseMocks.rpc).toHaveBeenCalledWith("revoke_clinic_member_access", {
         _membership_id: "mem-2",
       });
@@ -528,27 +538,24 @@ describe("ClinicTeamSection", () => {
   it("renders granular CRUD switches for colaboradores and allows toggling in operational roles modal", async () => {
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i }));
-
-    await waitFor(() => expect(screen.getByText("Hierarquias")).toBeInTheDocument());
+    const { tabsBar, permList } = await openRolesModal();
 
     // Switch category filter to "Equipe"
-    const equipeTab = screen.getByRole("button", { name: /^Equipe/i });
+    const equipeTab = within(tabsBar).getByRole("button", { name: /^Equipe/i });
     fireEvent.click(equipeTab);
 
-    await waitFor(() => {
-      expect(screen.getByText("Colaboradores da clínica")).toBeInTheDocument();
-      expect(screen.getAllByRole("switch", { name: /Ver/i }).length).toBeGreaterThan(0);
-      expect(screen.getByRole("switch", { name: /Convidar/i })).toBeInTheDocument();
-      expect(screen.getByRole("switch", { name: /Editar/i })).toBeInTheDocument();
-      expect(screen.getByRole("switch", { name: /Excluir/i })).toBeInTheDocument();
+    await fastWaitFor(() => {
+      expect(within(permList).getByText("Colaboradores da clínica")).toBeInTheDocument();
+      expect(within(permList).getAllByRole("switch", { name: /Ver/i }).length).toBeGreaterThan(0);
+      expect(within(permList).getByRole("switch", { name: /Convidar/i })).toBeInTheDocument();
+      expect(within(permList).getByRole("switch", { name: /Editar/i })).toBeInTheDocument();
+      expect(within(permList).getByRole("switch", { name: /Excluir/i })).toBeInTheDocument();
     });
 
-    const inviteSwitch = screen.getByRole("switch", { name: /Convidar/i });
+    const inviteSwitch = within(permList).getByRole("switch", { name: /Convidar/i });
     fireEvent.click(inviteSwitch);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(supabaseMocks.from).toHaveBeenCalledWith("clinic_operational_role_capabilities");
     });
   });
@@ -556,26 +563,23 @@ describe("ClinicTeamSection", () => {
   it("renders distinct switches for each permission item and decouples Ver and Editar/Gerenciar", async () => {
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i }));
-
-    await waitFor(() => expect(screen.getByText("Hierarquias")).toBeInTheDocument());
+    const { rolesAside, tabsBar, permList } = await openRolesModal();
 
     // Select Estagiário role (where forms.read and forms.manage are false)
-    fireEvent.click(screen.getByRole("button", { name: /Estagiário\(a\)/i }));
-    await waitFor(() => expect(screen.getByDisplayValue("Estagiário(a)")).toBeInTheDocument());
+    fireEvent.click(within(rolesAside).getByRole("button", { name: /Estagiário\(a\)/i }));
+    await fastWaitFor(() => expect(screen.getByDisplayValue("Estagiário(a)")).toBeInTheDocument());
 
     // Switch to Administração tab
-    const adminTab = screen.getByRole("button", { name: /^Administração/i });
+    const adminTab = within(tabsBar).getByRole("button", { name: /^Administração/i });
     fireEvent.click(adminTab);
 
-    await waitFor(() => {
-      expect(screen.getByText("Perfil institucional da clínica")).toBeInTheDocument();
-      expect(screen.getByText("Modelos de formulários")).toBeInTheDocument();
+    await fastWaitFor(() => {
+      expect(within(permList).getByText("Perfil institucional da clínica")).toBeInTheDocument();
+      expect(within(permList).getByText("Modelos de formulários")).toBeInTheDocument();
     });
 
     // In "Modelos de formulários", find the Ver switch
-    const formsHeading = screen.getByText("Modelos de formulários");
+    const formsHeading = within(permList).getByText("Modelos de formulários");
     const formsCard = formsHeading.closest(".flex.flex-col")!;
     const verSwitch = formsCard.querySelector('button[data-kind="view"]')!;
     const manageSwitch = formsCard.querySelector('button[data-kind="manage"]')!;
@@ -589,7 +593,7 @@ describe("ClinicTeamSection", () => {
     supabaseMocks.upsert.mockClear();
     fireEvent.click(verSwitch);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(supabaseMocks.upsert).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
@@ -613,29 +617,26 @@ describe("ClinicTeamSection", () => {
   it("smart coupling: activating Editar/Gerenciar automatically activates Ver if inactive", async () => {
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i }));
-
-    await waitFor(() => expect(screen.getByText("Hierarquias")).toBeInTheDocument());
+    const { rolesAside, tabsBar, permList } = await openRolesModal();
 
     // Select Estagiário role (where forms.read and forms.manage are false)
-    fireEvent.click(screen.getByRole("button", { name: /Estagiário\(a\)/i }));
-    await waitFor(() => expect(screen.getByDisplayValue("Estagiário(a)")).toBeInTheDocument());
+    fireEvent.click(within(rolesAside).getByRole("button", { name: /Estagiário\(a\)/i }));
+    await fastWaitFor(() => expect(screen.getByDisplayValue("Estagiário(a)")).toBeInTheDocument());
 
     // Switch to Administração tab
-    const adminTab = screen.getByRole("button", { name: /^Administração/i });
+    const adminTab = within(tabsBar).getByRole("button", { name: /^Administração/i });
     fireEvent.click(adminTab);
 
-    await waitFor(() => expect(screen.getByText("Modelos de formulários")).toBeInTheDocument());
+    await fastWaitFor(() => expect(within(permList).getByText("Modelos de formulários")).toBeInTheDocument());
 
-    const formsHeading = screen.getByText("Modelos de formulários");
+    const formsHeading = within(permList).getByText("Modelos de formulários");
     const formsCard = formsHeading.closest(".flex.flex-col")!;
     const manageSwitch = formsCard.querySelector('button[data-kind="manage"]')!;
 
     supabaseMocks.upsert.mockClear();
     fireEvent.click(manageSwitch);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       // Should batch upsert forms.manage = true AND forms.read = true
       expect(supabaseMocks.upsert).toHaveBeenCalledWith(
         expect.arrayContaining([
@@ -660,18 +661,15 @@ describe("ClinicTeamSection", () => {
   it("smart coupling: disabling Ver automatically disables dependent actions", async () => {
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i }));
-
-    await waitFor(() => expect(screen.getByText("Hierarquias")).toBeInTheDocument());
+    const { tabsBar, permList } = await openRolesModal();
 
     // Administrador has forms.read = true and forms.manage = true by default
-    const adminTab = screen.getByRole("button", { name: /^Administração/i });
+    const adminTab = within(tabsBar).getByRole("button", { name: /^Administração/i });
     fireEvent.click(adminTab);
 
-    await waitFor(() => expect(screen.getByText("Modelos de formulários")).toBeInTheDocument());
+    await fastWaitFor(() => expect(within(permList).getByText("Modelos de formulários")).toBeInTheDocument());
 
-    const formsHeading = screen.getByText("Modelos de formulários");
+    const formsHeading = within(permList).getByText("Modelos de formulários");
     const formsCard = formsHeading.closest(".flex.flex-col")!;
     const verSwitch = formsCard.querySelector('button[data-kind="view"]')!;
 
@@ -681,7 +679,7 @@ describe("ClinicTeamSection", () => {
     // Toggle Ver switch OFF: should disable forms.read and forms.manage
     fireEvent.click(verSwitch);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(supabaseMocks.upsert).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({
@@ -705,38 +703,35 @@ describe("ClinicTeamSection", () => {
   it("renders and supports switches for all new capability domains (Financeiro, Agenda, Clínico)", async () => {
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /^gerenciar papéis operacionais$/i }));
-
-    await waitFor(() => expect(screen.getByText("Hierarquias")).toBeInTheDocument());
+    const { tabsBar, permList } = await openRolesModal();
 
     // Check Financeiro tab
-    const financeTab = screen.getByRole("button", { name: /^Financeiro/i });
+    const financeTab = within(tabsBar).getByRole("button", { name: /^Financeiro/i });
     fireEvent.click(financeTab);
 
-    await waitFor(() => {
-      expect(screen.getByText("Caixa & Pagamentos de Pacientes")).toBeInTheDocument();
-      expect(screen.getByText("Assinatura & Plano Therapy-Flow")).toBeInTheDocument();
+    await fastWaitFor(() => {
+      expect(within(permList).getByText("Caixa & Pagamentos de Pacientes")).toBeInTheDocument();
+      expect(within(permList).getByText("Assinatura & Plano Therapy-Flow")).toBeInTheDocument();
     });
 
     // Check Agenda tab
-    const agendaTab = screen.getByRole("button", { name: /^Agenda/i });
+    const agendaTab = within(tabsBar).getByRole("button", { name: /^Agenda/i });
     fireEvent.click(agendaTab);
 
-    await waitFor(() => {
-      expect(screen.getByText("Agenda própria")).toBeInTheDocument();
-      expect(screen.getByText("Agenda da equipe")).toBeInTheDocument();
+    await fastWaitFor(() => {
+      expect(within(permList).getByText("Agenda própria")).toBeInTheDocument();
+      expect(within(permList).getByText("Agenda da equipe")).toBeInTheDocument();
     });
 
     // Check Clínico tab
-    const clinicoTab = screen.getByRole("button", { name: /^Clínico/i });
+    const clinicoTab = within(tabsBar).getByRole("button", { name: /^Clínico/i });
     fireEvent.click(clinicoTab);
 
-    await waitFor(() => {
-      expect(screen.getByText("Pacientes")).toBeInTheDocument();
-      expect(screen.getByText("Grupos de pacientes")).toBeInTheDocument();
-      expect(screen.getByText("Atendimentos próprios")).toBeInTheDocument();
-      expect(screen.getByText("Atendimentos da equipe")).toBeInTheDocument();
+    await fastWaitFor(() => {
+      expect(within(permList).getByText("Pacientes")).toBeInTheDocument();
+      expect(within(permList).getByText("Grupos de pacientes")).toBeInTheDocument();
+      expect(within(permList).getByText("Atendimentos próprios")).toBeInTheDocument();
+      expect(within(permList).getByText("Atendimentos da equipe")).toBeInTheDocument();
     });
   });
 
@@ -752,7 +747,7 @@ describe("ClinicTeamSection", () => {
 
     render(<ClinicTeamSection />);
 
-    await waitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByText("Colaboradores e acessos")).toBeInTheDocument());
 
     const inviteBtn = screen.getByRole("button", { name: /enviar convite por e-mail/i });
     expect(inviteBtn).toBeDisabled();

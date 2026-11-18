@@ -5,7 +5,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { isSameDay } from "date-fns";
 import {
   AlertTriangle, ArrowLeft, Plus, Phone, Calendar, CalendarDays, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
-  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown, Baby, Activity, FileCheck2, History
+  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, FileSignature, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown, Baby, Activity, FileCheck2, History
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,6 +47,8 @@ import { PrintResponsibilityModal } from "@/components/PrintResponsibilityModal"
 import { PatientRegistrationPrintView } from "@/components/patients/PatientRegistrationPrintView";
 import { PrintAdultConsentModal } from "@/components/patients/PrintAdultConsentModal";
 import { PrintGuardianConsentModal } from "@/components/patients/PrintGuardianConsentModal";
+import { GenerateDocumentModal } from "@/components/patients/GenerateDocumentModal";
+import { useDocumentTemplates } from "@/components/patients/generate-document";
 import { buildPatientExportData, downloadPatientDataJson } from "@/lib/patient-export";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -216,6 +218,8 @@ import {
   MobileFilterDrawer,
   MobileStatusSheet,
   MobileTermsSheet,
+  MobileShareSheet,
+  PatientDocumentsDropdown,
   PatientBentoOverview,
 } from "./paciente-detalhe";
 
@@ -425,6 +429,9 @@ const PacienteDetalhe = () => {
   const [isPrintingRegistration, setIsPrintingRegistration] = useState(false);
   const [showPrintAdultConsentModal, setShowPrintAdultConsentModal] = useState(false);
   const [showPrintGuardianConsentModal, setShowPrintGuardianConsentModal] = useState(false);
+  const [showGenerateDocumentModal, setShowGenerateDocumentModal] = useState(false);
+  const [initialGenerateTemplateId, setInitialGenerateTemplateId] = useState<string | undefined>(undefined);
+  const { customTemplates } = useDocumentTemplates({ open: Boolean(clinicId), clinicId });
   const [agendaDialogOpen, setAgendaDialogOpen] = useState(false);
   const [agendaDate, setAgendaDate] = useState(() => getDefaultAgendaInputs().date);
   const [agendaTime, setAgendaTime] = useState(() => getDefaultAgendaInputs().time);
@@ -505,6 +512,7 @@ const PacienteDetalhe = () => {
   const [mobileTab, setMobileTab] = useState<PatientMobileTab>("inicio");
   const [mobileStatusSheetOpen, setMobileStatusSheetOpen] = useState(false);
   const [mobileTermsSheetOpen, setMobileTermsSheetOpen] = useState(false);
+  const [mobileShareSheetOpen, setMobileShareSheetOpen] = useState(false);
   const [mobileFilterDrawerOpen, setMobileFilterDrawerOpen] = useState(false);
   const [attendanceConfirmDialogOpen, setAttendanceConfirmDialogOpen] = useState(false);
   const [startAttendanceOptionsDialogOpen, setStartAttendanceOptionsDialogOpen] = useState(false);
@@ -615,6 +623,16 @@ const PacienteDetalhe = () => {
   };
 
   const handleMobileTabChange = useCallback((tab: PatientMobileTab) => {
+    if (tab === "termos") {
+      setMobileTermsSheetOpen(true);
+      return;
+    }
+
+    if (tab === "compartilhar") {
+      setMobileShareSheetOpen(true);
+      return;
+    }
+
     setMobileTab(tab);
 
     if (tab === "inicio") {
@@ -656,11 +674,6 @@ const PacienteDetalhe = () => {
 
     if (tab === "estatisticas") {
       setRecordsView("dashboard");
-      return;
-    }
-
-    if (tab === "termos") {
-      setMobileTermsSheetOpen(true);
       return;
     }
 
@@ -2156,8 +2169,29 @@ const PacienteDetalhe = () => {
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-4 sm:space-y-6 pb-24 md:pb-6">
 
 
-      {/* Header Unificado de Linha Única (Mobile & Desktop) */}
-      <div data-tutorial="patient-profile-header" className="overflow-hidden rounded-2xl border bg-gradient-to-r from-card via-card to-primary/5 p-2.5 sm:px-4 sm:py-3 shadow-xs">
+      {/* Status Bolinha no Mobile (no topo ao lado do nome/sino) */}
+      <button
+        type="button"
+        onClick={() => setMobileStatusSheetOpen(true)}
+        aria-label={`Status: ${patient.status}. Tocar para alterar.`}
+        className="fixed top-3.5 right-14 z-40 flex md:hidden items-center gap-1 shrink-0 rounded-full border bg-background/90 backdrop-blur px-2 py-0.5 text-[10px] font-semibold capitalize text-foreground shadow-xs"
+      >
+        <span
+          className={`h-2 w-2 rounded-full shrink-0 ${
+            patient.status === "ativo"
+              ? "bg-success animate-pulse ring-2 ring-success/20"
+              : patient.status === "alta"
+                ? "bg-primary"
+                : patient.status === "arquivado"
+                  ? "bg-muted-foreground"
+                  : "bg-warning"
+          }`}
+        />
+        <span>{patient.status}</span>
+      </button>
+
+      {/* Header Unificado de Linha Única (Desktop) */}
+      <div data-tutorial="patient-profile-header" className="hidden md:block overflow-hidden rounded-2xl border bg-gradient-to-r from-card via-card to-primary/5 p-2.5 sm:px-4 sm:py-3 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
               <h1 className="sr-only">
@@ -2254,86 +2288,37 @@ const PacienteDetalhe = () => {
                   <WhatsAppLogo className="h-4.5 w-4.5" />
                 </Button>
               ) : null}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPatientInfoDialogOpen(true)}
-                className="h-9 rounded-xl border-primary/20 bg-background hover:border-primary/50 hover:bg-primary/5 text-xs font-medium shrink-0 px-2.5 sm:px-3"
-                title="Abrir resumo clínico do paciente"
-              >
-                <FileText className="h-4 w-4 text-primary sm:mr-1.5" />
-                <span className="hidden sm:inline">Resumo clínico</span>
-              </Button>
-
-              {/* Botão de Termos e Impressões */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label="Termos e impressões"
-                    title="Termos e impressões do paciente"
-                    className="h-9 rounded-xl border-border/80 bg-background hover:bg-muted/50 text-xs font-medium text-foreground gap-1.5 px-2.5 shrink-0"
-                  >
-                    <Printer className="h-4 w-4 text-primary" />
-                    <span className="hidden sm:inline">Termos</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-                    Termos & Documentos
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setShowPrintRegistrationModal(true);
-                    }}
-                    onClick={() => setShowPrintRegistrationModal(true)}
-                    disabled={!canPrint}
-                    className="cursor-pointer"
-                  >
-                    <Printer className="mr-2 h-4 w-4 text-primary" />
-                    <div className="flex flex-col">
-                      <span>Imprimir cadastro (PDF)</span>
-                      <span className="text-[11px] text-muted-foreground">Dossiê cadastral diagramado A4</span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setShowPrintAdultConsentModal(true);
-                    }}
-                    onClick={() => setShowPrintAdultConsentModal(true)}
-                    disabled={!canPrint}
-                    className="cursor-pointer"
-                  >
-                    <FileText className="mr-2 h-4 w-4 text-emerald-600" />
-                    <div className="flex flex-col">
-                      <span>Imprimir Termo de Consentimento (Adulto)</span>
-                      <span className="text-[11px] text-muted-foreground">TCLE A4 para assinatura física</span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setShowPrintGuardianConsentModal(true);
-                    }}
-                    onClick={() => setShowPrintGuardianConsentModal(true)}
-                    disabled={!canPrint}
-                    className="cursor-pointer"
-                  >
-                    <Baby className="mr-2 h-4 w-4 text-amber-600" />
-                    <div className="flex flex-col">
-                      <span>Imprimir Termo do Responsável (Menor)</span>
-                      <span className="text-[11px] text-muted-foreground">LGPD Art. 14 / Pais e Tutores</span>
-                    </div>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {/* Botão de Termos e Impressões (Desktop — no mobile fica no PatientMobileDock) */}
+              <div className="hidden md:block">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label="Termos e impressões"
+                      title="Termos e impressões do paciente"
+                      className="h-9 rounded-xl border-border/80 bg-background hover:bg-muted/50 text-xs font-medium text-foreground gap-1.5 px-2.5 shrink-0"
+                    >
+                      <Printer className="h-4 w-4 text-primary" />
+                      <span className="hidden sm:inline">Termos</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                <PatientDocumentsDropdown
+                  canPrint={canPrint}
+                  customTemplates={customTemplates}
+                  onGenerateDocument={(templateId) => {
+                    setInitialGenerateTemplateId(templateId);
+                    setShowGenerateDocumentModal(true);
+                  }}
+                  onPrintRegistration={() => setShowPrintRegistrationModal(true)}
+                  onPrintAdultConsent={() => setShowPrintAdultConsentModal(true)}
+                  onPrintGuardianConsent={() => setShowPrintGuardianConsentModal(true)}
+                />
+                </DropdownMenu>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2">
               <Select
                 value={patient.status}
                 onValueChange={(value) => void handlePatientStatusChange(value as PatientStatusSelectValue)}
@@ -3765,9 +3750,25 @@ const PacienteDetalhe = () => {
         }}
       />
 
+      {/* Modal Reutilizável de Geração de Documentos com Variáveis Automáticas */}
+      <GenerateDocumentModal
+        open={showGenerateDocumentModal}
+        onOpenChange={(open) => {
+          setShowGenerateDocumentModal(open);
+          if (!open) setInitialGenerateTemplateId(undefined);
+        }}
+        patient={patient}
+        clinicId={clinicId}
+        clinicName={clinic?.name}
+        initialTemplateId={initialGenerateTemplateId}
+        onPrinted={() => {
+          if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["patient"]);
+        }}
+      />
+
       {/* Dock Inferior Mobile com Scroll Horizontal e Gestos Touch DesignLab */}
       <PatientMobileDock
-        activeTab={mobileTab}
+        activeTab={mobileTermsSheetOpen ? "termos" : mobileShareSheetOpen ? "compartilhar" : mobileTab}
         onTabChange={handleMobileTabChange}
         showFiles={isFeatureEnabled("storage_s3_integration")}
         showStats={isFeatureEnabled("dashboards_patient")}
@@ -3783,6 +3784,19 @@ const PacienteDetalhe = () => {
         />
       )}
 
+      {/* Bottom Sheet Mobile: Compartilhar & Opções */}
+      {patient && (
+        <MobileShareSheet
+          open={mobileShareSheetOpen}
+          onOpenChange={setMobileShareSheetOpen}
+          patientName={patient.name}
+          canExport={canExport}
+          onShareRegistration={() => handleOpenShareDialog()}
+          onViewFullRegistration={() => navigate(getPatientPath(patient, "resumo"))}
+          onExportJson={() => handleExportPatientJson()}
+        />
+      )}
+
       {/* Bottom Sheet Mobile: Termos & Documentos */}
       {patient && (
         <MobileTermsSheet
@@ -3790,9 +3804,18 @@ const PacienteDetalhe = () => {
           onOpenChange={setMobileTermsSheetOpen}
           patient={patient}
           canPrint={canPrint}
+          onGenerateDocument={() => {
+            setInitialGenerateTemplateId(undefined);
+            setShowGenerateDocumentModal(true);
+          }}
           onPrintAdultConsent={() => setShowPrintAdultConsentModal(true)}
           onPrintGuardianConsent={() => setShowPrintGuardianConsentModal(true)}
           onPrintRegistration={() => setShowPrintRegistrationModal(true)}
+          customTemplates={customTemplates}
+          onSelectCustomTemplate={(templateId) => {
+            setInitialGenerateTemplateId(templateId);
+            setShowGenerateDocumentModal(true);
+          }}
         />
       )}
       </motion.div>

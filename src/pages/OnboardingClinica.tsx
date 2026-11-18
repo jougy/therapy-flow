@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -91,6 +91,26 @@ const getErrorMessage = (error: unknown) => {
   }
   return "Erro ao salvar os dados.";
 };
+
+const FieldLabel = React.memo(({ label, tooltip, htmlFor, required = false }: { label: string; tooltip: string; htmlFor: string; required?: boolean }) => (
+  <div className="flex items-center gap-2 mb-2">
+    <Label htmlFor={htmlFor} className="text-sm font-medium text-foreground/90">
+      {label}
+    </Label>
+    {required && <span className="text-destructive">*</span>}
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" tabIndex={-1} className="rounded-full outline-none focus:ring-2 focus:ring-primary/50">
+          <HelpCircle className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="right" className="max-w-[300px] bg-popover border-border text-popover-foreground p-3 text-sm z-50">
+        {tooltip}
+      </PopoverContent>
+    </Popover>
+  </div>
+));
+FieldLabel.displayName = "FieldLabel";
 
 export default function OnboardingClinica() {
   const [searchParams] = useSearchParams();
@@ -616,25 +636,6 @@ export default function OnboardingClinica() {
     e.preventDefault();
     executeSignupProcess(false);
   };
-
-  const FieldLabel = ({ label, tooltip, htmlFor, required = false }: { label: string; tooltip: string; htmlFor: string; required?: boolean }) => (
-    <div className="flex items-center gap-2 mb-2">
-      <Label htmlFor={htmlFor} className="text-sm font-medium text-foreground/90">
-        {label}
-      </Label>
-      {required && <span className="text-destructive">*</span>}
-      <Popover>
-        <PopoverTrigger asChild>
-          <button type="button" tabIndex={-1} className="rounded-full outline-none focus:ring-2 focus:ring-primary/50">
-            <HelpCircle className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent side="right" className="max-w-[300px] bg-popover border-border text-popover-foreground p-3 text-sm z-50">
-          {tooltip}
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col items-center py-6 px-4 sm:py-12 sm:px-6 relative overflow-y-auto overflow-x-hidden">

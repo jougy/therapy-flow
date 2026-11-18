@@ -1,9 +1,37 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import SessaoDetalhe from "@/pages/SessaoDetalhe";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+
+vi.mock("framer-motion", async () => {
+  const React = await import("react");
+  const cache: Record<string, React.ComponentType<any>> = {};
+  const createMotionComponent = (tag: string) =>
+    React.forwardRef(({ children, whileTap, initial, animate, exit, transition, ...props }: any, ref: any) =>
+      React.createElement(tag, { ...props, ref }, children)
+    );
+  return {
+    motion: new Proxy(
+      {},
+      {
+        get: (_target, prop: string) => {
+          if (!cache[prop]) cache[prop] = createMotionComponent(prop);
+          return cache[prop];
+        },
+      }
+    ),
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+  };
+});
+
+const fastWaitFor = <T,>(cb: () => T) => waitFor(cb, { interval: 5 });
+
+const getHeaderBar = async () => {
+  const nameEl = await screen.findByText("Carlos Eduardo Silva", {}, { interval: 5 });
+  return nameEl.closest(".space-y-4") as HTMLElement;
+};
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
@@ -177,10 +205,9 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Concluir Atendimento/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Salvar como Rascunho/i })).toBeInTheDocument();
-    });
+    const headerBar = await getHeaderBar();
+    expect(within(headerBar).getByRole("button", { name: /Concluir Atendimento/i })).toBeInTheDocument();
+    expect(within(headerBar).getByRole("button", { name: /Salvar como Rascunho/i })).toBeInTheDocument();
   });
 
   it("renders clean modular Anamnese form container without the fixed carelines picker", async () => {
@@ -192,7 +219,7 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       // Verifies that the fixed care lines selector was removed
       expect(screen.queryByText(/1\. Primeiro Bloco da Anamnese/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/Sintomas & Linhas de Cuidado/i)).not.toBeInTheDocument();
@@ -214,7 +241,7 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(screen.getByText(/Ficha Complementar de Avaliação/i)).toBeInTheDocument();
       expect(screen.getAllByText(/Anamnese Geral da Clínica/i).length).toBeGreaterThanOrEqual(1);
     });
@@ -229,17 +256,12 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText(/Descreva a queixa principal/i)).toBeInTheDocument();
-    });
-
-    const textarea = screen.getByPlaceholderText(/Descreva a queixa principal/i);
+    const textarea = await screen.findByPlaceholderText(/Descreva a queixa principal/i, {}, { interval: 5 });
     fireEvent.change(textarea, { target: { value: "Paciente relata dor lombar intensa após esforço físico" } });
 
-    await waitFor(() => {
-      expect(screen.getByText(/Sugestão inteligente/i)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Aplicar/i })).toBeInTheDocument();
-    });
+    const suggestionEl = await screen.findByText(/Sugestão inteligente/i, {}, { interval: 5 });
+    const suggestionBox = suggestionEl.closest("div")!.parentElement!;
+    expect(within(suggestionBox).getByRole("button", { name: /Aplicar/i })).toBeInTheDocument();
   });
 
   it("renders modular anamnesis runtime without static care line creation buttons and supports dynamic field inputs", async () => {
@@ -251,12 +273,9 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /Criar Linha de Cuidado Personalizada/i })).not.toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/Descreva a queixa principal/i)).toBeInTheDocument();
-    });
+    const queixaInput = await screen.findByPlaceholderText(/Descreva a queixa principal/i, {}, { interval: 5 });
+    expect(screen.queryByRole("button", { name: /Criar Linha de Cuidado Personalizada/i })).not.toBeInTheDocument();
 
-    const queixaInput = screen.getByPlaceholderText(/Descreva a queixa principal/i);
     fireEvent.change(queixaInput, { target: { value: "Avaliação inicial de mobilidade" } });
 
     expect((queixaInput as HTMLTextAreaElement).value).toBe("Avaliação inicial de mobilidade");
@@ -271,25 +290,22 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText(/Descreva a queixa principal/i)).toBeInTheDocument();
-    });
+    const textarea = await screen.findByPlaceholderText(/Descreva a queixa principal/i, {}, { interval: 5 });
+    const headerBar = await getHeaderBar();
 
     // Make an edit
-    const textarea = screen.getByPlaceholderText(/Descreva a queixa principal/i);
     fireEvent.change(textarea, { target: { value: "Alteração não salva" } });
 
     // Click back button in header
-    const backBtn = screen.getByRole("button", { name: /Voltar para paciente/i });
+    const backBtn = within(headerBar).getByRole("button", { name: /Voltar para paciente/i });
     fireEvent.click(backBtn);
 
-    await waitFor(() => {
-      expect(screen.getByText("Atendimento em andamento")).toBeInTheDocument();
-      expect(screen.getByText(/Você possui alterações que ainda não foram salvas no prontuário/i)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Sair e salvar como rascunho/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Sair sem salvar/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Continuar atendimento/i })).toBeInTheDocument();
-    });
+    const modalTitle = await screen.findByText("Atendimento em andamento", {}, { interval: 5 });
+    const dialogEl = modalTitle.closest('[role="dialog"], [role="alertdialog"]') as HTMLElement;
+    expect(within(dialogEl).getByText(/Você possui alterações que ainda não foram salvas no prontuário/i)).toBeInTheDocument();
+    expect(within(dialogEl).getByRole("button", { name: /Sair e salvar como rascunho/i })).toBeInTheDocument();
+    expect(within(dialogEl).getByRole("button", { name: /Sair sem salvar/i })).toBeInTheDocument();
+    expect(within(dialogEl).getByRole("button", { name: /Continuar atendimento/i })).toBeInTheDocument();
   });
 
   it("opens 'Evoluir Atendimento' modal with 3 action choices when clicking evolve button", async () => {
@@ -301,18 +317,15 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Evoluir Atendimento/i })).toBeInTheDocument();
-    });
+    const headerBar = await getHeaderBar();
+    const evolveBtn = within(headerBar).getByRole("button", { name: /Evoluir Atendimento/i });
+    fireEvent.click(evolveBtn);
 
-    fireEvent.click(screen.getByRole("button", { name: /Evoluir Atendimento/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Escolha como deseja iniciar a evolução deste caso no histórico do paciente:")).toBeInTheDocument();
-      expect(screen.getByText("Iniciar atendimento a partir deste")).toBeInTheDocument();
-      expect(screen.getByText("Iniciar atendimento em branco")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Cancelar/i })).toBeInTheDocument();
-    });
+    const modalDesc = await screen.findByText("Escolha como deseja iniciar a evolução deste caso no histórico do paciente:", {}, { interval: 5 });
+    const dialogEl = modalDesc.closest('[role="dialog"]') as HTMLElement;
+    expect(within(dialogEl).getByText("Iniciar atendimento a partir deste")).toBeInTheDocument();
+    expect(within(dialogEl).getByText("Iniciar atendimento em branco")).toBeInTheDocument();
+    expect(within(dialogEl).getByRole("button", { name: /Cancelar/i })).toBeInTheDocument();
   });
 
   it("renders patient risk tags and opens clinical summary modal from header", async () => {
@@ -324,25 +337,25 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Resumo clínico/i })).toBeInTheDocument();
-    });
+    const headerBar = await getHeaderBar();
+    const summaryBtn = within(headerBar).getByRole("button", { name: /Resumo clínico/i });
+    expect(summaryBtn).toBeInTheDocument();
 
     // Check risk tags are present
-    expect(screen.getByRole("button", { name: /Alergias/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Risco de queda/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Riscos/i })).toBeInTheDocument();
+    expect(within(headerBar).getByRole("button", { name: /Alergias/i })).toBeInTheDocument();
+    expect(within(headerBar).getByRole("button", { name: /Risco de queda/i })).toBeInTheDocument();
+    expect(within(headerBar).getByRole("button", { name: /Riscos/i })).toBeInTheDocument();
 
     // Click Resumo clínico button
-    fireEvent.click(screen.getByRole("button", { name: /Resumo clínico/i }));
+    fireEvent.click(summaryBtn);
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Resumo do paciente" })).toBeInTheDocument();
-      expect(screen.getByText("Saúde base")).toBeInTheDocument();
-      expect(screen.getByText("Histórico rápido")).toBeInTheDocument();
-      expect(screen.getByText("Dipirona; Penicilina")).toBeInTheDocument();
-      expect(screen.getByText("Alergia severa a dipirona")).toBeInTheDocument();
-    });
+    const summaryTitle = await screen.findByText("Resumo do paciente", {}, { interval: 5 });
+    const dialogEl = summaryTitle.closest('[role="dialog"]') as HTMLElement;
+    expect(within(dialogEl).getByRole("heading", { name: "Resumo do paciente" })).toBeInTheDocument();
+    expect(within(dialogEl).getByText("Saúde base")).toBeInTheDocument();
+    expect(within(dialogEl).getByText("Histórico rápido")).toBeInTheDocument();
+    expect(within(dialogEl).getByText("Dipirona; Penicilina")).toBeInTheDocument();
+    expect(within(dialogEl).getByText("Alergia severa a dipirona")).toBeInTheDocument();
   });
 
   it("navigates back to /espacopessoal when location.state has from: '/espacopessoal'", async () => {
@@ -356,14 +369,11 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Voltar para paciente/i })).toBeInTheDocument();
-    });
-
-    const backBtn = screen.getByRole("button", { name: /Voltar para paciente/i });
+    const headerBar = await getHeaderBar();
+    const backBtn = within(headerBar).getByRole("button", { name: /Voltar para paciente/i });
     fireEvent.click(backBtn);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(screen.getByText("Página Espaço Pessoal")).toBeInTheDocument();
     });
   });
@@ -379,14 +389,11 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Voltar para paciente/i })).toBeInTheDocument();
-    });
-
-    const backBtn = screen.getByRole("button", { name: /Voltar para paciente/i });
+    const headerBar = await getHeaderBar();
+    const backBtn = within(headerBar).getByRole("button", { name: /Voltar para paciente/i });
     fireEvent.click(backBtn);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(screen.getByText("Página Paciente Detalhe")).toBeInTheDocument();
     });
   });
@@ -442,13 +449,10 @@ describe("SessaoDetalhe Component - Redesenho de Fluxo de Atendimento", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Concluir Atendimento/i })).toBeInTheDocument();
-    });
+    const headerBar = await getHeaderBar();
+    fireEvent.click(within(headerBar).getByRole("button", { name: /Concluir Atendimento/i }));
 
-    fireEvent.click(screen.getByRole("button", { name: /Concluir Atendimento/i }));
-
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(sessionUpdateMock).toHaveBeenCalled();
       expect(capturedUpdatedId).toBe("real-session-uuid-456");
       expect(capturedUpdatedId).not.toBe("ATD-8");

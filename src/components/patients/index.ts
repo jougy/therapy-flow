@@ -4,3 +4,4 @@ export * from "./PatientClinicalSummaryDialog";
 export * from "./PatientRiskFlagsChecklist";
 export * from "./SharePatientRegistrationModal";
 export * from "./SubstanceUseClinicalSection";
+export * from "./GenerateDocumentModal";

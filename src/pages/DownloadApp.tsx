@@ -61,43 +61,45 @@ export default function DownloadApp() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/20 text-foreground">
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-b from-background via-background to-muted/20 text-foreground">
       {/* Barra Superior Simples */}
       <header className="sticky top-0 z-40 w-full border-b bg-background/90 backdrop-blur-md">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 max-w-5xl">
-          <div className="flex items-center gap-3">
+        <div className="container mx-auto flex h-16 items-center justify-between gap-2 px-4 sm:px-6 max-w-5xl">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
+              type="button"
               onClick={() => navigate(-1)}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              aria-label="Voltar"
+              className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
               Voltar
             </button>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 min-w-0">
               <img
                 src="/branding/logo/pluri_health_icon_gradient.svg"
                 alt="Pluri Health"
-                className="h-8 w-8 object-contain drop-shadow-xs"
+                className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 object-contain drop-shadow-xs"
               />
-              <span className="text-base font-bold tracking-tight text-foreground">
+              <span className="text-sm sm:text-base font-bold tracking-tight text-foreground truncate">
                 Pluri Health
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <Link to="/auth">
-              <Button variant="outline" size="sm" className="min-h-[44px] sm:h-10 text-xs sm:text-sm px-2.5 sm:px-3 font-medium">
-                <span className="hidden xs:inline">Já tenho conta</span>
-                <span className="xs:hidden">Entrar</span>
-              </Button>
-            </Link>
-            <Link to="/auth/cadastro">
-              <Button size="sm" className="min-h-[44px] sm:h-10 text-xs sm:text-sm px-2.5 sm:px-3 gap-1 sm:gap-1.5 font-medium shadow-xs">
+          <div className="flex items-center gap-2 shrink-0">
+            <Button asChild variant="outline" size="sm" className="min-h-[44px] min-w-[44px] text-xs sm:text-sm px-2.5 sm:px-3 font-medium">
+              <Link to="/auth">
+                <span className="hidden sm:inline">Já tenho conta</span>
+                <span className="sm:hidden">Entrar</span>
+              </Link>
+            </Button>
+            <Button asChild size="sm" className="min-h-[44px] min-w-[44px] text-xs sm:text-sm px-2.5 sm:px-3 gap-1.5 font-medium shadow-xs">
+              <Link to="/auth/cadastro">
                 <span>Criar Conta</span>
-                <ArrowRight className="h-3.5 w-3.5 hidden xs:inline" />
-              </Button>
-            </Link>
+                <ArrowRight className="h-3.5 w-3.5 hidden sm:inline" aria-hidden="true" />
+              </Link>
+            </Button>
           </div>
         </div>
       </header>
@@ -145,34 +147,34 @@ export default function DownloadApp() {
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
               {os === "mac" ? (
-                <a href="/downloads/Pluri-Health-Mac.dmg" download="Pluri-Health-Mac.dmg" className="w-full sm:w-auto">
-                  <Button className="w-full sm:w-auto gap-2 bg-primary text-primary-foreground shadow-sm h-10 px-5">
-                    <Download className="h-4 w-4" />
+                <Button asChild className="w-full sm:w-auto min-h-[44px] min-w-[44px] gap-2 bg-primary text-primary-foreground shadow-sm px-5">
+                  <a href="https://github.com/jougy/therapy-flow/releases/latest/download/Pluri-Health-Mac.dmg" download="Pluri-Health-Mac.dmg">
+                    <Download className="h-4 w-4" aria-hidden="true" />
                     Baixar para Mac
-                  </Button>
-                </a>
+                  </a>
+                </Button>
               ) : os === "windows" ? (
-                <a href="/downloads/Pluri-Health-Setup.exe" download="Pluri-Health-Setup.exe" className="w-full sm:w-auto">
-                  <Button className="w-full sm:w-auto gap-2 bg-primary text-primary-foreground shadow-sm h-10 px-5">
-                    <Download className="h-4 w-4" />
+                <Button asChild className="w-full sm:w-auto min-h-[44px] min-w-[44px] gap-2 bg-primary text-primary-foreground shadow-sm px-5">
+                  <a href="https://github.com/jougy/therapy-flow/releases/latest/download/Pluri-Health-Windows.exe" download="Pluri-Health-Setup.exe">
+                    <Download className="h-4 w-4" aria-hidden="true" />
                     Baixar para Windows (.exe)
-                  </Button>
-                </a>
+                  </a>
+                </Button>
               ) : os === "android" ? (
-                <Button onClick={handleBrowserInstall} className="w-full sm:w-auto gap-2 bg-primary text-primary-foreground shadow-sm h-10 px-5">
-                  <Download className="h-4 w-4" />
+                <Button onClick={handleBrowserInstall} className="w-full sm:w-auto min-h-[44px] min-w-[44px] gap-2 bg-primary text-primary-foreground shadow-sm px-5">
+                  <Download className="h-4 w-4" aria-hidden="true" />
                   Instalar no Celular
                 </Button>
               ) : os === "linux" ? (
-                <a href="/downloads/pluri-health_amd64.deb" download="pluri-health_amd64.deb" className="w-full sm:w-auto">
-                  <Button className="w-full sm:w-auto gap-2 bg-primary text-primary-foreground shadow-sm h-10 px-5">
-                    <Download className="h-4 w-4" />
+                <Button asChild className="w-full sm:w-auto min-h-[44px] min-w-[44px] gap-2 bg-primary text-primary-foreground shadow-sm px-5">
+                  <a href="https://github.com/jougy/therapy-flow/releases/latest/download/pluri-health_amd64.deb" download="pluri-health_amd64.deb">
+                    <Download className="h-4 w-4" aria-hidden="true" />
                     Baixar para Linux
-                  </Button>
-                </a>
+                  </a>
+                </Button>
               ) : (
-                <Button onClick={handleBrowserInstall} className="w-full sm:w-auto gap-2 bg-primary text-primary-foreground shadow-sm h-10 px-5">
-                  <Download className="h-4 w-4" />
+                <Button onClick={handleBrowserInstall} className="w-full sm:w-auto min-h-[44px] min-w-[44px] gap-2 bg-primary text-primary-foreground shadow-sm px-5">
+                  <Download className="h-4 w-4" aria-hidden="true" />
                   Instalar Aplicativo
                 </Button>
               )}
@@ -225,25 +227,25 @@ export default function DownloadApp() {
           </div>
 
           <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
-            <TabsList className="grid grid-cols-5 w-full max-w-xl mx-auto h-auto p-1 bg-muted/70 rounded-xl">
-              <TabsTrigger value="windows" className="py-2 text-xs font-semibold flex flex-col sm:flex-row items-center gap-1.5">
-                <Monitor className="h-4 w-4" />
+            <TabsList className="grid grid-cols-5 gap-2 w-full max-w-xl mx-auto h-auto p-1.5 bg-muted/70 rounded-xl">
+              <TabsTrigger value="windows" className="min-h-[44px] min-w-[44px] py-2 px-1 sm:px-3 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1.5 whitespace-normal text-center leading-tight">
+                <Monitor className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>Windows</span>
               </TabsTrigger>
-              <TabsTrigger value="mac" className="py-2 text-xs font-semibold flex flex-col sm:flex-row items-center gap-1.5">
-                <Apple className="h-4 w-4" />
+              <TabsTrigger value="mac" className="min-h-[44px] min-w-[44px] py-2 px-1 sm:px-3 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1.5 whitespace-normal text-center leading-tight">
+                <Apple className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>Mac (Apple)</span>
               </TabsTrigger>
-              <TabsTrigger value="linux" className="py-2 text-xs font-semibold flex flex-col sm:flex-row items-center gap-1.5">
-                <Laptop className="h-4 w-4" />
+              <TabsTrigger value="linux" className="min-h-[44px] min-w-[44px] py-2 px-1 sm:px-3 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1.5 whitespace-normal text-center leading-tight">
+                <Laptop className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>Linux</span>
               </TabsTrigger>
-              <TabsTrigger value="android" className="py-2 text-xs font-semibold flex flex-col sm:flex-row items-center gap-1.5">
-                <Smartphone className="h-4 w-4" />
+              <TabsTrigger value="android" className="min-h-[44px] min-w-[44px] py-2 px-1 sm:px-3 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1.5 whitespace-normal text-center leading-tight">
+                <Smartphone className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>Android</span>
               </TabsTrigger>
-              <TabsTrigger value="ios" className="py-2 text-xs font-semibold flex flex-col sm:flex-row items-center gap-1.5">
-                <Smartphone className="h-4 w-4" />
+              <TabsTrigger value="ios" className="min-h-[44px] min-w-[44px] py-2 px-1 sm:px-3 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1.5 whitespace-normal text-center leading-tight">
+                <Smartphone className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>iPhone/iPad</span>
               </TabsTrigger>
             </TabsList>
@@ -274,17 +276,17 @@ export default function DownloadApp() {
                         </p>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-2 mt-4">
-                        <a href="/downloads/Pluri-Health-Setup.exe" download="Pluri-Health-Setup.exe" className="flex-1">
-                          <Button className="w-full gap-2 font-medium" variant="default">
-                            <Download className="h-4 w-4" />
+                        <Button asChild className="flex-1 min-h-[44px] min-w-[44px] gap-2 font-medium" variant="default">
+                          <a href="https://github.com/jougy/therapy-flow/releases/latest/download/Pluri-Health-Windows.exe" download="Pluri-Health-Setup.exe">
+                            <Download className="h-4 w-4" aria-hidden="true" />
                             Baixar Instalador (.exe)
-                          </Button>
-                        </a>
-                        <a href="/downloads/Pluri-Health.msi" download="Pluri-Health.msi">
-                          <Button className="w-full sm:w-auto font-medium" variant="outline" title="Baixar instalador MSI">
+                          </a>
+                        </Button>
+                        <Button asChild className="w-full sm:w-auto min-h-[44px] min-w-[44px] font-medium" variant="outline" title="Baixar instalador MSI">
+                          <a href="https://github.com/jougy/therapy-flow/releases/latest/download/Pluri-Health.msi" download="Pluri-Health.msi">
                             Pacote (.msi)
-                          </Button>
-                        </a>
+                          </a>
+                        </Button>
                       </div>
                     </div>
 
@@ -299,8 +301,8 @@ export default function DownloadApp() {
                           Se você usa Google Chrome ou Microsoft Edge, pode colocar o ícone na sua barra de tarefas agora.
                         </p>
                       </div>
-                      <Button onClick={handleBrowserInstall} className="mt-4 w-full gap-2 font-medium" variant="outline">
-                        <CheckCircle2 className="h-4 w-4" />
+                      <Button onClick={handleBrowserInstall} className="mt-4 w-full min-h-[44px] min-w-[44px] gap-2 font-medium" variant="outline">
+                        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                         Instalar pelo Navegador
                       </Button>
                     </div>
@@ -347,12 +349,12 @@ export default function DownloadApp() {
                           Baixa o instalador oficial do Pluri Health para colocar na sua pasta de Aplicativos.
                         </p>
                       </div>
-                      <a href="/downloads/Pluri-Health-Mac.dmg" download="Pluri-Health-Mac.dmg" className="mt-4">
-                        <Button className="w-full gap-2 font-medium" variant="default">
-                          <Download className="h-4 w-4" />
+                      <Button asChild className="mt-4 w-full min-h-[44px] min-w-[44px] gap-2 font-medium" variant="default">
+                        <a href="https://github.com/jougy/therapy-flow/releases/latest/download/Pluri-Health-Mac.dmg" download="Pluri-Health-Mac.dmg">
+                          <Download className="h-4 w-4" aria-hidden="true" />
                           Baixar para Mac (.dmg)
-                        </Button>
-                      </a>
+                        </a>
+                      </Button>
                     </div>
 
                     {/* Opção 2: Pelo Safari */}
@@ -366,8 +368,8 @@ export default function DownloadApp() {
                           No Safari, clique no menu superior <strong>Arquivo &gt; Adicionar ao Dock</strong>.
                         </p>
                       </div>
-                      <Button onClick={handleBrowserInstall} className="mt-4 w-full gap-2 font-medium" variant="outline">
-                        <CheckCircle2 className="h-4 w-4" />
+                      <Button onClick={handleBrowserInstall} className="mt-4 w-full min-h-[44px] min-w-[44px] gap-2 font-medium" variant="outline">
+                        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                         Instalar pelo Navegador
                       </Button>
                     </div>
@@ -410,12 +412,12 @@ export default function DownloadApp() {
                         <div className="font-bold text-xs text-foreground">Ubuntu / Debian / Mint</div>
                         <div className="text-[11px] text-muted-foreground mt-0.5">Pacote de instalação fácil</div>
                       </div>
-                      <a href="/downloads/pluri-health_amd64.deb" download="pluri-health_amd64.deb" className="mt-3">
-                        <Button size="sm" className="w-full text-xs h-8">
-                          <Download className="h-3.5 w-3.5 mr-1" />
+                      <Button asChild size="sm" className="mt-3 w-full min-h-[44px] min-w-[44px] text-xs gap-1">
+                        <a href="https://github.com/jougy/therapy-flow/releases/latest/download/pluri-health_amd64.deb" download="pluri-health_amd64.deb">
+                          <Download className="h-3.5 w-3.5" aria-hidden="true" />
                           Baixar (.deb)
-                        </Button>
-                      </a>
+                        </a>
+                      </Button>
                     </div>
 
                     <div className="p-3.5 rounded-xl border bg-card text-center flex flex-col justify-between">
@@ -423,12 +425,12 @@ export default function DownloadApp() {
                         <div className="font-bold text-xs text-foreground">Fedora / RedHat</div>
                         <div className="text-[11px] text-muted-foreground mt-0.5">Pacote de instalação fácil</div>
                       </div>
-                      <a href="/downloads/pluri-health.rpm" download="pluri-health.rpm" className="mt-3">
-                        <Button size="sm" className="w-full text-xs h-8">
-                          <Download className="h-3.5 w-3.5 mr-1" />
+                      <Button asChild size="sm" className="mt-3 w-full min-h-[44px] min-w-[44px] text-xs gap-1">
+                        <a href="https://github.com/jougy/therapy-flow/releases/latest/download/pluri-health.rpm" download="pluri-health.rpm">
+                          <Download className="h-3.5 w-3.5" aria-hidden="true" />
                           Baixar (.rpm)
-                        </Button>
-                      </a>
+                        </a>
+                      </Button>
                     </div>
 
                     <div className="p-3.5 rounded-xl border bg-card text-center flex flex-col justify-between">
@@ -436,12 +438,12 @@ export default function DownloadApp() {
                         <div className="font-bold text-xs text-foreground">Outras Versões (Universal)</div>
                         <div className="text-[11px] text-muted-foreground mt-0.5">Executar direto</div>
                       </div>
-                      <a href="/downloads/Pluri-Health-Linux.AppImage" download="Pluri-Health-Linux.AppImage" className="mt-3">
-                        <Button size="sm" className="w-full text-xs h-8" variant="outline">
-                          <Download className="h-3.5 w-3.5 mr-1" />
+                      <Button asChild size="sm" className="mt-3 w-full min-h-[44px] min-w-[44px] text-xs gap-1" variant="outline">
+                        <a href="https://github.com/jougy/therapy-flow/releases/latest/download/Pluri-Health-Linux.AppImage" download="Pluri-Health-Linux.AppImage">
+                          <Download className="h-3.5 w-3.5" aria-hidden="true" />
                           Baixar (.AppImage)
-                        </Button>
-                      </a>
+                        </a>
+                      </Button>
                     </div>
                   </div>
 
@@ -472,8 +474,8 @@ export default function DownloadApp() {
                         Coloca o ícone do Pluri Health direto na tela do seu celular, sem ocupar espaço da memória.
                       </p>
                     </div>
-                    <Button onClick={handleBrowserInstall} className="w-full sm:w-auto shrink-0 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
-                      <Download className="h-4 w-4" />
+                    <Button onClick={handleBrowserInstall} className="w-full sm:w-auto min-h-[44px] min-w-[44px] shrink-0 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
+                      <Download className="h-4 w-4" aria-hidden="true" />
                       Instalar no Celular Agora
                     </Button>
                   </div>

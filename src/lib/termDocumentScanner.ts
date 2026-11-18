@@ -10,12 +10,23 @@
  * - Compressão do Markdown sanitizado via CompressionStream('gzip') nativo do browser ou fallback.
  */
 
+import { extractVariablesFromMarkdown } from "./termVariables";
+import { structureTextToMarkdown, suggestTitleFromFilename } from "./termDocumentMarkdown";
+import { parsePdfFile } from "./termDocumentPdf";
+
+export { structureTextToMarkdown, suggestTitleFromFilename };
+
+export interface ScanTermOptions {
+  onProgress?: (status: string) => void;
+}
+
 export interface ScannedTermResult {
   markdownText: string;
   compressedBlob: Blob;
   originalSize: number;
   compressedSize: number;
   hasRemovedImages: boolean;
+  detectedVariables: string[];
 }
 
 /**
@@ -275,6 +286,7 @@ async function parseDocLegacy(file: File | Blob): Promise<{ text: string; hasIma
   return { text: rawText, hasImages };
 }
 
+
 /**
  * Comprime texto via gzip utilizando a API de streaming nativa do navegador
  */
@@ -303,35 +315,64 @@ export async function compressGzip(text: string): Promise<Blob> {
 /**
  * Função Principal de Escaneamento, Sanitização e Compressão
  */
-export async function scanAndCompressTermDocument(file: File): Promise<ScannedTermResult> {
+export async function scanAndCompressTermDocument(
+  file: File,
+  optionsOrProgress?: ((status: string) => void) | ScanTermOptions
+): Promise<ScannedTermResult> {
+  const onProgress =
+    typeof optionsOrProgress === "function"
+      ? optionsOrProgress
+      : optionsOrProgress?.onProgress;
+
   const originalSize = file.size;
   const fileName = file.name.toLowerCase();
 
   let rawContent = "";
   let fileHasImages = false;
 
+  onProgress?.(`Lendo arquivo ${file.name}...`);
+
   if (fileName.endsWith(".docx")) {
+    onProgress?.("Decodificando documento Word (.docx)...");
     const parsed = await parseDocxFile(file);
     rawContent = parsed.text;
     fileHasImages = parsed.hasImages;
   } else if (fileName.endsWith(".doc")) {
+    onProgress?.("Decodificando documento Word legado (.doc)...");
     const parsed = await parseDocLegacy(file);
     rawContent = parsed.text;
     fileHasImages = parsed.hasImages;
+  } else if (fileName.endsWith(".pdf")) {
+    const parsed = await parsePdfFile(file, onProgress);
+    rawContent = parsed.text;
+    fileHasImages = parsed.hasImages;
   } else if (fileName.endsWith(".md") || fileName.endsWith(".txt")) {
+    onProgress?.("Lendo conteúdo textual...");
     rawContent = await readFileAsText(file);
   } else {
     // Tenta ler como texto caso tenha extensão diferente
+    onProgress?.("Lendo arquivo...");
     rawContent = await readFileAsText(file);
   }
 
+  // Estruturação inteligente em Markdown formatado
+  onProgress?.("Estruturando texto em Markdown...");
+  const structuredMarkdown = structureTextToMarkdown(rawContent);
+
   // Sanitização obrigatória de imagens (Markdown e HTML)
-  const { cleanText, removedImages } = sanitizeMarkdownImages(rawContent);
+  onProgress?.("Sanitizando imagens e detectando variáveis...");
+  const { cleanText, removedImages } = sanitizeMarkdownImages(structuredMarkdown);
   const hasRemovedImages = fileHasImages || removedImages;
 
+  // Detecção de variáveis no formato <nome_variavel>
+  const detectedVariables = extractVariablesFromMarkdown(cleanText);
+
   // Compressão nativa
+  onProgress?.("Comprimindo documento...");
   const compressedBlob = await compressGzip(cleanText);
   const compressedSize = compressedBlob.size;
+
+  onProgress?.("Concluído!");
 
   return {
     markdownText: cleanText,
@@ -339,5 +380,6 @@ export async function scanAndCompressTermDocument(file: File): Promise<ScannedTe
     originalSize,
     compressedSize,
     hasRemovedImages,
+    detectedVariables,
   };
 }

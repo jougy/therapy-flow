@@ -1,0 +1,78 @@
+appId: health.pluri.app
+productName: Pluri Health
+copyright: Copyright © 2026 Pluri Health
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - main.cjs
+  - package.json
+  - build/icon.png
+
+publish:
+  provider: github
+  owner: jougy
+  repo: therapy-flow
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: msi
+      arch:
+        - x64
+
+nsis:
+  artifactName: Pluri-Health-Windows.exe
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+msi:
+  artifactName: Pluri-Health.msi
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.medical
+  target:
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal
+
+dmg:
+  artifactName: Pluri-Health-Mac.dmg
+
+linux:
+  icon: build/icon.png
+  category: Office
+  maintainer: Pluri Health <suporte@pluri.health>
+  desktop:
+    entry:
+      Name: Pluri Health
+      Comment: Sistema de Prontuário e Gestão Clínica
+      StartupWMClass: pluri-health-desktop
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+
+appImage:
+  artifactName: Pluri-Health-Linux.AppImage
+
+deb:
+  artifactName: pluri-health_amd64.deb
+
+rpm:
+  artifactName: pluri-health.rpm

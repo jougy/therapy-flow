@@ -181,7 +181,7 @@
 }
 
 @media print {
-  body > *:not(#print-blank-kit-root):not(#print-clinic-stats-root):not(#print-patient-stats-root):not(#print-patient-registration-root):not(#print-adult-consent-root):not(#print-guardian-consent-root) {
+  body > *:not(#print-blank-kit-root):not(#print-clinic-stats-root):not(#print-patient-stats-root):not(#print-patient-registration-root):not(#print-adult-consent-root):not(#print-guardian-consent-root):not(#print-generate-document-root) {
     display: none !important;
   }
 
@@ -190,7 +190,8 @@
   #print-patient-stats-root,
   #print-patient-registration-root,
   #print-adult-consent-root,
-  #print-guardian-consent-root {
+  #print-guardian-consent-root,
+  #print-generate-document-root {
     display: block !important;
     position: static !important;
     width: 100% !important;
@@ -214,7 +215,10 @@
   #print-adult-consent-root .avoid-break,
   #print-guardian-consent-root section,
   #print-guardian-consent-root footer,
-  #print-guardian-consent-root .avoid-break {
+  #print-guardian-consent-root .avoid-break,
+  #print-generate-document-root section,
+  #print-generate-document-root footer,
+  #print-generate-document-root .avoid-break {
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -236,7 +240,10 @@
   #print-adult-consent-root *::after,
   #print-guardian-consent-root *,
   #print-guardian-consent-root *::before,
-  #print-guardian-consent-root *::after {
+  #print-guardian-consent-root *::after,
+  #print-generate-document-root *,
+  #print-generate-document-root *::before,
+  #print-generate-document-root *::after {
     visibility: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;

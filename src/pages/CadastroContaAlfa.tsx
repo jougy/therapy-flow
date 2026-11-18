@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Briefcase,
   Calendar,
+  Check,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -25,7 +26,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -132,6 +132,38 @@ const getErrorMessage = (error: unknown) => {
   }
   return "Não foi possível concluir o cadastro. Verifique os dados e tente novamente.";
 };
+
+interface PasswordFieldRowProps {
+  id: string; label: string; value: string; onChange: (value: string) => void;
+  onBlur: () => void; show: boolean; onToggleShow: () => void;
+  error?: string; toggleLabel: string; helperText?: string;
+}
+
+const PasswordFieldRow = ({
+  id, label, value, onChange, onBlur, show, onToggleShow, error, toggleLabel, helperText,
+}: PasswordFieldRowProps) => (
+  <div className="space-y-2">
+    <Label htmlFor={id}>{label}</Label>
+    <div className={`flex items-center rounded-md border bg-background ring-offset-background focus-within:ring-2 focus-within:ring-offset-2 ${error ? "border-destructive focus-within:ring-destructive" : "border-input focus-within:ring-ring"}`}>
+      <div className="relative flex-1 min-w-0">
+        <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Input
+          id={id} type={show ? "text" : "password"} autoComplete="new-password" value={value}
+          onChange={(event) => onChange(event.target.value)} onBlur={onBlur}
+          className="h-11 border-0 bg-transparent pl-9 pr-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+          minLength={8} maxLength={128} placeholder="••••••••" required
+        />
+      </div>
+      <button
+        type="button" onClick={onToggleShow} aria-label={toggleLabel}
+        className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {show ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+      </button>
+    </div>
+    {error ? <p className="text-xs text-destructive">{error}</p> : helperText ? <p className="text-[11px] text-muted-foreground">{helperText}</p> : null}
+  </div>
+);
 
 const CadastroContaAlfa = () => {
   const navigate = useNavigate();
@@ -454,15 +486,21 @@ const CadastroContaAlfa = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background px-4 py-8 pb-16">
+    <main className="min-h-screen overflow-x-hidden bg-background px-4 py-8 pb-16">
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
         className="mx-auto w-full max-w-2xl"
       >
-        <Button variant="ghost" className="mb-4 px-0" onClick={() => navigate(authLoginUrl)}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
+        <Button
+          type="button"
+          variant="ghost"
+          className="mb-4 min-h-[44px] min-w-[44px] px-2"
+          aria-label="Voltar para o login"
+          onClick={() => navigate(authLoginUrl)}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
           Voltar para o login
         </Button>
 
@@ -518,13 +556,13 @@ const CadastroContaAlfa = () => {
 
                 <div className="flex flex-col gap-3 sm:flex-row">
                   {hasSession ? (
-                    <Button className="w-full sm:w-auto" onClick={() => navigate("/espacopessoal", { replace: true })}>
+                    <Button className="w-full sm:w-auto min-h-[44px]" onClick={() => navigate("/espacopessoal", { replace: true })}>
                       Avançar para o espaço pessoal
                     </Button>
                   ) : (
                     <>
                       <Button
-                        className="w-full sm:w-auto"
+                        className="w-full sm:w-auto min-h-[44px]"
                         onClick={() =>
                           navigate(`/auth/confirmado?email=${encodeURIComponent(normalizeEmail(email))}&aguardando=true`, {
                             replace: true,
@@ -532,10 +570,10 @@ const CadastroContaAlfa = () => {
                           })
                         }
                       >
-                        <MailCheck className="mr-2 h-4 w-4" />
+                        <MailCheck className="mr-2 h-4 w-4" aria-hidden="true" />
                         Acompanhar confirmação / Reenviar
                       </Button>
-                      <Button variant="outline" className="w-full sm:w-auto" onClick={() => navigate("/auth", { replace: true })}>
+                      <Button variant="outline" className="w-full sm:w-auto min-h-[44px]" onClick={() => navigate("/auth", { replace: true })}>
                         Ir para o login
                       </Button>
                     </>
@@ -680,7 +718,7 @@ const CadastroContaAlfa = () => {
                         markTouched("profession");
                       }}
                     >
-                      <SelectTrigger id="profession-select" className="w-full bg-background">
+                      <SelectTrigger id="profession-select" className="w-full min-h-[44px] bg-background">
                         <div className="flex items-center gap-2">
                           <Briefcase className="h-4 w-4 text-muted-foreground" />
                           <SelectValue placeholder="Selecione sua profissão (opcional)" />
@@ -727,7 +765,7 @@ const CadastroContaAlfa = () => {
                         if (val !== "outro") setCustomGender("");
                       }}
                     >
-                      <SelectTrigger id="gender-select" className="w-full bg-background">
+                      <SelectTrigger id="gender-select" className="w-full min-h-[44px] bg-background">
                         <div className="flex items-center gap-2">
                           <UserRound className="h-4 w-4 text-muted-foreground" />
                           <SelectValue placeholder="Selecione (opcional)" />
@@ -771,7 +809,7 @@ const CadastroContaAlfa = () => {
                         if (val !== "outros") setCustomPronoun("");
                       }}
                     >
-                      <SelectTrigger id="pronoun-select" className="w-full bg-background">
+                      <SelectTrigger id="pronoun-select" className="w-full min-h-[44px] bg-background">
                         <div className="flex items-center gap-2">
                           <HeartHandshake className="h-4 w-4 text-muted-foreground" />
                           <SelectValue placeholder="Selecione (opcional)" />
@@ -805,111 +843,73 @@ const CadastroContaAlfa = () => {
                     </AnimatePresence>
                   </div>
 
-                  {/* Senha */}
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Senha</Label>
-                    <div className="relative">
-                      <LockKeyhole className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="signup-password"
-                        type={showPassword ? "text" : "password"}
-                        autoComplete="new-password"
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        onBlur={() => markTouched("password")}
-                        className={`pl-9 pr-12 h-11 ${touched.password && fieldErrors.password ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                        minLength={8}
-                        maxLength={128}
-                        placeholder="••••••••"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((value) => !value)}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground"
-                        aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
-                      >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    {touched.password && fieldErrors.password ? (
-                      <p className="text-xs text-destructive">{fieldErrors.password}</p>
-                    ) : (
-                      <p className="text-[11px] text-muted-foreground">Mínimo de 8 caracteres, com letras e números.</p>
-                    )}
-                  </div>
+                  <PasswordFieldRow
+                    id="signup-password" label="Senha" value={password} onChange={setPassword}
+                    onBlur={() => markTouched("password")} show={showPassword}
+                    onToggleShow={() => setShowPassword((value) => !value)}
+                    error={touched.password ? fieldErrors.password : ""}
+                    toggleLabel={showPassword ? "Ocultar senha" : "Ver senha"}
+                    helperText="Mínimo de 8 caracteres, com letras e números."
+                  />
 
-                  {/* Confirmar Senha */}
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password-confirmation">Confirmar senha</Label>
-                    <div className="relative">
-                      <LockKeyhole className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="signup-password-confirmation"
-                        type={showConfirmPassword ? "text" : "password"}
-                        autoComplete="new-password"
-                        value={passwordConfirmation}
-                        onChange={(event) => setPasswordConfirmation(event.target.value)}
-                        onBlur={() => markTouched("passwordConfirmation")}
-                        className={`pl-9 pr-12 h-11 ${touched.passwordConfirmation && fieldErrors.passwordConfirmation ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                        minLength={8}
-                        maxLength={128}
-                        placeholder="••••••••"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword((value) => !value)}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground"
-                        aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Ver confirmação de senha"}
-                      >
-                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    {touched.passwordConfirmation && fieldErrors.passwordConfirmation && (
-                      <p className="text-xs text-destructive">{fieldErrors.passwordConfirmation}</p>
-                    )}
-                  </div>
+                  <PasswordFieldRow
+                    id="signup-password-confirmation" label="Confirmar senha" value={passwordConfirmation}
+                    onChange={setPasswordConfirmation} onBlur={() => markTouched("passwordConfirmation")}
+                    show={showConfirmPassword} onToggleShow={() => setShowConfirmPassword((value) => !value)}
+                    error={touched.passwordConfirmation ? fieldErrors.passwordConfirmation : ""}
+                    toggleLabel={showConfirmPassword ? "Ocultar confirmação de senha" : "Ver confirmação de senha"}
+                  />
                 </div>
 
                 {/* Termo de Consentimento LGPD */}
                 <div className="rounded-xl border border-border/80 bg-muted/30 p-3.5 space-y-2">
-                  <div className="flex items-start gap-2.5">
-                    <Checkbox
+                  <div className="flex items-start gap-2">
+                    <button
                       id="signup-terms-consent"
-                      checked={termsAccepted}
-                      onCheckedChange={(checked) => setTermsAccepted(Boolean(checked))}
-                      className="mt-0.5"
-                    />
-                    <label
-                      htmlFor="signup-terms-consent"
-                      className="text-xs leading-relaxed text-muted-foreground cursor-pointer select-none"
+                      type="button"
+                      role="checkbox"
+                      aria-checked={termsAccepted}
+                      aria-label="Li, compreendi e concordo integralmente com os Termos de Uso e a Política de Privacidade e Proteção de Dados (LGPD)"
+                      onClick={() => setTermsAccepted((prev) => !prev)}
+                      className="flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
-                      Li, compreendi e concordo integralmente com os{" "}
-                      <a
-                        href="/termos"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
-                        onClick={(e) => e.stopPropagation()}
+                      <span
+                        className={`flex h-4 w-4 items-center justify-center rounded-sm border border-primary transition-colors ${
+                          termsAccepted ? "bg-primary text-primary-foreground" : "bg-background"
+                        }`}
                       >
-                        Termos de Uso
-                      </a>{" "}
-                      e a{" "}
-                      <a
-                        href="/privacidade"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
-                        onClick={(e) => e.stopPropagation()}
+                        {termsAccepted && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
+                      </span>
+                    </button>
+                    <div className="flex-1 min-w-0 space-y-1.5 pt-2.5">
+                      <label
+                        htmlFor="signup-terms-consent"
+                        className="block text-xs leading-relaxed text-muted-foreground cursor-pointer select-none"
                       >
-                        Política de Privacidade e Proteção de Dados (LGPD)
-                      </a>
-                      .
-                    </label>
+                        Li, compreendi e concordo integralmente com os Termos de Uso e a Política de Privacidade e Proteção de Dados (LGPD).
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a
+                          href="/termos"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-[44px] min-w-[44px] items-center rounded-md px-2 text-xs font-semibold text-primary underline underline-offset-2 hover:bg-primary/5 hover:text-primary/80"
+                        >
+                          Termos de Uso
+                        </a>
+                        <a
+                          href="/privacidade"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-[44px] min-w-[44px] items-center rounded-md px-2 text-xs font-semibold text-primary underline underline-offset-2 hover:bg-primary/5 hover:text-primary/80"
+                        >
+                          Política de Privacidade e Proteção de Dados (LGPD)
+                        </a>
+                      </div>
+                    </div>
                   </div>
                   {touched.terms && fieldErrors.terms && (
-                    <p className="text-xs text-destructive pl-6 font-medium">{fieldErrors.terms}</p>
+                    <p className="text-xs text-destructive pl-12 font-medium">{fieldErrors.terms}</p>
                   )}
                 </div>
 
@@ -920,15 +920,15 @@ const CadastroContaAlfa = () => {
                 )}
 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  <Button type="submit" className="w-full sm:w-auto h-11" disabled={loading || !canSubmit}>
-                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Button type="submit" className="w-full sm:w-auto min-h-[44px] h-11" disabled={loading || !canSubmit}>
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
                     {signupCooldown > 0 ? `Aguarde ${signupCooldown}s` : "Criar conta"}
                   </Button>
 
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full sm:w-auto h-11 px-4 py-1 text-center text-xs sm:text-sm font-medium leading-tight text-muted-foreground hover:text-foreground hover:bg-accent/60"
+                    className="w-full sm:w-auto min-h-[44px] h-auto px-4 py-2 text-center text-xs sm:text-sm font-medium leading-tight text-muted-foreground hover:text-foreground hover:bg-accent/60"
                     onClick={() => navigate(authLoginUrl)}
                   >
                     <span>
@@ -953,7 +953,7 @@ const CadastroContaAlfa = () => {
           }}
         />
       </motion.div>
-    </div>
+    </main>
   );
 };
 

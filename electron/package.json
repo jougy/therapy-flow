@@ -1,0 +1,22 @@
+{
+  "name": "pluri-health-desktop",
+  "version": "1.0.0",
+  "description": "Pluri Health Desktop Application",
+  "homepage": "https://pluri.health",
+  "author": "Pluri Health <suporte@pluri.health>",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:linux": "electron-builder --linux AppImage deb rpm",
+    "build:win": "electron-builder --win nsis msi",
+    "build:mac": "electron-builder --mac dmg zip"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^35.1.5",
+    "electron-builder": "^26.0.12"
+  }
+}

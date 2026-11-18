@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Calendar,
+  Check,
   Eye,
   EyeOff,
   IdCard,
@@ -11,7 +12,6 @@ import {
   UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { InviteSummary } from "./types";
@@ -141,52 +141,56 @@ export const ConviteSignupTab = ({
 
         <div className="space-y-1.5">
           <Label htmlFor="signup-pass">Criar senha</Label>
-          <div className="relative">
-            <LockKeyhole className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="signup-pass"
-              type={showPassword ? "text" : "password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 8 caracteres"
-              minLength={8}
-              required
-              className="pl-9 pr-12 h-11"
-            />
+          <div className="flex items-center rounded-md border border-input bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+            <div className="relative flex-1 min-w-0">
+              <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                id="signup-pass"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo 8 caracteres"
+                minLength={8}
+                required
+                className="h-11 border-0 bg-transparent pl-9 pr-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              />
+            </div>
             <button
               type="button"
-              className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground"
+              className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
               title={showPassword ? "Ocultar senha" : "Ver senha"}
             >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
             </button>
           </div>
         </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="signup-pass-confirm">Confirmar senha</Label>
-          <div className="relative">
-            <LockKeyhole className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="signup-pass-confirm"
-              type={showConfirmPassword ? "text" : "password"}
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Repita sua senha"
-              minLength={8}
-              required
-              className="pl-9 pr-12 h-11"
-            />
+          <div className="flex items-center rounded-md border border-input bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+            <div className="relative flex-1 min-w-0">
+              <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                id="signup-pass-confirm"
+                type={showConfirmPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repita sua senha"
+                minLength={8}
+                required
+                className="h-11 border-0 bg-transparent pl-9 pr-2 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              />
+            </div>
             <button
               type="button"
-              className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground"
+              className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
               aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Ver confirmação de senha"}
               title={showConfirmPassword ? "Ocultar confirmação de senha" : "Ver confirmação de senha"}
             >
-              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showConfirmPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
             </button>
           </div>
         </div>
@@ -194,57 +198,64 @@ export const ConviteSignupTab = ({
 
       {/* Termo de Consentimento LGPD */}
       <div className="rounded-xl border border-border/80 bg-muted/30 p-3.5 space-y-2">
-        <div className="flex items-start gap-2.5">
-          <Checkbox
+        <div className="flex items-start gap-2">
+          <button
             id="invite-terms-consent"
-            checked={termsAccepted}
-            onCheckedChange={(checked) => setTermsAccepted(Boolean(checked))}
-            className="mt-0.5"
-          />
-          <label
-            htmlFor="invite-terms-consent"
-            className="text-xs leading-relaxed text-muted-foreground cursor-pointer select-none"
+            type="button"
+            role="checkbox"
+            aria-checked={termsAccepted}
+            aria-label="Li, compreendi e concordo integralmente com os Termos de Uso e a Política de Privacidade e Proteção de Dados (LGPD)"
+            onClick={() => setTermsAccepted(!termsAccepted)}
+            className="flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            Li, compreendi e concordo integralmente com os{" "}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                onOpenTermsModal();
-              }}
-              className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+            <span
+              className={`flex h-4 w-4 items-center justify-center rounded-sm border border-primary transition-colors ${
+                termsAccepted ? "bg-primary text-primary-foreground" : "bg-background"
+              }`}
             >
-              Termos de Uso
-            </button>{" "}
-            e a{" "}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                onOpenTermsModal();
-              }}
-              className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80"
+              {termsAccepted && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
+            </span>
+          </button>
+          <div className="flex-1 min-w-0 space-y-1.5 pt-2.5">
+            <label
+              htmlFor="invite-terms-consent"
+              className="block text-xs leading-relaxed text-muted-foreground cursor-pointer select-none"
             >
-              Política de Privacidade e Proteção de Dados (LGPD)
-            </button>
-            .
-          </label>
+              Li, compreendi e concordo integralmente com os Termos de Uso e a Política de Privacidade e Proteção de Dados (LGPD).
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onOpenTermsModal}
+                className="inline-flex min-h-[44px] min-w-[44px] items-center rounded-md px-2 text-xs font-semibold text-primary underline underline-offset-2 hover:bg-primary/5 hover:text-primary/80"
+              >
+                Termos de Uso
+              </button>
+              <button
+                type="button"
+                onClick={onOpenTermsModal}
+                className="inline-flex min-h-[44px] min-w-[44px] items-center rounded-md px-2 text-xs font-semibold text-primary underline underline-offset-2 hover:bg-primary/5 hover:text-primary/80"
+              >
+                Política de Privacidade e Proteção de Dados (LGPD)
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       <Button
         type="submit"
-        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2 h-11 text-base font-semibold"
+        className="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 gap-2 h-11 text-base font-semibold"
         disabled={submitting || !termsAccepted}
       >
-        {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserPlus className="h-5 w-5" />}
+        {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <UserPlus className="h-5 w-5" aria-hidden="true" />}
         Concluir cadastro e entrar na clínica
       </Button>
 
       <div className="pt-1 text-center">
         <button
           type="button"
-          className="text-xs text-primary hover:underline font-medium"
+          className="inline-flex min-h-[44px] items-center justify-center px-2 text-xs text-primary hover:underline font-medium"
           onClick={onSwitchToLogin}
         >
           Já tem uma conta cadastrada? Entrar com minha senha

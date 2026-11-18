@@ -26,4 +26,4 @@ else
 fi
 
 echo "Iniciando o frontend em http://localhost:8080 ..."
-vite
+npx vite

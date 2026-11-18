@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, CheckCircle2, Copy, FileText, Loader2, Pencil, Printer, Save, Share2, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Copy, FileSignature, FileText, Loader2, Pencil, Printer, Save, Share2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,6 +33,7 @@ export interface SessionHeaderBarProps {
   onBack: () => void;
   onDelete: () => Promise<void>;
   onEdit: () => void;
+  onGenerateDocument?: () => void;
   onOpenShareAccess: () => void;
   onPrintDocument: (kind: SessionDocumentKind) => void;
   onSave: (explicitStatus?: "concluído" | "rascunho") => Promise<void>;
@@ -61,6 +62,7 @@ export const SessionHeaderBar = ({
   onBack,
   onDelete,
   onEdit,
+  onGenerateDocument,
   onOpenShareAccess,
   onPrintDocument,
   onSave,
@@ -211,6 +213,18 @@ export const SessionHeaderBar = ({
                 <DropdownMenuItem onClick={() => void onShareDocument("combined")}>Anamnese + Tratamento</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            {onGenerateDocument && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onGenerateDocument}
+                title="Gerar termo ou documento clínico com variáveis automáticas"
+                className="gap-1.5"
+              >
+                <FileSignature className="h-4 w-4 mr-1 text-primary" />
+                <span className="hidden sm:inline">Gerar Documento</span>
+              </Button>
+            )}
             {canPrintSessionDoc && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -220,6 +234,12 @@ export const SessionHeaderBar = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
+                  {onGenerateDocument && (
+                    <DropdownMenuItem onClick={onGenerateDocument} className="font-medium cursor-pointer">
+                      <FileSignature className="h-4 w-4 mr-2 text-primary" />
+                      Gerar Documento / Termo
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={() => onPrintDocument("combined")}>Anamnese + Tratamento</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

@@ -1,0 +1,15 @@
+{
+  "appId": "health.pluri.app",
+  "appName": "Pluri Health",
+  "webDir": "www",
+  "server": {
+    "url": "https://app.pluri.health",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "automatic"
+  }
+}
