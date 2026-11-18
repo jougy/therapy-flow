@@ -147,3 +147,154 @@ describe("WhatsApp Bot 2FA TOTP (Ente Auth) & Auth Session Engine", () => {
     expect(isReset("sair")).toBe(false);
   });
 });
+
+describe("WhatsApp Bot Website Lead -> Customer Support Flow (Unregistered Numbers)", () => {
+  it("detects exact website link message and variations with/without accents", async () => {
+    const { isWebsiteLeadTriggerMessage } = await import(
+      "../../supabase/functions/whatsapp-webhook/owner-copilot.ts"
+    );
+
+    // Exact URL decoded message from WhatsAppFloatingButton.astro
+    expect(
+      isWebsiteLeadTriggerMessage("vim do site, gostaria de conversar com alguem sobre mais informações.")
+    ).toBe(true);
+    expect(
+      isWebsiteLeadTriggerMessage("Vim do site, gostaria de conversar com alguém sobre mais informações!")
+    ).toBe(true);
+    expect(isWebsiteLeadTriggerMessage("Olá, vim do site!")).toBe(true);
+    expect(
+      isWebsiteLeadTriggerMessage("gostaria de conversar com alguem sobre mais informacoes")
+    ).toBe(true);
+
+    // Patient or unrelated messages must NOT trigger website lead flow
+    expect(isWebsiteLeadTriggerMessage("quero remarcar minha consulta")).toBe(false);
+    expect(isWebsiteLeadTriggerMessage("oi, tudo bem?")).toBe(false);
+    expect(isWebsiteLeadTriggerMessage("Confirmado para amanhã")).toBe(false);
+    expect(isWebsiteLeadTriggerMessage("")).toBe(false);
+    expect(isWebsiteLeadTriggerMessage(null)).toBe(false);
+  });
+
+  it("allows unregistered numbers coming from website to enter and navigate support/onboarding trail", async () => {
+    const { isAllowedUnregisteredSupportAction } = await import(
+      "../../supabase/functions/whatsapp-webhook/owner-copilot.ts"
+    );
+
+    // 1. Always activates when coming from website link
+    expect(
+      isAllowedUnregisteredSupportAction({
+        isSiteLeadSession: false,
+        currentStep: "initial",
+        selectedButtonId: "",
+        userText: "vim do site, gostaria de conversar com alguem sobre mais informações.",
+      })
+    ).toBe(true);
+
+    // Even if previously in another step, re-clicking website link activates it
+    expect(
+      isAllowedUnregisteredSupportAction({
+        isSiteLeadSession: false,
+        currentStep: "completed_self",
+        selectedButtonId: "",
+        userText: "vim do site, gostaria de conversar com alguem sobre mais informações.",
+      })
+    ).toBe(true);
+
+    // 2. Allows navigating support and scheduling options inside site lead session
+    const allowedButtons = [
+      "support_faq",
+      "support_human",
+      "support_report_bug",
+      "btn_schedule_intro",
+      "btn_self_explore",
+      "btn_owner_menu",
+      "btn_menu_support",
+      "menu",
+      "day_2026-11-20",
+      "onboarding_start",
+      "slot_1",
+      "time_10_00",
+    ];
+    for (const btn of allowedButtons) {
+      expect(
+        isAllowedUnregisteredSupportAction({
+          isSiteLeadSession: true,
+          currentStep: "owner_support_menu",
+          selectedButtonId: btn,
+          userText: btn,
+        })
+      ).toBe(true);
+    }
+
+    // 3. Allows free-text steps inside support/scheduling trail
+    const allowedSteps = [
+      "owner_support_menu",
+      "waiting_bug_report",
+      "waiting_day",
+      "waiting_time",
+      "completed_scheduled",
+      "completed_self",
+    ];
+    for (const step of allowedSteps) {
+      expect(
+        isAllowedUnregisteredSupportAction({
+          isSiteLeadSession: true,
+          currentStep: step,
+          selectedButtonId: "",
+          userText: "14:30",
+        })
+      ).toBe(true);
+    }
+  });
+
+  it("blocks unregistered non-site numbers (patients) and blocks clinical/financial owner menus", async () => {
+    const { isAllowedUnregisteredSupportAction } = await import(
+      "../../supabase/functions/whatsapp-webhook/owner-copilot.ts"
+    );
+
+    // Non-site unregistered numbers (e.g., clinic patients) must remain blocked from prospective-client support flow
+    expect(
+      isAllowedUnregisteredSupportAction({
+        isSiteLeadSession: false,
+        currentStep: "initial",
+        selectedButtonId: "",
+        userText: "quero remarcar minha consulta",
+      })
+    ).toBe(false);
+
+    expect(
+      isAllowedUnregisteredSupportAction({
+        isSiteLeadSession: false,
+        currentStep: "initial",
+        selectedButtonId: "",
+        userText: "oi",
+      })
+    ).toBe(false);
+
+    // Clinical and financial owner actions must be strictly blocked even inside is_site_lead session
+    const blockedOwnerButtons = [
+      "btn_menu_records",
+      "btn_menu_agenda",
+      "btn_menu_finance",
+      "records_quick_patient",
+      "records_terms",
+      "terms_adult",
+      "finance_pix_invoice",
+      "finance_nfse",
+      "finance_upgrade",
+      "finance_human",
+      "agenda_new_patient",
+      "appt_edit_date_123",
+      "btn_flow_fallback_chat",
+    ];
+    for (const btn of blockedOwnerButtons) {
+      expect(
+        isAllowedUnregisteredSupportAction({
+          isSiteLeadSession: true,
+          currentStep: "owner_support_menu",
+          selectedButtonId: btn,
+          userText: btn,
+        })
+      ).toBe(false);
+    }
+  });
+});

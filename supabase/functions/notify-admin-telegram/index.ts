@@ -471,40 +471,107 @@ Deno.serve(async (req) => {
 
       const origin = payload.origin || payload.signupOrigin || payload.signup_origin || profile?.signup_origin || '';
 
-      // REGRA: Verificar se o cadastro veio por convite (não é orgânico)
-      let isInvited = false;
+      // 2.5. Idempotência distribuída via Upstash Redis (evita duplicatas entre frontend + trigger server-side)
+      const upstashUrl = Deno.env.get('UPSTASH_REDIS_REST_URL') || '';
+      const upstashToken = Deno.env.get('UPSTASH_REDIS_REST_TOKEN') || '';
+      const idempotencySubject = (targetUserId && isValidUuid(targetUserId)) ? targetUserId : email || verifiedUserId;
+
+      if (upstashUrl && upstashToken && idempotencySubject) {
+        try {
+          const idempotencyKey = `pluri:signup:notified:${idempotencySubject}`;
+          const redisRes = await fetch(`${upstashUrl.replace(/\/+$/, '')}/set/${encodeURIComponent(idempotencyKey)}/1/NX/EX/2592000`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${upstashToken}` },
+          });
+          if (redisRes.ok) {
+            const redisJson = await redisRes.json();
+            if (redisJson?.result === null) {
+              console.log(`[notify-admin-telegram] Idempotência Upstash: signup de ${idempotencySubject} já notificado.`);
+              return new Response(JSON.stringify({ success: true, deduplicated: true }), {
+                status: 200,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
+          }
+        } catch (redisErr) {
+          console.warn('[notify-admin-telegram] Falha na checagem de idempotência Upstash (fail-open):', redisErr);
+        }
+      }
+
+      // 2.6. Detectar provedor de autenticação (Google OAuth vs E-mail/Senha)
+      let authProvider = 'email';
+      if (targetUserId && isValidUuid(targetUserId)) {
+        try {
+          const { data: authUserRes } = await adminSupabase.auth.admin.getUserById(targetUserId);
+          const u = authUserRes?.user;
+          if (u) {
+            const isGoogle =
+              u.app_metadata?.provider === 'google' ||
+              (Array.isArray(u.identities) && u.identities.some((id: { provider?: string }) => id.provider === 'google'));
+            if (isGoogle) authProvider = 'google';
+          }
+        } catch {
+          // fail-safe: mantém 'email'
+        }
+      }
+
+      // 3. Verificar se o cadastro veio por convite de colaborador de outra clínica (identificando qual clínica)
+      let invitedByClinicId: string | null = null;
+      let invitedByClinicName: string | null = null;
 
       if (email) {
         const { data: inviteByEmail } = await adminSupabase
           .from('clinic_collaborator_invitations')
-          .select('id, status')
+          .select('id, clinic_id, clinics(id, name)')
           .ilike('email', email)
-          .limit(1);
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (inviteByEmail && inviteByEmail.length > 0) {
-          isInvited = true;
+        if (inviteByEmail) {
+          invitedByClinicId = inviteByEmail.clinic_id || null;
+          const clinicRel = inviteByEmail.clinics as { id?: string; name?: string } | { id?: string; name?: string }[] | null;
+          invitedByClinicName = Array.isArray(clinicRel) ? clinicRel[0]?.name || null : clinicRel?.name || null;
         }
       }
 
-      if (!isInvited && targetUserId && isValidUuid(targetUserId)) {
+      if (!invitedByClinicId && targetUserId && isValidUuid(targetUserId)) {
         const { data: inviteByAcceptedUser } = await adminSupabase
           .from('clinic_collaborator_invitations')
-          .select('id')
+          .select('id, clinic_id, clinics(id, name)')
           .or(`accepted_by.eq.${targetUserId},existing_user_id.eq.${targetUserId}`)
-          .limit(1);
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (inviteByAcceptedUser && inviteByAcceptedUser.length > 0) {
-          isInvited = true;
+        if (inviteByAcceptedUser) {
+          invitedByClinicId = inviteByAcceptedUser.clinic_id || null;
+          const clinicRel = inviteByAcceptedUser.clinics as { id?: string; name?: string } | { id?: string; name?: string }[] | null;
+          invitedByClinicName = Array.isArray(clinicRel) ? clinicRel[0]?.name || null : clinicRel?.name || null;
         }
       }
 
-      if (isInvited) {
-        console.log(`[notify-admin-telegram] Usuário ${email || targetUserId} é oriundo de convite de clínica. Notificação de signup orgânico ignorada.`);
-        return new Response(JSON.stringify({ success: true, ignored: true, reason: 'collaborator_invite' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      // 3.1. Classificação padronizada da origem
+      const rawOriginLower = `${origin} ${utmSource} ${utmMedium}`.toLowerCase();
+      let originCategory = 'link_direto';
+      if (invitedByClinicId || invitedByClinicName) {
+        originCategory = 'indicacao_clinica';
+      } else if (/instagram|facebook|fb|tiktok|youtube|linkedin|social/.test(rawOriginLower)) {
+        originCategory = 'redes_sociais';
+      } else if (/google|gclid/.test(rawOriginLower) || authProvider === 'google') {
+        originCategory = 'google';
+      } else if (/plurifisio|plurihealth|site|landing/.test(rawOriginLower)) {
+        originCategory = 'site';
+      } else if (utmObj.ref || /indicacao|ref/.test(rawOriginLower)) {
+        originCategory = 'indicacao_link';
       }
+
+      const providerBadge = authProvider === 'google' ? 'Google OAuth' : 'E-mail/Senha';
+      const effectiveOrigin = invitedByClinicName
+        ? `Indicação / Convite da Clínica: ${invitedByClinicName} (${providerBadge})`
+        : origin
+        ? `${origin} (${providerBadge})`
+        : `Link Direto (${providerBadge})`;
 
       // Buscar nome da clínica criada para o usuário (se houver)
       let clinicName = payload.clinicName ? String(payload.clinicName).slice(0, 120) : '';
@@ -550,8 +617,8 @@ Deno.serve(async (req) => {
           councilName,
           gender,
           preferredPronoun,
-          origin,
-          signupOrigin: origin,
+          origin: effectiveOrigin,
+          signupOrigin: effectiveOrigin,
           utmSource,
           utmMedium,
           utmCampaign,
@@ -562,6 +629,73 @@ Deno.serve(async (req) => {
       } else {
         console.log('[notify-admin-telegram] Notificação Telegram do Admin ignorada: flag "notifications_telegram_admin" desativada.');
         sendResult = { success: true, skipped: true };
+      }
+
+      // 1.5. Telemetria no Upstash Redis (contadores) e Ingestão no Axiom (fail-safe)
+      const telemetryTasks: Promise<unknown>[] = [];
+      if (upstashUrl && upstashToken) {
+        const baseUpstash = upstashUrl.replace(/\/+$/, '');
+        const headers = { Authorization: `Bearer ${upstashToken}`, 'Content-Type': 'application/json' };
+        telemetryTasks.push(
+          fetch(`${baseUpstash}/pipeline`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify([
+              ['INCR', 'pluri:metrics:signups:total'],
+              ['INCR', `pluri:metrics:signups:provider:${authProvider}`],
+              ['INCR', `pluri:metrics:signups:origin:${originCategory}`],
+            ]),
+          })
+        );
+      }
+
+      const axiomToken = Deno.env.get('AXIOM_TOKEN') || '';
+      const axiomDataset = Deno.env.get('AXIOM_DATASET') || '';
+      if (axiomToken && axiomDataset) {
+        const rawEvent: Record<string, unknown> = {
+          _time: new Date().toISOString(),
+          event: 'signup_completed',
+          userId: targetUserId || verifiedUserId || undefined,
+          email,
+          name: name || undefined,
+          authProvider,
+          originCategory,
+          originLabel: effectiveOrigin,
+          invitedByClinicId: invitedByClinicId || undefined,
+          invitedByClinicName: invitedByClinicName || undefined,
+          utm_source: utmSource || undefined,
+          utm_medium: utmMedium || undefined,
+          utm_campaign: utmCampaign || undefined,
+          clinicName: clinicName || undefined,
+          plan,
+          telegramSent: Boolean(sendResult?.success && !sendResult?.skipped),
+        };
+        const compactEvent = Object.fromEntries(Object.entries(rawEvent).filter(([, v]) => v !== undefined));
+        const jsonBytes = new TextEncoder().encode(JSON.stringify([compactEvent]));
+
+        const sendAxiomCompressed = async () => {
+          let body: BodyInit = jsonBytes;
+          const headers: Record<string, string> = {
+            Authorization: `Bearer ${axiomToken}`,
+            'Content-Type': 'application/json',
+          };
+          if (typeof CompressionStream !== 'undefined') {
+            const stream = new Blob([jsonBytes]).stream().pipeThrough(new CompressionStream('gzip'));
+            body = await new Response(stream).arrayBuffer();
+            headers['Content-Encoding'] = 'gzip';
+          }
+          return fetch(`https://api.axiom.co/v1/datasets/${encodeURIComponent(axiomDataset)}/ingest`, {
+            method: 'POST',
+            headers,
+            body,
+          });
+        };
+
+        telemetryTasks.push(sendAxiomCompressed());
+      }
+
+      if (telemetryTasks.length > 0) {
+        await Promise.allSettled(telemetryTasks);
       }
 
       // Inserir notificação in-app em lote (O(1) round-trip) em app_notifications para todos os platform_admins ativos
