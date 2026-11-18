@@ -131,6 +131,7 @@ import {
   type PatientPaymentSession,
   type SessionEditHistoryRow,
 } from "@/components/sessions";
+import { GenerateDocumentModal } from "@/components/patients/GenerateDocumentModal";
 import { useScrollDirection } from "@/hooks/useScrollDirection";
 
 const SessaoDetalhe = () => {
@@ -181,6 +182,7 @@ const SessaoDetalhe = () => {
   const { isFeatureEnabled } = useFeatureFlags();
   const canPrintSessionDoc = can("system.print") && isFeatureEnabled("print_general") && isFeatureEnabled("records_session_print");
   const [isPrintTermsOpen, setIsPrintTermsOpen] = useState(false);
+  const [isGenerateDocumentOpen, setIsGenerateDocumentOpen] = useState(false);
   const [pendingPrintKind, setPendingPrintKind] = useState<SessionDocumentKind | null>(null);
   const [clinicalSummaryDialogOpen, setClinicalSummaryDialogOpen] = useState(false);
 
@@ -1855,27 +1857,18 @@ const SessaoDetalhe = () => {
       className="mx-auto w-full min-w-0 max-w-full space-y-6 px-1 pb-24 sm:pb-8 sm:max-w-[min(100vw-2rem,1680px)] sm:px-6 lg:max-w-[min(100vw-3rem,1760px)] [overscroll-behavior-x:contain] overflow-x-hidden"
     >
       <SessionHeaderBar
-        canDeleteSession={canDeleteSession}
-        canEditPresenceSummary={canEditPresenceSummary}
-        canEditSavedDraft={canEditSavedDraft}
-        canManageSessionSharing={canManageSessionSharing}
-        canPrintSessionDoc={canPrintSessionDoc}
-        canStartNewSessionFromThis={canStartNewSessionFromThis}
-        isEditing={isEditing}
-        isNew={isNew}
-        locked={locked}
-        patient={patientRow}
-        patientId={patientId}
-        patientName={patientName}
-        saving={saving}
-        sessionDate={sessionDate}
-        startingFromThis={startingFromThis}
-        status={status}
+        canDeleteSession={canDeleteSession} canEditPresenceSummary={canEditPresenceSummary}
+        canEditSavedDraft={canEditSavedDraft} canManageSessionSharing={canManageSessionSharing}
+        canPrintSessionDoc={canPrintSessionDoc} canStartNewSessionFromThis={canStartNewSessionFromThis}
+        isEditing={isEditing} isNew={isNew} locked={locked}
+        patient={patientRow} patientId={patientId} patientName={patientName}
+        saving={saving} sessionDate={sessionDate} startingFromThis={startingFromThis} status={status}
         summaryDialogOpen={clinicalSummaryDialogOpen}
         onSummaryDialogOpenChange={setClinicalSummaryDialogOpen}
         onBack={handleBackNavigation}
         onDelete={handleDelete}
         onEdit={() => setIsEditing(true)}
+        onGenerateDocument={() => setIsGenerateDocumentOpen(true)}
         onOpenShareAccess={handleOpenShareAccess}
         onPrintDocument={handlePrintDocument}
         onSave={handleSave}
@@ -2416,10 +2409,15 @@ const SessaoDetalhe = () => {
         isOpen={isPrintTermsOpen}
         pendingPrintKind={pendingPrintKind}
         onConfirm={handleConfirmPrintDocument}
-        onCancel={() => {
-          setIsPrintTermsOpen(false);
-          setPendingPrintKind(null);
-        }}
+        onCancel={() => { setIsPrintTermsOpen(false); setPendingPrintKind(null); }}
+      />
+
+      <GenerateDocumentModal
+        open={isGenerateDocumentOpen}
+        onOpenChange={setIsGenerateDocumentOpen}
+        patient={patientRow}
+        clinicId={clinicId}
+        clinicName={clinic?.name}
       />
 
       {/* Modal de Confirmação de Saída com Alterações Não Salvas */}

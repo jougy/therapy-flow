@@ -1,10 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SelecionarClinica from "@/pages/SelecionarClinica";
+import "@/pages/selecionar-clinica/PersonalDashboardTab";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { supabase } from "@/integrations/supabase/client";
+
+const fastWaitFor = <T,>(cb: () => T) => waitFor(cb, { interval: 5 });
 
 const navigateMock = vi.fn();
 type SupabaseMockResponse<T = unknown> = { data: T; error: Error | null };
@@ -98,7 +101,10 @@ Object.defineProperty(window, "localStorage", {
 });
 
 describe("SelecionarClinica", () => {
-  const getNavButton = (name: RegExp) => screen.getAllByRole("button", { name })[0]!;
+  const getNavButton = (name: RegExp) => {
+    const aside = document.querySelector("aside");
+    return aside ? within(aside).getAllByRole("button", { name })[0]! : screen.getAllByRole("button", { name })[0]!;
+  };
 
   beforeEach(() => {
     global.ResizeObserver = class ResizeObserver {
@@ -203,39 +209,44 @@ describe("SelecionarClinica", () => {
 
     vi.mocked(useAuth).mockReturnValue(buildAuthMock({ selectClinic, signOut }) as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Espaço pessoal")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /^clínicas$/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /^minhas estatísticas$/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /^novidades$/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /^Configurações$/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Owner Example").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /ver acessos online/i })).toHaveTextContent("3/4");
+    const aside = container.querySelector("aside") as HTMLElement;
+    const header = container.querySelector("header") as HTMLElement;
+    const mainSection = container.querySelector("main section") as HTMLElement;
 
-    fireEvent.click(screen.getAllByRole("button", { name: /abrir configurações pessoais/i })[0]!);
+    expect(within(header).getByText("Espaço pessoal")).toBeInTheDocument();
+    expect(within(aside).getAllByRole("button", { name: /^clínicas$/i }).length).toBeGreaterThan(0);
+    expect(within(aside).getAllByRole("button", { name: /^minhas estatísticas$/i }).length).toBeGreaterThan(0);
+    expect(within(aside).getAllByRole("button", { name: /^novidades$/i }).length).toBeGreaterThan(0);
+    expect(within(aside).getAllByRole("button", { name: /^Configurações$/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Owner Example").length).toBeGreaterThan(0);
+    expect(within(mainSection).getByRole("button", { name: /ver acessos online/i })).toHaveTextContent("3/4");
+
+    fireEvent.click(within(header).getAllByRole("button", { name: /abrir configurações pessoais/i })[0]!);
     expect(navigateMock).toHaveBeenCalledWith("/configuracoes/pessoal/perfil");
 
-    fireEvent.click(screen.getAllByRole("button", { name: /clinica aurora/i })[0]!);
+    fireEvent.click(within(mainSection).getAllByRole("button", { name: /clinica aurora/i })[0]!);
 
-    await waitFor(() => expect(selectClinic).toHaveBeenCalledWith("clinic-1"));
+    await fastWaitFor(() => expect(selectClinic).toHaveBeenCalledWith("clinic-1"));
     expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1", { replace: true });
   });
 
   it("shows online access details for each clinic", () => {
     vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /ver acessos online/i }));
+    const mainSection = container.querySelector("main section") as HTMLElement;
+    fireEvent.click(within(mainSection).getByRole("button", { name: /ver acessos online/i }));
 
     expect(screen.getByText("Acessos online")).toBeInTheDocument();
     expect(screen.getByText(/3 de 4 em uso/i)).toBeInTheDocument();
@@ -262,20 +273,22 @@ describe("SelecionarClinica", () => {
       }) as ReturnType<typeof useAuth>
     );
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /sair da clínica clinica aurora/i }));
+    const mainSection = container.querySelector("main section") as HTMLElement;
+    fireEvent.click(within(mainSection).getByRole("button", { name: /sair da clínica clinica aurora/i }));
 
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    const alertDialog = screen.getByRole("alertdialog");
+    expect(alertDialog).toBeInTheDocument();
     expect(screen.getByText(/seu espaço pessoal e seus dados próprios continuam/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^sair da clínica$/i }));
+    fireEvent.click(within(alertDialog).getByRole("button", { name: /^sair da clínica$/i }));
 
-    await waitFor(() =>
+    await fastWaitFor(() =>
       expect(supabase.rpc).toHaveBeenCalledWith("leave_current_user_clinic", {
         _clinic_id: "clinic-1",
       })
@@ -352,7 +365,7 @@ describe("SelecionarClinica", () => {
 
     fireEvent.click(getNavButton(/^minhas estatísticas$/i));
 
-    await waitFor(() => expect(screen.getByText("Quantidade de atendimentos")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByText("Quantidade de atendimentos")).toBeInTheDocument());
 
     expect(screen.getByText("Total de pacientes atendidos")).toBeInTheDocument();
     expect(screen.getByText("Total de atendimentos")).toBeInTheDocument();
@@ -394,7 +407,7 @@ describe("SelecionarClinica", () => {
 
     localStorageMock.setItem("pluri_welcome_seen_master-user", new Date().toISOString());
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
@@ -404,7 +417,8 @@ describe("SelecionarClinica", () => {
     expect(screen.queryByText("Escolha a clínica")).not.toBeInTheDocument();
     expect(screen.queryByTestId("empty-clinics-callout")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /abrir painel global/i }));
+    const mainSection = container.querySelector("main section") as HTMLElement;
+    fireEvent.click(within(mainSection).getByRole("button", { name: /abrir painel global/i }));
     expect(navigateMock).toHaveBeenCalledWith("/platform");
   });
 
@@ -459,7 +473,7 @@ describe("SelecionarClinica", () => {
     });
     vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
@@ -467,9 +481,10 @@ describe("SelecionarClinica", () => {
 
     fireEvent.click(getNavButton(/^novidades$/i));
 
-    await waitFor(() => expect(screen.getByText("Painel de novidades")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByText("Painel de novidades")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: /reparado/i }));
+    const mainSection = container.querySelector("main section") as HTMLElement;
+    fireEvent.click(within(mainSection).getByRole("button", { name: /reparado/i }));
     expect(screen.getByText("Correção de acesso")).toBeInTheDocument();
   });
 
@@ -525,7 +540,7 @@ describe("SelecionarClinica", () => {
     });
     vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
@@ -533,19 +548,21 @@ describe("SelecionarClinica", () => {
 
     fireEvent.click(getNavButton(/^novidades$/i));
 
-    await waitFor(() => expect(screen.getByText("Preenchimento Automático de Endereço via CEP")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByText("Preenchimento Automático de Endereço via CEP")).toBeInTheDocument());
     expect(screen.getAllByText("beta-26.09.17-01").length).toBeGreaterThan(0);
 
-    const addedBtn = screen.getByRole("button", { name: /adicionado.*5/i });
+    const mainSection = container.querySelector("main section") as HTMLElement;
+    const addedBtn = within(mainSection).getByRole("button", { name: /adicionado.*5/i });
     expect(addedBtn).toBeInTheDocument();
+    const filterBar = addedBtn.parentElement as HTMLElement;
 
-    const changedBtn = screen.getByRole("button", { name: /alterado.*4/i });
+    const changedBtn = within(filterBar).getByRole("button", { name: /alterado.*4/i });
     expect(changedBtn).toBeInTheDocument();
 
-    const fixedBtn = screen.getByRole("button", { name: /reparado.*4/i });
+    const fixedBtn = within(filterBar).getByRole("button", { name: /reparado.*4/i });
     expect(fixedBtn).toBeInTheDocument();
 
-    const removedBtn = screen.getByRole("button", { name: /removido.*1/i });
+    const removedBtn = within(filterBar).getByRole("button", { name: /removido.*1/i });
     expect(removedBtn).toBeInTheDocument();
 
     fireEvent.click(removedBtn);
@@ -598,15 +615,16 @@ describe("SelecionarClinica", () => {
     });
     vi.mocked(useAuth).mockReturnValue(buildAuthMock() as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Abrir notificações$/i }));
+    const header = container.querySelector("header") as HTMLElement;
+    fireEvent.click(within(header).getByRole("button", { name: /^Abrir notificações$/i }));
 
-    await waitFor(() => expect(screen.getByText("Acesso removido")).toBeInTheDocument());
+    await fastWaitFor(() => expect(screen.getByText("Acesso removido")).toBeInTheDocument());
     expect(screen.getByText("Status de acesso alterado")).toBeInTheDocument();
     expect(screen.getByText(/Testesessess removeu seu acesso da clínica Clinica Aurora/i)).toBeInTheDocument();
     expect(screen.getByText(/Testesessess suspendeu seu acesso da clínica Clinica Aurora/i)).toBeInTheDocument();
@@ -624,26 +642,28 @@ describe("SelecionarClinica", () => {
 
     fireEvent.click(getNavButton(/^Configurações$/i));
 
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/configuracoes/pessoal/perfil"));
+    await fastWaitFor(() => expect(navigateMock).toHaveBeenCalledWith("/configuracoes/pessoal/perfil"));
   });
 
   it("asks before signing out from the personal panel", () => {
     const signOut = vi.fn(async () => {});
     vi.mocked(useAuth).mockReturnValue(buildAuthMock({ signOut }) as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^sair$/i }));
+    const header = container.querySelector("header") as HTMLElement;
+    fireEvent.click(within(header).getByRole("button", { name: /^sair$/i }));
 
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    const alertDialog = screen.getByRole("alertdialog");
+    expect(alertDialog).toBeInTheDocument();
     expect(screen.getByText(/voltará para a tela inicial de login/i)).toBeInTheDocument();
     expect(signOut).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /sair da conta/i }));
+    fireEvent.click(within(alertDialog).getByRole("button", { name: /sair da conta/i }));
 
     expect(signOut).toHaveBeenCalled();
   });
@@ -661,7 +681,7 @@ describe("SelecionarClinica", () => {
     expect(portfolioBtn).toBeInTheDocument();
     fireEvent.click(portfolioBtn);
 
-    await waitFor(() => {
+    await fastWaitFor(() => {
       expect(screen.getByTestId("personal-clinical-portfolio")).toBeInTheDocument();
     });
     expect(screen.getByText("Acervo Técnico Profissional")).toBeInTheDocument();
@@ -678,7 +698,7 @@ describe("SelecionarClinica", () => {
       resetFlagOverrides: vi.fn(),
     });
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/espacopessoal"]}>
         <SelecionarClinica />
       </MemoryRouter>
@@ -688,7 +708,8 @@ describe("SelecionarClinica", () => {
     expect(screen.queryByTestId("header-portfolio-btn")).not.toBeInTheDocument();
     expect(screen.queryByTestId("header-portfolio-mobile-btn")).not.toBeInTheDocument();
     // Lateral menu should not have Meu Portfólio button
-    expect(screen.queryByRole("button", { name: /^Meu Portfólio$/i })).not.toBeInTheDocument();
+    const aside = container.querySelector("aside") as HTMLElement;
+    expect(within(aside).queryByRole("button", { name: /^Meu Portfólio$/i })).not.toBeInTheDocument();
   });
 
   it("renders the personal welcome modal on first login and records dismissal in localStorage", async () => {

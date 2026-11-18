@@ -1,7 +1,30 @@
+import React from "react";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ClinicAgendaPage from "./ClinicAgendaPage";
+import { inMemoryAgendaCache } from "@/lib/agenda-cache";
+
+vi.mock("framer-motion", async () => {
+  const React = await import("react");
+  const cache: Record<string, React.ComponentType<any>> = {};
+  const createMotionComponent = (tag: string) =>
+    React.forwardRef(({ children, whileTap, initial, animate, exit, transition, ...props }: any, ref: any) =>
+      React.createElement(tag, { ...props, ref }, children)
+    );
+  return {
+    motion: new Proxy(
+      {},
+      {
+        get: (_target, prop: string) => {
+          if (!cache[prop]) cache[prop] = createMotionComponent(prop);
+          return cache[prop];
+        },
+      }
+    ),
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+  };
+});
 
 if (typeof window !== "undefined" && !window.HTMLElement.prototype.scrollIntoView) {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -91,6 +114,10 @@ vi.mock("@/integrations/supabase/client", () => {
 });
 
 describe("ClinicAgendaPage", () => {
+  beforeEach(() => {
+    inMemoryAgendaCache.clear();
+  });
+
   it("renders page header and actions", async () => {
     render(
       <MemoryRouter initialEntries={["/designlab/clinica/testesteseqsadqwdas/agenda"]}>
@@ -130,7 +157,7 @@ describe("ClinicAgendaPage", () => {
   });
 
   it("switches to month view when clicking 'Mês'", async () => {
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
         <Routes>
           <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
@@ -138,16 +165,20 @@ describe("ClinicAgendaPage", () => {
       </MemoryRouter>
     );
 
-    const monthButton = await screen.findByRole("button", { name: /^mês$/i });
+    await screen.findByText(/Agenda da Clínica/i);
+    const header = container.querySelector("header")!;
+    const monthButton = within(header).getByRole("button", { name: /^mês$/i });
     fireEvent.click(monthButton);
 
     // Month view displays contextual panel with "Dia Selecionado" and "Agendar horário"
-    expect(await screen.findByText(/Dia Selecionado/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /agendar horário/i })).toBeInTheDocument();
+    const sideHeading = await screen.findByText(/Dia Selecionado/i);
+    expect(sideHeading).toBeInTheDocument();
+    const sidePanel = sideHeading.closest(".flex-col") as HTMLElement;
+    expect(within(sidePanel).getByRole("button", { name: /agendar horário/i })).toBeInTheDocument();
   });
 
   it("switches to week view when clicking 'Semana'", async () => {
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
         <Routes>
           <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
@@ -155,16 +186,19 @@ describe("ClinicAgendaPage", () => {
       </MemoryRouter>
     );
 
-    const weekButton = await screen.findByRole("button", { name: /^semana$/i });
+    await screen.findByText(/Agenda da Clínica/i);
+    const header = container.querySelector("header")!;
+    const weekButton = within(header).getByRole("button", { name: /^semana$/i });
     fireEvent.click(weekButton);
 
     // Week view renders 7 columns with "Adicionar" buttons
-    const addButtons = await screen.findAllByRole("button", { name: /adicionar/i });
+    const desktopGrid = container.querySelector(".md\\:grid") as HTMLElement;
+    const addButtons = await within(desktopGrid).findAllByRole("button", { name: /adicionar/i });
     expect(addButtons.length).toBe(7);
   });
 
   it("switches to year view when clicking 'Ano'", async () => {
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
         <Routes>
           <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
@@ -172,7 +206,9 @@ describe("ClinicAgendaPage", () => {
       </MemoryRouter>
     );
 
-    const yearButton = await screen.findByRole("button", { name: /^ano$/i });
+    await screen.findByText(/Agenda da Clínica/i);
+    const header = container.querySelector("header")!;
+    const yearButton = within(header).getByRole("button", { name: /^ano$/i });
     fireEvent.click(yearButton);
 
     // Year view renders months like "Janeiro", "Dezembro"
@@ -181,7 +217,7 @@ describe("ClinicAgendaPage", () => {
   });
 
   it("opens the unified event modal when clicking 'Novo Agendamento'", async () => {
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
         <Routes>
           <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
@@ -189,51 +225,58 @@ describe("ClinicAgendaPage", () => {
       </MemoryRouter>
     );
 
-    const newAppointmentButton = await screen.findByRole("button", { name: /novo agendamento/i });
+    await screen.findByText(/Agenda da Clínica/i);
+    const header = container.querySelector("header")!;
+    const newAppointmentButton = within(header).getByRole("button", { name: /novo agendamento/i });
     fireEvent.click(newAppointmentButton);
 
-    expect(await screen.findByRole("heading", { name: /novo agendamento/i })).toBeInTheDocument();
-    expect(screen.getByText(/duração da sessão/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /50 min/i })).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: /novo agendamento/i })).toBeInTheDocument();
+    expect(within(dialog).getByText(/duração da sessão/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /50 min/i })).toBeInTheDocument();
   });
 
   it("supports copying current period (day, week, month), displaying Paste and Cancel buttons", async () => {
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
         <Routes>
           <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
         </Routes>
       </MemoryRouter>
     );
+
+    await screen.findByText(/Agenda da Clínica/i);
+    const header = container.querySelector("header")!;
 
     // Na visão inicial (dia)
     const copyDayButton = await screen.findByRole("button", { name: /copiar dia/i });
     expect(copyDayButton).toBeInTheDocument();
+    const clipboardBar = copyDayButton.parentElement!;
 
     // Mudar para visão semana
-    const weekButton = await screen.findByRole("button", { name: /^semana$/i });
+    const weekButton = within(header).getByRole("button", { name: /^semana$/i });
     fireEvent.click(weekButton);
 
-    const copyWeekButton = await screen.findByRole("button", { name: /copiar semana/i });
+    const copyWeekButton = await within(clipboardBar).findByRole("button", { name: /copiar semana/i });
     expect(copyWeekButton).toBeInTheDocument();
 
     // Clicar em Copiar Semana
     fireEvent.click(copyWeekButton);
 
     // Agora os botões Colar e Cancelar devem aparecer
-    const pasteButton = await screen.findByRole("button", { name: /colar/i });
-    const cancelButton = await screen.findByRole("button", { name: /cancelar/i });
+    const pasteButton = await within(clipboardBar).findByRole("button", { name: /colar/i });
+    const cancelButton = await within(clipboardBar).findByRole("button", { name: /cancelar/i });
     expect(pasteButton).toBeInTheDocument();
     expect(cancelButton).toBeInTheDocument();
 
     // Cancelar a cópia limpa o clipboard e retorna o botão de copiar
     fireEvent.click(cancelButton);
-    expect(await screen.findByRole("button", { name: /copiar semana/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /colar/i })).not.toBeInTheDocument();
+    expect(await within(clipboardBar).findByRole("button", { name: /copiar semana/i })).toBeInTheDocument();
+    expect(within(clipboardBar).queryByRole("button", { name: /colar/i })).not.toBeInTheDocument();
   }, 30000);
 
   it("executes pastePeriod and triggers insert when clicking 'Colar'", async () => {
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
         <Routes>
           <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
@@ -241,14 +284,19 @@ describe("ClinicAgendaPage", () => {
       </MemoryRouter>
     );
 
+    await screen.findByText(/Agenda da Clínica/i);
+    const header = container.querySelector("header")!;
+    const copyDayButton = await screen.findByRole("button", { name: /copiar dia/i });
+    const clipboardBar = copyDayButton.parentElement!;
+
     // Mudar para semana onde há eventos mockados
-    const weekButton = await screen.findByRole("button", { name: /^semana$/i });
+    const weekButton = within(header).getByRole("button", { name: /^semana$/i });
     fireEvent.click(weekButton);
 
-    const copyWeekButton = await screen.findByRole("button", { name: /copiar semana/i });
+    const copyWeekButton = await within(clipboardBar).findByRole("button", { name: /copiar semana/i });
     fireEvent.click(copyWeekButton);
 
-    const pasteButton = await screen.findByRole("button", { name: /colar/i });
+    const pasteButton = await within(clipboardBar).findByRole("button", { name: /colar/i });
     expect(pasteButton).toBeInTheDocument();
 
     fireEvent.click(pasteButton);
@@ -313,7 +361,7 @@ describe("ClinicAgendaPage", () => {
       }),
     }));
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
         <Routes>
           <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
@@ -322,20 +370,21 @@ describe("ClinicAgendaPage", () => {
     );
 
     // Aguardar carregamento da página e dos pacientes
-    expect(await screen.findByText(/Agenda da Clínica/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Agenda da Clínica/i, {}, { interval: 5 })).toBeInTheDocument();
 
-    const newAppointmentButton = await screen.findByRole("button", { name: /novo agendamento/i });
+    const header = container.querySelector("header")!;
+    const newAppointmentButton = within(header).getByRole("button", { name: /novo agendamento/i });
     fireEvent.click(newAppointmentButton);
 
     // Aguardar o modal abrir
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", {}, { interval: 5 });
     expect(within(dialog).getByRole("heading", { name: /novo agendamento/i })).toBeInTheDocument();
 
     // Selecionar paciente João da Silva no combobox
     const patientComboboxButton = within(dialog).getByText(/selecionar paciente/i);
     fireEvent.click(patientComboboxButton);
 
-    const patientOption = (await screen.findAllByText("João da Silva")).slice(-1)[0];
+    const patientOption = (await screen.findAllByText("João da Silva", {}, { interval: 5 })).slice(-1)[0];
     fireEvent.click(patientOption);
 
     const submitButton = within(dialog).getByRole("button", { name: /^agendar$/i });
@@ -344,6 +393,6 @@ describe("ClinicAgendaPage", () => {
     await waitFor(() => {
       // Primeira tentativa falhou com erro de schema cache e segunda funcionou com fallback Expand & Contract
       expect(callCount).toBe(2);
-    });
+    }, { interval: 5 });
   });
 });

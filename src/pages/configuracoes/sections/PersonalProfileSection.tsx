@@ -48,6 +48,7 @@ import {
   SUPPORTED_PROFESSIONS,
   getProfessionOption,
 } from "@/lib/professions";
+import { PersonalSignatureSection } from "./PersonalSignatureSection";
 
 interface AddressState {
   cep: string;
@@ -846,6 +847,8 @@ export const PersonalProfileSection = () => {
             </div>
           </CardContent>
         </Card>
+
+        <PersonalSignatureSection />
       </div>
     </>
   );

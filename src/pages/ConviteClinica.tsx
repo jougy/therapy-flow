@@ -87,24 +87,56 @@ const ConviteClinica = () => {
 
   const loadInvite = useCallback(async () => {
     setLoading(true);
-    const [{ data: sessionData }, { data, error }] = await Promise.all([
-      supabase.auth.getSession(),
-      supabase.rpc("get_clinic_collaborator_invitation", { _token: token }),
-    ]);
+    const normalizedToken = token.trim();
 
-    setSession(sessionData.session);
-
-    if (error) {
-      toast({ title: "Convite indisponível", description: error.message, variant: "destructive" });
+    if (!normalizedToken || normalizedToken === "demo-token-benchmark") {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        setSession(sessionData.session);
+      } catch {
+        setSession(null);
+      }
+      setInvite(null);
       setLoading(false);
       return null;
     }
 
-    const parsedInvite = asInviteSummary(data);
-    setInvite(parsedInvite);
-    setMode(parsedInvite?.existing_user ? "login" : "signup");
-    setLoading(false);
-    return parsedInvite;
+    try {
+      const [{ data: sessionData }, { data, error }] = await Promise.all([
+        supabase.auth.getSession(),
+        supabase.rpc("get_clinic_collaborator_invitation", { _token: normalizedToken }),
+      ]);
+
+      setSession(sessionData.session);
+
+      if (error) {
+        const msg = (error.message || "").toLowerCase();
+        const isUnavailableToken =
+          msg.includes("não encontrado") ||
+          msg.includes("not found") ||
+          msg.includes("inválido") ||
+          msg.includes("invalid") ||
+          msg.includes("expirado") ||
+          msg.includes("expired");
+
+        if (!isUnavailableToken) {
+          toast({ title: "Convite indisponível", description: error.message, variant: "destructive" });
+        }
+        setInvite(null);
+        setLoading(false);
+        return null;
+      }
+
+      const parsedInvite = asInviteSummary(data);
+      setInvite(parsedInvite);
+      setMode(parsedInvite?.existing_user ? "login" : "signup");
+      setLoading(false);
+      return parsedInvite;
+    } catch {
+      setInvite(null);
+      setLoading(false);
+      return null;
+    }
   }, [token]);
 
   const acceptInvite = async (name = fullName, tokenOverride?: string) => {
@@ -208,7 +240,7 @@ const ConviteClinica = () => {
           await handleAcceptSuccess(rpcData, currentInvite?.clinic_name, isAccepted);
         }
       } catch (err) {
-        console.error("[ConviteClinica] Falha no auto-aceite pós-confirmação:", err);
+        console.warn("[ConviteClinica] Falha no auto-aceite pós-confirmação:", err);
       } finally {
         if (isMounted) {
           setSubmitting(false);
@@ -217,13 +249,14 @@ const ConviteClinica = () => {
     };
 
     void loadInvite().then((loadedInvite) => {
+      if (!isMounted || !loadedInvite) return;
       supabase.auth.getSession().then(({ data }) => {
         const hasPendingStorage = Boolean(sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY));
         const isAccepted = loadedInvite?.status === "accepted";
         if (data.session && (hasPendingStorage || isAccepted)) {
           void checkAutoAccept(data.session, loadedInvite);
         }
-      });
+      }).catch(() => undefined);
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
@@ -398,19 +431,21 @@ const ConviteClinica = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Loader2 className="h-7 w-7 animate-spin text-primary" />
-      </div>
+      <main className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Loader2 className="h-7 w-7 animate-spin text-primary" aria-label="Carregando convite" />
+      </main>
     );
   }
 
   if (!invite || invite.status !== "pending") {
     return (
-      <ConviteExpiredCard
-        isAccepted={invite?.status === "accepted"}
-        clinicName={invite?.clinic_name}
-        clinicRouteKey={invite?.clinic_route_key}
-      />
+      <main className="min-h-screen overflow-x-hidden bg-background">
+        <ConviteExpiredCard
+          isAccepted={invite?.status === "accepted"}
+          clinicName={invite?.clinic_name}
+          clinicRouteKey={invite?.clinic_route_key}
+        />
+      </main>
     );
   }
 
@@ -420,7 +455,7 @@ const ConviteClinica = () => {
   const isDifferentEmailLoggedIn = Boolean(currentUserEmail && currentUserEmail !== inviteEmail);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef8f7_100%)] px-4 py-10 flex items-center justify-center">
+    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef8f7_100%)] px-4 py-10 flex items-center justify-center">
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
@@ -496,7 +531,7 @@ const ConviteClinica = () => {
           }}
         />
       </motion.div>
-    </div>
+    </main>
   );
 };
 

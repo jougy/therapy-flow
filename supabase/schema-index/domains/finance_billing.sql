@@ -3,7 +3,7 @@
 -- Fonte SSOT: supabase/schema.sql
 -- ==========================================================================
 
--- [RPC/FUNCTION] confirm_asaas_subscription_payment (schema.sql L2126-L2198)
+-- [RPC/FUNCTION] confirm_asaas_subscription_payment (schema.sql L2353-L2425)
 CREATE OR REPLACE FUNCTION "public"."confirm_asaas_subscription_payment"("_asaas_payment_id" "text", "_clinic_id" "uuid", "_paid_value" numeric, "_payment_date" timestamp with time zone DEFAULT "now"(), "_billing_type" "text" DEFAULT 'PIX'::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -78,7 +78,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] get_asaas_webhook_logs (schema.sql L4237-L4265)
+-- [RPC/FUNCTION] get_asaas_webhook_logs (schema.sql L4550-L4578)
 CREATE OR REPLACE FUNCTION "public"."get_asaas_webhook_logs"("_limit" integer DEFAULT 50, "_offset" integer DEFAULT 0) RETURNS TABLE("id" "uuid", "asaas_event_id" "text", "event_type" "text", "payload" "jsonb", "processed" boolean, "processed_at" timestamp with time zone, "error_message" "text", "signature" "text", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -109,7 +109,58 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] record_asaas_webhook_event (schema.sql L9953-L9999)
+-- [RPC/FUNCTION] record_and_validate_asaas_webhook (schema.sql L10619-L10667)
+CREATE OR REPLACE FUNCTION "public"."record_and_validate_asaas_webhook"("_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text" DEFAULT NULL::"text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id uuid;
+  v_already_processed boolean;
+BEGIN
+  -- Inserir novo evento de forma estritamente idempotente
+  INSERT INTO public.asaas_webhook_events (
+    asaas_event_id,
+    event_type,
+    payload,
+    signature,
+    processed,
+    created_at
+  )
+  VALUES (
+    _event_id,
+    _event_type,
+    _payload,
+    _signature,
+    false,
+    now()
+  )
+  ON CONFLICT (asaas_event_id) DO NOTHING
+  RETURNING id, processed INTO v_id, v_already_processed;
+
+  -- Se já existia registro prévio (conflito de concorrência ou reenvio do Asaas)
+  IF v_id IS NULL THEN
+    SELECT id, COALESCE(processed, false) 
+    INTO v_id, v_already_processed
+    FROM public.asaas_webhook_events
+    WHERE asaas_event_id = _event_id;
+
+    RETURN jsonb_build_object(
+      'already_processed', v_already_processed,
+      'event_id', v_id,
+      'status', 'DUPLICATE_IGNORED'
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'already_processed', false,
+    'event_id', v_id,
+    'status', 'RECORDED'
+  );
+END;
+$$;
+
+-- [RPC/FUNCTION] record_asaas_webhook_event (schema.sql L10673-L10719)
 CREATE OR REPLACE FUNCTION "public"."record_asaas_webhook_event"("_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -158,7 +209,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] toggle_subscription_auto_renew (schema.sql L11612-L11640)
+-- [RPC/FUNCTION] toggle_subscription_auto_renew (schema.sql L12856-L12884)
 CREATE OR REPLACE FUNCTION "public"."toggle_subscription_auto_renew"("_clinic_id" "uuid", "_auto_renew" boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -189,88 +240,10 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L13115-L13190)
-CREATE OR REPLACE FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text") RETURNS "jsonb"
-    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public'
-    AS $$
-declare
-  v_normalized_code text;
-  v_coupon public.subscription_coupons%rowtype;
-begin
-  if _code is null or trim(_code) = '' then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Código do cupom não informado.'
-    );
-  end if;
-
-  v_normalized_code := upper(trim(_code));
-
-  select * into v_coupon
-  from public.subscription_coupons
-  where code = v_normalized_code;
-
-  if v_coupon.id is null then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Cupom inválido ou não encontrado.'
-    );
-  end if;
-
-  if not v_coupon.is_active then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Este cupom não está mais ativo.'
-    );
-  end if;
-
-  if v_coupon.valid_from > now() then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Este cupom ainda não está vigente.'
-    );
-  end if;
-
-  if v_coupon.valid_until is not null and v_coupon.valid_until < now() then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Este cupom expirou.'
-    );
-  end if;
-
-  if v_coupon.max_redemptions is not null and v_coupon.times_redeemed >= v_coupon.max_redemptions then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Limite máximo de resgates deste cupom atingido.'
-    );
-  end if;
-
-  if v_coupon.applicable_plans is not null and array_length(v_coupon.applicable_plans, 1) > 0 then
-    if not (_plan_type = any(v_coupon.applicable_plans)) then
-      return jsonb_build_object(
-        'valid', false,
-        'message', 'Este cupom não é aplicável ao plano selecionado.'
-      );
-    end if;
-  end if;
-
-  return jsonb_build_object(
-    'valid', true,
-    'coupon_id', v_coupon.id,
-    'code', v_coupon.code,
-    'description', v_coupon.description,
-    'discount_type', v_coupon.discount_type,
-    'discount_value', v_coupon.discount_value,
-    'message', 'Cupom aplicado com sucesso!'
-  );
-end;
-$$;
-
--- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L13196-L13476)
+-- [RPC/FUNCTION] validate_subscription_coupon (schema.sql L14450-L14732)
 CREATE OR REPLACE FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_billing_cycle" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
   v_normalized_code text;
@@ -545,12 +518,14 @@ begin
     'discount_value', v_coupon.discount_value,
     'discount_duration_type', v_coupon.discount_duration_type,
     'discount_duration_months', v_coupon.discount_duration_months,
+    'affiliate_id', v_coupon.affiliate_id,
+    'is_affiliate_coupon', coalesce(v_coupon.is_affiliate_coupon, false),
     'message', 'Cupom aplicado com sucesso!'
   );
 end;
 $$;
 
--- [TABLE] asaas_webhook_events (schema.sql L13620-L13630)
+-- [TABLE] asaas_webhook_events (schema.sql L15084-L15094)
 CREATE TABLE IF NOT EXISTS "public"."asaas_webhook_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "asaas_event_id" "text" NOT NULL,
@@ -563,34 +538,7 @@ CREATE TABLE IF NOT EXISTS "public"."asaas_webhook_events" (
     "signature" "text"
 );
 
--- [TABLE] subscription_coupons (schema.sql L14672-L14696)
-CREATE TABLE IF NOT EXISTS "public"."subscription_coupons" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "code" "text" NOT NULL,
-    "description" "text",
-    "discount_type" "text" NOT NULL,
-    "discount_value" numeric(10,2) DEFAULT 0.00 NOT NULL,
-    "max_redemptions" integer,
-    "times_redeemed" integer DEFAULT 0 NOT NULL,
-    "valid_from" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "valid_until" timestamp with time zone,
-    "is_active" boolean DEFAULT true NOT NULL,
-    "applicable_plans" "text"[],
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "discount_duration_type" "text" DEFAULT 'FOREVER'::"text" NOT NULL,
-    "discount_duration_months" integer,
-    "eligibility_rules" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    CONSTRAINT "subscription_coupons_code_check" CHECK ((("code" = "upper"(TRIM(BOTH FROM "code"))) AND ("length"("code") >= 3))),
-    CONSTRAINT "subscription_coupons_discount_duration_months_check" CHECK ((("discount_duration_months" IS NULL) OR ("discount_duration_months" > 0))),
-    CONSTRAINT "subscription_coupons_discount_duration_type_check" CHECK (("discount_duration_type" = ANY (ARRAY['ONCE'::"text", 'REPEATING'::"text", 'FOREVER'::"text"]))),
-    CONSTRAINT "subscription_coupons_discount_type_check" CHECK (("discount_type" = ANY (ARRAY['PERCENTAGE'::"text", 'FIXED_AMOUNT'::"text", 'TRIAL_DAYS'::"text"]))),
-    CONSTRAINT "subscription_coupons_discount_value_check" CHECK (("discount_value" >= (0)::numeric)),
-    CONSTRAINT "subscription_coupons_max_redemptions_check" CHECK ((("max_redemptions" IS NULL) OR ("max_redemptions" > 0))),
-    CONSTRAINT "subscription_coupons_times_redeemed_check" CHECK (("times_redeemed" >= 0))
-);
-
--- [TABLE] subscription_invoices (schema.sql L14714-L14750)
+-- [TABLE] subscription_invoices (schema.sql L16351-L16387)
 CREATE TABLE IF NOT EXISTS "public"."subscription_invoices" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -629,25 +577,25 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_invoices" (
     CONSTRAINT "subscription_invoices_status_check" CHECK (("status" = ANY (ARRAY['PENDING'::"text", 'RECEIVED'::"text", 'CONFIRMED'::"text", 'OVERDUE'::"text", 'REFUNDED'::"text", 'DELETED'::"text", 'DUNNING_RECEIVED'::"text", 'RECEIVED_IN_CASH'::"text", 'AWAITING_PAYMENT'::"text"])))
 );
 
--- [POLICY] Owners e gestores podem ver as faturas ON subscription_invoices (schema.sql L16955-L16957)
+-- [POLICY] Owners e gestores podem ver as faturas ON subscription_invoices (schema.sql L19135-L19137)
 CREATE POLICY "Owners e gestores podem ver as faturas" ON "public"."subscription_invoices" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "subscription_invoices"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR "public"."current_user_can"('subscription_billing.read'::"text", "subscription_invoices"."clinic_id"))))));
 
--- [POLICY] Platform admins podem ver eventos de webhook ON asaas_webhook_events (schema.sql L16973-L16975)
+-- [POLICY] Platform admins podem ver eventos de webhook ON asaas_webhook_events (schema.sql L19169-L19171)
 CREATE POLICY "Platform admins podem ver eventos de webhook" ON "public"."asaas_webhook_events" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform admins podem ver todas as faturas ON subscription_invoices (schema.sql L16995-L16997)
+-- [POLICY] Platform admins podem ver todas as faturas ON subscription_invoices (schema.sql L19191-L19193)
 CREATE POLICY "Platform admins podem ver todas as faturas" ON "public"."subscription_invoices" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform admins possuem controle total dos cupons ON subscription_coupons (schema.sql L17007-L17009)
+-- [POLICY] Platform admins possuem controle total dos cupons ON subscription_coupons (schema.sql L19203-L19205)
 CREATE POLICY "Platform admins possuem controle total dos cupons" ON "public"."subscription_coupons" TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Todos autenticados e anonimos podem consultar cupons ativos ON subscription_coupons (schema.sql L17121-L17121)
+-- [POLICY] Todos autenticados e anonimos podem consultar cupons ativos ON subscription_coupons (schema.sql L19345-L19345)
 CREATE POLICY "Todos autenticados e anonimos podem consultar cupons ativos" ON "public"."subscription_coupons" FOR SELECT USING ((("is_active" = true) AND (("valid_until" IS NULL) OR ("valid_until" >= "now"()))));

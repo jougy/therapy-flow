@@ -148,6 +148,8 @@ vi.mock("@/components/ui/select", () => {
   const SelectTrigger = ({ children }: { children?: ReactNode }) => <>{children}</>;
   const SelectValue = ({ children, placeholder }: { children?: ReactNode; placeholder?: string }) => <>{children ?? placeholder}</>;
   const SelectContent = ({ children }: { children?: ReactNode }) => <>{children}</>;
+  const SelectGroup = ({ children }: { children?: ReactNode }) => <>{children}</>;
+  const SelectLabel = ({ children }: { children?: ReactNode }) => <>{children}</>;
   const SelectItem = ({ children }: { children?: ReactNode }) => <>{children}</>;
 
   SelectItem.displayName = "MockSelectItem";
@@ -155,7 +157,9 @@ vi.mock("@/components/ui/select", () => {
   return {
     Select,
     SelectContent,
+    SelectGroup,
     SelectItem,
+    SelectLabel,
     SelectTrigger,
     SelectValue,
   };

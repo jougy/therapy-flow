@@ -24,6 +24,8 @@ const CadastroCompleto = lazy(() => import("./pages/CadastroCompleto"));
 const CadastroContaAlfa = lazy(() => import("./pages/CadastroContaAlfa"));
 const CadastroPacienteCompartilhado = lazy(() => import("./pages/CadastroPacienteCompartilhado"));
 const AutorizacaoMenorPublica = lazy(() => import("./pages/AutorizacaoMenorPublica"));
+const AssinarDocumentoPublico = lazy(() => import("./pages/AssinarDocumentoPublico"));
+const VerificarAssinaturaPublica = lazy(() => import("./pages/VerificarAssinaturaPublica"));
 const PublicLegalDocuments = lazy(() => import("./pages/PublicLegalDocuments"));
 const ClinicDashboard = lazy(() => import("./pages/ClinicDashboard"));
 const ClinicAgendaPage = lazy(() => import("./pages/ClinicAgendaPage"));
@@ -281,6 +283,8 @@ const App = () => (
                       <Route path="/cadastro/conta-alfa" element={<Navigate to="/auth/cadastro" replace />} />
                       <Route path="/cadastro/paciente/:token" element={<CadastroPacienteCompartilhado />} />
                       <Route path="/autorizacao-menor/:token" element={<AutorizacaoMenorPublica />} />
+                      <Route path="/assinar-documento/:token" element={<AssinarDocumentoPublico />} />
+                      <Route path="/verificar-assinatura/:token" element={<VerificarAssinaturaPublica />} />
                       <Route path="/termos" element={<PublicLegalDocuments initialTab="termos" />} />
                       <Route path="/privacidade" element={<PublicLegalDocuments initialTab="privacidade" />} />
                       <Route path="/terms" element={<Navigate to="/termos" replace />} />

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import OnboardingClinica from "@/pages/OnboardingClinica";
@@ -34,6 +34,9 @@ vi.mock("@/contexts/FeatureFlagsContext", () => ({
 }));
 
 describe("OnboardingClinica", () => {
+  const getFormFooter = (container: HTMLElement) =>
+    container.querySelector('form button[type="submit"]')!.parentElement as HTMLElement;
+
   const fillValidCard = () => {
     fireEvent.change(screen.getByLabelText(/Nome Impresso no Cartão/i), { target: { value: "DRA MARIA SILVA" } });
     fireEvent.change(screen.getByLabelText(/Número do Cartão/i), { target: { value: "4111 1111 1111 1111" } });
@@ -87,7 +90,7 @@ describe("OnboardingClinica", () => {
       session: { user: { id: "user-1", email: "user@exemplo.com" } },
     } as unknown as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/onboarding-clinica?plan=solo"]}>
         <OnboardingClinica />
       </MemoryRouter>
@@ -98,7 +101,7 @@ describe("OnboardingClinica", () => {
     expect(screen.getByLabelText(/Número do Cartão/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Validade/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Código de Segurança/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i })).toBeInTheDocument();
+    expect(within(getFormFooter(container)).getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i })).toBeInTheDocument();
   });
 
   it("blocks submission and keeps submit button disabled until terms of consent are accepted", async () => {
@@ -108,7 +111,7 @@ describe("OnboardingClinica", () => {
       session: { user: { id: "user-1", email: "user@exemplo.com" } },
     } as unknown as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/onboarding-clinica?plan=solo"]}>
         <OnboardingClinica />
       </MemoryRouter>
@@ -119,7 +122,7 @@ describe("OnboardingClinica", () => {
     fireEvent.change(screen.getByLabelText(/Cidade/i), { target: { value: "São Paulo" } });
     fireEvent.change(screen.getByLabelText(/UF/i), { target: { value: "SP" } });
 
-    const submitBtn = screen.getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
+    const submitBtn = within(getFormFooter(container)).getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
     expect(submitBtn).toBeDisabled();
 
     const termsCheckbox = screen.getByTestId("owner-terms-consent-checkbox");
@@ -138,21 +141,24 @@ describe("OnboardingClinica", () => {
       session: { user: { id: "user-1", email: "user@exemplo.com" } },
     } as unknown as ReturnType<typeof useAuth>);
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/onboarding-clinica?plan=solo"]}>
         <OnboardingClinica />
       </MemoryRouter>
     );
 
-    const openModalLink = screen.getByRole("button", { name: /Termos de Uso e Responsabilidade do Titular/i });
+    const termsContainer = screen.getByTestId("owner-terms-consent-checkbox").closest("div")!.parentElement as HTMLElement;
+    const openModalLink = within(termsContainer).getByRole("button", { name: /Termos de Uso e Responsabilidade do Titular/i });
     fireEvent.click(openModalLink);
 
-    expect(await screen.findByText(/Termos de Uso e Consentimento \(LGPD\)/i)).toBeInTheDocument();
+    const modalTitle = await screen.findByText(/Termos de Uso e Consentimento \(LGPD\)/i);
+    expect(modalTitle).toBeInTheDocument();
 
-    const acceptModalBtn = screen.getByRole("button", { name: /Li e Aceito os Termos/i });
+    const dialogFooter = modalTitle.closest('[role="dialog"]')!.children[2] as HTMLElement;
+    const acceptModalBtn = within(dialogFooter).getByRole("button", { name: /Li e Aceito os Termos/i });
     fireEvent.click(acceptModalBtn);
 
-    const submitBtn = screen.getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
+    const submitBtn = within(getFormFooter(container)).getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
     expect(submitBtn).not.toBeDisabled();
   });
 
@@ -185,7 +191,7 @@ describe("OnboardingClinica", () => {
       update: mockUpdate,
     });
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/onboarding-clinica?plan=solo"]}>
         <OnboardingClinica />
       </MemoryRouter>
@@ -203,7 +209,7 @@ describe("OnboardingClinica", () => {
     fireEvent.click(termsCheckbox);
 
     // Submit form
-    const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
+    const submitBtn = within(getFormFooter(container)).getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
@@ -231,7 +237,7 @@ describe("OnboardingClinica", () => {
       }));
       expect(mockRefreshAuthState).toHaveBeenCalled();
       expect(mockSelectClinic).toHaveBeenCalledWith("new-solo-clinic-id");
-    });
+    }, { interval: 5 });
   });
 
   it("enforces minimum of 2 concurrent accesses for clinic plan", async () => {
@@ -264,7 +270,7 @@ describe("OnboardingClinica", () => {
       source: "EDGE_FUNCTION",
     });
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/onboarding-clinica?plan=solo"]}>
         <OnboardingClinica />
       </MemoryRouter>
@@ -281,10 +287,11 @@ describe("OnboardingClinica", () => {
     // Accept terms
     fireEvent.click(screen.getByTestId("owner-terms-consent-checkbox"));
 
-    const submitBtn = screen.getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
+    const submitBtn = within(getFormFooter(container)).getByRole("button", { name: /Verificar Cartão e Criar Clínica/i });
     fireEvent.click(submitBtn);
 
-    expect(await screen.findByText(/CNPJ Já Possui um Espaço Cadastrado/i)).toBeInTheDocument();
+    const duplicateHeading = await screen.findByText(/CNPJ Já Possui um Espaço Cadastrado/i, {}, { interval: 5 });
+    expect(duplicateHeading).toBeInTheDocument();
     expect(screen.getByText(/Clínica Bem Estar Matriz/i)).toBeInTheDocument();
 
     // Click confirm button
@@ -301,7 +308,8 @@ describe("OnboardingClinica", () => {
       update: mockUpdate,
     });
 
-    const confirmBtn = screen.getByRole("button", { name: /Sim, Criar Nova Unidade sob este CNPJ/i });
+    const dialogEl = duplicateHeading.closest('[role="dialog"]') as HTMLElement;
+    const confirmBtn = within(dialogEl).getByRole("button", { name: /Sim, Criar Nova Unidade sob este CNPJ/i });
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
@@ -310,7 +318,7 @@ describe("OnboardingClinica", () => {
           allow_duplicate_cnpj: true,
         })
       );
-    });
+    }, { interval: 5 });
   });
 
   it("updates existing clinic without requesting credit card when not in create mode", async () => {
@@ -348,7 +356,7 @@ describe("OnboardingClinica", () => {
       update: mockUpdate,
     });
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/onboarding-clinica"]}>
         <OnboardingClinica />
       </MemoryRouter>
@@ -356,7 +364,7 @@ describe("OnboardingClinica", () => {
 
     // In edit mode, card section should NOT be displayed
     expect(screen.queryByText(/Cartão de Crédito \(Opcional\)/i)).not.toBeInTheDocument();
-    const saveBtn = screen.getByRole("button", { name: /Salvar Alterações/i });
+    const saveBtn = within(getFormFooter(container)).getByRole("button", { name: /Salvar Alterações/i });
     expect(saveBtn).toBeInTheDocument();
 
     // Accept terms if required
@@ -367,7 +375,7 @@ describe("OnboardingClinica", () => {
       expect(supabaseMocks.from).toHaveBeenCalledWith("clinics");
       expect(mockUpdate).toHaveBeenCalled();
       expect(asaasMocks.createClinicWithVerifiedCard).not.toHaveBeenCalled();
-    });
+    }, { interval: 5 });
   });
 
   it("creates clinic without credit card when user leaves card inputs blank and routes to checkout", async () => {
@@ -394,7 +402,7 @@ describe("OnboardingClinica", () => {
       update: mockUpdate,
     });
 
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/onboarding-clinica?plan=prof_medio"]}>
         <OnboardingClinica />
       </MemoryRouter>
@@ -409,7 +417,7 @@ describe("OnboardingClinica", () => {
     fireEvent.click(screen.getByTestId("owner-terms-consent-checkbox"));
 
     // Submit form sem preencher cartão
-    const submitBtn = screen.getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
+    const submitBtn = within(getFormFooter(container)).getByRole("button", { name: /Criar Espaço e Ir para Pagamento/i });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
@@ -423,7 +431,7 @@ describe("OnboardingClinica", () => {
           credit_card_data: undefined,
         })
       );
-    });
+    }, { interval: 5 });
   });
 });
 

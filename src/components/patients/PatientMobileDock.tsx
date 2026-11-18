@@ -9,6 +9,7 @@ import {
   FolderOpen,
   BarChart3,
   FileCheck2,
+  UserCog,
   Activity,
   type LucideIcon,
 } from "lucide-react";
@@ -23,6 +24,7 @@ export type PatientMobileTab =
   | "historico"
   | "arquivos"
   | "estatisticas"
+  | "compartilhar"
   | "termos"
   | "status";
 
@@ -246,13 +248,14 @@ export const PatientMobileDock = memo(function PatientMobileDock({
   const dockItems: PatientMobileDockItem[] = [
     { id: "inicio", label: "Início", icon: Home },
     { id: "resumo", label: "Resumo", tooltipTitle: "Resumo clínico", icon: FileText },
+    { id: "compartilhar", label: "Cadastro", icon: UserCog },
     { id: "agendar", label: "Agendar", tooltipTitle: "Novo Agendamento", icon: CalendarDays },
     { id: "agenda_completa", label: "Agenda", tooltipTitle: "Agenda completa", icon: Calendar },
     { id: "atender", label: "Atender", icon: PlayCircle, primary: true },
+    { id: "termos", label: "Termos", icon: FileCheck2 },
     { id: "historico", label: "Histórico", icon: History },
     ...(showFiles ? [{ id: "arquivos" as const, label: "Arquivos", icon: FolderOpen }] : []),
     ...(showStats ? [{ id: "estatisticas" as const, label: "Estatísticas", tooltipTitle: "Estatísticas", icon: BarChart3 }] : []),
-    { id: "termos", label: "Termos", icon: FileCheck2 },
     { id: "status", label: "Status", icon: Activity },
   ];
 

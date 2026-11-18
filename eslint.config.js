@@ -5,7 +5,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "website", "supabase/functions", "backups", "scripts", "designlab"] },
+  { ignores: ["dist", "website", "supabase/functions", "backups", "scripts", "designlab", "mobile/android/**/build", "mobile/android/.gradle", "electron/dist", "electron/out"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

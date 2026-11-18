@@ -29,10 +29,10 @@ export const ConviteExpiredCard = ({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" asChild>
+            <Button className="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white" asChild>
               <Link to={destination}>Acessar Clínica Agora</Link>
             </Button>
-            <Button variant="outline" className="w-full" asChild>
+            <Button variant="outline" className="w-full min-h-[44px]" asChild>
               <Link to="/espacopessoal">Ir para meu espaço pessoal</Link>
             </Button>
           </CardContent>
@@ -54,10 +54,10 @@ export const ConviteExpiredCard = ({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <Button className="w-full" asChild>
+          <Button className="w-full min-h-[44px]" asChild>
             <Link to="/auth">Ir para o login</Link>
           </Button>
-          <Button variant="outline" className="w-full" asChild>
+          <Button variant="outline" className="w-full min-h-[44px]" asChild>
             <Link to="/auth/cadastro">Criar uma nova conta</Link>
           </Button>
         </CardContent>

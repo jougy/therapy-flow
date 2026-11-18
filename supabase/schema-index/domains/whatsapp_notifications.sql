@@ -3,7 +3,7 @@
 -- Fonte SSOT: supabase/schema.sql
 -- ==========================================================================
 
--- [RPC/FUNCTION] create_due_agenda_reminder_notifications (schema.sql L2417-L2473)
+-- [RPC/FUNCTION] create_due_agenda_reminder_notifications (schema.sql L2644-L2700)
 CREATE OR REPLACE FUNCTION "public"."create_due_agenda_reminder_notifications"("_lookahead" interval DEFAULT '00:30:00'::interval) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -62,7 +62,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] notification_preferences (schema.sql L3890-L3904)
+-- [TABLE] notification_preferences (schema.sql L4145-L4159)
 CREATE TABLE IF NOT EXISTS "public"."notification_preferences" (
     "user_id" "uuid" NOT NULL,
     "sound_mode" "text" DEFAULT 'default'::"text" NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS "public"."notification_preferences" (
     CONSTRAINT "notification_preferences_sound_mode_check" CHECK (("sound_mode" = ANY (ARRAY['default'::"text", 'silent'::"text"])))
 );
 
--- [RPC/FUNCTION] ensure_notification_preferences (schema.sql L3910-L3932)
+-- [RPC/FUNCTION] ensure_notification_preferences (schema.sql L4165-L4187)
 CREATE OR REPLACE FUNCTION "public"."ensure_notification_preferences"("_user_id" "uuid") RETURNS "public"."notification_preferences"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -104,7 +104,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] notification_category_enabled (schema.sql L9160-L9173)
+-- [RPC/FUNCTION] notification_category_enabled (schema.sql L9585-L9598)
 CREATE OR REPLACE FUNCTION "public"."notification_category_enabled"("_preferences" "public"."notification_preferences", "_category" "text") RETURNS boolean
     LANGUAGE "sql" IMMUTABLE
     SET "search_path" TO 'public'
@@ -120,7 +120,7 @@ CREATE OR REPLACE FUNCTION "public"."notification_category_enabled"("_preference
   END;
 $$;
 
--- [RPC/FUNCTION] purge_old_app_notifications (schema.sql L9760-L9774)
+-- [RPC/FUNCTION] purge_old_app_notifications (schema.sql L10296-L10310)
 CREATE OR REPLACE FUNCTION "public"."purge_old_app_notifications"("_retention_days" integer DEFAULT 60) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -137,7 +137,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L11646-L11654)
+-- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L12890-L12898)
 CREATE OR REPLACE FUNCTION "public"."touch_notification_preferences_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -148,7 +148,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] app_notifications (schema.sql L13594-L13614)
+-- [TABLE] app_notifications (schema.sql L15058-L15078)
 CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -171,14 +171,34 @@ CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     CONSTRAINT "app_notifications_title_check" CHECK ((("char_length"("title") >= 1) AND ("char_length"("title") <= 160)))
 );
 
--- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L17167-L17167)
+-- [TABLE] mfa_recovery_challenges (schema.sql L15684-L15698)
+CREATE TABLE IF NOT EXISTS "public"."mfa_recovery_challenges" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "channel" "text" NOT NULL,
+    "target_masked" "text" NOT NULL,
+    "code_hash" "text" NOT NULL,
+    "attempts" integer DEFAULT 0 NOT NULL,
+    "max_attempts" integer DEFAULT 5 NOT NULL,
+    "expires_at" timestamp with time zone NOT NULL,
+    "verified_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "ip_address" "text",
+    "user_agent" "text",
+    CONSTRAINT "mfa_recovery_challenges_channel_check" CHECK (("channel" = ANY (ARRAY['whatsapp'::"text", 'email'::"text"])))
+);
+
+-- [POLICY] Service role manages mfa recovery challenges ON mfa_recovery_challenges (schema.sql L19285-L19285)
+CREATE POLICY "Service role manages mfa recovery challenges" ON "public"."mfa_recovery_challenges" TO "service_role" USING (true) WITH CHECK (true);
+
+-- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L19415-L19415)
 CREATE POLICY "Users delete own app notifications" ON "public"."app_notifications" FOR DELETE USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L17207-L17207)
+-- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L19465-L19465)
 CREATE POLICY "Users manage own notification preferences" ON "public"."notification_preferences" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own app notifications ON app_notifications (schema.sql L17278-L17278)
+-- [POLICY] Users read own app notifications ON app_notifications (schema.sql L19544-L19544)
 CREATE POLICY "Users read own app notifications" ON "public"."app_notifications" FOR SELECT USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users update own app notifications ON app_notifications (schema.sql L17334-L17334)
+-- [POLICY] Users update own app notifications ON app_notifications (schema.sql L19608-L19608)
 CREATE POLICY "Users update own app notifications" ON "public"."app_notifications" FOR UPDATE USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));

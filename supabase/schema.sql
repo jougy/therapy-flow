@@ -13,13 +13,6 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 
-CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions";
-
-
-
-
-
-
 COMMENT ON SCHEMA "public" IS 'standard public schema';
 
 
@@ -32,6 +25,13 @@ CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
 
 
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
+
+
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA "public";
 
 
 
@@ -1513,6 +1513,227 @@ $$;
 ALTER FUNCTION "public"."buy_clinic_subaccount_extra_spaces"("_clinic_id" "uuid", "_quantity" integer, "_billing_type" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."calculate_affiliate_tier_benefits"("_active_referrals" integer, "_floor_tier" "text" DEFAULT 'bronze'::"text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" IMMUTABLE PARALLEL SAFE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    v_active integer := GREATEST(COALESCE(_active_referrals, 0), 0);
+    v_norm_floor text := lower(trim(COALESCE(_floor_tier, 'bronze')));
+    v_volume_rank integer;
+    v_floor_rank integer;
+    v_final_rank integer;
+    v_tier text;
+    v_first_month numeric(5,2);
+    v_recurring numeric(5,2);
+    v_discount numeric(5,2);
+    v_eligible_plan text;
+    v_waived boolean;
+    v_extra jsonb;
+BEGIN
+    -- 3.1. Mapeamento hierárquico do Piso Garantido (_floor_tier)
+    -- Suporte a identificadores canônicos e aliases em português
+    CASE v_norm_floor
+        WHEN 'legendary'  THEN v_floor_rank := 8;
+        WHEN 'lenda'      THEN v_floor_rank := 8;
+        WHEN 'diamond'    THEN v_floor_rank := 7;
+        WHEN 'diamante'   THEN v_floor_rank := 7;
+        WHEN 'emerald'    THEN v_floor_rank := 6;
+        WHEN 'esmeralda'  THEN v_floor_rank := 6;
+        WHEN 'ruby'       THEN v_floor_rank := 5;
+        WHEN 'rubi'       THEN v_floor_rank := 5;
+        WHEN 'sapphire'   THEN v_floor_rank := 4;
+        WHEN 'safira'     THEN v_floor_rank := 4;
+        WHEN 'gold'       THEN v_floor_rank := 3;
+        WHEN 'ouro'       THEN v_floor_rank := 3;
+        WHEN 'silver'     THEN v_floor_rank := 2;
+        WHEN 'prata'      THEN v_floor_rank := 2;
+        ELSE                   v_floor_rank := 1; -- Bronze ou default
+    END CASE;
+
+    -- 3.2. Mapeamento por Volume Orgânico de Assinantes Ativos
+    IF v_active >= 201 THEN
+        v_volume_rank := 8; -- Legendary (201+ ativos)
+    ELSIF v_active >= 101 THEN
+        v_volume_rank := 7; -- Diamond (101 a 200 ativos)
+    ELSIF v_active >= 51 THEN
+        v_volume_rank := 6; -- Emerald (51 a 100 ativos)
+    ELSIF v_active >= 31 THEN
+        v_volume_rank := 5; -- Ruby (31 a 50 ativos)
+    ELSIF v_active >= 21 THEN
+        v_volume_rank := 4; -- Sapphire (21 a 30 ativos)
+    ELSIF v_active >= 11 THEN
+        v_volume_rank := 3; -- Gold (11 a 20 ativos)
+    ELSIF v_active >= 4 THEN
+        v_volume_rank := 2; -- Silver (4 a 10 ativos)
+    ELSE
+        v_volume_rank := 1; -- Bronze (0 a 3 ativos)
+    END IF;
+
+    -- 3.3. Piso Estratégico Garantido (assume o maior degrau entre volume e piso contratual)
+    v_final_rank := GREATEST(v_volume_rank, v_floor_rank);
+
+    -- 3.4. Definição determinística das vantagens e benefícios dos 8 Tiers Oficiais
+    CASE v_final_rank
+        WHEN 8 THEN -- Legendary (201+ ativos)
+            v_tier := 'legendary';
+            v_first_month := 65.00;
+            v_recurring := 30.00;
+            v_discount := 100.00;
+            v_eligible_plan := 'enterprise';
+            v_waived := true;
+            v_extra := jsonb_build_object(
+                'badge_label', 'Lenda Pluri-Health',
+                'color', '#7C3AED',
+                'icon', '👑',
+                'min_referrals', 201,
+                'max_referrals', null,
+                'description', '100% OFF no Plano Enterprise, negociação de patrocínios customizados e canal executivo direto.',
+                'perks', jsonb_build_array('enterprise_plan_waived_100', 'custom_sponsorships', 'executive_direct_channel', 'legendary_badge')
+            );
+
+        WHEN 7 THEN -- Diamond (101-200 ativos)
+            v_tier := 'diamond';
+            v_first_month := 60.00;
+            v_recurring := 28.00;
+            v_discount := 100.00;
+            v_eligible_plan := 'enterprise';
+            v_waived := true;
+            v_extra := jsonb_build_object(
+                'badge_label', 'Parceiro Diamante',
+                'color', '#06B6D4',
+                'icon', '💎',
+                'min_referrals', 101,
+                'max_referrals', 200,
+                'description', '100% OFF no Plano Enterprise e copatrocínio de 50% do estande em congressos e simpósios.',
+                'perks', jsonb_build_array('enterprise_plan_waived_100', 'booth_co_sponsorship_50', 'vip_board_summit', 'diamond_badge')
+            );
+
+        WHEN 6 THEN -- Emerald (51-100 ativos)
+            v_tier := 'emerald';
+            v_first_month := 55.00;
+            v_recurring := 25.00;
+            v_discount := 100.00;
+            v_eligible_plan := 'enterprise';
+            v_waived := true;
+            v_extra := jsonb_build_object(
+                'badge_label', 'Autoridade Esmeralda',
+                'color', '#059669',
+                'icon', '🟢',
+                'min_referrals', 51,
+                'max_referrals', 100,
+                'description', '100% OFF no Plano Enterprise e destaque oficial em eventos, palestras e webinars da Pluri.',
+                'perks', jsonb_build_array('enterprise_plan_waived_100', 'events_speaker_reference', 'emerald_badge')
+            );
+
+        WHEN 5 THEN -- Ruby (31-50 ativos)
+            v_tier := 'ruby';
+            v_first_month := 50.00;
+            v_recurring := 22.00;
+            v_discount := 100.00;
+            v_eligible_plan := 'enterprise';
+            v_waived := true;
+            v_extra := jsonb_build_object(
+                'badge_label', 'Líder Rubi',
+                'color', '#E11D48',
+                'icon', '🔴',
+                'min_referrals', 31,
+                'max_referrals', 50,
+                'description', '100% OFF no Plano Enterprise e consultoria trimestral de estratégia.',
+                'perks', jsonb_build_array('enterprise_plan_waived_100', 'vip_founders_group', 'quarterly_strategy_consulting', 'ruby_badge')
+            );
+
+        WHEN 4 THEN -- Sapphire (21-30 ativos)
+            v_tier := 'sapphire';
+            v_first_month := 45.00;
+            v_recurring := 19.00;
+            v_discount := 100.00;
+            v_eligible_plan := 'enterprise';
+            v_waived := true;
+            v_extra := jsonb_build_object(
+                'badge_label', 'Embaixador Safira',
+                'color', '#2563EB',
+                'icon', '🔵',
+                'min_referrals', 21,
+                'max_referrals', 30,
+                'description', '100% OFF no Plano Enterprise e acesso ao Grupo VIP de Afiliados e Fundadores.',
+                'perks', jsonb_build_array('enterprise_plan_waived_100', 'vip_founders_group', 'sapphire_badge')
+            );
+
+        WHEN 3 THEN -- Gold (11-20 ativos)
+            v_tier := 'gold';
+            v_first_month := 40.00;
+            v_recurring := 16.00;
+            v_discount := 100.00;
+            v_eligible_plan := 'team';
+            v_waived := true;
+            v_extra := jsonb_build_object(
+                'badge_label', 'Embaixador Ouro',
+                'color', '#EAB308',
+                'icon', '🟡',
+                'min_referrals', 11,
+                'max_referrals', 20,
+                'description', '100% OFF no Plano Clínica com Equipe e suporte prioritário via WhatsApp dedicado.',
+                'perks', jsonb_build_array('team_plan_waived_100', 'dedicated_whatsapp_support', 'gold_badge')
+            );
+
+        WHEN 2 THEN -- Silver (4-10 ativos)
+            v_tier := 'silver';
+            v_first_month := 35.00;
+            v_recurring := 13.00;
+            v_discount := 100.00;
+            v_eligible_plan := 'solo';
+            v_waived := true;
+            v_extra := jsonb_build_object(
+                'badge_label', 'Embaixador Prata',
+                'color', '#94A3B8',
+                'icon', '⚪',
+                'min_referrals', 4,
+                'max_referrals', 10,
+                'solo_plan_discount_percent', 100.00,
+                'team_plan_discount_percent', 50.00,
+                'description', '100% OFF no Plano Profissional Solo ou 50% OFF no Plano com Equipe. Tag oficial de Embaixador Prata.',
+                'perks', jsonb_build_array('solo_plan_waived_100', 'team_plan_discount_50', 'silver_badge')
+            );
+
+        ELSE -- Bronze (0-3 ativos)
+            v_tier := 'bronze';
+            v_first_month := 30.00;
+            v_recurring := 10.00;
+            v_discount := 0.00;
+            v_eligible_plan := 'none';
+            v_waived := false;
+            v_extra := jsonb_build_object(
+                'badge_label', 'Afiliado Bronze',
+                'color', '#CD7F32',
+                'icon', '🟤',
+                'min_referrals', 0,
+                'max_referrals', 3,
+                'description', 'Mini-CRM, link oficial, cupom nominal próprio e kit inicial de divulgação.',
+                'perks', jsonb_build_array('mini_crm', 'affiliate_link', 'nominal_coupon', 'starter_kit', 'bronze_badge')
+            );
+    END CASE;
+
+    RETURN jsonb_build_object(
+        'tier', v_tier,
+        'first_month_commission_percent', v_first_month,
+        'recurring_commission_percent', v_recurring,
+        'plan_discount_percent', v_discount,
+        'eligible_plan_tier', v_eligible_plan,
+        'is_subscription_waived', v_waived,
+        'extra_benefits', v_extra
+    );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."calculate_affiliate_tier_benefits"("_active_referrals" integer, "_floor_tier" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."calculate_affiliate_tier_benefits"("_active_referrals" integer, "_floor_tier" "text") IS 'Calcula deterministicamente benefícios, comissões de fechamento/recorrência, isenções de planos e perks dos 8 tiers gamificados de afiliados com suporte a piso estratégico.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."calculate_community_template_fields_count"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -1565,7 +1786,7 @@ ALTER FUNCTION "public"."can_perform_action"("_capability" "text", "_clinic_id" 
 
 
 CREATE OR REPLACE FUNCTION "public"."can_read_clinic_data"("_clinic_id" "uuid") RETURNS boolean
-    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER PARALLEL SAFE
     SET "search_path" TO 'public'
     AS $$
 DECLARE
@@ -1837,6 +2058,7 @@ DECLARE
   v_is_trial boolean := false;
   v_message text := '';
   v_plan_text text;
+  v_is_courtesy boolean := false;
 BEGIN
   -- Buscar assinatura da clínica
   SELECT * INTO v_sub
@@ -1844,8 +2066,13 @@ BEGIN
   WHERE clinic_id = p_clinic_id
   LIMIT 1;
 
-  -- Se não encontrou ou se for trial / beta
-  IF v_sub IS NULL OR v_sub.status = 'TRIAL' OR COALESCE(v_sub.is_free_trial, false) = true OR v_sub.status = 'BETA' THEN
+  -- Checar explicitamente se é cortesia parceira
+  IF v_sub IS NOT NULL AND (v_sub.status = 'COURTESY' OR COALESCE(v_sub.is_courtesy, false) = true) THEN
+    v_is_courtesy := true;
+  END IF;
+
+  -- Se não encontrou ou se for trial / beta (e NÃO for cortesia)
+  IF NOT v_is_courtesy AND (v_sub IS NULL OR v_sub.status = 'TRIAL' OR COALESCE(v_sub.is_free_trial, false) = true OR v_sub.status = 'BETA') THEN
     v_is_trial := true;
   END IF;
 
@@ -1865,7 +2092,7 @@ BEGIN
         v_message := 'Você atingiu o limite de ' || v_limit || ' atendimentos do seu período de teste grátis. Faça o upgrade para continuar evoluindo seus pacientes.';
       END IF;
     ELSE
-      -- Ilimitado em todos os planos pagos
+      -- Ilimitado em todos os planos pagos e cortesias
       v_limit := -1;
       v_allowed := true;
     END IF;
@@ -1884,7 +2111,7 @@ BEGIN
         v_message := 'Você atingiu o limite de ' || v_limit || ' pacientes do seu período de teste grátis. Faça o upgrade para cadastrar novos pacientes.';
       END IF;
     ELSE
-      -- Ilimitado em todos os planos pagos
+      -- Ilimitado em todos os planos pagos e cortesias
       v_limit := -1;
       v_allowed := true;
     END IF;
@@ -1903,15 +2130,15 @@ BEGIN
         v_allowed := false;
         v_message := 'O plano de teste grátis permite 1 modelo de formulário personalizado ativo. Faça o upgrade para criar modelos ilimitados.';
       END IF;
-    ELSIF v_plan_text = 'prof_basico' THEN
-      -- prof_basico tem cota de 1 formulário customizado complementar ativo
+    ELSIF v_plan_text = 'prof_basico' AND NOT v_is_courtesy THEN
+      -- prof_basico regular tem cota de 1 formulário customizado complementar ativo
       v_limit := 1;
       IF v_count >= v_limit THEN
         v_allowed := false;
         v_message := 'O Plano Profissional Básico permite 1 modelo customizado ativo complementar ao formulário padrão universal. Faça upgrade para formulários ilimitados.';
       END IF;
     ELSE
-      -- Todos os outros planos têm formulários customizados ilimitados (-1)
+      -- Todos os outros planos (e cortesia) têm formulários customizados ilimitados (-1)
       v_limit := -1;
       v_allowed := true;
     END IF;
@@ -1933,7 +2160,7 @@ ALTER FUNCTION "public"."check_clinic_plan_quota"("p_clinic_id" "uuid", "p_featu
 
 CREATE OR REPLACE FUNCTION "public"."cleanup_old_telemetry_events"("_page_view_retention_days" integer DEFAULT 15, "_security_event_retention_days" integer DEFAULT 90) RETURNS TABLE("deleted_page_views" bigint, "deleted_security_events" bigint)
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth', 'pg_temp'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_deleted_page_views BIGINT := 0;
@@ -2865,6 +3092,13 @@ BEGIN
          'sessions.delete' THEN
       RETURN _operational_role IN ('owner', 'admin');
 
+    WHEN 'marketing.affiliates.view',
+         'marketing.affiliates.manage' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+
+    WHEN 'marketing.affiliates.withdraw' THEN
+      RETURN _is_owner OR _operational_role = 'owner';
+
     WHEN 'patients.manage_exclusive' THEN
       RETURN _operational_role = 'owner';
 
@@ -3022,7 +3256,7 @@ BEGIN
 
     IF public.is_clinic_read_only(_resolved_clinic_id) THEN
       _is_read_only := true;
-      IF (_sub.status = 'TRIAL_EXPIRED' OR _sub.status = 'TRIAL' OR COALESCE(_sub.is_free_trial, false) = true) AND NOT _is_owner THEN
+      IF (_sub.status IN ('TRIAL_EXPIRED', 'TRIAL')) AND NOT _is_owner THEN
         RETURN false;
       END IF;
     END IF;
@@ -3138,6 +3372,8 @@ BEGIN
       RETURN _operational_role IN ('owner', 'admin');
     WHEN 'clinic_terms.manage' THEN
       RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'clinic_trash.manage' THEN
+      RETURN _operational_role IN ('owner', 'admin');
     WHEN 'forms.read' THEN
       RETURN _operational_role IN ('owner', 'admin', 'professional');
     WHEN 'forms.manage' THEN
@@ -3166,6 +3402,12 @@ BEGIN
       RETURN _operational_role IN ('owner', 'admin');
     WHEN 'subaccounts_analytics.read' THEN
       RETURN _is_clinic_tier AND _operational_role IN ('owner', 'admin');
+    WHEN 'marketing.affiliates.view' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'marketing.affiliates.manage' THEN
+      RETURN _operational_role IN ('owner', 'admin');
+    WHEN 'marketing.affiliates.withdraw' THEN
+      RETURN _is_owner OR _operational_role = 'owner';
     WHEN 'patients.read' THEN
       RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
     WHEN 'patients.write' THEN
@@ -3203,6 +3445,16 @@ BEGIN
     WHEN 'system.print' THEN
       RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant');
     ELSE
+      IF _canonical_capability <> _capability THEN
+        CASE _canonical_capability
+          WHEN 'patients.manage_groups', 'patients_groups.read' THEN
+            RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+          WHEN 'schedule.read', 'schedule.write' THEN
+            RETURN _operational_role IN ('owner', 'admin', 'professional', 'assistant', 'estagiario');
+          ELSE
+            RETURN false;
+        END CASE;
+      END IF;
       RETURN false;
   END CASE;
 END;
@@ -3349,7 +3601,7 @@ ALTER FUNCTION "public"."delete_current_user_notification"("_notification_id" "u
 
 CREATE OR REPLACE FUNCTION "public"."disable_user_totp"() RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
     _current_user_id UUID := auth.uid();
@@ -3357,6 +3609,9 @@ BEGIN
     IF _current_user_id IS NULL THEN
         RETURN jsonb_build_object('success', false, 'error', 'Não autenticado');
     END IF;
+
+    DELETE FROM public.user_mfa_credentials
+    WHERE user_id = _current_user_id;
 
     UPDATE public.profiles
     SET 
@@ -4035,6 +4290,28 @@ $$;
 ALTER FUNCTION "public"."expire_abandoned_security_sessions"("_abandoned_window" interval) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."expire_outdated_user_punishments"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth'
+    AS $$
+DECLARE
+  v_count integer := 0;
+BEGIN
+  UPDATE public.user_punishments up
+  SET is_active = false
+  WHERE up.is_active = true
+    AND up.expires_at IS NOT NULL
+    AND up.expires_at < now();
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."expire_outdated_user_punishments"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."finalize_overdue_agenda_events"("_batch_size" integer DEFAULT 500, "_timezone" "text" DEFAULT 'America/Sao_Paulo'::"text") RETURNS TABLE("cancelled_count" integer, "deleted_event_count" integer)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4215,6 +4492,42 @@ $$;
 
 
 ALTER FUNCTION "public"."generate_profile_public_code_for_clinic"("_clinic_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."generate_uuidv7"() RETURNS "uuid"
+    LANGUAGE "plpgsql" PARALLEL SAFE
+    AS $$
+DECLARE
+  unix_time_ms bigint;
+  uuid_bytes bytea;
+BEGIN
+  -- 48 bits de timestamp Unix em milissegundos
+  unix_time_ms := (extract(epoch from clock_timestamp()) * 1000)::bigint;
+
+  -- 16 bytes: 6 bytes tempo + 10 bytes aleatórios
+  uuid_bytes := set_byte(
+    set_byte(
+      gen_random_bytes(16),
+      0, (unix_time_ms >> 40)::int
+    ),
+    1, (unix_time_ms >> 32)::int
+  );
+  uuid_bytes := set_byte(uuid_bytes, 2, (unix_time_ms >> 24)::int);
+  uuid_bytes := set_byte(uuid_bytes, 3, (unix_time_ms >> 16)::int);
+  uuid_bytes := set_byte(uuid_bytes, 4, (unix_time_ms >> 8)::int);
+  uuid_bytes := set_byte(uuid_bytes, 5, unix_time_ms::int);
+
+  -- Versão 7 nos bits 48-51
+  uuid_bytes := set_byte(uuid_bytes, 6, (get_byte(uuid_bytes, 6) & 15) | 112);
+  -- Variante RFC 4122/9562 nos bits 64-65
+  uuid_bytes := set_byte(uuid_bytes, 8, (get_byte(uuid_bytes, 8) & 63) | 128);
+
+  RETURN encode(uuid_bytes, 'hex')::uuid;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."generate_uuidv7"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."get_active_platform_clinic_id"("_user_id" "uuid") RETURNS "uuid"
@@ -5517,6 +5830,68 @@ $$;
 ALTER FUNCTION "public"."get_current_user_pending_release_notes"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."get_document_signature_by_token"("p_token" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions', 'pg_temp'
+    AS $$
+DECLARE
+  _token_clean text := trim(coalesce(p_token, ''));
+  _doc public.clinic_document_signatures%ROWTYPE;
+  _clinic_name text;
+  _clinic_logo_url text;
+  _patient_name text;
+BEGIN
+  IF _token_clean = '' THEN
+    RAISE EXCEPTION 'Token de assinatura inválido.';
+  END IF;
+
+  SELECT *
+  INTO _doc
+  FROM public.clinic_document_signatures
+  WHERE sign_token = _token_clean
+    AND deleted_at IS NULL
+  LIMIT 1;
+
+  IF _doc.id IS NULL THEN
+    RAISE EXCEPTION 'Documento para assinatura não encontrado ou removido.';
+  END IF;
+
+  SELECT c.name, c.logo_url
+  INTO _clinic_name, _clinic_logo_url
+  FROM public.clinics c
+  WHERE c.id = _doc.clinic_id;
+
+  SELECT p.name
+  INTO _patient_name
+  FROM public.patients p
+  WHERE p.id = _doc.patient_id
+    AND p.deleted_at IS NULL;
+
+  RETURN jsonb_build_object(
+    'id', _doc.id,
+    'clinic_id', _doc.clinic_id,
+    'clinic_name', COALESCE(NULLIF(trim(_clinic_name), ''), 'Clínica'),
+    'clinic_logo_url', _clinic_logo_url,
+    'patient_id', _doc.patient_id,
+    'patient_name', _patient_name,
+    'session_id', _doc.session_id,
+    'template_id', _doc.template_id,
+    'template_title', _doc.template_title,
+    'rendered_markdown', _doc.rendered_markdown,
+    'status', _doc.status,
+    'signer_name', _doc.signer_name,
+    'signer_role', _doc.signer_role,
+    'signed_at', _doc.signed_at,
+    'already_signed', (_doc.status IN ('signed_in_person', 'signed_remote')),
+    'created_at', _doc.created_at
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_document_signature_by_token"("p_token" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."get_patient_registration_form"("_token" "text", "_password" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5730,7 +6105,7 @@ BEGIN
 
   -- 3. Retorno dos atendimentos com isolamento LGPD e guarda legal:
   --    a) Clínicas de terceiros (membro/colaborador): sessões detalhadas nominais só são
-  --       retornadas se o vínculo estiver ativo (status = 'active').
+  --       retornadas se o vínculo estiver ativo (membership_status = 'active').
   --    b) Própria clínica do usuário (account_owner): sessões históricas continuam sendo
   --       retornadas em modo leitura mesmo se is_hibernated = true (CFM 1.821 / 20 anos).
   --    c) Atendimentos particulares (s.clinic_id IS NULL): retornados diretamente.
@@ -6486,20 +6861,9 @@ ALTER FUNCTION "public"."get_session_share_summary"("_session_ids" "uuid"[]) OWN
 
 
 CREATE OR REPLACE FUNCTION "public"."get_user_active_governance"("_user_id" "uuid") RETURNS TABLE("punishment_id" "uuid", "punishment_type" "text", "applied_at" timestamp with time zone, "expires_at" timestamp with time zone, "reason" "text", "is_manual" boolean, "applied_by_name" "text")
-    LANGUAGE "plpgsql" SECURITY DEFINER
+    LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
     AS $$
-#variable_conflict use_column
-BEGIN
-  -- Auto-expire outdated punishments first
-  UPDATE public.user_punishments up
-  SET is_active = false
-  WHERE up.user_id = _user_id
-    AND up.is_active = true
-    AND up.expires_at IS NOT NULL
-    AND up.expires_at < now();
-
-  RETURN QUERY
   SELECT 
     p.id AS punishment_id,
     p.punishment_type,
@@ -6512,9 +6876,7 @@ BEGIN
   LEFT JOIN public.profiles prof ON prof.id = p.applied_by
   WHERE p.user_id = _user_id
     AND p.is_active = true
-    AND (p.expires_at IS NULL OR p.expires_at > now())
-  ORDER BY p.applied_at DESC;
-END;
+    AND (p.expires_at IS NULL OR p.expires_at > now());
 $$;
 
 
@@ -6522,8 +6884,8 @@ ALTER FUNCTION "public"."get_user_active_governance"("_user_id" "uuid") OWNER TO
 
 
 CREATE OR REPLACE FUNCTION "public"."get_user_clinic_id"("_user_id" "uuid") RETURNS "uuid"
-    LANGUAGE "sql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public'
+    LANGUAGE "sql" STABLE SECURITY DEFINER PARALLEL SAFE
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
   with platform_context as (
     select public.get_active_platform_clinic_id(_user_id) as clinic_id
@@ -6578,6 +6940,64 @@ $$;
 
 
 ALTER FUNCTION "public"."get_user_totp_status"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."handle_clinic_word_telemetry"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $_$
+DECLARE
+  clean_word text;
+  v_user_count int;
+  v_clinic_count int;
+BEGIN
+  clean_word := lower(trim(NEW.word));
+
+  -- Validação anti-spam / anti-PII mínima (somente letras e hífens, entre 3 e 35 caracteres)
+  IF length(clean_word) >= 3 AND length(clean_word) <= 35 AND clean_word ~ '^[a-zà-ÿ]+(-[a-zà-ÿ]+)*$' THEN
+    
+    -- 1. Garante registro na candidata
+    INSERT INTO public.global_word_candidates (word, user_count, clinic_count)
+    VALUES (clean_word, 1, 1)
+    ON CONFLICT (word) DO NOTHING;
+
+    -- 2. Registra na telemetria (se o usuário for conhecido)
+    IF NEW.created_by IS NOT NULL THEN
+      INSERT INTO public.global_word_telemetry (word, user_id, clinic_id)
+      VALUES (clean_word, NEW.created_by, NEW.clinic_id)
+      ON CONFLICT (word, user_id, clinic_id) DO NOTHING;
+    END IF;
+
+    -- 3. Recalcula quórum
+    SELECT 
+      count(DISTINCT user_id),
+      count(DISTINCT clinic_id)
+    INTO 
+      v_user_count, 
+      v_clinic_count
+    FROM public.global_word_telemetry
+    WHERE word = clean_word;
+
+    -- 4. Atualiza métricas e promove se atingiu quórum (10 usuários + 3 clínicas)
+    UPDATE public.global_word_candidates
+    SET 
+      user_count = GREATEST(v_user_count, 1),
+      clinic_count = GREATEST(v_clinic_count, 1),
+      status = CASE 
+        WHEN v_user_count >= 10 AND v_clinic_count >= 3 THEN 'promoted'
+        ELSE status
+      END,
+      updated_at = now()
+    WHERE word = clean_word;
+
+  END IF;
+
+  RETURN NEW;
+END;
+$_$;
+
+
+ALTER FUNCTION "public"."handle_clinic_word_telemetry"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text" DEFAULT NULL::"text", "_cpf" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date", "_profession" "text" DEFAULT NULL::"text", "_council_number" "text" DEFAULT NULL::"text") RETURNS "jsonb"
@@ -7216,7 +7636,7 @@ ALTER FUNCTION "public"."handle_whatsapp_chat_sessions_updated_at"() OWNER TO "p
 
 CREATE OR REPLACE FUNCTION "public"."has_role"("_user_id" "uuid", "_role" "public"."app_role") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.user_roles
@@ -7643,7 +8063,7 @@ ALTER FUNCTION "public"."is_platform_admin"("_user_id" "uuid") OWNER TO "postgre
 
 CREATE OR REPLACE FUNCTION "public"."is_platform_owner"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
   select exists (
     select 1
@@ -7660,7 +8080,7 @@ ALTER FUNCTION "public"."is_platform_owner"("_user_id" "uuid") OWNER TO "postgre
 
 CREATE OR REPLACE FUNCTION "public"."is_platform_owner_mfa_verified"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
   select public.is_platform_owner(_user_id)
     and coalesce(auth.jwt()->>'aal', '') = 'aal2'
@@ -8470,7 +8890,7 @@ ALTER FUNCTION "public"."list_platform_error_logs"("_limit" integer, "_error_typ
 
 CREATE OR REPLACE FUNCTION "public"."list_platform_telemetry_events"("_clinic_id" "uuid", "_limit" integer DEFAULT 100) RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "user_id" "uuid", "user_name" "text", "event_type" "text", "pathname" "text", "resource_type" "text", "resource_id" "text", "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 BEGIN
   -- Verify caller is platform owner
@@ -8503,7 +8923,7 @@ ALTER FUNCTION "public"."list_platform_telemetry_events"("_clinic_id" "uuid", "_
 
 CREATE OR REPLACE FUNCTION "public"."list_platform_user_telemetry_events"("_user_id" "uuid", "_limit" integer DEFAULT 100) RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "user_id" "uuid", "user_name" "text", "event_type" "text", "pathname" "text", "resource_type" "text", "resource_id" "text", "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 BEGIN
   -- Verify caller is platform owner
@@ -9060,6 +9480,11 @@ BEGIN
     RETURN jsonb_build_object('success', true, 'count', 0, 'entity_type', _clean_entity_type);
   END IF;
 
+  -- Proteção contra DoS e contenção de lock em payloads gigantes
+  IF cardinality(_entity_ids) > 200 THEN
+    RAISE EXCEPTION 'Limite maximo de 200 itens por lote excedido para protecao de infraestrutura.';
+  END IF;
+
   -- 3. Validação e Execução por tipo de entidade
   IF _clean_entity_type IN ('sessions', 'session') THEN
     _clean_entity_type := 'sessions';
@@ -9588,6 +10013,71 @@ $$;
 ALTER FUNCTION "public"."platform_override_clinic_subscription"("_clinic_id" "uuid", "_new_plan" "public"."subscription_plan", "_status" "text", "_subaccount_limit" integer, "_concurrent_access_limit" integer, "_next_due_date" "date", "_reason" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."prevent_affiliate_pyramid_structure"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    -- Trava Anti-Pirâmide (Lei Federal nº 1.521/1951 - Art. 2º, IX):
+    -- Proibição expressa de criação de redes em cascata, sub-afiliados ou matriz multinível.
+    IF NEW.parent_affiliate_id IS NOT NULL THEN
+        RAISE EXCEPTION 'Operação proibida (Lei 1.521/51): Estruturas multinível e sub-afiliações são estritamente proibidas no Pluri-Health. O modelo é exclusivamente de nível único (single-level).';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."prevent_affiliate_pyramid_structure"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."prevent_affiliate_pyramid_structure"() IS 'Assegura cumprimento estrito da Lei 1.521/51 impedindo qualquer tentativa de estruturação multinível ou sub-afiliação.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."prevent_affiliate_self_referral"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    v_affiliate_user_id UUID;
+    v_clinic_owner_id UUID;
+BEGIN
+    SELECT user_id INTO v_affiliate_user_id
+    FROM public.affiliates
+    WHERE id = NEW.affiliate_id;
+
+    -- 1. Bloqueio por usuário pagador / auth.uid
+    IF v_affiliate_user_id IS NOT NULL AND NEW.customer_user_id IS NOT NULL THEN
+        IF NEW.customer_user_id = v_affiliate_user_id THEN
+            RAISE EXCEPTION 'Auto-indicação proibida: Um usuário não pode utilizar o próprio cupom de afiliado.';
+        END IF;
+    END IF;
+
+    -- 2. Bloqueio por titularidade da clínica pagadora indicada
+    IF v_affiliate_user_id IS NOT NULL AND NEW.clinic_id IS NOT NULL THEN
+        SELECT account_owner_user_id INTO v_clinic_owner_id
+        FROM public.clinics
+        WHERE id = NEW.clinic_id;
+
+        IF v_clinic_owner_id IS NOT NULL AND v_clinic_owner_id = v_affiliate_user_id THEN
+            RAISE EXCEPTION 'Auto-indicação proibida: Um usuário não pode utilizar o próprio cupom de afiliado.';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."prevent_affiliate_self_referral"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."prevent_affiliate_self_referral"() IS 'Garante que nenhum usuário assine planos utilizando seu próprio cupom de afiliado (anti-self-referral).';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."prevent_default_patient_group_delete"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -9658,6 +10148,14 @@ DECLARE
   _patient_session_ids uuid[];
   _form_ids uuid[];
 BEGIN
+  -- Validação de segurança: apenas chamadas internas de sistema (pg_cron/service_role) ou platform owner/super_admin
+  IF auth.uid() IS NOT NULL AND NOT (
+    public.is_platform_owner(auth.uid())
+    OR public.has_role(auth.uid(), 'super_admin'::app_role)
+  ) THEN
+    RAISE EXCEPTION 'Acesso negado: apenas rotinas internas de sistema ou administradores da plataforma podem executar o expurgo.';
+  END IF;
+
   -- 1. Identifica os formulários elegíveis para expurgo definitivo:
   -- Itens cuja semana já se encerrou (domingo 23:59:59 passou) OU carência superior a 7 dias
   SELECT array_agg(id) INTO _form_ids
@@ -9711,6 +10209,8 @@ BEGIN
     DELETE FROM public.patient_file_uploads WHERE patient_id = ANY(_patient_ids);
     DELETE FROM public.patient_payment_plans WHERE patient_id = ANY(_patient_ids);
     DELETE FROM public.patient_evolution_groups WHERE patient_id = ANY(_patient_ids);
+    DELETE FROM public.patient_registration_links WHERE patient_id = ANY(_patient_ids);
+    DELETE FROM public.patient_groups WHERE patient_id = ANY(_patient_ids);
 
     DELETE FROM public.patients WHERE id = ANY(_patient_ids);
     GET DIAGNOSTICS _purged_patients_count = ROW_COUNT;
@@ -9757,6 +10257,42 @@ $$;
 ALTER FUNCTION "public"."purge_clinic_trash_bin"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."purge_expired_operational_data"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    _purged_telemetry INT := 0;
+    _purged_resolved_logs INT := 0;
+BEGIN
+    -- 1.1. Limpar telemetria com mais de 90 dias
+    DELETE FROM public.telemetry_events
+    WHERE created_at < (now() - INTERVAL '90 days');
+    GET DIAGNOSTICS _purged_telemetry = ROW_COUNT;
+
+    -- 1.2. Limpar logs de erro de plataforma resolvidos com mais de 30 dias
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'platform_error_logs'
+    ) THEN
+        DELETE FROM public.platform_error_logs
+        WHERE resolved = true AND created_at < (now() - INTERVAL '30 days');
+        GET DIAGNOSTICS _purged_resolved_logs = ROW_COUNT;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'purged_telemetry_events', _purged_telemetry,
+        'purged_resolved_logs', _purged_resolved_logs,
+        'executed_at', now()
+    );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."purge_expired_operational_data"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."purge_old_app_notifications"("_retention_days" integer DEFAULT 60) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -9787,6 +10323,136 @@ $$;
 
 
 ALTER FUNCTION "public"."raise_exception_json"("_message" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."recalculate_affiliate_tier"("_affiliate_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    v_affiliate public.affiliates%ROWTYPE;
+    v_active_count integer;
+    v_total_sales integer;
+    v_calc jsonb;
+    v_effective_floor text;
+    v_final_tier text;
+    v_final_first_month numeric(5,2);
+    v_final_recurring numeric(5,2);
+    v_final_plan_discount numeric(5,2);
+    v_final_eligible_plan text;
+    v_final_waived boolean;
+    v_result jsonb;
+BEGIN
+    IF _affiliate_id IS NULL THEN
+        RAISE EXCEPTION 'ID do afiliado não informado.';
+    END IF;
+
+    -- Obter e bloquear linha do afiliado para garantir atomicidade
+    SELECT * INTO v_affiliate
+    FROM public.affiliates
+    WHERE id = _affiliate_id
+      AND deleted_at IS NULL
+    FOR UPDATE;
+
+    IF v_affiliate.id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'message', 'Afiliado não encontrado ou deletado.'
+        );
+    END IF;
+
+    -- Conta ativos em affiliate_conversions onde status = 'active' AND deleted_at IS NULL
+    SELECT 
+        COUNT(*) FILTER (WHERE status = 'active' AND deleted_at IS NULL)::integer,
+        COUNT(*) FILTER (WHERE deleted_at IS NULL)::integer
+    INTO 
+        v_active_count,
+        v_total_sales
+    FROM public.affiliate_conversions
+    WHERE affiliate_id = _affiliate_id;
+
+    v_active_count := COALESCE(v_active_count, 0);
+    v_total_sales := COALESCE(v_total_sales, 0);
+
+    -- Determina o piso base: usa minimum_tier_floor ou bronze por padrão
+    v_effective_floor := COALESCE(v_affiliate.minimum_tier_floor, 'bronze');
+
+    -- Se houver override manual de tier ativo, usa o tier fixado como referência de piso
+    IF v_affiliate.is_tier_manual_override THEN
+        v_effective_floor := COALESCE(v_affiliate.tier, v_effective_floor);
+    END IF;
+
+    -- Benefícios calculados pelo motor de gamificação
+    v_calc := public.calculate_affiliate_tier_benefits(v_active_count, v_effective_floor);
+
+    -- Tratamento de Overrides Manuais:
+    -- 1. Tier e Comissões
+    IF v_affiliate.is_tier_manual_override THEN
+        -- Respeita o override manual: preserva tier e eventuais comissões customizadas pelo admin
+        v_final_tier := v_affiliate.tier;
+        v_final_first_month := v_affiliate.first_month_commission_percent;
+        v_final_recurring := v_affiliate.recurring_commission_percent;
+        v_final_plan_discount := v_affiliate.plan_discount_percent;
+        v_final_eligible_plan := v_affiliate.eligible_plan_tier;
+    ELSE
+        -- Aplica os parâmetros dinâmicos calculados pela esteira de gamificação
+        v_final_tier := (v_calc->>'tier')::text;
+        v_final_first_month := (v_calc->>'first_month_commission_percent')::numeric(5,2);
+        v_final_recurring := (v_calc->>'recurring_commission_percent')::numeric(5,2);
+        v_final_plan_discount := (v_calc->>'plan_discount_percent')::numeric(5,2);
+        v_final_eligible_plan := (v_calc->>'eligible_plan_tier')::text;
+    END IF;
+
+    -- 2. Isenção da Assinatura (Waiver Policy)
+    IF v_affiliate.is_waiver_manual_override THEN
+        -- Respeita o override manual: preserva o status de isenção da clínica do parceiro
+        v_final_waived := v_affiliate.is_subscription_waived;
+    ELSE
+        -- Aplica o waiver calculado dinamicamente
+        v_final_waived := (v_calc->>'is_subscription_waived')::boolean;
+    END IF;
+
+    -- Atualiza o registro em public.affiliates
+    UPDATE public.affiliates
+    SET active_referrals_count = v_active_count,
+        total_sales_count = v_total_sales,
+        tier = v_final_tier,
+        first_month_commission_percent = v_final_first_month,
+        recurring_commission_percent = v_final_recurring,
+        plan_discount_percent = v_final_plan_discount,
+        eligible_plan_tier = v_final_eligible_plan,
+        is_subscription_waived = v_final_waived,
+        updated_at = now()
+    WHERE id = _affiliate_id;
+
+    v_result := jsonb_build_object(
+        'success', true,
+        'affiliate_id', _affiliate_id,
+        'active_referrals_count', v_active_count,
+        'total_sales_count', v_total_sales,
+        'tier', v_final_tier,
+        'minimum_tier_floor', v_affiliate.minimum_tier_floor,
+        'is_tier_manual_override', v_affiliate.is_tier_manual_override,
+        'first_month_commission_percent', v_final_first_month,
+        'recurring_commission_percent', v_final_recurring,
+        'plan_discount_percent', v_final_plan_discount,
+        'eligible_plan_tier', v_final_eligible_plan,
+        'is_subscription_waived', v_final_waived,
+        'is_waiver_manual_override', v_affiliate.is_waiver_manual_override,
+        'extra_benefits', v_calc->'extra_benefits',
+        'updated_at', now()
+    );
+
+    RETURN v_result;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."recalculate_affiliate_tier"("_affiliate_id" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."recalculate_affiliate_tier"("_affiliate_id" "uuid") IS 'Recalcula e sincroniza em tempo real o contador de ativos, tier, comissões e isenções de plano do afiliado, respeitando overrides manuais.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."reconcile_legacy_users_solo_clinic"() RETURNS integer
@@ -9948,6 +10614,60 @@ $$;
 
 
 ALTER FUNCTION "public"."reconcile_legacy_users_solo_clinic"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."record_and_validate_asaas_webhook"("_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text" DEFAULT NULL::"text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_id uuid;
+  v_already_processed boolean;
+BEGIN
+  -- Inserir novo evento de forma estritamente idempotente
+  INSERT INTO public.asaas_webhook_events (
+    asaas_event_id,
+    event_type,
+    payload,
+    signature,
+    processed,
+    created_at
+  )
+  VALUES (
+    _event_id,
+    _event_type,
+    _payload,
+    _signature,
+    false,
+    now()
+  )
+  ON CONFLICT (asaas_event_id) DO NOTHING
+  RETURNING id, processed INTO v_id, v_already_processed;
+
+  -- Se já existia registro prévio (conflito de concorrência ou reenvio do Asaas)
+  IF v_id IS NULL THEN
+    SELECT id, COALESCE(processed, false) 
+    INTO v_id, v_already_processed
+    FROM public.asaas_webhook_events
+    WHERE asaas_event_id = _event_id;
+
+    RETURN jsonb_build_object(
+      'already_processed', v_already_processed,
+      'event_id', v_id,
+      'status', 'DUPLICATE_IGNORED'
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'already_processed', false,
+    'event_id', v_id,
+    'status', 'RECORDED'
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."record_and_validate_asaas_webhook"("_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."record_asaas_webhook_event"("_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text" DEFAULT NULL::"text") RETURNS "jsonb"
@@ -10492,6 +11212,135 @@ $$;
 ALTER FUNCTION "public"."reset_whatsapp_chat_sessions"("_phone" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."respond_affiliate_invitation"("_invitation_id" "uuid", "_response" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth', 'pg_temp'
+    AS $$
+DECLARE
+    _user_id UUID := auth.uid();
+    _user_email TEXT;
+    _invitation public.affiliate_invitations%ROWTYPE;
+    _current_affiliate public.affiliates%ROWTYPE;
+    _is_authorized BOOLEAN := false;
+BEGIN
+    IF _user_id IS NULL THEN
+        RAISE EXCEPTION 'Usuário não autenticado.';
+    END IF;
+
+    IF _response IS NULL OR _response NOT IN ('accepted', 'rejected') THEN
+        RAISE EXCEPTION 'Resposta inválida. Deve ser accepted ou rejected.';
+    END IF;
+
+    SELECT lower(email) INTO _user_email
+    FROM auth.users
+    WHERE id = _user_id;
+
+    IF _user_email IS NULL THEN
+        _user_email := lower(coalesce(auth.jwt() ->> 'email', ''));
+    END IF;
+
+    SELECT * INTO _invitation
+    FROM public.affiliate_invitations
+    WHERE id = _invitation_id
+      AND deleted_at IS NULL;
+
+    IF _invitation.id IS NULL THEN
+        RAISE EXCEPTION 'Convite não encontrado ou cancelado.';
+    END IF;
+
+    -- Validar se o usuário autenticado é o destinatário do convite ou platform admin
+    IF _invitation.invited_user_id IS NOT NULL AND _invitation.invited_user_id = _user_id THEN
+        _is_authorized := true;
+    ELSIF _invitation.invited_email IS NOT NULL AND lower(_invitation.invited_email) = _user_email THEN
+        _is_authorized := true;
+    ELSIF public.is_platform_admin(_user_id) OR public.has_role(_user_id, 'super_admin'::public.app_role) THEN
+        _is_authorized := true;
+    END IF;
+
+    IF NOT _is_authorized THEN
+        RAISE EXCEPTION 'Permissão negada para responder a este convite.';
+    END IF;
+
+    -- Validar se o convite já foi respondido
+    IF _invitation.status <> 'pending' THEN
+        RAISE EXCEPTION 'Este convite já foi respondido anteriormente (status: %).', _invitation.status;
+    END IF;
+
+    -- Validar expiração
+    IF _invitation.expires_at < now() THEN
+        UPDATE public.affiliate_invitations
+        SET status = 'expired',
+            updated_at = now()
+        WHERE id = _invitation_id;
+
+        RAISE EXCEPTION 'Este convite expirou em %.', to_char(_invitation.expires_at, 'DD/MM/YYYY HH24:MI');
+    END IF;
+
+    IF _response = 'rejected' THEN
+        UPDATE public.affiliate_invitations
+        SET status = 'rejected',
+            responded_at = now(),
+            updated_at = now()
+        WHERE id = _invitation_id;
+
+        RETURN jsonb_build_object(
+            'success', true,
+            'status', 'rejected',
+            'invitation_id', _invitation_id,
+            'message', 'Convite recusado com sucesso.'
+        );
+    END IF;
+
+    -- Se response = 'accepted':
+    -- 1. Validar se o usuário já possui afiliação e checar trava de cooldown
+    SELECT * INTO _current_affiliate
+    FROM public.affiliates
+    WHERE user_id = _user_id
+      AND deleted_at IS NULL
+    LIMIT 1;
+
+    IF _current_affiliate.id IS NOT NULL THEN
+        IF _current_affiliate.can_change_affiliate_context_after IS NOT NULL 
+           AND _current_affiliate.can_change_affiliate_context_after > now() THEN
+            RAISE EXCEPTION 'Período de cooldown ativo (anti-pingue-pongue). Você poderá alterar seu contexto de afiliação após %.',
+                to_char(_current_affiliate.can_change_affiliate_context_after, 'DD/MM/YYYY HH24:MI');
+        END IF;
+
+        -- Atualiza o vínculo do afiliado para a clínica do convite e grava cooldown de 15 dias
+        UPDATE public.affiliates
+        SET clinic_id = _invitation.clinic_id,
+            minimum_tier_floor = COALESCE(_invitation.floor_tier, minimum_tier_floor),
+            can_change_affiliate_context_after = now() + interval '15 days',
+            updated_at = now()
+        WHERE id = _current_affiliate.id;
+    END IF;
+
+    -- 2. Atualizar status do convite
+    UPDATE public.affiliate_invitations
+    SET status = 'accepted',
+        invited_user_id = COALESCE(invited_user_id, _user_id),
+        responded_at = now(),
+        updated_at = now()
+    WHERE id = _invitation_id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'status', 'accepted',
+        'invitation_id', _invitation_id,
+        'clinic_id', _invitation.clinic_id,
+        'message', 'Convite aceito com sucesso! Vínculo de afiliação atualizado.'
+    );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."respond_affiliate_invitation"("_invitation_id" "uuid", "_response" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."respond_affiliate_invitation"("_invitation_id" "uuid", "_response" "text") IS 'Responde a um convite de afiliação inter-clínicas (accepted ou rejected), validando vigência, autorização e aplicando cooldown de 15 dias.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."restore_entity_from_trash"("_entity_type" "text", "_entity_ids" "uuid"[]) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -10542,6 +11391,11 @@ BEGIN
 
   IF _entity_ids IS NULL OR cardinality(_entity_ids) = 0 THEN
     RETURN jsonb_build_object('success', true, 'count', 0, 'entity_type', _clean_entity_type);
+  END IF;
+
+  -- Proteção contra DoS e contenção de lock em payloads gigantes
+  IF cardinality(_entity_ids) > 200 THEN
+    RAISE EXCEPTION 'Limite maximo de 200 itens por lote excedido para protecao de infraestrutura.';
   END IF;
 
   -- 4. Restauração por entidade
@@ -10736,6 +11590,205 @@ $$;
 ALTER FUNCTION "public"."revoke_user_punishment"("_punishment_id" "uuid", "_reason" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."rpc_book_appointment_safe"("_clinic_id" "uuid", "_provider_id" "uuid", "_patient_id" "uuid" DEFAULT NULL::"uuid", "_start_time" timestamp with time zone DEFAULT NULL::timestamp with time zone, "_end_time" timestamp with time zone DEFAULT NULL::timestamp with time zone, "_event_type" "text" DEFAULT 'atendimento'::"text", "_title" "text" DEFAULT 'Atendimento'::"text", "_notes" "text" DEFAULT NULL::"text", "_duration_minutes" integer DEFAULT NULL::integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+  _resolved_duration integer;
+  _calculated_end timestamptz;
+  _has_conflict boolean;
+  _new_event_id uuid;
+  _new_session_id uuid;
+  _event_row record;
+BEGIN
+  IF _clinic_id IS NULL THEN
+    RAISE EXCEPTION 'CLINIC_REQUIRED: O identificador da clínica é obrigatório.';
+  END IF;
+
+  IF _provider_id IS NULL THEN
+    RAISE EXCEPTION 'PROVIDER_REQUIRED: O profissional é obrigatório.';
+  END IF;
+
+  IF _start_time IS NULL THEN
+    RAISE EXCEPTION 'START_TIME_REQUIRED: O horário de início é obrigatório.';
+  END IF;
+
+  _resolved_duration := COALESCE(
+    _duration_minutes,
+    CASE
+      WHEN _end_time IS NOT NULL AND _end_time > _start_time THEN
+        EXTRACT(EPOCH FROM (_end_time - _start_time))::integer / 60
+      ELSE 60
+    END
+  );
+
+  IF _resolved_duration <= 0 OR _resolved_duration > 1440 THEN
+    _resolved_duration := 60;
+  END IF;
+
+  _calculated_end := COALESCE(_end_time, _start_time + (_resolved_duration * interval '1 minute'));
+
+  -- Pessimistic Lock & Concurrency Check:
+  -- Bloqueia eventos existentes no intervalo para serializar transações concorrentes
+  PERFORM 1
+  FROM public.agenda_events ae
+  WHERE ae.clinic_id = _clinic_id
+    AND ae.user_id = _provider_id
+    AND ae.status NOT IN ('cancelado')
+    AND ae.scheduled_for < _calculated_end
+    AND (ae.scheduled_for + (COALESCE(ae.duration_minutes, 60) * interval '1 minute')) > _start_time
+  FOR UPDATE;
+
+  -- Verifica se houve conflito
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.agenda_events ae
+    WHERE ae.clinic_id = _clinic_id
+      AND ae.user_id = _provider_id
+      AND ae.status NOT IN ('cancelado')
+      AND ae.scheduled_for < _calculated_end
+      AND (ae.scheduled_for + (COALESCE(ae.duration_minutes, 60) * interval '1 minute')) > _start_time
+  ) INTO _has_conflict;
+
+  IF _has_conflict THEN
+    RAISE EXCEPTION 'SLOT_ALREADY_BOOKED: O horário solicitado já foi reservado por outro atendimento.';
+  END IF;
+
+  -- 1. Insere o registro em agenda_events
+  INSERT INTO public.agenda_events (
+    clinic_id,
+    user_id,
+    patient_id,
+    event_type,
+    title,
+    scheduled_for,
+    duration_minutes,
+    status
+  )
+  VALUES (
+    _clinic_id,
+    _provider_id,
+    _patient_id,
+    COALESCE(_event_type, 'atendimento'),
+    COALESCE(NULLIF(trim(_title), ''), 'Atendimento'),
+    _start_time,
+    _resolved_duration,
+    'confirmado'
+  )
+  RETURNING id INTO _new_event_id;
+
+  -- 2. Se for do tipo atendimento com paciente, cria sessão complementar em status 'rascunho'
+  IF _event_type = 'atendimento' AND _patient_id IS NOT NULL THEN
+    INSERT INTO public.sessions (
+      clinic_id,
+      user_id,
+      provider_id,
+      patient_id,
+      scheduled_start_at,
+      session_date,
+      status,
+      notes
+    )
+    VALUES (
+      _clinic_id,
+      _provider_id,
+      _provider_id,
+      _patient_id,
+      _start_time,
+      _start_time,
+      'rascunho',
+      _notes
+    )
+    RETURNING id INTO _new_session_id;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'event_id', _new_event_id,
+    'session_id', _new_session_id,
+    'scheduled_for', _start_time,
+    'duration_minutes', _resolved_duration
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."rpc_book_appointment_safe"("_clinic_id" "uuid", "_provider_id" "uuid", "_patient_id" "uuid", "_start_time" timestamp with time zone, "_end_time" timestamp with time zone, "_event_type" "text", "_title" "text", "_notes" "text", "_duration_minutes" integer) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."rpc_book_appointment_safe"("_clinic_id" "uuid", "_provider_id" "uuid", "_patient_id" "uuid", "_start_time" timestamp with time zone, "_end_time" timestamp with time zone, "_event_type" "text", "_title" "text", "_notes" "text", "_duration_minutes" integer) IS 'Reserva atômica de agendamento com trava pessimista para prevenção de concorrência e duplo agendamento.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."rpc_get_available_slots"("_clinic_id" "uuid", "_provider_id" "uuid", "_date" "date") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+  _slot_time text;
+  _slot_start timestamptz;
+  _slot_end timestamptz;
+  _is_occupied boolean;
+  _slots text[] := ARRAY[]::text[];
+  _all_slots text[] := ARRAY[
+    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+    '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
+    '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+    '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
+  ];
+BEGIN
+  IF _clinic_id IS NULL OR _date IS NULL THEN
+    RETURN '[]'::jsonb;
+  END IF;
+
+  FOREACH _slot_time IN ARRAY _all_slots
+  LOOP
+    -- Converte data + horário em timestamptz no timezone da clínica/São Paulo
+    _slot_start := (_date::text || ' ' || _slot_time || ':00')::timestamp AT TIME ZONE 'America/Sao_Paulo';
+    _slot_end := _slot_start + interval '30 minutes';
+
+    -- Verifica se já há evento ou sessão ocupando este slot
+    SELECT EXISTS (
+      -- Checa agenda_events
+      SELECT 1
+      FROM public.agenda_events ae
+      WHERE ae.clinic_id = _clinic_id
+        AND (_provider_id IS NULL OR ae.user_id = _provider_id)
+        AND ae.status NOT IN ('cancelado')
+        AND ae.scheduled_for < _slot_end
+        AND (ae.scheduled_for + (COALESCE(ae.duration_minutes, 60) * interval '1 minute')) > _slot_start
+
+      UNION ALL
+
+      -- Checa sessions ativas
+      SELECT 1
+      FROM public.sessions s
+      WHERE s.clinic_id = _clinic_id
+        AND (_provider_id IS NULL OR COALESCE(s.provider_id, s.user_id) = _provider_id)
+        AND s.deleted_at IS NULL
+        AND s.status NOT IN ('cancelada')
+        AND COALESCE(s.scheduled_start_at, s.session_date) < _slot_end
+        AND (COALESCE(s.scheduled_start_at, s.session_date) + interval '30 minutes') > _slot_start
+    ) INTO _is_occupied;
+
+    IF NOT _is_occupied THEN
+      _slots := array_append(_slots, _slot_time);
+    END IF;
+  END LOOP;
+
+  RETURN to_jsonb(_slots);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."rpc_get_available_slots"("_clinic_id" "uuid", "_provider_id" "uuid", "_date" "date") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."rpc_get_available_slots"("_clinic_id" "uuid", "_provider_id" "uuid", "_date" "date") IS 'Retorna os slots de horários vagos para uma clínica e profissional em determinada data.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."sanitize_clinical_free_text"("_text" "text") RETURNS "text"
     LANGUAGE "plpgsql" IMMUTABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -10777,6 +11830,66 @@ $$;
 
 
 ALTER FUNCTION "public"."sanitize_clinical_free_text"("_text" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."schedule_patient_appointment"("_clinic_id" "uuid", "_patient_id" "uuid", "_title" "text", "_scheduled_for" timestamp with time zone, "_duration_minutes" integer DEFAULT 50, "_event_type" "text" DEFAULT 'atendimento'::"text", "_status" "text" DEFAULT 'confirmado'::"text") RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "patient_id" "uuid", "title" "text", "scheduled_for" timestamp with time zone, "duration_minutes" integer, "status" "text", "event_type" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'auth'
+    AS $$
+DECLARE
+  v_event_id uuid;
+BEGIN
+  -- Validação de autenticação e contexto
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Usuario nao autenticado.';
+  END IF;
+
+  IF NOT public.current_user_can('agenda.write', _clinic_id) THEN
+    RAISE EXCEPTION 'Sem permissao para criar agendamentos nesta clinica.';
+  END IF;
+
+  -- Inserção atômica utilizando generate_uuidv7
+  v_event_id := public.generate_uuidv7();
+
+  INSERT INTO public.agenda_events (
+    id,
+    clinic_id,
+    patient_id,
+    user_id,
+    title,
+    scheduled_for,
+    duration_minutes,
+    status,
+    event_type
+  ) VALUES (
+    v_event_id,
+    _clinic_id,
+    _patient_id,
+    auth.uid(),
+    trim(_title),
+    _scheduled_for,
+    COALESCE(_duration_minutes, 50),
+    COALESCE(_status, 'confirmado'),
+    COALESCE(_event_type, 'atendimento')
+  );
+
+  RETURN QUERY
+  SELECT 
+    ae.id,
+    ae.clinic_id,
+    ae.patient_id,
+    ae.title,
+    ae.scheduled_for,
+    ae.duration_minutes,
+    ae.status,
+    ae.event_type
+  FROM public.agenda_events ae
+  WHERE ae.id = v_event_id;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."schedule_patient_appointment"("_clinic_id" "uuid", "_patient_id" "uuid", "_title" "text", "_scheduled_for" timestamp with time zone, "_duration_minutes" integer, "_event_type" "text", "_status" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_clinic_subscriptions_updated_at"() RETURNS "trigger"
@@ -10859,7 +11972,7 @@ ALTER FUNCTION "public"."set_updated_at"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."setup_user_totp"("_totp_secret" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 DECLARE
     _current_user_id UUID := auth.uid();
@@ -10872,9 +11985,18 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'Segredo TOTP inválido');
     END IF;
 
+    -- Salvar na tabela isolada
+    INSERT INTO public.user_mfa_credentials (user_id, totp_secret, totp_enabled, updated_at)
+    VALUES (_current_user_id, trim(_totp_secret), true, now())
+    ON CONFLICT (user_id) DO UPDATE
+    SET totp_secret = EXCLUDED.totp_secret,
+        totp_enabled = true,
+        updated_at = now();
+
+    -- Atualizar flag pública/não sensível de status no profile
     UPDATE public.profiles
     SET 
-        totp_secret = trim(_totp_secret),
+        totp_secret = NULL, -- Garante limpeza contínua
         totp_enabled = true,
         totp_enabled_at = now(),
         updated_at = now()
@@ -11070,6 +12192,93 @@ $$;
 
 
 ALTER FUNCTION "public"."start_platform_clinic_access"("_clinic_id" "uuid", "_reason" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."submit_document_signature_by_token"("p_token" "text", "p_signer_name" "text", "p_signer_cpf" "text", "p_signature_image_url" "text", "p_metadata" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions', 'pg_temp'
+    AS $$
+DECLARE
+  _token_clean text := trim(coalesce(p_token, ''));
+  _signer_name text := left(trim(coalesce(p_signer_name, '')), 200);
+  _signer_cpf text := nullif(regexp_replace(coalesce(p_signer_cpf, ''), '\D', '', 'g'), '');
+  _signature_url text := nullif(trim(coalesce(p_signature_image_url, '')), '');
+  _metadata jsonb := COALESCE(p_metadata, '{}'::jsonb);
+  _doc public.clinic_document_signatures%ROWTYPE;
+  _updated public.clinic_document_signatures%ROWTYPE;
+  _merged_metadata jsonb;
+BEGIN
+  IF _token_clean = '' THEN
+    RAISE EXCEPTION 'Token de assinatura inválido.';
+  END IF;
+
+  IF length(_signer_name) < 2 THEN
+    RAISE EXCEPTION 'Informe o nome completo do assinante.';
+  END IF;
+
+  IF _signer_cpf IS NOT NULL AND length(_signer_cpf) <> 11 THEN
+    RAISE EXCEPTION 'CPF inválido. Informe os 11 dígitos.';
+  END IF;
+
+  IF _signature_url IS NULL THEN
+    RAISE EXCEPTION 'A assinatura visual é obrigatória.';
+  END IF;
+
+  SELECT *
+  INTO _doc
+  FROM public.clinic_document_signatures
+  WHERE sign_token = _token_clean
+    AND deleted_at IS NULL
+  FOR UPDATE;
+
+  IF _doc.id IS NULL THEN
+    RAISE EXCEPTION 'Documento para assinatura não encontrado ou removido.';
+  END IF;
+
+  IF _doc.status IN ('signed_in_person', 'signed_remote') THEN
+    RAISE EXCEPTION 'Este documento já foi assinado anteriormente.';
+  END IF;
+
+  _merged_metadata := COALESCE(_doc.signature_metadata, '{}'::jsonb)
+    || _metadata
+    || jsonb_build_object(
+      'server_signed_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+      'signed_method', 'remote_link'
+    );
+
+  UPDATE public.clinic_document_signatures
+  SET
+    status = 'signed_remote',
+    signer_name = _signer_name,
+    signer_cpf = COALESCE(_signer_cpf, signer_cpf),
+    signer_role = COALESCE(
+      signer_role,
+      CASE
+        WHEN (_metadata ->> 'signer_role') IN ('paciente', 'responsavel', 'colaborador', 'owner')
+          THEN (_metadata ->> 'signer_role')
+        ELSE NULL
+      END
+    ),
+    signature_image_url = _signature_url,
+    signature_metadata = _merged_metadata,
+    signed_at = now(),
+    updated_at = now()
+  WHERE id = _doc.id
+  RETURNING * INTO _updated;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'id', _updated.id,
+    'status', _updated.status,
+    'signer_name', _updated.signer_name,
+    'signed_at', _updated.signed_at,
+    'template_title', _updated.template_title
+  );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."submit_document_signature_by_token"("p_token" "text", "p_signer_name" "text", "p_signer_cpf" "text", "p_signature_image_url" "text", "p_metadata" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."submit_patient_registration_form"("_token" "text", "_password" "text", "_payload" "jsonb") RETURNS "jsonb"
@@ -11371,6 +12580,41 @@ $$;
 ALTER FUNCTION "public"."submit_user_platform_feedback"("_clinic_id" "uuid", "_ratings" "jsonb", "_problem_report" "text", "_opinion" "text", "_page_url" "text", "_user_agent" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."sync_billing_to_session"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  UPDATE public.sessions
+  SET 
+    amount_charged_cents = NEW.amount_charged_cents,
+    amount_paid_cents = NEW.amount_paid_cents,
+    amount_original_cents = NEW.amount_original_cents,
+    payment_status = NEW.payment_status,
+    payment_method = NEW.payment_method,
+    payment_installments = NEW.payment_installments,
+    payment_adjustment_reason = NEW.payment_adjustment_reason,
+    payment_status_date = NEW.payment_status_date,
+    payment_plan_id = NEW.payment_plan_id,
+    payment_plan_session_index = NEW.payment_plan_session_index,
+    updated_at = now()
+  WHERE id = NEW.session_id
+    AND (
+      amount_charged_cents IS DISTINCT FROM NEW.amount_charged_cents OR
+      amount_paid_cents IS DISTINCT FROM NEW.amount_paid_cents OR
+      amount_original_cents IS DISTINCT FROM NEW.amount_original_cents OR
+      payment_status IS DISTINCT FROM NEW.payment_status OR
+      payment_method IS DISTINCT FROM NEW.payment_method
+    );
+
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."sync_billing_to_session"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."sync_clinic_daily_metrics"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11668,6 +12912,54 @@ $$;
 
 
 ALTER FUNCTION "public"."touch_platform_feedbacks_updated_at"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."trg_affiliate_conversions_sync_tier"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    -- Ao inserir nova conversão
+    IF (TG_OP = 'INSERT') THEN
+        IF NEW.affiliate_id IS NOT NULL THEN
+            PERFORM public.recalculate_affiliate_tier(NEW.affiliate_id);
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    -- Ao atualizar conversão existente
+    IF (TG_OP = 'UPDATE') THEN
+        -- Recalcula para o afiliado atual se ativo
+        IF NEW.affiliate_id IS NOT NULL THEN
+            PERFORM public.recalculate_affiliate_tier(NEW.affiliate_id);
+        END IF;
+
+        -- Se houver transferência de afiliado, recalcula também para o afiliado anterior
+        IF OLD.affiliate_id IS NOT NULL AND OLD.affiliate_id IS DISTINCT FROM NEW.affiliate_id THEN
+            PERFORM public.recalculate_affiliate_tier(OLD.affiliate_id);
+        END IF;
+
+        RETURN NEW;
+    END IF;
+
+    -- Ao excluir conversão
+    IF (TG_OP = 'DELETE') THEN
+        IF OLD.affiliate_id IS NOT NULL THEN
+            PERFORM public.recalculate_affiliate_tier(OLD.affiliate_id);
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."trg_affiliate_conversions_sync_tier"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."trg_affiliate_conversions_sync_tier"() IS 'Trigger pós inserção, atualização ou exclusão de conversões para sincronizar em tempo real o tier e benefícios do afiliado.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."trg_auto_assign_patient_code"() RETURNS "trigger"
@@ -13112,90 +14404,52 @@ $$;
 ALTER FUNCTION "public"."user_has_active_clinic_membership"("_user_id" "uuid", "_clinic_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text") RETURNS "jsonb"
-    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public'
+CREATE OR REPLACE FUNCTION "public"."validate_affiliate_unique_financial_data"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare
-  v_normalized_code text;
-  v_coupon public.subscription_coupons%rowtype;
-begin
-  if _code is null or trim(_code) = '' then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Código do cupom não informado.'
-    );
-  end if;
+BEGIN
+    -- Unicidade de Chave PIX
+    IF NEW.pix_key IS NOT NULL AND BTRIM(NEW.pix_key) <> '' THEN
+        IF EXISTS (
+            SELECT 1 FROM public.affiliates
+            WHERE id <> NEW.id
+              AND pix_key = NEW.pix_key
+              AND status <> 'banned'
+              AND deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Esta chave PIX já está vinculada a outro programa de afiliação ativo no Pluri Health.';
+        END IF;
+    END IF;
 
-  v_normalized_code := upper(trim(_code));
+    -- Unicidade de Conta Asaas
+    IF NEW.asaas_account_id IS NOT NULL AND BTRIM(NEW.asaas_account_id) <> '' THEN
+        IF EXISTS (
+            SELECT 1 FROM public.affiliates
+            WHERE id <> NEW.id
+              AND asaas_account_id = NEW.asaas_account_id
+              AND status <> 'banned'
+              AND deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Esta conta bancária/Asaas já está vinculada a outro programa de afiliação ativo no Pluri Health.';
+        END IF;
+    END IF;
 
-  select * into v_coupon
-  from public.subscription_coupons
-  where code = v_normalized_code;
-
-  if v_coupon.id is null then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Cupom inválido ou não encontrado.'
-    );
-  end if;
-
-  if not v_coupon.is_active then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Este cupom não está mais ativo.'
-    );
-  end if;
-
-  if v_coupon.valid_from > now() then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Este cupom ainda não está vigente.'
-    );
-  end if;
-
-  if v_coupon.valid_until is not null and v_coupon.valid_until < now() then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Este cupom expirou.'
-    );
-  end if;
-
-  if v_coupon.max_redemptions is not null and v_coupon.times_redeemed >= v_coupon.max_redemptions then
-    return jsonb_build_object(
-      'valid', false,
-      'message', 'Limite máximo de resgates deste cupom atingido.'
-    );
-  end if;
-
-  if v_coupon.applicable_plans is not null and array_length(v_coupon.applicable_plans, 1) > 0 then
-    if not (_plan_type = any(v_coupon.applicable_plans)) then
-      return jsonb_build_object(
-        'valid', false,
-        'message', 'Este cupom não é aplicável ao plano selecionado.'
-      );
-    end if;
-  end if;
-
-  return jsonb_build_object(
-    'valid', true,
-    'coupon_id', v_coupon.id,
-    'code', v_coupon.code,
-    'description', v_coupon.description,
-    'discount_type', v_coupon.discount_type,
-    'discount_value', v_coupon.discount_value,
-    'message', 'Cupom aplicado com sucesso!'
-  );
-end;
+    RETURN NEW;
+END;
 $$;
 
 
-ALTER FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text") OWNER TO "postgres";
+ALTER FUNCTION "public"."validate_affiliate_unique_financial_data"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."validate_affiliate_unique_financial_data"() IS 'Garante unicidade de Chaves PIX e Subcontas Asaas por afiliado no sistema inteiro.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text" DEFAULT 'clinic'::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_billing_cycle" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public'
+    SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
   v_normalized_code text;
@@ -13470,6 +14724,8 @@ begin
     'discount_value', v_coupon.discount_value,
     'discount_duration_type', v_coupon.discount_duration_type,
     'discount_duration_months', v_coupon.discount_duration_months,
+    'affiliate_id', v_coupon.affiliate_id,
+    'is_affiliate_coupon', coalesce(v_coupon.is_affiliate_coupon, false),
     'message', 'Cupom aplicado com sucesso!'
   );
 end;
@@ -13529,6 +14785,187 @@ $_$;
 ALTER FUNCTION "public"."verify_password_recovery_identity"("_email" "text", "_cpf" "text") OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."affiliate_commissions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "affiliate_id" "uuid" NOT NULL,
+    "conversion_id" "uuid" NOT NULL,
+    "asaas_payment_id" "text" NOT NULL,
+    "is_first_month" boolean DEFAULT false NOT NULL,
+    "gross_amount_cents" bigint NOT NULL,
+    "commission_percent" numeric(5,2) NOT NULL,
+    "commission_amount_cents" bigint NOT NULL,
+    "pluri_net_cents" bigint NOT NULL,
+    "payment_status" "text" NOT NULL,
+    "paid_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "affiliate_commissions_payment_status_check" CHECK (("payment_status" = ANY (ARRAY['pending'::"text", 'received'::"text", 'refunded'::"text"])))
+);
+
+
+ALTER TABLE "public"."affiliate_commissions" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."affiliate_commissions" IS 'Lançamentos individuais de repasse/split de comissão por pagamento faturado no Asaas.';
+
+
+
+COMMENT ON COLUMN "public"."affiliate_commissions"."gross_amount_cents" IS 'Valor bruto do pagamento em centavos.';
+
+
+
+COMMENT ON COLUMN "public"."affiliate_commissions"."commission_amount_cents" IS 'Valor repassado ao afiliado em centavos.';
+
+
+
+COMMENT ON COLUMN "public"."affiliate_commissions"."pluri_net_cents" IS 'Valor líquido retido pela Pluri-Health em centavos.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."affiliate_conversions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "affiliate_id" "uuid" NOT NULL,
+    "customer_user_id" "uuid",
+    "clinic_id" "uuid" NOT NULL,
+    "asaas_subscription_id" "text",
+    "plan_type" "text" NOT NULL,
+    "billing_cycle" "text" NOT NULL,
+    "status" "text" DEFAULT 'active'::"text" NOT NULL,
+    "beneficiary_type" "text" DEFAULT 'affiliate'::"text" NOT NULL,
+    "pending_split_removal" boolean DEFAULT false NOT NULL,
+    "split_removal_effective_at" timestamp with time zone,
+    "total_cycles_paid" integer DEFAULT 0 NOT NULL,
+    "next_due_date" "date",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "affiliate_conversions_beneficiary_type_check" CHECK (("beneficiary_type" = ANY (ARRAY['affiliate'::"text", 'platform_master'::"text"]))),
+    CONSTRAINT "affiliate_conversions_status_check" CHECK (("status" = ANY (ARRAY['trial'::"text", 'active'::"text", 'past_due'::"text", 'canceled'::"text"])))
+);
+
+
+ALTER TABLE "public"."affiliate_conversions" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."affiliate_conversions" IS 'Assinaturas e contas originadas por cupom ou link de referência de afiliado.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."affiliate_crm_logs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "affiliate_id" "uuid" NOT NULL,
+    "conversion_id" "uuid" NOT NULL,
+    "action_type" "text" NOT NULL,
+    "content" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "affiliate_crm_logs_action_type_check" CHECK (("action_type" = ANY (ARRAY['whatsapp_contact'::"text", 'note'::"text", 'status_change'::"text", 'churn_alert'::"text"])))
+);
+
+
+ALTER TABLE "public"."affiliate_crm_logs" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."affiliate_crm_logs" IS 'Histórico e anotações de relacionamento CRM do afiliado com suas indicações.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."affiliate_invitations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid",
+    "invited_user_id" "uuid",
+    "invited_email" "text",
+    "token" "text" NOT NULL,
+    "floor_tier" "text" DEFAULT 'bronze'::"text" NOT NULL,
+    "metadata" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "expires_at" timestamp with time zone DEFAULT ("now"() + '15 days'::interval) NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "responded_at" timestamp with time zone,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "affiliate_invitations_floor_tier_check" CHECK (("floor_tier" = ANY (ARRAY['bronze'::"text", 'silver'::"text", 'gold'::"text", 'sapphire'::"text", 'ruby'::"text", 'emerald'::"text", 'diamond'::"text", 'legendary'::"text"]))),
+    CONSTRAINT "affiliate_invitations_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'rejected'::"text", 'expired'::"text"])))
+);
+
+
+ALTER TABLE "public"."affiliate_invitations" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."affiliate_invitations" IS 'Convites formais de afiliação inter-clínicas e representação parceira no Pluri-Health.';
+
+
+
+COMMENT ON COLUMN "public"."affiliate_invitations"."token" IS 'Token seguro único para link ou identificação da requisição de convite.';
+
+
+
+COMMENT ON COLUMN "public"."affiliate_invitations"."status" IS 'Status do convite: pending, accepted, rejected ou expired.';
+
+
+
+COMMENT ON COLUMN "public"."affiliate_invitations"."expires_at" IS 'Data limite de expiração do convite (padrão: D+15 da emissão).';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."affiliates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid",
+    "clinic_id" "uuid",
+    "coupon_code" "text" NOT NULL,
+    "referral_slug" "text" NOT NULL,
+    "asaas_account_id" "text" NOT NULL,
+    "asaas_wallet_id" "text",
+    "status" "text" DEFAULT 'active'::"text" NOT NULL,
+    "absorbed_at" timestamp with time zone,
+    "locked_reason" "text",
+    "tier" "text" DEFAULT 'bronze'::"text" NOT NULL,
+    "minimum_tier_floor" "text" DEFAULT 'bronze'::"text" NOT NULL,
+    "is_tier_manual_override" boolean DEFAULT false NOT NULL,
+    "manual_tier_notes" "text",
+    "pix_key" "text",
+    "pix_key_type" "text",
+    "first_month_commission_percent" numeric(5,2) DEFAULT 30.00 NOT NULL,
+    "recurring_commission_percent" numeric(5,2) DEFAULT 10.00 NOT NULL,
+    "plan_discount_percent" numeric(5,2) DEFAULT 0.00 NOT NULL,
+    "eligible_plan_tier" "text" DEFAULT 'none'::"text" NOT NULL,
+    "is_subscription_waived" boolean DEFAULT false NOT NULL,
+    "is_waiver_manual_override" boolean DEFAULT false NOT NULL,
+    "active_referrals_count" integer DEFAULT 0 NOT NULL,
+    "total_sales_count" integer DEFAULT 0 NOT NULL,
+    "lifetime_commission_cents" bigint DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    "parent_affiliate_id" "uuid",
+    "can_change_affiliate_context_after" timestamp with time zone,
+    CONSTRAINT "affiliates_eligible_plan_tier_check" CHECK (("eligible_plan_tier" = ANY (ARRAY['none'::"text", 'solo'::"text", 'team'::"text", 'enterprise'::"text"]))),
+    CONSTRAINT "affiliates_minimum_tier_floor_check" CHECK (("minimum_tier_floor" = ANY (ARRAY['bronze'::"text", 'silver'::"text", 'gold'::"text", 'sapphire'::"text", 'ruby'::"text", 'emerald'::"text", 'diamond'::"text", 'legendary'::"text"]))),
+    CONSTRAINT "affiliates_status_check" CHECK (("status" = ANY (ARRAY['active'::"text", 'suspended'::"text", 'banned'::"text", 'absorbed_by_platform'::"text"]))),
+    CONSTRAINT "affiliates_tier_check" CHECK (("tier" = ANY (ARRAY['bronze'::"text", 'silver'::"text", 'gold'::"text", 'sapphire'::"text", 'ruby'::"text", 'emerald'::"text", 'diamond'::"text", 'legendary'::"text"]))),
+    CONSTRAINT "chk_affiliates_single_level_anti_pyramid" CHECK (("parent_affiliate_id" IS NULL))
+);
+
+
+ALTER TABLE "public"."affiliates" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."affiliates" IS 'Cadastro de parceiros e promotores do programa de afiliados Pluri-Health.';
+
+
+
+COMMENT ON COLUMN "public"."affiliates"."lifetime_commission_cents" IS 'Total histórico acumulado em centavos de comissões geradas pelo afiliado.';
+
+
+
+COMMENT ON COLUMN "public"."affiliates"."parent_affiliate_id" IS 'Trava anti-pirâmide (Lei 1.521/51): Obrigatório NULL. O modelo de afiliados Pluri-Health é estritamente de nível único (single-level).';
+
+
+
+COMMENT ON COLUMN "public"."affiliates"."can_change_affiliate_context_after" IS 'Trava temporal de 15 dias impedindo alternância contínua entre programas de afiliados de diferentes clínicas.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -13553,17 +14990,44 @@ CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     "origin_lat" double precision,
     "origin_lng" double precision,
     "origin_city" "text",
+    "reminder_dispatches" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "last_reminder_dispatched_at" timestamp with time zone,
     CONSTRAINT "agenda_events_duration_minutes_check" CHECK ((("duration_minutes" > 0) AND ("duration_minutes" <= 1440))),
     CONSTRAINT "agenda_events_event_type_check" CHECK (("event_type" = ANY (ARRAY['atendimento'::"text", 'reuniao'::"text", 'evento'::"text"]))),
     CONSTRAINT "agenda_events_payment_plan_session_index_check" CHECK ((("payment_plan_session_index" IS NULL) OR ("payment_plan_session_index" >= 1))),
     CONSTRAINT "agenda_events_status_check" CHECK (("status" = ANY (ARRAY['lembrete'::"text", 'aguardando_confirmacao'::"text", 'confirmado'::"text", 'cancelado'::"text", 'concluido'::"text"])))
-);
+)
+WITH ("autovacuum_vacuum_scale_factor"='0.05', "autovacuum_vacuum_threshold"='500', "autovacuum_analyze_scale_factor"='0.02');
 
 
 ALTER TABLE "public"."agenda_events" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."agenda_events"."duration_minutes" IS 'Duração do evento na agenda em minutos (padrão 60 min, máximo 24h/1440 min).';
+
+
+
+COMMENT ON COLUMN "public"."agenda_events"."origin_timezone" IS 'Identificador IANA do fuso horário de origem do evento (ex: America/Sao_Paulo, America/Manaus).';
+
+
+
+COMMENT ON COLUMN "public"."agenda_events"."origin_lat" IS 'Latitude geográfica de origem da criação do evento (opcional).';
+
+
+
+COMMENT ON COLUMN "public"."agenda_events"."origin_lng" IS 'Longitude geográfica de origem da criação do evento (opcional).';
+
+
+
+COMMENT ON COLUMN "public"."agenda_events"."origin_city" IS 'Nome da cidade ou localidade de origem do agendamento (opcional).';
+
+
+
+COMMENT ON COLUMN "public"."agenda_events"."reminder_dispatches" IS 'Histórico estruturado de lembretes já disparados (ex: 24h, 2h, imediato) para prevenir disparos duplicados.';
+
+
+
+COMMENT ON COLUMN "public"."agenda_events"."last_reminder_dispatched_at" IS 'Timestamp do último lembrete disparado com sucesso via WhatsApp/SMS.';
 
 
 
@@ -13663,6 +15127,18 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_collaborator_invitations" (
 ALTER TABLE "public"."clinic_collaborator_invitations" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."clinic_custom_words" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "word" "text" NOT NULL,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."clinic_custom_words" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."clinic_daily_metrics" (
     "clinic_id" "uuid" NOT NULL,
     "metric_date" "date" NOT NULL,
@@ -13677,6 +15153,97 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_daily_metrics" (
 
 
 ALTER TABLE "public"."clinic_daily_metrics" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."clinic_document_signatures" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "patient_id" "uuid" NOT NULL,
+    "session_id" "uuid",
+    "template_id" "uuid",
+    "template_title" "text" NOT NULL,
+    "rendered_markdown" "text" NOT NULL,
+    "sign_token" "text" DEFAULT "replace"(("gen_random_uuid"())::"text", '-'::"text", ''::"text") NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "signer_name" "text",
+    "signer_cpf" "text",
+    "signer_role" "text",
+    "signature_image_url" "text",
+    "signature_metadata" "jsonb" DEFAULT '{}'::"jsonb",
+    "signed_at" timestamp with time zone,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "clinic_document_signatures_signer_role_check" CHECK ((("signer_role" IS NULL) OR ("signer_role" = ANY (ARRAY['paciente'::"text", 'responsavel'::"text", 'colaborador'::"text", 'owner'::"text"])))),
+    CONSTRAINT "clinic_document_signatures_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'signed_in_person'::"text", 'signed_remote'::"text", 'pending_physical'::"text"])))
+);
+
+
+ALTER TABLE "public"."clinic_document_signatures" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."clinic_document_signatures" IS 'Registros de solicitação e assinatura digital/presencial de documentos gerados a partir de clinic_document_templates';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_signatures"."sign_token" IS 'Token único e seguro para acesso público à página de assinatura remota (/assinar-documento/:token)';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_signatures"."status" IS 'Estado da assinatura: pending, signed_in_person, signed_remote, pending_physical';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_signatures"."signer_role" IS 'Papel de quem assinou: paciente, responsavel, colaborador, owner';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_signatures"."signature_metadata" IS 'Metadados de auditoria da assinatura (IP, user-agent, data/hora, local, ID global usr_xxx, etc.)';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_signatures"."deleted_at" IS 'Data de arquivamento/soft-delete (retenção legal conforme CFM 1.821 / LGPD)';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."clinic_document_templates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "description" "text",
+    "category" "text" DEFAULT 'custom'::"text" NOT NULL,
+    "content_md" "text" NOT NULL,
+    "variables" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "is_active" boolean DEFAULT true NOT NULL,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone
+);
+
+
+ALTER TABLE "public"."clinic_document_templates" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."clinic_document_templates" IS 'Modelos de documentos e termos customizáveis por clínica com suporte a variáveis dinâmicas e versionamento suave';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_templates"."category" IS 'Categoria do modelo (ex: adult_consent, minor_consent, print_responsibility, custom)';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_templates"."content_md" IS 'Conteúdo do template formatado em Markdown';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_templates"."variables" IS 'Lista de chaves de variáveis detectadas no template (ex: ["nome_paciente", "email_colaborador"])';
+
+
+
+COMMENT ON COLUMN "public"."clinic_document_templates"."deleted_at" IS 'Data de arquivamento/soft-delete (retenção legal conforme CFM 1.821 / LGPD)';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."clinic_group_color_slots" (
@@ -13751,7 +15318,8 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_memberships" (
     "specialty" "text",
     "working_hours" "jsonb",
     "role_key" "text"
-);
+)
+WITH ("autovacuum_vacuum_scale_factor"='0.05', "autovacuum_vacuum_threshold"='200', "autovacuum_analyze_scale_factor"='0.02');
 
 
 ALTER TABLE "public"."clinic_memberships" OWNER TO "postgres";
@@ -13777,7 +15345,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_operational_role_capabilities" (
     "enabled" boolean DEFAULT false NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "clinic_operational_role_capabilities_known" CHECK (("capability" = ANY (ARRAY['clinic_profile.read'::"text", 'clinic_profile.manage'::"text", 'clinic_terms.manage'::"text", 'clinic_trash.manage'::"text", 'forms.read'::"text", 'forms.manage'::"text", 'subaccounts.read'::"text", 'subaccounts.write'::"text", 'subaccounts.manage'::"text", 'subaccounts.delete'::"text", 'subaccounts_roles.read'::"text", 'subaccounts_roles.manage'::"text", 'subscription_billing.read'::"text", 'subscription_billing.manage'::"text", 'treasury.read'::"text", 'treasury.manage'::"text", 'agenda.delete_events'::"text", 'subaccounts_analytics.read'::"text", 'team_development.manage'::"text", 'patients.read'::"text", 'patients.write'::"text", 'patients.delete'::"text", 'patients.manage_exclusive'::"text", 'patients_groups.read'::"text", 'patients.manage_groups'::"text", 'schedule.read'::"text", 'schedule.read_all'::"text", 'schedule.write'::"text", 'schedule.write_others'::"text", 'sessions.read'::"text", 'sessions.write'::"text", 'sessions.read_all'::"text", 'sessions.write_others'::"text", 'sessions.share'::"text", 'sessions.delete'::"text", 'session.delete_draft'::"text", 'system.print'::"text"]))),
+    CONSTRAINT "clinic_operational_role_capabilities_known" CHECK (("capability" = ANY (ARRAY['clinic_profile.read'::"text", 'clinic_profile.manage'::"text", 'clinic_terms.manage'::"text", 'clinic_trash.manage'::"text", 'forms.read'::"text", 'forms.manage'::"text", 'subaccounts.read'::"text", 'subaccounts.write'::"text", 'subaccounts.manage'::"text", 'subaccounts.delete'::"text", 'subaccounts_roles.read'::"text", 'subaccounts_roles.manage'::"text", 'subscription_billing.read'::"text", 'subscription_billing.manage'::"text", 'treasury.read'::"text", 'treasury.manage'::"text", 'agenda.delete_events'::"text", 'subaccounts_analytics.read'::"text", 'team_development.manage'::"text", 'patients.read'::"text", 'patients.write'::"text", 'patients.delete'::"text", 'patients.manage_exclusive'::"text", 'patients_groups.read'::"text", 'patients.manage_groups'::"text", 'schedule.read'::"text", 'schedule.read_all'::"text", 'schedule.write'::"text", 'schedule.write_others'::"text", 'sessions.read'::"text", 'sessions.write'::"text", 'sessions.read_all'::"text", 'sessions.write_others'::"text", 'sessions.share'::"text", 'sessions.delete'::"text", 'session.delete_draft'::"text", 'system.print'::"text", 'marketing.affiliates.view'::"text", 'marketing.affiliates.manage'::"text", 'marketing.affiliates.withdraw'::"text"]))),
     CONSTRAINT "clinic_operational_role_capabilities_no_owner" CHECK (("operational_role" <> 'owner'::"text"))
 );
 
@@ -13967,6 +15535,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinics" (
     "is_hibernated" boolean DEFAULT false NOT NULL,
     "hibernated_at" timestamp with time zone,
     "last_accessed_at" timestamp with time zone DEFAULT "now"(),
+    "allow_team_personal_affiliates" boolean DEFAULT false NOT NULL,
     CONSTRAINT "clinics_access_status_check" CHECK (("access_status" = ANY (ARRAY['active'::"text", 'payment_pending'::"text", 'temporarily_paused'::"text", 'banned'::"text"]))),
     CONSTRAINT "clinics_anamnesis_base_schema_shape_check" CHECK ((("jsonb_typeof"("anamnesis_base_schema") = 'array'::"text") AND
 CASE
@@ -13988,6 +15557,10 @@ COMMENT ON COLUMN "public"."clinics"."hibernated_at" IS 'Data e hora em que a cl
 
 
 COMMENT ON COLUMN "public"."clinics"."last_accessed_at" IS 'Último acesso ou atividade operacional registrada na clínica.';
+
+
+
+COMMENT ON COLUMN "public"."clinics"."allow_team_personal_affiliates" IS 'Define se colaboradores da clínica podem operar seu programa pessoal de afiliados fora do expediente da clínica.';
 
 
 
@@ -14070,6 +15643,34 @@ COMMENT ON TABLE "public"."feature_flags" IS 'Tabela de governança de feature f
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."global_word_candidates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "word" "text" NOT NULL,
+    "user_count" integer DEFAULT 1 NOT NULL,
+    "clinic_count" integer DEFAULT 1 NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "promoted_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "global_word_candidates_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'promoted'::"text", 'rejected'::"text"])))
+);
+
+
+ALTER TABLE "public"."global_word_candidates" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."global_word_telemetry" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "word" "text" NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."global_word_telemetry" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."governance_rules" (
     "key" "text" NOT NULL,
     "value" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
@@ -14078,6 +15679,26 @@ CREATE TABLE IF NOT EXISTS "public"."governance_rules" (
 
 
 ALTER TABLE "public"."governance_rules" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."mfa_recovery_challenges" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "channel" "text" NOT NULL,
+    "target_masked" "text" NOT NULL,
+    "code_hash" "text" NOT NULL,
+    "attempts" integer DEFAULT 0 NOT NULL,
+    "max_attempts" integer DEFAULT 5 NOT NULL,
+    "expires_at" timestamp with time zone NOT NULL,
+    "verified_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "ip_address" "text",
+    "user_agent" "text",
+    CONSTRAINT "mfa_recovery_challenges_channel_check" CHECK (("channel" = ANY (ARRAY['whatsapp'::"text", 'email'::"text"])))
+);
+
+
+ALTER TABLE "public"."mfa_recovery_challenges" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."patient_clinical_snapshots" (
@@ -14522,7 +16143,8 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "signup_utm" "jsonb",
     "totp_secret" "text",
     "totp_enabled" boolean DEFAULT false NOT NULL,
-    "totp_enabled_at" timestamp with time zone
+    "totp_enabled_at" timestamp with time zone,
+    "signature_webp_url" "text"
 );
 
 
@@ -14550,6 +16172,10 @@ COMMENT ON COLUMN "public"."profiles"."signup_origin" IS 'Origem ou canal de aqu
 
 
 COMMENT ON COLUMN "public"."profiles"."signup_utm" IS 'Metadados e parâmetros UTM capturados no momento do cadastro (utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer).';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."signature_webp_url" IS 'URL, storage path ou data URL da assinatura digital em .webp sem fundo do profissional/owner';
 
 
 
@@ -14660,7 +16286,8 @@ CREATE TABLE IF NOT EXISTS "public"."sessions" (
     CONSTRAINT "sessions_payment_status_check" CHECK (("payment_status" = ANY (ARRAY['nao_cobrado'::"text", 'pendente'::"text", 'parcial'::"text", 'pago'::"text", 'credito'::"text", 'cortesia'::"text"]))),
     CONSTRAINT "sessions_payment_status_date_range" CHECK ((("payment_status_date" IS NULL) OR (("payment_status_date" >= '2000-01-01'::"date") AND ("payment_status_date" <= '2100-12-31'::"date")))),
     CONSTRAINT "sessions_scheduled_start_at_reasonable" CHECK ((("scheduled_start_at" IS NULL) OR (("scheduled_start_at" >= '2000-01-01 00:00:00+00'::timestamp with time zone) AND ("scheduled_start_at" < '2101-01-01 00:00:00+00'::timestamp with time zone))))
-);
+)
+WITH ("autovacuum_vacuum_scale_factor"='0.05', "autovacuum_vacuum_threshold"='500', "autovacuum_analyze_scale_factor"='0.02');
 ALTER TABLE ONLY "public"."sessions" ALTER COLUMN "anamnesis" SET COMPRESSION lz4;
 ALTER TABLE ONLY "public"."sessions" ALTER COLUMN "treatment" SET COMPRESSION lz4;
 ALTER TABLE ONLY "public"."sessions" ALTER COLUMN "anamnesis_form_response" SET COMPRESSION lz4;
@@ -14686,6 +16313,8 @@ CREATE TABLE IF NOT EXISTS "public"."subscription_coupons" (
     "discount_duration_type" "text" DEFAULT 'FOREVER'::"text" NOT NULL,
     "discount_duration_months" integer,
     "eligibility_rules" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "affiliate_id" "uuid",
+    "is_affiliate_coupon" boolean DEFAULT false NOT NULL,
     CONSTRAINT "subscription_coupons_code_check" CHECK ((("code" = "upper"(TRIM(BOTH FROM "code"))) AND ("length"("code") >= 3))),
     CONSTRAINT "subscription_coupons_discount_duration_months_check" CHECK ((("discount_duration_months" IS NULL) OR ("discount_duration_months" > 0))),
     CONSTRAINT "subscription_coupons_discount_duration_type_check" CHECK (("discount_duration_type" = ANY (ARRAY['ONCE'::"text", 'REPEATING'::"text", 'FOREVER'::"text"]))),
@@ -14708,6 +16337,14 @@ COMMENT ON COLUMN "public"."subscription_coupons"."discount_duration_months" IS 
 
 
 COMMENT ON COLUMN "public"."subscription_coupons"."eligibility_rules" IS 'Configurações de elegibilidade da conta: data de criação, colaboradores, sessões, novos clientes, pacientes, ciclos, winback, estados';
+
+
+
+COMMENT ON COLUMN "public"."subscription_coupons"."affiliate_id" IS 'ID do afiliado parceiro dono do cupom. Nulo para cupons promocionais da plataforma.';
+
+
+
+COMMENT ON COLUMN "public"."subscription_coupons"."is_affiliate_coupon" IS 'Sinalizador rápido para cupons emitidos por afiliados parceiros.';
 
 
 
@@ -14819,6 +16456,19 @@ CREATE TABLE IF NOT EXISTS "public"."user_governance_overrides" (
 
 
 ALTER TABLE "public"."user_governance_overrides" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."user_mfa_credentials" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "totp_secret" "text" NOT NULL,
+    "totp_enabled" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."user_mfa_credentials" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."user_punishments" (
@@ -14947,6 +16597,46 @@ COMMENT ON TABLE "public"."whatsapp_chat_sessions" IS 'Armazena o estado das con
 
 
 
+ALTER TABLE ONLY "public"."affiliate_commissions"
+    ADD CONSTRAINT "affiliate_commissions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."affiliate_conversions"
+    ADD CONSTRAINT "affiliate_conversions_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."affiliate_crm_logs"
+    ADD CONSTRAINT "affiliate_crm_logs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."affiliate_invitations"
+    ADD CONSTRAINT "affiliate_invitations_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."affiliate_invitations"
+    ADD CONSTRAINT "affiliate_invitations_token_key" UNIQUE ("token");
+
+
+
+ALTER TABLE ONLY "public"."affiliates"
+    ADD CONSTRAINT "affiliates_coupon_code_key" UNIQUE ("coupon_code");
+
+
+
+ALTER TABLE ONLY "public"."affiliates"
+    ADD CONSTRAINT "affiliates_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."affiliates"
+    ADD CONSTRAINT "affiliates_referral_slug_key" UNIQUE ("referral_slug");
+
+
+
 ALTER TABLE ONLY "public"."agenda_events"
     ADD CONSTRAINT "agenda_events_pkey" PRIMARY KEY ("id");
 
@@ -14982,8 +16672,28 @@ ALTER TABLE ONLY "public"."clinic_collaborator_invitations"
 
 
 
+ALTER TABLE ONLY "public"."clinic_custom_words"
+    ADD CONSTRAINT "clinic_custom_words_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."clinic_daily_metrics"
     ADD CONSTRAINT "clinic_daily_metrics_pkey" PRIMARY KEY ("clinic_id", "metric_date");
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_signatures"
+    ADD CONSTRAINT "clinic_document_signatures_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_signatures"
+    ADD CONSTRAINT "clinic_document_signatures_sign_token_key" UNIQUE ("sign_token");
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_templates"
+    ADD CONSTRAINT "clinic_document_templates_pkey" PRIMARY KEY ("id");
 
 
 
@@ -15107,8 +16817,28 @@ ALTER TABLE ONLY "public"."feature_flags"
 
 
 
+ALTER TABLE ONLY "public"."global_word_candidates"
+    ADD CONSTRAINT "global_word_candidates_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."global_word_candidates"
+    ADD CONSTRAINT "global_word_candidates_word_key" UNIQUE ("word");
+
+
+
+ALTER TABLE ONLY "public"."global_word_telemetry"
+    ADD CONSTRAINT "global_word_telemetry_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."governance_rules"
     ADD CONSTRAINT "governance_rules_pkey" PRIMARY KEY ("key");
+
+
+
+ALTER TABLE ONLY "public"."mfa_recovery_challenges"
+    ADD CONSTRAINT "mfa_recovery_challenges_pkey" PRIMARY KEY ("id");
 
 
 
@@ -15277,6 +17007,26 @@ ALTER TABLE ONLY "public"."telemetry_events"
 
 
 
+ALTER TABLE ONLY "public"."clinic_custom_words"
+    ADD CONSTRAINT "uq_clinic_custom_word" UNIQUE ("clinic_id", "word");
+
+
+
+ALTER TABLE ONLY "public"."patients"
+    ADD CONSTRAINT "uq_patients_id_clinic_id" UNIQUE ("id", "clinic_id");
+
+
+
+ALTER TABLE ONLY "public"."user_mfa_credentials"
+    ADD CONSTRAINT "uq_user_mfa_credentials_user" UNIQUE ("user_id");
+
+
+
+ALTER TABLE ONLY "public"."global_word_telemetry"
+    ADD CONSTRAINT "uq_word_telemetry_user_clinic" UNIQUE ("word", "user_id", "clinic_id");
+
+
+
 ALTER TABLE ONLY "public"."user_active_clinic_contexts"
     ADD CONSTRAINT "user_active_clinic_contexts_pkey" PRIMARY KEY ("user_id");
 
@@ -15284,6 +17034,11 @@ ALTER TABLE ONLY "public"."user_active_clinic_contexts"
 
 ALTER TABLE ONLY "public"."user_governance_overrides"
     ADD CONSTRAINT "user_governance_overrides_pkey" PRIMARY KEY ("user_id");
+
+
+
+ALTER TABLE ONLY "public"."user_mfa_credentials"
+    ADD CONSTRAINT "user_mfa_credentials_pkey" PRIMARY KEY ("id");
 
 
 
@@ -15328,7 +17083,7 @@ ALTER TABLE ONLY "public"."user_telemetry_summaries"
 
 
 ALTER TABLE ONLY "public"."user_telemetry_summaries"
-    ADD CONSTRAINT "user_telemetry_summary_unique" UNIQUE ("user_id", "clinic_id", "summary_date");
+    ADD CONSTRAINT "user_telemetry_summary_unique" UNIQUE NULLS NOT DISTINCT ("user_id", "clinic_id", "summary_date");
 
 
 
@@ -15358,6 +17113,74 @@ CREATE UNIQUE INDEX "feature_flags_tag_key_key" ON "public"."feature_flags" USIN
 
 
 
+CREATE INDEX "idx_affiliate_commissions_affiliate_id" ON "public"."affiliate_commissions" USING "btree" ("affiliate_id");
+
+
+
+CREATE INDEX "idx_affiliate_commissions_conversion_id" ON "public"."affiliate_commissions" USING "btree" ("conversion_id");
+
+
+
+CREATE INDEX "idx_affiliate_commissions_payment_status" ON "public"."affiliate_commissions" USING "btree" ("payment_status");
+
+
+
+CREATE INDEX "idx_affiliate_conversions_affiliate_id" ON "public"."affiliate_conversions" USING "btree" ("affiliate_id");
+
+
+
+CREATE INDEX "idx_affiliate_conversions_clinic_id" ON "public"."affiliate_conversions" USING "btree" ("clinic_id");
+
+
+
+CREATE INDEX "idx_affiliate_conversions_customer_user_id" ON "public"."affiliate_conversions" USING "btree" ("customer_user_id");
+
+
+
+CREATE INDEX "idx_affiliate_crm_logs_affiliate_created" ON "public"."affiliate_crm_logs" USING "btree" ("affiliate_id", "created_at" DESC);
+
+
+
+CREATE INDEX "idx_affiliate_crm_logs_conversion_id" ON "public"."affiliate_crm_logs" USING "btree" ("conversion_id");
+
+
+
+CREATE INDEX "idx_affiliate_invitations_clinic_id" ON "public"."affiliate_invitations" USING "btree" ("clinic_id");
+
+
+
+CREATE INDEX "idx_affiliate_invitations_email_lower" ON "public"."affiliate_invitations" USING "btree" ("lower"("invited_email")) WHERE ("invited_email" IS NOT NULL);
+
+
+
+CREATE INDEX "idx_affiliate_invitations_invited_user_id" ON "public"."affiliate_invitations" USING "btree" ("invited_user_id");
+
+
+
+CREATE INDEX "idx_affiliate_invitations_status" ON "public"."affiliate_invitations" USING "btree" ("status");
+
+
+
+CREATE UNIQUE INDEX "idx_affiliate_invitations_token" ON "public"."affiliate_invitations" USING "btree" ("token");
+
+
+
+CREATE INDEX "idx_affiliates_clinic_id" ON "public"."affiliates" USING "btree" ("clinic_id");
+
+
+
+CREATE INDEX "idx_affiliates_coupon_code" ON "public"."affiliates" USING "btree" ("coupon_code");
+
+
+
+CREATE INDEX "idx_affiliates_referral_slug" ON "public"."affiliates" USING "btree" ("referral_slug");
+
+
+
+CREATE INDEX "idx_affiliates_user_id" ON "public"."affiliates" USING "btree" ("user_id");
+
+
+
 CREATE INDEX "idx_agenda_events_auto_cancel_due" ON "public"."agenda_events" USING "btree" ("scheduled_for") WHERE (("event_type" = 'atendimento'::"text") AND ("patient_id" IS NOT NULL) AND ("status" <> 'cancelado'::"text"));
 
 
@@ -15378,6 +17201,10 @@ CREATE INDEX "idx_agenda_events_clinic_scheduled_for" ON "public"."agenda_events
 
 
 
+CREATE INDEX "idx_agenda_events_covering_active" ON "public"."agenda_events" USING "btree" ("clinic_id", "scheduled_for") INCLUDE ("id", "title", "event_type", "status", "patient_id", "duration_minutes") WHERE ("status" <> 'cancelado'::"text");
+
+
+
 CREATE INDEX "idx_agenda_events_generated_recurrence" ON "public"."agenda_events" USING "btree" ("patient_id", "scheduled_for") WHERE ("generated_by_recurring_patient" = true);
 
 
@@ -15387,6 +17214,10 @@ CREATE INDEX "idx_agenda_events_patient_id" ON "public"."agenda_events" USING "b
 
 
 CREATE INDEX "idx_agenda_events_payment_plan_id" ON "public"."agenda_events" USING "btree" ("payment_plan_id");
+
+
+
+CREATE INDEX "idx_agenda_events_reminder_poll" ON "public"."agenda_events" USING "btree" ("scheduled_for", "status") WHERE ("status" = ANY (ARRAY['confirmado'::"text", 'agendado'::"text", 'aguardando_confirmacao'::"text"]));
 
 
 
@@ -15430,6 +17261,10 @@ CREATE INDEX "idx_asaas_webhook_events_asaas_event_id" ON "public"."asaas_webhoo
 
 
 
+CREATE INDEX "idx_asaas_webhook_events_dedup" ON "public"."asaas_webhook_events" USING "btree" ("asaas_event_id", "processed");
+
+
+
 CREATE INDEX "idx_clinic_collaborator_invitations_clinic_id" ON "public"."clinic_collaborator_invitations" USING "btree" ("clinic_id");
 
 
@@ -15450,7 +17285,47 @@ CREATE INDEX "idx_clinic_collaborator_invitations_email_status" ON "public"."cli
 
 
 
+CREATE INDEX "idx_clinic_collaborator_invitations_invited_by_cover" ON "public"."clinic_collaborator_invitations" USING "btree" ("invited_by") WHERE ("status" = 'pending'::"text");
+
+
+
+CREATE INDEX "idx_clinic_custom_words_clinic_id" ON "public"."clinic_custom_words" USING "btree" ("clinic_id");
+
+
+
+CREATE INDEX "idx_clinic_custom_words_lookup" ON "public"."clinic_custom_words" USING "btree" ("clinic_id", "word");
+
+
+
 CREATE INDEX "idx_clinic_daily_metrics_lookup" ON "public"."clinic_daily_metrics" USING "btree" ("clinic_id", "metric_date" DESC);
+
+
+
+CREATE INDEX "idx_clinic_document_signatures_clinic_patient" ON "public"."clinic_document_signatures" USING "btree" ("clinic_id", "patient_id") WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_clinic_document_signatures_clinic_session" ON "public"."clinic_document_signatures" USING "btree" ("clinic_id", "session_id") WHERE (("deleted_at" IS NULL) AND ("session_id" IS NOT NULL));
+
+
+
+CREATE INDEX "idx_clinic_document_signatures_clinic_status" ON "public"."clinic_document_signatures" USING "btree" ("clinic_id", "status") WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_clinic_document_signatures_patient_created" ON "public"."clinic_document_signatures" USING "btree" ("patient_id", "created_at" DESC) WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_clinic_document_templates_category" ON "public"."clinic_document_templates" USING "btree" ("clinic_id", "category") WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_clinic_document_templates_clinic_deleted" ON "public"."clinic_document_templates" USING "btree" ("clinic_id", "deleted_at");
+
+
+
+CREATE INDEX "idx_clinic_document_templates_clinic_id" ON "public"."clinic_document_templates" USING "btree" ("clinic_id");
 
 
 
@@ -15479,6 +17354,14 @@ CREATE INDEX "idx_clinic_memberships_clinic_role_key" ON "public"."clinic_member
 
 
 CREATE INDEX "idx_clinic_memberships_user_active_joined" ON "public"."clinic_memberships" USING "btree" ("user_id", "is_active", "membership_status", "joined_at");
+
+
+
+CREATE INDEX "idx_clinic_memberships_user_clinic_covering" ON "public"."clinic_memberships" USING "btree" ("user_id", "clinic_id") INCLUDE ("operational_role", "role_key", "is_active", "membership_status") WHERE ("is_active" = true);
+
+
+
+CREATE INDEX "idx_clinic_memberships_user_cover" ON "public"."clinic_memberships" USING "btree" ("user_id") WHERE ("is_active" = true);
 
 
 
@@ -15519,6 +17402,10 @@ CREATE INDEX "idx_clinical_session_billings_payment_plan_id" ON "public"."clinic
 
 
 CREATE INDEX "idx_clinical_session_billings_payment_status" ON "public"."clinical_session_billings" USING "btree" ("payment_status");
+
+
+
+CREATE INDEX "idx_clinical_session_billings_session_cover" ON "public"."clinical_session_billings" USING "btree" ("session_id");
 
 
 
@@ -15570,6 +17457,22 @@ CREATE INDEX "idx_feature_flags_scope_tag" ON "public"."feature_flags" USING "bt
 
 
 
+CREATE INDEX "idx_global_word_candidates_quorum" ON "public"."global_word_candidates" USING "btree" ("user_count", "clinic_count") WHERE ("status" = 'pending'::"text");
+
+
+
+CREATE INDEX "idx_global_word_candidates_status" ON "public"."global_word_candidates" USING "btree" ("status") WHERE ("status" = 'pending'::"text");
+
+
+
+CREATE INDEX "idx_global_word_telemetry_word" ON "public"."global_word_telemetry" USING "btree" ("word");
+
+
+
+CREATE INDEX "idx_mfa_recovery_challenges_user_active" ON "public"."mfa_recovery_challenges" USING "btree" ("user_id", "expires_at") WHERE ("verified_at" IS NULL);
+
+
+
 CREATE INDEX "idx_patient_clinical_snapshots_patient_created_at" ON "public"."patient_clinical_snapshots" USING "btree" ("patient_id", "created_at" DESC);
 
 
@@ -15599,6 +17502,10 @@ CREATE INDEX "idx_patient_file_uploads_session" ON "public"."patient_file_upload
 
 
 CREATE INDEX "idx_patient_file_uploads_status" ON "public"."patient_file_uploads" USING "btree" ("status", "upload_expires_at") WHERE ("status" = 'pending'::"public"."patient_file_upload_status");
+
+
+
+CREATE INDEX "idx_patient_file_uploads_user_cover" ON "public"."patient_file_uploads" USING "btree" ("uploaded_by_user_id") WHERE ("deleted_at" IS NULL);
 
 
 
@@ -15634,6 +17541,10 @@ CREATE INDEX "idx_patient_payment_plans_clinic_id" ON "public"."patient_payment_
 
 
 
+CREATE INDEX "idx_patient_payment_plans_patient_cover" ON "public"."patient_payment_plans" USING "btree" ("patient_id");
+
+
+
 CREATE INDEX "idx_patient_payment_plans_patient_id" ON "public"."patient_payment_plans" USING "btree" ("patient_id");
 
 
@@ -15643,6 +17554,10 @@ CREATE INDEX "idx_patient_registration_links_patient_id" ON "public"."patient_re
 
 
 CREATE INDEX "idx_patient_registration_links_token" ON "public"."patient_registration_links" USING "btree" ("token");
+
+
+
+CREATE INDEX "idx_patients_active_clinic_covering" ON "public"."patients" USING "btree" ("clinic_id", "name") INCLUDE ("id", "patient_code", "status", "updated_at") WHERE ("deleted_at" IS NULL);
 
 
 
@@ -15670,7 +17585,7 @@ CREATE INDEX "idx_patients_deleted_at" ON "public"."patients" USING "btree" ("de
 
 
 
-CREATE INDEX "idx_patients_recurrence" ON "public"."patients" USING "btree" ("clinic_id", "is_recurring") WHERE ("is_recurring" = true);
+CREATE INDEX "idx_patients_exclusive_users" ON "public"."patients" USING "gin" ("exclusive_user_ids");
 
 
 
@@ -15678,7 +17593,11 @@ CREATE INDEX "idx_patients_is_exclusive" ON "public"."patients" USING "btree" ("
 
 
 
-CREATE INDEX "idx_patients_exclusive_users" ON "public"."patients" USING "gin" ("exclusive_user_ids");
+CREATE INDEX "idx_patients_name_trgm" ON "public"."patients" USING "gin" ("name" "public"."gin_trgm_ops") WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_patients_recurrence" ON "public"."patients" USING "btree" ("clinic_id", "is_recurring") WHERE ("is_recurring" = true);
 
 
 
@@ -15798,6 +17717,10 @@ CREATE INDEX "idx_session_edit_history_edited_at" ON "public"."session_edit_hist
 
 
 
+CREATE INDEX "idx_session_edit_history_session_cover" ON "public"."session_edit_history" USING "btree" ("session_id", "edited_at" DESC);
+
+
+
 CREATE INDEX "idx_session_edit_history_session_id" ON "public"."session_edit_history" USING "btree" ("session_id");
 
 
@@ -15815,10 +17738,6 @@ CREATE INDEX "idx_session_shares_session_id" ON "public"."session_shares" USING 
 
 
 CREATE INDEX "idx_session_shares_shared_with_user_id" ON "public"."session_shares" USING "btree" ("shared_with_user_id");
-
-
-
-CREATE INDEX "idx_sessions_active_clinics" ON "public"."sessions" USING "btree" ("clinic_id", "session_date" DESC) WHERE ("deleted_at" IS NULL);
 
 
 
@@ -15854,6 +17773,10 @@ CREATE INDEX "idx_sessions_parent_session_id" ON "public"."sessions" USING "btre
 
 
 
+CREATE INDEX "idx_sessions_patient_cover" ON "public"."sessions" USING "btree" ("patient_id") WHERE ("deleted_at" IS NULL);
+
+
+
 CREATE INDEX "idx_sessions_patient_id" ON "public"."sessions" USING "btree" ("patient_id");
 
 
@@ -15886,6 +17809,10 @@ CREATE INDEX "idx_sessions_user_id" ON "public"."sessions" USING "btree" ("user_
 
 
 
+CREATE INDEX "idx_subscription_coupons_affiliate_id" ON "public"."subscription_coupons" USING "btree" ("affiliate_id") WHERE ("affiliate_id" IS NOT NULL);
+
+
+
 CREATE INDEX "idx_subscription_coupons_code" ON "public"."subscription_coupons" USING "btree" ("code");
 
 
@@ -15911,6 +17838,10 @@ CREATE INDEX "idx_subscription_invoices_clinic_status_due" ON "public"."subscrip
 
 
 CREATE INDEX "idx_subscription_invoices_status" ON "public"."subscription_invoices" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_subscription_invoices_subscription_cover" ON "public"."subscription_invoices" USING "btree" ("subscription_id");
 
 
 
@@ -15943,6 +17874,14 @@ CREATE INDEX "idx_user_punishments_expires" ON "public"."user_punishments" USING
 
 
 CREATE INDEX "idx_user_punishments_type" ON "public"."user_punishments" USING "btree" ("punishment_type");
+
+
+
+CREATE INDEX "idx_user_punishments_user_active_covering" ON "public"."user_punishments" USING "btree" ("user_id", "is_active") INCLUDE ("punishment_type", "applied_at", "expires_at", "reason", "is_manual", "applied_by") WHERE ("is_active" = true);
+
+
+
+CREATE INDEX "idx_user_roles_user_cover" ON "public"."user_roles" USING "btree" ("user_id");
 
 
 
@@ -16082,11 +18021,39 @@ CREATE OR REPLACE TRIGGER "trg_check_clinic_hibernation_eligibility" BEFORE INSE
 
 
 
+CREATE OR REPLACE TRIGGER "trg_clinic_document_signatures_updated_at" BEFORE UPDATE ON "public"."clinic_document_signatures" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_clinic_document_templates_updated_at" BEFORE UPDATE ON "public"."clinic_document_templates" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_clinic_word_telemetry" AFTER INSERT ON "public"."clinic_custom_words" FOR EACH ROW EXECUTE FUNCTION "public"."handle_clinic_word_telemetry"();
+
+
+
 CREATE OR REPLACE TRIGGER "trg_platform_feedbacks_updated_at" BEFORE UPDATE ON "public"."platform_feedbacks" FOR EACH ROW EXECUTE FUNCTION "public"."touch_platform_feedbacks_updated_at"();
 
 
 
+CREATE OR REPLACE TRIGGER "trg_prevent_affiliate_pyramid_structure" BEFORE INSERT OR UPDATE ON "public"."affiliates" FOR EACH ROW EXECUTE FUNCTION "public"."prevent_affiliate_pyramid_structure"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_prevent_affiliate_self_referral" BEFORE INSERT ON "public"."affiliate_conversions" FOR EACH ROW EXECUTE FUNCTION "public"."prevent_affiliate_self_referral"();
+
+
+
 CREATE OR REPLACE TRIGGER "trg_set_clinic_subscriptions_updated_at" BEFORE UPDATE ON "public"."clinic_subscriptions" FOR EACH ROW EXECUTE FUNCTION "public"."set_clinic_subscriptions_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_sync_affiliate_tier_on_conversion" AFTER INSERT OR DELETE OR UPDATE ON "public"."affiliate_conversions" FOR EACH ROW EXECUTE FUNCTION "public"."trg_affiliate_conversions_sync_tier"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_sync_billing_to_session" AFTER UPDATE OF "amount_charged_cents", "amount_paid_cents", "amount_original_cents", "payment_status", "payment_method", "payment_installments", "payment_adjustment_reason", "payment_status_date", "payment_plan_id", "payment_plan_session_index" ON "public"."clinical_session_billings" FOR EACH ROW EXECUTE FUNCTION "public"."sync_billing_to_session"();
 
 
 
@@ -16103,6 +18070,26 @@ CREATE OR REPLACE TRIGGER "trg_sync_payment_plan_used_sessions" AFTER INSERT OR 
 
 
 CREATE OR REPLACE TRIGGER "trg_sync_session_to_billing" AFTER INSERT OR UPDATE OF "amount_charged_cents", "amount_paid_cents", "amount_original_cents", "payment_status", "payment_method", "payment_installments", "payment_adjustment_reason", "payment_status_date", "payment_plan_id", "payment_plan_session_index", "clinic_id", "patient_id" ON "public"."sessions" FOR EACH ROW EXECUTE FUNCTION "public"."sync_session_to_billing"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_update_affiliate_commissions_updated_at" BEFORE UPDATE ON "public"."affiliate_commissions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_update_affiliate_conversions_updated_at" BEFORE UPDATE ON "public"."affiliate_conversions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_update_affiliate_invitations_updated_at" BEFORE UPDATE ON "public"."affiliate_invitations" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_update_affiliates_updated_at" BEFORE UPDATE ON "public"."affiliates" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_validate_affiliate_unique_financial_data" BEFORE INSERT OR UPDATE OF "pix_key", "asaas_account_id" ON "public"."affiliates" FOR EACH ROW EXECUTE FUNCTION "public"."validate_affiliate_unique_financial_data"();
 
 
 
@@ -16202,6 +18189,61 @@ CREATE OR REPLACE TRIGGER "update_user_release_note_states_updated_at" BEFORE UP
 
 
 
+ALTER TABLE ONLY "public"."affiliate_commissions"
+    ADD CONSTRAINT "affiliate_commissions_affiliate_id_fkey" FOREIGN KEY ("affiliate_id") REFERENCES "public"."affiliates"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliate_commissions"
+    ADD CONSTRAINT "affiliate_commissions_conversion_id_fkey" FOREIGN KEY ("conversion_id") REFERENCES "public"."affiliate_conversions"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliate_conversions"
+    ADD CONSTRAINT "affiliate_conversions_affiliate_id_fkey" FOREIGN KEY ("affiliate_id") REFERENCES "public"."affiliates"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliate_conversions"
+    ADD CONSTRAINT "affiliate_conversions_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliate_conversions"
+    ADD CONSTRAINT "affiliate_conversions_customer_user_id_fkey" FOREIGN KEY ("customer_user_id") REFERENCES "public"."profiles"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliate_crm_logs"
+    ADD CONSTRAINT "affiliate_crm_logs_affiliate_id_fkey" FOREIGN KEY ("affiliate_id") REFERENCES "public"."affiliates"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliate_crm_logs"
+    ADD CONSTRAINT "affiliate_crm_logs_conversion_id_fkey" FOREIGN KEY ("conversion_id") REFERENCES "public"."affiliate_conversions"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliate_invitations"
+    ADD CONSTRAINT "affiliate_invitations_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliate_invitations"
+    ADD CONSTRAINT "affiliate_invitations_invited_user_id_fkey" FOREIGN KEY ("invited_user_id") REFERENCES "public"."profiles"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliates"
+    ADD CONSTRAINT "affiliates_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."affiliates"
+    ADD CONSTRAINT "affiliates_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE RESTRICT;
+
+
+
 ALTER TABLE ONLY "public"."agenda_events"
     ADD CONSTRAINT "agenda_events_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE CASCADE;
 
@@ -16262,8 +18304,53 @@ ALTER TABLE ONLY "public"."clinic_collaborator_invitations"
 
 
 
+ALTER TABLE ONLY "public"."clinic_custom_words"
+    ADD CONSTRAINT "clinic_custom_words_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."clinic_custom_words"
+    ADD CONSTRAINT "clinic_custom_words_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."clinic_daily_metrics"
     ADD CONSTRAINT "clinic_daily_metrics_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_signatures"
+    ADD CONSTRAINT "clinic_document_signatures_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_signatures"
+    ADD CONSTRAINT "clinic_document_signatures_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_signatures"
+    ADD CONSTRAINT "clinic_document_signatures_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "public"."patients"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_signatures"
+    ADD CONSTRAINT "clinic_document_signatures_session_id_fkey" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_signatures"
+    ADD CONSTRAINT "clinic_document_signatures_template_id_fkey" FOREIGN KEY ("template_id") REFERENCES "public"."clinic_document_templates"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_templates"
+    ADD CONSTRAINT "clinic_document_templates_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."clinic_document_templates"
+    ADD CONSTRAINT "clinic_document_templates_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
@@ -16424,6 +18511,21 @@ ALTER TABLE ONLY "public"."feature_flags"
 
 ALTER TABLE ONLY "public"."feature_flags"
     ADD CONSTRAINT "feature_flags_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."sessions"
+    ADD CONSTRAINT "fk_sessions_patient_clinic_invariant" FOREIGN KEY ("patient_id", "clinic_id") REFERENCES "public"."patients"("id", "clinic_id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."global_word_telemetry"
+    ADD CONSTRAINT "global_word_telemetry_word_fkey" FOREIGN KEY ("word") REFERENCES "public"."global_word_candidates"("word") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."mfa_recovery_challenges"
+    ADD CONSTRAINT "mfa_recovery_challenges_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -16742,6 +18844,11 @@ ALTER TABLE ONLY "public"."sessions"
 
 
 
+ALTER TABLE ONLY "public"."subscription_coupons"
+    ADD CONSTRAINT "subscription_coupons_affiliate_id_fkey" FOREIGN KEY ("affiliate_id") REFERENCES "public"."affiliates"("id") ON DELETE RESTRICT;
+
+
+
 ALTER TABLE ONLY "public"."subscription_invoices"
     ADD CONSTRAINT "subscription_invoices_clinic_id_fkey" FOREIGN KEY ("clinic_id") REFERENCES "public"."clinics"("id") ON DELETE CASCADE;
 
@@ -16784,6 +18891,11 @@ ALTER TABLE ONLY "public"."user_active_clinic_contexts"
 
 ALTER TABLE ONLY "public"."user_governance_overrides"
     ADD CONSTRAINT "user_governance_overrides_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."user_mfa_credentials"
+    ADD CONSTRAINT "user_mfa_credentials_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -16852,6 +18964,36 @@ ALTER TABLE ONLY "public"."whatsapp_chat_sessions"
 
 
 
+CREATE POLICY "Administradores da clinica podem excluir palavras do corretor" ON "public"."clinic_custom_words" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND ("cm"."operational_role" = ANY (ARRAY['admin'::"public"."operational_role_type", 'owner'::"public"."operational_role_type"]))))));
+
+
+
+CREATE POLICY "Affiliates and admins insert crm logs" ON "public"."affiliate_crm_logs" FOR INSERT TO "authenticated" WITH CHECK ((("affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
+CREATE POLICY "Affiliates and admins read commissions" ON "public"."affiliate_commissions" FOR SELECT TO "authenticated" USING ((("affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
+CREATE POLICY "Affiliates and admins read conversions" ON "public"."affiliate_conversions" FOR SELECT TO "authenticated" USING ((("affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
+CREATE POLICY "Affiliates and admins read crm logs" ON "public"."affiliate_crm_logs" FOR SELECT TO "authenticated" USING ((("affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
 CREATE POLICY "Anon can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "anon" WITH CHECK (("user_id" IS NULL));
 
 
@@ -16876,7 +19018,9 @@ CREATE POLICY "Authenticated users can insert registration links" ON "public"."p
 
 
 
-CREATE POLICY "Authenticated users can insert telemetry events" ON "public"."telemetry_events" FOR INSERT TO "authenticated" WITH CHECK (true);
+CREATE POLICY "Authenticated users can insert telemetry events" ON "public"."telemetry_events" FOR INSERT TO "authenticated" WITH CHECK ((("user_id" = "auth"."uid"()) AND (("clinic_id" IS NULL) OR ("clinic_id" IN ( SELECT "cm"."clinic_id"
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true)))))));
 
 
 
@@ -16930,6 +19074,26 @@ CREATE POLICY "Authors, super admins and platform owners can update community " 
 
 
 
+CREATE POLICY "Invited users and managers read affiliate invitations" ON "public"."affiliate_invitations" FOR SELECT TO "authenticated" USING (((("invited_user_id" IS NOT NULL) AND ("invited_user_id" = ( SELECT "auth"."uid"() AS "uid"))) OR (("invited_email" IS NOT NULL) AND ("lower"("invited_email") = "lower"(COALESCE(("auth"."jwt"() ->> 'email'::"text"), ''::"text")))) OR (("clinic_id" IS NOT NULL) AND ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "affiliate_invitations"."clinic_id") AND ("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true) AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR ("cm"."operational_role" = ANY (ARRAY['owner'::"public"."operational_role_type", 'admin'::"public"."operational_role_type"])))))) OR (EXISTS ( SELECT 1
+   FROM "public"."clinics" "c"
+  WHERE (("c"."id" = "affiliate_invitations"."clinic_id") AND ("c"."account_owner_user_id" = ( SELECT "auth"."uid"() AS "uid"))))) OR "public"."current_user_can"('marketing.affiliates.manage'::"text", "clinic_id") OR "public"."current_user_can"('marketing.affiliates.view'::"text", "clinic_id"))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
+CREATE POLICY "Managers and platform admins manage affiliate invitations" ON "public"."affiliate_invitations" TO "authenticated" USING (((("clinic_id" IS NOT NULL) AND ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "affiliate_invitations"."clinic_id") AND ("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true) AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR ("cm"."operational_role" = ANY (ARRAY['owner'::"public"."operational_role_type", 'admin'::"public"."operational_role_type"])))))) OR (EXISTS ( SELECT 1
+   FROM "public"."clinics" "c"
+  WHERE (("c"."id" = "affiliate_invitations"."clinic_id") AND ("c"."account_owner_user_id" = ( SELECT "auth"."uid"() AS "uid"))))) OR "public"."current_user_can"('marketing.affiliates.manage'::"text", "clinic_id"))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (((("clinic_id" IS NOT NULL) AND ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "affiliate_invitations"."clinic_id") AND ("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true) AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR ("cm"."operational_role" = ANY (ARRAY['owner'::"public"."operational_role_type", 'admin'::"public"."operational_role_type"])))))) OR (EXISTS ( SELECT 1
+   FROM "public"."clinics" "c"
+  WHERE (("c"."id" = "affiliate_invitations"."clinic_id") AND ("c"."account_owner_user_id" = ( SELECT "auth"."uid"() AS "uid"))))) OR "public"."current_user_can"('marketing.affiliates.manage'::"text", "clinic_id"))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
 CREATE POLICY "Managers insert clinic memberships" ON "public"."clinic_memberships" FOR INSERT TO "authenticated" WITH CHECK ((("public"."current_user_can"('subaccounts.write'::"text", "clinic_id") OR "public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")) AND (EXISTS ( SELECT 1
    FROM "public"."clinics"
   WHERE (("clinics"."id" = "clinic_memberships"."clinic_id") AND (("clinics"."subscription_plan")::"text" = ANY (ARRAY['clinic'::"text", 'enterprise'::"text", 'clinica_basico'::"text", 'clinica_medio'::"text", 'clinica_top'::"text", 'prof_top'::"text"])))))));
@@ -16948,6 +19112,22 @@ CREATE POLICY "Managers update clinic profiles" ON "public"."profiles" FOR UPDAT
 
 
 
+CREATE POLICY "Membros autenticados podem consultar status de palavras globais" ON "public"."global_word_candidates" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "Membros da clinica podem adicionar palavras ao corretor" ON "public"."clinic_custom_words" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type")))));
+
+
+
+CREATE POLICY "Membros da clinica podem visualizar palavras do corretor" ON "public"."clinic_custom_words" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type")))));
+
+
+
 CREATE POLICY "Owners e gestores podem ver a assinatura" ON "public"."clinic_subscriptions" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id") OR "public"."current_user_can"('subscription_billing.read'::"text", "clinic_id")));
 
 
@@ -16959,6 +19139,22 @@ CREATE POLICY "Owners e gestores podem ver as faturas" ON "public"."subscription
 
 
 CREATE POLICY "Platform admins can view platform error logs" ON "public"."platform_error_logs" FOR SELECT TO "authenticated" USING (("public"."is_platform_admin"("auth"."uid"()) OR "public"."is_platform_owner"("auth"."uid"())));
+
+
+
+CREATE POLICY "Platform admins manage affiliates" ON "public"."affiliates" TO "authenticated" USING (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
+CREATE POLICY "Platform admins manage commissions" ON "public"."affiliate_commissions" TO "authenticated" USING (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
+CREATE POLICY "Platform admins manage conversions" ON "public"."affiliate_conversions" TO "authenticated" USING (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
+
+
+
+CREATE POLICY "Platform admins manage crm logs" ON "public"."affiliate_crm_logs" TO "authenticated" USING (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
 
 
@@ -17066,6 +19262,30 @@ CREATE POLICY "Platform owners read support sessions" ON "public"."platform_clin
 
 
 
+CREATE POLICY "Service role manages all affiliate invitations" ON "public"."affiliate_invitations" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Service role manages all affiliates" ON "public"."affiliates" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Service role manages all commissions" ON "public"."affiliate_commissions" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Service role manages all conversions" ON "public"."affiliate_conversions" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Service role manages all crm logs" ON "public"."affiliate_crm_logs" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Service role manages mfa recovery challenges" ON "public"."mfa_recovery_challenges" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
 CREATE POLICY "Service role tem acesso total a platform_onboarding_meetings" ON "public"."platform_onboarding_meetings" TO "service_role" USING (true) WITH CHECK (true);
 
 
@@ -17079,6 +19299,10 @@ CREATE POLICY "Super admins manage all agenda events" ON "public"."agenda_events
 
 
 CREATE POLICY "Super admins manage all anamnesis form templates" ON "public"."anamnesis_form_templates" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
+
+
+
+CREATE POLICY "Super admins manage all clinic document signatures" ON "public"."clinic_document_signatures" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
 
 
@@ -17110,11 +19334,11 @@ CREATE POLICY "Super admins manage all roles" ON "public"."user_roles" TO "authe
 
 
 
-CREATE POLICY "Super admins manage all session edit history" ON "public"."session_edit_history" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
-
-
-
 CREATE POLICY "Super admins manage all sessions" ON "public"."sessions" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
+
+
+
+CREATE POLICY "Super admins view all session edit history" ON "public"."session_edit_history" FOR SELECT TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
 
 
@@ -17127,6 +19351,22 @@ CREATE POLICY "Users and admins can delete own comments" ON "public"."community_
 
 
 CREATE POLICY "Users can insert own profile" ON "public"."profiles" FOR INSERT TO "authenticated" WITH CHECK (("id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "Users can manage own MFA credentials" ON "public"."user_mfa_credentials" TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can only read own MFA credentials" ON "public"."user_mfa_credentials" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can read affiliates if owner, clinic admin or platform ad" ON "public"."affiliates" FOR SELECT TO "authenticated" USING ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) OR (("clinic_id" IS NOT NULL) AND ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "affiliates"."clinic_id") AND ("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR ("cm"."operational_role" = ANY (ARRAY['owner'::"public"."operational_role_type", 'admin'::"public"."operational_role_type"])))))) OR (EXISTS ( SELECT 1
+   FROM "public"."clinics" "c"
+  WHERE (("c"."id" = "affiliates"."clinic_id") AND ("c"."account_owner_user_id" = ( SELECT "auth"."uid"() AS "uid"))))))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
 
 
@@ -17147,6 +19387,14 @@ CREATE POLICY "Users delete clinic agenda events" ON "public"."agenda_events" FO
 
 
 CREATE POLICY "Users delete clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
+
+
+
+CREATE POLICY "Users delete clinic document signatures" ON "public"."clinic_document_signatures" FOR DELETE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('patients.delete'::"text", "clinic_id"))));
+
+
+
+CREATE POLICY "Users delete clinic document templates" ON "public"."clinic_document_templates" FOR DELETE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
 
 
@@ -17176,7 +19424,17 @@ CREATE POLICY "Users insert allowed session shares" ON "public"."session_shares"
 
 
 
-CREATE POLICY "Users insert clinic session edit history" ON "public"."session_edit_history" FOR INSERT TO "authenticated" WITH CHECK ((("editor_user_id" = "auth"."uid"()) OR ("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR true));
+CREATE POLICY "Users insert clinic document signatures" ON "public"."clinic_document_signatures" FOR INSERT TO "authenticated" WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
+
+
+
+CREATE POLICY "Users insert clinic document templates" ON "public"."clinic_document_templates" FOR INSERT TO "authenticated" WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
+
+
+
+CREATE POLICY "Users insert clinic session edit history" ON "public"."session_edit_history" FOR INSERT TO "authenticated" WITH CHECK ((("editor_user_id" = "auth"."uid"()) AND (("clinic_id" IN ( SELECT "cm"."clinic_id"
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true)))) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"))));
 
 
 
@@ -17220,6 +19478,14 @@ CREATE POLICY "Users read clinic daily metrics" ON "public"."clinic_daily_metric
 
 
 
+CREATE POLICY "Users read clinic document signatures" ON "public"."clinic_document_signatures" FOR SELECT TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('patients.read'::"text", "clinic_id") OR "public"."current_user_can"('sessions.read'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")) AND (("deleted_at" IS NULL) OR "public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
+
+
+
+CREATE POLICY "Users read clinic document templates" ON "public"."clinic_document_templates" FOR SELECT TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND (("deleted_at" IS NULL) OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
+
+
+
 CREATE POLICY "Users read clinic evolution groups" ON "public"."patient_evolution_groups" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('sessions.read'::"text", "clinic_id")));
 
 
@@ -17247,9 +19513,9 @@ CREATE POLICY "Users read clinic profiles" ON "public"."profiles" FOR SELECT TO 
 
 
 
-CREATE POLICY "Users read clinic session billings" ON "public"."clinical_session_billings" FOR SELECT TO "authenticated" USING (((("clinic_id" IS NULL) AND ("session_id" IN ( SELECT "sessions"."id"
-   FROM "public"."sessions"
-  WHERE ("sessions"."user_id" = "auth"."uid"())))) OR (("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND ("public"."current_user_can"('treasury.read'::"text", "clinic_id") OR "public"."current_user_can"('sessions.read'::"text", "clinic_id")))));
+CREATE POLICY "Users read clinic session billings" ON "public"."clinical_session_billings" FOR SELECT TO "authenticated" USING (("clinic_id" IN ( SELECT "cm"."clinic_id"
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true)))));
 
 
 
@@ -17257,9 +19523,9 @@ CREATE POLICY "Users read clinic session edit history" ON "public"."session_edit
 
 
 
-CREATE POLICY "Users read clinic sessions" ON "public"."sessions" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."current_user_can"('sessions.read'::"text", "clinic_id") AND ("public"."current_user_is_clinic_manager"("clinic_id") OR ("user_id" = "auth"."uid"()) OR ("provider_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
-   FROM "public"."session_shares"
-  WHERE (("session_shares"."session_id" = "sessions"."id") AND ("session_shares"."clinic_id" = "sessions"."clinic_id") AND ("session_shares"."shared_with_user_id" = "auth"."uid"()) AND ("session_shares"."revoked_at" IS NULL)))))));
+CREATE POLICY "Users read clinic sessions" ON "public"."sessions" FOR SELECT TO "authenticated" USING ((("clinic_id" IN ( SELECT "cm"."clinic_id"
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true)))) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
 
 
@@ -17312,6 +19578,14 @@ CREATE POLICY "Users update clinic agenda events" ON "public"."agenda_events" FO
 
 
 CREATE POLICY "Users update clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
+
+
+
+CREATE POLICY "Users update clinic document signatures" ON "public"."clinic_document_signatures" FOR UPDATE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")))) WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
+
+
+
+CREATE POLICY "Users update clinic document templates" ON "public"."clinic_document_templates" FOR UPDATE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id")))) WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
 
 
@@ -17387,6 +19661,21 @@ CREATE POLICY "admins can read clinic security events" ON "public"."security_eve
 
 
 
+ALTER TABLE "public"."affiliate_commissions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."affiliate_conversions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."affiliate_crm_logs" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."affiliate_invitations" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."affiliates" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."agenda_events" ENABLE ROW LEVEL SECURITY;
 
 
@@ -17402,7 +19691,16 @@ ALTER TABLE "public"."asaas_webhook_events" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."clinic_collaborator_invitations" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."clinic_custom_words" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."clinic_daily_metrics" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."clinic_document_signatures" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."clinic_document_templates" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."clinic_group_color_slots" ENABLE ROW LEVEL SECURITY;
@@ -17477,7 +19775,16 @@ ALTER TABLE "public"."community_form_templates" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."feature_flags" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."global_word_candidates" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."global_word_telemetry" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."governance_rules" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."mfa_recovery_challenges" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."notification_preferences" ENABLE ROW LEVEL SECURITY;
@@ -17611,6 +19918,9 @@ ALTER TABLE "public"."user_active_clinic_contexts" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."user_governance_overrides" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."user_mfa_credentials" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."user_punishments" ENABLE ROW LEVEL SECURITY;
 
 
@@ -17661,9 +19971,6 @@ ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."clinic_operationa
 
 
 
-
-
-
 GRANT USAGE ON SCHEMA "public" TO "postgres";
 GRANT USAGE ON SCHEMA "public" TO "anon";
 GRANT USAGE ON SCHEMA "public" TO "authenticated";
@@ -17671,9 +19978,17 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."gtrgm_in"("cstring") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_in"("cstring") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_in"("cstring") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_in"("cstring") TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."gtrgm_out"("public"."gtrgm") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_out"("public"."gtrgm") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_out"("public"."gtrgm") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_out"("public"."gtrgm") TO "service_role";
 
 
 
@@ -17883,6 +20198,12 @@ GRANT ALL ON FUNCTION "public"."batch_sync_push"("_mutations" "jsonb") TO "authe
 
 GRANT ALL ON FUNCTION "public"."buy_clinic_subaccount_extra_spaces"("_clinic_id" "uuid", "_quantity" integer, "_billing_type" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."buy_clinic_subaccount_extra_spaces"("_clinic_id" "uuid", "_quantity" integer, "_billing_type" "text") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."calculate_affiliate_tier_benefits"("_active_referrals" integer, "_floor_tier" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."calculate_affiliate_tier_benefits"("_active_referrals" integer, "_floor_tier" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."calculate_affiliate_tier_benefits"("_active_referrals" integer, "_floor_tier" "text") TO "anon";
 
 
 
@@ -18099,6 +20420,11 @@ GRANT ALL ON FUNCTION "public"."expire_abandoned_security_sessions"("_abandoned_
 
 
 
+GRANT ALL ON FUNCTION "public"."expire_outdated_user_punishments"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."expire_outdated_user_punishments"() TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."finalize_overdue_agenda_events"("_batch_size" integer, "_timezone" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."finalize_overdue_agenda_events"("_batch_size" integer, "_timezone" "text") TO "service_role";
 
@@ -18119,6 +20445,12 @@ REVOKE ALL ON FUNCTION "public"."generate_profile_public_code_for_clinic"("_clin
 GRANT ALL ON FUNCTION "public"."generate_profile_public_code_for_clinic"("_clinic_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."generate_profile_public_code_for_clinic"("_clinic_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."generate_profile_public_code_for_clinic"("_clinic_id" "uuid") TO "anon";
+
+
+
+GRANT ALL ON FUNCTION "public"."generate_uuidv7"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."generate_uuidv7"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."generate_uuidv7"() TO "anon";
 
 
 
@@ -18195,6 +20527,13 @@ GRANT ALL ON FUNCTION "public"."get_current_platform_role"() TO "authenticated";
 REVOKE ALL ON FUNCTION "public"."get_current_user_pending_release_notes"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."get_current_user_pending_release_notes"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."get_current_user_pending_release_notes"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."get_document_signature_by_token"("p_token" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."get_document_signature_by_token"("p_token" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."get_document_signature_by_token"("p_token" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_document_signature_by_token"("p_token" "text") TO "authenticated";
 
 
 
@@ -18283,6 +20622,101 @@ GRANT ALL ON FUNCTION "public"."get_user_totp_status"() TO "authenticated";
 
 
 
+GRANT ALL ON FUNCTION "public"."gin_extract_query_trgm"("text", "internal", smallint, "internal", "internal", "internal", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gin_extract_query_trgm"("text", "internal", smallint, "internal", "internal", "internal", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gin_extract_query_trgm"("text", "internal", smallint, "internal", "internal", "internal", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gin_extract_query_trgm"("text", "internal", smallint, "internal", "internal", "internal", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gin_extract_value_trgm"("text", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gin_extract_value_trgm"("text", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gin_extract_value_trgm"("text", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gin_extract_value_trgm"("text", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gin_trgm_consistent"("internal", smallint, "text", integer, "internal", "internal", "internal", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gin_trgm_consistent"("internal", smallint, "text", integer, "internal", "internal", "internal", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gin_trgm_consistent"("internal", smallint, "text", integer, "internal", "internal", "internal", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gin_trgm_consistent"("internal", smallint, "text", integer, "internal", "internal", "internal", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gin_trgm_triconsistent"("internal", smallint, "text", integer, "internal", "internal", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gin_trgm_triconsistent"("internal", smallint, "text", integer, "internal", "internal", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gin_trgm_triconsistent"("internal", smallint, "text", integer, "internal", "internal", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gin_trgm_triconsistent"("internal", smallint, "text", integer, "internal", "internal", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_compress"("internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_compress"("internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_compress"("internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_compress"("internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_consistent"("internal", "text", smallint, "oid", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_consistent"("internal", "text", smallint, "oid", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_consistent"("internal", "text", smallint, "oid", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_consistent"("internal", "text", smallint, "oid", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_decompress"("internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_decompress"("internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_decompress"("internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_decompress"("internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_distance"("internal", "text", smallint, "oid", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_distance"("internal", "text", smallint, "oid", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_distance"("internal", "text", smallint, "oid", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_distance"("internal", "text", smallint, "oid", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_options"("internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_options"("internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_options"("internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_options"("internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_penalty"("internal", "internal", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_penalty"("internal", "internal", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_penalty"("internal", "internal", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_penalty"("internal", "internal", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_picksplit"("internal", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_picksplit"("internal", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_picksplit"("internal", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_picksplit"("internal", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_same"("public"."gtrgm", "public"."gtrgm", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_same"("public"."gtrgm", "public"."gtrgm", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_same"("public"."gtrgm", "public"."gtrgm", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_same"("public"."gtrgm", "public"."gtrgm", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gtrgm_union"("internal", "internal") TO "postgres";
+GRANT ALL ON FUNCTION "public"."gtrgm_union"("internal", "internal") TO "anon";
+GRANT ALL ON FUNCTION "public"."gtrgm_union"("internal", "internal") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gtrgm_union"("internal", "internal") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."handle_clinic_word_telemetry"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date", "_profession" "text", "_council_number" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date", "_profession" "text", "_council_number" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_email" "text", "_full_name" "text", "_cpf" "text", "_phone" "text", "_birth_date" "date", "_profession" "text", "_council_number" "text") TO "authenticated";
@@ -18337,6 +20771,7 @@ GRANT ALL ON FUNCTION "public"."invite_clinic_collaborator"("_clinic_id" "uuid",
 REVOKE ALL ON FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") TO "authenticated";
+
 
 
 REVOKE ALL ON FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_user_id" "uuid") FROM PUBLIC;
@@ -18463,7 +20898,6 @@ GRANT ALL ON FUNCTION "public"."log_security_event"("_clinic_id" "uuid", "_actor
 REVOKE ALL ON FUNCTION "public"."log_session_edit_history"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."log_session_edit_history"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."log_session_edit_history"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."log_session_edit_history"() TO "anon";
 
 
 
@@ -18517,6 +20951,14 @@ GRANT ALL ON FUNCTION "public"."platform_override_clinic_subscription"("_clinic_
 
 
 
+GRANT ALL ON FUNCTION "public"."prevent_affiliate_pyramid_structure"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."prevent_affiliate_self_referral"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."prevent_default_patient_group_delete"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."prevent_default_patient_group_delete"() TO "service_role";
 
@@ -18527,8 +20969,13 @@ GRANT ALL ON FUNCTION "public"."pseudonymize_patient_name"("_name" "text") TO "a
 
 
 
+REVOKE ALL ON FUNCTION "public"."purge_clinic_trash_bin"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."purge_clinic_trash_bin"() TO "service_role";
-GRANT ALL ON FUNCTION "public"."purge_clinic_trash_bin"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."purge_expired_operational_data"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."purge_expired_operational_data"() TO "service_role";
 
 
 
@@ -18541,7 +20988,17 @@ GRANT ALL ON FUNCTION "public"."raise_exception_json"("_message" "text") TO "ser
 
 
 
+GRANT ALL ON FUNCTION "public"."recalculate_affiliate_tier"("_affiliate_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."recalculate_affiliate_tier"("_affiliate_id" "uuid") TO "authenticated";
+
+
+
 GRANT ALL ON FUNCTION "public"."reconcile_legacy_users_solo_clinic"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."record_and_validate_asaas_webhook"("_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."record_and_validate_asaas_webhook"("_event_id" "text", "_event_type" "text", "_payload" "jsonb", "_signature" "text") TO "service_role";
 
 
 
@@ -18573,6 +21030,12 @@ GRANT ALL ON FUNCTION "public"."reset_whatsapp_chat_sessions"("_phone" "text") T
 
 
 
+REVOKE ALL ON FUNCTION "public"."respond_affiliate_invitation"("_invitation_id" "uuid", "_response" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."respond_affiliate_invitation"("_invitation_id" "uuid", "_response" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."respond_affiliate_invitation"("_invitation_id" "uuid", "_response" "text") TO "authenticated";
+
+
+
 GRANT ALL ON FUNCTION "public"."restore_entity_from_trash"("_entity_type" "text", "_entity_ids" "uuid"[]) TO "service_role";
 GRANT ALL ON FUNCTION "public"."restore_entity_from_trash"("_entity_type" "text", "_entity_ids" "uuid"[]) TO "authenticated";
 
@@ -18594,8 +21057,26 @@ GRANT ALL ON FUNCTION "public"."revoke_user_punishment"("_punishment_id" "uuid",
 
 
 
+REVOKE ALL ON FUNCTION "public"."rpc_book_appointment_safe"("_clinic_id" "uuid", "_provider_id" "uuid", "_patient_id" "uuid", "_start_time" timestamp with time zone, "_end_time" timestamp with time zone, "_event_type" "text", "_title" "text", "_notes" "text", "_duration_minutes" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rpc_book_appointment_safe"("_clinic_id" "uuid", "_provider_id" "uuid", "_patient_id" "uuid", "_start_time" timestamp with time zone, "_end_time" timestamp with time zone, "_event_type" "text", "_title" "text", "_notes" "text", "_duration_minutes" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."rpc_book_appointment_safe"("_clinic_id" "uuid", "_provider_id" "uuid", "_patient_id" "uuid", "_start_time" timestamp with time zone, "_end_time" timestamp with time zone, "_event_type" "text", "_title" "text", "_notes" "text", "_duration_minutes" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."rpc_get_available_slots"("_clinic_id" "uuid", "_provider_id" "uuid", "_date" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rpc_get_available_slots"("_clinic_id" "uuid", "_provider_id" "uuid", "_date" "date") TO "service_role";
+GRANT ALL ON FUNCTION "public"."rpc_get_available_slots"("_clinic_id" "uuid", "_provider_id" "uuid", "_date" "date") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."rpc_get_available_slots"("_clinic_id" "uuid", "_provider_id" "uuid", "_date" "date") TO "anon";
+
+
+
 GRANT ALL ON FUNCTION "public"."sanitize_clinical_free_text"("_text" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."sanitize_clinical_free_text"("_text" "text") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."schedule_patient_appointment"("_clinic_id" "uuid", "_patient_id" "uuid", "_title" "text", "_scheduled_for" timestamp with time zone, "_duration_minutes" integer, "_event_type" "text", "_status" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."schedule_patient_appointment"("_clinic_id" "uuid", "_patient_id" "uuid", "_title" "text", "_scheduled_for" timestamp with time zone, "_duration_minutes" integer, "_event_type" "text", "_status" "text") TO "authenticated";
 
 
 
@@ -18610,6 +21091,13 @@ GRANT ALL ON FUNCTION "public"."set_current_user_active_clinic"("_clinic_id" "uu
 
 GRANT ALL ON FUNCTION "public"."set_current_user_active_clinic_by_route_key"("_route_key" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."set_current_user_active_clinic_by_route_key"("_route_key" "text") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."set_limit"(real) TO "postgres";
+GRANT ALL ON FUNCTION "public"."set_limit"(real) TO "anon";
+GRANT ALL ON FUNCTION "public"."set_limit"(real) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_limit"(real) TO "service_role";
 
 
 
@@ -18629,6 +21117,41 @@ GRANT ALL ON FUNCTION "public"."share_sessions_with_collaborators"("_session_ids
 
 
 
+GRANT ALL ON FUNCTION "public"."show_limit"() TO "postgres";
+GRANT ALL ON FUNCTION "public"."show_limit"() TO "anon";
+GRANT ALL ON FUNCTION "public"."show_limit"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."show_limit"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."show_trgm"("text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."show_trgm"("text") TO "anon";
+GRANT ALL ON FUNCTION "public"."show_trgm"("text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."show_trgm"("text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."similarity"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."similarity"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."similarity"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."similarity"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."similarity_dist"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."similarity_dist"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."similarity_dist"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."similarity_dist"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."similarity_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."similarity_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."similarity_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."similarity_op"("text", "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."slugify_text"("_val" "text") TO "service_role";
 
 
@@ -18636,6 +21159,48 @@ GRANT ALL ON FUNCTION "public"."slugify_text"("_val" "text") TO "service_role";
 REVOKE ALL ON FUNCTION "public"."start_platform_clinic_access"("_clinic_id" "uuid", "_reason" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."start_platform_clinic_access"("_clinic_id" "uuid", "_reason" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."start_platform_clinic_access"("_clinic_id" "uuid", "_reason" "text") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."strict_word_similarity"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_commutator_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_commutator_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_commutator_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_commutator_op"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_dist_commutator_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_dist_commutator_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_dist_commutator_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_dist_commutator_op"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_dist_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_dist_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_dist_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_dist_op"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."strict_word_similarity_op"("text", "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."submit_document_signature_by_token"("p_token" "text", "p_signer_name" "text", "p_signer_cpf" "text", "p_signature_image_url" "text", "p_metadata" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."submit_document_signature_by_token"("p_token" "text", "p_signer_name" "text", "p_signer_cpf" "text", "p_signature_image_url" "text", "p_metadata" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."submit_document_signature_by_token"("p_token" "text", "p_signer_name" "text", "p_signer_cpf" "text", "p_signature_image_url" "text", "p_metadata" "jsonb") TO "anon";
+GRANT ALL ON FUNCTION "public"."submit_document_signature_by_token"("p_token" "text", "p_signer_name" "text", "p_signer_cpf" "text", "p_signature_image_url" "text", "p_metadata" "jsonb") TO "authenticated";
 
 
 
@@ -18648,6 +21213,10 @@ GRANT ALL ON FUNCTION "public"."submit_patient_registration_form"("_token" "text
 
 GRANT ALL ON FUNCTION "public"."submit_user_platform_feedback"("_clinic_id" "uuid", "_ratings" "jsonb", "_problem_report" "text", "_opinion" "text", "_page_url" "text", "_user_agent" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."submit_user_platform_feedback"("_clinic_id" "uuid", "_ratings" "jsonb", "_problem_report" "text", "_opinion" "text", "_page_url" "text", "_user_agent" "text") TO "authenticated";
+
+
+
+GRANT ALL ON FUNCTION "public"."sync_billing_to_session"() TO "service_role";
 
 
 
@@ -18681,6 +21250,10 @@ GRANT ALL ON FUNCTION "public"."touch_notification_preferences_updated_at"() TO 
 
 
 GRANT ALL ON FUNCTION "public"."touch_platform_feedbacks_updated_at"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."trg_affiliate_conversions_sync_tier"() TO "service_role";
 
 
 
@@ -18780,9 +21353,7 @@ GRANT ALL ON FUNCTION "public"."user_has_active_clinic_membership"("_user_id" "u
 
 
 
-GRANT ALL ON FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text") TO "service_role";
-GRANT ALL ON FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."validate_subscription_coupon"("_code" "text", "_plan_type" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."validate_affiliate_unique_financial_data"() TO "service_role";
 
 
 
@@ -18805,6 +21376,38 @@ GRANT ALL ON FUNCTION "public"."verify_password_recovery_identity"("_email" "tex
 
 
 
+GRANT ALL ON FUNCTION "public"."word_similarity"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."word_similarity"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."word_similarity"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."word_similarity"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."word_similarity_commutator_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."word_similarity_commutator_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."word_similarity_commutator_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."word_similarity_commutator_op"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."word_similarity_dist_commutator_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."word_similarity_dist_commutator_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."word_similarity_dist_commutator_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."word_similarity_dist_commutator_op"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."word_similarity_dist_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."word_similarity_dist_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."word_similarity_dist_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."word_similarity_dist_op"("text", "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."word_similarity_op"("text", "text") TO "postgres";
+GRANT ALL ON FUNCTION "public"."word_similarity_op"("text", "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."word_similarity_op"("text", "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."word_similarity_op"("text", "text") TO "service_role";
 
 
 
@@ -18817,6 +21420,39 @@ GRANT ALL ON FUNCTION "public"."verify_password_recovery_identity"("_email" "tex
 
 
 
+
+
+
+
+
+
+GRANT ALL ON TABLE "public"."affiliate_commissions" TO "anon";
+GRANT ALL ON TABLE "public"."affiliate_commissions" TO "authenticated";
+GRANT ALL ON TABLE "public"."affiliate_commissions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."affiliate_conversions" TO "anon";
+GRANT ALL ON TABLE "public"."affiliate_conversions" TO "authenticated";
+GRANT ALL ON TABLE "public"."affiliate_conversions" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."affiliate_crm_logs" TO "anon";
+GRANT ALL ON TABLE "public"."affiliate_crm_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."affiliate_crm_logs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."affiliate_invitations" TO "anon";
+GRANT ALL ON TABLE "public"."affiliate_invitations" TO "authenticated";
+GRANT ALL ON TABLE "public"."affiliate_invitations" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."affiliates" TO "anon";
+GRANT ALL ON TABLE "public"."affiliates" TO "authenticated";
+GRANT ALL ON TABLE "public"."affiliates" TO "service_role";
 
 
 
@@ -18850,9 +21486,27 @@ GRANT ALL ON TABLE "public"."clinic_collaborator_invitations" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."clinic_custom_words" TO "anon";
+GRANT ALL ON TABLE "public"."clinic_custom_words" TO "authenticated";
+GRANT ALL ON TABLE "public"."clinic_custom_words" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."clinic_daily_metrics" TO "anon";
 GRANT ALL ON TABLE "public"."clinic_daily_metrics" TO "authenticated";
 GRANT ALL ON TABLE "public"."clinic_daily_metrics" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."clinic_document_signatures" TO "anon";
+GRANT ALL ON TABLE "public"."clinic_document_signatures" TO "authenticated";
+GRANT ALL ON TABLE "public"."clinic_document_signatures" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."clinic_document_templates" TO "anon";
+GRANT ALL ON TABLE "public"."clinic_document_templates" TO "authenticated";
+GRANT ALL ON TABLE "public"."clinic_document_templates" TO "service_role";
 
 
 
@@ -18952,9 +21606,25 @@ GRANT ALL ON TABLE "public"."feature_flags" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."global_word_candidates" TO "anon";
+GRANT ALL ON TABLE "public"."global_word_candidates" TO "authenticated";
+GRANT ALL ON TABLE "public"."global_word_candidates" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."global_word_telemetry" TO "anon";
+GRANT ALL ON TABLE "public"."global_word_telemetry" TO "authenticated";
+GRANT ALL ON TABLE "public"."global_word_telemetry" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."governance_rules" TO "anon";
 GRANT ALL ON TABLE "public"."governance_rules" TO "authenticated";
 GRANT ALL ON TABLE "public"."governance_rules" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."mfa_recovery_challenges" TO "service_role";
 
 
 
@@ -19126,6 +21796,12 @@ GRANT ALL ON TABLE "public"."user_governance_overrides" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."user_mfa_credentials" TO "anon";
+GRANT ALL ON TABLE "public"."user_mfa_credentials" TO "authenticated";
+GRANT ALL ON TABLE "public"."user_mfa_credentials" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."user_punishments" TO "anon";
 GRANT ALL ON TABLE "public"."user_punishments" TO "authenticated";
 GRANT ALL ON TABLE "public"."user_punishments" TO "service_role";
@@ -19227,259 +21903,3 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 
-
-
--- Migration 20261031163500_schedule_cache_and_atomic_booking.sql
--- ==============================================================================
--- Migration: 20261031163500_schedule_cache_and_atomic_booking.sql
--- Descrição:
--- 1. RPC public.rpc_get_available_slots(_clinic_id uuid, _provider_id uuid, _date date):
---    Consulta horários vagos (08:00 às 20:00, slots de 30 min) verificando conflito
---    com agenda_events e sessions para a data e profissional informados.
--- 2. RPC public.rpc_book_appointment_safe(...):
---    Executa reserva atômica com pessimistic lock (SELECT FOR UPDATE) prevenindo
---    duplo agendamento concorrente e insere em agenda_events + sessions ('rascunho').
--- ==============================================================================
-
--- 1. RPC: rpc_get_available_slots
-CREATE OR REPLACE FUNCTION public.rpc_get_available_slots(
-  _clinic_id uuid,
-  _provider_id uuid,
-  _date date
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  _slot_time text;
-  _slot_start timestamptz;
-  _slot_end timestamptz;
-  _is_occupied boolean;
-  _slots text[] := ARRAY[]::text[];
-  _all_slots text[] := ARRAY[
-    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
-    '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
-    '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-    '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
-  ];
-BEGIN
-  IF _clinic_id IS NULL OR _date IS NULL THEN
-    RETURN '[]'::jsonb;
-  END IF;
-
-  FOREACH _slot_time IN ARRAY _all_slots
-  LOOP
-    -- Converte data + horário em timestamptz no timezone da clínica/São Paulo
-    _slot_start := (_date::text || ' ' || _slot_time || ':00')::timestamp AT TIME ZONE 'America/Sao_Paulo';
-    _slot_end := _slot_start + interval '30 minutes';
-
-    -- Verifica se já há evento ou sessão ocupando este slot
-    SELECT EXISTS (
-      -- Checa agenda_events
-      SELECT 1
-      FROM public.agenda_events ae
-      WHERE ae.clinic_id = _clinic_id
-        AND (_provider_id IS NULL OR ae.user_id = _provider_id)
-        AND ae.status NOT IN ('cancelado')
-        AND ae.scheduled_for < _slot_end
-        AND (ae.scheduled_for + (COALESCE(ae.duration_minutes, 60) * interval '1 minute')) > _slot_start
-
-      UNION ALL
-
-      -- Checa sessions ativas
-      SELECT 1
-      FROM public.sessions s
-      WHERE s.clinic_id = _clinic_id
-        AND (_provider_id IS NULL OR COALESCE(s.provider_id, s.user_id) = _provider_id)
-        AND s.deleted_at IS NULL
-        AND s.status NOT IN ('cancelada')
-        AND COALESCE(s.scheduled_start_at, s.session_date) < _slot_end
-        AND (COALESCE(s.scheduled_start_at, s.session_date) + interval '30 minutes') > _slot_start
-    ) INTO _is_occupied;
-
-    IF NOT _is_occupied THEN
-      _slots := array_append(_slots, _slot_time);
-    END IF;
-  END LOOP;
-
-  RETURN to_jsonb(_slots);
-END;
-$$;
-
-COMMENT ON FUNCTION public.rpc_get_available_slots(uuid, uuid, date) IS
-'Retorna os slots de horários vagos para uma clínica e profissional em determinada data.';
-
-REVOKE ALL ON FUNCTION public.rpc_get_available_slots(uuid, uuid, date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.rpc_get_available_slots(uuid, uuid, date) TO service_role;
-GRANT EXECUTE ON FUNCTION public.rpc_get_available_slots(uuid, uuid, date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.rpc_get_available_slots(uuid, uuid, date) TO anon;
-
--- 2. RPC: rpc_book_appointment_safe
-CREATE OR REPLACE FUNCTION public.rpc_book_appointment_safe(
-  _clinic_id uuid,
-  _provider_id uuid,
-  _patient_id uuid DEFAULT NULL,
-  _start_time timestamptz DEFAULT NULL,
-  _end_time timestamptz DEFAULT NULL,
-  _event_type text DEFAULT 'atendimento',
-  _title text DEFAULT 'Atendimento',
-  _notes text DEFAULT NULL,
-  _duration_minutes integer DEFAULT NULL
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  _resolved_duration integer;
-  _calculated_end timestamptz;
-  _has_conflict boolean;
-  _new_event_id uuid;
-  _new_session_id uuid;
-  _event_row record;
-BEGIN
-  IF _clinic_id IS NULL THEN
-    RAISE EXCEPTION 'CLINIC_REQUIRED: O identificador da clínica é obrigatório.';
-  END IF;
-
-  IF _provider_id IS NULL THEN
-    RAISE EXCEPTION 'PROVIDER_REQUIRED: O profissional é obrigatório.';
-  END IF;
-
-  IF _start_time IS NULL THEN
-    RAISE EXCEPTION 'START_TIME_REQUIRED: O horário de início é obrigatório.';
-  END IF;
-
-  _resolved_duration := COALESCE(
-    _duration_minutes,
-    CASE
-      WHEN _end_time IS NOT NULL AND _end_time > _start_time THEN
-        EXTRACT(EPOCH FROM (_end_time - _start_time))::integer / 60
-      ELSE 60
-    END
-  );
-
-  IF _resolved_duration <= 0 OR _resolved_duration > 1440 THEN
-    _resolved_duration := 60;
-  END IF;
-
-  _calculated_end := COALESCE(_end_time, _start_time + (_resolved_duration * interval '1 minute'));
-
-  -- Pessimistic Lock & Concurrency Check:
-  -- Bloqueia eventos existentes no intervalo para serializar transações concorrentes
-  PERFORM 1
-  FROM public.agenda_events ae
-  WHERE ae.clinic_id = _clinic_id
-    AND ae.user_id = _provider_id
-    AND ae.status NOT IN ('cancelado')
-    AND ae.scheduled_for < _calculated_end
-    AND (ae.scheduled_for + (COALESCE(ae.duration_minutes, 60) * interval '1 minute')) > _start_time
-  FOR UPDATE;
-
-  -- Verifica se houve conflito
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.agenda_events ae
-    WHERE ae.clinic_id = _clinic_id
-      AND ae.user_id = _provider_id
-      AND ae.status NOT IN ('cancelado')
-      AND ae.scheduled_for < _calculated_end
-      AND (ae.scheduled_for + (COALESCE(ae.duration_minutes, 60) * interval '1 minute')) > _start_time
-  ) INTO _has_conflict;
-
-  IF _has_conflict THEN
-    RAISE EXCEPTION 'SLOT_ALREADY_BOOKED: O horário solicitado já foi reservado por outro atendimento.';
-  END IF;
-
-  -- 1. Insere o registro em agenda_events
-  INSERT INTO public.agenda_events (
-    clinic_id,
-    user_id,
-    patient_id,
-    event_type,
-    title,
-    scheduled_for,
-    duration_minutes,
-    status
-  )
-  VALUES (
-    _clinic_id,
-    _provider_id,
-    _patient_id,
-    COALESCE(_event_type, 'atendimento'),
-    COALESCE(NULLIF(trim(_title), ''), 'Atendimento'),
-    _start_time,
-    _resolved_duration,
-    'confirmado'
-  )
-  RETURNING id INTO _new_event_id;
-
-  -- 2. Se for do tipo atendimento com paciente, cria sessão complementar em status 'rascunho'
-  IF _event_type = 'atendimento' AND _patient_id IS NOT NULL THEN
-    INSERT INTO public.sessions (
-      clinic_id,
-      user_id,
-      provider_id,
-      patient_id,
-      scheduled_start_at,
-      session_date,
-      status,
-      notes
-    )
-    VALUES (
-      _clinic_id,
-      _provider_id,
-      _provider_id,
-      _patient_id,
-      _start_time,
-      _start_time,
-      'rascunho',
-      _notes
-    )
-    RETURNING id INTO _new_session_id;
-  END IF;
-
-  RETURN jsonb_build_object(
-    'success', true,
-    'event_id', _new_event_id,
-    'session_id', _new_session_id,
-    'scheduled_for', _start_time,
-    'duration_minutes', _resolved_duration
-  );
-END;
-$$;
-
-COMMENT ON FUNCTION public.rpc_book_appointment_safe(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) IS
-'Reserva atômica de agendamento com trava pessimista para prevenção de concorrência e duplo agendamento.';
-
-REVOKE ALL ON FUNCTION public.rpc_book_appointment_safe(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.rpc_book_appointment_safe(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.rpc_book_appointment_safe(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text, integer) TO authenticated;
-
-
--- Migration 20261031233000_agenda_reminder_dispatch_tracking.sql
--- ==============================================================================
--- Migration: 20261031233000_agenda_reminder_dispatch_tracking.sql
--- Descrição:
--- Adiciona tracking de lembretes enviados em agenda_events para evitar duplicidade:
--- - reminder_dispatches: array jsonb de lembretes já enviados [{ key, sent_at, channel, recipient }]
--- - last_reminder_dispatched_at: timestamp do último lembrete disparado
--- ==============================================================================
-
-ALTER TABLE public.agenda_events
-  ADD COLUMN IF NOT EXISTS reminder_dispatches jsonb DEFAULT '[]'::jsonb NOT NULL,
-  ADD COLUMN IF NOT EXISTS last_reminder_dispatched_at timestamptz DEFAULT NULL;
-
-COMMENT ON COLUMN public.agenda_events.reminder_dispatches IS
-'Histórico estruturado de lembretes já disparados (ex: 24h, 2h, imediato) para prevenir disparos duplicados.';
-
-COMMENT ON COLUMN public.agenda_events.last_reminder_dispatched_at IS
-'Timestamp do último lembrete disparado com sucesso via WhatsApp/SMS.';
-
--- Índice cobrindo status ativo e scheduled_for para performance do cron de lembretes
-CREATE INDEX IF NOT EXISTS idx_agenda_events_reminder_poll
-  ON public.agenda_events (scheduled_for, status)
-  WHERE status IN ('confirmado', 'agendado', 'aguardando_confirmacao');

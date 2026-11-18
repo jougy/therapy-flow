@@ -59,6 +59,13 @@ src/test/account-admin*
 # Local documentation vault / Obsidian state
 core/Pluri-Health/
 
+# Mobile / Electron build artifacts
+mobile/android/**/build/
+mobile/android/.gradle/
+electron/dist/
+electron/out/
+*.apk
+
 # Deploy/tool state
 .vercel
 .wrangler

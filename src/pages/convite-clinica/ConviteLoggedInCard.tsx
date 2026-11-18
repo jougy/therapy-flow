@@ -61,7 +61,7 @@ export const ConviteLoggedInCard = ({
 
       <Button
         variant="outline"
-        className="w-full gap-2 border-amber-300 text-amber-900 hover:bg-amber-100"
+        className="w-full min-h-[44px] gap-2 border-amber-300 text-amber-900 hover:bg-amber-100"
         onClick={onSwitchAccount}
       >
         <LogOut className="h-4 w-4" />

@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   sanitizeMarkdownImages,
   convertDocxXmlToMarkdown,
   compressGzip,
   scanAndCompressTermDocument,
+  structureTextToMarkdown,
+  suggestTitleFromFilename,
 } from "./termDocumentScanner";
 
 describe("termDocumentScanner", () => {
@@ -101,6 +103,124 @@ Normas da clínica e retenção por 20 anos.`;
       expect(scanned.markdownText).toContain("Normas da clínica e retenção por 20 anos.");
       expect(scanned.originalSize).toBe(file.size);
       expect(scanned.compressedBlob).toBeDefined();
+    });
+
+    it("detects variables in scanned markdown document", async () => {
+      const content = `# TCLE da Clínica <nome_clinica>
+Eu, <nome_paciente>, portador do CPF <cpf_paciente>, aceito os termos em <data_atual>.`;
+
+      const file = new File([content], "termo-variaveis.md", { type: "text/markdown" });
+      const scanned = await scanAndCompressTermDocument(file);
+
+      expect(scanned.detectedVariables).toEqual([
+        "<nome_clinica>",
+        "<nome_paciente>",
+        "<cpf_paciente>",
+        "<data_atual>",
+      ]);
+    });
+
+    it("scans and extracts text from a PDF file", async () => {
+      const { PDFDocument } = await import("pdf-lib");
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([500, 500]);
+      page.drawText("Termo em PDF com variavel <nome_paciente>");
+      const bytes = await pdfDoc.save();
+
+      const file = new File([bytes], "documento.pdf", { type: "application/pdf" });
+      const progressUpdates: string[] = [];
+      const scanned = await scanAndCompressTermDocument(file, (msg) => {
+        progressUpdates.push(msg);
+      });
+
+      expect(scanned.markdownText).toContain("Termo em PDF com variavel <nome_paciente>");
+      expect(scanned.detectedVariables).toContain("<nome_paciente>");
+      expect(progressUpdates.length).toBeGreaterThan(0);
+      expect(progressUpdates).toContain("Concluído!");
+    });
+  });
+
+  describe("structureTextToMarkdown", () => {
+    it("formats titles, clauses, lists and heals paragraph wraps", () => {
+      const raw = `TERMO DE CONSENTIMENTO LIVRE E ESCLARECIDO
+
+CLÁUSULA PRIMEIRA - DO OBJETO
+Este é o texto inicial que foi
+quebrado no meio da frase para demonstrar
+a junção automática de parágrafos.
+
+1. Condições Gerais
+As obrigações do paciente incluem:
+• Pontualidade nas sessões agendadas
+▪ Cancelamento prévio com 24 horas
+* Trazer documento com foto
+- Respeitar normas da clínica
+a) Notificar via WhatsApp
+i) Manter cadastro atualizado
+
+Art. 14. O consentimento do menor será fornecido pelos pais.
+
+Parágrafo Único: Em caso de urgência, o atendimento será mantido.
+
+CLÁUSULA SEGUNDA - DA CONFIDENCIALIDADE
+O psicólogo responsável, Dr(a). <nome_profissional>, guardará sigilo absoluto.`;
+
+      const markdown = structureTextToMarkdown(raw);
+
+      expect(markdown).toContain("# TERMO DE CONSENTIMENTO LIVRE E ESCLARECIDO");
+      expect(markdown).toContain("## CLÁUSULA PRIMEIRA - DO OBJETO");
+      expect(markdown).toContain(
+        "Este é o texto inicial que foi quebrado no meio da frase para demonstrar a junção automática de parágrafos."
+      );
+      expect(markdown).toContain("## 1. Condições Gerais");
+      expect(markdown).toContain("- Pontualidade nas sessões agendadas");
+      expect(markdown).toContain("- Cancelamento prévio com 24 horas");
+      expect(markdown).toContain("- Trazer documento com foto");
+      expect(markdown).toContain("- Respeitar normas da clínica");
+      expect(markdown).toContain("- a) Notificar via WhatsApp");
+      expect(markdown).toContain("- i) Manter cadastro atualizado");
+      expect(markdown).toContain("## Art. 14. O consentimento do menor será fornecido pelos pais.");
+      expect(markdown).toContain("### Parágrafo Único: Em caso de urgência, o atendimento será mantido.");
+      expect(markdown).toContain("## CLÁUSULA SEGUNDA - DA CONFIDENCIALIDADE");
+      expect(markdown).toContain("<nome_profissional>");
+    });
+
+    it("handles de-hyphenation across line breaks", () => {
+      const raw = `TERMO DE ATENDIMENTO
+O paciente declara estar ciente de sua responsa-
+bilidade no cumpri-
+mento do plano.`;
+
+      const markdown = structureTextToMarkdown(raw);
+      expect(markdown).toContain("responsabilidade no cumprimento do plano.");
+    });
+
+    it("preserves already formatted markdown headings", () => {
+      const raw = `# Título Existente
+## Subtítulo Existente
+- Item 1
+- Item 2`;
+
+      const markdown = structureTextToMarkdown(raw);
+      expect(markdown).toContain("# Título Existente");
+      expect(markdown).toContain("## Subtítulo Existente");
+      expect(markdown).toContain("- Item 1");
+      expect(markdown).toContain("- Item 2");
+    });
+  });
+
+  describe("suggestTitleFromFilename", () => {
+    it("suggests clean capitalized title from various filename conventions", () => {
+      expect(suggestTitleFromFilename("termo-de-teleatendimento.pdf")).toBe(
+        "Termo de Teleatendimento"
+      );
+      expect(suggestTitleFromFilename("contrato_de_honorarios_terapeuticos.docx")).toBe(
+        "Contrato de Honorarios Terapeuticos"
+      );
+      expect(suggestTitleFromFilename("tcle-psicoterapia-adulto.pdf")).toBe(
+        "TCLE Psicoterapia Adulto"
+      );
+      expect(suggestTitleFromFilename("termo.md")).toBe("Termo");
     });
   });
 });
