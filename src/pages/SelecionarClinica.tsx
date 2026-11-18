@@ -15,6 +15,7 @@ import { toast } from "@/hooks/use-toast";
 import { getClinicBrandName } from "@/lib/clinic-settings";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { getSignupIntent, clearSignupIntent } from "@/lib/signup-intent";
+import { getStoredSignupOrigin, resolveFriendlyOrigin } from "@/lib/signup-origin";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import {
   type PersonalSection,
@@ -99,6 +100,40 @@ const SelecionarClinica = () => {
       setActiveSection("clinics");
     }
   }, [isPortfolioEnabled, activeSection]);
+
+  // Notificação fail-safe de novos cadastros via Google OAuth (com idempotência no backend via Upstash)
+  useEffect(() => {
+    if (!user?.id || !isOAuthUser || authLoading) return;
+    const storageKey = `pluri_oauth_signup_notified_${user.id}`;
+    try {
+      if (localStorage.getItem(storageKey)) return;
+      const createdAtMs = user.created_at ? new Date(user.created_at).getTime() : 0;
+      const isRecentSignup = createdAtMs > 0 && Date.now() - createdAtMs < 15 * 60 * 1000;
+      if (!isRecentSignup) return;
+
+      localStorage.setItem(storageKey, "1");
+      const storedOrigin = getStoredSignupOrigin();
+      const friendlyOrigin = resolveFriendlyOrigin(storedOrigin);
+
+      void supabase.functions.invoke("notify-admin-telegram", {
+        body: {
+          event: "SIGNUP_COMPLETED",
+          userId: user.id,
+          email: user.email,
+          name: profile?.full_name || user.user_metadata?.full_name || user.user_metadata?.name || "",
+          origin: friendlyOrigin || "Google OAuth",
+          utmSource: storedOrigin?.utm_source || undefined,
+          utmMedium: storedOrigin?.utm_medium || undefined,
+          utmCampaign: storedOrigin?.utm_campaign || undefined,
+          signup_utm: storedOrigin || undefined,
+        },
+      }).catch(() => {
+        // fail-safe: backend trigger também garante a entrega
+      });
+    } catch {
+      // ignore storage errors
+    }
+  }, [user?.id, user?.email, user?.created_at, user?.user_metadata, profile?.full_name, isOAuthUser, authLoading]);
 
   const visibleSectionItems = useMemo(() => {
     return isPortfolioEnabled

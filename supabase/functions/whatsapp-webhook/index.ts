@@ -48,6 +48,8 @@ import {
   AgendaStateData,
   isGlobalCancelCommand,
   isGlobalBackCommand,
+  isWebsiteLeadTriggerMessage,
+  isAllowedUnregisteredSupportAction,
 } from './owner-copilot.ts';
 
 /**
@@ -993,6 +995,20 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       activeRole: customer.activeRole,
     };
 
+    const isUnregisteredNumber = !customer.userId && !whatsAppClient.isAdminCommercialPhone(phone);
+    const isSiteLeadTrigger = isWebsiteLeadTriggerMessage(userText);
+    const isSiteLeadSession =
+      isUnregisteredNumber &&
+      (isSiteLeadTrigger || Boolean(metadata.is_site_lead) || currentStep === 'owner_support_menu');
+    const alertClinicName =
+      isSiteLeadSession && !customer.clinicId
+        ? 'Possível Cliente (Veio do Site - Sem cadastro)'
+        : clinicName;
+    const alertPlanName =
+      isSiteLeadSession && !customer.clinicId
+        ? 'Interessado / Não cadastrado'
+        : planName;
+
     // ---------------------------------------------------------------------------------
     // 0. FLUXO DE AUTENTICAÇÃO VIA NÚMERO DE CELULAR E 2FA (ENTE AUTH)
     // ---------------------------------------------------------------------------------
@@ -1476,12 +1492,19 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         }
       }
 
-      // Se não for comando de agendamento de lead/onboarding (Gatilhos do Onboarding público)
+      // Se não for comando de agendamento de lead/onboarding (Gatilhos do Onboarding público ou Lead do Site)
       const isPublicOnboardingFlow =
         cleanSelectedButtonId.startsWith('onboarding_') ||
         cleanSelectedButtonId.startsWith('slot_') ||
         cleanSelectedButtonId.startsWith('time_') ||
-        currentStep.startsWith('onboarding_');
+        currentStep.startsWith('onboarding_') ||
+        (isUnregisteredNumber &&
+          isAllowedUnregisteredSupportAction({
+            isSiteLeadSession,
+            currentStep,
+            selectedButtonId: cleanSelectedButtonId,
+            userText,
+          }));
 
       if (!isPublicOnboardingFlow) {
         // Encerra sessão caso estivesse marcada como autenticada anteriormente mas expirou
@@ -1593,6 +1616,54 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       });
     }
 
+    // A1. Gatilho Direto de Entrada pelo Site (Lead não registrado entra direto no Modo Suporte ao Cliente)
+    if (isUnregisteredNumber && isSiteLeadTrigger) {
+      await supabase
+        .from('whatsapp_chat_sessions')
+        .update({
+          current_step: 'owner_support_menu',
+          last_message_at: new Date().toISOString(),
+          metadata: {
+            ...metadata,
+            is_site_lead: true,
+            customer_type: 'prospective_client',
+            lead_origin: 'website',
+            support_menu_at: new Date().toISOString(),
+          },
+        })
+        .eq('phone', phone);
+
+      await sendSupportMenu(whatsAppClient, phone, userName);
+      return new Response(JSON.stringify({ success: true, step: 'owner_support_menu', site_lead: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // A2. Retorno ao Menu de Suporte no Fluxo de Lead do Site
+    if (isSiteLeadSession && !customer.isOwnerOrAdmin && (isOwnerMenuTrigger || cleanSelectedButtonId === 'btn_menu_support')) {
+      await supabase
+        .from('whatsapp_chat_sessions')
+        .update({
+          current_step: 'owner_support_menu',
+          last_message_at: new Date().toISOString(),
+          metadata: {
+            ...metadata,
+            is_site_lead: true,
+            customer_type: 'prospective_client',
+            lead_origin: (metadata.lead_origin as string) || 'website',
+            support_menu_at: new Date().toISOString(),
+          },
+        })
+        .eq('phone', phone);
+
+      await sendSupportMenu(whatsAppClient, phone, userName);
+      return new Response(JSON.stringify({ success: true, step: 'owner_support_menu', site_lead: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // B. Módulo Suporte Técnico: btn_menu_support
     if (cleanSelectedButtonId === 'btn_menu_support') {
       await supabase
@@ -1663,20 +1734,13 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
     if (cleanSelectedButtonId === 'support_human' || cleanSelectedButtonId === 'finance_human') {
       const waLink = `https://wa.me/${phone}`;
       const humanAlert =
-        `💬 *SOLICITAÇÃO DE ATENDIMENTO HUMANO DO TITULAR*
-
-` +
-        `👤 *Titular:* ${userName}
-` +
-        `📱 *WhatsApp:* +${phone}
-` +
-        `🏥 *Clínica:* ${clinicName}
-` +
-        `📧 *E-mail:* ${userEmail}
-` +
-        `📦 *Plano:* ${planName}
-
-` +
+        (isSiteLeadSession
+          ? `💬 *SOLICITAÇÃO DE ATENDIMENTO HUMANO (LEAD DO SITE)*\n\n👤 *Possível Cliente:* ${userName}\n`
+          : `💬 *SOLICITAÇÃO DE ATENDIMENTO HUMANO DO TITULAR*\n\n👤 *Titular:* ${userName}\n`) +
+        `📱 *WhatsApp:* +${phone}\n` +
+        `🏥 *Clínica:* ${alertClinicName}\n` +
+        `📧 *E-mail:* ${userEmail}\n` +
+        `📦 *Plano:* ${alertPlanName}\n\n` +
         `👉 *Iniciar conversa:* ${waLink}`;
 
       if (transbordoEnabled && !whatsAppClient.isAdminCommercialPhone(phone)) {
@@ -2235,7 +2299,9 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         whatsAppClient,
         telegramClient,
         phone,
-        ownerContext,
+        isSiteLeadSession && !customer.clinicId
+          ? { ...ownerContext, clinicName: alertClinicName, planName: alertPlanName }
+          : ownerContext,
         userText,
         imageUrl
       );
@@ -2535,8 +2601,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
       // Horário válido: gera link do Google Calendar
       const gCalUrl = generateGoogleCalendarUrl({
-        title: `Introdução PluriFisio - ${userName} (${clinicName})`,
-        details: `Reunião de introdução e primeiros passos (15 min) na plataforma PluriFisio.\nProfissional: ${userName}\nWhatsApp: +${phone}\nE-mail: ${isValidEmail(userEmail) ? userEmail : 'Não informado'}\nClínica: ${clinicName}\nPlano: ${planName}`,
+        title: `Introdução PluriFisio - ${userName} (${alertClinicName})`,
+        details: `Reunião de introdução e primeiros passos (15 min) na plataforma PluriFisio.\nProfissional: ${userName}\nWhatsApp: +${phone}\nE-mail: ${isValidEmail(userEmail) ? userEmail : 'Não informado'}\nClínica: ${alertClinicName}\nPlano: ${alertPlanName}`,
         location: `Online / WhatsApp: https://wa.me/${phone}`,
         startDate: validation.dateObj,
         durationMinutes: 15,
@@ -2559,12 +2625,12 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           lead_name: userName,
           email: validLeadEmail,
           phone: phone,
-          clinic_name: clinicName,
+          clinic_name: alertClinicName,
           scheduled_at: validation.dateObj.toISOString(),
           duration_minutes: 15,
           status: 'scheduled',
           google_calendar_url: gCalUrl,
-          notes: `Agendado via WhatsApp Bot. Profissão: ${professionInfo}. Plano: ${planName}.`,
+          notes: `Agendado via WhatsApp Bot.${isSiteLeadSession ? ' Origem: Site (Possível Cliente).' : ''} Profissão: ${professionInfo}. Plano: ${alertPlanName}.`,
           created_by: customer.userId || null,
         });
 
@@ -2611,7 +2677,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
             `👤 *Profissional:* ${userName}\n` +
             `📧 *E-mail:* ${userEmail}\n` +
             `📱 *WhatsApp:* +${phone}\n` +
-            `🏥 *Clínica:* ${clinicName}\n` +
+            `🏥 *Clínica:* ${alertClinicName}\n` +
             `🩺 *Profissão:* ${professionInfo}\n` +
             `🗓️ *Data & Horário:* ${dayLabel} às ${validation.normalizedTime}\n\n` +
             `🔗 *Google Agenda:* ${gCalUrl}\n` +
@@ -2636,8 +2702,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           `📧 <b>E-mail:</b> ${escapeHtml(userEmail)}\n` +
           `📱 <b>Telefone:</b> ${escapeHtml(phone)}\n` +
           `🗓️ <b>Dia & Horário:</b> <b>${escapeHtml(dayLabel)} às ${escapeHtml(validation.normalizedTime)}</b>\n` +
-          `🏥 <b>Clínica:</b> ${escapeHtml(clinicName)}\n` +
-          `📦 <b>Plano:</b> ${escapeHtml(planName)}\n\n` +
+          `🏥 <b>Clínica:</b> ${escapeHtml(alertClinicName)}\n` +
+          `📦 <b>Plano:</b> ${escapeHtml(alertPlanName)}\n\n` +
           `🔗 <a href="${gCalUrl}">Abrir no Google Calendar</a>\n` +
           `💬 <a href="${waLink}">Chamar no WhatsApp</a>`;
 
@@ -2677,7 +2743,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
             payload: {
               phone,
               userName,
-              clinicName,
+              clinicName: alertClinicName,
               dayLabel,
               scheduledTime: validation.normalizedTime,
               scheduled_at: validation.dateObj!.toISOString(),
@@ -2720,13 +2786,14 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       if (transbordoEnabled && !whatsAppClient.isAdminCommercialPhone(phone)) {
         try {
           const adminWaSupportMsg =
-            `🚨 *SOLICITAÇÃO DE SUPORTE / ATENDIMENTO HUMANO*\n\n` +
+            `🚨 *SOLICITAÇÃO DE SUPORTE / ATENDIMENTO HUMANO${isSiteLeadSession ? ' (LEAD DO SITE)' : ''}*\n\n` +
+            (isSiteLeadSession ? `🌐 *Origem:* Site (Possível Cliente)\n` : '') +
             `👤 *Nome:* ${userName}\n` +
             `📧 *E-mail:* ${userEmail}\n` +
             `📱 *WhatsApp:* +${phone}\n` +
-            `🏥 *Clínica:* ${clinicName}\n` +
+            `🏥 *Clínica:* ${alertClinicName}\n` +
             `🩺 *Profissão:* ${professionInfo}\n` +
-            `📦 *Plano:* ${planName}\n` +
+            `📦 *Plano:* ${alertPlanName}\n` +
             `💬 *Mensagem do Cliente:* "${sanitizedUserMsg}"\n\n` +
             `👉 *Iniciar conversa direta:* ${waLink}`;
 
@@ -2755,12 +2822,13 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       // 3. Notificar Admin no Telegram sobre mensagem do usuário para atendimento humano
       try {
         const telegramMessage =
-          `💬 <b>Nova Mensagem no WhatsApp da PluriFisio!</b>\n\n` +
+          `💬 <b>Nova Mensagem no WhatsApp da PluriFisio${isSiteLeadSession ? ' (Lead do Site)' : ''}!</b>\n\n` +
+          (isSiteLeadSession ? `🌐 <b>Origem:</b> Site (Possível Cliente)\n` : '') +
           `👤 <b>De:</b> ${escapeHtml(userName)} (${escapeHtml(phone)})\n` +
           `📧 <b>E-mail:</b> ${escapeHtml(userEmail)}\n` +
-          `🏥 <b>Clínica:</b> ${escapeHtml(clinicName)}\n` +
+          `🏥 <b>Clínica:</b> ${escapeHtml(alertClinicName)}\n` +
           `🩺 <b>Profissão:</b> ${escapeHtml(professionInfo)}\n` +
-          `📦 <b>Plano:</b> ${escapeHtml(planName)}\n` +
+          `📦 <b>Plano:</b> ${escapeHtml(alertPlanName)}\n` +
           `📩 <b>Mensagem:</b> <i>"${escapeHtml(sanitizedUserMsg)}"</i>\n\n` +
           `👉 <a href="${waLink}">Responder no WhatsApp</a>`;
 

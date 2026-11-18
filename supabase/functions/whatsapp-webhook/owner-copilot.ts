@@ -3068,6 +3068,102 @@ export function isOwnerMenuTriggerCommand(textOrButtonId?: string | null): boole
   );
 }
 
+const ALLOWED_SITE_SUPPORT_STEPS = new Set([
+  'owner_support_menu',
+  'waiting_bug_report',
+  'waiting_day',
+  'waiting_time',
+  'completed_scheduled',
+  'completed_self',
+]);
+
+const ALLOWED_SITE_SUPPORT_BUTTONS = new Set([
+  'btn_menu_support',
+  'btn_owner_menu',
+  'menu',
+  'support_report_bug',
+  'support_faq',
+  'support_human',
+  'btn_schedule_intro',
+  'btn_self_explore',
+]);
+
+const ALLOWED_SITE_SUPPORT_PREFIXES = ['day_', 'onboarding_', 'slot_', 'time_'] as const;
+
+const BLOCKED_OWNER_BUTTONS = new Set([
+  'btn_menu_records',
+  'btn_menu_agenda',
+  'btn_menu_finance',
+  'btn_flow_fallback_chat',
+]);
+
+const BLOCKED_OWNER_PREFIXES = ['finance_', 'records_', 'terms_', 'agenda_', 'appt_'] as const;
+
+/**
+ * Detecta se a mensagem recebida corresponde ao gatilho padrão do link do site
+ * (ex: "vim do site, gostaria de conversar com alguem sobre mais informações.").
+ */
+export function isWebsiteLeadTriggerMessage(text?: string | null): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const normalized = text
+    .slice(0, 500)
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return false;
+  return (
+    normalized.includes('vim do site') ||
+    normalized.includes('gostaria de conversar com alguem sobre mais informacoes')
+  );
+}
+
+/**
+ * Determina se um número não registrado no sistema (!customer.userId) pode prosseguir
+ * sem 2FA na trilha pública de Suporte ao Cliente e Onboarding de possíveis clientes vindos do site.
+ * Bloqueia estritamente qualquer botão de gestão clínica/financeira exclusiva de titulares.
+ */
+export function isAllowedUnregisteredSupportAction(params: {
+  isSiteLeadSession: boolean;
+  currentStep: string;
+  selectedButtonId: string;
+  userText: string;
+}): boolean {
+  const cleanButtonId = (params.selectedButtonId || '').trim();
+  const currentStep = (params.currentStep || '').trim();
+
+  if (cleanButtonId) {
+    if (
+      BLOCKED_OWNER_BUTTONS.has(cleanButtonId) ||
+      BLOCKED_OWNER_PREFIXES.some((prefix) => cleanButtonId.startsWith(prefix))
+    ) {
+      return false;
+    }
+
+    const isAllowedButton =
+      ALLOWED_SITE_SUPPORT_BUTTONS.has(cleanButtonId) ||
+      ALLOWED_SITE_SUPPORT_PREFIXES.some((prefix) => cleanButtonId.startsWith(prefix));
+
+    if (!isAllowedButton) {
+      return false;
+    }
+  }
+
+  if (isWebsiteLeadTriggerMessage(params.userText)) {
+    return true;
+  }
+
+  if (params.isSiteLeadSession || ALLOWED_SITE_SUPPORT_STEPS.has(currentStep)) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Função de resolução e reconhecimento de contexto do cliente/profissional no webhook,
  * incluindo detecção de Titular Mestre através do WhatsApp comercial oficial,
