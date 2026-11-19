@@ -34,6 +34,10 @@ interface CreateMeetingModalProps {
     duration_minutes: number;
     meet_url?: string;
     notes?: string;
+    origin?: string;
+    confirmation_channel?: string;
+    booked_by_name?: string;
+    whatsapp_line?: string | null;
   }) => Promise<void>;
 }
 
@@ -54,6 +58,8 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
   const [durationMinutes, setDurationMinutes] = useState("15");
   const [meetUrl, setMeetUrl] = useState("");
   const [notes, setNotes] = useState("");
+  const [channel, setChannel] = useState<"backoffice_agenda" | "whatsapp_bot_5511960474566" | "whatsapp_commercial_5511980113936">("backoffice_agenda");
+  const [bookedByName, setBookedByName] = useState("Backoffice Master");
   const [saving, setSaving] = useState(false);
 
   const resetForm = () => {
@@ -66,6 +72,8 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
     setDurationMinutes("15");
     setMeetUrl("");
     setNotes("");
+    setChannel("backoffice_agenda");
+    setBookedByName("Backoffice Master");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,6 +83,12 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
     setSaving(true);
     try {
       const scheduledAt = new Date(`${dateStr}T${timeStr}:00`).toISOString();
+      const whatsappLine =
+        channel === "whatsapp_bot_5511960474566"
+          ? "5511960474566"
+          : channel === "whatsapp_commercial_5511980113936"
+          ? "5511980113936"
+          : null;
       await onCreateMeeting({
         lead_name: leadName.trim(),
         phone: phone.trim(),
@@ -84,6 +98,10 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
         duration_minutes: parseInt(durationMinutes, 10) || 15,
         meet_url: meetUrl.trim() || undefined,
         notes: notes.trim() || undefined,
+        origin: channel,
+        confirmation_channel: channel,
+        booked_by_name: bookedByName.trim() || "Backoffice Master",
+        whatsapp_line: whatsappLine,
       });
       resetForm();
       onOpenChange(false);
@@ -221,6 +239,46 @@ export const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
                     <SelectItem value="60">60 minutos</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            {/* Canal & Quem Marcou (Integração Tripla de Agendas) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="meeting-channel" className="text-xs font-medium">
+                  Canal da Agenda
+                </Label>
+                <Select
+                  value={channel}
+                  onValueChange={(v) => {
+                    const next = v as typeof channel;
+                    setChannel(next);
+                    if (next === "whatsapp_bot_5511960474566") setBookedByName("Lead via Bot (+55 11 96047-4566)");
+                    else if (next === "whatsapp_commercial_5511980113936") setBookedByName("WhatsApp Comercial (+55 11 98011-3936)");
+                    else setBookedByName("Backoffice Master");
+                  }}
+                >
+                  <SelectTrigger id="meeting-channel" className="text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="backoffice_agenda">Agenda Backoffice</SelectItem>
+                    <SelectItem value="whatsapp_bot_5511960474566">WhatsApp Bot (+55 11 96047-4566)</SelectItem>
+                    <SelectItem value="whatsapp_commercial_5511980113936">WhatsApp Comercial (+55 11 98011-3936)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="meeting-booked-by" className="text-xs font-medium">
+                  Quem marcou
+                </Label>
+                <Input
+                  id="meeting-booked-by"
+                  value={bookedByName}
+                  onChange={(e) => setBookedByName(e.target.value)}
+                  placeholder="Ex: Lead via Bot ou Equipe Comercial"
+                  className="text-sm"
+                />
               </div>
             </div>
 

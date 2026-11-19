@@ -2619,9 +2619,9 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         .maybeSingle();
 
       if (!duplicateMeeting) {
-        // Salva no banco em platform_onboarding_meetings
+        // Salva no banco em platform_onboarding_meetings com rastreamento do canal Bot (+5511960474566)
         const validLeadEmail = isValidEmail(userEmail) ? userEmail.trim().toLowerCase() : null;
-        const { error: meetErr } = await supabase.from('platform_onboarding_meetings').insert({
+        const baseMeetingPayload = {
           lead_name: userName,
           email: validLeadEmail,
           phone: phone,
@@ -2632,7 +2632,19 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           google_calendar_url: gCalUrl,
           notes: `Agendado via WhatsApp Bot.${isSiteLeadSession ? ' Origem: Site (Possível Cliente).' : ''} Profissão: ${professionInfo}. Plano: ${alertPlanName}.`,
           created_by: customer.userId || null,
+        };
+        let { error: meetErr } = await supabase.from('platform_onboarding_meetings').insert({
+          ...baseMeetingPayload,
+          origin: 'whatsapp_bot_5511960474566',
+          confirmation_channel: 'whatsapp_bot_5511960474566',
+          booked_by_name: `${userName} (Autoatendimento Bot +55 11 96047-4566)`,
+          whatsapp_line: '5511960474566',
         });
+
+        if (meetErr && /column/i.test(meetErr.message || '')) {
+          const fallbackRes = await supabase.from('platform_onboarding_meetings').insert(baseMeetingPayload);
+          meetErr = fallbackRes.error;
+        }
 
         if (meetErr) {
           console.error('[whatsapp-webhook] Erro ao salvar platform_onboarding_meetings:', meetErr);

@@ -7262,6 +7262,368 @@ $$;
 ALTER FUNCTION "public"."handle_platform_onboarding_meetings_updated_at"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."normalize_br_phone_key"("p_phone" "text") RETURNS "text"
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_digits text;
+BEGIN
+    v_digits := regexp_replace(COALESCE(p_phone, ''), '\D', '', 'g');
+    IF v_digits = '' THEN
+        RETURN NULL;
+    END IF;
+    IF length(v_digits) IN (12, 13) AND left(v_digits, 2) = '55' THEN
+        RETURN substring(v_digits FROM 3);
+    END IF;
+    IF length(v_digits) > 11 THEN
+        RETURN right(v_digits, 11);
+    END IF;
+    RETURN v_digits;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."normalize_br_phone_key"("p_phone" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."sync_auto_lead_before_write"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_meeting record;
+    v_ws record;
+    v_channel text;
+BEGIN
+    NEW.updated_at := now();
+    NEW.normalized_phone_key := public.normalize_br_phone_key(NEW.phone);
+
+    IF NEW.assigned_affiliate_id IS NOT NULL AND NEW.assigned_at IS NULL THEN
+        NEW.assigned_at := now();
+        IF NEW.stage IN ('new', 'qualified') THEN
+            NEW.stage := 'assigned';
+        END IF;
+    END IF;
+
+    IF NEW.meeting_id IS NULL AND (NEW.normalized_phone_key IS NOT NULL OR NEW.email IS NOT NULL) THEN
+        SELECT m.* INTO v_meeting
+        FROM public.platform_onboarding_meetings m
+        WHERE (NEW.normalized_phone_key IS NOT NULL AND public.normalize_br_phone_key(m.phone) = NEW.normalized_phone_key)
+           OR (NEW.email IS NOT NULL AND btrim(NEW.email) <> '' AND lower(COALESCE(m.email, '')) = lower(btrim(NEW.email)))
+        ORDER BY m.scheduled_at DESC
+        LIMIT 1;
+
+        IF FOUND THEN
+            v_channel := CASE
+                WHEN v_meeting.whatsapp_line = '5511960474566' OR COALESCE(v_meeting.confirmation_channel, '') ILIKE '%960474566%' OR COALESCE(v_meeting.origin, '') ILIKE '%bot%' OR COALESCE(v_meeting.notes, '') ILIKE '%whatsapp bot%' THEN 'whatsapp_bot_5511960474566'
+                WHEN v_meeting.whatsapp_line = '5511980113936' OR COALESCE(v_meeting.confirmation_channel, '') ILIKE '%980113936%' OR COALESCE(v_meeting.origin, '') ILIKE '%commercial%' OR COALESCE(v_meeting.origin, '') ILIKE '%comercial%' THEN 'whatsapp_commercial_5511980113936'
+                ELSE 'backoffice_agenda'
+            END;
+
+            NEW.meeting_id := v_meeting.id;
+            NEW.meeting_status := v_meeting.status;
+            NEW.meeting_scheduled_at := v_meeting.scheduled_at;
+            NEW.meeting_duration_minutes := v_meeting.duration_minutes;
+            NEW.meeting_channel := v_channel;
+            NEW.meeting_booked_by := COALESCE(
+                NULLIF(btrim(v_meeting.booked_by_name), ''),
+                CASE
+                    WHEN v_channel = 'whatsapp_bot_5511960474566' THEN v_meeting.lead_name || ' (Bot +55 11 96047-4566)'
+                    WHEN v_channel = 'whatsapp_commercial_5511980113936' THEN 'Equipe Comercial (+55 11 98011-3936)'
+                    ELSE 'Backoffice Master'
+                END
+            );
+
+            IF NEW.stage IN ('new', 'qualified', 'assigned', 'contacted', 'replied') AND v_meeting.status IN ('scheduled', 'rescheduled') THEN
+                NEW.stage := 'meeting_scheduled';
+            END IF;
+        END IF;
+    END IF;
+
+    IF NEW.meeting_id IS NULL AND NEW.meeting_status IN ('none', 'attempted_bot', 'handed_off_commercial') AND NEW.normalized_phone_key IS NOT NULL THEN
+        SELECT ws.* INTO v_ws
+        FROM public.whatsapp_chat_sessions ws
+        WHERE public.normalize_br_phone_key(ws.phone) = NEW.normalized_phone_key
+        ORDER BY ws.last_message_at DESC
+        LIMIT 1;
+
+        IF FOUND AND v_ws.current_step IN ('waiting_day', 'waiting_time', 'owner_support_menu', 'support_handoff', 'support_active', 'completed_scheduled') THEN
+            NEW.last_scheduling_attempt_at := v_ws.last_message_at;
+            IF v_ws.current_step IN ('support_handoff', 'support_active') THEN
+                NEW.meeting_status := 'handed_off_commercial';
+                NEW.meeting_channel := 'whatsapp_commercial_5511980113936';
+                NEW.scheduling_attempt_summary := 'Atendimento/agendamento transferido para WhatsApp Comercial (+55 11 98011-3936).';
+            ELSIF v_ws.current_step IN ('waiting_day', 'waiting_time', 'owner_support_menu') THEN
+                NEW.meeting_status := 'attempted_bot';
+                NEW.meeting_channel := 'whatsapp_bot_5511960474566';
+                NEW.scheduling_attempt_summary := 'Iniciou fluxo de agenda no Bot (+55 11 96047-4566) — etapa: ' || v_ws.current_step ||
+                    COALESCE(' (Dia: ' || (v_ws.metadata->>'selected_day_label') || ')', '');
+            END IF;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."sync_auto_lead_before_write"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."sync_meeting_to_auto_leads"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_phone_key text;
+    v_channel text;
+    v_booked_by text;
+BEGIN
+    v_phone_key := public.normalize_br_phone_key(NEW.phone);
+
+    v_channel := CASE
+        WHEN NEW.whatsapp_line = '5511960474566' OR COALESCE(NEW.confirmation_channel, '') ILIKE '%960474566%' OR COALESCE(NEW.origin, '') ILIKE '%bot%' OR COALESCE(NEW.notes, '') ILIKE '%whatsapp bot%' THEN 'whatsapp_bot_5511960474566'
+        WHEN NEW.whatsapp_line = '5511980113936' OR COALESCE(NEW.confirmation_channel, '') ILIKE '%980113936%' OR COALESCE(NEW.origin, '') ILIKE '%commercial%' OR COALESCE(NEW.origin, '') ILIKE '%comercial%' THEN 'whatsapp_commercial_5511980113936'
+        ELSE 'backoffice_agenda'
+    END;
+
+    v_booked_by := COALESCE(
+        NULLIF(btrim(NEW.booked_by_name), ''),
+        CASE
+            WHEN v_channel = 'whatsapp_bot_5511960474566' THEN NEW.lead_name || ' (Bot +55 11 96047-4566)'
+            WHEN v_channel = 'whatsapp_commercial_5511980113936' THEN 'Equipe Comercial (+55 11 98011-3936)'
+            ELSE 'Backoffice Master'
+        END
+    );
+
+    UPDATE public.platform_auto_leads
+    SET
+        meeting_id = NEW.id,
+        meeting_status = NEW.status,
+        meeting_scheduled_at = NEW.scheduled_at,
+        meeting_duration_minutes = NEW.duration_minutes,
+        meeting_channel = v_channel,
+        meeting_booked_by = v_booked_by,
+        stage = CASE
+            WHEN stage IN ('new', 'qualified', 'assigned', 'contacted', 'replied') AND NEW.status IN ('scheduled', 'rescheduled') THEN 'meeting_scheduled'
+            ELSE stage
+        END,
+        updated_at = now()
+    WHERE deleted_at IS NULL
+      AND (
+          (NEW.auto_lead_id IS NOT NULL AND id = NEW.auto_lead_id)
+          OR (v_phone_key IS NOT NULL AND normalized_phone_key = v_phone_key)
+          OR (NEW.email IS NOT NULL AND btrim(NEW.email) <> '' AND lower(COALESCE(email, '')) = lower(btrim(NEW.email)))
+      );
+
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."sync_meeting_to_auto_leads"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."sync_whatsapp_session_to_auto_leads"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_phone_key text;
+BEGIN
+    v_phone_key := public.normalize_br_phone_key(NEW.phone);
+    IF v_phone_key IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.current_step IN ('waiting_day', 'waiting_time', 'owner_support_menu', 'support_handoff', 'support_active') THEN
+        UPDATE public.platform_auto_leads
+        SET
+            meeting_status = CASE
+                WHEN NEW.current_step IN ('support_handoff', 'support_active') THEN 'handed_off_commercial'
+                ELSE 'attempted_bot'
+            END,
+            meeting_channel = CASE
+                WHEN NEW.current_step IN ('support_handoff', 'support_active') THEN 'whatsapp_commercial_5511980113936'
+                ELSE 'whatsapp_bot_5511960474566'
+            END,
+            last_scheduling_attempt_at = NEW.last_message_at,
+            scheduling_attempt_summary = CASE
+                WHEN NEW.current_step IN ('support_handoff', 'support_active') THEN 'Atendimento/agendamento transferido para WhatsApp Comercial (+55 11 98011-3936).'
+                ELSE 'Iniciou fluxo de agenda no Bot (+55 11 96047-4566) — etapa: ' || NEW.current_step ||
+                    COALESCE(' (Dia: ' || (NEW.metadata->>'selected_day_label') || ')', '')
+            END,
+            updated_at = now()
+        WHERE deleted_at IS NULL
+          AND normalized_phone_key = v_phone_key
+          AND meeting_status IN ('none', 'attempted_bot', 'handed_off_commercial');
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."sync_whatsapp_session_to_auto_leads"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."upsert_platform_auto_leads_batch"("p_leads" "jsonb", "p_run_id" "uuid" DEFAULT NULL::"uuid", "p_routine_id" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_item jsonb;
+    v_inserted integer := 0;
+    v_updated integer := 0;
+    v_total integer := 0;
+    v_ext_key text;
+    v_phone_key text;
+    v_existing_id uuid;
+    v_score integer;
+    v_stage text;
+BEGIN
+    IF p_leads IS NULL OR jsonb_typeof(p_leads) <> 'array' THEN
+        RETURN jsonb_build_object('inserted_count', 0, 'updated_count', 0, 'total_processed', 0);
+    END IF;
+
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_leads)
+    LOOP
+        v_total := v_total + 1;
+        v_phone_key := public.normalize_br_phone_key(v_item->>'phone');
+        v_ext_key := COALESCE(
+            NULLIF(btrim(v_item->>'external_lead_key'), ''),
+            'lead:' || COALESCE(
+                v_phone_key,
+                NULLIF(lower(btrim(v_item->>'email')), ''),
+                NULLIF(lower(btrim(v_item->>'facebook_profile_url')), ''),
+                md5(COALESCE(v_item->>'full_name', 'lead') || '|' || COALESCE(v_item->>'source_post_url', v_item->>'facebook_group_name', ''))
+            )
+        );
+        v_score := LEAST(100, GREATEST(0, COALESCE((v_item->>'ai_score')::integer, 60)));
+        v_stage := COALESCE(NULLIF(v_item->>'stage', ''), CASE WHEN v_score >= 70 THEN 'qualified' ELSE 'new' END);
+
+        SELECT id INTO v_existing_id
+        FROM public.platform_auto_leads
+        WHERE external_lead_key = v_ext_key
+        LIMIT 1;
+
+        IF v_existing_id IS NULL THEN
+            INSERT INTO public.platform_auto_leads (
+                routine_id,
+                full_name,
+                phone,
+                email,
+                instagram_handle,
+                facebook_profile_url,
+                facebook_group_name,
+                facebook_group_url,
+                linkedin_url,
+                website_url,
+                city,
+                state,
+                clinic_name,
+                specialty,
+                icp_tier,
+                source_platform,
+                source_post_url,
+                source_post_excerpt,
+                ai_score,
+                ai_qualification_summary,
+                ai_icebreaker_message,
+                subagent_captured_by,
+                stage,
+                external_lead_key,
+                apify_run_id,
+                lindy_task_id,
+                raw_metadata
+            ) VALUES (
+                COALESCE(p_routine_id, NULLIF(v_item->>'routine_id', '')::uuid),
+                COALESCE(NULLIF(btrim(v_item->>'full_name'), ''), 'Lead Sem Nome'),
+                NULLIF(btrim(v_item->>'phone'), ''),
+                NULLIF(lower(btrim(v_item->>'email')), ''),
+                NULLIF(btrim(v_item->>'instagram_handle'), ''),
+                NULLIF(btrim(v_item->>'facebook_profile_url'), ''),
+                NULLIF(btrim(v_item->>'facebook_group_name'), ''),
+                NULLIF(btrim(v_item->>'facebook_group_url'), ''),
+                NULLIF(btrim(v_item->>'linkedin_url'), ''),
+                NULLIF(btrim(v_item->>'website_url'), ''),
+                NULLIF(btrim(v_item->>'city'), ''),
+                NULLIF(btrim(v_item->>'state'), ''),
+                NULLIF(btrim(v_item->>'clinic_name'), ''),
+                NULLIF(btrim(v_item->>'specialty'), ''),
+                COALESCE(NULLIF(v_item->>'icp_tier', ''), 'solo_physio'),
+                COALESCE(NULLIF(v_item->>'source_platform', ''), 'facebook_group'),
+                NULLIF(btrim(v_item->>'source_post_url'), ''),
+                NULLIF(btrim(v_item->>'source_post_excerpt'), ''),
+                v_score,
+                NULLIF(btrim(v_item->>'ai_qualification_summary'), ''),
+                NULLIF(btrim(v_item->>'ai_icebreaker_message'), ''),
+                COALESCE(NULLIF(v_item->>'subagent_captured_by', ''), 'fb_group_intent_hunter'),
+                v_stage,
+                v_ext_key,
+                NULLIF(btrim(v_item->>'apify_run_id'), ''),
+                NULLIF(btrim(v_item->>'lindy_task_id'), ''),
+                COALESCE(v_item->'raw_metadata', '{}'::jsonb)
+            );
+            v_inserted := v_inserted + 1;
+        ELSE
+            UPDATE public.platform_auto_leads
+            SET
+                phone = COALESCE(NULLIF(btrim(phone), ''), NULLIF(btrim(v_item->>'phone'), '')),
+                email = COALESCE(NULLIF(btrim(email), ''), NULLIF(lower(btrim(v_item->>'email')), '')),
+                instagram_handle = COALESCE(NULLIF(btrim(instagram_handle), ''), NULLIF(btrim(v_item->>'instagram_handle'), '')),
+                facebook_profile_url = COALESCE(NULLIF(btrim(facebook_profile_url), ''), NULLIF(btrim(v_item->>'facebook_profile_url'), '')),
+                city = COALESCE(NULLIF(btrim(city), ''), NULLIF(btrim(v_item->>'city'), '')),
+                state = COALESCE(NULLIF(btrim(state), ''), NULLIF(btrim(v_item->>'state'), '')),
+                clinic_name = COALESCE(NULLIF(btrim(clinic_name), ''), NULLIF(btrim(v_item->>'clinic_name'), '')),
+                specialty = COALESCE(NULLIF(btrim(specialty), ''), NULLIF(btrim(v_item->>'specialty'), '')),
+                ai_score = GREATEST(ai_score, v_score),
+                ai_qualification_summary = COALESCE(NULLIF(btrim(v_item->>'ai_qualification_summary'), ''), ai_qualification_summary),
+                ai_icebreaker_message = COALESCE(NULLIF(btrim(v_item->>'ai_icebreaker_message'), ''), ai_icebreaker_message),
+                apify_run_id = COALESCE(NULLIF(btrim(v_item->>'apify_run_id'), ''), apify_run_id),
+                lindy_task_id = COALESCE(NULLIF(btrim(v_item->>'lindy_task_id'), ''), lindy_task_id),
+                deleted_at = NULL,
+                updated_at = now()
+            WHERE id = v_existing_id;
+            v_updated := v_updated + 1;
+        END IF;
+    END LOOP;
+
+    IF p_run_id IS NOT NULL THEN
+        UPDATE public.platform_auto_lead_runs
+        SET
+            leads_found_count = v_total,
+            leads_inserted_count = v_inserted,
+            leads_updated_count = v_updated,
+            status = 'succeeded',
+            subagent_stage = 'completed',
+            completed_at = now()
+        WHERE id = p_run_id;
+    END IF;
+
+    IF p_routine_id IS NOT NULL THEN
+        UPDATE public.platform_auto_lead_routines
+        SET
+            last_run_at = now(),
+            last_run_status = 'succeeded',
+            total_leads_captured = total_leads_captured + v_inserted,
+            updated_at = now()
+        WHERE id = p_routine_id;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'inserted_count', v_inserted,
+        'updated_count', v_updated,
+        'total_processed', v_total
+    );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."upsert_platform_auto_leads_batch"("p_leads" "jsonb", "p_run_id" "uuid", "p_routine_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -16051,6 +16413,120 @@ CREATE TABLE IF NOT EXISTS "public"."platform_feedbacks" (
 ALTER TABLE "public"."platform_feedbacks" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."platform_auto_lead_routines" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "description" "text",
+    "subagent_role" "text" DEFAULT 'fb_group_intent_hunter'::"text" NOT NULL,
+    "apify_actor_id" "text" DEFAULT 'apify/facebook-groups-scraper'::"text" NOT NULL,
+    "target_groups" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "search_keywords" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "enable_cross_enrichment" boolean DEFAULT true NOT NULL,
+    "enable_lindy_qualification" boolean DEFAULT true NOT NULL,
+    "schedule_cron" "text" DEFAULT '0 8 * * *'::"text" NOT NULL,
+    "frequency_label" "text" DEFAULT 'Diário às 08:00'::"text" NOT NULL,
+    "min_score_auto_assign" integer DEFAULT 75 NOT NULL,
+    "auto_assign_affiliate_id" "uuid",
+    "is_active" boolean DEFAULT true NOT NULL,
+    "last_run_at" timestamp with time zone,
+    "last_run_status" "text" DEFAULT 'idle'::"text" NOT NULL,
+    "total_leads_captured" integer DEFAULT 0 NOT NULL,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "platform_auto_lead_routines_last_run_status_check" CHECK (("last_run_status" = ANY (ARRAY['idle'::"text", 'running_apify'::"text", 'enriching_lindy'::"text", 'succeeded'::"text", 'failed'::"text"]))),
+    CONSTRAINT "platform_auto_lead_routines_min_score_auto_assign_check" CHECK ((("min_score_auto_assign" >= 0) AND ("min_score_auto_assign" <= 100))),
+    CONSTRAINT "platform_auto_lead_routines_subagent_role_check" CHECK (("subagent_role" = ANY (ARRAY['fb_group_intent_hunter'::"text", 'cross_channel_enricher'::"text", 'lindy_sdr_qualifier'::"text", 'full_pipeline'::"text"])))
+);
+
+
+ALTER TABLE "public"."platform_auto_lead_routines" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."platform_auto_lead_runs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "routine_id" "uuid",
+    "run_type" "text" DEFAULT 'subagent_routine'::"text" NOT NULL,
+    "subagent_stage" "text" DEFAULT 'completed'::"text" NOT NULL,
+    "status" "text" DEFAULT 'running'::"text" NOT NULL,
+    "target_groups" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "keywords" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "external_run_id" "text",
+    "leads_found_count" integer DEFAULT 0 NOT NULL,
+    "leads_inserted_count" integer DEFAULT 0 NOT NULL,
+    "leads_updated_count" integer DEFAULT 0 NOT NULL,
+    "error_message" "text",
+    "triggered_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "completed_at" timestamp with time zone,
+    CONSTRAINT "platform_auto_lead_runs_run_type_check" CHECK (("run_type" = ANY (ARRAY['subagent_routine'::"text", 'apify_scrape'::"text", 'lindy_webhook'::"text", 'csv_import'::"text"]))),
+    CONSTRAINT "platform_auto_lead_runs_status_check" CHECK (("status" = ANY (ARRAY['running'::"text", 'succeeded'::"text", 'failed'::"text", 'partial'::"text"]))),
+    CONSTRAINT "platform_auto_lead_runs_subagent_stage_check" CHECK (("subagent_stage" = ANY (ARRAY['extracting_apify'::"text", 'cross_enriching'::"text", 'qualifying_lindy'::"text", 'completed'::"text", 'failed'::"text"])))
+);
+
+
+ALTER TABLE "public"."platform_auto_lead_runs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."platform_auto_leads" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "routine_id" "uuid",
+    "full_name" "text" NOT NULL,
+    "phone" "text",
+    "normalized_phone_key" "text",
+    "email" "text",
+    "instagram_handle" "text",
+    "facebook_profile_url" "text",
+    "facebook_group_name" "text",
+    "facebook_group_url" "text",
+    "linkedin_url" "text",
+    "website_url" "text",
+    "city" "text",
+    "state" "text",
+    "clinic_name" "text",
+    "specialty" "text",
+    "icp_tier" "text" DEFAULT 'solo_physio'::"text" NOT NULL,
+    "source_platform" "text" DEFAULT 'facebook_group'::"text" NOT NULL,
+    "source_post_url" "text",
+    "source_post_excerpt" "text",
+    "ai_score" integer DEFAULT 50 NOT NULL,
+    "ai_qualification_summary" "text",
+    "ai_icebreaker_message" "text",
+    "subagent_captured_by" "text" DEFAULT 'fb_group_intent_hunter'::"text",
+    "stage" "text" DEFAULT 'new'::"text" NOT NULL,
+    "assigned_affiliate_id" "uuid",
+    "assigned_at" timestamp with time zone,
+    "converted_clinic_id" "uuid",
+    "meeting_id" "uuid",
+    "meeting_status" "text" DEFAULT 'none'::"text" NOT NULL,
+    "meeting_scheduled_at" timestamp with time zone,
+    "meeting_duration_minutes" integer,
+    "meeting_channel" "text",
+    "meeting_booked_by" "text",
+    "last_scheduling_attempt_at" timestamp with time zone,
+    "scheduling_attempt_summary" "text",
+    "external_lead_key" "text" NOT NULL,
+    "apify_run_id" "text",
+    "lindy_task_id" "text",
+    "raw_metadata" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "notes" "text",
+    "last_contacted_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "platform_auto_leads_ai_score_check" CHECK ((("ai_score" >= 0) AND ("ai_score" <= 100))),
+    CONSTRAINT "platform_auto_leads_icp_tier_check" CHECK (("icp_tier" = ANY (ARRAY['clinic_owner'::"text", 'solo_physio'::"text", 'studio_pilates'::"text", 'student'::"text", 'other'::"text"]))),
+    CONSTRAINT "platform_auto_leads_meeting_channel_check" CHECK ((("meeting_channel" IS NULL) OR ("meeting_channel" = ANY (ARRAY['whatsapp_bot_5511960474566'::"text", 'whatsapp_commercial_5511980113936'::"text", 'backoffice_agenda'::"text"])))),
+    CONSTRAINT "platform_auto_leads_meeting_status_check" CHECK (("meeting_status" = ANY (ARRAY['none'::"text", 'attempted_bot'::"text", 'handed_off_commercial'::"text", 'scheduled'::"text", 'rescheduled'::"text", 'completed'::"text", 'canceled'::"text", 'no_show'::"text"]))),
+    CONSTRAINT "platform_auto_leads_source_platform_check" CHECK (("source_platform" = ANY (ARRAY['facebook_group'::"text", 'instagram'::"text", 'google_maps'::"text", 'lindy_agent'::"text", 'apify_direct'::"text", 'csv_import'::"text", 'whatsapp_inbound'::"text"]))),
+    CONSTRAINT "platform_auto_leads_stage_check" CHECK (("stage" = ANY (ARRAY['new'::"text", 'qualified'::"text", 'assigned'::"text", 'contacted'::"text", 'replied'::"text", 'meeting_scheduled'::"text", 'converted_trial'::"text", 'discarded'::"text"])))
+);
+
+
+ALTER TABLE "public"."platform_auto_leads" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."platform_onboarding_meetings" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "lead_name" "text" NOT NULL,
@@ -16066,6 +16542,11 @@ CREATE TABLE IF NOT EXISTS "public"."platform_onboarding_meetings" (
     "created_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "origin" "text" DEFAULT 'backoffice_agenda'::"text",
+    "confirmation_channel" "text" DEFAULT 'backoffice'::"text",
+    "booked_by_name" "text" DEFAULT 'Backoffice Master'::"text",
+    "whatsapp_line" "text",
+    "auto_lead_id" "uuid",
     CONSTRAINT "platform_onboarding_meetings_status_check" CHECK (("status" = ANY (ARRAY['scheduled'::"text", 'completed'::"text", 'canceled'::"text", 'rescheduled'::"text", 'no_show'::"text"])))
 );
 
@@ -16932,6 +17413,26 @@ ALTER TABLE ONLY "public"."platform_feedbacks"
 
 
 
+ALTER TABLE ONLY "public"."platform_auto_lead_routines"
+    ADD CONSTRAINT "platform_auto_lead_routines_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_lead_runs"
+    ADD CONSTRAINT "platform_auto_lead_runs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_leads"
+    ADD CONSTRAINT "platform_auto_leads_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_leads"
+    ADD CONSTRAINT "platform_auto_leads_external_lead_key_key" UNIQUE ("external_lead_key");
+
+
+
 ALTER TABLE ONLY "public"."platform_onboarding_meetings"
     ADD CONSTRAINT "platform_onboarding_meetings_pkey" PRIMARY KEY ("id");
 
@@ -17653,6 +18154,34 @@ CREATE INDEX "idx_platform_feedbacks_user_id" ON "public"."platform_feedbacks" U
 
 
 
+CREATE INDEX "idx_platform_auto_lead_routines_active" ON "public"."platform_auto_lead_routines" USING "btree" ("is_active") WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_platform_auto_lead_runs_routine_created" ON "public"."platform_auto_lead_runs" USING "btree" ("routine_id", "created_at" DESC);
+
+
+
+CREATE INDEX "idx_platform_auto_leads_affiliate" ON "public"."platform_auto_leads" USING "btree" ("assigned_affiliate_id") WHERE (("deleted_at" IS NULL) AND ("assigned_affiliate_id" IS NOT NULL));
+
+
+
+CREATE INDEX "idx_platform_auto_leads_meeting_status" ON "public"."platform_auto_leads" USING "btree" ("meeting_status", "meeting_scheduled_at") WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_platform_auto_leads_phone_key" ON "public"."platform_auto_leads" USING "btree" ("normalized_phone_key") WHERE (("deleted_at" IS NULL) AND ("normalized_phone_key" IS NOT NULL));
+
+
+
+CREATE INDEX "idx_platform_auto_leads_stage_score" ON "public"."platform_auto_leads" USING "btree" ("stage", "ai_score" DESC, "created_at" DESC) WHERE ("deleted_at" IS NULL);
+
+
+
+CREATE INDEX "idx_platform_onboarding_meetings_auto_lead_id" ON "public"."platform_onboarding_meetings" USING "btree" ("auto_lead_id") WHERE ("auto_lead_id" IS NOT NULL);
+
+
+
 CREATE INDEX "idx_platform_onboarding_meetings_created_by" ON "public"."platform_onboarding_meetings" USING "btree" ("created_by");
 
 
@@ -18094,6 +18623,22 @@ CREATE OR REPLACE TRIGGER "trg_validate_affiliate_unique_financial_data" BEFORE 
 
 
 CREATE OR REPLACE TRIGGER "trigger_calculate_community_template_fields_count" BEFORE INSERT OR UPDATE OF "schema" ON "public"."community_form_templates" FOR EACH ROW EXECUTE FUNCTION "public"."calculate_community_template_fields_count"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_sync_auto_lead_before_write" BEFORE INSERT OR UPDATE ON "public"."platform_auto_leads" FOR EACH ROW EXECUTE FUNCTION "public"."sync_auto_lead_before_write"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_sync_meeting_to_auto_leads" AFTER INSERT OR UPDATE ON "public"."platform_onboarding_meetings" FOR EACH ROW EXECUTE FUNCTION "public"."sync_meeting_to_auto_leads"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_sync_whatsapp_session_to_auto_leads" AFTER INSERT OR UPDATE ON "public"."whatsapp_chat_sessions" FOR EACH ROW EXECUTE FUNCTION "public"."sync_whatsapp_session_to_auto_leads"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_update_platform_auto_lead_routines_updated_at" BEFORE UPDATE ON "public"."platform_auto_lead_routines" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
 
@@ -18719,6 +19264,46 @@ ALTER TABLE ONLY "public"."platform_feedbacks"
 
 
 
+ALTER TABLE ONLY "public"."platform_auto_lead_routines"
+    ADD CONSTRAINT "platform_auto_lead_routines_auto_assign_affiliate_id_fkey" FOREIGN KEY ("auto_assign_affiliate_id") REFERENCES "public"."affiliates"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_lead_routines"
+    ADD CONSTRAINT "platform_auto_lead_routines_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_lead_runs"
+    ADD CONSTRAINT "platform_auto_lead_runs_routine_id_fkey" FOREIGN KEY ("routine_id") REFERENCES "public"."platform_auto_lead_routines"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_lead_runs"
+    ADD CONSTRAINT "platform_auto_lead_runs_triggered_by_fkey" FOREIGN KEY ("triggered_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_leads"
+    ADD CONSTRAINT "platform_auto_leads_assigned_affiliate_id_fkey" FOREIGN KEY ("assigned_affiliate_id") REFERENCES "public"."affiliates"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_leads"
+    ADD CONSTRAINT "platform_auto_leads_converted_clinic_id_fkey" FOREIGN KEY ("converted_clinic_id") REFERENCES "public"."clinics"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_leads"
+    ADD CONSTRAINT "platform_auto_leads_meeting_id_fkey" FOREIGN KEY ("meeting_id") REFERENCES "public"."platform_onboarding_meetings"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."platform_auto_leads"
+    ADD CONSTRAINT "platform_auto_leads_routine_id_fkey" FOREIGN KEY ("routine_id") REFERENCES "public"."platform_auto_lead_routines"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."platform_onboarding_meetings"
     ADD CONSTRAINT "platform_onboarding_meetings_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
@@ -19158,6 +19743,32 @@ CREATE POLICY "Platform admins manage crm logs" ON "public"."affiliate_crm_logs"
 
 
 
+CREATE POLICY "Affiliates read assigned platform_auto_leads" ON "public"."platform_auto_leads" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("assigned_affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE (("a"."user_id" = "auth"."uid"()) AND ("a"."deleted_at" IS NULL))))));
+
+
+
+CREATE POLICY "Affiliates update assigned platform_auto_leads" ON "public"."platform_auto_leads" FOR UPDATE TO "authenticated" USING ((("deleted_at" IS NULL) AND ("assigned_affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE (("a"."user_id" = "auth"."uid"()) AND ("a"."deleted_at" IS NULL)))))) WITH CHECK (("assigned_affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE (("a"."user_id" = "auth"."uid"()) AND ("a"."deleted_at" IS NULL)))));
+
+
+
+CREATE POLICY "Platform admins manage platform_auto_lead_routines" ON "public"."platform_auto_lead_routines" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
+
+
+
+CREATE POLICY "Platform admins manage platform_auto_lead_runs" ON "public"."platform_auto_lead_runs" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
+
+
+
+CREATE POLICY "Platform admins manage platform_auto_leads" ON "public"."platform_auto_leads" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
+
+
+
 CREATE POLICY "Platform admins podem gerenciar platform_onboarding_meetings" ON "public"."platform_onboarding_meetings" TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true))))) WITH CHECK ((EXISTS ( SELECT 1
@@ -19283,6 +19894,18 @@ CREATE POLICY "Service role manages all crm logs" ON "public"."affiliate_crm_log
 
 
 CREATE POLICY "Service role manages mfa recovery challenges" ON "public"."mfa_recovery_challenges" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Service role full access platform_auto_lead_routines" ON "public"."platform_auto_lead_routines" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Service role full access platform_auto_lead_runs" ON "public"."platform_auto_lead_runs" TO "service_role" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Service role full access platform_auto_leads" ON "public"."platform_auto_leads" TO "service_role" USING (true) WITH CHECK (true);
 
 
 
@@ -19862,6 +20485,15 @@ ALTER TABLE "public"."platform_error_logs" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."platform_feedbacks" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."platform_auto_lead_routines" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."platform_auto_lead_runs" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."platform_auto_leads" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."platform_onboarding_meetings" ENABLE ROW LEVEL SECURITY;
@@ -20725,6 +21357,16 @@ GRANT ALL ON FUNCTION "public"."handle_personal_signup"("_user_id" "uuid", "_ema
 
 
 GRANT ALL ON FUNCTION "public"."handle_platform_onboarding_meetings_updated_at"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."normalize_br_phone_key"("p_phone" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."normalize_br_phone_key"("p_phone" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."upsert_platform_auto_leads_batch"("p_leads" "jsonb", "p_run_id" "uuid", "p_routine_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."upsert_platform_auto_leads_batch"("p_leads" "jsonb", "p_run_id" "uuid", "p_routine_id" "uuid") TO "service_role";
 
 
 
@@ -21709,6 +22351,21 @@ GRANT ALL ON TABLE "public"."platform_error_logs" TO "service_role";
 GRANT ALL ON TABLE "public"."platform_feedbacks" TO "anon";
 GRANT ALL ON TABLE "public"."platform_feedbacks" TO "authenticated";
 GRANT ALL ON TABLE "public"."platform_feedbacks" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."platform_auto_lead_routines" TO "authenticated";
+GRANT ALL ON TABLE "public"."platform_auto_lead_routines" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."platform_auto_lead_runs" TO "authenticated";
+GRANT ALL ON TABLE "public"."platform_auto_lead_runs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."platform_auto_leads" TO "authenticated";
+GRANT ALL ON TABLE "public"."platform_auto_leads" TO "service_role";
 
 
 

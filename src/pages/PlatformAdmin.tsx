@@ -1,7 +1,7 @@
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { PlatformLayout } from "@/components/platform/PlatformLayout";
 import { PlatformDirectoryPage } from "@/pages/platform/PlatformDirectoryPage";
-import { PlatformAffiliatesPage } from "@/pages/platform/PlatformAffiliatesPage";
+import { PlatformMarketingPage } from "@/pages/platform/PlatformMarketingPage";
 import { PlatformClinicDetailPage } from "@/pages/platform/PlatformClinicDetailPage";
 import { PlatformPersonDetailPage } from "@/pages/platform/PlatformPersonDetailPage";
 import { PlatformFeedbacksManager } from "@/components/PlatformFeedbacksManager";
@@ -68,13 +68,24 @@ const PlatformAdmin = () => {
         }
       />
       <Route
+        path="marketing"
+        element={
+          <PlatformLayout
+            title="Marketing & Auto-Lead"
+            subtitle="Gestão de afiliados, captura automática de leads (Apify + Lindy AI) e integração tripla de agendas"
+          >
+            <PlatformMarketingPage />
+          </PlatformLayout>
+        }
+      />
+      <Route
         path="afiliados"
         element={
           <PlatformLayout
-            title="Afiliados & Parceiros"
-            subtitle="Gestão global do programa de afiliados, tiers e comissões"
+            title="Marketing & Auto-Lead"
+            subtitle="Gestão de afiliados, captura automática de leads (Apify + Lindy AI) e integração tripla de agendas"
           >
-            <PlatformAffiliatesPage />
+            <PlatformMarketingPage />
           </PlatformLayout>
         }
       />

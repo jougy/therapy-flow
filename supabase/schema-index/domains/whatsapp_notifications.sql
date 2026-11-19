@@ -104,7 +104,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] notification_category_enabled (schema.sql L9585-L9598)
+-- [RPC/FUNCTION] notification_category_enabled (schema.sql L9947-L9960)
 CREATE OR REPLACE FUNCTION "public"."notification_category_enabled"("_preferences" "public"."notification_preferences", "_category" "text") RETURNS boolean
     LANGUAGE "sql" IMMUTABLE
     SET "search_path" TO 'public'
@@ -120,7 +120,7 @@ CREATE OR REPLACE FUNCTION "public"."notification_category_enabled"("_preference
   END;
 $$;
 
--- [RPC/FUNCTION] purge_old_app_notifications (schema.sql L10296-L10310)
+-- [RPC/FUNCTION] purge_old_app_notifications (schema.sql L10658-L10672)
 CREATE OR REPLACE FUNCTION "public"."purge_old_app_notifications"("_retention_days" integer DEFAULT 60) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -137,7 +137,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L12890-L12898)
+-- [RPC/FUNCTION] touch_notification_preferences_updated_at (schema.sql L13252-L13260)
 CREATE OR REPLACE FUNCTION "public"."touch_notification_preferences_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -148,7 +148,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] app_notifications (schema.sql L15058-L15078)
+-- [TABLE] app_notifications (schema.sql L15420-L15440)
 CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS "public"."app_notifications" (
     CONSTRAINT "app_notifications_title_check" CHECK ((("char_length"("title") >= 1) AND ("char_length"("title") <= 160)))
 );
 
--- [TABLE] mfa_recovery_challenges (schema.sql L15684-L15698)
+-- [TABLE] mfa_recovery_challenges (schema.sql L16046-L16060)
 CREATE TABLE IF NOT EXISTS "public"."mfa_recovery_challenges" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -188,17 +188,17 @@ CREATE TABLE IF NOT EXISTS "public"."mfa_recovery_challenges" (
     CONSTRAINT "mfa_recovery_challenges_channel_check" CHECK (("channel" = ANY (ARRAY['whatsapp'::"text", 'email'::"text"])))
 );
 
--- [POLICY] Service role manages mfa recovery challenges ON mfa_recovery_challenges (schema.sql L19285-L19285)
+-- [POLICY] Service role manages mfa recovery challenges ON mfa_recovery_challenges (schema.sql L19896-L19896)
 CREATE POLICY "Service role manages mfa recovery challenges" ON "public"."mfa_recovery_challenges" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L19415-L19415)
+-- [POLICY] Users delete own app notifications ON app_notifications (schema.sql L20038-L20038)
 CREATE POLICY "Users delete own app notifications" ON "public"."app_notifications" FOR DELETE USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L19465-L19465)
+-- [POLICY] Users manage own notification preferences ON notification_preferences (schema.sql L20088-L20088)
 CREATE POLICY "Users manage own notification preferences" ON "public"."notification_preferences" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own app notifications ON app_notifications (schema.sql L19544-L19544)
+-- [POLICY] Users read own app notifications ON app_notifications (schema.sql L20167-L20167)
 CREATE POLICY "Users read own app notifications" ON "public"."app_notifications" FOR SELECT USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users update own app notifications ON app_notifications (schema.sql L19608-L19608)
+-- [POLICY] Users update own app notifications ON app_notifications (schema.sql L20231-L20231)
 CREATE POLICY "Users update own app notifications" ON "public"."app_notifications" FOR UPDATE USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));

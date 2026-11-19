@@ -513,7 +513,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] normalize_patient_name_key (schema.sql L9570-L9579)
+-- [RPC/FUNCTION] normalize_patient_name_key (schema.sql L9932-L9941)
 CREATE OR REPLACE FUNCTION "public"."normalize_patient_name_key"("_value" "text") RETURNS "text"
     LANGUAGE "sql" IMMUTABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -525,7 +525,7 @@ CREATE OR REPLACE FUNCTION "public"."normalize_patient_name_key"("_value" "text"
   ), '[^[:alnum:]]+', '', 'g'));
 $$;
 
--- [RPC/FUNCTION] prevent_default_patient_group_delete (schema.sql L10081-L10097)
+-- [RPC/FUNCTION] prevent_default_patient_group_delete (schema.sql L10443-L10459)
 CREATE OR REPLACE FUNCTION "public"."prevent_default_patient_group_delete"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -544,7 +544,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] pseudonymize_patient_name (schema.sql L10103-L10132)
+-- [RPC/FUNCTION] pseudonymize_patient_name (schema.sql L10465-L10494)
 CREATE OR REPLACE FUNCTION "public"."pseudonymize_patient_name"("_name" "text") RETURNS "text"
     LANGUAGE "plpgsql" IMMUTABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -576,7 +576,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] schedule_patient_appointment (schema.sql L11835-L11889)
+-- [RPC/FUNCTION] schedule_patient_appointment (schema.sql L12197-L12251)
 CREATE OR REPLACE FUNCTION "public"."schedule_patient_appointment"("_clinic_id" "uuid", "_patient_id" "uuid", "_title" "text", "_scheduled_for" timestamp with time zone, "_duration_minutes" integer DEFAULT 50, "_event_type" "text" DEFAULT 'atendimento'::"text", "_status" "text" DEFAULT 'confirmado'::"text") RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "patient_id" "uuid", "title" "text", "scheduled_for" timestamp with time zone, "duration_minutes" integer, "status" "text", "event_type" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -633,7 +633,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] submit_patient_registration_form (schema.sql L12284-L12490)
+-- [RPC/FUNCTION] submit_patient_registration_form (schema.sql L12646-L12852)
 CREATE OR REPLACE FUNCTION "public"."submit_patient_registration_form"("_token" "text", "_password" "text", "_payload" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -842,7 +842,7 @@ BEGIN
 END;
 $_$;
 
--- [RPC/FUNCTION] trg_auto_assign_patient_code (schema.sql L12965-L12978)
+-- [RPC/FUNCTION] trg_auto_assign_patient_code (schema.sql L13327-L13340)
 CREATE OR REPLACE FUNCTION "public"."trg_auto_assign_patient_code"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -858,7 +858,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] trg_patient_groups_set_clinic_id (schema.sql L12997-L13007)
+-- [RPC/FUNCTION] trg_patient_groups_set_clinic_id (schema.sql L13359-L13369)
 CREATE OR REPLACE FUNCTION "public"."trg_patient_groups_set_clinic_id"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -871,7 +871,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_patient_guardian_consent (schema.sql L13865-L13914)
+-- [RPC/FUNCTION] update_patient_guardian_consent (schema.sql L14227-L14276)
 CREATE OR REPLACE FUNCTION "public"."update_patient_guardian_consent"("_patient_id" "uuid", "_consent_payload" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions', 'pg_temp'
@@ -923,7 +923,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] patient_clinical_snapshots (schema.sql L15704-L15714)
+-- [TABLE] patient_clinical_snapshots (schema.sql L16066-L16076)
 CREATE TABLE IF NOT EXISTS "public"."patient_clinical_snapshots" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "patient_id" "uuid" NOT NULL,
@@ -936,7 +936,7 @@ CREATE TABLE IF NOT EXISTS "public"."patient_clinical_snapshots" (
     "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL
 );
 
--- [TABLE] patient_evolution_groups (schema.sql L15720-L15727)
+-- [TABLE] patient_evolution_groups (schema.sql L16082-L16089)
 CREATE TABLE IF NOT EXISTS "public"."patient_evolution_groups" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -946,7 +946,7 @@ CREATE TABLE IF NOT EXISTS "public"."patient_evolution_groups" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] patient_file_uploads (schema.sql L15733-L15777)
+-- [TABLE] patient_file_uploads (schema.sql L16095-L16139)
 CREATE TABLE IF NOT EXISTS "public"."patient_file_uploads" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -993,7 +993,7 @@ CREATE TABLE IF NOT EXISTS "public"."patient_file_uploads" (
     CONSTRAINT "patient_file_uploads_uploaded_status_valid" CHECK (((("status" = 'uploaded'::"public"."patient_file_upload_status") AND ("uploaded_at" IS NOT NULL)) OR ("status" <> 'uploaded'::"public"."patient_file_upload_status")))
 );
 
--- [TABLE] patient_group_templates (schema.sql L15783-L15797)
+-- [TABLE] patient_group_templates (schema.sql L16145-L16159)
 CREATE TABLE IF NOT EXISTS "public"."patient_group_templates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -1010,7 +1010,7 @@ CREATE TABLE IF NOT EXISTS "public"."patient_group_templates" (
     CONSTRAINT "patient_group_templates_status_check" CHECK (("status" = ANY (ARRAY['em_andamento'::"text", 'pausado'::"text", 'concluido'::"text", 'cancelado'::"text", 'inativo'::"text"])))
 );
 
--- [TABLE] patient_groups (schema.sql L15803-L15817)
+-- [TABLE] patient_groups (schema.sql L16165-L16179)
 CREATE TABLE IF NOT EXISTS "public"."patient_groups" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -1027,7 +1027,7 @@ CREATE TABLE IF NOT EXISTS "public"."patient_groups" (
     CONSTRAINT "patient_groups_status_check" CHECK ((("status" IS NULL) OR ("status" = ANY (ARRAY['em_andamento'::"text", 'pausado'::"text", 'concluido'::"text", 'cancelado'::"text", 'inativo'::"text"]))))
 );
 
--- [TABLE] patient_health_insurances (schema.sql L15823-L15834)
+-- [TABLE] patient_health_insurances (schema.sql L16185-L16196)
 CREATE TABLE IF NOT EXISTS "public"."patient_health_insurances" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -1041,7 +1041,7 @@ CREATE TABLE IF NOT EXISTS "public"."patient_health_insurances" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] patient_payment_plans (schema.sql L15840-L15869)
+-- [TABLE] patient_payment_plans (schema.sql L16202-L16231)
 CREATE TABLE IF NOT EXISTS "public"."patient_payment_plans" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -1073,7 +1073,7 @@ CREATE TABLE IF NOT EXISTS "public"."patient_payment_plans" (
     CONSTRAINT "patient_payment_plans_used_sessions_check" CHECK (("used_sessions" >= 0))
 );
 
--- [TABLE] patient_registration_links (schema.sql L15875-L15885)
+-- [TABLE] patient_registration_links (schema.sql L16237-L16247)
 CREATE TABLE IF NOT EXISTS "public"."patient_registration_links" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "patient_id" "uuid" NOT NULL,
@@ -1086,7 +1086,7 @@ CREATE TABLE IF NOT EXISTS "public"."patient_registration_links" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] patients (schema.sql L15891-L15950)
+-- [TABLE] patients (schema.sql L16253-L16312)
 CREATE TABLE IF NOT EXISTS "public"."patients" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -1148,80 +1148,80 @@ CREATE TABLE IF NOT EXISTS "public"."patients" (
     CONSTRAINT "patients_recurring_weekdays_valid" CHECK ((("cardinality"("recurring_weekdays") <= 7) AND ("recurring_weekdays" <@ ARRAY[0, 1, 2, 3, 4, 5, 6])))
 );
 
--- [POLICY] Authenticated users can insert registration links ON patient_registration_links (schema.sql L19017-L19017)
+-- [POLICY] Authenticated users can insert registration links ON patient_registration_links (schema.sql L19602-L19602)
 CREATE POLICY "Authenticated users can insert registration links" ON "public"."patient_registration_links" FOR INSERT TO "authenticated" WITH CHECK (("created_by" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can update their own registration links ON patient_registration_links (schema.sql L19043-L19043)
+-- [POLICY] Authenticated users can update their own registration links ON patient_registration_links (schema.sql L19628-L19628)
 CREATE POLICY "Authenticated users can update their own registration links" ON "public"."patient_registration_links" FOR UPDATE TO "authenticated" USING (("created_by" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can view their own registration links ON patient_registration_links (schema.sql L19051-L19051)
+-- [POLICY] Authenticated users can view their own registration links ON patient_registration_links (schema.sql L19636-L19636)
 CREATE POLICY "Authenticated users can view their own registration links" ON "public"."patient_registration_links" FOR SELECT TO "authenticated" USING (("created_by" = "auth"."uid"()));
 
--- [POLICY] Super admins manage all evolution groups ON patient_evolution_groups (schema.sql L19313-L19313)
+-- [POLICY] Super admins manage all evolution groups ON patient_evolution_groups (schema.sql L19936-L19936)
 CREATE POLICY "Super admins manage all evolution groups" ON "public"."patient_evolution_groups" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all patient_groups ON patient_groups (schema.sql L19317-L19317)
+-- [POLICY] Super admins manage all patient_groups ON patient_groups (schema.sql L19940-L19940)
 CREATE POLICY "Super admins manage all patient_groups" ON "public"."patient_groups" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all patients ON patients (schema.sql L19321-L19321)
+-- [POLICY] Super admins manage all patients ON patients (schema.sql L19944-L19944)
 CREATE POLICY "Super admins manage all patients" ON "public"."patients" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all payment plans ON patient_payment_plans (schema.sql L19325-L19325)
+-- [POLICY] Super admins manage all payment plans ON patient_payment_plans (schema.sql L19948-L19948)
 CREATE POLICY "Super admins manage all payment plans" ON "public"."patient_payment_plans" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users delete clinic patients ON patients (schema.sql L19407-L19407)
+-- [POLICY] Users delete clinic patients ON patients (schema.sql L20030-L20030)
 CREATE POLICY "Users delete clinic patients" ON "public"."patients" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.delete'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids")))));
 
--- [POLICY] Users delete patient file uploads ON patient_file_uploads (schema.sql L19419-L19419)
+-- [POLICY] Users delete patient file uploads ON patient_file_uploads (schema.sql L20042-L20042)
 CREATE POLICY "Users delete patient file uploads" ON "public"."patient_file_uploads" FOR DELETE TO "authenticated" USING ((("clinic_id" IS NOT NULL) AND ("public"."current_user_can"('patients.delete'::"text", "clinic_id") OR "public"."current_user_can"('patients.write'::"text", "clinic_id"))));
 
--- [POLICY] Users insert patient file uploads ON patient_file_uploads (schema.sql L19449-L19449)
+-- [POLICY] Users insert patient file uploads ON patient_file_uploads (schema.sql L20072-L20072)
 CREATE POLICY "Users insert patient file uploads" ON "public"."patient_file_uploads" FOR INSERT TO "authenticated" WITH CHECK ((("uploaded_by_user_id" = "auth"."uid"()) AND ("clinic_id" IS NOT NULL) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
 
--- [POLICY] Users manage clinic payment plans ON patient_payment_plans (schema.sql L19453-L19453)
+-- [POLICY] Users manage clinic payment plans ON patient_payment_plans (schema.sql L20076-L20076)
 CREATE POLICY "Users manage clinic payment plans" ON "public"."patient_payment_plans" TO "authenticated" USING (("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"()))) WITH CHECK (("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())));
 
--- [POLICY] Users read clinic evolution groups ON patient_evolution_groups (schema.sql L19489-L19489)
+-- [POLICY] Users read clinic evolution groups ON patient_evolution_groups (schema.sql L20112-L20112)
 CREATE POLICY "Users read clinic evolution groups" ON "public"."patient_evolution_groups" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('sessions.read'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic patient_group_templates ON patient_group_templates (schema.sql L19497-L19497)
+-- [POLICY] Users read clinic patient_group_templates ON patient_group_templates (schema.sql L20120-L20120)
 CREATE POLICY "Users read clinic patient_group_templates" ON "public"."patient_group_templates" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.read'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic patient_groups ON patient_groups (schema.sql L19501-L19501)
+-- [POLICY] Users read clinic patient_groups ON patient_groups (schema.sql L20124-L20124)
 CREATE POLICY "Users read clinic patient_groups" ON "public"."patient_groups" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('patient_groups.read'::"text", "clinic_id") OR "public"."current_user_can"('patients_groups.read'::"text", "clinic_id") OR "public"."current_user_can"('patients.read'::"text", "clinic_id") OR "public"."current_user_can"('sessions.read'::"text", "clinic_id"))));
 
--- [POLICY] Users read clinic patients ON patients (schema.sql L19505-L19505)
+-- [POLICY] Users read clinic patients ON patients (schema.sql L20128-L20128)
 CREATE POLICY "Users read clinic patients" ON "public"."patients" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('patients.read'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids")))));
 
--- [POLICY] Users read patient file uploads ON patient_file_uploads (schema.sql L19564-L19564)
+-- [POLICY] Users read patient file uploads ON patient_file_uploads (schema.sql L20187-L20187)
 CREATE POLICY "Users read patient file uploads" ON "public"."patient_file_uploads" FOR SELECT TO "authenticated" USING ((("clinic_id" IS NOT NULL) AND "public"."current_user_can"('patients.read'::"text", "clinic_id")));
 
--- [POLICY] Users read patient_clinical_snapshots ON patient_clinical_snapshots (schema.sql L19568-L19568)
+-- [POLICY] Users read patient_clinical_snapshots ON patient_clinical_snapshots (schema.sql L20191-L20191)
 CREATE POLICY "Users read patient_clinical_snapshots" ON "public"."patient_clinical_snapshots" FOR SELECT USING ((("auth"."uid"() IS NOT NULL) AND "public"."current_user_can"('patients.read'::"text", "clinic_id")));
 
--- [POLICY] Users update clinic patients ON patients (schema.sql L19592-L19592)
+-- [POLICY] Users update clinic patients ON patients (schema.sql L20215-L20215)
 CREATE POLICY "Users update clinic patients" ON "public"."patients" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids"))))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids")))));
 
--- [POLICY] Users update patient file uploads ON patient_file_uploads (schema.sql L19616-L19616)
+-- [POLICY] Users update patient file uploads ON patient_file_uploads (schema.sql L20239-L20239)
 CREATE POLICY "Users update patient file uploads" ON "public"."patient_file_uploads" FOR UPDATE TO "authenticated" USING ((("clinic_id" IS NOT NULL) AND "public"."current_user_can"('patients.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" IS NOT NULL) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
 
--- [POLICY] Users write clinic evolution groups ON patient_evolution_groups (schema.sql L19628-L19628)
+-- [POLICY] Users write clinic evolution groups ON patient_evolution_groups (schema.sql L20251-L20251)
 CREATE POLICY "Users write clinic evolution groups" ON "public"."patient_evolution_groups" TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('sessions.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('sessions.write'::"text", "clinic_id")));
 
--- [POLICY] Users write clinic patient_group_templates ON patient_group_templates (schema.sql L19632-L19632)
+-- [POLICY] Users write clinic patient_group_templates ON patient_group_templates (schema.sql L20255-L20255)
 CREATE POLICY "Users write clinic patient_group_templates" ON "public"."patient_group_templates" TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
 
--- [POLICY] Users write clinic patient_groups ON patient_groups (schema.sql L19636-L19636)
+-- [POLICY] Users write clinic patient_groups ON patient_groups (schema.sql L20259-L20259)
 CREATE POLICY "Users write clinic patient_groups" ON "public"."patient_groups" TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.manage_groups'::"text", "clinic_id") OR "public"."current_user_can"('patient_groups.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id")))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.manage_groups'::"text", "clinic_id") OR "public"."current_user_can"('patient_groups.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id"))));
 
--- [POLICY] Users write clinic patients ON patients (schema.sql L19640-L19640)
+-- [POLICY] Users write clinic patients ON patients (schema.sql L20263-L20263)
 CREATE POLICY "Users write clinic patients" ON "public"."patients" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
 
--- [POLICY] Users write patient_clinical_snapshots ON patient_clinical_snapshots (schema.sql L19648-L19648)
+-- [POLICY] Users write patient_clinical_snapshots ON patient_clinical_snapshots (schema.sql L20271-L20271)
 CREATE POLICY "Users write patient_clinical_snapshots" ON "public"."patient_clinical_snapshots" FOR INSERT WITH CHECK ((("auth"."uid"() IS NOT NULL) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
 
--- [POLICY] patient_health_insurances_all ON patient_health_insurances (schema.sql L19819-L19819)
+-- [POLICY] patient_health_insurances_all ON patient_health_insurances (schema.sql L20442-L20442)
 CREATE POLICY "patient_health_insurances_all" ON "public"."patient_health_insurances" USING (("public"."current_user_can"('patients.manage'::"text", "clinic_id") OR "public"."current_user_can"('sessions.create'::"text", "clinic_id"))) WITH CHECK (("public"."current_user_can"('patients.manage'::"text", "clinic_id") OR "public"."current_user_can"('sessions.create'::"text", "clinic_id")));
 
--- [POLICY] patient_health_insurances_select ON patient_health_insurances (schema.sql L19823-L19823)
+-- [POLICY] patient_health_insurances_select ON patient_health_insurances (schema.sql L20446-L20446)
 CREATE POLICY "patient_health_insurances_select" ON "public"."patient_health_insurances" FOR SELECT USING ("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id"));
