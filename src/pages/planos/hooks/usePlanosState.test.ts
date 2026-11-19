@@ -110,7 +110,7 @@ describe("usePlanosState - Meta Pixel InitiateCheckout", () => {
       await result.current.handleSelectPlan("prof_basico");
     });
 
-    expect(mockNavigate).toHaveBeenCalledWith("/pagamento/clinic-solo-123?plan=prof_basico&cycle=monthly");
+    expect(mockNavigate).toHaveBeenCalledWith("/pagamento/clinic-solo-123?plan=prof_basico&cycle=monthly&subproduct=plurifisio");
   });
 
   it("redirects to /onboarding-clinica?mode=upgrade when existing clinic owner chooses team clinic plan", async () => {

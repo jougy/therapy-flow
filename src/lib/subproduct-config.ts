@@ -26,6 +26,17 @@ export interface SubproductSEO {
   themeColor: string;
 }
 
+export interface SubproductRailConfig {
+  /** Se true (plurihealth), libera todas as especialidades e frentes sem filtro */
+  isFullPlatform: boolean;
+  /** Profissões/especialidades permitidas ou priorizadas nesta frente */
+  allowedProfessions: string[];
+  /** Escopos/categorias de anamnese visíveis nesta frente (vazio = todas) */
+  anamnesisScopes: string[];
+  /** Módulos ocultos especificamente nesta frente */
+  hiddenModules?: string[];
+}
+
 export interface SubproductConfig {
   key: SubproductKey;
   name: string;
@@ -37,6 +48,7 @@ export interface SubproductConfig {
   defaultProfession: string;
   councilName: string;
   councilPlaceholder: string;
+  rail: SubproductRailConfig;
   metaPixelId: string;
   gaMeasurementId: string;
   clarityProjectId?: string;
@@ -55,6 +67,11 @@ export const SUBPRODUCTS_CATALOG: Record<SubproductKey, SubproductConfig> = {
     defaultProfession: "fisioterapeuta",
     councilName: "CREFITO",
     councilPlaceholder: "Ex: 123456-F",
+    rail: {
+      isFullPlatform: false,
+      allowedProfessions: ["fisioterapeuta", "terapeuta_ocupacional"],
+      anamnesisScopes: ["fisioterapia", "ortopedia", "neurologia", "respiratoria", "pilates", "geral"],
+    },
     metaPixelId: import.meta.env.VITE_META_PIXEL_ID || "1073846021935349",
     gaMeasurementId: import.meta.env.VITE_GA_MEASUREMENT_ID || "G-HM85XTZRHT",
     clarityProjectId: import.meta.env.VITE_CLARITY_PROJECT_ID || "qj4s7f3g",
@@ -92,6 +109,11 @@ export const SUBPRODUCTS_CATALOG: Record<SubproductKey, SubproductConfig> = {
     defaultProfession: "psicologo",
     councilName: "CRP",
     councilPlaceholder: "Ex: 06/123456",
+    rail: {
+      isFullPlatform: false,
+      allowedProfessions: ["psicologo", "psicanalista", "neuropsicologo"],
+      anamnesisScopes: ["psicologia", "saude_mental", "geral"],
+    },
     metaPixelId: import.meta.env.VITE_META_PIXEL_ID || "1073846021935349",
     gaMeasurementId: import.meta.env.VITE_GA_MEASUREMENT_ID || "G-HM85XTZRHT",
     seo: {
@@ -118,6 +140,11 @@ export const SUBPRODUCTS_CATALOG: Record<SubproductKey, SubproductConfig> = {
     defaultProfession: "nutricionista",
     councilName: "CRN",
     councilPlaceholder: "Ex: 12345",
+    rail: {
+      isFullPlatform: false,
+      allowedProfessions: ["nutricionista"],
+      anamnesisScopes: ["nutricao", "antropometria", "geral"],
+    },
     metaPixelId: import.meta.env.VITE_META_PIXEL_ID || "1073846021935349",
     gaMeasurementId: import.meta.env.VITE_GA_MEASUREMENT_ID || "G-HM85XTZRHT",
     seo: {
@@ -144,6 +171,11 @@ export const SUBPRODUCTS_CATALOG: Record<SubproductKey, SubproductConfig> = {
     defaultProfession: "naturopata",
     councilName: "Registro Profissional",
     councilPlaceholder: "Ex: 12345",
+    rail: {
+      isFullPlatform: false,
+      allowedProfessions: ["naturopata", "acupunturista", "terapeuta_integrativo"],
+      anamnesisScopes: ["integrativa", "naturopatia", "geral"],
+    },
     metaPixelId: import.meta.env.VITE_META_PIXEL_ID || "1073846021935349",
     gaMeasurementId: import.meta.env.VITE_GA_MEASUREMENT_ID || "G-HM85XTZRHT",
     seo: {
@@ -170,6 +202,11 @@ export const SUBPRODUCTS_CATALOG: Record<SubproductKey, SubproductConfig> = {
     defaultProfession: "fisioterapeuta",
     councilName: "Conselho Regional",
     councilPlaceholder: "Ex: CREFITO, CRM, CRP",
+    rail: {
+      isFullPlatform: true,
+      allowedProfessions: [],
+      anamnesisScopes: [],
+    },
     metaPixelId: import.meta.env.VITE_META_PIXEL_ID || "1073846021935349",
     gaMeasurementId: import.meta.env.VITE_GA_MEASUREMENT_ID || "G-HM85XTZRHT",
     clarityProjectId: import.meta.env.VITE_CLARITY_PROJECT_ID || "qj4s7f3g",
@@ -193,12 +230,45 @@ export const SUBPRODUCTS_CATALOG: Record<SubproductKey, SubproductConfig> = {
   },
 };
 
+let runtimeClinicSubproductKey: SubproductKey | null = null;
+const runtimeListeners = new Set<() => void>();
+
+export function isValidSubproductKey(value: unknown): value is SubproductKey {
+  return typeof value === "string" && value in SUBPRODUCTS_CATALOG;
+}
+
+export function setRuntimeClinicSubproduct(key: string | null | undefined): void {
+  const next: SubproductKey | null = isValidSubproductKey(key) ? key : null;
+  if (runtimeClinicSubproductKey === next) return;
+  runtimeClinicSubproductKey = next;
+  runtimeListeners.forEach((listener) => listener());
+}
+
+export function getRuntimeClinicSubproduct(): SubproductKey | null {
+  return runtimeClinicSubproductKey;
+}
+
+export function subscribeRuntimeClinicSubproduct(listener: () => void): () => void {
+  runtimeListeners.add(listener);
+  return () => {
+    runtimeListeners.delete(listener);
+  };
+}
+
 /**
- * Resolve o subproduto atual baseado no hostname do navegador.
+ * Resolve o subproduto atual baseado em:
+ * 1. Query param `?brand=...` (dev/QA)
+ * 2. Hostname vertical dedicado (`app.plurifisio.com.br`, etc.)
+ * 3. `subproduct_key` da clínica ativa (se comprou/usa plano vertical como `plurifisio`, prevalece mesmo em `pluri.health`)
+ * 4. Fallback `plurihealth`
  */
-export function resolveCurrentSubproduct(): SubproductConfig {
+export function resolveCurrentSubproduct(clinicSubproductKey?: string | null): SubproductConfig {
+  const effectiveClinicKey = isValidSubproductKey(clinicSubproductKey)
+    ? clinicSubproductKey
+    : runtimeClinicSubproductKey;
+
   if (typeof window === "undefined" || !window.location) {
-    return SUBPRODUCTS_CATALOG.plurifisio;
+    return effectiveClinicKey ? SUBPRODUCTS_CATALOG[effectiveClinicKey] : SUBPRODUCTS_CATALOG.plurifisio;
   }
 
   const hostname = window.location.hostname.toLowerCase();
@@ -211,6 +281,9 @@ export function resolveCurrentSubproduct(): SubproductConfig {
   }
   if (brandParam === "health" || brandParam === "plurihealth") {
     return SUBPRODUCTS_CATALOG.plurihealth;
+  }
+  if (isValidSubproductKey(brandParam)) {
+    return SUBPRODUCTS_CATALOG[brandParam];
   }
 
   if (hostname.includes("plurifisio") || hostname.includes("fisioterapia")) {
@@ -227,6 +300,11 @@ export function resolveCurrentSubproduct(): SubproductConfig {
 
   if (hostname.includes("plurinatu")) {
     return SUBPRODUCTS_CATALOG.plurinatu;
+  }
+
+  // Se a clínica ativa usa uma frente específica (ex: plurifisio), prevalece mesmo em pluri.health ou localhost
+  if (effectiveClinicKey && effectiveClinicKey !== "plurihealth") {
+    return SUBPRODUCTS_CATALOG[effectiveClinicKey];
   }
 
   if (hostname.includes("pluri.health")) {

@@ -10,6 +10,7 @@ import { toast } from "@/hooks/use-toast";
 import { formatCpf } from "@/lib/profile-settings";
 import { isValidCpfDigits } from "@/lib/patient-registration";
 import { useAuth } from "@/hooks/useAuth";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 
 const isStrongEnoughPassword = (value: string) => /^(?=.*[A-Za-z])(?=.*\d).{8,128}$/.test(value);
 
@@ -299,15 +300,15 @@ const RedefinirSenha = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
+    <main className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center flex flex-col items-center">
           <img
             src="/branding/logo/pluri_health_icon_gradient.svg"
-            alt="Pluri-Health"
+            alt={getActiveBrand().name}
             className="h-14 w-14 mb-3 drop-shadow-md"
           />
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Pluri-Health</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{getActiveBrand().name}</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">Recuperação segura de acesso</p>
         </div>
 
@@ -415,25 +416,27 @@ const RedefinirSenha = () => {
 
                     <div className="space-y-2">
                       <Label htmlFor="new-password">Nova senha</Label>
-                      <div className="relative">
-                        <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          id="new-password"
-                          type={showPassword ? "text" : "password"}
-                          value={newPassword}
-                          onChange={(event) => setNewPassword(event.target.value)}
-                          minLength={8}
-                          required
-                          className="pl-9 pr-10"
-                          autoFocus={!needsCpf}
-                        />
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative flex-1">
+                          <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="new-password"
+                            type={showPassword ? "text" : "password"}
+                            value={newPassword}
+                            onChange={(event) => setNewPassword(event.target.value)}
+                            minLength={8}
+                            required
+                            className="pl-9"
+                            autoFocus={!needsCpf}
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={() => setShowPassword((current) => !current)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:text-foreground"
                           aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                         >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                         </button>
                       </div>
                     </div>
@@ -464,7 +467,7 @@ const RedefinirSenha = () => {
                     <p className="text-sm text-muted-foreground">
                       O link de recuperação não está ativo ou expirou. Peça um novo e-mail de recuperação para continuar.
                     </p>
-                    <Button className="w-full" onClick={handleBackToLogin}>
+                    <Button className="w-full min-h-[44px]" onClick={handleBackToLogin}>
                       Voltar para o login
                     </Button>
                   </div>
@@ -474,7 +477,7 @@ const RedefinirSenha = () => {
           )}
         </Card>
       </div>
-    </div>
+    </main>
   );
 };
 

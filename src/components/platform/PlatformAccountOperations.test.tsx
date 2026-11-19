@@ -44,6 +44,20 @@ vi.mock("./platform-api", () => ({
       ],
     },
   ],
+  subproductLabels: {
+    plurifisio: "Pluri Fisio",
+    pluripsy: "Pluri Psy",
+    plurinutri: "Pluri Nutri",
+    plurinatu: "Pluri Natu",
+    plurihealth: "Pluri Health (Completo / Multidisciplinar)",
+  },
+  subproductOptions: [
+    { value: "plurifisio", label: "Pluri Fisio" },
+    { value: "pluripsy", label: "Pluri Psy" },
+    { value: "plurinutri", label: "Pluri Nutri" },
+    { value: "plurinatu", label: "Pluri Natu" },
+    { value: "plurihealth", label: "Pluri Health (Completo / Multidisciplinar)" },
+  ],
 }));
 
 vi.mock("@/hooks/use-toast", () => ({

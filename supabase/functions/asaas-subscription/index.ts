@@ -350,7 +350,13 @@ Deno.serve(async (req) => {
       customer_id,
       clinic_data,
       allow_duplicate_cnpj,
+      subproduct_key,
     } = body;
+
+    const validSubproducts = ['plurifisio', 'pluripsy', 'plurinutri', 'plurinatu', 'plurihealth'];
+    const effectiveSubproductKey = typeof subproduct_key === 'string' && validSubproducts.includes(subproduct_key)
+      ? subproduct_key
+      : 'plurifisio';
 
     const effectiveCouponCode = coupon_code || couponCode;
     const effectiveAffiliateId = affiliate_id || affiliateId;
@@ -783,6 +789,7 @@ Deno.serve(async (req) => {
         asaas_customer_id: customerId,
         payment_method: hasCard ? 'CREDIT_CARD' : 'PENDING_CHOICE',
         plan_type: selectedPlan,
+        subproduct_key: effectiveSubproductKey,
         billing_cycle: 'ANNUAL',
         base_monthly_price: config.baseMonthlyEq,
         base_concurrent_access_count: initialLimits.baseSeats,
@@ -1219,6 +1226,7 @@ Deno.serve(async (req) => {
         asaas_customer_id: customerId,
         asaas_subscription_id: createdAsaasSubId,
         plan_type: selectedPlan,
+        subproduct_key: effectiveSubproductKey,
         billing_cycle: cycle.toUpperCase(),
         payment_method: billing_type || 'PIX',
         base_monthly_price: baseMonthlyPrice,
@@ -1778,6 +1786,7 @@ Deno.serve(async (req) => {
         asaas_customer_id: customerId,
         payment_method: 'CREDIT_CARD',
         plan_type: selectedPlan,
+        subproduct_key: effectiveSubproductKey,
         billing_cycle: cycle.toUpperCase(),
         base_monthly_price: config.baseMonthlyEq,
         base_concurrent_access_count: planLimits.baseSeats,

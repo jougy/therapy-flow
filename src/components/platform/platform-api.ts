@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { logRuntimeRpc, logRuntimeError } from "@/lib/runtime-debug";
+import { SUBPRODUCTS_CATALOG, type SubproductKey } from "@/lib/subproduct-config";
 import type { AccountOperation, ClinicCategory, DetailKind, PlatformDirectoryItem } from "./types";
 
 export const callRpc = async (
@@ -139,6 +140,19 @@ export const planLabels: Record<string, string> = {
   clinic: "Clínica com Equipe (Legado)",
   enterprise: "Enterprise (Legado)",
 };
+
+export const subproductLabels: Record<string, string> = Object.fromEntries(
+  Object.values(SUBPRODUCTS_CATALOG).map((item) => [
+    item.key,
+    item.key === "plurihealth" ? "Pluri Health (Completo / Multidisciplinar)" : item.name,
+  ])
+);
+
+export const subproductOptions: Array<{ value: SubproductKey; label: string }> =
+  Object.values(SUBPRODUCTS_CATALOG).map((item) => ({
+    value: item.key,
+    label: item.key === "plurihealth" ? "Pluri Health (Completo / Multidisciplinar)" : item.name,
+  }));
 
 export interface PlanOptionGroup {
   label: string;

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import ReactMarkdown from "react-markdown";
 import {
   AlertCircle,
@@ -378,7 +379,7 @@ export const AssinarDocumentoPublico: React.FC = () => {
       </div>
 
       <footer className="text-center text-[11px] text-muted-foreground py-4 border-t mt-8">
-        Pluri-Health • Assinatura Eletrônica Segura em conformidade com a LGPD e Conselhos de Classe.
+        {getActiveBrand().name} • Assinatura Eletrônica Segura em conformidade com a LGPD e Conselhos de Classe.
       </footer>
     </div>
   );

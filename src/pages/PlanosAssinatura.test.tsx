@@ -56,7 +56,7 @@ describe("PlanosAssinatura (Bento Interativo)", () => {
     );
 
     // Verify main Bento title and controls
-    expect(screen.getByText(/Um sistema que cresce com o seu atendimento/i)).toBeInTheDocument();
+    expect(screen.getByText(/Planos Pluri Fisio para o seu atendimento/i)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Profissional Solo/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Clínica com Equipe/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Enterprise/i })).toBeInTheDocument();

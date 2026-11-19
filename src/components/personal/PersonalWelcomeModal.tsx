@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles, HeartHandshake } from "lucide-react";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 
 interface PersonalWelcomeModalProps {
   userId?: string;
@@ -96,7 +97,7 @@ export const PersonalWelcomeModal: React.FC<PersonalWelcomeModalProps> = React.m
           <div className="relative mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-background/90 p-2 shadow-md ring-1 ring-border/60">
             <img
               src="/branding/logo/pluri_health_icon_gradient.svg"
-              alt="Pluri Health"
+              alt={getActiveBrand().name}
               className="h-10 w-10 object-contain drop-shadow-xs"
             />
           </div>
@@ -109,8 +110,8 @@ export const PersonalWelcomeModal: React.FC<PersonalWelcomeModalProps> = React.m
           <DialogHeader className="space-y-1.5 text-center">
             <DialogTitle className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
               {greetingName
-                ? `Bem-vindo(a) à Pluri Health, ${firstName}!`
-                : "Bem-vindo(a) à Pluri Health!"}
+                ? `Bem-vindo(a) à ${getActiveBrand().name}, ${firstName}!`
+                : `Bem-vindo(a) à ${getActiveBrand().name}!`}
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
               Estamos muito felizes em ter você aqui. Seu Espaço Pessoal é o ponto de partida para organizar sua rotina, gerenciar consultórios e impulsionar seus atendimentos.

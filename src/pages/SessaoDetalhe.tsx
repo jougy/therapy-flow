@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import { Info, Loader2, FileText, CheckCircle2, Layers, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1729,7 +1730,7 @@ const SessaoDetalhe = () => {
   const buildCurrentDocumentData = () => ({
     anamnesisIndicators: previewIndicators,
     anamnesisSummary: sessionSummary,
-    appName: "Pluri Health",
+    appName: getActiveBrand().name,
     clinic: {
       address: formatAddressLine(clinicDocumentInfo?.address),
       businessHours: readBusinessHours(clinicDocumentInfo?.business_hours).summary,
@@ -1737,7 +1738,7 @@ const SessaoDetalhe = () => {
       email: clinicDocumentInfo?.email ?? null,
       legalName: clinicDocumentInfo?.legal_name ?? null,
       logoUrl: clinicDocumentInfo?.logo_url ?? null,
-      name: clinicDocumentInfo?.name ?? "Pluri Health",
+      name: clinicDocumentInfo?.name ?? getActiveBrand().name,
       phone: clinicDocumentInfo?.phone ?? null,
     },
     generatedAt: new Date().toLocaleString("pt-BR"),

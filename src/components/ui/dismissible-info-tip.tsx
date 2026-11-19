@@ -107,15 +107,15 @@ export function DismissibleInfoTip({
       <div className="mt-0.5 shrink-0 text-primary">
         {icon || <Info className="h-3.5 w-3.5" aria-hidden="true" />}
       </div>
-      <div className="min-w-0 flex-1 pr-6">{children}</div>
+      <div className="min-w-0 flex-1">{children}</div>
       <button
         type="button"
         onClick={handleDismiss}
-        className="absolute right-1 top-1 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        className="shrink-0 -my-1 -mr-1 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         title="Dispensar aviso permanentemente"
         aria-label="Dispensar aviso permanentemente"
       >
-        <X className="h-4 w-4" />
+        <X className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   );

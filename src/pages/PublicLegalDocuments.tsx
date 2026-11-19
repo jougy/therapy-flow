@@ -26,6 +26,7 @@ import {
   type ParsedHeading,
 } from "./legal/legal-markdown-utils";
 import { TableOfContents } from "./legal/TableOfContents";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 
 interface PublicLegalDocumentsProps {
   initialTab?: "termos" | "privacidade";
@@ -228,11 +229,11 @@ export const PublicLegalDocuments: React.FC<PublicLegalDocumentsProps> = ({
             <div className="flex items-center gap-2">
               <img
                 src="/branding/logo/pluri_health_icon_gradient.svg"
-                alt="Pluri Health"
+                alt={getActiveBrand().name}
                 className="h-6 w-6"
               />
               <span className="font-semibold text-sm tracking-tight text-foreground">
-                Pluri Health
+                {getActiveBrand().name}
               </span>
             </div>
           </div>
@@ -320,7 +321,7 @@ export const PublicLegalDocuments: React.FC<PublicLegalDocumentsProps> = ({
 
         {/* Rodapé Informativo */}
         <div className="mt-8 pt-6 border-t border-border/60 text-xs text-muted-foreground flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} Pluri Health Tecnologia. Todos os direitos reservados.</p>
+          <p>© {new Date().getFullYear()} {getActiveBrand().name} Tecnologia. Todos os direitos reservados.</p>
           <div className="flex items-center gap-4">
             <Link to="/auth" className="hover:text-foreground transition-colors">
               Acessar Plataforma

@@ -562,11 +562,11 @@ const CadastroPacienteCompartilhado = () => {
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="min-h-screen bg-background py-8 px-4">
+    <motion.main initial={false} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="min-h-screen bg-background py-8 px-4">
       <div className="max-w-3xl mx-auto space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Cadastro do paciente</CardTitle>
+            <h1 className="text-2xl font-semibold leading-none tracking-tight">Cadastro do paciente</h1>
             <CardDescription>
               Preencha seus dados cadastrais e clínicos. Você usará os 6 primeiros dígitos do seu CPF para abrir este formulário.
             </CardDescription>
@@ -585,7 +585,7 @@ const CadastroPacienteCompartilhado = () => {
                   placeholder="6 primeiros dígitos do CPF"
                   disabled={locked || !!patientId}
                 />
-                <Button onClick={handleUnlock} disabled={!canUnlock || unlocking || locked || !!patientId}>
+                <Button onClick={handleUnlock} disabled={!canUnlock || unlocking || locked || !!patientId} className="min-h-[44px]">
                   {unlocking ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <LockKeyhole className="h-4 w-4 mr-2" />}
                   Abrir cadastro
                 </Button>
@@ -1075,7 +1075,7 @@ const CadastroPacienteCompartilhado = () => {
           </>
         )}
       </div>
-    </motion.div>
+    </motion.main>
   );
 };
 

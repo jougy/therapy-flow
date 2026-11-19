@@ -3639,6 +3639,7 @@ export type Database = {
           clinic_name: string
           clinic_route_key: string
           clinic_subaccount_limit: number
+          clinic_subproduct_key?: string
           clinic_subscription_plan: Database["public"]["Enums"]["subscription_plan"]
           is_active: boolean
           joined_at: string
@@ -3728,6 +3729,7 @@ export type Database = {
           clinic_name: string
           clinic_route_key: string
           clinic_subaccount_limit: number
+          clinic_subproduct_key?: string
           clinic_subscription_plan: Database["public"]["Enums"]["subscription_plan"]
           clinic_updated_at: string
           collaborators_count: number
@@ -3973,6 +3975,10 @@ export type Database = {
       }
       update_clinic_concurrent_accesses: {
         Args: { _clinic_id: string; _extra_concurrent: number }
+        Returns: Json
+      }
+      set_clinic_subproduct_key: {
+        Args: { _clinic_id: string; _subproduct_key: string }
         Returns: Json
       }
       update_clinic_member_operational_fields: {

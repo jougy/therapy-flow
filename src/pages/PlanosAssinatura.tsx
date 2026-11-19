@@ -3,6 +3,7 @@ import { ArrowLeft, Table2, Award, Sparkles } from "lucide-react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
+import { useActiveBrand } from "@/hooks/useActiveBrand";
 import { usePlanosState } from "./planos/hooks/usePlanosState";
 import { PlanType, BillingCycle } from "@/utils/subscriptionPricing";
 import {
@@ -39,6 +40,7 @@ import {
  */
 export default function PlanosAssinatura() {
   const navigate = useNavigate();
+  const brand = useActiveBrand();
   const [detailsPlanId, setDetailsPlanId] = React.useState<PlanType | null>(null);
   const [isFAQModalOpen, setIsFAQModalOpen] = React.useState(false);
   const [isComparisonModalOpen, setIsComparisonModalOpen] = React.useState(false);
@@ -363,17 +365,24 @@ export default function PlanosAssinatura() {
           )}
 
           <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-extrabold tracking-wide">
-            <span aria-hidden="true">⚡</span> Planos interativos
+            <span aria-hidden="true">⚡</span>{" "}
+            {activeAudience === "enterprise"
+              ? "Pluri Health Enterprise · Multidisciplinar & Hospitais"
+              : `Planos ${brand.isHealth ? "Pluri Fisio" : brand.name} · Fisioterapia`}
           </span>
 
           <div className="space-y-1">
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-foreground tracking-tight leading-tight">
-              Um sistema que cresce com o seu atendimento.
+              {activeAudience === "enterprise"
+                ? "Gestão completa sem barreiras para clínicas multidisciplinares."
+                : "Planos Pluri Fisio para o seu atendimento."}
             </h1>
             <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-md">
               {existingClinicName
                 ? `Configurando espaço: ${existingClinicName}. Escolha o perfil e período.`
-                : "Escolha seu perfil, o porte da sua rotina e o período. O plano e o valor se ajustam na hora."}
+                : activeAudience === "enterprise"
+                ? "Todas as frentes e especialidades liberadas para sua clínica ou hospital."
+                : "Contratação dedicada à frente Pluri Fisio (Fisioterapia e Terapia Ocupacional). Escolha seu perfil, porte e período."}
             </p>
           </div>
 
