@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   CalendarCheck2,
   Loader2,
@@ -32,6 +32,7 @@ import { AutoLeadIntegrationModal } from "./AutoLeadIntegrationModal";
 
 export const PlatformAutoLeadsView: React.FC = () => {
   const {
+    leads,
     filteredLeads,
     affiliates,
     kpis,
@@ -75,6 +76,11 @@ export const PlatformAutoLeadsView: React.FC = () => {
     setIntegrationTab(tab);
     setIntegrationOpen(true);
   };
+
+  const activeDetailLead = useMemo(
+    () => (detailLead ? leads.find((l) => l.id === detailLead.id) || detailLead : null),
+    [leads, detailLead]
+  );
 
   return (
     <div data-testid="platform-auto-leads-view" className="w-full max-w-full min-w-0 space-y-5">
@@ -260,9 +266,12 @@ export const PlatformAutoLeadsView: React.FC = () => {
       />
 
       <AutoLeadDetailSheet
-        lead={detailLead}
-        open={Boolean(detailLead)}
+        lead={activeDetailLead}
+        open={Boolean(activeDetailLead)}
         onOpenChange={(open) => !open && setDetailLead(null)}
+        affiliates={affiliates}
+        onStageChange={(id, stage) => void updateLeadStage(id, stage)}
+        onAssignAffiliate={(id, affId) => void assignLeadsToAffiliate([id], affId)}
         onSaveDetails={updateLeadDetails}
         onOpenSchedule={(lead) => {
           setDetailLead(null);

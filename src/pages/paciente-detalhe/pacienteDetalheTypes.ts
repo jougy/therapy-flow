@@ -23,4 +23,4 @@ export type PatientStatus = EditablePatientStatus;
 export type PatientStatusSelectValue = PatientStatus | "delete";
 export type AgendaStatusAction = AgendaEventStatus | "delete";
 export type PatientGroupKind = "custom" | "default" | "cancelados";
-export type PatientRecordsView = "dashboard" | "files" | "list";
+export type PatientRecordsView = "dashboard" | "files" | "list" | "payments";

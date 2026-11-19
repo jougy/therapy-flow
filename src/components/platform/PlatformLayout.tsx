@@ -241,8 +241,8 @@ export const PlatformLayout = ({
       <main className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6 overflow-x-hidden pb-28 lg:pb-6">
         {showNav && (
           <div className="w-full">
-            {/* Desktop & Tablet Top Horizontal Nav Bar */}
-            <nav className="flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-muted/30 p-1.5 shadow-sm scrollbar-none">
+            {/* Desktop Top Horizontal Nav Bar */}
+            <nav className="hidden lg:flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-muted/30 p-1.5 shadow-sm scrollbar-none">
               {PLATFORM_NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const isActive =

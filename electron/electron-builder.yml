@@ -15,6 +15,7 @@ publish:
   provider: github
   owner: jougy
   repo: therapy-flow
+  releaseType: release
 
 win:
   icon: build/icon.ico

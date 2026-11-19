@@ -306,4 +306,53 @@ describe("PlatformMarketingPage & Clean Auto-Lead Contacts Table", () => {
       expect(screen.getByLabelText(/Nome completo/i)).toBeInTheDocument();
     });
   });
+
+  it("renders compact mobile card with stage, location, ICP, channel icons, and pipeline controls in detail sheet", async () => {
+    render(<PlatformMarketingPage initialSubtab="auto-lead" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mobile-lead-card-lead-1")).toBeInTheDocument();
+      expect(screen.getByTestId("mobile-lead-card-lead-2")).toBeInTheDocument();
+    });
+
+    const card1 = screen.getByTestId("mobile-lead-card-lead-1");
+    expect(card1).toHaveTextContent(/Clínica Movimento Pleno • São Paulo\/SP/i);
+    expect(card1).toHaveTextContent(/Reunião Marcada/i);
+    expect(card1).toHaveTextContent(/Clínica/i);
+    expect(screen.getByLabelText("Abrir WhatsApp de Dra. Camila Nogueira")).toBeInTheDocument();
+    expect(screen.getByLabelText("Abrir Instagram de Dra. Camila Nogueira")).toBeInTheDocument();
+    expect(screen.getByLabelText("Enviar e-mail para Dra. Camila Nogueira")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("mobile-detail-btn-lead-2"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("detail-sheet-stage-select")).toBeInTheDocument();
+      expect(screen.getByTestId("detail-sheet-affiliate-select")).toBeInTheDocument();
+      expect(screen.getByTestId("detail-sheet-bot-link")).toHaveAttribute(
+        "href",
+        "https://wa.me/5511960474566"
+      );
+    });
+
+    // Alterar estágio dentro da ficha de detalhes
+    fireEvent.click(screen.getByTestId("detail-sheet-stage-select"));
+    const contactedOption = await screen.findByRole("option", { name: "Abordado" });
+    fireEvent.click(contactedOption);
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledWith("platform_auto_leads", { stage: "contacted" });
+    });
+
+    // Atribuir afiliado dentro da ficha de detalhes
+    fireEvent.click(screen.getByTestId("detail-sheet-affiliate-select"));
+    const affiliateOption = await screen.findByRole("option", { name: /Dra\. Mariana Silva/i });
+    fireEvent.click(affiliateOption);
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledWith(
+        "platform_auto_leads",
+        expect.objectContaining({ assigned_affiliate_id: "aff-1" })
+      );
+    });
+  });
 });

@@ -90,7 +90,8 @@ async function tryLocalOllamaCurator(rawText, fallbackResult) {
   if (!text) return fallbackResult;
 
   const prompt =
-    `Você é um SDR especialista em fisioterapia e clínicas para o SaaS Pluri-Health.\n` +
+    `Você é um SDR especialista em fisioterapia e clínicas para a Pluri Fisio.\n` +
+    `Foco de ICP: leigos com tecnologia, profissionais solo iniciando carreira, recém-formados com CREFITO novo, clínicas começando e fisioterapeutas experientes que ainda usam papel/planilha. Nunca qualifique quem já usa outro software de gestão.\n` +
     `Analise este contato/post e responda APENAS JSON válido com as chaves:\n` +
     `{"ai_score": number(0..100), "icp_tier": "clinic_owner"|"studio_pilates"|"solo_physio"|"student"|"other", "ai_qualification_summary": string, "ai_icebreaker_message": string}\n` +
     `Nome: ${fallbackResult.full_name}\nOrigem: ${fallbackResult.facebook_group_name || fallbackResult.source_platform}\nTexto: ${text.slice(0, 500)}`;
@@ -170,11 +171,28 @@ export async function curateRawLead(raw) {
 
   const combinedText = `${fullName} ${raw.categoryName || ''} ${text}`.toLowerCase();
 
+  // Exclui quem já postou sobre ou divulga outros softwares de gestão clínica parecidos
+  if (/clinicorp|feegow|zenfisio|fisioonline|gest[aã]oclick|shosp|amplimed|doctoralia|simples\s*dental|ninsaude|iclinic|vedius|mobifisio|prontu[aá]rio\s*verde|amigo\s*tech/i.test(combinedText)) {
+    return null;
+  }
+
+  let profileDetail = 'Fisioterapeuta / Clínica';
+  if (/crefito|rec[eé]m[\s-]*formad|peguei o crefito|tirei meu crefito|formei/i.test(combinedText)) {
+    profileDetail = 'CREFITO novo / Recém-formado';
+  } else if (/abrindo cl[ií]nica|primeira cl[ií]nica|come[çc]ando cl[ií]nica|inaugurando|montando consult[oó]rio/i.test(combinedText)) {
+    profileDetail = 'Clínica começando';
+  } else if (/papel|caderno|ficha de papel|planilha|n[aã]o entendo de sistema|nunca usei sistema|leigo/i.test(combinedText)) {
+    profileDetail = 'Experiente no papel / Leigo em tecnologia';
+  } else if (/aut[oô]nomo|home\s*care|domiciliar|solo|come[çc]ando agora/i.test(combinedText)) {
+    profileDetail = 'Profissional solo iniciante';
+  }
+
   let score = typeof raw.ai_score === 'number' ? raw.ai_score : isGoogleMaps ? 68 : 55;
   if (typeof raw.ai_score !== 'number') {
     if (/fisio|pilates|reabilit|ortoped|rpg|quirop/i.test(combinedText)) score += 10;
     if (/clínica|clinica|consultório|consultorio|estúdio|estudio|pilates|clinic/i.test(combinedText)) score += 12;
-    if (/sistema|software|prontuário|prontuario|agenda|planilha|indicação|indicacao|whatsapp/i.test(combinedText)) score += 14;
+    if (/crefito|rec[eé]m[\s-]*formad|abrindo cl[ií]nica|montando consult[oó]rio|aut[oô]nomo|home\s*care|papel|caderno|planilha/i.test(combinedText)) score += 15;
+    if (/prontuário|prontuario|agenda|indicação|indicacao|whatsapp/i.test(combinedText)) score += 10;
     if (phone) score += 10;
     if (raw.website || instagram || email) score += 4;
     if (/estudante|estágio|estagio|tcc|prova/i.test(combinedText)) score -= 25;
@@ -200,8 +218,8 @@ export async function curateRawLead(raw) {
   const icebreaker =
     raw.ai_icebreaker_message ||
     (isGoogleMaps
-      ? `Olá! Tudo bem? Encontrei a ${fullName}${city ? ` em ${city}` : ''} e gostaria de apresentar a Pluri-Health, uma plataforma feita para fisioterapeutas e clínicas automatizarem prontuário, agenda com lembretes no WhatsApp e financeiro. Faz sentido conversarmos 10 min?`
-      : `Olá ${firstName}! Vi sua publicação no grupo "${groupName}" e trabalho com a Pluri-Health (feita para fisioterapeutas e clínicas organizarem prontuários, agenda com WhatsApp e cobranças). Posso te mostrar como funciona em 10 min?`);
+      ? `Oi, ${firstName}, tudo bem? Vi o contato de vocês no Google Maps${city ? ` (${city})` : ''} e queria te fazer uma pergunta rápida.\n\nHoje você atua na área de fisioterapia?\n\n[RESPOSTA]\n\nAh, legal. E atualmente, como você organiza agenda, prontuário e financeiro dos pacientes? Planilha, papel, algum sistema...?\n\n[RESPOSTA]\n\nPergunto porque fazemos a Pluri Fisio, um sistema feito só para fisioterapeutas autônomos e clínicas pequenas. Se fizer sentido, te mostro em 10 minutos. Se não, sem problema.`
+      : `Oi, ${firstName}, tudo bem? Vi você no grupo ${groupName} e queria te fazer uma pergunta rápida.\n\nHoje você atua na área de fisioterapia?\n\n[RESPOSTA]\n\nAh, legal. E atualmente, como você organiza agenda, prontuário e financeiro dos pacientes? Planilha, papel, algum sistema...?\n\n[RESPOSTA]\n\nPergunto porque fazemos a Pluri Fisio, um sistema feito só para fisioterapeutas autônomos e clínicas pequenas. Se fizer sentido, te mostro em 10 minutos. Se não, sem problema.`);
 
   const baseCurated = {
     full_name: fullName,
@@ -223,7 +241,7 @@ export async function curateRawLead(raw) {
     ai_score: score,
     ai_qualification_summary:
       raw.ai_qualification_summary ||
-      `Curadoria Antigravity (${isGoogleMaps ? 'Google Maps' : 'Grupo Facebook'}): perfil ${icpTier}${phone ? ' com WhatsApp/telefone verificado' : ''}.`,
+      `Perfil: ${profileDetail} (${icpTier}) • Origem: ${isGoogleMaps ? 'Google Maps' : 'Grupo Facebook'}${phone ? ' • WhatsApp/telefone verificado' : ''}.`,
     ai_icebreaker_message: icebreaker,
     subagent_captured_by: 'antigravity_lead_curator',
     raw_metadata: {

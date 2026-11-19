@@ -1,0 +1,19 @@
+#!/bin/bash
+URL="https://app.plurifisio.com.br"
+if command -v curl >/dev/null 2>&1 && curl -s --connect-timeout 1 http://localhost:8080 >/dev/null 2>&1; then
+  URL="http://localhost:8080"
+fi
+
+if command -v brave >/dev/null 2>&1; then
+  brave --app="$URL" &
+elif command -v brave-browser >/dev/null 2>&1; then
+  brave-browser --app="$URL" &
+elif command -v google-chrome >/dev/null 2>&1; then
+  google-chrome --app="$URL" &
+elif command -v chromium >/dev/null 2>&1; then
+  chromium --app="$URL" &
+elif command -v microsoft-edge >/dev/null 2>&1; then
+  microsoft-edge --app="$URL" &
+else
+  xdg-open "$URL" &
+fi

@@ -1,6 +1,4 @@
 import React from "react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import {
   AlertTriangle,
   Bot,
@@ -12,7 +10,6 @@ import {
   MessageCircle,
   Phone,
   Sparkles,
-  UserCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +32,11 @@ import {
   type PlatformAutoLead,
 } from "./types";
 import { buildLeadWhatsAppUrl } from "./usePlatformAutoLeads";
+import {
+  AutoLeadMobileCard,
+  formatLeadScheduledLabel,
+  getLeadScoreColor,
+} from "./AutoLeadMobileCard";
 
 interface AutoLeadsContactsTableProps {
   leads: PlatformAutoLead[];
@@ -46,21 +48,6 @@ interface AutoLeadsContactsTableProps {
   onAssignAffiliate: (leadId: string, affiliateId: string | null) => void;
   onOpenSchedule: (lead: PlatformAutoLead) => void;
   onOpenDetail: (lead: PlatformAutoLead) => void;
-}
-
-function formatScheduledLabel(iso?: string | null): string {
-  if (!iso) return "";
-  try {
-    return format(new Date(iso), "dd/MM 'às' HH:mm", { locale: ptBR });
-  } catch {
-    return iso;
-  }
-}
-
-function getScoreColor(score: number): string {
-  if (score >= 80) return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-400/50";
-  if (score >= 60) return "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-400/50";
-  return "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-300/60";
 }
 
 export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
@@ -86,7 +73,7 @@ export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
         <div className="space-y-1 text-xs min-w-[200px]">
           <Badge variant="outline" className={cn("gap-1 font-semibold", meta.badgeClass)}>
             <CalendarCheck2 className="h-3 w-3 shrink-0" />
-            <span>{formatScheduledLabel(lead.meeting_scheduled_at)}</span>
+            <span>{formatLeadScheduledLabel(lead.meeting_scheduled_at)}</span>
           </Badge>
           {lead.meeting_booked_by && (
             <p className="text-[11px] font-medium text-foreground truncate" title={lead.meeting_booked_by}>
@@ -111,7 +98,7 @@ export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
           </Badge>
           {lead.last_scheduling_attempt_at && (
             <p className="text-[11px] text-muted-foreground">
-              Tentativa: {formatScheduledLabel(lead.last_scheduling_attempt_at)}
+              Tentativa: {formatLeadScheduledLabel(lead.last_scheduling_attempt_at)}
             </p>
           )}
           {lead.scheduling_attempt_summary && (
@@ -258,7 +245,7 @@ export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
                       )}
                     </td>
                     <td className="p-3 align-top">
-                      <Badge variant="outline" className={cn("font-bold gap-1", getScoreColor(lead.ai_score))}>
+                      <Badge variant="outline" className={cn("font-bold gap-1", getLeadScoreColor(lead.ai_score))}>
                         <Sparkles className="h-3 w-3" />
                         {lead.ai_score}/100
                       </Badge>
@@ -347,68 +334,18 @@ export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
 
       {/* Mobile Cards (Zero Horizontal Overflow, 44px Touch Targets) */}
       <div className="md:hidden space-y-3">
-        {leads.map((lead) => {
-          const isSelected = selectedIds.includes(lead.id);
-          const waUrl = buildLeadWhatsAppUrl(lead);
-          return (
-            <div
-              key={lead.id}
-              className={cn(
-                "rounded-xl border bg-card p-3.5 space-y-3 shadow-2xs",
-                isSelected && "border-primary bg-primary/5"
-              )}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-start gap-2.5 min-w-0">
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={() => onToggleSelect(lead.id)}
-                    className="mt-1"
-                    aria-label={`Selecionar ${lead.full_name}`}
-                  />
-                  <div className="min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => onOpenDetail(lead)}
-                      className="font-semibold text-sm text-foreground text-left truncate block max-w-[200px]"
-                    >
-                      {lead.full_name}
-                    </button>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {lead.facebook_group_name || "Grupo Facebook"}
-                    </p>
-                  </div>
-                </div>
-                <Badge variant="outline" className={cn("font-bold text-xs shrink-0", getScoreColor(lead.ai_score))}>
-                  {lead.ai_score}
-                </Badge>
-              </div>
-
-              {renderAgendaCell(lead)}
-
-              <div className="flex flex-wrap gap-2 pt-1">
-                {lead.phone && (
-                  <Button asChild size="sm" className="flex-1 min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
-                    <a href={waUrl} target="_blank" rel="noreferrer">
-                      <MessageCircle className="h-4 w-4" />
-                      <span>WhatsApp</span>
-                    </a>
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onOpenDetail(lead)}
-                  className="flex-1 min-h-[44px] gap-1.5"
-                >
-                  <UserCheck className="h-4 w-4" />
-                  <span>Detalhes</span>
-                </Button>
-              </div>
-            </div>
-          );
-        })}
+        {leads.map((lead) => (
+          <AutoLeadMobileCard
+            key={lead.id}
+            lead={lead}
+            affiliates={affiliates}
+            isSelected={selectedIds.includes(lead.id)}
+            onToggleSelect={onToggleSelect}
+            onStageChange={onStageChange}
+            onOpenSchedule={onOpenSchedule}
+            onOpenDetail={onOpenDetail}
+          />
+        ))}
       </div>
     </div>
   );
