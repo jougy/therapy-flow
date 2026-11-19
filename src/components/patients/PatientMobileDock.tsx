@@ -1,10 +1,12 @@
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useReducedMotion } from "framer-motion";
 import {
   Home,
   FileText,
   CalendarDays,
   Calendar,
   PlayCircle,
+  Wallet,
   History,
   FolderOpen,
   BarChart3,
@@ -21,6 +23,7 @@ export type PatientMobileTab =
   | "agendar"
   | "agenda_completa"
   | "atender"
+  | "pagamentos"
   | "historico"
   | "arquivos"
   | "estatisticas"
@@ -42,6 +45,8 @@ interface PatientMobileDockProps {
   onTabChange: (tab: PatientMobileTab) => void;
   showFiles?: boolean;
   showStats?: boolean;
+  showPayments?: boolean;
+  pendingPaymentsCount?: number;
 }
 
 export const PatientMobileDock = memo(function PatientMobileDock({
@@ -49,7 +54,11 @@ export const PatientMobileDock = memo(function PatientMobileDock({
   onTabChange,
   showFiles = true,
   showStats = true,
+  showPayments = true,
+  pendingPaymentsCount = 0,
 }: PatientMobileDockProps) {
+  const shouldReduceMotion = useReducedMotion();
+  const dockContainerRef = useRef<HTMLDivElement | null>(null);
   const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
   const [mobileDockPressedTab, setMobileDockPressedTab] = useState<PatientMobileTab | null>(null);
   const mobileDockPressedTabRef = useRef<PatientMobileTab | null>(null);
@@ -245,6 +254,20 @@ export const PatientMobileDock = memo(function PatientMobileDock({
     };
   }, [clearMobileLongPress, stopMobileDockAutoScroll]);
 
+  useEffect(() => {
+    const container = dockContainerRef.current;
+    if (!container) return;
+    const activeButton = container.querySelector<HTMLButtonElement>(
+      `[data-patient-mobile-dock-tab="${activeTab}"]`
+    );
+    if (!activeButton || typeof activeButton.scrollIntoView !== "function") return;
+    activeButton.scrollIntoView({
+      behavior: shouldReduceMotion ? "auto" : "smooth",
+      inline: "center",
+      block: "nearest",
+    });
+  }, [activeTab, shouldReduceMotion]);
+
   const dockItems: PatientMobileDockItem[] = [
     { id: "inicio", label: "Início", icon: Home },
     { id: "resumo", label: "Resumo", tooltipTitle: "Resumo clínico", icon: FileText },
@@ -252,6 +275,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
     { id: "agendar", label: "Agendar", tooltipTitle: "Novo Agendamento", icon: CalendarDays },
     { id: "agenda_completa", label: "Agenda", tooltipTitle: "Agenda completa", icon: Calendar },
     { id: "atender", label: "Atender", icon: PlayCircle, primary: true },
+    ...(showPayments !== false ? [{ id: "pagamentos" as const, label: "Pagamentos", icon: Wallet }] : []),
     { id: "termos", label: "Termos", icon: FileCheck2 },
     { id: "historico", label: "Histórico", icon: History },
     ...(showFiles ? [{ id: "arquivos" as const, label: "Arquivos", icon: FolderOpen }] : []),
@@ -276,7 +300,8 @@ export const PatientMobileDock = memo(function PatientMobileDock({
           </span>
         )}
         <div
-          className="patient-mobile-dock-container designlab-settings-mobile-dock flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden is-scrollable"
+          ref={dockContainerRef}
+          className="patient-mobile-dock-container designlab-settings-mobile-dock flex gap-1.5 overflow-x-auto snap-x snap-mandatory pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden is-scrollable"
           onPointerMove={(event) => {
             if (moveMobileDockGesture(event.clientX, event.clientY)) {
               event.preventDefault();
@@ -303,6 +328,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
             const isPressed = mobileDockPressedTab === item.id;
             const Icon = item.icon;
             const itemTitle = item.tooltipTitle || item.label;
+            const hasPendingBadge = item.id === "pagamentos" && pendingPaymentsCount > 0;
 
             return (
               <button
@@ -313,7 +339,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
                 aria-label={itemTitle}
                 disabled={item.disabled}
                 className={cn(
-                  "designlab-settings-mobile-item group relative flex shrink-0 flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-150 ease-out active:translate-y-0.5 disabled:opacity-45",
+                  "designlab-settings-mobile-item group relative flex min-h-[44px] min-w-[44px] shrink-0 snap-center flex-col items-center justify-center rounded-xl p-[1px] text-center transition-[filter,transform] duration-150 ease-out active:translate-y-0.5 disabled:opacity-45",
                   isActive && "is-active",
                   item.primary && "is-primary",
                   isPressed && "is-pressed"
@@ -353,7 +379,7 @@ export const PatientMobileDock = memo(function PatientMobileDock({
                 >
                   <span
                     className={cn(
-                      "designlab-settings-mobile-icon grid h-7 w-7 place-items-center rounded-lg transition-colors duration-300",
+                      "designlab-settings-mobile-icon relative grid h-7 w-7 place-items-center rounded-lg transition-colors duration-300",
                       isActive
                         ? "bg-primary text-primary-foreground shadow-xs"
                         : item.primary
@@ -362,6 +388,12 @@ export const PatientMobileDock = memo(function PatientMobileDock({
                     )}
                   >
                     <Icon className="h-4 w-4 shrink-0 transition-transform duration-200 group-active:scale-95" />
+                    {hasPendingBadge && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-amber-500 ring-1 ring-background"
+                      />
+                    )}
                   </span>
                   <span className="designlab-settings-mobile-label mt-1 block max-w-none px-0.5 text-[9.5px] font-medium leading-tight tracking-tight whitespace-nowrap text-center">
                     {item.label}

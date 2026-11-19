@@ -3,7 +3,7 @@
   "appName": "Pluri Health",
   "webDir": "www",
   "server": {
-    "url": "https://app.pluri.health",
+    "url": "https://app.plurifisio.com.br",
     "cleartext": false
   },
   "android": {

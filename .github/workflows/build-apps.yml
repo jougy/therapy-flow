@@ -73,7 +73,7 @@ jobs:
         working-directory: mobile
         run: |
           npm install
-          npx cap add android
+          if [ ! -d android ]; then npx cap add android; fi
           npx cap sync android
 
       - name: Build APK

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { isSameDay } from "date-fns";
 import {
   AlertTriangle, ArrowLeft, Plus, Phone, Calendar, CalendarDays, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
-  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, FileSignature, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown, Baby, Activity, FileCheck2, History
+  Pencil, Trash2, FolderPlus, ClipboardEdit, ClipboardList, Share2, Copy, CheckCircle2, ChevronsUpDown, Search, X, Users, FileText, FileSignature, MoreHorizontal, ChevronLeft, ChevronRight, CalendarClock, Package, SlidersHorizontal, PlayCircle, Printer, FileDown, Baby, Activity, FileCheck2, History, Wallet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -216,14 +216,15 @@ import {
   SessionShareRecipientsDialog,
   LinkSessionEvolutionGroupDialog,
   MobileFilterDrawer,
-  MobileStatusSheet,
-  MobileTermsSheet,
-  MobileShareSheet,
+  PatientMobileSheets,
+  PatientPrintModals,
   PatientDocumentsDropdown,
   PatientBentoOverview,
 } from "./paciente-detalhe";
+import { PatientPaymentsTab } from "./paciente-detalhe/payments/PatientPaymentsTab";
 
 const PacienteDetalhe = () => {
+  const shouldReduceMotion = useReducedMotion();
   const { id, clinicKey } = useParams<{ id?: string; clinicKey?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -662,6 +663,12 @@ const PacienteDetalhe = () => {
       return;
     }
 
+    if (tab === "pagamentos") {
+      if (!canViewFinancialData) return;
+      setRecordsView("payments");
+      return;
+    }
+
     if (tab === "historico") {
       setRecordsView("list");
       return;
@@ -681,7 +688,7 @@ const PacienteDetalhe = () => {
       setMobileStatusSheetOpen(true);
       return;
     }
-  }, [handleStartAttendanceNow]);
+  }, [canViewFinancialData, handleStartAttendanceNow]);
   const [dashboardTemplateFilter, setDashboardTemplateFilter] = useState("all");
   const [dashboardChartPreferences, setDashboardChartPreferences] = useState<Record<string, PatientAnamnesisChartType>>({});
   const [showDashboardPrintModal, setShowDashboardPrintModal] = useState(false);
@@ -1121,6 +1128,21 @@ const PacienteDetalhe = () => {
     () => new Map(paymentPlans.map((p) => [p.id, p])),
     [paymentPlans]
   );
+
+  const pendingPaymentsCount = useMemo(() => {
+    if (!canViewFinancialData) return 0;
+    const pendingSessions = sessions.filter(
+      (session) =>
+        session.status !== "cancelado" &&
+        (session.payment_status === "pendente" ||
+          session.payment_status === "parcial" ||
+          getSessionBalanceCents(session) > 0)
+    ).length;
+    const pendingPlans = paymentPlans.filter(
+      (plan) => plan.payment_status === "pendente" || plan.payment_status === "parcial"
+    ).length;
+    return pendingSessions + pendingPlans;
+  }, [canViewFinancialData, paymentPlans, sessions]);
 
   useEffect(() => {
     if (!realPatientId || !clinicId) return;
@@ -2166,7 +2188,12 @@ const PacienteDetalhe = () => {
 
   return (
     <PatientFilesProvider patientId={patient?.id || id!} clinicId={clinicId}>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-4 sm:space-y-6 pb-24 md:pb-6">
+      <motion.div
+        initial={shouldReduceMotion ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: shouldReduceMotion ? 0 : 0.2 }}
+        className="w-full max-w-full min-w-0 overflow-x-hidden space-y-4 sm:space-y-6 pb-24 md:pb-6"
+      >
 
 
       {/* Status Bolinha no Mobile (no topo ao lado do nome/sino) */}
@@ -2521,10 +2548,11 @@ const PacienteDetalhe = () => {
             tabs={[
               { id: "list", label: "Atendimentos", icon: ClipboardList, dataTutorial: "patient-tab-sessions" },
               ...(isFeatureEnabled("storage_s3_integration") ? [{ id: "files", label: "Arquivos", icon: FileText, dataTutorial: "patient-tab-files" }] : []),
-              ...(isFeatureEnabled("dashboards_patient") ? [{ id: "dashboard", label: "Estatísticas", icon: BarChart3 }] : [])
+              ...(isFeatureEnabled("dashboards_patient") ? [{ id: "dashboard", label: "Estatísticas", icon: BarChart3 }] : []),
+              ...(canViewFinancialData ? [{ id: "payments", label: "Pagamentos", icon: Wallet }] : []),
             ]}
             activeTab={recordsView}
-            onChange={(val) => setRecordsView(val as "list" | "files" | "dashboard")}
+            onChange={(val) => setRecordsView(val as PatientRecordsView)}
             className="w-full sm:w-auto hidden md:flex"
             tabClassName="flex-1 sm:flex-none"
           />
@@ -2554,25 +2582,62 @@ const PacienteDetalhe = () => {
           )}
         </div>
 
-        {recordsView === "dashboard" ? (
-          <PatientAnamnesisDashboardContent
-            chartPreferences={dashboardChartPreferences}
-            dashboard={anamnesisDashboard}
-            onChartChange={handleDashboardChartChange}
-            onPrintRequest={can("system.print") && isFeatureEnabled("print_general") ? () => setShowDashboardPrintModal(true) : undefined}
-            onSelectedTemplateIdChange={setDashboardTemplateFilter}
-            selectedTemplateId={dashboardTemplateFilter}
-          />
-        ) : recordsView === "files" ? (
-          <PatientFilesPanel
-            clinicId={clinicId}
-            patientId={patient.id}
-            sessionId={null}
-            title="Arquivos do paciente"
-            variant="patient"
-          />
-        ) : (
-          <>
+        <AnimatePresence mode="wait" initial={false}>
+          {recordsView === "dashboard" ? (
+            <motion.div
+              key="dashboard"
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.18, ease: "easeOut" }}
+            >
+              <PatientAnamnesisDashboardContent
+                chartPreferences={dashboardChartPreferences}
+                dashboard={anamnesisDashboard}
+                onChartChange={handleDashboardChartChange}
+                onPrintRequest={can("system.print") && isFeatureEnabled("print_general") ? () => setShowDashboardPrintModal(true) : undefined}
+                onSelectedTemplateIdChange={setDashboardTemplateFilter}
+                selectedTemplateId={dashboardTemplateFilter}
+              />
+            </motion.div>
+          ) : recordsView === "files" ? (
+            <motion.div
+              key="files"
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.18, ease: "easeOut" }}
+            >
+              <PatientFilesPanel
+                clinicId={clinicId}
+                patientId={patient.id}
+                sessionId={null}
+                title="Arquivos do paciente"
+                variant="patient"
+              />
+            </motion.div>
+          ) : recordsView === "payments" && canViewFinancialData ? (
+            <motion.div
+              key="payments"
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.18, ease: "easeOut" }}
+            >
+              <PatientPaymentsTab
+                patientId={patient.id}
+                clinicId={clinicId}
+                sessions={sessions}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="list"
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.18, ease: "easeOut" }}
+            >
         {/* Banner de Rascunhos Pendentes */}
         {sessions.filter((s) => s.status === "rascunho").length > 0 && (
           <DismissibleInfoTip
@@ -3439,8 +3504,9 @@ const PacienteDetalhe = () => {
         )}
         </div>
         </div>
-          </>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Dialogs Operacionais e Clínicos do Paciente */}
@@ -3707,63 +3773,29 @@ const PacienteDetalhe = () => {
         />
       )}
 
-      {/* Dossiê de Impressão do Cadastro (Renderizado sob demanda para proteção LGPD) */}
-      {(showPrintRegistrationModal || isPrintingRegistration) && patient && (
-        <PatientRegistrationPrintView
-          patient={patient}
-          clinic={clinic}
-          profile={profile}
-          user={user}
-          clinicalProfile={parsedClinicalProfile}
-          emergencyContact={parsedEmergencyContact}
-        />
-      )}
-
-      {/* Modal de Confirmação & Termo LGPD de Impressão do Cadastro */}
-      {patient && (
-        <PrintResponsibilityModal
-          isOpen={showPrintRegistrationModal}
-          onConfirm={handleExecutePrintRegistration}
-          onCancel={() => setShowPrintRegistrationModal(false)}
-          documentTitle={`cadastro completo do paciente ${patient.name}`}
-        />
-      )}
-
-      {/* Modal de Impressão do Termo de Consentimento Adulto (TCLE) */}
-      <PrintAdultConsentModal
-        open={showPrintAdultConsentModal}
-        onOpenChange={setShowPrintAdultConsentModal}
+      {/* Modais de Impressão e Documentos do Paciente */}
+      <PatientPrintModals
         patient={patient}
+        clinic={clinic}
+        profile={profile}
+        user={user}
         clinicId={clinicId}
-        clinicName={clinic?.name}
-      />
-
-      {/* Modal de Impressão da Permissão dos Pais (Menor de Idade) */}
-      <PrintGuardianConsentModal
-        open={showPrintGuardianConsentModal}
-        onOpenChange={setShowPrintGuardianConsentModal}
-        patient={patient}
-        clinicId={clinicId}
-        clinicName={clinic?.name}
-        onPrinted={() => {
-          if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["patient"]);
-        }}
-      />
-
-      {/* Modal Reutilizável de Geração de Documentos com Variáveis Automáticas */}
-      <GenerateDocumentModal
-        open={showGenerateDocumentModal}
-        onOpenChange={(open) => {
-          setShowGenerateDocumentModal(open);
-          if (!open) setInitialGenerateTemplateId(undefined);
-        }}
-        patient={patient}
-        clinicId={clinicId}
-        clinicName={clinic?.name}
-        initialTemplateId={initialGenerateTemplateId}
-        onPrinted={() => {
-          if (realPatientId) void invalidatePatientData(realPatientId, clinicId, ["patient"]);
-        }}
+        realPatientId={realPatientId}
+        parsedClinicalProfile={parsedClinicalProfile}
+        parsedEmergencyContact={parsedEmergencyContact}
+        showPrintRegistrationModal={showPrintRegistrationModal}
+        setShowPrintRegistrationModal={setShowPrintRegistrationModal}
+        isPrintingRegistration={isPrintingRegistration}
+        handleExecutePrintRegistration={handleExecutePrintRegistration}
+        showPrintAdultConsentModal={showPrintAdultConsentModal}
+        setShowPrintAdultConsentModal={setShowPrintAdultConsentModal}
+        showPrintGuardianConsentModal={showPrintGuardianConsentModal}
+        setShowPrintGuardianConsentModal={setShowPrintGuardianConsentModal}
+        showGenerateDocumentModal={showGenerateDocumentModal}
+        setShowGenerateDocumentModal={setShowGenerateDocumentModal}
+        initialGenerateTemplateId={initialGenerateTemplateId}
+        setInitialGenerateTemplateId={setInitialGenerateTemplateId}
+        invalidatePatientData={invalidatePatientData}
       />
 
       {/* Dock Inferior Mobile com Scroll Horizontal e Gestos Touch DesignLab */}
@@ -3772,52 +3804,33 @@ const PacienteDetalhe = () => {
         onTabChange={handleMobileTabChange}
         showFiles={isFeatureEnabled("storage_s3_integration")}
         showStats={isFeatureEnabled("dashboards_patient")}
+        showPayments={canViewFinancialData}
+        pendingPaymentsCount={pendingPaymentsCount}
       />
 
-      {/* Bottom Sheet Mobile: Gerenciar Status do Paciente */}
-      {patient && (
-        <MobileStatusSheet
-          open={mobileStatusSheetOpen}
-          onOpenChange={setMobileStatusSheetOpen}
-          patient={patient}
-          onStatusChange={handlePatientStatusChange}
-        />
-      )}
-
-      {/* Bottom Sheet Mobile: Compartilhar & Opções */}
-      {patient && (
-        <MobileShareSheet
-          open={mobileShareSheetOpen}
-          onOpenChange={setMobileShareSheetOpen}
-          patientName={patient.name}
-          canExport={canExport}
-          onShareRegistration={() => handleOpenShareDialog()}
-          onViewFullRegistration={() => navigate(getPatientPath(patient, "resumo"))}
-          onExportJson={() => handleExportPatientJson()}
-        />
-      )}
-
-      {/* Bottom Sheet Mobile: Termos & Documentos */}
-      {patient && (
-        <MobileTermsSheet
-          open={mobileTermsSheetOpen}
-          onOpenChange={setMobileTermsSheetOpen}
-          patient={patient}
-          canPrint={canPrint}
-          onGenerateDocument={() => {
-            setInitialGenerateTemplateId(undefined);
-            setShowGenerateDocumentModal(true);
-          }}
-          onPrintAdultConsent={() => setShowPrintAdultConsentModal(true)}
-          onPrintGuardianConsent={() => setShowPrintGuardianConsentModal(true)}
-          onPrintRegistration={() => setShowPrintRegistrationModal(true)}
-          customTemplates={customTemplates}
-          onSelectCustomTemplate={(templateId) => {
-            setInitialGenerateTemplateId(templateId);
-            setShowGenerateDocumentModal(true);
-          }}
-        />
-      )}
+      {/* Bottom Sheets Mobile: Status, Compartilhar e Termos */}
+      <PatientMobileSheets
+        patient={patient}
+        mobileStatusSheetOpen={mobileStatusSheetOpen}
+        setMobileStatusSheetOpen={setMobileStatusSheetOpen}
+        handlePatientStatusChange={handlePatientStatusChange}
+        mobileShareSheetOpen={mobileShareSheetOpen}
+        setMobileShareSheetOpen={setMobileShareSheetOpen}
+        canExport={canExport}
+        handleOpenShareDialog={handleOpenShareDialog}
+        navigate={navigate}
+        getPatientPath={getPatientPath}
+        handleExportPatientJson={handleExportPatientJson}
+        mobileTermsSheetOpen={mobileTermsSheetOpen}
+        setMobileTermsSheetOpen={setMobileTermsSheetOpen}
+        canPrint={canPrint}
+        setShowGenerateDocumentModal={setShowGenerateDocumentModal}
+        setInitialGenerateTemplateId={setInitialGenerateTemplateId}
+        setShowPrintAdultConsentModal={setShowPrintAdultConsentModal}
+        setShowPrintGuardianConsentModal={setShowPrintGuardianConsentModal}
+        setShowPrintRegistrationModal={setShowPrintRegistrationModal}
+        customTemplates={customTemplates}
+      />
       </motion.div>
     </PatientFilesProvider>
   );

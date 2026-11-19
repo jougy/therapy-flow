@@ -297,8 +297,13 @@ const Index = () => {
           if (toolbarStartTopRef.current === null) {
             measureToolbarStart();
           }
-          const shouldFix = window.scrollY > (toolbarStartTopRef.current ?? Number.POSITIVE_INFINITY);
-          setToolbarFixed(shouldFix);
+          const startTop = toolbarStartTopRef.current ?? Number.POSITIVE_INFINITY;
+          setToolbarFixed((prev) => {
+            if (prev) {
+              return window.scrollY > Math.max(0, startTop - 8);
+            }
+            return window.scrollY > startTop + 8;
+          });
           ticking = false;
         });
         ticking = true;

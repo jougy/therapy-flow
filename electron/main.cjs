@@ -1,7 +1,7 @@
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
 
-const APP_URL = process.env.PLURI_APP_URL || 'https://app.pluri.health';
+const APP_URL = process.env.PLURI_APP_URL || 'https://app.plurifisio.com.br';
 
 // Native Wayland support on Linux (Bazzite, Fedora, GNOME, KDE) with automatic X11 fallback
 if (process.platform === 'linux') {
