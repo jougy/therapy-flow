@@ -96,6 +96,23 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({
                   <span>origem: WhatsApp Copilot</span>
                 </Badge>
               )}
+              {meeting.whatsapp_line === "5511980113936" && (
+                <Badge
+                  variant="outline"
+                  className="bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-300/60 text-[11px] font-semibold"
+                >
+                  Comercial +55 11 98011-3936
+                </Badge>
+              )}
+              {meeting.booked_by_name && (
+                <Badge
+                  variant="secondary"
+                  className="text-[11px] font-medium"
+                  title="Responsável ou canal que efetuou a marcação"
+                >
+                  Marcado por: {meeting.booked_by_name}
+                </Badge>
+              )}
             </div>
 
             {meeting.clinic_name && (

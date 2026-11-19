@@ -635,7 +635,160 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] increment_community_template_import (schema.sql L7651-L7660)
+-- [RPC/FUNCTION] upsert_platform_auto_leads_batch (schema.sql L7471-L7621)
+CREATE OR REPLACE FUNCTION "public"."upsert_platform_auto_leads_batch"("p_leads" "jsonb", "p_run_id" "uuid" DEFAULT NULL::"uuid", "p_routine_id" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_item jsonb;
+    v_inserted integer := 0;
+    v_updated integer := 0;
+    v_total integer := 0;
+    v_ext_key text;
+    v_phone_key text;
+    v_existing_id uuid;
+    v_score integer;
+    v_stage text;
+BEGIN
+    IF p_leads IS NULL OR jsonb_typeof(p_leads) <> 'array' THEN
+        RETURN jsonb_build_object('inserted_count', 0, 'updated_count', 0, 'total_processed', 0);
+    END IF;
+
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_leads)
+    LOOP
+        v_total := v_total + 1;
+        v_phone_key := public.normalize_br_phone_key(v_item->>'phone');
+        v_ext_key := COALESCE(
+            NULLIF(btrim(v_item->>'external_lead_key'), ''),
+            'lead:' || COALESCE(
+                v_phone_key,
+                NULLIF(lower(btrim(v_item->>'email')), ''),
+                NULLIF(lower(btrim(v_item->>'facebook_profile_url')), ''),
+                md5(COALESCE(v_item->>'full_name', 'lead') || '|' || COALESCE(v_item->>'source_post_url', v_item->>'facebook_group_name', ''))
+            )
+        );
+        v_score := LEAST(100, GREATEST(0, COALESCE((v_item->>'ai_score')::integer, 60)));
+        v_stage := COALESCE(NULLIF(v_item->>'stage', ''), CASE WHEN v_score >= 70 THEN 'qualified' ELSE 'new' END);
+
+        SELECT id INTO v_existing_id
+        FROM public.platform_auto_leads
+        WHERE external_lead_key = v_ext_key
+        LIMIT 1;
+
+        IF v_existing_id IS NULL THEN
+            INSERT INTO public.platform_auto_leads (
+                routine_id,
+                full_name,
+                phone,
+                email,
+                instagram_handle,
+                facebook_profile_url,
+                facebook_group_name,
+                facebook_group_url,
+                linkedin_url,
+                website_url,
+                city,
+                state,
+                clinic_name,
+                specialty,
+                icp_tier,
+                source_platform,
+                source_post_url,
+                source_post_excerpt,
+                ai_score,
+                ai_qualification_summary,
+                ai_icebreaker_message,
+                subagent_captured_by,
+                stage,
+                external_lead_key,
+                apify_run_id,
+                lindy_task_id,
+                raw_metadata
+            ) VALUES (
+                COALESCE(p_routine_id, NULLIF(v_item->>'routine_id', '')::uuid),
+                COALESCE(NULLIF(btrim(v_item->>'full_name'), ''), 'Lead Sem Nome'),
+                NULLIF(btrim(v_item->>'phone'), ''),
+                NULLIF(lower(btrim(v_item->>'email')), ''),
+                NULLIF(btrim(v_item->>'instagram_handle'), ''),
+                NULLIF(btrim(v_item->>'facebook_profile_url'), ''),
+                NULLIF(btrim(v_item->>'facebook_group_name'), ''),
+                NULLIF(btrim(v_item->>'facebook_group_url'), ''),
+                NULLIF(btrim(v_item->>'linkedin_url'), ''),
+                NULLIF(btrim(v_item->>'website_url'), ''),
+                NULLIF(btrim(v_item->>'city'), ''),
+                NULLIF(btrim(v_item->>'state'), ''),
+                NULLIF(btrim(v_item->>'clinic_name'), ''),
+                NULLIF(btrim(v_item->>'specialty'), ''),
+                COALESCE(NULLIF(v_item->>'icp_tier', ''), 'solo_physio'),
+                COALESCE(NULLIF(v_item->>'source_platform', ''), 'facebook_group'),
+                NULLIF(btrim(v_item->>'source_post_url'), ''),
+                NULLIF(btrim(v_item->>'source_post_excerpt'), ''),
+                v_score,
+                NULLIF(btrim(v_item->>'ai_qualification_summary'), ''),
+                NULLIF(btrim(v_item->>'ai_icebreaker_message'), ''),
+                COALESCE(NULLIF(v_item->>'subagent_captured_by', ''), 'fb_group_intent_hunter'),
+                v_stage,
+                v_ext_key,
+                NULLIF(btrim(v_item->>'apify_run_id'), ''),
+                NULLIF(btrim(v_item->>'lindy_task_id'), ''),
+                COALESCE(v_item->'raw_metadata', '{}'::jsonb)
+            );
+            v_inserted := v_inserted + 1;
+        ELSE
+            UPDATE public.platform_auto_leads
+            SET
+                phone = COALESCE(NULLIF(btrim(phone), ''), NULLIF(btrim(v_item->>'phone'), '')),
+                email = COALESCE(NULLIF(btrim(email), ''), NULLIF(lower(btrim(v_item->>'email')), '')),
+                instagram_handle = COALESCE(NULLIF(btrim(instagram_handle), ''), NULLIF(btrim(v_item->>'instagram_handle'), '')),
+                facebook_profile_url = COALESCE(NULLIF(btrim(facebook_profile_url), ''), NULLIF(btrim(v_item->>'facebook_profile_url'), '')),
+                city = COALESCE(NULLIF(btrim(city), ''), NULLIF(btrim(v_item->>'city'), '')),
+                state = COALESCE(NULLIF(btrim(state), ''), NULLIF(btrim(v_item->>'state'), '')),
+                clinic_name = COALESCE(NULLIF(btrim(clinic_name), ''), NULLIF(btrim(v_item->>'clinic_name'), '')),
+                specialty = COALESCE(NULLIF(btrim(specialty), ''), NULLIF(btrim(v_item->>'specialty'), '')),
+                ai_score = GREATEST(ai_score, v_score),
+                ai_qualification_summary = COALESCE(NULLIF(btrim(v_item->>'ai_qualification_summary'), ''), ai_qualification_summary),
+                ai_icebreaker_message = COALESCE(NULLIF(btrim(v_item->>'ai_icebreaker_message'), ''), ai_icebreaker_message),
+                apify_run_id = COALESCE(NULLIF(btrim(v_item->>'apify_run_id'), ''), apify_run_id),
+                lindy_task_id = COALESCE(NULLIF(btrim(v_item->>'lindy_task_id'), ''), lindy_task_id),
+                deleted_at = NULL,
+                updated_at = now()
+            WHERE id = v_existing_id;
+            v_updated := v_updated + 1;
+        END IF;
+    END LOOP;
+
+    IF p_run_id IS NOT NULL THEN
+        UPDATE public.platform_auto_lead_runs
+        SET
+            leads_found_count = v_total,
+            leads_inserted_count = v_inserted,
+            leads_updated_count = v_updated,
+            status = 'succeeded',
+            subagent_stage = 'completed',
+            completed_at = now()
+        WHERE id = p_run_id;
+    END IF;
+
+    IF p_routine_id IS NOT NULL THEN
+        UPDATE public.platform_auto_lead_routines
+        SET
+            last_run_at = now(),
+            last_run_status = 'succeeded',
+            total_leads_captured = total_leads_captured + v_inserted,
+            updated_at = now()
+        WHERE id = p_routine_id;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'inserted_count', v_inserted,
+        'updated_count', v_updated,
+        'total_processed', v_total
+    );
+END;
+$$;
+
+-- [RPC/FUNCTION] increment_community_template_import (schema.sql L8013-L8022)
 CREATE OR REPLACE FUNCTION "public"."increment_community_template_import"("p_template_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -647,7 +800,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] is_platform_admin (schema.sql L8048-L8058)
+-- [RPC/FUNCTION] is_platform_admin (schema.sql L8410-L8420)
 CREATE OR REPLACE FUNCTION "public"."is_platform_admin"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
@@ -660,7 +813,7 @@ CREATE OR REPLACE FUNCTION "public"."is_platform_admin"("_user_id" "uuid" DEFAUL
   );
 $$;
 
--- [RPC/FUNCTION] is_platform_owner (schema.sql L8064-L8075)
+-- [RPC/FUNCTION] is_platform_owner (schema.sql L8426-L8437)
 CREATE OR REPLACE FUNCTION "public"."is_platform_owner"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -674,7 +827,7 @@ CREATE OR REPLACE FUNCTION "public"."is_platform_owner"("_user_id" "uuid" DEFAUL
   )
 $$;
 
--- [RPC/FUNCTION] is_platform_owner_mfa_verified (schema.sql L8081-L8087)
+-- [RPC/FUNCTION] is_platform_owner_mfa_verified (schema.sql L8443-L8449)
 CREATE OR REPLACE FUNCTION "public"."is_platform_owner_mfa_verified"("_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -683,7 +836,7 @@ CREATE OR REPLACE FUNCTION "public"."is_platform_owner_mfa_verified"("_user_id" 
     and coalesce(auth.jwt()->>'aal', '') = 'aal2'
 $$;
 
--- [RPC/FUNCTION] list_platform_audit_events (schema.sql L8395-L8418)
+-- [RPC/FUNCTION] list_platform_audit_events (schema.sql L8757-L8780)
 CREATE OR REPLACE FUNCTION "public"."list_platform_audit_events"("_clinic_id" "uuid" DEFAULT NULL::"uuid", "_limit" integer DEFAULT 80) RETURNS TABLE("id" "uuid", "actor_user_id" "uuid", "actor_email" "text", "actor_name" "text", "actor_platform_role" "public"."platform_admin_role", "clinic_id" "uuid", "clinic_name" "text", "event_type" "text", "reason" "text", "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -709,7 +862,7 @@ CREATE OR REPLACE FUNCTION "public"."list_platform_audit_events"("_clinic_id" "u
   limit least(greatest(coalesce(_limit, 80), 1), 200)
 $$;
 
--- [RPC/FUNCTION] list_platform_clinics (schema.sql L8424-L8478)
+-- [RPC/FUNCTION] list_platform_clinics (schema.sql L8786-L8840)
 CREATE OR REPLACE FUNCTION "public"."list_platform_clinics"() RETURNS TABLE("clinic_id" "uuid", "clinic_route_key" "text", "clinic_name" "text", "clinic_cnpj" "text", "clinic_subscription_plan" "public"."subscription_plan", "clinic_subaccount_limit" integer, "clinic_concurrent_access_limit" integer, "clinic_created_at" timestamp with time zone, "clinic_updated_at" timestamp with time zone, "owner_user_id" "uuid", "owner_name" "text", "owner_email" "text", "collaborators_count" bigint, "patients_count" bigint, "sessions_count" bigint, "active_flags_count" bigint, "last_activity_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -766,7 +919,7 @@ CREATE OR REPLACE FUNCTION "public"."list_platform_clinics"() RETURNS TABLE("cli
   order by clinics.updated_at desc nulls last, clinics.created_at desc
 $$;
 
--- [RPC/FUNCTION] list_platform_directory (schema.sql L8484-L8844)
+-- [RPC/FUNCTION] list_platform_directory (schema.sql L8846-L9206)
 CREATE OR REPLACE FUNCTION "public"."list_platform_directory"("_query" "text" DEFAULT NULL::"text", "_kind" "text" DEFAULT 'all'::"text", "_status" "text" DEFAULT 'all'::"text", "_tag_id" "uuid" DEFAULT NULL::"uuid", "_limit" integer DEFAULT 80) RETURNS TABLE("item_type" "text", "item_id" "uuid", "clinic_id" "uuid", "clinic_name" "text", "title" "text", "subtitle" "text", "primary_document" "text", "secondary_document" "text", "status" "text", "metadata" "jsonb", "updated_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1129,7 +1282,7 @@ CREATE OR REPLACE FUNCTION "public"."list_platform_directory"("_query" "text" DE
   LIMIT (SELECT row_limit FROM input);
 $$;
 
--- [RPC/FUNCTION] list_platform_error_logs (schema.sql L8850-L8885)
+-- [RPC/FUNCTION] list_platform_error_logs (schema.sql L9212-L9247)
 CREATE OR REPLACE FUNCTION "public"."list_platform_error_logs"("_limit" integer DEFAULT 100, "_error_type" "text" DEFAULT NULL::"text", "_search" "text" DEFAULT NULL::"text") RETURNS TABLE("id" "uuid", "user_id" "uuid", "user_name" "text", "user_email" "text", "clinic_id" "uuid", "clinic_name" "text", "error_type" "text", "scope" "text", "message" "text", "stack_trace" "text", "context" "jsonb", "route" "text", "created_at" timestamp with time zone)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
@@ -1167,7 +1320,7 @@ CREATE OR REPLACE FUNCTION "public"."list_platform_error_logs"("_limit" integer 
   LIMIT LEAST(GREATEST(COALESCE(_limit, 100), 1), 500);
 $$;
 
--- [RPC/FUNCTION] list_platform_telemetry_events (schema.sql L8891-L8918)
+-- [RPC/FUNCTION] list_platform_telemetry_events (schema.sql L9253-L9280)
 CREATE OR REPLACE FUNCTION "public"."list_platform_telemetry_events"("_clinic_id" "uuid", "_limit" integer DEFAULT 100) RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "user_id" "uuid", "user_name" "text", "event_type" "text", "pathname" "text", "resource_type" "text", "resource_id" "text", "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1197,7 +1350,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] list_platform_user_telemetry_events (schema.sql L8924-L8951)
+-- [RPC/FUNCTION] list_platform_user_telemetry_events (schema.sql L9286-L9313)
 CREATE OR REPLACE FUNCTION "public"."list_platform_user_telemetry_events"("_user_id" "uuid", "_limit" integer DEFAULT 100) RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "user_id" "uuid", "user_name" "text", "event_type" "text", "pathname" "text", "resource_type" "text", "resource_id" "text", "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1227,7 +1380,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] log_platform_audit_event (schema.sql L8957-L9000)
+-- [RPC/FUNCTION] log_platform_audit_event (schema.sql L9319-L9362)
 CREATE OR REPLACE FUNCTION "public"."log_platform_audit_event"("_event_type" "text", "_clinic_id" "uuid" DEFAULT NULL::"uuid", "_reason" "text" DEFAULT NULL::"text", "_metadata" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1273,7 +1426,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] log_platform_error (schema.sql L9006-L9043)
+-- [RPC/FUNCTION] log_platform_error (schema.sql L9368-L9405)
 CREATE OR REPLACE FUNCTION "public"."log_platform_error"("_error_type" "text", "_message" "text", "_scope" "text" DEFAULT NULL::"text", "_stack_trace" "text" DEFAULT NULL::"text", "_context" "jsonb" DEFAULT '{}'::"jsonb", "_route" "text" DEFAULT NULL::"text", "_clinic_id" "uuid" DEFAULT NULL::"uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
@@ -1313,7 +1466,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] platform_create_clinic (schema.sql L9803-L9852)
+-- [RPC/FUNCTION] platform_create_clinic (schema.sql L10165-L10214)
 CREATE OR REPLACE FUNCTION "public"."platform_create_clinic"("_name" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'clinic'::"public"."subscription_plan", "_subaccount_limit" integer DEFAULT 4, "_reason" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1365,7 +1518,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] platform_normalize_search (schema.sql L9858-L9863)
+-- [RPC/FUNCTION] platform_normalize_search (schema.sql L10220-L10225)
 CREATE OR REPLACE FUNCTION "public"."platform_normalize_search"("_value" "text") RETURNS "text"
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -1373,7 +1526,7 @@ CREATE OR REPLACE FUNCTION "public"."platform_normalize_search"("_value" "text")
   select lower(regexp_replace(coalesce(_value, ''), '[^[:alnum:]]+', '', 'g'));
 $$;
 
--- [RPC/FUNCTION] platform_override_clinic_subscription (schema.sql L9869-L10010)
+-- [RPC/FUNCTION] platform_override_clinic_subscription (schema.sql L10231-L10372)
 CREATE OR REPLACE FUNCTION "public"."platform_override_clinic_subscription"("_clinic_id" "uuid", "_new_plan" "public"."subscription_plan" DEFAULT NULL::"public"."subscription_plan", "_status" "text" DEFAULT NULL::"text", "_subaccount_limit" integer DEFAULT NULL::integer, "_concurrent_access_limit" integer DEFAULT NULL::integer, "_next_due_date" "date" DEFAULT NULL::"date", "_reason" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1517,7 +1670,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] start_platform_clinic_access (schema.sql L12131-L12191)
+-- [RPC/FUNCTION] start_platform_clinic_access (schema.sql L12493-L12553)
 CREATE OR REPLACE FUNCTION "public"."start_platform_clinic_access"("_clinic_id" "uuid", "_reason" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1580,7 +1733,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] submit_user_platform_feedback (schema.sql L12496-L12577)
+-- [RPC/FUNCTION] submit_user_platform_feedback (schema.sql L12858-L12939)
 CREATE OR REPLACE FUNCTION "public"."submit_user_platform_feedback"("_clinic_id" "uuid", "_ratings" "jsonb", "_problem_report" "text" DEFAULT NULL::"text", "_opinion" "text" DEFAULT NULL::"text", "_page_url" "text" DEFAULT NULL::"text", "_user_agent" "text" DEFAULT NULL::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1664,7 +1817,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] toggle_community_template_like (schema.sql L12817-L12850)
+-- [RPC/FUNCTION] toggle_community_template_like (schema.sql L13179-L13212)
 CREATE OR REPLACE FUNCTION "public"."toggle_community_template_like"("p_template_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1700,7 +1853,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] touch_platform_feedbacks_updated_at (schema.sql L12904-L12911)
+-- [RPC/FUNCTION] touch_platform_feedbacks_updated_at (schema.sql L13266-L13273)
 CREATE OR REPLACE FUNCTION "public"."touch_platform_feedbacks_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -1710,7 +1863,7 @@ BEGIN
 END;
 $$;
 
--- [TABLE] clinic_document_templates (schema.sql L15210-L15223)
+-- [TABLE] clinic_document_templates (schema.sql L15572-L15585)
 CREATE TABLE IF NOT EXISTS "public"."clinic_document_templates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -1726,7 +1879,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_document_templates" (
     "deleted_at" timestamp with time zone
 );
 
--- [TABLE] community_form_template_comments (schema.sql L15567-L15578)
+-- [TABLE] community_form_template_comments (schema.sql L15929-L15940)
 CREATE TABLE IF NOT EXISTS "public"."community_form_template_comments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "template_id" "uuid" NOT NULL,
@@ -1740,14 +1893,14 @@ CREATE TABLE IF NOT EXISTS "public"."community_form_template_comments" (
     CONSTRAINT "community_form_template_comments_rating_check" CHECK ((("rating" >= 1) AND ("rating" <= 5)))
 );
 
--- [TABLE] community_form_template_likes (schema.sql L15584-L15588)
+-- [TABLE] community_form_template_likes (schema.sql L15946-L15950)
 CREATE TABLE IF NOT EXISTS "public"."community_form_template_likes" (
     "template_id" "uuid" NOT NULL,
     "user_id" "uuid" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] community_form_templates (schema.sql L15594-L15613)
+-- [TABLE] community_form_templates (schema.sql L15956-L15975)
 CREATE TABLE IF NOT EXISTS "public"."community_form_templates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -1769,7 +1922,7 @@ CREATE TABLE IF NOT EXISTS "public"."community_form_templates" (
     "fields_count" smallint DEFAULT 0 NOT NULL
 );
 
--- [TABLE] platform_admins (schema.sql L15969-L15976)
+-- [TABLE] platform_admins (schema.sql L16331-L16338)
 CREATE TABLE IF NOT EXISTS "public"."platform_admins" (
     "user_id" "uuid" NOT NULL,
     "role" "public"."platform_admin_role" DEFAULT 'platform_owner'::"public"."platform_admin_role" NOT NULL,
@@ -1779,7 +1932,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_admins" (
     "last_used_at" timestamp with time zone
 );
 
--- [TABLE] platform_audit_events (schema.sql L15982-L15993)
+-- [TABLE] platform_audit_events (schema.sql L16344-L16355)
 CREATE TABLE IF NOT EXISTS "public"."platform_audit_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "actor_user_id" "uuid" NOT NULL,
@@ -1793,7 +1946,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_audit_events" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] platform_error_logs (schema.sql L16013-L16024)
+-- [TABLE] platform_error_logs (schema.sql L16375-L16386)
 CREATE TABLE IF NOT EXISTS "public"."platform_error_logs" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -1807,7 +1960,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_error_logs" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] platform_feedbacks (schema.sql L16030-L16048)
+-- [TABLE] platform_feedbacks (schema.sql L16392-L16410)
 CREATE TABLE IF NOT EXISTS "public"."platform_feedbacks" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -1828,7 +1981,112 @@ CREATE TABLE IF NOT EXISTS "public"."platform_feedbacks" (
     CONSTRAINT "platform_feedbacks_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'reviewed'::"text", 'archived'::"text"])))
 );
 
--- [TABLE] platform_onboarding_meetings (schema.sql L16054-L16070)
+-- [TABLE] platform_auto_lead_routines (schema.sql L16416-L16441)
+CREATE TABLE IF NOT EXISTS "public"."platform_auto_lead_routines" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "description" "text",
+    "subagent_role" "text" DEFAULT 'fb_group_intent_hunter'::"text" NOT NULL,
+    "apify_actor_id" "text" DEFAULT 'apify/facebook-groups-scraper'::"text" NOT NULL,
+    "target_groups" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "search_keywords" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "enable_cross_enrichment" boolean DEFAULT true NOT NULL,
+    "enable_lindy_qualification" boolean DEFAULT true NOT NULL,
+    "schedule_cron" "text" DEFAULT '0 8 * * *'::"text" NOT NULL,
+    "frequency_label" "text" DEFAULT 'Diário às 08:00'::"text" NOT NULL,
+    "min_score_auto_assign" integer DEFAULT 75 NOT NULL,
+    "auto_assign_affiliate_id" "uuid",
+    "is_active" boolean DEFAULT true NOT NULL,
+    "last_run_at" timestamp with time zone,
+    "last_run_status" "text" DEFAULT 'idle'::"text" NOT NULL,
+    "total_leads_captured" integer DEFAULT 0 NOT NULL,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "platform_auto_lead_routines_last_run_status_check" CHECK (("last_run_status" = ANY (ARRAY['idle'::"text", 'running_apify'::"text", 'enriching_lindy'::"text", 'succeeded'::"text", 'failed'::"text"]))),
+    CONSTRAINT "platform_auto_lead_routines_min_score_auto_assign_check" CHECK ((("min_score_auto_assign" >= 0) AND ("min_score_auto_assign" <= 100))),
+    CONSTRAINT "platform_auto_lead_routines_subagent_role_check" CHECK (("subagent_role" = ANY (ARRAY['fb_group_intent_hunter'::"text", 'cross_channel_enricher'::"text", 'lindy_sdr_qualifier'::"text", 'full_pipeline'::"text"])))
+);
+
+-- [TABLE] platform_auto_lead_runs (schema.sql L16447-L16466)
+CREATE TABLE IF NOT EXISTS "public"."platform_auto_lead_runs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "routine_id" "uuid",
+    "run_type" "text" DEFAULT 'subagent_routine'::"text" NOT NULL,
+    "subagent_stage" "text" DEFAULT 'completed'::"text" NOT NULL,
+    "status" "text" DEFAULT 'running'::"text" NOT NULL,
+    "target_groups" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "keywords" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "external_run_id" "text",
+    "leads_found_count" integer DEFAULT 0 NOT NULL,
+    "leads_inserted_count" integer DEFAULT 0 NOT NULL,
+    "leads_updated_count" integer DEFAULT 0 NOT NULL,
+    "error_message" "text",
+    "triggered_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "completed_at" timestamp with time zone,
+    CONSTRAINT "platform_auto_lead_runs_run_type_check" CHECK (("run_type" = ANY (ARRAY['subagent_routine'::"text", 'apify_scrape'::"text", 'lindy_webhook'::"text", 'csv_import'::"text"]))),
+    CONSTRAINT "platform_auto_lead_runs_status_check" CHECK (("status" = ANY (ARRAY['running'::"text", 'succeeded'::"text", 'failed'::"text", 'partial'::"text"]))),
+    CONSTRAINT "platform_auto_lead_runs_subagent_stage_check" CHECK (("subagent_stage" = ANY (ARRAY['extracting_apify'::"text", 'cross_enriching'::"text", 'qualifying_lindy'::"text", 'completed'::"text", 'failed'::"text"])))
+);
+
+-- [TABLE] platform_auto_leads (schema.sql L16472-L16524)
+CREATE TABLE IF NOT EXISTS "public"."platform_auto_leads" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "routine_id" "uuid",
+    "full_name" "text" NOT NULL,
+    "phone" "text",
+    "normalized_phone_key" "text",
+    "email" "text",
+    "instagram_handle" "text",
+    "facebook_profile_url" "text",
+    "facebook_group_name" "text",
+    "facebook_group_url" "text",
+    "linkedin_url" "text",
+    "website_url" "text",
+    "city" "text",
+    "state" "text",
+    "clinic_name" "text",
+    "specialty" "text",
+    "icp_tier" "text" DEFAULT 'solo_physio'::"text" NOT NULL,
+    "source_platform" "text" DEFAULT 'facebook_group'::"text" NOT NULL,
+    "source_post_url" "text",
+    "source_post_excerpt" "text",
+    "ai_score" integer DEFAULT 50 NOT NULL,
+    "ai_qualification_summary" "text",
+    "ai_icebreaker_message" "text",
+    "subagent_captured_by" "text" DEFAULT 'fb_group_intent_hunter'::"text",
+    "stage" "text" DEFAULT 'new'::"text" NOT NULL,
+    "assigned_affiliate_id" "uuid",
+    "assigned_at" timestamp with time zone,
+    "converted_clinic_id" "uuid",
+    "meeting_id" "uuid",
+    "meeting_status" "text" DEFAULT 'none'::"text" NOT NULL,
+    "meeting_scheduled_at" timestamp with time zone,
+    "meeting_duration_minutes" integer,
+    "meeting_channel" "text",
+    "meeting_booked_by" "text",
+    "last_scheduling_attempt_at" timestamp with time zone,
+    "scheduling_attempt_summary" "text",
+    "external_lead_key" "text" NOT NULL,
+    "apify_run_id" "text",
+    "lindy_task_id" "text",
+    "raw_metadata" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "notes" "text",
+    "last_contacted_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "platform_auto_leads_ai_score_check" CHECK ((("ai_score" >= 0) AND ("ai_score" <= 100))),
+    CONSTRAINT "platform_auto_leads_icp_tier_check" CHECK (("icp_tier" = ANY (ARRAY['clinic_owner'::"text", 'solo_physio'::"text", 'studio_pilates'::"text", 'student'::"text", 'other'::"text"]))),
+    CONSTRAINT "platform_auto_leads_meeting_channel_check" CHECK ((("meeting_channel" IS NULL) OR ("meeting_channel" = ANY (ARRAY['whatsapp_bot_5511960474566'::"text", 'whatsapp_commercial_5511980113936'::"text", 'backoffice_agenda'::"text"])))),
+    CONSTRAINT "platform_auto_leads_meeting_status_check" CHECK (("meeting_status" = ANY (ARRAY['none'::"text", 'attempted_bot'::"text", 'handed_off_commercial'::"text", 'scheduled'::"text", 'rescheduled'::"text", 'completed'::"text", 'canceled'::"text", 'no_show'::"text"]))),
+    CONSTRAINT "platform_auto_leads_source_platform_check" CHECK (("source_platform" = ANY (ARRAY['facebook_group'::"text", 'instagram'::"text", 'google_maps'::"text", 'lindy_agent'::"text", 'apify_direct'::"text", 'csv_import'::"text", 'whatsapp_inbound'::"text"]))),
+    CONSTRAINT "platform_auto_leads_stage_check" CHECK (("stage" = ANY (ARRAY['new'::"text", 'qualified'::"text", 'assigned'::"text", 'contacted'::"text", 'replied'::"text", 'meeting_scheduled'::"text", 'converted_trial'::"text", 'discarded'::"text"])))
+);
+
+-- [TABLE] platform_onboarding_meetings (schema.sql L16530-L16551)
 CREATE TABLE IF NOT EXISTS "public"."platform_onboarding_meetings" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "lead_name" "text" NOT NULL,
@@ -1844,10 +2102,15 @@ CREATE TABLE IF NOT EXISTS "public"."platform_onboarding_meetings" (
     "created_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "origin" "text" DEFAULT 'backoffice_agenda'::"text",
+    "confirmation_channel" "text" DEFAULT 'backoffice'::"text",
+    "booked_by_name" "text" DEFAULT 'Backoffice Master'::"text",
+    "whatsapp_line" "text",
+    "auto_lead_id" "uuid",
     CONSTRAINT "platform_onboarding_meetings_status_check" CHECK (("status" = ANY (ARRAY['scheduled'::"text", 'completed'::"text", 'canceled'::"text", 'rescheduled'::"text", 'no_show'::"text"])))
 );
 
--- [TABLE] platform_release_note_items (schema.sql L16080-L16089)
+-- [TABLE] platform_release_note_items (schema.sql L16561-L16570)
 CREATE TABLE IF NOT EXISTS "public"."platform_release_note_items" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "release_id" "uuid" NOT NULL,
@@ -1859,7 +2122,7 @@ CREATE TABLE IF NOT EXISTS "public"."platform_release_note_items" (
     CONSTRAINT "platform_release_note_items_title_not_blank" CHECK (("btrim"("title") <> ''::"text"))
 );
 
--- [TABLE] platform_releases (schema.sql L16095-L16108)
+-- [TABLE] platform_releases (schema.sql L16576-L16589)
 CREATE TABLE IF NOT EXISTS "public"."platform_releases" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "version" "text" NOT NULL,
@@ -1875,110 +2138,140 @@ CREATE TABLE IF NOT EXISTS "public"."platform_releases" (
     CONSTRAINT "platform_releases_version_order_positive" CHECK (("version_order" > 0))
 );
 
--- [POLICY] Anon can insert error logs ON platform_error_logs (schema.sql L18997-L18997)
+-- [POLICY] Anon can insert error logs ON platform_error_logs (schema.sql L19582-L19582)
 CREATE POLICY "Anon can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "anon" WITH CHECK (("user_id" IS NULL));
 
--- [POLICY] Anyone authenticated can view published community templates ON community_form_templates (schema.sql L19005-L19005)
+-- [POLICY] Anyone authenticated can view published community templates ON community_form_templates (schema.sql L19590-L19590)
 CREATE POLICY "Anyone authenticated can view published community templates" ON "public"."community_form_templates" FOR SELECT TO "authenticated" USING ((("is_published" = true) OR ("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authenticated users can insert comments ON community_form_template_comments (schema.sql L19009-L19009)
+-- [POLICY] Authenticated users can insert comments ON community_form_template_comments (schema.sql L19594-L19594)
 CREATE POLICY "Authenticated users can insert comments" ON "public"."community_form_template_comments" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can insert error logs ON platform_error_logs (schema.sql L19013-L19013)
+-- [POLICY] Authenticated users can insert error logs ON platform_error_logs (schema.sql L19598-L19598)
 CREATE POLICY "Authenticated users can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "authenticated" WITH CHECK ((("auth"."uid"() IS NULL) OR ("user_id" = "auth"."uid"())));
 
--- [POLICY] Authenticated users can manage their own likes ON community_form_template_likes (schema.sql L19027-L19027)
+-- [POLICY] Authenticated users can manage their own likes ON community_form_template_likes (schema.sql L19612-L19612)
 CREATE POLICY "Authenticated users can manage their own likes" ON "public"."community_form_template_likes" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can publish community templates ON community_form_templates (schema.sql L19031-L19031)
+-- [POLICY] Authenticated users can publish community templates ON community_form_templates (schema.sql L19616-L19616)
 CREATE POLICY "Authenticated users can publish community templates" ON "public"."community_form_templates" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can read comments ON community_form_template_comments (schema.sql L19035-L19035)
+-- [POLICY] Authenticated users can read comments ON community_form_template_comments (schema.sql L19620-L19620)
 CREATE POLICY "Authenticated users can read comments" ON "public"."community_form_template_comments" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Authenticated users can remove their own likes ON community_form_template_likes (schema.sql L19039-L19039)
+-- [POLICY] Authenticated users can remove their own likes ON community_form_template_likes (schema.sql L19624-L19624)
 CREATE POLICY "Authenticated users can remove their own likes" ON "public"."community_form_template_likes" FOR DELETE TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Authenticated users can view template likes ON community_form_template_likes (schema.sql L19047-L19047)
+-- [POLICY] Authenticated users can view template likes ON community_form_template_likes (schema.sql L19632-L19632)
 CREATE POLICY "Authenticated users can view template likes" ON "public"."community_form_template_likes" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Authenticated users insert own feedback ON platform_feedbacks (schema.sql L19055-L19055)
+-- [POLICY] Authenticated users insert own feedback ON platform_feedbacks (schema.sql L19640-L19640)
 CREATE POLICY "Authenticated users insert own feedback" ON "public"."platform_feedbacks" FOR INSERT TO "authenticated" WITH CHECK (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR ("user_id" IS NULL)));
 
--- [POLICY] Authenticated users read platform releases ON platform_releases (schema.sql L19059-L19059)
+-- [POLICY] Authenticated users read platform releases ON platform_releases (schema.sql L19644-L19644)
 CREATE POLICY "Authenticated users read platform releases" ON "public"."platform_releases" FOR SELECT TO "authenticated" USING ((("is_active" = true) OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authenticated users read release note items ON platform_release_note_items (schema.sql L19063-L19065)
+-- [POLICY] Authenticated users read release note items ON platform_release_note_items (schema.sql L19648-L19650)
 CREATE POLICY "Authenticated users read release note items" ON "public"."platform_release_note_items" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_releases"
   WHERE (("platform_releases"."id" = "platform_release_note_items"."release_id") AND (("platform_releases"."is_active" = true) OR "public"."is_platform_owner"("auth"."uid"()))))));
 
--- [POLICY] Authors, super admins and platform owners can delete community  ON community_form_templates (schema.sql L19069-L19069)
+-- [POLICY] Authors, super admins and platform owners can delete community  ON community_form_templates (schema.sql L19654-L19654)
 CREATE POLICY "Authors, super admins and platform owners can delete community " ON "public"."community_form_templates" FOR DELETE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Authors, super admins and platform owners can update community  ON community_form_templates (schema.sql L19073-L19073)
+-- [POLICY] Authors, super admins and platform owners can update community  ON community_form_templates (schema.sql L19658-L19658)
 CREATE POLICY "Authors, super admins and platform owners can update community " ON "public"."community_form_templates" FOR UPDATE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"()))) WITH CHECK ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Platform admins can view platform error logs ON platform_error_logs (schema.sql L19141-L19141)
+-- [POLICY] Platform admins can view platform error logs ON platform_error_logs (schema.sql L19726-L19726)
 CREATE POLICY "Platform admins can view platform error logs" ON "public"."platform_error_logs" FOR SELECT TO "authenticated" USING (("public"."is_platform_admin"("auth"."uid"()) OR "public"."is_platform_owner"("auth"."uid"())));
 
--- [POLICY] Platform admins podem gerenciar platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L19161-L19165)
+-- [POLICY] Affiliates read assigned platform_auto_leads ON platform_auto_leads (schema.sql L19746-L19748)
+CREATE POLICY "Affiliates read assigned platform_auto_leads" ON "public"."platform_auto_leads" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("assigned_affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE (("a"."user_id" = "auth"."uid"()) AND ("a"."deleted_at" IS NULL))))));
+
+-- [POLICY] Affiliates update assigned platform_auto_leads ON platform_auto_leads (schema.sql L19752-L19756)
+CREATE POLICY "Affiliates update assigned platform_auto_leads" ON "public"."platform_auto_leads" FOR UPDATE TO "authenticated" USING ((("deleted_at" IS NULL) AND ("assigned_affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE (("a"."user_id" = "auth"."uid"()) AND ("a"."deleted_at" IS NULL)))))) WITH CHECK (("assigned_affiliate_id" IN ( SELECT "a"."id"
+   FROM "public"."affiliates" "a"
+  WHERE (("a"."user_id" = "auth"."uid"()) AND ("a"."deleted_at" IS NULL)))));
+
+-- [POLICY] Platform admins manage platform_auto_lead_routines ON platform_auto_lead_routines (schema.sql L19760-L19760)
+CREATE POLICY "Platform admins manage platform_auto_lead_routines" ON "public"."platform_auto_lead_routines" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
+
+-- [POLICY] Platform admins manage platform_auto_lead_runs ON platform_auto_lead_runs (schema.sql L19764-L19764)
+CREATE POLICY "Platform admins manage platform_auto_lead_runs" ON "public"."platform_auto_lead_runs" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
+
+-- [POLICY] Platform admins manage platform_auto_leads ON platform_auto_leads (schema.sql L19768-L19768)
+CREATE POLICY "Platform admins manage platform_auto_leads" ON "public"."platform_auto_leads" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
+
+-- [POLICY] Platform admins podem gerenciar platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L19772-L19776)
 CREATE POLICY "Platform admins podem gerenciar platform_onboarding_meetings" ON "public"."platform_onboarding_meetings" TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform owner manage feedbacks ON platform_feedbacks (schema.sql L19209-L19209)
+-- [POLICY] Platform owner manage feedbacks ON platform_feedbacks (schema.sql L19820-L19820)
 CREATE POLICY "Platform owner manage feedbacks" ON "public"."platform_feedbacks" TO "authenticated" USING ("public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid"))) WITH CHECK ("public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid")));
 
--- [POLICY] Platform owners manage platform release note items ON platform_release_note_items (schema.sql L19245-L19245)
+-- [POLICY] Platform owners manage platform release note items ON platform_release_note_items (schema.sql L19856-L19856)
 CREATE POLICY "Platform owners manage platform release note items" ON "public"."platform_release_note_items" TO "authenticated" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Platform owners manage platform releases ON platform_releases (schema.sql L19249-L19249)
+-- [POLICY] Platform owners manage platform releases ON platform_releases (schema.sql L19860-L19860)
 CREATE POLICY "Platform owners manage platform releases" ON "public"."platform_releases" TO "authenticated" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Platform owners read platform admins ON platform_admins (schema.sql L19253-L19253)
+-- [POLICY] Platform owners read platform admins ON platform_admins (schema.sql L19864-L19864)
 CREATE POLICY "Platform owners read platform admins" ON "public"."platform_admins" FOR SELECT TO "authenticated" USING (("public"."is_platform_owner_mfa_verified"("auth"."uid"()) OR ("user_id" = "auth"."uid"())));
 
--- [POLICY] Platform owners read platform audit ON platform_audit_events (schema.sql L19257-L19257)
+-- [POLICY] Platform owners read platform audit ON platform_audit_events (schema.sql L19868-L19868)
 CREATE POLICY "Platform owners read platform audit" ON "public"."platform_audit_events" FOR SELECT TO "authenticated" USING ("public"."is_platform_owner_mfa_verified"("auth"."uid"()));
 
--- [POLICY] Service role tem acesso total a platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L19289-L19289)
+-- [POLICY] Service role full access platform_auto_lead_routines ON platform_auto_lead_routines (schema.sql L19900-L19900)
+CREATE POLICY "Service role full access platform_auto_lead_routines" ON "public"."platform_auto_lead_routines" TO "service_role" USING (true) WITH CHECK (true);
+
+-- [POLICY] Service role full access platform_auto_lead_runs ON platform_auto_lead_runs (schema.sql L19904-L19904)
+CREATE POLICY "Service role full access platform_auto_lead_runs" ON "public"."platform_auto_lead_runs" TO "service_role" USING (true) WITH CHECK (true);
+
+-- [POLICY] Service role full access platform_auto_leads ON platform_auto_leads (schema.sql L19908-L19908)
+CREATE POLICY "Service role full access platform_auto_leads" ON "public"."platform_auto_leads" TO "service_role" USING (true) WITH CHECK (true);
+
+-- [POLICY] Service role tem acesso total a platform_onboarding_meetings ON platform_onboarding_meetings (schema.sql L19912-L19912)
 CREATE POLICY "Service role tem acesso total a platform_onboarding_meetings" ON "public"."platform_onboarding_meetings" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Super admins manage all anamnesis form templates ON anamnesis_form_templates (schema.sql L19301-L19301)
+-- [POLICY] Super admins manage all anamnesis form templates ON anamnesis_form_templates (schema.sql L19924-L19924)
 CREATE POLICY "Super admins manage all anamnesis form templates" ON "public"."anamnesis_form_templates" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users and admins can delete own comments ON community_form_template_comments (schema.sql L19349-L19349)
+-- [POLICY] Users and admins can delete own comments ON community_form_template_comments (schema.sql L19972-L19972)
 CREATE POLICY "Users and admins can delete own comments" ON "public"."community_form_template_comments" FOR DELETE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Users delete clinic anamnesis forms ON anamnesis_form_templates (schema.sql L19389-L19389)
+-- [POLICY] Users delete clinic anamnesis forms ON anamnesis_form_templates (schema.sql L20012-L20012)
 CREATE POLICY "Users delete clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users delete clinic document templates ON clinic_document_templates (schema.sql L19397-L19397)
+-- [POLICY] Users delete clinic document templates ON clinic_document_templates (schema.sql L20020-L20020)
 CREATE POLICY "Users delete clinic document templates" ON "public"."clinic_document_templates" FOR DELETE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
--- [POLICY] Users insert clinic document templates ON clinic_document_templates (schema.sql L19431-L19431)
+-- [POLICY] Users insert clinic document templates ON clinic_document_templates (schema.sql L20054-L20054)
 CREATE POLICY "Users insert clinic document templates" ON "public"."clinic_document_templates" FOR INSERT TO "authenticated" WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
--- [POLICY] Users read clinic anamnesis forms ON anamnesis_form_templates (schema.sql L19473-L19473)
+-- [POLICY] Users read clinic anamnesis forms ON anamnesis_form_templates (schema.sql L20096-L20096)
 CREATE POLICY "Users read clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('forms.read'::"text", "clinic_id") OR "public"."current_user_can"('anamnesis_forms.read'::"text", "clinic_id"))));
 
--- [POLICY] Users read clinic document templates ON clinic_document_templates (schema.sql L19485-L19485)
+-- [POLICY] Users read clinic document templates ON clinic_document_templates (schema.sql L20108-L20108)
 CREATE POLICY "Users read clinic document templates" ON "public"."clinic_document_templates" FOR SELECT TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND (("deleted_at" IS NULL) OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
--- [POLICY] Users read own feedback ON platform_feedbacks (schema.sql L19552-L19552)
+-- [POLICY] Users read own feedback ON platform_feedbacks (schema.sql L20175-L20175)
 CREATE POLICY "Users read own feedback" ON "public"."platform_feedbacks" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR "public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid"))));
 
--- [POLICY] Users update clinic anamnesis forms ON anamnesis_form_templates (schema.sql L19580-L19580)
+-- [POLICY] Users update clinic anamnesis forms ON anamnesis_form_templates (schema.sql L20203-L20203)
 CREATE POLICY "Users update clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users update clinic document templates ON clinic_document_templates (schema.sql L19588-L19588)
+-- [POLICY] Users update clinic document templates ON clinic_document_templates (schema.sql L20211-L20211)
 CREATE POLICY "Users update clinic document templates" ON "public"."clinic_document_templates" FOR UPDATE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id")))) WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
--- [POLICY] Users write clinic anamnesis forms ON anamnesis_form_templates (schema.sql L19624-L19624)
+-- [POLICY] Users write clinic anamnesis forms ON anamnesis_form_templates (schema.sql L20247-L20247)
 CREATE POLICY "Users write clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Usuarios autenticados podem visualizar suas reunioes de onboard ON platform_onboarding_meetings (schema.sql L19656-L19656)
+-- [POLICY] Usuarios autenticados podem visualizar suas reunioes de onboard ON platform_onboarding_meetings (schema.sql L20279-L20279)
 CREATE POLICY "Usuarios autenticados podem visualizar suas reunioes de onboard" ON "public"."platform_onboarding_meetings" FOR SELECT TO "authenticated" USING (("created_by" = "auth"."uid"()));

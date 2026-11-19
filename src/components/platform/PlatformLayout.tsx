@@ -44,8 +44,8 @@ export const PLATFORM_NAV_ITEMS: PlatformNavItem[] = [
   },
   {
     id: "affiliates",
-    path: "/platform/afiliados",
-    label: "Afiliados & Parceiros",
+    path: "/platform/marketing",
+    label: "Marketing",
     icon: Award,
   },
   {
@@ -161,6 +161,9 @@ export const PlatformLayout = ({
   // Resolve current active tab ID from current pathname
   const currentTabId = useMemo(() => {
     const pathname = location.pathname;
+    if (pathname.startsWith("/platform/afiliados") || pathname.startsWith("/platform/marketing")) {
+      return "affiliates";
+    }
     const match = PLATFORM_NAV_ITEMS.find(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
     );
@@ -244,6 +247,7 @@ export const PlatformLayout = ({
                 const Icon = item.icon;
                 const isActive =
                   location.pathname === item.path ||
+                  (item.id === "affiliates" && location.pathname.startsWith("/platform/afiliados")) ||
                   (item.id === "directory" && (location.pathname === "/platform" || location.pathname === "/platform/"));
 
                 return (

@@ -62,4 +62,7 @@ verify_jwt = false
 [functions.agenda-whatsapp-reminders]
 verify_jwt = false
 
+[functions.auto-lead-orchestrator]
+verify_jwt = false
+
 

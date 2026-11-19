@@ -16,6 +16,9 @@ export interface OnboardingMeeting {
   notes?: string | null;
   origin?: string | null;
   confirmation_channel?: string | null;
+  booked_by_name?: string | null;
+  whatsapp_line?: string | null;
+  auto_lead_id?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;

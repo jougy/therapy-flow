@@ -271,9 +271,13 @@ export const PlatformAgendaMaster: React.FC = () => {
     duration_minutes: number;
     meet_url?: string;
     notes?: string;
+    origin?: string;
+    confirmation_channel?: string;
+    booked_by_name?: string;
+    whatsapp_line?: string | null;
   }) => {
     try {
-      const newRecord = {
+      const baseRecord = {
         lead_name: payload.lead_name.trim(),
         phone: payload.phone.trim(),
         email: payload.email?.trim() || null,
@@ -285,12 +289,29 @@ export const PlatformAgendaMaster: React.FC = () => {
         status: "scheduled" as MeetingStatus,
         created_by: user?.id || null,
       };
+      const extendedRecord = {
+        ...baseRecord,
+        origin: payload.origin || "backoffice_agenda",
+        confirmation_channel: payload.confirmation_channel || "backoffice",
+        booked_by_name: payload.booked_by_name || "Backoffice Master",
+        whatsapp_line: payload.whatsapp_line ?? null,
+      };
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("platform_onboarding_meetings")
-        .insert([newRecord])
+        .insert([extendedRecord])
         .select()
         .single();
+
+      if (error && /column/i.test(error.message || "")) {
+        const fallback = await supabase
+          .from("platform_onboarding_meetings")
+          .insert([baseRecord])
+          .select()
+          .single();
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) {
         throw error;

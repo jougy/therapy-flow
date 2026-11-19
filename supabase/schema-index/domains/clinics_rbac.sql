@@ -3910,7 +3910,7 @@ BEGIN
 END;
 $_$;
 
--- [RPC/FUNCTION] has_role (schema.sql L7637-L7645)
+-- [RPC/FUNCTION] has_role (schema.sql L7999-L8007)
 CREATE OR REPLACE FUNCTION "public"."has_role"("_user_id" "uuid", "_role" "public"."app_role") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3921,7 +3921,7 @@ CREATE OR REPLACE FUNCTION "public"."has_role"("_user_id" "uuid", "_role" "publi
   )
 $$;
 
--- [RPC/FUNCTION] invite_clinic_collaborator (schema.sql L7666-L7917)
+-- [RPC/FUNCTION] invite_clinic_collaborator (schema.sql L8028-L8279)
 CREATE OR REPLACE FUNCTION "public"."invite_clinic_collaborator"("_clinic_id" "uuid" DEFAULT NULL::"uuid", "_email" "text" DEFAULT NULL::"text", "_operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_role_key" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'extensions'
@@ -4175,7 +4175,7 @@ BEGIN
 END;
 $_$;
 
--- [RPC/FUNCTION] is_active_clinic_member (schema.sql L7923-L7935)
+-- [RPC/FUNCTION] is_active_clinic_member (schema.sql L8285-L8297)
 CREATE OR REPLACE FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid", "_user_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4190,7 +4190,7 @@ CREATE OR REPLACE FUNCTION "public"."is_active_clinic_member"("_clinic_id" "uuid
   );
 $$;
 
--- [RPC/FUNCTION] is_clinic_owner (schema.sql L7941-L7959)
+-- [RPC/FUNCTION] is_clinic_owner (schema.sql L8303-L8321)
 CREATE OR REPLACE FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_user_id" "uuid" DEFAULT "auth"."uid"()) RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4211,7 +4211,7 @@ CREATE OR REPLACE FUNCTION "public"."is_clinic_owner"("_clinic_id" "uuid", "_use
   );
 $$;
 
--- [RPC/FUNCTION] is_clinic_read_only (schema.sql L7965-L8014)
+-- [RPC/FUNCTION] is_clinic_read_only (schema.sql L8327-L8376)
 CREATE OR REPLACE FUNCTION "public"."is_clinic_read_only"("_clinic_id" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4263,7 +4263,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] is_clinic_subscription_manager (schema.sql L8020-L8042)
+-- [RPC/FUNCTION] is_clinic_subscription_manager (schema.sql L8382-L8404)
 CREATE OR REPLACE FUNCTION "public"."is_clinic_subscription_manager"("_user_id" "uuid", "_clinic_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4288,7 +4288,7 @@ CREATE OR REPLACE FUNCTION "public"."is_clinic_subscription_manager"("_user_id" 
   );
 $$;
 
--- [RPC/FUNCTION] leave_current_user_clinic (schema.sql L8093-L8170)
+-- [RPC/FUNCTION] leave_current_user_clinic (schema.sql L8455-L8532)
 CREATE OR REPLACE FUNCTION "public"."leave_current_user_clinic"("_clinic_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4368,7 +4368,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] list_current_user_clinic_invitations (schema.sql L8176-L8204)
+-- [RPC/FUNCTION] list_current_user_clinic_invitations (schema.sql L8538-L8566)
 CREATE OR REPLACE FUNCTION "public"."list_current_user_clinic_invitations"() RETURNS TABLE("invitation_id" "uuid", "clinic_id" "uuid", "clinic_name" "text", "clinic_logo_url" "text", "clinic_route_key" "text", "operational_role" "public"."operational_role_type", "role_key" "text", "job_title" "text", "specialty" "text", "invited_by_name" "text", "expires_at" timestamp with time zone, "created_at" timestamp with time zone)
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -4399,7 +4399,7 @@ CREATE OR REPLACE FUNCTION "public"."list_current_user_clinic_invitations"() RET
   ORDER BY invitations.created_at DESC;
 $$;
 
--- [RPC/FUNCTION] list_current_user_clinics (schema.sql L8210-L8271)
+-- [RPC/FUNCTION] list_current_user_clinics (schema.sql L8572-L8633)
 CREATE OR REPLACE FUNCTION "public"."list_current_user_clinics"() RETURNS TABLE("membership_id" "uuid", "clinic_id" "uuid", "clinic_route_key" "text", "clinic_name" "text", "clinic_logo_url" "text", "clinic_subscription_plan" "public"."subscription_plan", "clinic_subaccount_limit" integer, "clinic_concurrent_access_limit" integer, "clinic_active_access_count" integer, "clinic_active_access_users" "jsonb", "clinic_account_owner_user_id" "uuid", "account_role" "public"."account_role_type", "operational_role" "public"."operational_role_type", "role_key" "text", "membership_status" "public"."membership_status_type", "is_active" boolean, "joined_at" timestamp with time zone)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4463,7 +4463,7 @@ CREATE OR REPLACE FUNCTION "public"."list_current_user_clinics"() RETURNS TABLE(
   ORDER BY clinic_memberships.joined_at ASC;
 $$;
 
--- [RPC/FUNCTION] list_current_user_notification_preferences (schema.sql L8277-L8303)
+-- [RPC/FUNCTION] list_current_user_notification_preferences (schema.sql L8639-L8665)
 CREATE OR REPLACE FUNCTION "public"."list_current_user_notification_preferences"() RETURNS TABLE("sound_mode" "text", "sound_key" "text", "notify_security" boolean, "notify_clinic_access" boolean, "notify_patient_saved" boolean, "notify_session_activity" boolean, "notify_event_reminders" boolean, "notify_system" boolean)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4492,7 +4492,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] list_current_user_notifications (schema.sql L8309-L8348)
+-- [RPC/FUNCTION] list_current_user_notifications (schema.sql L8671-L8710)
 CREATE OR REPLACE FUNCTION "public"."list_current_user_notifications"() RETURNS TABLE("notification_id" "uuid", "created_at" timestamp with time zone, "category" "text", "event_type" "text", "title" "text", "body" "text", "clinic_id" "uuid", "clinic_name" "text", "actor_user_id" "uuid", "actor_name" "text", "action_label" "text", "action_url" "text", "payload" "jsonb", "read_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4534,7 +4534,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] manage_clinic_subscription_plan (schema.sql L9249-L9441)
+-- [RPC/FUNCTION] manage_clinic_subscription_plan (schema.sql L9611-L9803)
 CREATE OR REPLACE FUNCTION "public"."manage_clinic_subscription_plan"("_clinic_id" "uuid", "_new_plan" "public"."subscription_plan", "_billing_cycle" "text" DEFAULT 'annual'::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -4729,7 +4729,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] notify_clinic_collaborator_presence (schema.sql L9655-L9736)
+-- [RPC/FUNCTION] notify_clinic_collaborator_presence (schema.sql L10017-L10098)
 CREATE OR REPLACE FUNCTION "public"."notify_clinic_collaborator_presence"("_clinic_id" "uuid", "_user_id" "uuid", "_status" "text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -4813,7 +4813,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] purge_clinic_trash_bin (schema.sql L10138-L10254)
+-- [RPC/FUNCTION] purge_clinic_trash_bin (schema.sql L10500-L10616)
 CREATE OR REPLACE FUNCTION "public"."purge_clinic_trash_bin"() RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4932,7 +4932,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] reconcile_legacy_users_solo_clinic (schema.sql L10458-L10613)
+-- [RPC/FUNCTION] reconcile_legacy_users_solo_clinic (schema.sql L10820-L10975)
 CREATE OR REPLACE FUNCTION "public"."reconcile_legacy_users_solo_clinic"() RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5090,7 +5090,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] resend_clinic_collaborator_invitation (schema.sql L11068-L11169)
+-- [RPC/FUNCTION] resend_clinic_collaborator_invitation (schema.sql L11430-L11531)
 CREATE OR REPLACE FUNCTION "public"."resend_clinic_collaborator_invitation"("_invitation_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'extensions'
@@ -5194,7 +5194,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] revoke_clinic_member_access (schema.sql L11459-L11532)
+-- [RPC/FUNCTION] revoke_clinic_member_access (schema.sql L11821-L11894)
 CREATE OR REPLACE FUNCTION "public"."revoke_clinic_member_access"("_membership_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5270,7 +5270,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] revoke_user_punishment (schema.sql L11572-L11587)
+-- [RPC/FUNCTION] revoke_user_punishment (schema.sql L11934-L11949)
 CREATE OR REPLACE FUNCTION "public"."revoke_user_punishment"("_punishment_id" "uuid", "_reason" "text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -5288,7 +5288,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] sanitize_clinical_free_text (schema.sql L11792-L11829)
+-- [RPC/FUNCTION] sanitize_clinical_free_text (schema.sql L12154-L12191)
 CREATE OR REPLACE FUNCTION "public"."sanitize_clinical_free_text"("_text" "text") RETURNS "text"
     LANGUAGE "plpgsql" IMMUTABLE
     SET "search_path" TO 'public', 'pg_temp'
@@ -5328,7 +5328,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] set_clinic_subscriptions_updated_at (schema.sql L11895-L11902)
+-- [RPC/FUNCTION] set_clinic_subscriptions_updated_at (schema.sql L12257-L12264)
 CREATE OR REPLACE FUNCTION "public"."set_clinic_subscriptions_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -5338,7 +5338,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] set_current_user_active_clinic (schema.sql L11908-L11930)
+-- [RPC/FUNCTION] set_current_user_active_clinic (schema.sql L12270-L12292)
 CREATE OR REPLACE FUNCTION "public"."set_current_user_active_clinic"("_clinic_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5363,7 +5363,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] set_current_user_active_clinic_by_route_key (schema.sql L11936-L11954)
+-- [RPC/FUNCTION] set_current_user_active_clinic_by_route_key (schema.sql L12298-L12316)
 CREATE OR REPLACE FUNCTION "public"."set_current_user_active_clinic_by_route_key"("_route_key" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5384,7 +5384,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] setup_user_totp (schema.sql L11973-L12007)
+-- [RPC/FUNCTION] setup_user_totp (schema.sql L12335-L12369)
 CREATE OR REPLACE FUNCTION "public"."setup_user_totp"("_totp_secret" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5421,7 +5421,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] sync_clinic_daily_metrics (schema.sql L12618-L12667)
+-- [RPC/FUNCTION] sync_clinic_daily_metrics (schema.sql L12980-L13029)
 CREATE OR REPLACE FUNCTION "public"."sync_clinic_daily_metrics"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5473,7 +5473,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] sync_clinic_limits_from_subscription (schema.sql L12673-L12721)
+-- [RPC/FUNCTION] sync_clinic_limits_from_subscription (schema.sql L13035-L13083)
 CREATE OR REPLACE FUNCTION "public"."sync_clinic_limits_from_subscription"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5524,7 +5524,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] trim_user_notifications (schema.sql L13013-L13030)
+-- [RPC/FUNCTION] trim_user_notifications (schema.sql L13375-L13392)
 CREATE OR REPLACE FUNCTION "public"."trim_user_notifications"("_user_id" "uuid") RETURNS "void"
     LANGUAGE "sql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5544,7 +5544,7 @@ CREATE OR REPLACE FUNCTION "public"."trim_user_notifications"("_user_id" "uuid")
   );
 $$;
 
--- [RPC/FUNCTION] update_clinic_billing_due_window (schema.sql L13036-L13162)
+-- [RPC/FUNCTION] update_clinic_billing_due_window (schema.sql L13398-L13524)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_billing_due_window"("_clinic_id" "uuid", "_window" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5673,7 +5673,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_collaborator_invitation (schema.sql L13168-L13212)
+-- [RPC/FUNCTION] update_clinic_collaborator_invitation (schema.sql L13530-L13574)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_collaborator_invitation"("_invitation_id" "uuid", "_operational_role" "public"."operational_role_type" DEFAULT 'professional'::"public"."operational_role_type", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -5720,7 +5720,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_concurrent_accesses (schema.sql L13218-L13294)
+-- [RPC/FUNCTION] update_clinic_concurrent_accesses (schema.sql L13580-L13656)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_concurrent_accesses"("_clinic_id" "uuid", "_extra_concurrent" integer) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5799,7 +5799,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_member_operational_fields (schema.sql L13300-L13404)
+-- [RPC/FUNCTION] update_clinic_member_operational_fields (schema.sql L13662-L13766)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_member_operational_fields"("_membership_id" "uuid", "_job_title" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_working_hours" "text" DEFAULT NULL::"text", "_operational_role" "public"."operational_role_type" DEFAULT NULL::"public"."operational_role_type", "_membership_status" "public"."membership_status_type" DEFAULT NULL::"public"."membership_status_type", "_role_key" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -5906,7 +5906,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_subaccount (schema.sql L13410-L13526)
+-- [RPC/FUNCTION] update_clinic_subaccount (schema.sql L13772-L13888)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_subaccount"("_membership_id" "uuid", "_full_name" "text" DEFAULT NULL::"text", "_email" "text" DEFAULT NULL::"text", "_cpf" "text" DEFAULT NULL::"text", "_professional_license" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_job_title" "text" DEFAULT NULL::"text", "_operational_role" "public"."operational_role_type" DEFAULT NULL::"public"."operational_role_type", "_membership_status" "public"."membership_status_type" DEFAULT NULL::"public"."membership_status_type", "_new_password" "text" DEFAULT NULL::"text", "_working_hours" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6025,7 +6025,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_clinic_subaccount_profile (schema.sql L13532-L13699)
+-- [RPC/FUNCTION] update_clinic_subaccount_profile (schema.sql L13894-L14061)
 CREATE OR REPLACE FUNCTION "public"."update_clinic_subaccount_profile"("_membership_id" "uuid", "_full_name" "text" DEFAULT NULL::"text", "_social_name" "text" DEFAULT NULL::"text", "_email" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date", "_cpf" "text" DEFAULT NULL::"text", "_professional_license" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_job_title" "text" DEFAULT NULL::"text", "_bio" "text" DEFAULT NULL::"text", "_working_hours" "text" DEFAULT NULL::"text", "_address" "jsonb" DEFAULT NULL::"jsonb", "_operational_role" "public"."operational_role_type" DEFAULT NULL::"public"."operational_role_type", "_membership_status" "public"."membership_status_type" DEFAULT NULL::"public"."membership_status_type", "_new_password" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6195,7 +6195,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_current_profile (schema.sql L13705-L13826)
+-- [RPC/FUNCTION] update_current_profile (schema.sql L14067-L14188)
 CREATE OR REPLACE FUNCTION "public"."update_current_profile"("_full_name" "text" DEFAULT NULL::"text", "_social_name" "text" DEFAULT NULL::"text", "_email" "text" DEFAULT NULL::"text", "_phone" "text" DEFAULT NULL::"text", "_birth_date" "date" DEFAULT NULL::"date", "_cpf" "text" DEFAULT NULL::"text", "_professional_license" "text" DEFAULT NULL::"text", "_specialty" "text" DEFAULT NULL::"text", "_job_title" "text" DEFAULT NULL::"text", "_bio" "text" DEFAULT NULL::"text", "_working_hours" "text" DEFAULT NULL::"text", "_address" "jsonb" DEFAULT NULL::"jsonb", "_new_password" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6319,7 +6319,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_current_user_notification_preferences (schema.sql L13832-L13859)
+-- [RPC/FUNCTION] update_current_user_notification_preferences (schema.sql L14194-L14221)
 CREATE OR REPLACE FUNCTION "public"."update_current_user_notification_preferences"("_sound_mode" "text" DEFAULT NULL::"text", "_sound_key" "text" DEFAULT NULL::"text", "_notify_security" boolean DEFAULT NULL::boolean, "_notify_clinic_access" boolean DEFAULT NULL::boolean, "_notify_patient_saved" boolean DEFAULT NULL::boolean, "_notify_session_activity" boolean DEFAULT NULL::boolean, "_notify_event_reminders" boolean DEFAULT NULL::boolean, "_notify_system" boolean DEFAULT NULL::boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6349,7 +6349,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_team_development_profile (schema.sql L13920-L13986)
+-- [RPC/FUNCTION] update_team_development_profile (schema.sql L14282-L14348)
 CREATE OR REPLACE FUNCTION "public"."update_team_development_profile"("_user_id" "uuid", "_development_status" "text" DEFAULT NULL::"text", "_internal_level" "text" DEFAULT NULL::"text", "_goals" "text" DEFAULT NULL::"text", "_review_notes" "text" DEFAULT NULL::"text", "_last_review_at" "date" DEFAULT NULL::"date", "_next_review_at" "date" DEFAULT NULL::"date", "_onboarding_flow_read" boolean DEFAULT NULL::boolean, "_onboarding_initial_training" boolean DEFAULT NULL::boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6418,7 +6418,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] upsert_current_user_security_settings (schema.sql L14006-L14059)
+-- [RPC/FUNCTION] upsert_current_user_security_settings (schema.sql L14368-L14421)
 CREATE OR REPLACE FUNCTION "public"."upsert_current_user_security_settings"("_alert_password_changed" boolean DEFAULT NULL::boolean, "_alert_new_login" boolean DEFAULT NULL::boolean, "_alert_other_sessions_ended" boolean DEFAULT NULL::boolean, "_alert_access_change" boolean DEFAULT NULL::boolean) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6474,7 +6474,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] upsert_user_telemetry_summary (schema.sql L14258-L14374)
+-- [RPC/FUNCTION] upsert_user_telemetry_summary (schema.sql L14620-L14736)
 CREATE OR REPLACE FUNCTION "public"."upsert_user_telemetry_summary"("_clinic_id" "uuid", "_user_name" "text", "_page_views" integer, "_prints_detected" integer, "_docs_printed" integer, "_pdf_exported" integer, "_dwell_seconds" integer, "_top_routes" "jsonb", "_is_spam_flagged" boolean DEFAULT false, "_spam_reason" "text" DEFAULT NULL::"text", "_clinical_records_saved" integer DEFAULT 0, "_forms_completed" integer DEFAULT 0, "_upgrade_views" integer DEFAULT 0, "_form_validation_errors" integer DEFAULT 0, "_recent_errors" "jsonb" DEFAULT '[]'::"jsonb", "_page_dwell_matrix" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
@@ -6593,7 +6593,7 @@ BEGIN
 END;
 $_$;
 
--- [RPC/FUNCTION] user_has_active_clinic_membership (schema.sql L14380-L14401)
+-- [RPC/FUNCTION] user_has_active_clinic_membership (schema.sql L14742-L14763)
 CREATE OR REPLACE FUNCTION "public"."user_has_active_clinic_membership"("_user_id" "uuid", "_clinic_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6617,7 +6617,7 @@ CREATE OR REPLACE FUNCTION "public"."user_has_active_clinic_membership"("_user_i
   );
 $$;
 
--- [RPC/FUNCTION] validate_user_clinic (schema.sql L14738-L14751)
+-- [RPC/FUNCTION] validate_user_clinic (schema.sql L15100-L15113)
 CREATE OR REPLACE FUNCTION "public"."validate_user_clinic"("_user_id" "uuid", "_cnpj" "text") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -6633,7 +6633,7 @@ CREATE OR REPLACE FUNCTION "public"."validate_user_clinic"("_user_id" "uuid", "_
   )
 $$;
 
--- [TABLE] clinic_collaborator_invitations (schema.sql L15100-L15124)
+-- [TABLE] clinic_collaborator_invitations (schema.sql L15462-L15486)
 CREATE TABLE IF NOT EXISTS "public"."clinic_collaborator_invitations" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6660,7 +6660,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_collaborator_invitations" (
     CONSTRAINT "clinic_collaborator_invitations_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'cancelled'::"text", 'expired'::"text"])))
 );
 
--- [TABLE] clinic_custom_words (schema.sql L15130-L15136)
+-- [TABLE] clinic_custom_words (schema.sql L15492-L15498)
 CREATE TABLE IF NOT EXISTS "public"."clinic_custom_words" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6669,7 +6669,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_custom_words" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] clinic_daily_metrics (schema.sql L15142-L15152)
+-- [TABLE] clinic_daily_metrics (schema.sql L15504-L15514)
 CREATE TABLE IF NOT EXISTS "public"."clinic_daily_metrics" (
     "clinic_id" "uuid" NOT NULL,
     "metric_date" "date" NOT NULL,
@@ -6682,7 +6682,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_daily_metrics" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] clinic_document_signatures (schema.sql L15158-L15180)
+-- [TABLE] clinic_document_signatures (schema.sql L15520-L15542)
 CREATE TABLE IF NOT EXISTS "public"."clinic_document_signatures" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6707,7 +6707,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_document_signatures" (
     CONSTRAINT "clinic_document_signatures_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'signed_in_person'::"text", 'signed_remote'::"text", 'pending_physical'::"text"])))
 );
 
--- [TABLE] clinic_group_color_slots (schema.sql L15249-L15260)
+-- [TABLE] clinic_group_color_slots (schema.sql L15611-L15622)
 CREATE TABLE IF NOT EXISTS "public"."clinic_group_color_slots" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6721,7 +6721,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_group_color_slots" (
     CONSTRAINT "clinic_group_color_slots_slot_index_check" CHECK ((("slot_index" >= 0) AND ("slot_index" < 21)))
 );
 
--- [TABLE] clinic_health_insurances (schema.sql L15266-L15279)
+-- [TABLE] clinic_health_insurances (schema.sql L15628-L15641)
 CREATE TABLE IF NOT EXISTS "public"."clinic_health_insurances" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6737,7 +6737,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_health_insurances" (
     CONSTRAINT "clinic_health_insurances_payment_term_days_check" CHECK (("payment_term_days" >= 0))
 );
 
--- [TABLE] clinic_insurance_procedures (schema.sql L15285-L15298)
+-- [TABLE] clinic_insurance_procedures (schema.sql L15647-L15660)
 CREATE TABLE IF NOT EXISTS "public"."clinic_insurance_procedures" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6753,7 +6753,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_insurance_procedures" (
     CONSTRAINT "clinic_insurance_procedures_session_unit_amount_cents_check" CHECK (("session_unit_amount_cents" >= 0))
 );
 
--- [TABLE] clinic_memberships (schema.sql L15304-L15350)
+-- [TABLE] clinic_memberships (schema.sql L15666-L15712)
 CREATE TABLE IF NOT EXISTS "public"."clinic_memberships" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6802,7 +6802,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_operational_role_capabilities" (
     CONSTRAINT "clinic_operational_role_capabilities_no_owner" CHECK (("operational_role" <> 'owner'::"text"))
 );
 
--- [TABLE] clinic_operational_roles (schema.sql L15358-L15372)
+-- [TABLE] clinic_operational_roles (schema.sql L15720-L15734)
 CREATE TABLE IF NOT EXISTS "public"."clinic_operational_roles" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6819,7 +6819,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_operational_roles" (
     CONSTRAINT "clinic_operational_roles_no_custom_owner" CHECK ((("is_system" = true) OR ("role_key" <> 'owner'::"text")))
 );
 
--- [TABLE] clinic_subscriptions (schema.sql L15380-L15432)
+-- [TABLE] clinic_subscriptions (schema.sql L15742-L15794)
 CREATE TABLE IF NOT EXISTS "public"."clinic_subscriptions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6874,7 +6874,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_subscriptions" (
     CONSTRAINT "clinic_subscriptions_status_check" CHECK (("status" = ANY (ARRAY['ACTIVE'::"text", 'PENDING'::"text", 'TRIAL'::"text", 'TRIAL_EXPIRED'::"text", 'BETA'::"text", 'OVERDUE'::"text", 'PAUSED'::"text", 'CANCELED'::"text", 'SUSPENDED'::"text", 'EXPIRED'::"text", 'COURTESY'::"text"])))
 );
 
--- [TABLE] clinic_tag_relations (schema.sql L15438-L15443)
+-- [TABLE] clinic_tag_relations (schema.sql L15800-L15805)
 CREATE TABLE IF NOT EXISTS "public"."clinic_tag_relations" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6882,7 +6882,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_tag_relations" (
     "created_at" timestamp with time zone DEFAULT "now"()
 );
 
--- [TABLE] clinic_tags (schema.sql L15449-L15455)
+-- [TABLE] clinic_tags (schema.sql L15811-L15817)
 CREATE TABLE IF NOT EXISTS "public"."clinic_tags" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "name" "text" NOT NULL,
@@ -6891,7 +6891,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_tags" (
     "updated_at" timestamp with time zone DEFAULT "now"()
 );
 
--- [TABLE] clinic_terms (schema.sql L15461-L15476)
+-- [TABLE] clinic_terms (schema.sql L15823-L15838)
 CREATE TABLE IF NOT EXISTS "public"."clinic_terms" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6909,7 +6909,7 @@ CREATE TABLE IF NOT EXISTS "public"."clinic_terms" (
     CONSTRAINT "clinic_terms_term_type_check" CHECK (("term_type" = ANY (ARRAY['adult_consent'::"text", 'minor_consent'::"text"])))
 );
 
--- [TABLE] clinics (schema.sql L15514-L15545)
+-- [TABLE] clinics (schema.sql L15876-L15907)
 CREATE TABLE IF NOT EXISTS "public"."clinics" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "cnpj" "text" NOT NULL,
@@ -6943,7 +6943,7 @@ CASE
 END))
 );
 
--- [TABLE] profiles (schema.sql L16114-L16148)
+-- [TABLE] profiles (schema.sql L16595-L16629)
 CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "id" "uuid" NOT NULL,
     "clinic_id" "uuid",
@@ -6980,7 +6980,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "signature_webp_url" "text"
 );
 
--- [TABLE] team_development_profiles (schema.sql L16401-L16417)
+-- [TABLE] team_development_profiles (schema.sql L16882-L16898)
 CREATE TABLE IF NOT EXISTS "public"."team_development_profiles" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
@@ -6999,14 +6999,14 @@ CREATE TABLE IF NOT EXISTS "public"."team_development_profiles" (
     CONSTRAINT "team_development_profiles_internal_level_check" CHECK (("internal_level" = ANY (ARRAY['estagiario'::"text", 'junior'::"text", 'pleno'::"text", 'senior'::"text", 'referencia'::"text"])))
 );
 
--- [TABLE] user_active_clinic_contexts (schema.sql L16440-L16444)
+-- [TABLE] user_active_clinic_contexts (schema.sql L16921-L16925)
 CREATE TABLE IF NOT EXISTS "public"."user_active_clinic_contexts" (
     "user_id" "uuid" NOT NULL,
     "clinic_id" "uuid" NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_governance_overrides (schema.sql L16450-L16455)
+-- [TABLE] user_governance_overrides (schema.sql L16931-L16936)
 CREATE TABLE IF NOT EXISTS "public"."user_governance_overrides" (
     "user_id" "uuid" NOT NULL,
     "max_actions" integer DEFAULT 150 NOT NULL,
@@ -7014,7 +7014,7 @@ CREATE TABLE IF NOT EXISTS "public"."user_governance_overrides" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_mfa_credentials (schema.sql L16461-L16468)
+-- [TABLE] user_mfa_credentials (schema.sql L16942-L16949)
 CREATE TABLE IF NOT EXISTS "public"."user_mfa_credentials" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
@@ -7024,7 +7024,7 @@ CREATE TABLE IF NOT EXISTS "public"."user_mfa_credentials" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_punishments (schema.sql L16474-L16484)
+-- [TABLE] user_punishments (schema.sql L16955-L16965)
 CREATE TABLE IF NOT EXISTS "public"."user_punishments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -7037,7 +7037,7 @@ CREATE TABLE IF NOT EXISTS "public"."user_punishments" (
     "is_manual" boolean DEFAULT false NOT NULL
 );
 
--- [TABLE] user_release_note_states (schema.sql L16490-L16497)
+-- [TABLE] user_release_note_states (schema.sql L16971-L16978)
 CREATE TABLE IF NOT EXISTS "public"."user_release_note_states" (
     "user_id" "uuid" NOT NULL,
     "last_seen_release_id" "uuid",
@@ -7047,14 +7047,14 @@ CREATE TABLE IF NOT EXISTS "public"."user_release_note_states" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_roles (schema.sql L16503-L16507)
+-- [TABLE] user_roles (schema.sql L16984-L16988)
 CREATE TABLE IF NOT EXISTS "public"."user_roles" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid" NOT NULL,
     "role" "public"."app_role" NOT NULL
 );
 
--- [TABLE] user_security_settings (schema.sql L16535-L16544)
+-- [TABLE] user_security_settings (schema.sql L17016-L17025)
 CREATE TABLE IF NOT EXISTS "public"."user_security_settings" (
     "user_id" "uuid" NOT NULL,
     "clinic_id" "uuid",
@@ -7066,7 +7066,7 @@ CREATE TABLE IF NOT EXISTS "public"."user_security_settings" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
--- [TABLE] user_telemetry_summaries (schema.sql L16550-L16571)
+-- [TABLE] user_telemetry_summaries (schema.sql L17031-L17052)
 CREATE TABLE IF NOT EXISTS "public"."user_telemetry_summaries" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -7090,197 +7090,197 @@ CREATE TABLE IF NOT EXISTS "public"."user_telemetry_summaries" (
     "page_dwell_matrix" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL
 );
 
--- [POLICY] Administradores da clinica podem excluir palavras do corretor ON clinic_custom_words (schema.sql L18967-L18969)
+-- [POLICY] Administradores da clinica podem excluir palavras do corretor ON clinic_custom_words (schema.sql L19552-L19554)
 CREATE POLICY "Administradores da clinica podem excluir palavras do corretor" ON "public"."clinic_custom_words" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND ("cm"."operational_role" = ANY (ARRAY['admin'::"public"."operational_role_type", 'owner'::"public"."operational_role_type"]))))));
 
--- [POLICY] Managers insert clinic memberships ON clinic_memberships (schema.sql L19097-L19099)
+-- [POLICY] Managers insert clinic memberships ON clinic_memberships (schema.sql L19682-L19684)
 CREATE POLICY "Managers insert clinic memberships" ON "public"."clinic_memberships" FOR INSERT TO "authenticated" WITH CHECK ((("public"."current_user_can"('subaccounts.write'::"text", "clinic_id") OR "public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")) AND (EXISTS ( SELECT 1
    FROM "public"."clinics"
   WHERE (("clinics"."id" = "clinic_memberships"."clinic_id") AND (("clinics"."subscription_plan")::"text" = ANY (ARRAY['clinic'::"text", 'enterprise'::"text", 'clinica_basico'::"text", 'clinica_medio'::"text", 'clinica_top'::"text", 'prof_top'::"text"])))))));
 
--- [POLICY] Managers read clinic collaborator invitations ON clinic_collaborator_invitations (schema.sql L19103-L19103)
+-- [POLICY] Managers read clinic collaborator invitations ON clinic_collaborator_invitations (schema.sql L19688-L19688)
 CREATE POLICY "Managers read clinic collaborator invitations" ON "public"."clinic_collaborator_invitations" FOR SELECT TO "authenticated" USING (("public"."current_user_can"('subaccounts.read'::"text", "clinic_id") OR "public"."current_user_can"('subaccounts.write'::"text", "clinic_id") OR "public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")));
 
--- [POLICY] Managers update clinic memberships ON clinic_memberships (schema.sql L19107-L19107)
+-- [POLICY] Managers update clinic memberships ON clinic_memberships (schema.sql L19692-L19692)
 CREATE POLICY "Managers update clinic memberships" ON "public"."clinic_memberships" FOR UPDATE TO "authenticated" USING ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id"));
 
--- [POLICY] Managers update clinic profiles ON profiles (schema.sql L19111-L19111)
+-- [POLICY] Managers update clinic profiles ON profiles (schema.sql L19696-L19696)
 CREATE POLICY "Managers update clinic profiles" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('subaccounts.manage'::"text", "clinic_id"));
 
--- [POLICY] Membros da clinica podem adicionar palavras ao corretor ON clinic_custom_words (schema.sql L19119-L19121)
+-- [POLICY] Membros da clinica podem adicionar palavras ao corretor ON clinic_custom_words (schema.sql L19704-L19706)
 CREATE POLICY "Membros da clinica podem adicionar palavras ao corretor" ON "public"."clinic_custom_words" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type")))));
 
--- [POLICY] Membros da clinica podem visualizar palavras do corretor ON clinic_custom_words (schema.sql L19125-L19127)
+-- [POLICY] Membros da clinica podem visualizar palavras do corretor ON clinic_custom_words (schema.sql L19710-L19712)
 CREATE POLICY "Membros da clinica podem visualizar palavras do corretor" ON "public"."clinic_custom_words" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type")))));
 
--- [POLICY] Owners e gestores podem ver a assinatura ON clinic_subscriptions (schema.sql L19131-L19131)
+-- [POLICY] Owners e gestores podem ver a assinatura ON clinic_subscriptions (schema.sql L19716-L19716)
 CREATE POLICY "Owners e gestores podem ver a assinatura" ON "public"."clinic_subscriptions" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id") OR "public"."current_user_can"('subscription_billing.read'::"text", "clinic_id")));
 
--- [POLICY] Platform admins podem ver todas as assinaturas ON clinic_subscriptions (schema.sql L19175-L19177)
+-- [POLICY] Platform admins podem ver todas as assinaturas ON clinic_subscriptions (schema.sql L19786-L19788)
 CREATE POLICY "Platform admins podem ver todas as assinaturas" ON "public"."clinic_subscriptions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform admins podem ver todas as clinicas ON clinics (schema.sql L19181-L19183)
+-- [POLICY] Platform admins podem ver todas as clinicas ON clinics (schema.sql L19792-L19794)
 CREATE POLICY "Platform admins podem ver todas as clinicas" ON "public"."clinics" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."platform_admins" "pa"
   WHERE (("pa"."user_id" = "auth"."uid"()) AND ("pa"."is_active" = true)))));
 
--- [POLICY] Platform owners can manage governance overrides ON user_governance_overrides (schema.sql L19213-L19213)
+-- [POLICY] Platform owners can manage governance overrides ON user_governance_overrides (schema.sql L19824-L19824)
 CREATE POLICY "Platform owners can manage governance overrides" ON "public"."user_governance_overrides" TO "authenticated" USING ("public"."is_platform_owner"()) WITH CHECK ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners can manage user punishments ON user_punishments (schema.sql L19221-L19221)
+-- [POLICY] Platform owners can manage user punishments ON user_punishments (schema.sql L19832-L19832)
 CREATE POLICY "Platform owners can manage user punishments" ON "public"."user_punishments" TO "authenticated" USING ("public"."is_platform_owner"()) WITH CHECK ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners can view all summaries ON user_telemetry_summaries (schema.sql L19225-L19225)
+-- [POLICY] Platform owners can view all summaries ON user_telemetry_summaries (schema.sql L19836-L19836)
 CREATE POLICY "Platform owners can view all summaries" ON "public"."user_telemetry_summaries" FOR SELECT TO "authenticated" USING ("public"."is_platform_owner"());
 
--- [POLICY] Platform owners manage clinic_tag_relations ON clinic_tag_relations (schema.sql L19233-L19233)
+-- [POLICY] Platform owners manage clinic_tag_relations ON clinic_tag_relations (schema.sql L19844-L19844)
 CREATE POLICY "Platform owners manage clinic_tag_relations" ON "public"."clinic_tag_relations" USING ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Platform owners manage clinic_tags ON clinic_tags (schema.sql L19237-L19237)
+-- [POLICY] Platform owners manage clinic_tags ON clinic_tags (schema.sql L19848-L19848)
 CREATE POLICY "Platform owners manage clinic_tags" ON "public"."clinic_tags" USING ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] Super admins manage all clinic document signatures ON clinic_document_signatures (schema.sql L19305-L19305)
+-- [POLICY] Super admins manage all clinic document signatures ON clinic_document_signatures (schema.sql L19928-L19928)
 CREATE POLICY "Super admins manage all clinic document signatures" ON "public"."clinic_document_signatures" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all clinics ON clinics (schema.sql L19309-L19309)
+-- [POLICY] Super admins manage all clinics ON clinics (schema.sql L19932-L19932)
 CREATE POLICY "Super admins manage all clinics" ON "public"."clinics" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all profiles ON profiles (schema.sql L19329-L19329)
+-- [POLICY] Super admins manage all profiles ON profiles (schema.sql L19952-L19952)
 CREATE POLICY "Super admins manage all profiles" ON "public"."profiles" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Super admins manage all roles ON user_roles (schema.sql L19333-L19333)
+-- [POLICY] Super admins manage all roles ON user_roles (schema.sql L19956-L19956)
 CREATE POLICY "Super admins manage all roles" ON "public"."user_roles" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users can insert own profile ON profiles (schema.sql L19353-L19353)
+-- [POLICY] Users can insert own profile ON profiles (schema.sql L19976-L19976)
 CREATE POLICY "Users can insert own profile" ON "public"."profiles" FOR INSERT TO "authenticated" WITH CHECK (("id" = "auth"."uid"()));
 
--- [POLICY] Users can manage own MFA credentials ON user_mfa_credentials (schema.sql L19357-L19357)
+-- [POLICY] Users can manage own MFA credentials ON user_mfa_credentials (schema.sql L19980-L19980)
 CREATE POLICY "Users can manage own MFA credentials" ON "public"."user_mfa_credentials" TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
 
--- [POLICY] Users can only read own MFA credentials ON user_mfa_credentials (schema.sql L19361-L19361)
+-- [POLICY] Users can only read own MFA credentials ON user_mfa_credentials (schema.sql L19984-L19984)
 CREATE POLICY "Users can only read own MFA credentials" ON "public"."user_mfa_credentials" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "user_id"));
 
--- [POLICY] Users can read own active punishments ON user_punishments (schema.sql L19373-L19373)
+-- [POLICY] Users can read own active punishments ON user_punishments (schema.sql L19996-L19996)
 CREATE POLICY "Users can read own active punishments" ON "public"."user_punishments" FOR SELECT TO "authenticated" USING ((("auth"."uid"() = "user_id") OR "public"."is_platform_owner"()));
 
--- [POLICY] Users can read own overrides ON user_governance_overrides (schema.sql L19377-L19377)
+-- [POLICY] Users can read own overrides ON user_governance_overrides (schema.sql L20000-L20000)
 CREATE POLICY "Users can read own overrides" ON "public"."user_governance_overrides" FOR SELECT TO "authenticated" USING ((("auth"."uid"() = "user_id") OR "public"."is_platform_owner"()));
 
--- [POLICY] Users can upsert own summary row ON user_telemetry_summaries (schema.sql L19381-L19381)
+-- [POLICY] Users can upsert own summary row ON user_telemetry_summaries (schema.sql L20004-L20004)
 CREATE POLICY "Users can upsert own summary row" ON "public"."user_telemetry_summaries" TO "authenticated" USING (("auth"."uid"() = "user_id")) WITH CHECK (("auth"."uid"() = "user_id"));
 
--- [POLICY] Users delete clinic document signatures ON clinic_document_signatures (schema.sql L19393-L19393)
+-- [POLICY] Users delete clinic document signatures ON clinic_document_signatures (schema.sql L20016-L20016)
 CREATE POLICY "Users delete clinic document signatures" ON "public"."clinic_document_signatures" FOR DELETE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('patients.delete'::"text", "clinic_id"))));
 
--- [POLICY] Users delete clinic terms ON clinic_terms (schema.sql L19411-L19411)
+-- [POLICY] Users delete clinic terms ON clinic_terms (schema.sql L20034-L20034)
 CREATE POLICY "Users delete clinic terms" ON "public"."clinic_terms" FOR DELETE TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users insert clinic document signatures ON clinic_document_signatures (schema.sql L19427-L19427)
+-- [POLICY] Users insert clinic document signatures ON clinic_document_signatures (schema.sql L20050-L20050)
 CREATE POLICY "Users insert clinic document signatures" ON "public"."clinic_document_signatures" FOR INSERT TO "authenticated" WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
 
--- [POLICY] Users insert clinic terms ON clinic_terms (schema.sql L19445-L19445)
+-- [POLICY] Users insert clinic terms ON clinic_terms (schema.sql L20068-L20068)
 CREATE POLICY "Users insert clinic terms" ON "public"."clinic_terms" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic daily metrics ON clinic_daily_metrics (schema.sql L19477-L19477)
+-- [POLICY] Users read clinic daily metrics ON clinic_daily_metrics (schema.sql L20100-L20100)
 CREATE POLICY "Users read clinic daily metrics" ON "public"."clinic_daily_metrics" FOR SELECT TO "authenticated" USING ((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND ("public"."current_user_can"('treasury.read'::"text", "clinic_id") OR "public"."current_user_can"('sessions.read'::"text", "clinic_id"))));
 
--- [POLICY] Users read clinic document signatures ON clinic_document_signatures (schema.sql L19481-L19481)
+-- [POLICY] Users read clinic document signatures ON clinic_document_signatures (schema.sql L20104-L20104)
 CREATE POLICY "Users read clinic document signatures" ON "public"."clinic_document_signatures" FOR SELECT TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('patients.read'::"text", "clinic_id") OR "public"."current_user_can"('sessions.read'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")) AND (("deleted_at" IS NULL) OR "public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
 
--- [POLICY] Users read clinic memberships ON clinic_memberships (schema.sql L19493-L19493)
+-- [POLICY] Users read clinic memberships ON clinic_memberships (schema.sql L20116-L20116)
 CREATE POLICY "Users read clinic memberships" ON "public"."clinic_memberships" FOR SELECT TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR ("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")));
 
--- [POLICY] Users read clinic profiles ON profiles (schema.sql L19509-L19512)
+-- [POLICY] Users read clinic profiles ON profiles (schema.sql L20132-L20135)
 CREATE POLICY "Users read clinic profiles" ON "public"."profiles" FOR SELECT TO "authenticated" USING ((("id" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role") AS "has_role") OR (("clinic_id" IS NOT NULL) AND ("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id"))) OR (EXISTS ( SELECT 1
    FROM ("public"."clinic_memberships" "requester_membership"
      JOIN "public"."clinic_memberships" "target_membership" ON (("target_membership"."clinic_id" = "requester_membership"."clinic_id")))
   WHERE (("requester_membership"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("requester_membership"."is_active" = true) AND ("target_membership"."user_id" = "profiles"."id"))))));
 
--- [POLICY] Users read clinic terms ON clinic_terms (schema.sql L19532-L19532)
+-- [POLICY] Users read clinic terms ON clinic_terms (schema.sql L20155-L20155)
 CREATE POLICY "Users read clinic terms" ON "public"."clinic_terms" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('patients.read'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.read'::"text", "clinic_id"))));
 
--- [POLICY] Users read clinic_group_color_slots ON clinic_group_color_slots (schema.sql L19536-L19536)
+-- [POLICY] Users read clinic_group_color_slots ON clinic_group_color_slots (schema.sql L20159-L20159)
 CREATE POLICY "Users read clinic_group_color_slots" ON "public"."clinic_group_color_slots" FOR SELECT TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.read'::"text", "clinic_id")));
 
--- [POLICY] Users read own active clinic context ON user_active_clinic_contexts (schema.sql L19540-L19540)
+-- [POLICY] Users read own active clinic context ON user_active_clinic_contexts (schema.sql L20163-L20163)
 CREATE POLICY "Users read own active clinic context" ON "public"."user_active_clinic_contexts" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own clinic ON clinics (schema.sql L19548-L19548)
+-- [POLICY] Users read own clinic ON clinics (schema.sql L20171-L20171)
 CREATE POLICY "Users read own clinic" ON "public"."clinics" FOR SELECT TO "authenticated" USING ((("id" = "public"."get_user_clinic_id"("auth"."uid"())) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "id") OR ("account_owner_user_id" = "auth"."uid"())));
 
--- [POLICY] Users read own release note state ON user_release_note_states (schema.sql L19556-L19556)
+-- [POLICY] Users read own release note state ON user_release_note_states (schema.sql L20179-L20179)
 CREATE POLICY "Users read own release note state" ON "public"."user_release_note_states" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users read own roles ON user_roles (schema.sql L19560-L19560)
+-- [POLICY] Users read own roles ON user_roles (schema.sql L20183-L20183)
 CREATE POLICY "Users read own roles" ON "public"."user_roles" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
--- [POLICY] Users update clinic document signatures ON clinic_document_signatures (schema.sql L19584-L19584)
+-- [POLICY] Users update clinic document signatures ON clinic_document_signatures (schema.sql L20207-L20207)
 CREATE POLICY "Users update clinic document signatures" ON "public"."clinic_document_signatures" FOR UPDATE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")))) WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
 
--- [POLICY] Users update clinic terms ON clinic_terms (schema.sql L19600-L19600)
+-- [POLICY] Users update clinic terms ON clinic_terms (schema.sql L20223-L20223)
 CREATE POLICY "Users update clinic terms" ON "public"."clinic_terms" FOR UPDATE TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users update managed clinic ON clinics (schema.sql L19604-L19604)
+-- [POLICY] Users update managed clinic ON clinics (schema.sql L20227-L20227)
 CREATE POLICY "Users update managed clinic" ON "public"."clinics" FOR UPDATE TO "authenticated" USING ("public"."current_user_can"('clinic_profile.manage'::"text", "id")) WITH CHECK ("public"."current_user_can"('clinic_profile.manage'::"text", "id"));
 
--- [POLICY] Users update own profile ON profiles (schema.sql L19612-L19612)
+-- [POLICY] Users update own profile ON profiles (schema.sql L20235-L20235)
 CREATE POLICY "Users update own profile" ON "public"."profiles" FOR UPDATE TO "authenticated" USING (("id" = "auth"."uid"())) WITH CHECK (("id" = "auth"."uid"()));
 
--- [POLICY] Users write clinic_group_color_slots ON clinic_group_color_slots (schema.sql L19644-L19644)
+-- [POLICY] Users write clinic_group_color_slots ON clinic_group_color_slots (schema.sql L20267-L20267)
 CREATE POLICY "Users write clinic_group_color_slots" ON "public"."clinic_group_color_slots" TO "authenticated" USING ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid"))) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
 
--- [POLICY] clinic_health_insurances_delete ON clinic_health_insurances (schema.sql L19712-L19712)
+-- [POLICY] clinic_health_insurances_delete ON clinic_health_insurances (schema.sql L20335-L20335)
 CREATE POLICY "clinic_health_insurances_delete" ON "public"."clinic_health_insurances" FOR DELETE USING ("public"."current_user_can"('treasury.manage'::"text", "clinic_id"));
 
--- [POLICY] clinic_health_insurances_insert ON clinic_health_insurances (schema.sql L19716-L19716)
+-- [POLICY] clinic_health_insurances_insert ON clinic_health_insurances (schema.sql L20339-L20339)
 CREATE POLICY "clinic_health_insurances_insert" ON "public"."clinic_health_insurances" FOR INSERT WITH CHECK ("public"."current_user_can"('treasury.manage'::"text", "clinic_id"));
 
--- [POLICY] clinic_health_insurances_select ON clinic_health_insurances (schema.sql L19720-L19720)
+-- [POLICY] clinic_health_insurances_select ON clinic_health_insurances (schema.sql L20343-L20343)
 CREATE POLICY "clinic_health_insurances_select" ON "public"."clinic_health_insurances" FOR SELECT USING (("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id") AND ("deleted_at" IS NULL)));
 
--- [POLICY] clinic_health_insurances_update ON clinic_health_insurances (schema.sql L19724-L19724)
+-- [POLICY] clinic_health_insurances_update ON clinic_health_insurances (schema.sql L20347-L20347)
 CREATE POLICY "clinic_health_insurances_update" ON "public"."clinic_health_insurances" FOR UPDATE USING ("public"."current_user_can"('treasury.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('treasury.manage'::"text", "clinic_id"));
 
--- [POLICY] clinic_insurance_procedures_all ON clinic_insurance_procedures (schema.sql L19731-L19731)
+-- [POLICY] clinic_insurance_procedures_all ON clinic_insurance_procedures (schema.sql L20354-L20354)
 CREATE POLICY "clinic_insurance_procedures_all" ON "public"."clinic_insurance_procedures" USING ("public"."current_user_can"('treasury.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('treasury.manage'::"text", "clinic_id"));
 
--- [POLICY] clinic_insurance_procedures_select ON clinic_insurance_procedures (schema.sql L19735-L19735)
+-- [POLICY] clinic_insurance_procedures_select ON clinic_insurance_procedures (schema.sql L20358-L20358)
 CREATE POLICY "clinic_insurance_procedures_select" ON "public"."clinic_insurance_procedures" FOR SELECT USING ("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id"));
 
--- [POLICY] operational roles are manageable by role admins ON clinic_operational_roles (schema.sql L19793-L19793)
+-- [POLICY] operational roles are manageable by role admins ON clinic_operational_roles (schema.sql L20416-L20416)
 CREATE POLICY "operational roles are manageable by role admins" ON "public"."clinic_operational_roles" USING ("public"."current_user_can"('subaccounts_roles.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('subaccounts_roles.manage'::"text", "clinic_id"));
 
--- [POLICY] operational roles are readable by clinic members ON clinic_operational_roles (schema.sql L19797-L19797)
+-- [POLICY] operational roles are readable by clinic members ON clinic_operational_roles (schema.sql L20420-L20420)
 CREATE POLICY "operational roles are readable by clinic members" ON "public"."clinic_operational_roles" FOR SELECT USING ("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id"));
 
--- [POLICY] platform owners can manage all clinic operational role capabili ON clinic_operational_role_capabilities (schema.sql L19836-L19836)
+-- [POLICY] platform owners can manage all clinic operational role capabili ON clinic_operational_role_capabilities (schema.sql L20459-L20459)
 CREATE POLICY "platform owners can manage all clinic operational role capabili" ON "public"."clinic_operational_role_capabilities" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] platform owners can manage all clinic operational roles ON clinic_operational_roles (schema.sql L19840-L19840)
+-- [POLICY] platform owners can manage all clinic operational roles ON clinic_operational_roles (schema.sql L20463-L20463)
 CREATE POLICY "platform owners can manage all clinic operational roles" ON "public"."clinic_operational_roles" USING ("public"."is_platform_owner"("auth"."uid"())) WITH CHECK ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] platform owners can read all clinic operational role capabiliti ON clinic_operational_role_capabilities (schema.sql L19844-L19844)
+-- [POLICY] platform owners can read all clinic operational role capabiliti ON clinic_operational_role_capabilities (schema.sql L20467-L20467)
 CREATE POLICY "platform owners can read all clinic operational role capabiliti" ON "public"."clinic_operational_role_capabilities" FOR SELECT USING ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] platform owners can read all clinic operational roles ON clinic_operational_roles (schema.sql L19848-L19848)
+-- [POLICY] platform owners can read all clinic operational roles ON clinic_operational_roles (schema.sql L20471-L20471)
 CREATE POLICY "platform owners can read all clinic operational roles" ON "public"."clinic_operational_roles" FOR SELECT USING ("public"."is_platform_owner"("auth"."uid"()));
 
--- [POLICY] role capabilities are manageable by role admins ON clinic_operational_role_capabilities (schema.sql L19879-L19879)
+-- [POLICY] role capabilities are manageable by role admins ON clinic_operational_role_capabilities (schema.sql L20511-L20511)
 CREATE POLICY "role capabilities are manageable by role admins" ON "public"."clinic_operational_role_capabilities" USING ("public"."current_user_can"('subaccounts_roles.manage'::"text", "clinic_id")) WITH CHECK ("public"."current_user_can"('subaccounts_roles.manage'::"text", "clinic_id"));
 
--- [POLICY] role capabilities are readable by clinic members ON clinic_operational_role_capabilities (schema.sql L19883-L19883)
+-- [POLICY] role capabilities are readable by clinic members ON clinic_operational_role_capabilities (schema.sql L20515-L20515)
 CREATE POLICY "role capabilities are readable by clinic members" ON "public"."clinic_operational_role_capabilities" FOR SELECT USING ("public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id"));
 
--- [POLICY] team development readable by clinic admins or self ON team_development_profiles (schema.sql L19905-L19905)
+-- [POLICY] team development readable by clinic admins or self ON team_development_profiles (schema.sql L20537-L20537)
 CREATE POLICY "team development readable by clinic admins or self" ON "public"."team_development_profiles" FOR SELECT USING ((("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND ("public"."current_user_can"('subaccounts_analytics.read'::"text", "clinic_id") OR ("user_id" = "auth"."uid"()))));
 
--- [POLICY] users can read own security settings ON user_security_settings (schema.sql L19950-L19950)
+-- [POLICY] users can read own security settings ON user_security_settings (schema.sql L20582-L20582)
 CREATE POLICY "users can read own security settings" ON "public"."user_security_settings" FOR SELECT USING (("user_id" = "auth"."uid"()));

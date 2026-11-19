@@ -863,7 +863,161 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L7265-L7305)
+-- [RPC/FUNCTION] normalize_br_phone_key (schema.sql L7265-L7284)
+CREATE OR REPLACE FUNCTION "public"."normalize_br_phone_key"("p_phone" "text") RETURNS "text"
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_digits text;
+BEGIN
+    v_digits := regexp_replace(COALESCE(p_phone, ''), '\D', '', 'g');
+    IF v_digits = '' THEN
+        RETURN NULL;
+    END IF;
+    IF length(v_digits) IN (12, 13) AND left(v_digits, 2) = '55' THEN
+        RETURN substring(v_digits FROM 3);
+    END IF;
+    IF length(v_digits) > 11 THEN
+        RETURN right(v_digits, 11);
+    END IF;
+    RETURN v_digits;
+END;
+$$;
+
+-- [RPC/FUNCTION] sync_auto_lead_before_write (schema.sql L7290-L7368)
+CREATE OR REPLACE FUNCTION "public"."sync_auto_lead_before_write"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_meeting record;
+    v_ws record;
+    v_channel text;
+BEGIN
+    NEW.updated_at := now();
+    NEW.normalized_phone_key := public.normalize_br_phone_key(NEW.phone);
+
+    IF NEW.assigned_affiliate_id IS NOT NULL AND NEW.assigned_at IS NULL THEN
+        NEW.assigned_at := now();
+        IF NEW.stage IN ('new', 'qualified') THEN
+            NEW.stage := 'assigned';
+        END IF;
+    END IF;
+
+    IF NEW.meeting_id IS NULL AND (NEW.normalized_phone_key IS NOT NULL OR NEW.email IS NOT NULL) THEN
+        SELECT m.* INTO v_meeting
+        FROM public.platform_onboarding_meetings m
+        WHERE (NEW.normalized_phone_key IS NOT NULL AND public.normalize_br_phone_key(m.phone) = NEW.normalized_phone_key)
+           OR (NEW.email IS NOT NULL AND btrim(NEW.email) <> '' AND lower(COALESCE(m.email, '')) = lower(btrim(NEW.email)))
+        ORDER BY m.scheduled_at DESC
+        LIMIT 1;
+
+        IF FOUND THEN
+            v_channel := CASE
+                WHEN v_meeting.whatsapp_line = '5511960474566' OR COALESCE(v_meeting.confirmation_channel, '') ILIKE '%960474566%' OR COALESCE(v_meeting.origin, '') ILIKE '%bot%' OR COALESCE(v_meeting.notes, '') ILIKE '%whatsapp bot%' THEN 'whatsapp_bot_5511960474566'
+                WHEN v_meeting.whatsapp_line = '5511980113936' OR COALESCE(v_meeting.confirmation_channel, '') ILIKE '%980113936%' OR COALESCE(v_meeting.origin, '') ILIKE '%commercial%' OR COALESCE(v_meeting.origin, '') ILIKE '%comercial%' THEN 'whatsapp_commercial_5511980113936'
+                ELSE 'backoffice_agenda'
+            END;
+
+            NEW.meeting_id := v_meeting.id;
+            NEW.meeting_status := v_meeting.status;
+            NEW.meeting_scheduled_at := v_meeting.scheduled_at;
+            NEW.meeting_duration_minutes := v_meeting.duration_minutes;
+            NEW.meeting_channel := v_channel;
+            NEW.meeting_booked_by := COALESCE(
+                NULLIF(btrim(v_meeting.booked_by_name), ''),
+                CASE
+                    WHEN v_channel = 'whatsapp_bot_5511960474566' THEN v_meeting.lead_name || ' (Bot +55 11 96047-4566)'
+                    WHEN v_channel = 'whatsapp_commercial_5511980113936' THEN 'Equipe Comercial (+55 11 98011-3936)'
+                    ELSE 'Backoffice Master'
+                END
+            );
+
+            IF NEW.stage IN ('new', 'qualified', 'assigned', 'contacted', 'replied') AND v_meeting.status IN ('scheduled', 'rescheduled') THEN
+                NEW.stage := 'meeting_scheduled';
+            END IF;
+        END IF;
+    END IF;
+
+    IF NEW.meeting_id IS NULL AND NEW.meeting_status IN ('none', 'attempted_bot', 'handed_off_commercial') AND NEW.normalized_phone_key IS NOT NULL THEN
+        SELECT ws.* INTO v_ws
+        FROM public.whatsapp_chat_sessions ws
+        WHERE public.normalize_br_phone_key(ws.phone) = NEW.normalized_phone_key
+        ORDER BY ws.last_message_at DESC
+        LIMIT 1;
+
+        IF FOUND AND v_ws.current_step IN ('waiting_day', 'waiting_time', 'owner_support_menu', 'support_handoff', 'support_active', 'completed_scheduled') THEN
+            NEW.last_scheduling_attempt_at := v_ws.last_message_at;
+            IF v_ws.current_step IN ('support_handoff', 'support_active') THEN
+                NEW.meeting_status := 'handed_off_commercial';
+                NEW.meeting_channel := 'whatsapp_commercial_5511980113936';
+                NEW.scheduling_attempt_summary := 'Atendimento/agendamento transferido para WhatsApp Comercial (+55 11 98011-3936).';
+            ELSIF v_ws.current_step IN ('waiting_day', 'waiting_time', 'owner_support_menu') THEN
+                NEW.meeting_status := 'attempted_bot';
+                NEW.meeting_channel := 'whatsapp_bot_5511960474566';
+                NEW.scheduling_attempt_summary := 'Iniciou fluxo de agenda no Bot (+55 11 96047-4566) — etapa: ' || v_ws.current_step ||
+                    COALESCE(' (Dia: ' || (v_ws.metadata->>'selected_day_label') || ')', '');
+            END IF;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+-- [RPC/FUNCTION] sync_meeting_to_auto_leads (schema.sql L7374-L7422)
+CREATE OR REPLACE FUNCTION "public"."sync_meeting_to_auto_leads"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+DECLARE
+    v_phone_key text;
+    v_channel text;
+    v_booked_by text;
+BEGIN
+    v_phone_key := public.normalize_br_phone_key(NEW.phone);
+
+    v_channel := CASE
+        WHEN NEW.whatsapp_line = '5511960474566' OR COALESCE(NEW.confirmation_channel, '') ILIKE '%960474566%' OR COALESCE(NEW.origin, '') ILIKE '%bot%' OR COALESCE(NEW.notes, '') ILIKE '%whatsapp bot%' THEN 'whatsapp_bot_5511960474566'
+        WHEN NEW.whatsapp_line = '5511980113936' OR COALESCE(NEW.confirmation_channel, '') ILIKE '%980113936%' OR COALESCE(NEW.origin, '') ILIKE '%commercial%' OR COALESCE(NEW.origin, '') ILIKE '%comercial%' THEN 'whatsapp_commercial_5511980113936'
+        ELSE 'backoffice_agenda'
+    END;
+
+    v_booked_by := COALESCE(
+        NULLIF(btrim(NEW.booked_by_name), ''),
+        CASE
+            WHEN v_channel = 'whatsapp_bot_5511960474566' THEN NEW.lead_name || ' (Bot +55 11 96047-4566)'
+            WHEN v_channel = 'whatsapp_commercial_5511980113936' THEN 'Equipe Comercial (+55 11 98011-3936)'
+            ELSE 'Backoffice Master'
+        END
+    );
+
+    UPDATE public.platform_auto_leads
+    SET
+        meeting_id = NEW.id,
+        meeting_status = NEW.status,
+        meeting_scheduled_at = NEW.scheduled_at,
+        meeting_duration_minutes = NEW.duration_minutes,
+        meeting_channel = v_channel,
+        meeting_booked_by = v_booked_by,
+        stage = CASE
+            WHEN stage IN ('new', 'qualified', 'assigned', 'contacted', 'replied') AND NEW.status IN ('scheduled', 'rescheduled') THEN 'meeting_scheduled'
+            ELSE stage
+        END,
+        updated_at = now()
+    WHERE deleted_at IS NULL
+      AND (
+          (NEW.auto_lead_id IS NOT NULL AND id = NEW.auto_lead_id)
+          OR (v_phone_key IS NOT NULL AND normalized_phone_key = v_phone_key)
+          OR (NEW.email IS NOT NULL AND btrim(NEW.email) <> '' AND lower(COALESCE(email, '')) = lower(btrim(NEW.email)))
+      );
+
+    RETURN NEW;
+END;
+$$;
+
+-- [RPC/FUNCTION] handle_signup (schema.sql L7627-L7667)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -906,7 +1060,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L7311-L7387)
+-- [RPC/FUNCTION] handle_signup (schema.sql L7673-L7749)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -985,7 +1139,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L7393-L7479)
+-- [RPC/FUNCTION] handle_signup (schema.sql L7755-L7841)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text", "_clinic_name" "text" DEFAULT NULL::"text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1074,7 +1228,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] handle_signup (schema.sql L7485-L7618)
+-- [RPC/FUNCTION] handle_signup (schema.sql L7847-L7980)
 CREATE OR REPLACE FUNCTION "public"."handle_signup"("_user_id" "uuid", "_email" "text", "_cnpj" "text", "_subscription_plan" "public"."subscription_plan" DEFAULT 'solo'::"public"."subscription_plan", "_full_name" "text" DEFAULT NULL::"text", "_clinic_name" "text" DEFAULT NULL::"text", "_allow_duplicate_cnpj" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1210,7 +1364,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] log_security_event (schema.sql L9049-L9145)
+-- [RPC/FUNCTION] log_security_event (schema.sql L9411-L9507)
 CREATE OR REPLACE FUNCTION "public"."log_security_event"("_clinic_id" "uuid", "_actor_user_id" "uuid", "_target_user_id" "uuid", "_event_type" "text", "_visibility_scope" "text" DEFAULT 'self'::"text", "_payload" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -1309,7 +1463,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] move_entity_to_trash (schema.sql L9447-L9564)
+-- [RPC/FUNCTION] move_entity_to_trash (schema.sql L9809-L9926)
 CREATE OR REPLACE FUNCTION "public"."move_entity_to_trash"("_entity_type" "text", "_entity_ids" "uuid"[]) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1429,7 +1583,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] prevent_affiliate_pyramid_structure (schema.sql L10016-L10029)
+-- [RPC/FUNCTION] prevent_affiliate_pyramid_structure (schema.sql L10378-L10391)
 CREATE OR REPLACE FUNCTION "public"."prevent_affiliate_pyramid_structure"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1445,7 +1599,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] prevent_affiliate_self_referral (schema.sql L10039-L10071)
+-- [RPC/FUNCTION] prevent_affiliate_self_referral (schema.sql L10401-L10433)
 CREATE OR REPLACE FUNCTION "public"."prevent_affiliate_self_referral"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1480,7 +1634,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] purge_expired_operational_data (schema.sql L10260-L10290)
+-- [RPC/FUNCTION] purge_expired_operational_data (schema.sql L10622-L10652)
 CREATE OR REPLACE FUNCTION "public"."purge_expired_operational_data"() RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1513,7 +1667,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] raise_exception_json (schema.sql L10316-L10322)
+-- [RPC/FUNCTION] raise_exception_json (schema.sql L10678-L10684)
 CREATE OR REPLACE FUNCTION "public"."raise_exception_json"("_message" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE
     AS $$
@@ -1522,7 +1676,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] recalculate_affiliate_tier (schema.sql L10328-L10448)
+-- [RPC/FUNCTION] recalculate_affiliate_tier (schema.sql L10690-L10810)
 CREATE OR REPLACE FUNCTION "public"."recalculate_affiliate_tier"("_affiliate_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1645,7 +1799,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] request_account_recovery_status (schema.sql L10926-L11062)
+-- [RPC/FUNCTION] request_account_recovery_status (schema.sql L11288-L11424)
 CREATE OR REPLACE FUNCTION "public"."request_account_recovery_status"("_identifier" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -1784,7 +1938,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] respond_affiliate_invitation (schema.sql L11215-L11334)
+-- [RPC/FUNCTION] respond_affiliate_invitation (schema.sql L11577-L11696)
 CREATE OR REPLACE FUNCTION "public"."respond_affiliate_invitation"("_invitation_id" "uuid", "_response" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth', 'pg_temp'
@@ -1906,7 +2060,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] restore_entity_from_trash (schema.sql L11344-L11453)
+-- [RPC/FUNCTION] restore_entity_from_trash (schema.sql L11706-L11815)
 CREATE OR REPLACE FUNCTION "public"."restore_entity_from_trash"("_entity_type" "text", "_entity_ids" "uuid"[]) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2018,7 +2172,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] rpc_get_available_slots (schema.sql L11724-L11782)
+-- [RPC/FUNCTION] rpc_get_available_slots (schema.sql L12086-L12144)
 CREATE OR REPLACE FUNCTION "public"."rpc_get_available_slots"("_clinic_id" "uuid", "_provider_id" "uuid", "_date" "date") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -2079,7 +2233,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] set_updated_at (schema.sql L11960-L11967)
+-- [RPC/FUNCTION] set_updated_at (schema.sql L12322-L12329)
 CREATE OR REPLACE FUNCTION "public"."set_updated_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -2089,7 +2243,7 @@ begin
 end;
 $$;
 
--- [RPC/FUNCTION] slugify_text (schema.sql L12101-L12125)
+-- [RPC/FUNCTION] slugify_text (schema.sql L12463-L12487)
 CREATE OR REPLACE FUNCTION "public"."slugify_text"("_val" "text") RETURNS "text"
     LANGUAGE "plpgsql" IMMUTABLE
     AS $_$
@@ -2116,7 +2270,7 @@ begin
 end;
 $_$;
 
--- [RPC/FUNCTION] submit_document_signature_by_token (schema.sql L12197-L12278)
+-- [RPC/FUNCTION] submit_document_signature_by_token (schema.sql L12559-L12640)
 CREATE OR REPLACE FUNCTION "public"."submit_document_signature_by_token"("p_token" "text", "p_signer_name" "text", "p_signer_cpf" "text", "p_signature_image_url" "text", "p_metadata" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions', 'pg_temp'
@@ -2200,7 +2354,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] trg_affiliate_conversions_sync_tier (schema.sql L12917-L12955)
+-- [RPC/FUNCTION] trg_affiliate_conversions_sync_tier (schema.sql L13279-L13317)
 CREATE OR REPLACE FUNCTION "public"."trg_affiliate_conversions_sync_tier"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2241,7 +2395,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] trg_increment_row_version (schema.sql L12984-L12991)
+-- [RPC/FUNCTION] trg_increment_row_version (schema.sql L13346-L13353)
 CREATE OR REPLACE FUNCTION "public"."trg_increment_row_version"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -2251,7 +2405,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] update_updated_at_column (schema.sql L13992-L14000)
+-- [RPC/FUNCTION] update_updated_at_column (schema.sql L14354-L14362)
 CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -2262,7 +2416,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] validate_affiliate_unique_financial_data (schema.sql L14407-L14440)
+-- [RPC/FUNCTION] validate_affiliate_unique_financial_data (schema.sql L14769-L14802)
 CREATE OR REPLACE FUNCTION "public"."validate_affiliate_unique_financial_data"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -2298,7 +2452,7 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] verify_password_recovery_identity (schema.sql L14757-L14782)
+-- [RPC/FUNCTION] verify_password_recovery_identity (schema.sql L15119-L15144)
 CREATE OR REPLACE FUNCTION "public"."verify_password_recovery_identity"("_email" "text", "_cpf" "text") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'auth'
@@ -2326,7 +2480,7 @@ BEGIN
 END;
 $_$;
 
--- [TABLE] affiliate_commissions (schema.sql L14788-L14804)
+-- [TABLE] affiliate_commissions (schema.sql L15150-L15166)
 CREATE TABLE IF NOT EXISTS "public"."affiliate_commissions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "affiliate_id" "uuid" NOT NULL,
@@ -2345,7 +2499,7 @@ CREATE TABLE IF NOT EXISTS "public"."affiliate_commissions" (
     CONSTRAINT "affiliate_commissions_payment_status_check" CHECK (("payment_status" = ANY (ARRAY['pending'::"text", 'received'::"text", 'refunded'::"text"])))
 );
 
--- [TABLE] affiliate_conversions (schema.sql L14826-L14845)
+-- [TABLE] affiliate_conversions (schema.sql L15188-L15207)
 CREATE TABLE IF NOT EXISTS "public"."affiliate_conversions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "affiliate_id" "uuid" NOT NULL,
@@ -2367,7 +2521,7 @@ CREATE TABLE IF NOT EXISTS "public"."affiliate_conversions" (
     CONSTRAINT "affiliate_conversions_status_check" CHECK (("status" = ANY (ARRAY['trial'::"text", 'active'::"text", 'past_due'::"text", 'canceled'::"text"])))
 );
 
--- [TABLE] affiliate_crm_logs (schema.sql L14855-L14863)
+-- [TABLE] affiliate_crm_logs (schema.sql L15217-L15225)
 CREATE TABLE IF NOT EXISTS "public"."affiliate_crm_logs" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "affiliate_id" "uuid" NOT NULL,
@@ -2378,7 +2532,7 @@ CREATE TABLE IF NOT EXISTS "public"."affiliate_crm_logs" (
     CONSTRAINT "affiliate_crm_logs_action_type_check" CHECK (("action_type" = ANY (ARRAY['whatsapp_contact'::"text", 'note'::"text", 'status_change'::"text", 'churn_alert'::"text"])))
 );
 
--- [TABLE] affiliate_invitations (schema.sql L14873-L14889)
+-- [TABLE] affiliate_invitations (schema.sql L15235-L15251)
 CREATE TABLE IF NOT EXISTS "public"."affiliate_invitations" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -2397,7 +2551,7 @@ CREATE TABLE IF NOT EXISTS "public"."affiliate_invitations" (
     CONSTRAINT "affiliate_invitations_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'rejected'::"text", 'expired'::"text"])))
 );
 
--- [TABLE] affiliates (schema.sql L14911-L14947)
+-- [TABLE] affiliates (schema.sql L15273-L15309)
 CREATE TABLE IF NOT EXISTS "public"."affiliates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "user_id" "uuid",
@@ -2436,7 +2590,7 @@ CREATE TABLE IF NOT EXISTS "public"."affiliates" (
     CONSTRAINT "chk_affiliates_single_level_anti_pyramid" CHECK (("parent_affiliate_id" IS NULL))
 );
 
--- [TABLE] agenda_events (schema.sql L14969-L15052)
+-- [TABLE] agenda_events (schema.sql L15331-L15414)
 CREATE TABLE IF NOT EXISTS "public"."agenda_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -2522,7 +2676,7 @@ CASE
 END))
 );
 
--- [TABLE] global_word_candidates (schema.sql L15646-L15656)
+-- [TABLE] global_word_candidates (schema.sql L16008-L16018)
 CREATE TABLE IF NOT EXISTS "public"."global_word_candidates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "word" "text" NOT NULL,
@@ -2535,7 +2689,7 @@ CREATE TABLE IF NOT EXISTS "public"."global_word_candidates" (
     CONSTRAINT "global_word_candidates_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'promoted'::"text", 'rejected'::"text"])))
 );
 
--- [TABLE] security_events (schema.sql L16182-L16192)
+-- [TABLE] security_events (schema.sql L16663-L16673)
 CREATE TABLE IF NOT EXISTS "public"."security_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid",
@@ -2548,34 +2702,34 @@ CREATE TABLE IF NOT EXISTS "public"."security_events" (
     CONSTRAINT "security_events_visibility_scope_check" CHECK (("visibility_scope" = ANY (ARRAY['self'::"text", 'admin'::"text"])))
 );
 
--- [POLICY] Affiliates and admins insert crm logs ON affiliate_crm_logs (schema.sql L18973-L18975)
+-- [POLICY] Affiliates and admins insert crm logs ON affiliate_crm_logs (schema.sql L19558-L19560)
 CREATE POLICY "Affiliates and admins insert crm logs" ON "public"."affiliate_crm_logs" FOR INSERT TO "authenticated" WITH CHECK ((("affiliate_id" IN ( SELECT "a"."id"
    FROM "public"."affiliates" "a"
   WHERE ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Affiliates and admins read commissions ON affiliate_commissions (schema.sql L18979-L18981)
+-- [POLICY] Affiliates and admins read commissions ON affiliate_commissions (schema.sql L19564-L19566)
 CREATE POLICY "Affiliates and admins read commissions" ON "public"."affiliate_commissions" FOR SELECT TO "authenticated" USING ((("affiliate_id" IN ( SELECT "a"."id"
    FROM "public"."affiliates" "a"
   WHERE ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Affiliates and admins read conversions ON affiliate_conversions (schema.sql L18985-L18987)
+-- [POLICY] Affiliates and admins read conversions ON affiliate_conversions (schema.sql L19570-L19572)
 CREATE POLICY "Affiliates and admins read conversions" ON "public"."affiliate_conversions" FOR SELECT TO "authenticated" USING ((("affiliate_id" IN ( SELECT "a"."id"
    FROM "public"."affiliates" "a"
   WHERE ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Affiliates and admins read crm logs ON affiliate_crm_logs (schema.sql L18991-L18993)
+-- [POLICY] Affiliates and admins read crm logs ON affiliate_crm_logs (schema.sql L19576-L19578)
 CREATE POLICY "Affiliates and admins read crm logs" ON "public"."affiliate_crm_logs" FOR SELECT TO "authenticated" USING ((("affiliate_id" IN ( SELECT "a"."id"
    FROM "public"."affiliates" "a"
   WHERE ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Invited users and managers read affiliate invitations ON affiliate_invitations (schema.sql L19077-L19081)
+-- [POLICY] Invited users and managers read affiliate invitations ON affiliate_invitations (schema.sql L19662-L19666)
 CREATE POLICY "Invited users and managers read affiliate invitations" ON "public"."affiliate_invitations" FOR SELECT TO "authenticated" USING (((("invited_user_id" IS NOT NULL) AND ("invited_user_id" = ( SELECT "auth"."uid"() AS "uid"))) OR (("invited_email" IS NOT NULL) AND ("lower"("invited_email") = "lower"(COALESCE(("auth"."jwt"() ->> 'email'::"text"), ''::"text")))) OR (("clinic_id" IS NOT NULL) AND ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "affiliate_invitations"."clinic_id") AND ("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true) AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR ("cm"."operational_role" = ANY (ARRAY['owner'::"public"."operational_role_type", 'admin'::"public"."operational_role_type"])))))) OR (EXISTS ( SELECT 1
    FROM "public"."clinics" "c"
   WHERE (("c"."id" = "affiliate_invitations"."clinic_id") AND ("c"."account_owner_user_id" = ( SELECT "auth"."uid"() AS "uid"))))) OR "public"."current_user_can"('marketing.affiliates.manage'::"text", "clinic_id") OR "public"."current_user_can"('marketing.affiliates.view'::"text", "clinic_id"))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Managers and platform admins manage affiliate invitations ON affiliate_invitations (schema.sql L19085-L19093)
+-- [POLICY] Managers and platform admins manage affiliate invitations ON affiliate_invitations (schema.sql L19670-L19678)
 CREATE POLICY "Managers and platform admins manage affiliate invitations" ON "public"."affiliate_invitations" TO "authenticated" USING (((("clinic_id" IS NOT NULL) AND ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "affiliate_invitations"."clinic_id") AND ("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true) AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR ("cm"."operational_role" = ANY (ARRAY['owner'::"public"."operational_role_type", 'admin'::"public"."operational_role_type"])))))) OR (EXISTS ( SELECT 1
@@ -2586,60 +2740,60 @@ CREATE POLICY "Managers and platform admins manage affiliate invitations" ON "pu
    FROM "public"."clinics" "c"
   WHERE (("c"."id" = "affiliate_invitations"."clinic_id") AND ("c"."account_owner_user_id" = ( SELECT "auth"."uid"() AS "uid"))))) OR "public"."current_user_can"('marketing.affiliates.manage'::"text", "clinic_id"))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Membros autenticados podem consultar status de palavras globais ON global_word_candidates (schema.sql L19115-L19115)
+-- [POLICY] Membros autenticados podem consultar status de palavras globais ON global_word_candidates (schema.sql L19700-L19700)
 CREATE POLICY "Membros autenticados podem consultar status de palavras globais" ON "public"."global_word_candidates" FOR SELECT TO "authenticated" USING (true);
 
--- [POLICY] Platform admins manage affiliates ON affiliates (schema.sql L19145-L19145)
+-- [POLICY] Platform admins manage affiliates ON affiliates (schema.sql L19730-L19730)
 CREATE POLICY "Platform admins manage affiliates" ON "public"."affiliates" TO "authenticated" USING (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Platform admins manage commissions ON affiliate_commissions (schema.sql L19149-L19149)
+-- [POLICY] Platform admins manage commissions ON affiliate_commissions (schema.sql L19734-L19734)
 CREATE POLICY "Platform admins manage commissions" ON "public"."affiliate_commissions" TO "authenticated" USING (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Platform admins manage conversions ON affiliate_conversions (schema.sql L19153-L19153)
+-- [POLICY] Platform admins manage conversions ON affiliate_conversions (schema.sql L19738-L19738)
 CREATE POLICY "Platform admins manage conversions" ON "public"."affiliate_conversions" TO "authenticated" USING (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Platform admins manage crm logs ON affiliate_crm_logs (schema.sql L19157-L19157)
+-- [POLICY] Platform admins manage crm logs ON affiliate_crm_logs (schema.sql L19742-L19742)
 CREATE POLICY "Platform admins manage crm logs" ON "public"."affiliate_crm_logs" TO "authenticated" USING (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role"))) WITH CHECK (("public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Service role manages all affiliate invitations ON affiliate_invitations (schema.sql L19265-L19265)
+-- [POLICY] Service role manages all affiliate invitations ON affiliate_invitations (schema.sql L19876-L19876)
 CREATE POLICY "Service role manages all affiliate invitations" ON "public"."affiliate_invitations" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Service role manages all affiliates ON affiliates (schema.sql L19269-L19269)
+-- [POLICY] Service role manages all affiliates ON affiliates (schema.sql L19880-L19880)
 CREATE POLICY "Service role manages all affiliates" ON "public"."affiliates" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Service role manages all commissions ON affiliate_commissions (schema.sql L19273-L19273)
+-- [POLICY] Service role manages all commissions ON affiliate_commissions (schema.sql L19884-L19884)
 CREATE POLICY "Service role manages all commissions" ON "public"."affiliate_commissions" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Service role manages all conversions ON affiliate_conversions (schema.sql L19277-L19277)
+-- [POLICY] Service role manages all conversions ON affiliate_conversions (schema.sql L19888-L19888)
 CREATE POLICY "Service role manages all conversions" ON "public"."affiliate_conversions" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Service role manages all crm logs ON affiliate_crm_logs (schema.sql L19281-L19281)
+-- [POLICY] Service role manages all crm logs ON affiliate_crm_logs (schema.sql L19892-L19892)
 CREATE POLICY "Service role manages all crm logs" ON "public"."affiliate_crm_logs" TO "service_role" USING (true) WITH CHECK (true);
 
--- [POLICY] Super admins manage all agenda events ON agenda_events (schema.sql L19297-L19297)
+-- [POLICY] Super admins manage all agenda events ON agenda_events (schema.sql L19920-L19920)
 CREATE POLICY "Super admins manage all agenda events" ON "public"."agenda_events" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
--- [POLICY] Users can read affiliates if owner, clinic admin or platform ad ON affiliates (schema.sql L19365-L19369)
+-- [POLICY] Users can read affiliates if owner, clinic admin or platform ad ON affiliates (schema.sql L19988-L19992)
 CREATE POLICY "Users can read affiliates if owner, clinic admin or platform ad" ON "public"."affiliates" FOR SELECT TO "authenticated" USING ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) OR (("clinic_id" IS NOT NULL) AND ((EXISTS ( SELECT 1
    FROM "public"."clinic_memberships" "cm"
   WHERE (("cm"."clinic_id" = "affiliates"."clinic_id") AND ("cm"."user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND (("cm"."account_role" = 'account_owner'::"public"."account_role_type") OR ("cm"."operational_role" = ANY (ARRAY['owner'::"public"."operational_role_type", 'admin'::"public"."operational_role_type"])))))) OR (EXISTS ( SELECT 1
    FROM "public"."clinics" "c"
   WHERE (("c"."id" = "affiliates"."clinic_id") AND ("c"."account_owner_user_id" = ( SELECT "auth"."uid"() AS "uid"))))))) OR "public"."is_platform_admin"(( SELECT "auth"."uid"() AS "uid")) OR "public"."has_role"(( SELECT "auth"."uid"() AS "uid"), 'super_admin'::"public"."app_role")));
 
--- [POLICY] Users delete clinic agenda events ON agenda_events (schema.sql L19385-L19385)
+-- [POLICY] Users delete clinic agenda events ON agenda_events (schema.sql L20008-L20008)
 CREATE POLICY "Users delete clinic agenda events" ON "public"."agenda_events" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.delete_events'::"text", "clinic_id")));
 
--- [POLICY] Users read clinic agenda events ON agenda_events (schema.sql L19469-L19469)
+-- [POLICY] Users read clinic agenda events ON agenda_events (schema.sql L20092-L20092)
 CREATE POLICY "Users read clinic agenda events" ON "public"."agenda_events" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('agenda.read'::"text", "clinic_id")));
 
--- [POLICY] Users update clinic agenda events ON agenda_events (schema.sql L19576-L19576)
+-- [POLICY] Users update clinic agenda events ON agenda_events (schema.sql L20199-L20199)
 CREATE POLICY "Users update clinic agenda events" ON "public"."agenda_events" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id")));
 
--- [POLICY] Users write clinic agenda events ON agenda_events (schema.sql L19620-L19620)
+-- [POLICY] Users write clinic agenda events ON agenda_events (schema.sql L20243-L20243)
 CREATE POLICY "Users write clinic agenda events" ON "public"."agenda_events" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('agenda.write'::"text", "clinic_id")));
 
--- [POLICY] admins can read clinic security events ON security_events (schema.sql L19660-L19660)
+-- [POLICY] admins can read clinic security events ON security_events (schema.sql L20283-L20283)
 CREATE POLICY "admins can read clinic security events" ON "public"."security_events" FOR SELECT USING ((("visibility_scope" = 'admin'::"text") AND ("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())) AND "public"."current_user_can"('subaccounts.manage'::"text", "clinic_id")));
 
--- [POLICY] users can read own security events ON security_events (schema.sql L19942-L19942)
+-- [POLICY] users can read own security events ON security_events (schema.sql L20574-L20574)
 CREATE POLICY "users can read own security events" ON "public"."security_events" FOR SELECT USING ((("actor_user_id" = "auth"."uid"()) OR ("target_user_id" = "auth"."uid"())));
