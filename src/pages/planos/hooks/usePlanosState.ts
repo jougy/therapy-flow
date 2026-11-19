@@ -284,6 +284,10 @@ export function usePlanosState(): UsePlanosStateReturn {
           _plan_type: trialPlan,
         });
         if (rpcError) throw rpcError;
+        await supabase.rpc("set_clinic_subproduct_key", {
+          _clinic_id: existingClinicId,
+          _subproduct_key: "plurifisio",
+        });
         if (typeof refreshAuthState === "function") await refreshAuthState();
         if (typeof selectClinic === "function") {
           try { await selectClinic(existingClinicId); } catch (e) { console.warn("Auto-seleção:", e); }
@@ -345,6 +349,9 @@ export function usePlanosState(): UsePlanosStateReturn {
       planId === "prof_top" ||
       planId === "solo";
 
+    const targetSubproduct = planId === "enterprise" ? "plurihealth" : "plurifisio";
+    const subproductQuery = `&subproduct=${targetSubproduct}`;
+
     // 1. Se for plano Profissional Solo:
     // Pula qualquer etapa de registro de clínica e vai direto para a página de checkout Asaas
     if (isSoloPlan) {
@@ -369,7 +376,7 @@ export function usePlanosState(): UsePlanosStateReturn {
       }
 
       if (targetClinicId) {
-        navigate(`/pagamento/${targetClinicId}?plan=${planId}&cycle=${checkoutCycle}${couponQuery}`);
+        navigate(`/pagamento/${targetClinicId}?plan=${planId}&cycle=${checkoutCycle}${subproductQuery}${couponQuery}`);
         return;
       }
     }
@@ -382,20 +389,20 @@ export function usePlanosState(): UsePlanosStateReturn {
       const spacesQuery = "&spaces=30";
 
       if (existingClinicId) {
-        navigate(`/onboarding-clinica?mode=upgrade&clinicId=${existingClinicId}&plan=${planId}&cycle=${selectedCycle}${seatsQuery}${couponQuery}`);
+        navigate(`/onboarding-clinica?mode=upgrade&clinicId=${existingClinicId}&plan=${planId}&cycle=${selectedCycle}${seatsQuery}${subproductQuery}${couponQuery}`);
         return;
       }
 
-      navigate(`/onboarding-clinica?plan=${planId}&cycle=${selectedCycle}${seatsQuery}${spacesQuery}${couponQuery}`);
+      navigate(`/onboarding-clinica?plan=${planId}&cycle=${selectedCycle}${seatsQuery}${spacesQuery}${subproductQuery}${couponQuery}`);
       return;
     }
 
     if (existingClinicId) {
-      navigate(`/pagamento/${existingClinicId}?plan=${planId}&cycle=${selectedCycle}${couponQuery}`);
+      navigate(`/pagamento/${existingClinicId}?plan=${planId}&cycle=${selectedCycle}${subproductQuery}${couponQuery}`);
       return;
     }
 
-    navigate(`/pagamento/solo?plan=${planId}&cycle=${selectedCycle}${couponQuery}`);
+    navigate(`/pagamento/solo?plan=${planId}&cycle=${selectedCycle}${subproductQuery}${couponQuery}`);
   }, [activatingTrial, isFreeCycle, existingClinicId, user?.id, extraConcurrent, appliedCoupon, selectedCycle, navigate, refreshAuthState, selectClinic]);
 
   return {

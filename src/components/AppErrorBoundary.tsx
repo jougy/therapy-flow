@@ -3,6 +3,7 @@ import { AlertTriangle, Copy, Info, RotateCcw, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logRuntimeError } from "@/lib/runtime-debug";
 import { isChunkLoadError, reloadForNewVersion } from "@/lib/chunk-reload";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 
 type AppErrorBoundaryProps = {
   children: ReactNode;
@@ -116,7 +117,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-600">
               {isChunkLoadError(this.state.errorMessage)
-                ? "Uma nova versão do Pluri Health foi publicada. Recarregue a página para continuar utilizando normalmente."
+                ? `Uma nova versão do ${getActiveBrand().name} foi publicada. Recarregue a página para continuar utilizando normalmente.`
                 : "O erro foi registrado no console do navegador com detalhes para depuração. Você pode recarregar a aplicação para tentar novamente."}
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-2">

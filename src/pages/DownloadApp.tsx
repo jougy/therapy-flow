@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePWAInstall, type DetectedOS } from "@/hooks/usePWAInstall";
+import { useActiveBrand } from "@/hooks/useActiveBrand";
 import { toast } from "@/hooks/use-toast";
 import {
   DOWNLOAD_FILENAMES,
@@ -24,6 +25,7 @@ import {
 
 export default function DownloadApp() {
   const navigate = useNavigate();
+  const brand = useActiveBrand();
   const { os, isInstallable, isInstalled, isApp, promptInstall } = usePWAInstall();
   const downloadUrls = useDownloadUrls();
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
@@ -41,7 +43,7 @@ export default function DownloadApp() {
       if (installed) {
         toast({
           title: "Aplicativo instalado com sucesso!",
-          description: "O ícone do Pluri Health já está disponível no seu dispositivo.",
+          description: `O ícone do ${brand.name} já está disponível no seu dispositivo.`,
         });
       }
       return;
@@ -90,11 +92,11 @@ export default function DownloadApp() {
             <div className="flex items-center gap-2 min-w-0">
               <img
                 src="/branding/logo/pluri_health_icon_gradient.svg"
-                alt="Pluri Health"
+                alt={brand.name}
                 className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 object-contain drop-shadow-xs"
               />
               <span className="text-sm sm:text-base font-bold tracking-tight text-foreground truncate">
-                Pluri Health
+                {brand.name}
               </span>
             </div>
           </div>
@@ -127,7 +129,7 @@ export default function DownloadApp() {
             Baixar Aplicativo Oficial
           </Badge>
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-foreground">
-            Use o Pluri Health como aplicativo no seu computador ou celular
+            Use o {brand.name} como aplicativo no seu computador ou celular
           </h1>
           <p className="mt-3 text-sm sm:text-base text-muted-foreground leading-relaxed">
             Tenha um atalho direto na sua tela para abrir seus atendimentos e prontuários rapidamente, sem precisar digitar o endereço no navegador toda vez.
@@ -263,7 +265,7 @@ export default function DownloadApp() {
             <div className="p-4 rounded-xl border bg-card/40">
               <div className="text-xs font-bold text-foreground">Preciso pagar para instalar?</div>
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                Não, o aplicativo é totalmente gratuito para todos os usuários cadastrados no Pluri Health.
+                Não, o aplicativo é totalmente gratuito para todos os usuários cadastrados no {brand.name}.
               </p>
             </div>
           </div>
@@ -273,7 +275,7 @@ export default function DownloadApp() {
       {/* Rodapé Simples */}
       <footer className="border-t bg-muted/20 py-6 text-center text-xs text-muted-foreground mt-10">
         <div className="container mx-auto px-4">
-          <p>© {new Date().getFullYear()} Pluri Health. Todos os direitos reservados.</p>
+          <p>© {new Date().getFullYear()} {brand.name}. Todos os direitos reservados.</p>
         </div>
       </footer>
     </div>

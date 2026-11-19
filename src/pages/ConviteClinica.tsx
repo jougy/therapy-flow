@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
 import { useAuth } from "@/hooks/useAuth";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import type { Session } from "@supabase/supabase-js";
 import {
   asInviteSummary,
@@ -364,7 +365,7 @@ const ConviteClinica = () => {
       if (isAlreadyRegistered) {
         toast({
           title: "Conta já cadastrada",
-          description: "Você já possui uma conta no Pluri Health. Basta digitar sua senha para ativar seu acesso à clínica.",
+          description: `Você já possui uma conta no ${getActiveBrand().name}. Basta digitar sua senha para ativar seu acesso à clínica.`,
         });
         setMode("login");
         setSubmitting(false);
@@ -389,7 +390,7 @@ const ConviteClinica = () => {
           if (rpcError) {
             const rpcMsg = rpcError.message?.toLowerCase() || "";
             if (rpcMsg.includes("cpf já está cadastrado") || rpcError.code === "23505") {
-              throw new Error("Este CPF já está cadastrado em outra conta no Pluri Health. Verifique os dados informados.");
+              throw new Error(`Este CPF já está cadastrado em outra conta no ${getActiveBrand().name}. Verifique os dados informados.`);
             }
             console.warn("[ConviteClinica] Aviso não-bloqueante no handle_personal_signup:", rpcError);
           }
@@ -457,9 +458,9 @@ const ConviteClinica = () => {
   return (
     <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_40%),linear-gradient(180deg,#f8fbff_0%,#eef8f7_100%)] px-4 py-10 flex items-center justify-center">
       <motion.div
-        initial={{ opacity: 0, y: 14 }}
+        initial={false}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
+        transition={{ duration: 0.2 }}
         className="mx-auto w-full max-w-xl space-y-6"
       >
         <ConviteBrandingHeader clinicName={invite.clinic_name} />

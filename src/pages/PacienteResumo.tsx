@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import {
   AlertCircle,
   ArrowLeft,
@@ -146,7 +147,7 @@ const PacienteResumo = () => {
         clinicalProfile: parsedClinicalProfile,
         emergencyContact: parsedEmergencyContact,
         snapshots: clinicalSnapshots,
-        clinicName: clinic?.name || "Clínica Pluri-Health",
+        clinicName: clinic?.name || `Clínica ${getActiveBrand().name}`,
         exportedBy: profile?.full_name || profile?.social_name || user?.email || "Profissional autorizado",
       });
 

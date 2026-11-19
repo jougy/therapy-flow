@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useActiveBrand } from "@/hooks/useActiveBrand";
 import { DOWNLOAD_FILENAMES, type DownloadAssetKey } from "./downloadSources";
 
 interface PlatformInstallTabsProps {
@@ -26,6 +27,7 @@ export function PlatformInstallTabs({
   downloadUrls,
   onBrowserInstall,
 }: PlatformInstallTabsProps) {
+  const brand = useActiveBrand();
   return (
     <Tabs value={selectedTab} onValueChange={onSelectedTabChange} className="w-full">
       <TabsList className="grid grid-cols-5 gap-2 w-full max-w-xl mx-auto h-auto p-1.5 bg-muted/70 rounded-xl">
@@ -88,7 +90,7 @@ export function PlatformInstallTabs({
                     Opção 1: Baixar Instalador Oficial (.exe)
                   </div>
                   <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                    Baixa o executável oficial para instalar e fixar o ícone do Pluri Health na sua Área de Trabalho e Menu Iniciar.
+                    Baixa o executável oficial para instalar e fixar o ícone do {brand.name} na sua Área de Trabalho e Menu Iniciar.
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 mt-4">

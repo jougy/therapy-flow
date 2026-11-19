@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import {
   Baby,
   CheckCircle2,
@@ -196,7 +197,7 @@ export const AutorizacaoMenorPublica: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-muted/30 to-background flex flex-col justify-between p-4 sm:p-6 lg:p-8">
-      <div className="max-w-2xl mx-auto w-full space-y-6">
+      <main className="max-w-2xl mx-auto w-full space-y-6">
         {/* Cabeçalho da Página */}
         <div className="text-center space-y-2 pt-4">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider">
@@ -246,7 +247,7 @@ export const AutorizacaoMenorPublica: React.FC = () => {
                 type="button"
                 onClick={handleUnlock}
                 disabled={!canUnlock || unlocking}
-                className="w-full font-semibold shadow-sm gap-2"
+                className="w-full min-h-[44px] font-semibold shadow-sm gap-2"
               >
                 {unlocking ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -456,10 +457,10 @@ export const AutorizacaoMenorPublica: React.FC = () => {
             </Card>
           </div>
         )}
-      </div>
+      </main>
 
       <footer className="text-center text-[11px] text-muted-foreground py-4 border-t mt-8">
-        Pluri-Health • Plataforma de Gestão Clínica Segura em conformidade com a LGPD e Conselhos de Classe.
+        {getActiveBrand().name} • Plataforma de Gestão Clínica Segura em conformidade com a LGPD e Conselhos de Classe.
       </footer>
     </div>
   );

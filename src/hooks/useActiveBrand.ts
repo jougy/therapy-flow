@@ -1,5 +1,12 @@
-import { useMemo } from "react";
-import { resolveCurrentSubproduct, type SubproductConfig, type SubproductKey } from "@/lib/subproduct-config";
+import { useMemo, useSyncExternalStore } from "react";
+import {
+  getRuntimeClinicSubproduct,
+  resolveCurrentSubproduct,
+  subscribeRuntimeClinicSubproduct,
+  type SubproductConfig,
+  type SubproductKey,
+  type SubproductRailConfig,
+} from "@/lib/subproduct-config";
 
 export interface BrandConfig {
   key: SubproductKey;
@@ -11,13 +18,13 @@ export interface BrandConfig {
   brandSuffix: string; // "Health", "Fisio", "Psy", "Nutri", "Natu"
   isFisio: boolean;
   isHealth: boolean;
+  isFullPlatform: boolean;
+  rail: SubproductRailConfig;
+  isProfessionAllowed: (profession: string) => boolean;
+  isScopeAllowed: (scope: string) => boolean;
 }
 
-/**
- * Retorna os dados da marca ativa computados a partir do subproduto do domínio.
- */
-export function getActiveBrand(): BrandConfig {
-  const subproduct: SubproductConfig = resolveCurrentSubproduct();
+function buildBrandConfig(subproduct: SubproductConfig): BrandConfig {
   const isFisio = subproduct.key === "plurifisio";
   const isHealth = subproduct.key === "plurihealth";
 
@@ -37,20 +44,37 @@ export function getActiveBrand(): BrandConfig {
     brandSuffix,
     isFisio,
     isHealth,
+    isFullPlatform: subproduct.rail.isFullPlatform,
+    rail: subproduct.rail,
+    isProfessionAllowed: (profession: string) => {
+      if (subproduct.rail.isFullPlatform || subproduct.rail.allowedProfessions.length === 0) return true;
+      return subproduct.rail.allowedProfessions.includes(profession.toLowerCase());
+    },
+    isScopeAllowed: (scope: string) => {
+      if (subproduct.rail.isFullPlatform || subproduct.rail.anamnesisScopes.length === 0) return true;
+      return subproduct.rail.anamnesisScopes.includes(scope.toLowerCase());
+    },
   };
 }
 
 /**
- * Inicializa a marca ativa no documento (document.title, meta tags).
+ * Retorna os dados da marca ativa computados a partir do subproduto do domínio e da clínica ativa.
  */
-export function initializeDocumentBrand(): BrandConfig {
-  const brand = getActiveBrand();
+export function getActiveBrand(clinicSubproductKey?: string | null): BrandConfig {
+  const subproduct = resolveCurrentSubproduct(clinicSubproductKey);
+  return buildBrandConfig(subproduct);
+}
+
+/**
+ * Inicializa/atualiza a marca ativa no documento (document.title).
+ */
+export function initializeDocumentBrand(clinicSubproductKey?: string | null): BrandConfig {
+  const brand = getActiveBrand(clinicSubproductKey);
   if (typeof document !== "undefined") {
-    // Alinha título inicial antes de qualquer render
     if (!document.title || document.title.includes("Pluri Health") || document.title.includes("Pluri Fisio")) {
       document.title = brand.isFisio
         ? "Pluri Fisio — Software de Gestão e Prontuário para Fisioterapia"
-        : "Pluri Health — Sistema de Gestão para Clínicas e Equipes de Saúde";
+        : `${brand.name} — ${brand.tagline}`;
     }
   }
   return brand;
@@ -58,7 +82,13 @@ export function initializeDocumentBrand(): BrandConfig {
 
 /**
  * Hook reativo para uso em componentes React.
+ * Reage automaticamente quando a clínica logada altera o subproduto ativo.
  */
 export function useActiveBrand(): BrandConfig {
-  return useMemo(() => getActiveBrand(), []);
+  const runtimeClinicKey = useSyncExternalStore(
+    subscribeRuntimeClinicSubproduct,
+    getRuntimeClinicSubproduct,
+    () => null,
+  );
+  return useMemo(() => getActiveBrand(runtimeClinicKey), [runtimeClinicKey]);
 }

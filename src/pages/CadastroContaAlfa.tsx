@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -488,9 +489,9 @@ const CadastroContaAlfa = () => {
   return (
     <main className="min-h-screen overflow-x-hidden bg-background px-4 py-8 pb-16">
       <motion.div
-        initial={{ opacity: 0, y: 14 }}
+        initial={false}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
+        transition={{ duration: 0.2 }}
         className="mx-auto w-full max-w-2xl"
       >
         <Button
@@ -505,13 +506,16 @@ const CadastroContaAlfa = () => {
         </Button>
 
         <div className="mb-6 flex items-center gap-3">
-          <img
+            <img
             src="/branding/logo/pluri_health_icon_gradient.svg"
-            alt="Pluri-Health"
+            alt={getActiveBrand().name}
+            width={40}
+            height={40}
+            fetchPriority="high"
             className="h-10 w-10 shrink-0 drop-shadow-sm"
           />
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pluri-Health</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{getActiveBrand().name}</p>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Criar conta</h1>
           </div>
         </div>

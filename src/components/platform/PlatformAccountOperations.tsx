@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PlanAndVerticalSelector } from "./PlanAndVerticalSelector";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { PlatformOperationPendingChanges } from "./PlatformOperationPendingChanges";
@@ -28,7 +29,7 @@ import {
   getErrorMessage,
   getPlanDefaultLimits,
   planLabels,
-  planOptionGroups,
+  subproductLabels,
 } from "./platform-api";
 
 export interface PlatformAccountOperationsProps {
@@ -42,6 +43,7 @@ export interface PlatformAccountOperationsProps {
   availableMemberships?: Array<{ clinic_id?: string; clinic_name?: string; operational_role?: string; account_role?: string }>;
   onDone: () => void;
   subaccountLimit?: string;
+  subproductKey?: string;
   subscriptionPlan?: string;
   subscriptionData?: PlatformSubscriptionData | null;
   title: string;
@@ -58,6 +60,7 @@ export const PlatformAccountOperations = ({
   availableMemberships = [],
   onDone,
   subaccountLimit = "4",
+  subproductKey: initialSubproductKey = "plurihealth",
   subscriptionPlan: initialSubscriptionPlan = "clinica_medio",
   subscriptionData,
   title,
@@ -76,6 +79,7 @@ export const PlatformAccountOperations = ({
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>(
     subscriptionData?.status ?? "ACTIVE"
   );
+  const [selectedSubproductKey, setSelectedSubproductKey] = useState<string>(initialSubproductKey);
   const [showPassword, setShowPassword] = useState(false);
   const [forcePasswordReset, setForcePasswordReset] = useState(true);
 
@@ -84,6 +88,12 @@ export const PlatformAccountOperations = ({
       setSubscriptionPlan(initialSubscriptionPlan);
     }
   }, [initialSubscriptionPlan]);
+
+  useEffect(() => {
+    if (initialSubproductKey) {
+      setSelectedSubproductKey(initialSubproductKey);
+    }
+  }, [initialSubproductKey]);
 
   useEffect(() => {
     if (subscriptionData) {
@@ -139,6 +149,9 @@ export const PlatformAccountOperations = ({
       if (subscriptionPlan !== currentPlan) {
         changes.push(`Tipo de plano: ${planLabels[currentPlan] || currentPlan} ➔ ${planLabels[subscriptionPlan] || subscriptionPlan}`);
       }
+      if (selectedSubproductKey !== initialSubproductKey) {
+        changes.push(`Frente / Vertical: ${subproductLabels[initialSubproductKey] || initialSubproductKey} ➔ ${subproductLabels[selectedSubproductKey] || selectedSubproductKey}`);
+      }
       const initialCourtesy = subscriptionData?.is_courtesy === true || subscriptionData?.status === "COURTESY";
       if (isCourtesy !== initialCourtesy) {
         changes.push(`Cortesia Parceira: ${initialCourtesy ? "Ativada" : "Desativada"} ➔ ${isCourtesy ? "Ativada" : "Desativada"}`);
@@ -183,6 +196,9 @@ export const PlatformAccountOperations = ({
       const currentPlan = initialSubscriptionPlan ?? "clinic";
       if (subscriptionPlan !== currentPlan) {
         suggestions.push(subscriptionPlan === "clinic" ? "Upgrade para Plano com Equipe" : "Downgrade para Plano Solo");
+      }
+      if (selectedSubproductKey !== initialSubproductKey) {
+        suggestions.push(`Alteração de frente para ${subproductLabels[selectedSubproductKey] || selectedSubproductKey}`);
       }
       const initialCourtesy = subscriptionData?.is_courtesy === true || subscriptionData?.status === "COURTESY";
       if (isCourtesy !== initialCourtesy) {
@@ -294,6 +310,7 @@ export const PlatformAccountOperations = ({
         isCourtesy,
         status: form.status,
         subaccountLimit: form.subaccountLimit,
+        subproductKey: selectedSubproductKey,
         subscriptionPlan,
         subscriptionStatus: isCourtesy ? "COURTESY" : subscriptionStatus,
       };
@@ -557,29 +574,12 @@ export const PlatformAccountOperations = ({
           </div>
         )}
         {operation === "update_clinic_access" && (
-          <div className="space-y-1">
-            <Label>Tipo de plano</Label>
-            <Select
-              value={subscriptionPlan}
-              onValueChange={handlePlanChange}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {planOptionGroups.map((group) => (
-                  <SelectGroup key={group.label}>
-                    <SelectLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      {group.label}
-                    </SelectLabel>
-                    {group.options.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <PlanAndVerticalSelector
+            planValue={subscriptionPlan}
+            onPlanChange={handlePlanChange}
+            subproductValue={selectedSubproductKey}
+            onSubproductChange={setSelectedSubproductKey}
+          />
         )}
         {(operation === "create_subaccount" || operation === "create_simple_user" || operation === "assign_user_to_clinic" || operation === "update_membership_role" || operation.startsWith("update_") || operation === "create_patient") && operation !== "update_owner_access" && (
           <div className="space-y-1">

@@ -15,6 +15,7 @@ import PersonalNotificationsButton from "@/components/PersonalNotificationsButto
 import ProfileAccountButton from "@/components/ProfileAccountButton";
 import { TutorialTriggerButton } from "@/components/tutorial/TutorialTriggerButton";
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
+import { useActiveBrand } from "@/hooks/useActiveBrand";
 
 export interface PersonalHeaderProps {
   isPortfolioEnabled: boolean;
@@ -37,17 +38,18 @@ export function PersonalHeader({
   onOpenProfile,
   onSignOut,
 }: PersonalHeaderProps) {
+  const brand = useActiveBrand();
   return (
     <header className="border-b bg-card px-4 py-4 sm:px-6">
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
         <div data-tutorial="personal-welcome" className="flex items-center gap-2 sm:gap-3 min-w-0">
           <img
             src="/branding/logo/pluri_health_icon_gradient.svg"
-            alt="Pluri-Health"
+            alt={brand.name}
             className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 drop-shadow-xs"
           />
           <div className="min-w-0">
-            <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">Pluri-Health</p>
+            <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">{brand.name}</p>
             <h1 className="text-base sm:text-xl font-semibold tracking-tight text-foreground whitespace-nowrap">Espaço pessoal</h1>
           </div>
           <div className="hidden xs:block">

@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Loader2, Lock, LogIn, Mail, MailCheck, Send, ShieldCheck } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,10 +7,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { buildPublicAppUrl } from "@/lib/public-app-url";
-import { ConfirmationAnimationFlow } from "@/components/ui/clay-confirmation-art";
 import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
 import { useAuth } from "@/hooks/useAuth";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
+
+const ConfirmationAnimationFlow = lazy(() =>
+  import("@/components/ui/clay-confirmation-art").then((mod) => ({
+    default: mod.ConfirmationAnimationFlow,
+  }))
+);
 
 type ConfirmationState = "waiting_resend" | "checking" | "animating_success" | "expired" | "error";
 
@@ -48,6 +53,53 @@ const readAuthParam = (name: string, locationSearch = "", locationHash = "") => 
   return searchParams.get(name) ?? hashParams.get(name);
 };
 
+const resolveInitialConfirmationState = (
+  search: string,
+  hash: string
+): {
+  state: ConfirmationState;
+  message: string;
+  errorDescription: string;
+} => {
+  const errorDescription =
+    readAuthParam("error_description", search, hash) ??
+    readAuthParam("error", search, hash) ??
+    "";
+
+  if (errorDescription) {
+    let decoded = errorDescription;
+    try {
+      decoded = decodeURIComponent(errorDescription);
+    } catch {
+      decoded = errorDescription;
+    }
+    return {
+      state: /expired|invalid|otp|token/i.test(decoded) ? "expired" : "error",
+      message: decoded,
+      errorDescription,
+    };
+  }
+
+  const code = readAuthParam("code", search, hash);
+  const accessToken = readAuthParam("access_token", search, hash);
+  const aguardando = readAuthParam("aguardando", search, hash);
+  const type = readAuthParam("type", search, hash);
+
+  if (code || accessToken || (type && aguardando !== "true")) {
+    return {
+      state: "checking",
+      message: "Estamos validando o link de confirmação.",
+      errorDescription: "",
+    };
+  }
+
+  return {
+    state: "waiting_resend",
+    message: "Aguardando confirmação do seu e-mail.",
+    errorDescription: "",
+  };
+};
+
 const ContaConfirmada = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -65,15 +117,16 @@ const ContaConfirmada = () => {
     }
   }, [emailInput, queryEmail, user?.email]);
 
-  const [state, setState] = useState<ConfirmationState>("checking");
-  const [animationPhase, setAnimationPhase] = useState<"confirmed" | "transforming" | "ready">("confirmed");
-  const [message, setMessage] = useState("Estamos validando o link de confirmação.");
-  const redirectTimeoutRef = useRef<number | null>(null);
-
-  const errorDescription = useMemo(
-    () => readAuthParam("error_description", location.search, location.hash) ?? readAuthParam("error", location.search, location.hash) ?? "",
+  const initialConfirmation = useMemo(
+    () => resolveInitialConfirmationState(location.search, location.hash),
     [location.search, location.hash]
   );
+  const errorDescription = initialConfirmation.errorDescription;
+
+  const [state, setState] = useState<ConfirmationState>(initialConfirmation.state);
+  const [animationPhase, setAnimationPhase] = useState<"confirmed" | "transforming" | "ready">("confirmed");
+  const [message, setMessage] = useState(initialConfirmation.message);
+  const redirectTimeoutRef = useRef<number | null>(null);
 
   // Cooldown countdown timer sincronizado com sessionStorage
   useEffect(() => {
@@ -240,38 +293,25 @@ const ContaConfirmada = () => {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_38%),linear-gradient(180deg,#f8fbff_0%,#eef8f7_100%)] px-4 py-8 text-foreground flex items-center justify-center">
-      {/* Liquid fluid decorative background circles */}
-      <motion.div
-        animate={{
-          scale: [1, 1.15, 1],
-          x: [0, 20, 0],
-          y: [0, -20, 0],
-        }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+      {/* Decorative background circles (CSS estático para zero impacto no TBT mobile) */}
+      <div
+        aria-hidden="true"
         className="pointer-events-none absolute -top-24 -left-24 h-96 w-96 rounded-full bg-emerald-300/20 blur-3xl"
       />
-      <motion.div
-        animate={{
-          scale: [1, 1.2, 1],
-          x: [0, -25, 0],
-          y: [0, 25, 0],
-        }}
-        transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
+      <div
+        aria-hidden="true"
         className="pointer-events-none absolute -bottom-24 -right-24 h-96 w-96 rounded-full bg-sky-300/25 blur-3xl"
       />
 
-      <motion.div
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="relative z-10 mx-auto w-full max-w-lg"
-      >
+      <div className="relative z-10 mx-auto w-full max-w-lg">
         <Card className="w-full overflow-hidden border-sky-100/80 bg-card/95 shadow-2xl shadow-sky-950/10 backdrop-blur-xl transition-all duration-500">
           <div className="h-1.5 bg-gradient-to-r from-sky-500 via-cyan-400 to-emerald-400" />
           
           <CardHeader className="space-y-4 text-center pb-4">
             {isAnimating ? (
-              <ConfirmationAnimationFlow phase={animationPhase} />
+              <Suspense fallback={<div className="mx-auto h-16 w-16 rounded-2xl bg-emerald-50" />}>
+                <ConfirmationAnimationFlow phase={animationPhase} />
+              </Suspense>
             ) : (
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 ring-1 ring-sky-100 shadow-sm">
                 {isChecking ? (
@@ -287,8 +327,8 @@ const ContaConfirmada = () => {
             )}
 
             <div>
-              <p className="text-sm font-semibold tracking-wide text-sky-700">Pluri-Health</p>
-              <CardTitle className="mt-1 text-2xl font-bold tracking-tight">
+              <p className="text-sm font-semibold tracking-wide text-sky-700">{getActiveBrand().name}</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight leading-none">
                 {isChecking
                   ? "Confirmando sua conta"
                   : isAnimating
@@ -300,7 +340,7 @@ const ContaConfirmada = () => {
                       : isExpired
                         ? "Link Expirado"
                         : "Não foi possível confirmar"}
-              </CardTitle>
+              </h1>
               <CardDescription className="mt-2 text-base transition-all duration-300">
                 {message}
               </CardDescription>
@@ -309,18 +349,14 @@ const ContaConfirmada = () => {
 
           <CardContent className="space-y-5 text-center">
             {isAnimating && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="rounded-2xl border border-emerald-200/80 bg-emerald-50/80 p-4 text-sm text-emerald-950 backdrop-blur-sm shadow-inner"
-              >
+              <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/80 p-4 text-sm text-emerald-950 backdrop-blur-sm shadow-inner">
                 <p className="font-semibold">Tudo pronto para seu atendimento!</p>
                 <p className="mt-1 text-xs text-emerald-800">
                   {animationPhase === "confirmed"
                     ? "Validando suas credenciais com segurança..."
                     : "Carregando clínicas e espaço de trabalho..."}
                 </p>
-              </motion.div>
+              </div>
             )}
 
             {(isWaitingResend || isExpired || isError) && (
@@ -370,7 +406,7 @@ const ContaConfirmada = () => {
                 <Button
                   onClick={() => void handleResendConfirmation()}
                   disabled={cooldown > 0 || isResending || !emailInput}
-                  className="w-full gap-2 shadow-md shadow-sky-500/10"
+                  className="w-full min-h-[44px] gap-2 shadow-md shadow-sky-500/10"
                 >
                   {isResending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -385,13 +421,13 @@ const ContaConfirmada = () => {
             <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-center">
               {!isAnimating && (
                 <>
-                  <Button variant="outline" asChild className="gap-2">
+                  <Button variant="outline" asChild className="gap-2 min-h-[44px]">
                     <Link to="/auth">
-                      <LogIn className="h-4 w-4" />
+                      <LogIn className="h-4 w-4" aria-hidden="true" />
                       Ir para o login
                     </Link>
                   </Button>
-                  <Button variant="ghost" asChild>
+                  <Button variant="ghost" asChild className="min-h-[44px]">
                     <Link to="/auth/cadastro">Criar outra conta</Link>
                   </Button>
                 </>
@@ -399,7 +435,7 @@ const ContaConfirmada = () => {
             </div>
           </CardContent>
         </Card>
-      </motion.div>
+      </div>
     </main>
   );
 };

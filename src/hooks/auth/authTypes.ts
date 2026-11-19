@@ -51,6 +51,7 @@ export type ClinicSummary = Pick<
   | "subaccount_limit"
   | "subscription_plan"
 > & {
+  subproduct_key?: string | null;
   subscription_status?: string | null;
   trial_ends_at?: string | null;
 };

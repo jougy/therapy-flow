@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -86,7 +87,7 @@ export const GenerateDocumentModal: React.FC<GenerateDocumentModalProps> = ({
     initialTemplateId,
   });
 
-  const effectiveClinicDisplayName = clinicName || authClinic?.name || "Clínica Pluri Health";
+  const effectiveClinicDisplayName = clinicName || authClinic?.name || `Clínica ${getActiveBrand().name}`;
   const patientDisplayName = patient?.name || patient?.full_name || "Paciente";
 
   const defaultKnownValues = useMemo<Record<string, string>>(() => {
