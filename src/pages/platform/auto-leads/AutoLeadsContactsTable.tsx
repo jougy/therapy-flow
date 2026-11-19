@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Bot,
@@ -28,6 +28,9 @@ import {
   AUTO_LEAD_STAGE_META,
   WHATSAPP_BOT_PHONE,
   type AutoLeadAffiliateSummary,
+  type AutoLeadFilterState,
+  type AutoLeadSortField,
+  type AutoLeadSortState,
   type AutoLeadStage,
   type PlatformAutoLead,
 } from "./types";
@@ -37,11 +40,14 @@ import {
   formatLeadScheduledLabel,
   getLeadScoreColor,
 } from "./AutoLeadMobileCard";
+import { AutoLeadsTableHeader } from "./AutoLeadsTableHeader";
 
 interface AutoLeadsContactsTableProps {
   leads: PlatformAutoLead[];
   affiliates: AutoLeadAffiliateSummary[];
   selectedIds: string[];
+  filters?: AutoLeadFilterState;
+  onFilterChange?: (updater: (prev: AutoLeadFilterState) => AutoLeadFilterState) => void;
   onToggleSelect: (leadId: string) => void;
   onToggleSelectAll: () => void;
   onStageChange: (leadId: string, stage: AutoLeadStage) => void;
@@ -54,6 +60,8 @@ export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
   leads,
   affiliates,
   selectedIds,
+  filters,
+  onFilterChange,
   onToggleSelect,
   onToggleSelectAll,
   onStageChange,
@@ -61,7 +69,92 @@ export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
   onOpenSchedule,
   onOpenDetail,
 }) => {
-  const allSelected = leads.length > 0 && selectedIds.length === leads.length;
+  const [sortState, setSortState] = useState<AutoLeadSortState>({
+    field: "score",
+    direction: "desc",
+  });
+
+  const handleSort = (field: AutoLeadSortField) => {
+    setSortState((prev) => {
+      if (prev.field === field) {
+        return {
+          field,
+          direction: prev.direction === "asc" ? "desc" : "asc",
+        };
+      }
+      return {
+        field,
+        direction: field === "score" || field === "selected" ? "desc" : "asc",
+      };
+    });
+  };
+
+  const sortedLeads = useMemo(() => {
+    const sorted = [...leads];
+    const { field, direction } = sortState;
+    const factor = direction === "asc" ? 1 : -1;
+
+    sorted.sort((a, b) => {
+      switch (field) {
+        case "selected": {
+          const aSel = selectedIds.includes(a.id) ? 1 : 0;
+          const bSel = selectedIds.includes(b.id) ? 1 : 0;
+          return (aSel - bSel) * factor;
+        }
+        case "name": {
+          const nameA = (a.full_name || "").toLowerCase();
+          const nameB = (b.full_name || "").toLowerCase();
+          return nameA.localeCompare(nameB) * factor;
+        }
+        case "origin": {
+          const origA = (a.facebook_group_name || a.source_platform || "").toLowerCase();
+          const origB = (b.facebook_group_name || b.source_platform || "").toLowerCase();
+          return origA.localeCompare(origB) * factor;
+        }
+        case "score": {
+          return (a.ai_score - b.ai_score) * factor;
+        }
+        case "agenda": {
+          const dateA = a.meeting_scheduled_at
+            ? new Date(a.meeting_scheduled_at).getTime()
+            : a.last_scheduling_attempt_at
+              ? new Date(a.last_scheduling_attempt_at).getTime()
+              : 0;
+          const dateB = b.meeting_scheduled_at
+            ? new Date(b.meeting_scheduled_at).getTime()
+            : b.last_scheduling_attempt_at
+              ? new Date(b.last_scheduling_attempt_at).getTime()
+              : 0;
+          return (dateA - dateB) * factor;
+        }
+        case "stage_affiliate": {
+          const stageA = (a.stage || "").toLowerCase();
+          const stageB = (b.stage || "").toLowerCase();
+          if (stageA !== stageB) {
+            return stageA.localeCompare(stageB) * factor;
+          }
+          const affA = a.assigned_affiliate_id
+            ? (affiliates.find((x) => x.id === a.assigned_affiliate_id)?.full_name || "").toLowerCase()
+            : "";
+          const affB = b.assigned_affiliate_id
+            ? (affiliates.find((x) => x.id === b.assigned_affiliate_id)?.full_name || "").toLowerCase()
+            : "";
+          return affA.localeCompare(affB) * factor;
+        }
+        case "has_whatsapp": {
+          const aHas = a.phone ? 1 : 0;
+          const bHas = b.phone ? 1 : 0;
+          return (aHas - bHas) * factor;
+        }
+        default:
+          return 0;
+      }
+    });
+
+    return sorted;
+  }, [leads, sortState, selectedIds, affiliates]);
+
+  const allSelected = sortedLeads.length > 0 && selectedIds.length === sortedLeads.length;
 
   const renderAgendaCell = (lead: PlatformAutoLead) => {
     const meta = AUTO_LEAD_MEETING_STATUS_META[lead.meeting_status] || AUTO_LEAD_MEETING_STATUS_META.none;
@@ -153,25 +246,17 @@ export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
       <div className="hidden md:block rounded-xl border bg-card shadow-2xs">
         <div className="w-full overflow-x-auto touch-pan-x">
           <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-xs font-semibold text-muted-foreground">
-                <th className="p-3 w-10">
-                  <Checkbox
-                    checked={allSelected}
-                    onCheckedChange={onToggleSelectAll}
-                    aria-label="Selecionar todos os leads"
-                  />
-                </th>
-                <th className="p-3 min-w-[220px]">Contato & Canais</th>
-                <th className="p-3 min-w-[210px]">Origem (Grupo FB & Post)</th>
-                <th className="p-3 min-w-[110px]">Score Lindy AI</th>
-                <th className="p-3 min-w-[220px]">Agenda & Tentativas WhatsApp</th>
-                <th className="p-3 min-w-[160px]">Estágio & Afiliado</th>
-                <th className="p-3 text-right min-w-[150px]">Ações 1-Click</th>
-              </tr>
-            </thead>
+            <AutoLeadsTableHeader
+              allSelected={allSelected}
+              onToggleSelectAll={onToggleSelectAll}
+              sortState={sortState}
+              onSort={handleSort}
+              affiliates={affiliates}
+              filters={filters}
+              onFilterChange={onFilterChange}
+            />
             <tbody className="divide-y">
-              {leads.map((lead) => {
+              {sortedLeads.map((lead) => {
                 const isSelected = selectedIds.includes(lead.id);
                 const waUrl = buildLeadWhatsAppUrl(lead);
                 const stageMeta = AUTO_LEAD_STAGE_META[lead.stage] || AUTO_LEAD_STAGE_META.new;
@@ -334,7 +419,7 @@ export const AutoLeadsContactsTable: React.FC<AutoLeadsContactsTableProps> = ({
 
       {/* Mobile Cards (Zero Horizontal Overflow, 44px Touch Targets) */}
       <div className="md:hidden space-y-3">
-        {leads.map((lead) => (
+        {sortedLeads.map((lead) => (
           <AutoLeadMobileCard
             key={lead.id}
             lead={lead}
