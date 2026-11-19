@@ -107,7 +107,7 @@ describe("Auth", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Pluri-Health")).toBeInTheDocument();
+    expect(screen.getByText("Pluri Health")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument();
     expect(screen.getByText(/próxima etapa/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/e-mail/i)).toBeInTheDocument();
