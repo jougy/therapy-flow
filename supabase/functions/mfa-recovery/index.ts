@@ -178,8 +178,11 @@ Deno.serve(async (req) => {
         });
 
         if (!emailRes.success) {
+          const errMsg = typeof emailRes.error === "string"
+            ? emailRes.error
+            : emailRes.error?.message || JSON.stringify(emailRes.error) || "Serviço indisponível";
           console.error("[mfa-recovery] Erro ao enviar E-mail:", emailRes.error);
-          return json({ success: false, error: `Falha no envio de e-mail: ${emailRes.error?.message || "Serviço indisponível"}` }, 502);
+          return json({ success: false, error: `Falha no envio de e-mail: ${errMsg}` }, 502);
         }
       }
 
