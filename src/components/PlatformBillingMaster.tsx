@@ -1,20 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { 
-  CreditCard, 
-  Receipt, 
-  Search, 
-  Loader2, 
-  RefreshCw, 
-  Building2, 
-  Tag, 
-  CheckCircle2, 
-  XCircle,
-  FileCode,
-  SlidersHorizontal,
-  ExternalLink,
-  FileCheck,
-  BellRing,
-  Smartphone
+import {
+  CreditCard, Receipt, Search, Loader2, RefreshCw, Building2, Tag,
+  CheckCircle2, XCircle, FileCode, SlidersHorizontal, ExternalLink, FileCheck, BellRing, Smartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
@@ -31,7 +18,8 @@ import { queryAxiomLogs, type AxiomLogRecord } from "@/lib/telemetry/axiom-clien
 import { PlatformCouponsManager, type SubscriptionCouponItem } from "@/components/platform/PlatformCouponsManager";
 import { PlatformTelegramAlerts } from "@/components/platform/PlatformTelegramAlerts";
 import { PlatformWhatsAppAlerts } from "@/components/platform/PlatformWhatsAppAlerts";
-import { planLabels, getPlanDefaultLimits, planOptionGroups } from "@/components/platform/platform-api";
+import { planLabels, getPlanDefaultLimits, subproductLabels } from "@/components/platform/platform-api";
+import { PlanAndVerticalSelector } from "@/components/platform/PlanAndVerticalSelector";
 import type { PlanType } from "@/utils/subscriptionPricing";
 import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 
@@ -41,6 +29,7 @@ interface ClinicSubscriptionRawRow {
   id: string;
   clinic_id: string;
   plan_type: PlanType | string;
+  subproduct_key?: string | null;
   status: string;
   base_subaccount_limit?: number | null;
   purchased_subaccount_extra_count?: number | null;
@@ -50,7 +39,7 @@ interface ClinicSubscriptionRawRow {
   total_recurring_monthly_price?: number;
   override_reason?: string | null;
   updated_at: string;
-  clinics: { name: string } | null;
+  clinics: { name: string; subproduct_key?: string | null } | null;
 }
 
 interface ClinicSubscriptionItem {
@@ -58,6 +47,7 @@ interface ClinicSubscriptionItem {
   clinic_id: string;
   clinic_name: string;
   plan_type: PlanType | string;
+  subproduct_key: string;
   status: string;
   subaccount_limit: number;
   concurrent_access_limit: number;
@@ -110,6 +100,7 @@ export function PlatformBillingMaster() {
 
   // Form Override State
   const [overridePlan, setOverridePlan] = useState<string>("clinica_medio");
+  const [overrideSubproductKey, setOverrideSubproductKey] = useState<string>("plurihealth");
   const [overrideStatus, setOverrideStatus] = useState("active");
   const [overrideSubaccounts, setOverrideSubaccounts] = useState(30);
   const [overrideConcurrent, setOverrideConcurrent] = useState(2);
@@ -134,6 +125,7 @@ export function PlatformBillingMaster() {
           id,
           clinic_id,
           plan_type,
+          subproduct_key,
           status,
           base_subaccount_limit,
           purchased_subaccount_extra_count,
@@ -143,7 +135,7 @@ export function PlatformBillingMaster() {
           total_recurring_monthly_price,
           override_reason,
           updated_at,
-          clinics ( name )
+          clinics ( name, subproduct_key )
         `)
         .order("updated_at", { ascending: false });
 
@@ -155,6 +147,7 @@ export function PlatformBillingMaster() {
           clinic_id: item.clinic_id,
           clinic_name: item.clinics?.name || "Clínica Desconhecida",
           plan_type: item.plan_type,
+          subproduct_key: item.clinics?.subproduct_key || item.subproduct_key || "plurihealth",
           status: item.status,
           subaccount_limit: (item.base_subaccount_limit ?? 0) + (item.purchased_subaccount_extra_count ?? 0),
           concurrent_access_limit: (item.base_concurrent_access_count ?? 0) + (item.additional_concurrent_access_count ?? 0),
@@ -330,6 +323,7 @@ export function PlatformBillingMaster() {
   const handleOpenOverrideModal = (sub: ClinicSubscriptionItem) => {
     setSelectedSub(sub);
     setOverridePlan(sub.plan_type);
+    setOverrideSubproductKey(sub.subproduct_key || "plurihealth");
     setOverrideStatus(sub.status || "active");
     setOverrideSubaccounts(sub.subaccount_limit || 30);
     setOverrideConcurrent(sub.concurrent_access_limit || 2);
@@ -359,6 +353,12 @@ export function PlatformBillingMaster() {
       });
 
       if (error) throw error;
+
+      const { error: subproductError } = await supabase.rpc("set_clinic_subproduct_key", {
+        _clinic_id: selectedSub.clinic_id,
+        _subproduct_key: overrideSubproductKey,
+      });
+      if (subproductError) throw subproductError;
 
       toast.success(`Override de assinatura aplicado à clínica ${selectedSub.clinic_name}!`);
       setSelectedSub(null);
@@ -507,16 +507,28 @@ export function PlatformBillingMaster() {
                           <p className="text-[10px] text-muted-foreground font-mono">{sub.clinic_id}</p>
                         </td>
                         <td className="p-4">
-                          <Badge
-                            variant="secondary"
-                            className={
-                              sub.plan_type.startsWith("clinica_") || sub.plan_type === "clinic" || sub.plan_type === "enterprise"
-                                ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-medium"
-                                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium"
-                            }
-                          >
-                            {planLabels[sub.plan_type] || sub.plan_type}
-                          </Badge>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge
+                              variant="secondary"
+                              className={
+                                sub.plan_type.startsWith("clinica_") || sub.plan_type === "clinic" || sub.plan_type === "enterprise"
+                                  ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-medium"
+                                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium"
+                              }
+                            >
+                              {planLabels[sub.plan_type] || sub.plan_type}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={
+                                sub.subproduct_key === "plurihealth"
+                                  ? "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300 font-medium"
+                                  : "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300 font-medium"
+                              }
+                            >
+                              {subproductLabels[sub.subproduct_key] || sub.subproduct_key}
+                            </Badge>
+                          </div>
                         </td>
                         <td className="p-4 font-mono">
                           <span className="font-semibold text-foreground">{sub.subaccount_limit} Vagas</span> •{" "}
@@ -860,52 +872,33 @@ export function PlatformBillingMaster() {
           </DialogHeader>
 
           <div className="space-y-4 py-2 text-xs">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Plano de Assinatura</Label>
-                <Select
-                  value={overridePlan}
-                  onValueChange={(newPlan) => {
-                    setOverridePlan(newPlan);
-                    const limits = getPlanDefaultLimits(newPlan);
-                    setOverrideConcurrent(limits.concurrent);
-                    setOverrideSubaccounts(limits.subaccounts);
-                  }}
-                >
-                  <SelectTrigger className="h-10 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {planOptionGroups.map((group) => (
-                      <SelectGroup key={group.label}>
-                        <SelectLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                          {group.label}
-                        </SelectLabel>
-                        {group.options.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <PlanAndVerticalSelector
+              planValue={overridePlan}
+              onPlanChange={(newPlan) => {
+                setOverridePlan(newPlan);
+                const limits = getPlanDefaultLimits(newPlan);
+                setOverrideConcurrent(limits.concurrent);
+                setOverrideSubaccounts(limits.subaccounts);
+              }}
+              subproductValue={overrideSubproductKey}
+              onSubproductChange={setOverrideSubproductKey}
+              planLabel="Plano de Assinatura"
+              triggerClassName="h-10 rounded-xl"
+            />
 
-              <div className="space-y-1">
-                <Label className="text-xs">Status do Acesso</Label>
-                <Select value={overrideStatus} onValueChange={setOverrideStatus}>
-                  <SelectTrigger className="h-10 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Ativa</SelectItem>
-                    <SelectItem value="payment_pending">Pagamento Pendente</SelectItem>
-                    <SelectItem value="temporarily_paused">Pausada Temporariamente</SelectItem>
-                    <SelectItem value="banned">Bloqueada</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Status do Acesso</Label>
+              <Select value={overrideStatus} onValueChange={setOverrideStatus}>
+                <SelectTrigger className="h-10 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Ativa</SelectItem>
+                  <SelectItem value="payment_pending">Pagamento Pendente</SelectItem>
+                  <SelectItem value="temporarily_paused">Pausada Temporariamente</SelectItem>
+                  <SelectItem value="banned">Bloqueada</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">

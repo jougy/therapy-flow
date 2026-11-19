@@ -1092,9 +1092,15 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
     targetPlan = normalizePlan(payload.subscriptionPlan);
   }
 
+  const validSubproducts = ["plurifisio", "pluripsy", "plurinutri", "plurinatu", "plurihealth"];
+  const requestedSubproduct = typeof payload.subproductKey === "string" && validSubproducts.includes(payload.subproductKey)
+    ? payload.subproductKey
+    : undefined;
+
   const clinicUpdate: Record<string, unknown> = {
     access_status: status,
     subscription_plan: targetPlan,
+    ...(requestedSubproduct ? { subproduct_key: requestedSubproduct } : {}),
   };
 
   const defaultLimits = getPlanBaseLimits(targetPlan);
@@ -1166,6 +1172,7 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
         clinic_id: clinic.id,
         account_owner_user_id: ownerUserId,
         plan_type: targetPlan,
+        ...(requestedSubproduct ? { subproduct_key: requestedSubproduct } : {}),
         base_subaccount_limit: subaccounts,
         base_concurrent_access_count: concurrentLimit,
         status: status === "active" ? "ACTIVE" : "PENDING",
@@ -1183,6 +1190,7 @@ const updateClinicAccess = async (payload: Record<string, unknown>) => {
   if (currentSub) {
     const subUpdate: Record<string, unknown> = {
       plan_type: targetPlan,
+      ...(requestedSubproduct ? { subproduct_key: requestedSubproduct } : {}),
       base_subaccount_limit: subaccounts,
       base_concurrent_access_count: concurrentLimit,
       updated_at: new Date().toISOString(),

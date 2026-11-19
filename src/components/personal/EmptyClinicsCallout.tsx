@@ -3,6 +3,7 @@ import { Building2, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 
 interface EmptyClinicsCalloutProps {
   userEmail?: string;
@@ -36,7 +37,7 @@ export const EmptyClinicsCallout: React.FC<EmptyClinicsCalloutProps> = React.mem
           Nenhuma clínica vinculada
         </h3>
         <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-          Você tem permissão para provisionar um novo espaço clínico institucional na Pluri Health.
+          Você tem permissão para provisionar um novo espaço clínico institucional na {getActiveBrand().name}.
         </p>
       </div>
 

@@ -59,7 +59,8 @@
     "qa:perf": "node scripts/qa/audit-bundle-perf.mjs",
     "qa:perf:pages": "node scripts/qa/audit-internal-pages-perf.mjs",
     "qa:perf:vault": "node scripts/qa/audit-vault-pages-benchmark.mjs",
-    "bench": "node scripts/qa/audit-vault-pages-benchmark.mjs",
+    "bench": "npm run build && node scripts/qa/audit-vault-pages-benchmark.mjs",
+    "qa:page": "node scripts/qa/audit-page-deep.mjs",
     "qa:agent": "node scripts/qa/audit-agent-readiness.mjs"
   },
   "dependencies": {

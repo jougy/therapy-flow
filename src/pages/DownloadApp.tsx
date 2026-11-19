@@ -19,10 +19,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { usePWAInstall, type DetectedOS } from "@/hooks/usePWAInstall";
+import { useActiveBrand } from "@/hooks/useActiveBrand";
 import { toast } from "@/hooks/use-toast";
 
 export default function DownloadApp() {
   const navigate = useNavigate();
+  const brand = useActiveBrand();
   const { os, isInstallable, isInstalled, isApp, promptInstall } = usePWAInstall();
   const [selectedTab, setSelectedTab] = useState<string>(
     os === "unknown" ? "windows" : os
@@ -39,7 +41,7 @@ export default function DownloadApp() {
       if (installed) {
         toast({
           title: "Aplicativo instalado com sucesso!",
-          description: "O ícone do Pluri Health já está disponível no seu dispositivo.",
+          description: `O ícone do ${brand.name} já está disponível no seu dispositivo.`,
         });
       }
     } else {
@@ -78,11 +80,11 @@ export default function DownloadApp() {
             <div className="flex items-center gap-2 min-w-0">
               <img
                 src="/branding/logo/pluri_health_icon_gradient.svg"
-                alt="Pluri Health"
+                alt={brand.name}
                 className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 object-contain drop-shadow-xs"
               />
               <span className="text-sm sm:text-base font-bold tracking-tight text-foreground truncate">
-                Pluri Health
+                {brand.name}
               </span>
             </div>
           </div>
@@ -115,7 +117,7 @@ export default function DownloadApp() {
             Baixar Aplicativo Oficial
           </Badge>
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-foreground">
-            Use o Pluri Health como aplicativo no seu computador ou celular
+            Use o {brand.name} como aplicativo no seu computador ou celular
           </h1>
           <p className="mt-3 text-sm sm:text-base text-muted-foreground leading-relaxed">
             Tenha um atalho direto na sua tela para abrir seus atendimentos e prontuários rapidamente, sem precisar digitar o endereço no navegador toda vez.
@@ -227,7 +229,7 @@ export default function DownloadApp() {
           </div>
 
           <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
-            <TabsList className="grid grid-cols-5 gap-2 w-full max-w-xl mx-auto h-auto p-1.5 bg-muted/70 rounded-xl">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-5 gap-2 w-full max-w-xl mx-auto h-auto p-1.5 bg-muted/70 rounded-xl">
               <TabsTrigger value="windows" className="min-h-[44px] min-w-[44px] py-2 px-1 sm:px-3 text-[10px] sm:text-xs font-semibold flex flex-col sm:flex-row items-center justify-center gap-1.5 whitespace-normal text-center leading-tight">
                 <Monitor className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>Windows</span>
@@ -272,7 +274,7 @@ export default function DownloadApp() {
                           Opção 1: Baixar Instalador Oficial (.exe)
                         </div>
                         <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                          Baixa o executável oficial para instalar e fixar o ícone do Pluri Health na sua Área de Trabalho e Menu Iniciar.
+                          Baixa o executável oficial para instalar e fixar o ícone do {brand.name} na sua Área de Trabalho e Menu Iniciar.
                         </p>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -346,7 +348,7 @@ export default function DownloadApp() {
                           Opção 1: Baixar Aplicativo para Mac
                         </div>
                         <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                          Baixa o instalador oficial do Pluri Health para colocar na sua pasta de Aplicativos.
+                          Baixa o instalador oficial do {brand.name} para colocar na sua pasta de Aplicativos.
                         </p>
                       </div>
                       <Button asChild className="mt-4 w-full min-h-[44px] min-w-[44px] gap-2 font-medium" variant="default">
@@ -384,7 +386,7 @@ export default function DownloadApp() {
                     <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
                       <li>Abra o arquivo <strong>Pluri-Health-Mac.dmg</strong> baixado e arraste o ícone para <strong>Aplicativos</strong>.</li>
                       <li>
-                        <strong>Se o Mac mostrar um aviso de segurança:</strong> basta clicar no ícone do Pluri Health com o <strong>botão direito do mouse</strong> (ou segurar a tecla <strong>Control</strong> e clicar) e escolher <strong>"Abrir"</strong>.
+                        <strong>Se o Mac mostrar um aviso de segurança:</strong> basta clicar no ícone do {brand.name} com o <strong>botão direito do mouse</strong> (ou segurar a tecla <strong>Control</strong> e clicar) e escolher <strong>"Abrir"</strong>.
                       </li>
                       <li>Confirme em <strong>"Abrir"</strong> na janelinha. Pronto! Ele abrirá normalmente e não perguntará de novo.</li>
                     </ol>
@@ -471,7 +473,7 @@ export default function DownloadApp() {
                     <div>
                       <div className="font-bold text-sm text-foreground">Instalação com 1 Toque</div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Coloca o ícone do Pluri Health direto na tela do seu celular, sem ocupar espaço da memória.
+                        Coloca o ícone do {brand.name} direto na tela do seu celular, sem ocupar espaço da memória.
                       </p>
                     </div>
                     <Button onClick={handleBrowserInstall} className="w-full sm:w-auto min-h-[44px] min-w-[44px] shrink-0 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
@@ -567,7 +569,7 @@ export default function DownloadApp() {
             <div className="p-4 rounded-xl border bg-card/40">
               <div className="text-xs font-bold text-foreground">Preciso pagar para instalar?</div>
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                Não, o aplicativo é totalmente gratuito para todos os usuários cadastrados no Pluri Health.
+                Não, o aplicativo é totalmente gratuito para todos os usuários cadastrados no {brand.name}.
               </p>
             </div>
           </div>
@@ -577,7 +579,7 @@ export default function DownloadApp() {
       {/* Rodapé Simples */}
       <footer className="border-t bg-muted/20 py-6 text-center text-xs text-muted-foreground mt-10">
         <div className="container mx-auto px-4">
-          <p>© {new Date().getFullYear()} Pluri Health. Todos os direitos reservados.</p>
+          <p>© {new Date().getFullYear()} {brand.name}. Todos os direitos reservados.</p>
         </div>
       </footer>
     </div>

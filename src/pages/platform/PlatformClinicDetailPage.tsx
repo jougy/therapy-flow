@@ -56,6 +56,7 @@ import {
   formatClinicAccessStatus,
   getErrorMessage,
   planLabels,
+  subproductLabels,
 } from "@/components/platform/platform-api";
 
 export const PlatformClinicDetailPage = ({
@@ -356,6 +357,7 @@ export const PlatformClinicDetailPage = ({
                       ["Nome", String(clinic?.name ?? "-")],
                       ["CNPJ", String(clinic?.cnpj ?? "-")],
                       ["Plano", clinic?.subscription_plan ? (planLabels[clinic.subscription_plan] || clinic.subscription_plan) : "-"],
+                      ["Frente / Vertical", subproductLabels[String((clinic as { subproduct_key?: string } | null)?.subproduct_key ?? "plurihealth")] || "Pluri Health"],
                       ["Status", formatClinicAccessStatus(String(clinic?.access_status ?? "active"))],
                       ["Data de cadastro", clinic?.created_at ? new Date(clinic.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"],
                       ["Rota", routeKey || "-"],
@@ -459,6 +461,7 @@ export const PlatformClinicDetailPage = ({
                 compact
                 onDone={() => void loadDetail()}
                 subaccountLimit={String(clinic?.subaccount_limit ?? 4)}
+                subproductKey={String((clinic as { subproduct_key?: string } | null)?.subproduct_key ?? "plurihealth")}
                 subscriptionPlan={clinic?.subscription_plan ?? "clinica_medio"}
                 subscriptionData={clinicSubscription}
                 title="Acesso e plano da clínica"

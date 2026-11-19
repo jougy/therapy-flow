@@ -69,12 +69,12 @@ export function BrowserAppDownloadBanner({ variant = "top", className = "" }: Br
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-          <Link to="/download" className="w-full sm:w-auto">
-            <Button size="sm" className="w-full sm:w-auto gap-1.5 h-8 text-xs font-semibold bg-primary text-primary-foreground shadow-xs">
-              <Download className="h-3.5 w-3.5" />
+          <Button asChild size="sm" className="w-full sm:w-auto min-h-[44px] gap-1.5 text-xs font-semibold bg-primary text-primary-foreground shadow-xs">
+            <Link to="/download">
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
               Baixar Aplicativo
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </div>
     );
@@ -94,17 +94,18 @@ export function BrowserAppDownloadBanner({ variant = "top", className = "" }: Br
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Link to="/download" className="inline-flex items-center">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="min-h-[44px] sm:min-h-[36px] px-3 text-xs font-bold text-sky-950 bg-white hover:bg-white/90 shadow-xs"
-            >
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            asChild
+            size="sm"
+            variant="secondary"
+            className="min-h-[44px] px-3 text-xs font-bold text-sky-950 bg-white hover:bg-white/90 shadow-xs"
+          >
+            <Link to="/download">
               <span className="hidden sm:inline">Baixar Aplicativo</span>
               <span className="sm:hidden">Baixar App</span>
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <button
             type="button"
             onClick={handleDismiss}

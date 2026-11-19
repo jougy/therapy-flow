@@ -20,10 +20,10 @@ export const ConviteExpiredCard = ({
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md border-emerald-200 bg-card shadow-lg">
           <CardHeader className="text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200">
-              <CheckCircle2 className="h-7 w-7" />
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
+              <CheckCircle2 className="h-7 w-7" aria-hidden="true" />
             </div>
-            <CardTitle className="mt-2 text-xl font-bold">Convite já ativado!</CardTitle>
+            <h1 className="mt-2 text-xl font-bold leading-none tracking-tight">Convite já ativado!</h1>
             <CardDescription className="mt-1 text-sm">
               Este convite para a clínica {clinicName || "indicada"} já foi aceito. Você já pode acessar a clínica normalmente.
             </CardDescription>
@@ -45,10 +45,10 @@ export const ConviteExpiredCard = ({
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md border-amber-200 bg-card shadow-lg">
         <CardHeader className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 ring-1 ring-amber-200">
-            <AlertCircle className="h-7 w-7" />
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-800 dark:text-amber-300 ring-1 ring-amber-200">
+            <AlertCircle className="h-7 w-7" aria-hidden="true" />
           </div>
-          <CardTitle className="mt-2 text-xl font-bold">Convite indisponível</CardTitle>
+          <h1 className="mt-2 text-xl font-bold leading-none tracking-tight">Convite indisponível</h1>
           <CardDescription className="mt-1 text-sm">
             Este convite já foi aceito, cancelado, expirou ou não existe mais no sistema.
           </CardDescription>

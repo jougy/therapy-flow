@@ -13,6 +13,7 @@ import { ArrowLeft, Building2, HelpCircle, Loader2, ShieldCheck, CreditCard, Loc
 import { TermsOfServiceModal } from "@/components/TermsOfServiceModal";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { useAuth } from "@/hooks/useAuth";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { isOwnerDocumentValid } from "@/lib/owner-document";
@@ -678,7 +679,7 @@ export default function OnboardingClinica() {
         <div className="text-left flex items-start gap-4">
           <img
             src="/branding/logo/pluri_health_icon_gradient.svg"
-            alt="Pluri-Health"
+            alt={getActiveBrand().name}
             className="h-12 w-12 shrink-0 drop-shadow-md hidden sm:block mt-1"
           />
           <div>
@@ -1102,7 +1103,7 @@ export default function OnboardingClinica() {
                 >
                   Termos de Uso e Responsabilidade do Titular
                 </button>{" "}
-                do Pluri-Health.
+                do {getActiveBrand().name}.
               </label>
             </div>
             {requireOwnerTerms && !termsAccepted && (
@@ -1121,7 +1122,7 @@ export default function OnboardingClinica() {
               <div>
                 <p className="font-semibold text-foreground text-xs">Processamento Financeiro Seguro via Asaas (PCI-DSS)</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Ao prosseguir, você será direcionado para a seleção e checkout de pagamento integrado ao gateway Asaas. O Pluri-Health <strong>nunca armazena números de cartão de crédito</strong> em seus servidores.
+                  Ao prosseguir, você será direcionado para a seleção e checkout de pagamento integrado ao gateway Asaas. O {getActiveBrand().name} <strong>nunca armazena números de cartão de crédito</strong> em seus servidores.
                 </p>
               </div>
             </div>

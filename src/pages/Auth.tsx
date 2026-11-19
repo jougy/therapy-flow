@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
+import { useActiveBrand } from "@/hooks/useActiveBrand";
 import { BrowserAppDownloadBanner } from "@/components/BrowserAppDownloadBanner";
 import { DismissibleInfoTip } from "@/components/ui/dismissible-info-tip";
 import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
@@ -16,6 +17,7 @@ import { AuthRecoveryForm } from "@/components/auth/AuthRecoveryForm";
 
 const Auth = () => {
   const navigate = useNavigate();
+  const brand = useActiveBrand();
   const { isApp } = usePWAInstall();
   const [mode, setMode] = useState<"login" | "recovery">("login");
   const [email, setEmail] = useState("");
@@ -100,7 +102,7 @@ const Auth = () => {
             {/* Logo adaptável: Gradiente ciano/azul com ícone nítido e otimização LCP */}
             <img
               src="/branding/logo/pluri_health_icon_gradient.svg"
-              alt="Pluri-Health"
+              alt={brand.name}
               width={64}
               height={64}
               {...{ fetchpriority: "high" }}
@@ -108,7 +110,7 @@ const Auth = () => {
               className="h-16 w-16 drop-shadow-md transition-transform hover:scale-105"
             />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Pluri-Health</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{brand.name}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Gestão clínica simplificada</p>
         </div>
 
@@ -167,7 +169,7 @@ const Auth = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="password">Senha</Label>
-                <div className="relative">
+                <div className="flex items-center gap-1.5">
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
@@ -176,16 +178,16 @@ const Auth = () => {
                     placeholder="••••••••"
                     required
                     minLength={6}
-                    className="pr-12 h-11"
+                    className="flex-1 h-11"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     aria-label={showPassword ? "Ocultar senha" : "Ver senha"}
                     title={showPassword ? "Ocultar senha" : "Ver senha"}
-                    className="absolute right-0 top-1/2 -translate-y-1/2 h-11 w-11 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground transition-colors"
+                    className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex items-center justify-center rounded-md border border-input bg-background text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                   </button>
                 </div>
               </div>

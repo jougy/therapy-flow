@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import {
   AlertCircle,
   Building2,
@@ -189,7 +190,7 @@ export const VerificarAssinaturaPublica: React.FC = () => {
         <header className="text-center space-y-2 pt-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-semibold uppercase tracking-wider">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-            <span>Verificação Pública • Pluri-Health</span>
+            <span>Verificação Pública • {getActiveBrand().name}</span>
           </div>
           {doc?.clinic_logo_url && (
             <img
@@ -461,7 +462,7 @@ export const VerificarAssinaturaPublica: React.FC = () => {
       </main>
 
       <footer className="text-center text-[11px] text-muted-foreground py-4 border-t mt-8">
-        Pluri-Health • Autenticação Eletrônica de Documentos Clínicos
+        {getActiveBrand().name} • Autenticação Eletrônica de Documentos Clínicos
       </footer>
     </div>
   );

@@ -1,5 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { type Session, type User } from "@supabase/supabase-js";
+import {
+  setRuntimeClinicSubproduct,
+} from "@/lib/subproduct-config";
+import { initializeDocumentBrand } from "@/hooks/useActiveBrand";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "@/hooks/use-toast";
@@ -278,6 +282,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           name: row.clinic_name,
           route_key: row.clinic_route_key,
           subaccount_limit: subaccountLimit,
+          subproduct_key: (row as { clinic_subproduct_key?: string | null }).clinic_subproduct_key ?? null,
           subscription_plan: subscriptionPlan,
         },
         activeAccessCount: row.clinic_active_access_count ?? 0,
@@ -603,6 +608,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [simulatedRoleCapabilityOverrides, setSimulatedRoleCapabilityOverrides] = useState<Partial<Record<AccessCapability, boolean>>>({});
 
   const activeSubscriptionPlan = (platformAccess?.simulatedPlan ?? clinic?.subscription_plan as SubscriptionPlan) ?? null;
+
+  useEffect(() => {
+    const clinicSubproductKey = clinic?.subproduct_key ?? null;
+    setRuntimeClinicSubproduct(clinicSubproductKey);
+    initializeDocumentBrand(clinicSubproductKey);
+  }, [clinic?.subproduct_key]);
 
   const setPlatformRoleCapabilityOverride = (capability: AccessCapability, enabled: boolean) => {
     setSimulatedRoleCapabilityOverrides((prev) => ({ ...prev, [capability]: enabled }));

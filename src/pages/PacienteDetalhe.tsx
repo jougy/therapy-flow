@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, memo, type ReactNode
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import { isSameDay } from "date-fns";
 import {
   AlertTriangle, ArrowLeft, Plus, Phone, Calendar, CalendarDays, Loader2, ChevronDown, ChevronUp, Clock, BarChart3,
@@ -1476,7 +1477,7 @@ const PacienteDetalhe = () => {
         patient,
         clinicalProfile: parsedClinicalProfile,
         emergencyContact: parsedEmergencyContact,
-        clinicName: clinic?.name || "Clínica Pluri-Health",
+        clinicName: clinic?.name || `Clínica ${getActiveBrand().name}`,
         exportedBy: profile?.full_name || profile?.social_name || user?.email || "Profissional autorizado",
       });
 

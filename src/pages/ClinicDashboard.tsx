@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
+import { getActiveBrand } from "@/hooks/useActiveBrand";
 import {
   Area,
   AreaChart,
@@ -1140,10 +1141,10 @@ const ClinicDashboard = () => {
               {clinic?.logo_url ? (
                 <img src={clinic.logo_url} alt="" className="h-10 max-w-[130px] object-contain rounded" />
               ) : (
-                <img src="/branding/logo/pluri_health_icon_gradient.svg" alt="Pluri-Health" className="h-10 w-10 object-contain" />
+                <img src="/branding/logo/pluri_health_icon_gradient.svg" alt={getActiveBrand().name} className="h-10 w-10 object-contain" />
               )}
               <div>
-                <h1 className="text-xl font-bold text-slate-900 leading-tight">{clinic?.name ?? "Pluri-Health"}</h1>
+                <h1 className="text-xl font-bold text-slate-900 leading-tight">{clinic?.name ?? getActiveBrand().name}</h1>
                 <h2 className="text-xs text-slate-600 font-medium">Relatório de Estatísticas Completas</h2>
               </div>
             </div>
@@ -1416,7 +1417,7 @@ const ClinicDashboard = () => {
           )}
 
           <footer className="pt-2 border-t text-center text-[9px] text-slate-400">
-            <p>Documento gerado eletronicamente por Pluri-Health. O manuseio do papel impresso é de responsabilidade do solicitante.</p>
+            <p>Documento gerado eletronicamente por {getActiveBrand().name}. O manuseio do papel impresso é de responsabilidade do solicitante.</p>
           </footer>
         </div>,
         document.body
