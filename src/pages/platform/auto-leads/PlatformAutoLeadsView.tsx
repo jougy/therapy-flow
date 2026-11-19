@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import {
   CalendarCheck2,
+  Download,
   Loader2,
   Phone,
   Plus,
@@ -29,6 +30,7 @@ import { AutoLeadsContactsTable } from "./AutoLeadsContactsTable";
 import { AutoLeadScheduleDialog } from "./AutoLeadScheduleDialog";
 import { AutoLeadDetailSheet } from "./AutoLeadDetailSheet";
 import { AutoLeadIntegrationModal } from "./AutoLeadIntegrationModal";
+import { exportAutoLeadsToCsv } from "./autoLeadExportCsv";
 
 export const PlatformAutoLeadsView: React.FC = () => {
   const {
@@ -198,6 +200,20 @@ export const PlatformAutoLeadsView: React.FC = () => {
 
               <Button
                 type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => exportAutoLeadsToCsv(filteredLeads, affiliates)}
+                disabled={filteredLeads.length === 0}
+                data-testid="export-leads-csv-btn"
+                className="gap-1.5 min-h-[44px] sm:min-h-[38px] text-xs"
+                title="Exportar contatos em CSV com todos os dados"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Exportar CSV</span>
+              </Button>
+
+              <Button
+                type="button"
                 variant="default"
                 size="sm"
                 onClick={() => openModal("manual")}
@@ -216,6 +232,19 @@ export const PlatformAutoLeadsView: React.FC = () => {
                 {selectedIds.length} lead(s) selecionado(s)
               </span>
               <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const selectedLeads = filteredLeads.filter((l) => selectedIds.includes(l.id));
+                    exportAutoLeadsToCsv(selectedLeads, affiliates, "pluri-health-leads-selecionados");
+                  }}
+                  className="h-8 text-xs gap-1.5"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Exportar ({selectedIds.length}) Selecionados</span>
+                </Button>
                 <Select value={bulkAffiliateId} onValueChange={setBulkAffiliateId}>
                   <SelectTrigger className="h-8 w-[200px] text-xs">
                     <SelectValue placeholder="Escolher afiliado..." />
@@ -249,6 +278,8 @@ export const PlatformAutoLeadsView: React.FC = () => {
           leads={filteredLeads}
           affiliates={affiliates}
           selectedIds={selectedIds}
+          filters={filters}
+          onFilterChange={setFilters}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
           onStageChange={(id, stage) => void updateLeadStage(id, stage)}

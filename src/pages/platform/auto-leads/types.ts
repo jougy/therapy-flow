@@ -139,12 +139,31 @@ export interface AutoLeadAffiliateSummary {
   full_name: string;
 }
 
+export type AutoLeadSortField =
+  | "selected"
+  | "name"
+  | "origin"
+  | "score"
+  | "agenda"
+  | "stage_affiliate"
+  | "has_whatsapp";
+
+export type AutoLeadSortDirection = "asc" | "desc";
+
+export interface AutoLeadSortState {
+  field: AutoLeadSortField;
+  direction: AutoLeadSortDirection;
+}
+
+export type AutoLeadPhoneFilter = "all" | "with_whatsapp" | "without_whatsapp";
+
 export interface AutoLeadFilterState {
   search: string;
   stage: AutoLeadStage | "all";
   agendaFilter: "all" | "scheduled" | "attempted" | "none";
   minScore: "all" | "70" | "85";
   onlyWithPhone: boolean;
+  phoneFilter: AutoLeadPhoneFilter;
   affiliateId: string;
 }
 

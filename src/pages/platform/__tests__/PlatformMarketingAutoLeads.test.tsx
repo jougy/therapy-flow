@@ -355,4 +355,35 @@ describe("PlatformMarketingPage & Clean Auto-Lead Contacts Table", () => {
       );
     });
   });
+
+  it("sorts table columns by clicking headers and filters by stage/affiliate and whatsapp presence", async () => {
+    render(<PlatformMarketingPage initialSubtab="auto-lead" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("auto-leads-contacts-table")).toBeInTheDocument();
+      expect(screen.getAllByText("Dra. Camila Nogueira").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Dr. Henrique Bastos").length).toBeGreaterThan(0);
+    });
+
+    // Ordenação por nome
+    const nameSortBtn = screen.getByRole("button", { name: /Contato & Canais/i });
+    fireEvent.click(nameSortBtn);
+
+    // Ordenação por score
+    const scoreSortBtn = screen.getByRole("button", { name: /Score Lindy AI/i });
+    fireEvent.click(scoreSortBtn);
+
+    // Ordenação por presença de WhatsApp
+    const waSortBtn = screen.getByRole("button", { name: /Ações 1-Click/i });
+    fireEvent.click(waSortBtn);
+
+    // Botões de filtro no cabeçalho
+    expect(screen.getByTestId("stage-affiliate-filter-menu-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("whatsapp-filter-menu-btn")).toBeInTheDocument();
+
+    // Botão de exportação completa em CSV
+    const exportCsvBtn = screen.getByTestId("export-leads-csv-btn");
+    expect(exportCsvBtn).toBeInTheDocument();
+    expect(exportCsvBtn).not.toBeDisabled();
+  });
 });

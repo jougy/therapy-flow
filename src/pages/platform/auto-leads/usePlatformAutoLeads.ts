@@ -88,6 +88,7 @@ export function usePlatformAutoLeads() {
     agendaFilter: "all",
     minScore: "all",
     onlyWithPhone: false,
+    phoneFilter: "all",
     affiliateId: "all",
   });
 
@@ -202,7 +203,15 @@ export function usePlatformAutoLeads() {
       if (filters.agendaFilter === "none" && lead.meeting_status !== "none") return false;
       if (filters.minScore !== "all" && lead.ai_score < Number(filters.minScore)) return false;
       if (filters.onlyWithPhone && !lead.phone) return false;
-      if (filters.affiliateId !== "all" && lead.assigned_affiliate_id !== filters.affiliateId) return false;
+      if (filters.phoneFilter === "with_whatsapp" && !lead.phone) return false;
+      if (filters.phoneFilter === "without_whatsapp" && Boolean(lead.phone)) return false;
+      if (filters.affiliateId !== "all") {
+        if (filters.affiliateId === "unassigned") {
+          if (lead.assigned_affiliate_id) return false;
+        } else if (lead.assigned_affiliate_id !== filters.affiliateId) {
+          return false;
+        }
+      }
       return true;
     });
   }, [leads, filters]);
