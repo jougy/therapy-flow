@@ -1070,17 +1070,13 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       });
     }
 
-    // Função auxiliar reutilizável para autenticar com token 2FA verificado
-    const processTotpAuthentication = async (tokenCode: string) => {
-      if (!customer.totpSecret) {
-        return { success: false, reason: 'no_secret' };
-      }
-      const isValid = await verifyTotpCode(customer.totpSecret, tokenCode);
-      if (!isValid) {
-        return { success: false, reason: 'invalid_token' };
+    // Função auxiliar reutilizável para autenticar diretamente via telefone cadastrado
+    const processDirectAuthentication = async () => {
+      if (!customer.userId) {
+        return { success: false, reason: 'user_not_found' };
       }
 
-      // Token correto! Buscar clínicas do usuário (via memberships e titularidade direta)
+      // Buscar clínicas do usuário (via memberships e titularidade direta)
       const [{ data: userMemberships }, { data: ownedClinics }] = await Promise.all([
         supabase
           .from('clinic_memberships')
@@ -1125,7 +1121,7 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
           .eq('phone', phone);
 
         let clinicSelectionText =
-          `✅ *Código verificado com sucesso!*\n\n` +
+          `✅ *Telefone identificado com sucesso!*\n\n` +
           `Você possui acesso a mais de uma clínica. Digite o número correspondente para selecionar:\n\n`;
 
         clinicsList.forEach((c, index: number) => {
@@ -1159,7 +1155,8 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
         await whatsAppClient.sendTextMessage(
           phone,
-          `🎉 *Acesso liberado com sucesso para a clínica ${activeClinicName}!*\nSua sessão permanecerá ativa pelas próximas 5 horas de inatividade.`
+          `🎉 *Olá, ${customer.userName || 'Profissional'}! Acesso liberado para a clínica ${activeClinicName}.*\n\n` +
+          `🔒 _Dica de Privacidade: Para maior segurança dos dados no seu celular, ative 'Trancar Conversa' nas configurações deste contato._`
         );
 
         await sendOwnerMainMenu(whatsAppClient, phone, {
@@ -1170,6 +1167,17 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
 
         return { success: true, step: 'auth_complete_single_clinic' };
       }
+    };
+
+    // Mantém compatibilidade com TOTP caso alguém envie código de 6 dígitos
+    const processTotpAuthentication = async (tokenCode: string) => {
+      if (customer.totpSecret) {
+        const isValid = await verifyTotpCode(customer.totpSecret, tokenCode);
+        if (!isValid) {
+          return { success: false, reason: 'invalid_token' };
+        }
+      }
+      return processDirectAuthentication();
     };
 
     // B. Destravamento/Escape durante etapas de autenticação intermediárias
@@ -1338,70 +1346,9 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         });
       }
 
-      // 2. Número encontrado mas 2FA não está ativado
-      if (!customer.totpEnabled || !customer.totpSecret) {
-        await whatsAppClient.sendTextMessage(phone, TUTORIAL_ENTE_AUTH_NO_2FA);
-        return new Response(JSON.stringify({ success: true, step: 'auth_2fa_not_enabled' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      // 3. Número encontrado com 2FA ativo
-      // Se o usuário já enviou o código inline (ex: "login 167611" ou "entrar\n167611")
-      if (inlineToken) {
-        const authResult = await processTotpAuthentication(inlineToken);
-        if (authResult.success) {
-          return new Response(JSON.stringify({ success: true, step: authResult.step, inline: true }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        } else {
-          // Token inline incorreto ou expirado -> já coloca a sessão em waiting_2fa_token para facilitar retentativa imediata
-          await supabase
-            .from('whatsapp_chat_sessions')
-            .update({
-              current_step: 'waiting_2fa_token',
-              last_message_at: new Date().toISOString(),
-              metadata: {
-                ...metadata,
-                auth_requested_at: new Date().toISOString(),
-                login_lock_at: nowMs,
-              },
-            })
-            .eq('phone', phone);
-
-          await whatsAppClient.sendTextMessage(
-            phone,
-            `❌ *Código incorreto ou expirado.*\n\nO código do Ente Auth muda a cada 30 segundos. Por favor, confira o código mais recente no app e envie aqui os 6 dígitos para concluir o login.\n\n💡 _Dica: Digite *ajuda* para ver o tutorial ou *cancelar* para voltar ao início._`
-          );
-          return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token_inline_invalid' }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-      }
-
-      // Se enviou apenas "login" ou "entrar" -> solicitar token
-      await supabase
-        .from('whatsapp_chat_sessions')
-        .update({
-          current_step: 'waiting_2fa_token',
-          last_message_at: new Date().toISOString(),
-          metadata: {
-            ...metadata,
-            auth_requested_at: new Date().toISOString(),
-            login_lock_at: nowMs,
-          },
-        })
-        .eq('phone', phone);
-
-      await whatsAppClient.sendTextMessage(
-        phone,
-        `entre no seu app de autenticação, copie e cole aqui o código token da pluri para realizar o seu login\n\n💡 _Dica: Da próxima vez você pode enviar direto *login <código>* (ex: *login 123456*)!_`
-      );
-
-      return new Response(JSON.stringify({ success: true, step: 'waiting_2fa_token' }), {
+      // 2. Número cadastrado: autenticação direta e liberação de acesso imediata
+      const authResult = await processDirectAuthentication();
+      return new Response(JSON.stringify({ success: true, step: authResult.step }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -1541,10 +1488,19 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
         }
 
         if (!shouldThrottlePrompt) {
+          if (customer.userId) {
+            // Se o usuário já é cadastrado mas a sessão expirou por inatividade, reautentica direto
+            const directAuth = await processDirectAuthentication();
+            return new Response(JSON.stringify({ success: true, step: directAuth.step, auto_reactivated: true }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+
           const expiredOrNotLoggedText =
             `🔒 *Sessão não autenticada no WhatsApp*\n\n` +
-            `Para acessar os dados e comandos da sua clínica, é necessário se autenticar.\n\n` +
-            `👉 Digite *login* ou envie diretamente *login <código>* (ex: *login 123456* com o código do Ente Auth).`;
+            `Para acessar os dados e comandos da sua clínica, certifique-se de que seu número de celular está cadastrado na plataforma.\n\n` +
+            `👉 Digite *menu* ou *entrar* para iniciar seu acesso.`;
 
           await whatsAppClient.sendTextMessage(phone, expiredOrNotLoggedText);
         }
@@ -1821,7 +1777,22 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       });
     }
 
-    // D1. Termos de Consentimento (Submenu ou Ação)
+    // D1. Termos de Consentimento e Link Seguro do Portal
+    if (cleanSelectedButtonId === 'records_portal_link') {
+      const recordsUrl = `https://app.plurifisio.com.br/pacientes`;
+      const privacyMsg =
+        `🔐 *Acesso Seguro aos Prontuários*\n\n` +
+        `Para garantir o sigilo profissional (LGPD / CFM / CFP) e evitar exposição indevida no WhatsApp Web, acesse a ficha clínica e histórico de atendimentos diretamente na plataforma protegida:\n\n` +
+        `👉 *Abrir Prontuários:* ${recordsUrl}\n\n` +
+        `💡 *Dica:* Mantenha o recurso *Trancar Conversa* ativado no seu WhatsApp para maior privacidade no celular.`;
+
+      await whatsAppClient.sendTextMessage(phone, privacyMsg, { linkPreview: true });
+      return new Response(JSON.stringify({ success: true, step: 'records_portal_link_sent' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (cleanSelectedButtonId === 'records_terms') {
       await sendTermsMenu(whatsAppClient, phone, userName);
       return new Response(JSON.stringify({ success: true, step: 'records_terms_menu' }), {

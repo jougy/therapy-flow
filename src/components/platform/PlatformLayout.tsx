@@ -20,11 +20,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import PersonalNotificationsButton from "@/components/PersonalNotificationsButton";
-import { PlatformMobileDock } from "@/components/PlatformMobileDock";
+import { BACKOFFICE_DOCK_TABS, PlatformMobileDock } from "@/components/PlatformMobileDock";
 import { SimulationDebugPanel } from "@/components/SimulationDebugPanel";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { useRuntimeDebugEvents } from "@/lib/runtime-debug";
+import { checkPlatformFlagFromAuth, NAV_ID_TO_PLATFORM_FLAG } from "@/lib/platform-feature-flags";
 import { cn } from "@/lib/utils";
 import { getErrorMessage } from "./platform-api";
 
@@ -119,7 +120,12 @@ export const PlatformLayout = ({
 }: PlatformLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { startPlatformClinicSimulation } = useAuth();
+  const auth = useAuth();
+  const { isPlatformOwner, isPlatformMarketing, platformRole, platformFeatureFlags, hasPlatformFlag, startPlatformClinicSimulation } = auth;
+  const isRestrictedMarketing = Boolean(isPlatformMarketing && !isPlatformOwner);
+  const canUseSimulation = checkPlatformFlagFromAuth(auth, "simulation");
+  const canUseDebug = checkPlatformFlagFromAuth(auth, "debug");
+  const canViewDirectory = checkPlatformFlagFromAuth(auth, "directory");
   const [startingSim, setStartingSim] = useState(false);
   const [debugModalOpen, setDebugModalOpen] = useState(false);
   const debugEvents = useRuntimeDebugEvents();
@@ -127,6 +133,7 @@ export const PlatformLayout = ({
 
   // Atalho global Cmd+Ctrl+D (Mac) ou Ctrl+Alt+D (Windows/Linux) para abrir painel de debug no backoffice
   useEffect(() => {
+    if (!canUseDebug) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const isKeyD = e.key === "D" || e.key === "d";
       const isMacCmdCtrl = e.metaKey && e.ctrlKey && isKeyD;
@@ -139,10 +146,10 @@ export const PlatformLayout = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [canUseDebug]);
 
   const handleStartSimulation = async () => {
-    if (!startPlatformClinicSimulation) return;
+    if (!startPlatformClinicSimulation || !canUseSimulation) return;
     setStartingSim(true);
     try {
       const access = await startPlatformClinicSimulation();
@@ -158,20 +165,38 @@ export const PlatformLayout = ({
     }
   };
 
+  const visibleNavItems = useMemo(
+    () =>
+      PLATFORM_NAV_ITEMS.filter((item) => {
+        const flag = NAV_ID_TO_PLATFORM_FLAG[item.id];
+        return !flag || checkPlatformFlagFromAuth({ isPlatformOwner, isPlatformMarketing, platformRole, platformFeatureFlags, hasPlatformFlag }, flag);
+      }),
+    [hasPlatformFlag, isPlatformMarketing, isPlatformOwner, platformFeatureFlags, platformRole]
+  );
+
+  const visibleDockTabs = useMemo(
+    () =>
+      BACKOFFICE_DOCK_TABS.filter((tab) => {
+        const flag = NAV_ID_TO_PLATFORM_FLAG[tab.id];
+        return !flag || checkPlatformFlagFromAuth({ isPlatformOwner, isPlatformMarketing, platformRole, platformFeatureFlags, hasPlatformFlag }, flag);
+      }),
+    [hasPlatformFlag, isPlatformMarketing, isPlatformOwner, platformFeatureFlags, platformRole]
+  );
+
   // Resolve current active tab ID from current pathname
   const currentTabId = useMemo(() => {
     const pathname = location.pathname;
     if (pathname.startsWith("/platform/afiliados") || pathname.startsWith("/platform/marketing")) {
       return "affiliates";
     }
-    const match = PLATFORM_NAV_ITEMS.find(
+    const match = visibleNavItems.find(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`)
     );
-    return match ? match.id : "directory";
-  }, [location.pathname]);
+    return match ? match.id : (visibleNavItems[0]?.id ?? "directory");
+  }, [location.pathname, visibleNavItems]);
 
   const handleDockTabChange = (tabId: string) => {
-    const item = PLATFORM_NAV_ITEMS.find((t) => t.id === tabId);
+    const item = visibleNavItems.find((t) => t.id === tabId);
     if (item) {
       navigate(item.path);
     }
@@ -196,41 +221,49 @@ export const PlatformLayout = ({
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <div className="flex items-center gap-2">
               <PersonalNotificationsButton />
-              <Badge className="bg-primary/10 text-primary hover:bg-primary/10 shrink-0">platform_owner</Badge>
+              <Badge className="bg-primary/10 text-primary hover:bg-primary/10 shrink-0">
+                {isRestrictedMarketing ? "platform_marketing" : platformRole || "platform_owner"}
+              </Badge>
             </div>
 
             {/* Painel de Debug em Tempo Real */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs flex-1 sm:flex-initial"
-              onClick={() => setDebugModalOpen(true)}
-              title="Abrir Painel de Diagnóstico e Debug em Tempo Real (Atalho: Cmd+Ctrl+D / Ctrl+Alt+D)"
-            >
-              <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse shrink-0" />
-              <span>Debug</span>
-              {errorCount > 0 ? (
-                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
-                  {errorCount}
-                </span>
-              ) : (
-                <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" title="Sistema saudável" />
-              )}
-            </Button>
+            {canUseDebug && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs flex-1 sm:flex-initial"
+                onClick={() => setDebugModalOpen(true)}
+                title="Abrir Painel de Diagnóstico e Debug em Tempo Real (Atalho: Cmd+Ctrl+D / Ctrl+Alt+D)"
+              >
+                <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse shrink-0" />
+                <span>Debug</span>
+                {errorCount > 0 ? (
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
+                    {errorCount}
+                  </span>
+                ) : (
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" title="Sistema saudável" />
+                )}
+              </Button>
+            )}
 
-            <Button
-              type="button"
-              disabled={startingSim}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-medium gap-1.5 shadow-sm flex-1 sm:flex-initial text-xs sm:text-sm"
-              onClick={() => void handleStartSimulation()}
-            >
-              {startingSim ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : <FlaskConical className="h-4 w-4 shrink-0" />}
-              <span className="truncate">Simulação (Preview)</span>
-            </Button>
-            <Button variant="outline" size="sm" className="flex-1 sm:flex-initial text-xs sm:text-sm" onClick={() => navigate("/platform/diretorio")}>
-              Painel mestre
-            </Button>
+            {canUseSimulation && (
+              <Button
+                type="button"
+                disabled={startingSim}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-medium gap-1.5 shadow-sm flex-1 sm:flex-initial text-xs sm:text-sm"
+                onClick={() => void handleStartSimulation()}
+              >
+                {startingSim ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : <FlaskConical className="h-4 w-4 shrink-0" />}
+                <span className="truncate">Simulação (Preview)</span>
+              </Button>
+            )}
+            {canViewDirectory && (
+              <Button variant="outline" size="sm" className="flex-1 sm:flex-initial text-xs sm:text-sm" onClick={() => navigate("/platform/diretorio")}>
+                Painel mestre
+              </Button>
+            )}
             <Button variant="outline" size="sm" className="flex-1 sm:flex-initial text-xs sm:text-sm" onClick={() => navigate("/espacopessoal")}>
               Espaço pessoal
             </Button>
@@ -243,7 +276,7 @@ export const PlatformLayout = ({
           <div className="w-full">
             {/* Desktop Top Horizontal Nav Bar */}
             <nav className="hidden lg:flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-muted/30 p-1.5 shadow-sm scrollbar-none">
-              {PLATFORM_NAV_ITEMS.map((item) => {
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive =
                   location.pathname === item.path ||
@@ -269,14 +302,14 @@ export const PlatformLayout = ({
             </nav>
 
             {/* Mobile Bottom Floating Dock */}
-            <PlatformMobileDock activeTab={currentTabId} onChange={handleDockTabChange} />
+            <PlatformMobileDock activeTab={currentTabId} onChange={handleDockTabChange} tabs={visibleDockTabs} />
           </div>
         )}
 
         {children}
       </main>
 
-      <SimulationDebugPanel open={debugModalOpen} onOpenChange={setDebugModalOpen} />
+      {canUseDebug && <SimulationDebugPanel open={debugModalOpen} onOpenChange={setDebugModalOpen} />}
     </div>
   );
 };

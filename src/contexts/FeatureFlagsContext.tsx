@@ -32,10 +32,10 @@ const FeatureFlagsContext = createContext<FeatureFlagsContextType>({
 export const useFeatureFlags = () => useContext(FeatureFlagsContext);
 
 export const FeatureFlagsProvider = ({ children }: { children: ReactNode }) => {
-  const { clinicId, platformAccess, isPlatformOwner, session } = useAuth();
+  const { clinicId, platformAccess, isPlatformOwner, isPlatformMarketing, session } = useAuth();
   const [flagOverrides, setFlagOverrides] = useState<Record<string, boolean>>({});
   const [simulationAudienceMode, setSimulationAudienceMode] = useState<SimulationAudienceMode>("tester");
-  const hasAuthContext = Boolean(session?.user?.id || isPlatformOwner || import.meta.env.MODE === "test");
+  const hasAuthContext = Boolean(session?.user?.id || isPlatformOwner || isPlatformMarketing || import.meta.env.MODE === "test");
 
   const { data: flags = {}, isLoading: loading } = useQuery<Record<string, unknown>>({
     queryKey: ["feature-flags", clinicId ?? "global", hasAuthContext],

@@ -39,6 +39,7 @@ export type Membership = Database["public"]["Tables"]["clinic_memberships"]["Row
 };
 
 export type PlatformSupportRole = NonNullable<OperationalRole>;
+export type PlatformRole = "platform_owner" | "platform_marketing" | null;
 
 export type ClinicSummary = Pick<
   Database["public"]["Tables"]["clinics"]["Row"],
@@ -87,6 +88,10 @@ export interface AuthContextType {
   endPlatformClinicAccess?: () => Promise<void>;
   isSuperAdmin: boolean;
   isPlatformOwner?: boolean;
+  isPlatformMarketing?: boolean;
+  platformRole?: PlatformRole;
+  platformFeatureFlags: Record<string, boolean>;
+  hasPlatformFlag: (flag: string) => boolean;
   isPasswordRecovery?: boolean;
   clearPasswordRecovery?: () => void;
   platformMfaVerified?: boolean;

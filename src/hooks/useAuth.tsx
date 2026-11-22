@@ -23,6 +23,7 @@ import {
 } from "@/lib/rbac";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
 import { withTransientRetry } from "@/lib/supabase-resilience";
+import { normalizePlatformFeatureFlags } from "@/lib/platform-feature-flags";
 import {
   ACTIVE_CLINIC_STORAGE_KEY,
   emptyCapabilities,
@@ -31,6 +32,7 @@ import {
   type ClinicSummary,
   type Membership,
   type PlatformClinicAccess,
+  type PlatformRole,
   type PlatformSupportRole,
   type Profile,
   type RoleCapabilityOverride,
@@ -56,6 +58,10 @@ const AuthContext = createContext<AuthContextType>({
   endPlatformClinicAccess: async () => {},
   isSuperAdmin: false,
   isPlatformOwner: false,
+  isPlatformMarketing: false,
+  platformRole: null,
+  platformFeatureFlags: {},
+  hasPlatformFlag: () => false,
   isPasswordRecovery: false,
   clearPasswordRecovery: () => {},
   platformMfaVerified: false,
@@ -97,6 +103,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   });
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isPlatformOwner, setIsPlatformOwner] = useState(false);
+  const [platformRole, setPlatformRole] = useState<PlatformRole>(null);
+  const [platformFeatureFlags, setPlatformFeatureFlags] = useState<Record<string, boolean>>({});
+  const isPlatformMarketing = platformRole === "platform_marketing";
   const [platformMfaVerified, setPlatformMfaVerified] = useState(false);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -371,7 +380,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       };
 
-      const [profileRes, roleRes, clinicOptions, platformOwnerRes] = await Promise.all([
+      const platformAdminRoleRequest = async (): Promise<{ role: PlatformRole; featureFlags: Record<string, boolean> }> => {
+        try {
+          let { data, error } = await withTransientRetry(() =>
+            supabase
+              .from("platform_admins")
+              .select("role, is_active, feature_flags" as never)
+              .eq("user_id", userId)
+              .eq("is_active", true)
+              .maybeSingle() as unknown as Promise<{ data: { role?: string; is_active?: boolean; feature_flags?: unknown } | null; error: unknown }>
+          );
+          if (error) {
+            const fallbackRes = await withTransientRetry(() =>
+              supabase
+                .from("platform_admins")
+                .select("role, is_active")
+                .eq("user_id", userId)
+                .eq("is_active", true)
+                .maybeSingle()
+            );
+            data = fallbackRes.data as { role?: string; is_active?: boolean; feature_flags?: unknown } | null;
+            error = fallbackRes.error;
+          }
+          if (!error && data && data.is_active !== false) {
+            const role = (data as { role?: string }).role;
+            if (role === "platform_owner" || role === "platform_marketing") {
+              return { role, featureFlags: normalizePlatformFeatureFlags(data.feature_flags, role) };
+            }
+          }
+        } catch {
+          // Fallback para RPC is_platform_owner abaixo
+        }
+        return { role: null, featureFlags: {} };
+      };
+
+      const [profileRes, roleRes, clinicOptions, platformOwnerRes, platformAdminInfo] = await Promise.all([
         withTransientRetry(() =>
           supabase
             .from("profiles")
@@ -382,10 +425,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         withTransientRetry(() => supabase.from("user_roles").select("role").eq("user_id", userId)),
         fetchAccessibleClinics(userId),
         platformOwnerRequest(),
+        platformAdminRoleRequest(),
       ]);
 
       const nextProfile = profileRes.data ?? null;
-      const nextIsPlatformOwner = platformOwnerRes.data === true;
+      const resolvedPlatformRole: PlatformRole =
+        platformAdminInfo.role ?? (platformOwnerRes.data === true ? "platform_owner" : null);
+      const resolvedPlatformFeatureFlags =
+        platformAdminInfo.role
+          ? platformAdminInfo.featureFlags
+          : normalizePlatformFeatureFlags(null, resolvedPlatformRole);
+      const nextIsPlatformOwner = resolvedPlatformRole === "platform_owner";
+      const nextIsPlatformMarketing = resolvedPlatformRole === "platform_marketing";
+      const nextHasPlatformAccess = nextIsPlatformOwner || nextIsPlatformMarketing;
       let nextPlatformMfaVerified = false;
 
       if (nextIsPlatformOwner) {
@@ -400,18 +452,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setProfile(nextProfile);
       setAccessibleClinics(clinicOptions);
       setIsSuperAdmin((roleRes.data ?? []).some((role) => role.role === "super_admin"));
+      setPlatformRole(resolvedPlatformRole);
+      setPlatformFeatureFlags(resolvedPlatformFeatureFlags);
       setIsPlatformOwner(nextIsPlatformOwner);
       setPlatformMfaVerified(nextPlatformMfaVerified);
 
       setPlatformAccess((prevAccess) => {
-        if (nextIsPlatformOwner && prevAccess) {
+        if (nextHasPlatformAccess && prevAccess) {
           return prevAccess;
         }
         return null;
       });
 
       setClinic((prevClinic) => {
-        if (nextIsPlatformOwner && platformAccessRef.current) {
+        if (nextHasPlatformAccess && platformAccessRef.current) {
           return prevClinic;
         }
 
@@ -426,7 +480,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
       setMembership((prevMembership) => {
-        if (nextIsPlatformOwner && platformAccessRef.current) {
+        if (nextHasPlatformAccess && platformAccessRef.current) {
           return prevMembership;
         }
 
@@ -491,6 +545,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setRoleCapabilityOverrides([]);
         setStoredActiveClinicId(null);
         setIsSuperAdmin(false);
+        setPlatformRole(null);
+        setPlatformFeatureFlags({});
         setIsPlatformOwner(false);
         setPlatformMfaVerified(false);
         setPlatformAccess(null);
@@ -682,6 +738,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       setStoredActiveClinicId(null);
       setPlatformAccess(null);
+      setPlatformRole(null);
+      setPlatformFeatureFlags({});
+      setIsPlatformOwner(false);
       setPlatformMfaVerified(false);
       setIsPasswordRecovery(false);
       appQueryClient.clear();
@@ -718,6 +777,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const can = useCallback((capability: AccessCapability) => capabilities[capability], [capabilities]);
+  const hasPlatformFlag = useCallback(
+    (flag: string) => isPlatformOwner || Boolean(platformFeatureFlags[flag]),
+    [isPlatformOwner, platformFeatureFlags]
+  );
 
   const leaveClinic = async () => {
     if (isLeavingClinic) return;
@@ -932,10 +995,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         // 2. Fallback para RPC list_platform_clinics
         const { data: clinicsData } = await supabase.rpc("list_platform_clinics" as never) as {
-          data: Array<{ id: string }> | null;
+          data: Array<{ id?: string; clinic_id?: string }> | null;
         };
         if (clinicsData && clinicsData.length > 0) {
-          targetClinicId = clinicsData[0].id;
+          targetClinicId = clinicsData[0].clinic_id || clinicsData[0].id;
         }
       } catch (err) {
         console.error("Erro ao buscar list_platform_clinics para simulação:", err);
@@ -1004,6 +1067,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         endPlatformClinicAccess,
         isSuperAdmin,
         isPlatformOwner,
+        isPlatformMarketing,
+        platformRole,
+        platformFeatureFlags,
+        hasPlatformFlag,
         isPasswordRecovery,
         clearPasswordRecovery,
         platformMfaVerified,

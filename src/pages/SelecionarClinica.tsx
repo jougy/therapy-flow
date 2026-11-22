@@ -1,10 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Award, ShieldCheck } from "lucide-react";
 import { useAuth, type AccessibleClinic } from "@/hooks/useAuth";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TermsUpdatePromptModal } from "@/components/TermsUpdatePromptModal";
 import { TemporaryPasswordPromptModal } from "@/components/TemporaryPasswordPromptModal";
 import { PersonalClinicalPortfolioTab } from "@/components/personal/PersonalClinicalPortfolioTab";
@@ -17,6 +13,7 @@ import { logRuntimeError } from "@/lib/runtime-debug";
 import { getSignupIntent, clearSignupIntent } from "@/lib/signup-intent";
 import { getStoredSignupOrigin, resolveFriendlyOrigin } from "@/lib/signup-origin";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { getFirstAllowedPlatformPath } from "@/lib/platform-feature-flags";
 import {
   type PersonalSection,
   type ReleaseNoteCategory,
@@ -48,6 +45,7 @@ import {
   PersonalNewsTab,
   ClinicInvitationsList,
   ClinicSelectionList,
+  PersonalPlatformShortcutCard,
   useClinicsRecovery,
   usePersonalMobileDock,
 } from "./selecionar-clinica";
@@ -55,12 +53,13 @@ import {
 const PersonalDashboardTab = lazy(() => import("./selecionar-clinica/PersonalDashboardTab").then(m => ({ default: m.PersonalDashboardTab })));
 
 const SelecionarClinica = () => {
-  const { accessibleClinics, isPlatformOwner, loading: authLoading, profile, refreshAuthState, selectClinic, signOut, user } = useAuth();
+  const auth = useAuth();
+  const { accessibleClinics, isPlatformOwner, isPlatformMarketing, platformRole, loading: authLoading, profile, refreshAuthState, selectClinic, signOut, user } = auth;
+  const isRestrictedMarketing = Boolean((isPlatformMarketing || platformRole) && !isPlatformOwner);
+  const firstAllowedPlatformPath = getFirstAllowedPlatformPath(auth);
   const { isFeatureEnabled } = useFeatureFlags();
   const isPortfolioEnabled = isFeatureEnabled("clinical_portfolio_enabled");
-  const hasEnterpriseAccess = Boolean(
-    isPlatformOwner || accessibleClinics.some((c) => c.clinic.subscription_plan === "enterprise")
-  );
+  const hasEnterpriseAccess = Boolean(isPlatformOwner || accessibleClinics.some((c) => c.clinic.subscription_plan === "enterprise"));
   const location = useLocation();
   const navigate = useNavigate();
   const isDesignLabRoute = location.pathname.startsWith("/designlab") || location.pathname.startsWith("/designlabs");
@@ -767,20 +766,22 @@ const SelecionarClinica = () => {
   const renderClinics = (): ReactNode => (
     <>
       {isPlatformOwner ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Clínicas</CardTitle>
-            <p className="text-sm text-muted-foreground">Use o painel administrativo global para acessar clínicas como suporte.</p>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => navigate("/platform")}>
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              Abrir painel global
-            </Button>
-          </CardContent>
-        </Card>
+        <PersonalPlatformShortcutCard
+          title="Clínicas"
+          description="Use o painel administrativo global para acessar clínicas como suporte."
+          buttonLabel="Abrir painel global"
+          onNavigate={() => navigate("/platform")}
+        />
       ) : (
         <div className="space-y-4">
+          {isRestrictedMarketing && firstAllowedPlatformPath !== "/espacopessoal" && (
+            <PersonalPlatformShortcutCard
+              title="Central de Marketing & Agenda"
+              description="Acesse Auto-Lead, Afiliados, Agenda de Reuniões e o Modo Simulação para demonstrações."
+              buttonLabel="Abrir painel de Marketing"
+              onNavigate={() => navigate(firstAllowedPlatformPath)}
+            />
+          )}
           <ClinicInvitationsList
             loadingInvitations={loadingInvitations}
             clinicInvitations={clinicInvitations}
@@ -790,8 +791,6 @@ const SelecionarClinica = () => {
             onAcceptInvitation={handleAcceptInvitation}
             onDeclineInvitation={handleDeclineInvitation}
           />
-
-
           <ClinicSelectionList
             authLoading={authLoading}
             accessibleClinics={accessibleClinics}
@@ -824,7 +823,7 @@ const SelecionarClinica = () => {
     if (activeSection === "dashboard") {
       return (
         <Suspense fallback={<div className="h-48 w-full animate-pulse rounded-lg bg-muted/40" />}>
-          <PersonalDashboardTab loadingDashboard={loadingDashboard} dashboardData={dashboardData} attendanceRange={attendanceRange} setAttendanceRange={setAttendanceRange} isPlatformOwner={isPlatformOwner} onNavigateToPlatform={() => navigate("/platform")} />
+          <PersonalDashboardTab loadingDashboard={loadingDashboard} dashboardData={dashboardData} attendanceRange={attendanceRange} setAttendanceRange={setAttendanceRange} isPlatformOwner={isPlatformOwner} isPlatformMarketing={isRestrictedMarketing} onNavigateToPlatform={() => navigate(isRestrictedMarketing ? firstAllowedPlatformPath : "/platform")} />
         </Suspense>
       );
     }

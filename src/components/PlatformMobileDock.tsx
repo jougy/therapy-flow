@@ -1,4 +1,6 @@
-import React, { memo, useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { checkPlatformFlagFromAuth, NAV_ID_TO_PLATFORM_FLAG } from "@/lib/platform-feature-flags";
 import {
   Award,
   UsersRound,
@@ -94,14 +96,24 @@ export const BACKOFFICE_DOCK_TABS: BackofficeDockTabItem[] = [
 interface PlatformMobileDockProps {
   activeTab: string;
   onChange: (tabId: string) => void;
+  tabs?: BackofficeDockTabItem[];
   className?: string;
 }
 
 export const PlatformMobileDock = memo(function PlatformMobileDock({
   activeTab,
   onChange,
+  tabs: customTabs,
   className,
 }: PlatformMobileDockProps) {
+  const auth = useAuth();
+  const tabs = useMemo(() => {
+    if (customTabs) return customTabs;
+    return BACKOFFICE_DOCK_TABS.filter((tab) => {
+      const flag = NAV_ID_TO_PLATFORM_FLAG[tab.id];
+      return !flag || checkPlatformFlagFromAuth(auth, flag);
+    });
+  }, [auth, customTabs]);
   const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
   const [mobileDockPressedTab, setMobileDockPressedTab] = useState<string | null>(null);
   const [mobileDockPointerActive, setMobileDockPointerActive] = useState(false);
@@ -346,7 +358,7 @@ export const PlatformMobileDock = memo(function PlatformMobileDock({
             }
           }}
         >
-          {BACKOFFICE_DOCK_TABS.map((tab) => {
+          {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             const isPressed = mobileDockPressedTab === tab.id;

@@ -6,6 +6,7 @@ export { PersonalMobileNav } from "./PersonalMobileNav";
 export { PersonalNewsTab } from "./PersonalNewsTab";
 export { ClinicInvitationsList } from "./ClinicInvitationsList";
 export { ClinicSelectionList } from "./ClinicSelectionList";
+export { PersonalPlatformShortcutCard } from "./PersonalPlatformShortcutCard";
 export { EmptyClinicsRecovery } from "./EmptyClinicsRecovery";
 export { useClinicsRecovery } from "./useClinicsRecovery";
 export { usePersonalMobileDock } from "./usePersonalMobileDock";

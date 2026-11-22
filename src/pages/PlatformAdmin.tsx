@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { PlatformLayout } from "@/components/platform/PlatformLayout";
 import { PlatformDirectoryPage } from "@/pages/platform/PlatformDirectoryPage";
@@ -16,6 +17,12 @@ import { PlatformErrorsLogsPage } from "@/pages/platform/PlatformErrorsLogsPage"
 import { PlatformAgendaMaster } from "@/pages/platform/PlatformAgendaMaster";
 import FormularioEditor from "@/pages/FormularioEditor";
 import { readStoredPlatformClinicKey } from "@/components/platform/platform-api";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  checkPlatformFlagFromAuth,
+  getFirstAllowedPlatformPath,
+  type PlatformFeatureFlagKey,
+} from "@/lib/platform-feature-flags";
 
 const ClinicDetailRoute = () => {
   const { clinicId } = useParams();
@@ -55,134 +62,171 @@ const PersonDetailRoute = ({ itemType }: { itemType: "account" | "patient" }) =>
   );
 };
 
+const RequirePlatformFlag = ({
+  flag,
+  fallbackPath,
+  children,
+}: {
+  flag: PlatformFeatureFlagKey;
+  fallbackPath: string;
+  children: ReactNode;
+}) => {
+  const auth = useAuth();
+  if (!checkPlatformFlagFromAuth(auth, flag)) {
+    return <Navigate to={fallbackPath} replace />;
+  }
+  return <>{children}</>;
+};
+
 const PlatformAdmin = () => {
+  const auth = useAuth();
+  const firstAllowedPath = getFirstAllowedPlatformPath(auth);
+  const wrapFlag = (flag: PlatformFeatureFlagKey, element: ReactNode) => (
+    <RequirePlatformFlag flag={flag} fallbackPath={firstAllowedPath}>
+      {element}
+    </RequirePlatformFlag>
+  );
+
   return (
     <Routes>
-      <Route index element={<Navigate to="diretorio" replace />} />
+      <Route index element={<Navigate to={firstAllowedPath} replace />} />
       <Route
         path="diretorio"
-        element={
+        element={wrapFlag(
+          "directory",
           <PlatformLayout>
             <PlatformDirectoryPage />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="marketing"
-        element={
+        element={wrapFlag(
+          "marketing",
           <PlatformLayout
             title="Marketing & Auto-Lead"
             subtitle="Gestão de afiliados, captura automática de leads (Apify + Lindy AI) e integração tripla de agendas"
           >
             <PlatformMarketingPage />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="afiliados"
-        element={
+        element={wrapFlag(
+          "marketing",
           <PlatformLayout
             title="Marketing & Auto-Lead"
             subtitle="Gestão de afiliados, captura automática de leads (Apify + Lindy AI) e integração tripla de agendas"
           >
             <PlatformMarketingPage />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="agenda"
-        element={
+        element={wrapFlag(
+          "agenda",
           <PlatformLayout
             title="Agenda Master"
             subtitle="Gestão centralizada de reuniões de onboarding, demonstrações e chamadas com clínicas"
           >
             <PlatformAgendaMaster />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="formularios"
-        element={
+        element={wrapFlag(
+          "forms",
           <PlatformLayout title="Biblioteca de Formulários" subtitle="Moderação global, controle de destaques editoriais e gestão de modelos da comunidade">
             <PlatformFormLibraryManager />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="formularios/editor/:templateId"
-        element={<FormularioEditor />}
+        element={wrapFlag("forms", <FormularioEditor />)}
       />
       <Route
         path="formularios/:templateId"
-        element={
+        element={wrapFlag(
+          "forms",
           <PlatformLayout title="Detalhes do Modelo" subtitle="Visualização detalhada, moderação e comentários do formulário" showNav={false}>
             <FormTemplateDetailPage />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="feedbacks"
-        element={
+        element={wrapFlag(
+          "feedbacks",
           <PlatformLayout title="Feedbacks & Avaliações" subtitle="Gestão centralizada de avaliações, feedbacks e NPS da plataforma">
             <PlatformFeedbacksManager />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="novidades"
-        element={
+        element={wrapFlag(
+          "releases",
           <PlatformLayout title="Notas de Novidades" subtitle="Publicação e gerenciamento do changelog e atualizações para as clínicas">
             <PlatformReleaseNotesManager standalone />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="tags"
-        element={
+        element={wrapFlag(
+          "tags",
           <PlatformLayout title="Gestão de Tags" subtitle="Criação e padronização de tags para organização e filtragem de clínicas">
             <PlatformClinicTags />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="flags"
-        element={
+        element={wrapFlag(
+          "feature_flags",
           <PlatformLayout title="Feature Flags Globais" subtitle="Controle de ativação e rollout de funcionalidades em tempo real">
             <PlatformFeatureFlags />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="governanca"
-        element={
+        element={wrapFlag(
+          "governance",
           <PlatformLayout title="Governança & Segurança" subtitle="Políticas globais de segurança, auditoria e controles administrativos">
             <PlatformGovernanceSettings />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="faturamento"
-        element={
+        element={wrapFlag(
+          "billing",
           <PlatformLayout title="Faturamento & Webhooks" subtitle="Gestão master de cobranças, assinaturas Asaas e webhooks">
             <PlatformBillingMaster />
           </PlatformLayout>
-        }
+        )}
       />
       <Route
         path="erros-logs"
-        element={
+        element={wrapFlag(
+          "logs",
           <PlatformLayout
             title="Erros & Logs de Diagnóstico"
             subtitle="Monitoramento em tempo real de falhas de runtime, alertas do sistema e auditoria de erros"
           >
             <PlatformErrorsLogsPage />
           </PlatformLayout>
-        }
+        )}
       />
-      <Route path="clinicas/:clinicId" element={<ClinicDetailRoute />} />
-      <Route path="usuarios/:userId" element={<PersonDetailRoute itemType="account" />} />
-      <Route path="pacientes/:patientId" element={<PersonDetailRoute itemType="patient" />} />
-      <Route path="*" element={<Navigate to="diretorio" replace />} />
+      <Route path="clinicas/:clinicId" element={wrapFlag("directory", <ClinicDetailRoute />)} />
+      <Route path="usuarios/:userId" element={wrapFlag("directory", <PersonDetailRoute itemType="account" />)} />
+      <Route path="pacientes/:patientId" element={wrapFlag("directory", <PersonDetailRoute itemType="patient" />)} />
+      <Route path="*" element={<Navigate to={firstAllowedPath} replace />} />
     </Routes>
   );
 };

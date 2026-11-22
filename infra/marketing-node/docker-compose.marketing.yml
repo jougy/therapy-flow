@@ -1,0 +1,162 @@
+services:
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: pluri-marketing-redis
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.25"
+    command: redis-server --appendonly yes --maxmemory 96mb --maxmemory-policy noeviction
+    volumes:
+      - evolution_redis_data:/data:z
+
+  evolution-api:
+    image: atendai/evolution-api:v2.2.3
+    container_name: pluri-marketing-evolution
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: "0.75"
+    ports:
+      - "127.0.0.1:8085:8080"
+    depends_on:
+      - evolution-redis
+    environment:
+      SERVER_PORT: 8080
+      SERVER_URL: ${EVOLUTION_PUBLIC_URL:-http://localhost:8085}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?Defina EVOLUTION_API_KEY via Pulumi ESC ou .env}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: pluri_evo
+      CACHE_LOCAL_ENABLED: "false"
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: ${SUPABASE_WEBHOOK_URL:?Defina SUPABASE_WEBHOOK_URL apontando para marketing-zap-gateway}
+      WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
+      DEL_INSTANCE: "false"
+      CONFIG_SESSION_PHONE_CLIENT: PluriGrowthOS
+      CONFIG_SESSION_PHONE_NAME: Chrome
+    volumes:
+      - evolution_instances_data:/evolution/instances:z
+
+  marketing-worker:
+    build: ./worker
+    container_name: pluri-marketing-worker
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: "0.5"
+    ports:
+      - "127.0.0.1:8086:8086"
+    depends_on:
+      - evolution-redis
+      - evolution-api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      NODE_ENV: production
+      WORKER_PORT: 8086
+      REDIS_URL: redis://evolution-redis:6379/0
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:?Defina EVOLUTION_API_KEY via Pulumi ESC ou .env}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      WORKER_SHARED_SECRET: ${WORKER_SHARED_SECRET:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-public}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANDROID_BRIDGE_URL: ${ANDROID_BRIDGE_URL:-}
+      ANDROID_BRIDGE_SECRET: ${ANDROID_BRIDGE_SECRET:-}
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pluri-marketing-ollama
+    profiles:
+      - local-ai
+    restart: unless-stopped
+    mem_limit: 6g
+    ports:
+      - "127.0.0.1:11434:11434"
+    environment:
+      OLLAMA_KEEP_ALIVE: 5m
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "2"
+    volumes:
+      - ollama_models_data:/root/.ollama:z
+    # Optional NVIDIA GPU reservation (12 GB VRAM — requires nvidia-container-toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  typebot-builder:
+    image: baptistearno/typebot-builder:latest
+    container_name: pluri-marketing-typebot-builder
+    profiles:
+      - typebot
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: "0.5"
+    ports:
+      - "127.0.0.1:8087:3000"
+    environment:
+      NEXTAUTH_URL: ${TYPEBOT_BUILDER_URL:-http://127.0.0.1:8087}
+      NEXT_PUBLIC_VIEWER_URL: ${TYPEBOT_VIEWER_URL:-http://127.0.0.1:8088}
+      DATABASE_URL: ${TYPEBOT_DATABASE_URL:-}
+      ENCRYPTION_SECRET: ${TYPEBOT_ENCRYPTION_SECRET:-pluri-typebot-dev-secret-32bytes!}
+
+  typebot-viewer:
+    image: baptistearno/typebot-viewer:latest
+    container_name: pluri-marketing-typebot-viewer
+    profiles:
+      - typebot
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: "0.5"
+    ports:
+      - "127.0.0.1:8088:3000"
+    environment:
+      NEXT_PUBLIC_VIEWER_URL: ${TYPEBOT_VIEWER_URL:-http://127.0.0.1:8088}
+      DATABASE_URL: ${TYPEBOT_DATABASE_URL:-}
+      ENCRYPTION_SECRET: ${TYPEBOT_ENCRYPTION_SECRET:-pluri-typebot-dev-secret-32bytes!}
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: pluri-marketing-tunnel
+    profiles:
+      - tunnel
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: "0.1"
+    depends_on:
+      - evolution-api
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-missing-token}
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: pluri-marketing-caddy
+    profiles:
+      - oci-caddy
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: "0.2"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - evolution-api
+      - marketing-worker
+
+volumes:
+  evolution_redis_data:
+  evolution_instances_data:
+  ollama_models_data:
+  caddy_data:
+  caddy_config:
