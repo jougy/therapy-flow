@@ -28,6 +28,8 @@ vi.mock("@/hooks/useAuth", () => ({
     simulatedRoleCapabilityOverrides: {},
     profile: { full_name: "Admin User", email: "admin@test.com" },
     subscriptionPlan: "clinic",
+    isPlatformOwner: true,
+    platformRole: "platform_owner",
   }),
 }));
 

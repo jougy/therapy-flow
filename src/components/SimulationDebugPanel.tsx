@@ -70,10 +70,12 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
     can,
     clinic,
     clinicId,
+    isPlatformMarketing,
     isPlatformOwner,
     operationalRole,
     platformAccess,
     platformMfaVerified,
+    platformRole,
     profile,
     simulatedRoleCapabilityOverrides = {},
     subscriptionPlan,
@@ -257,7 +259,7 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
       `- **Data/Hora:** ${new Date().toLocaleString("pt-BR")}`,
       `- **Rota Atual:** \`${location.pathname}${location.search}\``,
       `- **Usuário / Sessão:** ${user?.email || "Anônimo"} (\`${user?.id || "N/A"}\`)`,
-      `- **Papel Operacional:** \`${operationalRole || "nenhum"}\` | Platform Owner: \`${isPlatformOwner ? "Sim" : "Não"}\` | Simulação: \`${platformAccess?.isSimulation ? "Sim" : "Não"}\``,
+      `- **Papel Operacional:** \`${operationalRole || "nenhum"}\` | Plataforma: \`${platformRole || (isPlatformOwner ? "platform_owner" : "nenhum")}\` | Platform Owner: \`${isPlatformOwner ? "Sim" : "Não"}\` | Platform Marketing: \`${isPlatformMarketing ? "Sim" : "Não"}\` | Simulação: \`${platformAccess?.isSimulation ? "Sim" : "Não"}\``,
       `- **Clínica:** ${clinic?.name || "Nenhuma selecionada"} (\`${clinicId || "null"}\`) | Plano: \`${subscriptionPlan || "N/A"}\``,
       `- **TanStack Query Cache:** ${cacheQueries.length} queries no cache (${cacheQueries.filter((q) => q.state.status === "error").length} com erro)`,
       "",
@@ -328,7 +330,9 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
         userId: user?.id,
         email: user?.email,
         operationalRole,
+        platformRole: platformRole ?? (isPlatformOwner ? "platform_owner" : null),
         isPlatformOwner,
+        isPlatformMarketing: Boolean(isPlatformMarketing),
         platformMfaVerified,
         isSimulation: Boolean(platformAccess?.isSimulation),
         simulatedOverridesCount: Object.keys(simulatedRoleCapabilityOverrides).length,
@@ -779,6 +783,8 @@ export function SimulationDebugPanel({ open, onOpenChange }: SimulationDebugPane
                   <p><span className="text-neutral-500">Email:</span> {user?.email}</p>
                   <p><span className="text-neutral-500">User ID:</span> <span className="font-mono text-[11px]">{user?.id}</span></p>
                   <p><span className="text-neutral-500">Master / Platform Owner:</span> <span className={isPlatformOwner ? "text-emerald-400 font-bold" : "text-neutral-400"}>{isPlatformOwner ? "Sim" : "Não"}</span></p>
+                  <p><span className="text-neutral-500">Platform Marketing:</span> <span className={isPlatformMarketing ? "text-emerald-400 font-bold" : "text-neutral-400"}>{isPlatformMarketing ? "Sim" : "Não"}</span></p>
+                  <p><span className="text-neutral-500">Papel de Plataforma:</span> <span className="font-mono text-[11px] text-amber-300">{platformRole || (isPlatformOwner ? "platform_owner" : "Nenhum")}</span></p>
                   <p><span className="text-neutral-500">MFA AAL2:</span> <span className={platformMfaVerified ? "text-emerald-400" : "text-amber-400"}>{platformMfaVerified ? "Verificado" : "AAL1 (Padrão)"}</span></p>
                 </div>
               </div>

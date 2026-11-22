@@ -88,6 +88,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Visao geral do produto]]: apresentacao curta do projeto.
 - [[Catalogo Mestre de Funcionalidades e Diferenciais]]: levantamento exaustivo de todas as 37 rotas, funcionalidades e diferenciais da plataforma.
 - [[00 - Roteiro de Execucao e Indice Mestre|Marketing e Afiliados]]: roteiro mestre e índice técnico completo do módulo de Marketing, CRM B2B/B2C, Afiliados e Splits Asaas.
+- [[00 - Hub Pluri Growth OS (Zap Engine + CrabStudio + Fluxos)]]: arquitetura completa, system design custo zero (Evolution API + CrabStudio + Fluxos DAG + Gemini) e roteiro em 4 ondas.
 - [[00 - Hub de Tutoriais da Plataforma]]: roteiros, mapeamento e guias passo a passo de todas as páginas da plataforma.
 - [[Ambiente e operacao]]: ambiente local, fluxo tecnico e deploy.
 - [[TDD e checks]]
@@ -103,6 +104,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 
 - [[README - Produto]]
 - [[00 - Roteiro de Execucao e Indice Mestre|Marketing e Afiliados]]
+- [[00 - Hub Pluri Growth OS (Zap Engine + CrabStudio + Fluxos)]]
 - [[00 - Hub de Tutoriais da Plataforma]]
 - [[00 - Plano Geral de Assinaturas e Asaas]]
 - [[Gestao de Assinatura e Integracao Asaas]]
@@ -155,6 +157,7 @@ Se a ideia for ganhar contexto rapido sem abrir a vault inteira:
 - [[Subplano Supabase Postgres RLS e RPCs]]
 - [[Subplano autorizacao RBAC clinicas e colaboradores]]
 - [[Subplano formularios publicos e compartilhamentos]]
+- [[05 - Modelagem de Banco Multi-Tenant, RBAC e Seguranca LGPD]]
 
 ### Release e Lançamento Oficial
 

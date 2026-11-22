@@ -16,6 +16,11 @@ const TutorialOverlay = lazy(() => import("@/components/tutorial/TutorialOverlay
 const EmailConfirmationRequiredModal = lazy(() => import("@/components/EmailConfirmationRequiredModal").then(m => ({ default: m.EmailConfirmationRequiredModal })));
 import { AnalyticsRouteTracker } from "@/components/AnalyticsRouteTracker";
 import { SyncProgressBanner } from "@/components/SyncProgressBanner";
+import {
+  checkPlatformFlagFromAuth,
+  getFirstAllowedPlatformPath,
+  getRequiredFlagForPlatformPath,
+} from "@/lib/platform-feature-flags";
 
 
 import Auth from "./pages/Auth";
@@ -120,7 +125,7 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
 };
 
 const ClinicRoute = ({ children }: { children: ReactNode }) => {
-  const { accessibleClinics, clinic, isPlatformOwner, loading, platformAccess, platformMfaVerified, selectClinicByRouteKey, session } = useAuth();
+  const { accessibleClinics, clinic, isPlatformOwner, isPlatformMarketing, loading, platformAccess, platformMfaVerified, selectClinicByRouteKey, session } = useAuth();
   const { clinicKey } = useParams();
   const [deniedRouteKey, setDeniedRouteKey] = useState<string | null>(null);
   const [validatingRouteKey, setValidatingRouteKey] = useState(false);
@@ -130,7 +135,7 @@ const ClinicRoute = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    if (isPlatformOwner && platformAccess?.clinic.route_key === clinicKey) {
+    if ((isPlatformOwner || isPlatformMarketing) && platformAccess?.clinic.route_key === clinicKey) {
       return;
     }
 
@@ -144,7 +149,7 @@ const ClinicRoute = ({ children }: { children: ReactNode }) => {
     void selectClinicByRouteKey(clinicKey)
       .catch(() => setDeniedRouteKey(clinicKey))
       .finally(() => setValidatingRouteKey(false));
-  }, [accessibleClinics, clinic?.route_key, clinicKey, deniedRouteKey, isPlatformOwner, loading, platformAccess?.clinic.route_key, selectClinicByRouteKey, session]);
+  }, [accessibleClinics, clinic?.route_key, clinicKey, deniedRouteKey, isPlatformMarketing, isPlatformOwner, loading, platformAccess?.clinic.route_key, selectClinicByRouteKey, session]);
 
   if (loading) {
     return <LoadingScreen />;
@@ -157,25 +162,45 @@ const ClinicRoute = ({ children }: { children: ReactNode }) => {
 };
 
 const PlatformRoute = ({ children }: { children: ReactNode }) => {
-  const { isPlatformOwner, loading, platformMfaVerified, session } = useAuth();
+  const auth = useAuth();
+  const { isPlatformOwner, isPlatformMarketing, platformRole, loading, platformMfaVerified, session } = auth;
+  const location = useLocation();
 
   if (loading) {
     return <LoadingScreen />;
   }
   if (!session) return <Navigate to="/auth" replace />;
-  if (!isPlatformOwner) return <Navigate to="/espacopessoal" replace />;
-  if (!platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
+  if (!isPlatformOwner && !isPlatformMarketing && !platformRole) return <Navigate to="/espacopessoal" replace />;
+  if (isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
+  if (!isPlatformOwner) {
+    const firstAllowedPath = getFirstAllowedPlatformPath(auth);
+    const requiredFlag = getRequiredFlagForPlatformPath(location.pathname);
+    if (location.pathname === "/platform" || location.pathname === "/platform/") {
+      return <Navigate to={firstAllowedPath} replace />;
+    }
+    if (requiredFlag && !checkPlatformFlagFromAuth(auth, requiredFlag)) {
+      return <Navigate to={firstAllowedPath} replace />;
+    }
+  }
   return <>{children}</>;
 };
 
 const PlatformMfaRoute = ({ children }: { children: ReactNode }) => {
-  const { isPlatformOwner, loading, platformMfaVerified, session } = useAuth();
+  const auth = useAuth();
+  const { isPlatformOwner, isPlatformMarketing, platformRole, loading, platformMfaVerified, session } = auth;
 
   if (loading) {
     return <LoadingScreen />;
   }
   if (!session) return <Navigate to="/auth" replace />;
-  if (!isPlatformOwner) return <Navigate to="/espacopessoal" replace />;
+  if (!isPlatformOwner) {
+    return (
+      <Navigate
+        to={isPlatformMarketing || platformRole ? getFirstAllowedPlatformPath(auth) : "/espacopessoal"}
+        replace
+      />
+    );
+  }
   if (platformMfaVerified) return <Navigate to="/platform" replace />;
   return <>{children}</>;
 };
@@ -212,7 +237,8 @@ const LegacyClinicPatientRedirect = () => {
 
 
 const AuthRoute = ({ children }: { children: ReactNode }) => {
-  const { isPlatformOwner, isPasswordRecovery, loading, platformMfaVerified, session } = useAuth();
+  const auth = useAuth();
+  const { isPlatformOwner, isPlatformMarketing, platformRole, isPasswordRecovery, loading, platformMfaVerified, session } = auth;
   if (loading && (import.meta.env.MODE === "test" || hasPotentialAuthContext())) {
     return <LoadingScreen />;
   }
@@ -221,6 +247,7 @@ const AuthRoute = ({ children }: { children: ReactNode }) => {
   }
   if (session && isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
   if (session && isPlatformOwner && platformMfaVerified) return <Navigate to="/platform" replace />;
+  if (session && (isPlatformMarketing || platformRole)) return <Navigate to={getFirstAllowedPlatformPath(auth)} replace />;
   if (session) return <Navigate to="/espacopessoal" replace />;
   return <>{children}</>;
 };

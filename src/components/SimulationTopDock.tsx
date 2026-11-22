@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/select";
 import { SubscriptionPlan } from "@/integrations/supabase/types";
 import { SimulationAudienceMode } from "@/contexts/FeatureFlagsContext";
+import { useAuth } from "@/hooks/useAuth";
+import { checkPlatformFlagFromAuth } from "@/lib/platform-feature-flags";
 import {
   SimulationMobileRoleDialog,
   SimulationMobilePlanDialog,
@@ -32,6 +34,9 @@ import {
 
 interface SimulationTopDockProps {
   clinicBrandName: string;
+  isPlatformMarketing?: boolean;
+  canUseDebug?: boolean;
+  canUseSimulation?: boolean;
   isSimulationMode: boolean;
   simulatedRole: string;
   onRoleChange: (role: string) => void;
@@ -66,6 +71,9 @@ const platformPlanLabels: Record<string, string> = {
 
 export const SimulationTopDock = ({
   clinicBrandName,
+  isPlatformMarketing = false,
+  canUseDebug: canUseDebugProp,
+  canUseSimulation: canUseSimulationProp,
   isSimulationMode,
   simulatedRole,
   onRoleChange,
@@ -84,6 +92,11 @@ export const SimulationTopDock = ({
   onViewModeChange,
   onExitSimulation,
 }: SimulationTopDockProps) => {
+  const auth = useAuth();
+  const hasAuthRole = Boolean(auth.isPlatformOwner || auth.isPlatformMarketing || auth.platformRole);
+  const canUseDebug = canUseDebugProp ?? (hasAuthRole ? checkPlatformFlagFromAuth(auth, "debug") : true);
+  const canUseSimulation = canUseSimulationProp ?? (hasAuthRole ? checkPlatformFlagFromAuth(auth, "simulation") : true);
+  const showSimControls = !isSimulationMode || canUseSimulation;
   const [mobileRoleDialogOpen, setMobileRoleDialogOpen] = useState(false);
   const [mobilePlanDialogOpen, setMobilePlanDialogOpen] = useState(false);
   const [mobileAudienceDialogOpen, setMobileAudienceDialogOpen] = useState(false);
@@ -144,6 +157,8 @@ export const SimulationTopDock = ({
             className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5"
             onTouchMove={clearLongPress}
           >
+            {showSimControls && (
+              <>
             {/* Papel Button */}
             <button
               type="button"
@@ -231,28 +246,32 @@ export const SimulationTopDock = ({
                 </span>
               )}
             </button>
+              </>
+            )}
 
             {/* Debug */}
-            <button
-              type="button"
-              className="flex items-center gap-1 h-7 px-2 rounded-lg bg-amber-500/10 border border-amber-400/80 text-xs font-bold text-amber-950 dark:text-amber-200 shrink-0 active:scale-95 transition-transform"
-              onClick={onOpenDebugModal}
-              onTouchStart={(e) => handleTouchStart(e, "Diagnóstico & Debug")}
-              onTouchEnd={handleTouchEnd}
-              aria-label="Abrir Diagnóstico e Debug"
-            >
-              <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse" />
-              {errorCount > 0 ? (
-                <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
-                  {errorCount}
-                </span>
-              ) : (
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              )}
-            </button>
+            {canUseDebug && (
+              <button
+                type="button"
+                className="flex items-center gap-1 h-7 px-2 rounded-lg bg-amber-500/10 border border-amber-400/80 text-xs font-bold text-amber-950 dark:text-amber-200 shrink-0 active:scale-95 transition-transform"
+                onClick={onOpenDebugModal}
+                onTouchStart={(e) => handleTouchStart(e, "Diagnóstico & Debug")}
+                onTouchEnd={handleTouchEnd}
+                aria-label="Abrir Diagnóstico e Debug"
+              >
+                <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse" />
+                {errorCount > 0 ? (
+                  <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
+                    {errorCount}
+                  </span>
+                ) : (
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                )}
+              </button>
+            )}
 
             {/* Paciente Teste */}
-            {isSimulationMode && (
+            {isSimulationMode && canUseSimulation && (
               <button
                 type="button"
                 className="flex items-center gap-1 h-7 px-2 rounded-lg bg-background/90 border border-amber-300 text-xs text-amber-950 dark:text-amber-200 shrink-0 active:scale-95 transition-transform"
@@ -305,10 +324,15 @@ export const SimulationTopDock = ({
               <span>
                 {isSimulationMode ? "Modo Simulação Backoffice" : "Modo Suporte Ativo"} ({clinicBrandName})
               </span>
+              {isPlatformMarketing && (
+                <span className="rounded-full bg-amber-500/20 border border-amber-400/50 px-2 py-0.5 text-[10px] font-bold tracking-wide">
+                  platform_marketing
+                </span>
+              )}
             </div>
 
             <div className="h-4 w-px bg-amber-300/60" />
-
+            {showSimControls && (<>
             {/* Papéis Operacionais */}
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-medium uppercase tracking-wide text-amber-800 dark:text-amber-400">
@@ -410,29 +434,31 @@ export const SimulationTopDock = ({
                 </span>
               )}
             </Button>
-
+            </>)}
             {/* Debug */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs"
-              onClick={onOpenDebugModal}
-              title="Abrir Painel de Diagnóstico e Debug em Tempo Real (Atalho: Cmd+Ctrl+D / Ctrl+Alt+D)"
-            >
-              <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse" />
-              <span>Debug</span>
-              {errorCount > 0 ? (
-                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
-                  {errorCount}
-                </span>
-              ) : (
-                <span className="h-2 w-2 rounded-full bg-emerald-500" title="Sistema saudável" />
-              )}
-            </Button>
+            {canUseDebug && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 border-amber-400/80 bg-amber-500/10 text-amber-950 dark:text-amber-200 hover:bg-amber-500/20 text-xs gap-1.5 font-bold shadow-xs"
+                onClick={onOpenDebugModal}
+                title="Abrir Painel de Diagnóstico e Debug em Tempo Real (Atalho: Cmd+Ctrl+D / Ctrl+Alt+D)"
+              >
+                <Zap className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 fill-amber-400/20 animate-pulse" />
+                <span>Debug</span>
+                {errorCount > 0 ? (
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
+                    {errorCount}
+                  </span>
+                ) : (
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" title="Sistema saudável" />
+                )}
+              </Button>
+            )}
 
             {/* Gerador de Paciente Teste */}
-            {isSimulationMode && (
+            {isSimulationMode && canUseSimulation && (
               <Button
                 type="button"
                 variant="outline"

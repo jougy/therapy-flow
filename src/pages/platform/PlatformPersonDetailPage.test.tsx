@@ -2,6 +2,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PlatformPersonDetailPage } from "./PlatformPersonDetailPage";
 import { callPlatformAccountAdmin, callRpc } from "@/components/platform/platform-api";
+import { toast } from "@/hooks/use-toast";
+
+const authStateMock = vi.hoisted(() => ({
+  isPlatformOwner: false,
+  platformAdminRow: null as { role?: string; is_active?: boolean; feature_flags?: Record<string, boolean> } | null,
+}));
 
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 window.HTMLElement.prototype.hasPointerCapture = vi.fn();
@@ -24,6 +30,12 @@ vi.mock("@/components/platform/platform-api", () => ({
   storePlatformClinicKey: vi.fn(),
 }));
 
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: () => ({
+    isPlatformOwner: authStateMock.isPlatformOwner,
+  }),
+}));
+
 vi.mock("@/hooks/use-toast", () => ({
   toast: vi.fn(),
   useToast: () => ({ toast: vi.fn() }),
@@ -31,15 +43,24 @@ vi.mock("@/hooks/use-toast", () => ({
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn().mockResolvedValue({ data: [], error: null }),
-        order: vi.fn().mockResolvedValue({
-          data: [
-            { id: "clinic-3", name: "Clínica Gama", cnpj: "11.222.333/0001-44" },
-          ],
-        }),
-      })),
+    from: vi.fn((table: string) => ({
+      select: vi.fn(() => {
+        if (table === "platform_admins") {
+          return {
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn().mockResolvedValue({ data: authStateMock.platformAdminRow, error: null }),
+            })),
+          };
+        }
+        return {
+          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          order: vi.fn().mockResolvedValue({
+            data: [
+              { id: "clinic-3", name: "Clínica Gama", cnpj: "11.222.333/0001-44" },
+            ],
+          }),
+        };
+      }),
     })),
     auth: {
       mfa: {
@@ -98,6 +119,8 @@ describe("PlatformPersonDetailPage - Gestão de Relação Multi-Clínica", () =>
 
   beforeEach(() => {
     vi.clearAllMocks();
+    authStateMock.isPlatformOwner = false;
+    authStateMock.platformAdminRow = null;
     vi.mocked(callRpc).mockImplementation(async (method: string) => {
       if (method === "get_platform_person_detail") {
         return { data: mockDetailData, error: null };
@@ -222,5 +245,95 @@ describe("PlatformPersonDetailPage - Gestão de Relação Multi-Clínica", () =>
       expect(screen.getByText(/Financeiro:/i)).toBeInTheDocument();
       expect(screen.getByText(/Configurar na clínica/i)).toBeInTheDocument();
     });
+  });
+
+  it("organiza seções em abas e oculta 'Acesso ao Backoffice' quando não é platform_owner", async () => {
+    authStateMock.isPlatformOwner = false;
+    render(<PlatformPersonDetailPage itemType="account" itemId="user-123" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Clínica Alfa")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("tab", { name: /Dados & Contexto/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Operações Master/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Governança & Punições/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Telemetria/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Acesso ao Backoffice/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Operações Master/i }));
+    expect(screen.getByTestId("account-operations")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Governança & Punições/i }));
+    expect(screen.getByTestId("governance-panel")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Telemetria/i }));
+    expect(screen.getByTestId("statistics-panel")).toBeInTheDocument();
+  });
+
+  it("exibe aba 'Acesso ao Backoffice' para platform_owner, oculta flags quando false e salva via upsert_platform_admin_access", async () => {
+    authStateMock.isPlatformOwner = true;
+    authStateMock.platformAdminRow = null;
+    render(<PlatformPersonDetailPage itemType="account" itemId="user-123" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Acesso ao Backoffice/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Acesso ao Backoffice/i }));
+
+    const accessSwitch = await screen.findByRole("switch", {
+      name: /Este usuário terá acesso ao backoffice\?/i,
+    });
+    expect(accessSwitch).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByText(/Feature Flags do Backoffice/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Salvar permissões do backoffice/i })).not.toBeInTheDocument();
+
+    fireEvent.click(accessSwitch);
+
+    expect(screen.getByText(/Feature Flags do Backoffice/i)).toBeInTheDocument();
+
+    const expectedFlags = [
+      "marketing",
+      "agenda",
+      "simulation",
+      "debug",
+      "directory",
+      "forms",
+      "feedbacks",
+      "releases",
+      "tags",
+      "feature_flags",
+      "governance",
+      "billing",
+      "logs",
+    ];
+    for (const flagKey of expectedFlags) {
+      expect(screen.getByText(flagKey)).toBeInTheDocument();
+    }
+
+    fireEvent.click(screen.getByRole("switch", { name: /Marketing & Auto-Lead \(marketing\)/i }));
+    fireEvent.click(screen.getByRole("switch", { name: /Faturamento & Webhooks \(billing\)/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Salvar permissões do backoffice/i }));
+
+    await waitFor(() => {
+      expect(callRpc).toHaveBeenCalledWith("upsert_platform_admin_access", {
+        _target_user_id: "user-123",
+        _has_access: true,
+        _feature_flags: expect.objectContaining({
+          marketing: true,
+          billing: true,
+          agenda: false,
+          logs: false,
+        }),
+      });
+    });
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Acesso ao Backoffice atualizado",
+      })
+    );
   });
 });

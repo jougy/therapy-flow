@@ -15,8 +15,29 @@ const supabaseMocks = vi.hoisted(() => {
     eq: vi.fn(() => createQueryResult(null)),
   };
 
+  let mockPlatformAdminRole: "platform_owner" | "platform_marketing" | null = null;
+  let mockPlatformFeatureFlags: Record<string, boolean> | null = null;
+
   const createSelectBuilder = (table: string, selectClause?: string) => {
     const normalizedSelect = selectClause ?? "";
+
+    if (table === "platform_admins") {
+      const builder = {
+        eq: vi.fn(() => builder),
+        maybeSingle: vi.fn(() =>
+          createQueryResult(
+            mockPlatformAdminRole
+              ? {
+                  role: mockPlatformAdminRole,
+                  is_active: true,
+                  ...(mockPlatformFeatureFlags ? { feature_flags: mockPlatformFeatureFlags } : {}),
+                }
+              : null
+          )
+        ),
+      };
+      return builder;
+    }
 
     if (table === "profiles" && normalizedSelect.includes("address")) {
       return {
@@ -116,6 +137,12 @@ const supabaseMocks = vi.hoisted(() => {
   return {
     fakeSession,
     from,
+    setMockPlatformAdminRole: (role: "platform_owner" | "platform_marketing" | null) => {
+      mockPlatformAdminRole = role;
+    },
+    setMockPlatformFeatureFlags: (flags: Record<string, boolean> | null) => {
+      mockPlatformFeatureFlags = flags;
+    },
     onAuthStateChange: vi.fn((callback: (event: string, session: typeof fakeSession | null) => void) => {
       callback("SIGNED_IN", fakeSession);
 
@@ -202,6 +229,8 @@ const AuthStateProbe = () => {
 describe("useAuth runtime resilience", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    supabaseMocks.setMockPlatformAdminRole(null);
+    supabaseMocks.setMockPlatformFeatureFlags(null);
     window.sessionStorage.setItem("therapy-flow.activeClinicId", "clinic-1");
   });
 
@@ -355,5 +384,88 @@ describe("useAuth runtime resilience", () => {
     await signOutFn();
 
     expect(supabaseMocks.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes platformRole and isPlatformMarketing when user has active platform_marketing role", async () => {
+    supabaseMocks.setMockPlatformAdminRole("platform_marketing");
+
+    const PlatformRoleProbe = () => {
+      const { loading, platformRole, isPlatformMarketing, isPlatformOwner } = useAuth();
+      if (loading) return <span>loading</span>;
+      return (
+        <div>
+          <span data-testid="platform-role">{platformRole ?? "none"}</span>
+          <span data-testid="is-marketing">{String(isPlatformMarketing)}</span>
+          <span data-testid="is-owner">{String(isPlatformOwner)}</span>
+        </div>
+      );
+    };
+
+    render(
+      <AuthProvider>
+        <PlatformRoleProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("platform-role")).toHaveTextContent("platform_marketing");
+    });
+
+    expect(screen.getByTestId("is-marketing")).toHaveTextContent("true");
+    expect(screen.getByTestId("is-owner")).toHaveTextContent("false");
+  });
+
+  it("exposes platformFeatureFlags and hasPlatformFlag from platform_admins and grants all flags to platform_owner", async () => {
+    supabaseMocks.setMockPlatformAdminRole("platform_marketing");
+    supabaseMocks.setMockPlatformFeatureFlags({
+      marketing: true,
+      agenda: false,
+      billing: true,
+      simulation: false,
+    });
+
+    const FlagsProbe = () => {
+      const { loading, platformFeatureFlags, hasPlatformFlag } = useAuth();
+      if (loading) return <span>loading</span>;
+      return (
+        <div>
+          <span data-testid="flag-marketing">{String(hasPlatformFlag("marketing"))}</span>
+          <span data-testid="flag-agenda">{String(hasPlatformFlag("agenda"))}</span>
+          <span data-testid="flag-billing">{String(hasPlatformFlag("billing"))}</span>
+          <span data-testid="flag-logs">{String(hasPlatformFlag("logs"))}</span>
+          <span data-testid="raw-billing">{String(platformFeatureFlags.billing)}</span>
+        </div>
+      );
+    };
+
+    const { unmount } = render(
+      <AuthProvider>
+        <FlagsProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("flag-marketing")).toHaveTextContent("true");
+    });
+    expect(screen.getByTestId("flag-agenda")).toHaveTextContent("false");
+    expect(screen.getByTestId("flag-billing")).toHaveTextContent("true");
+    expect(screen.getByTestId("flag-logs")).toHaveTextContent("false");
+    expect(screen.getByTestId("raw-billing")).toHaveTextContent("true");
+
+    unmount();
+    supabaseMocks.setMockPlatformAdminRole("platform_owner");
+    supabaseMocks.setMockPlatformFeatureFlags({ billing: false, logs: false });
+
+    render(
+      <AuthProvider>
+        <FlagsProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("flag-logs")).toHaveTextContent("true");
+    });
+    expect(screen.getByTestId("flag-agenda")).toHaveTextContent("true");
+    expect(screen.getByTestId("flag-billing")).toHaveTextContent("true");
   });
 });

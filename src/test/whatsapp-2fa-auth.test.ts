@@ -63,11 +63,11 @@ describe("WhatsApp Bot 2FA TOTP (Ente Auth) & Auth Session Engine", () => {
     expect(diffHours).toBeLessThanOrEqual(5.01);
   });
 
-  it("contém links e instruções do Ente Auth nos tutoriais", () => {
-    expect(TUTORIAL_ENTE_AUTH_NO_2FA).toContain("play.google.com");
-    expect(TUTORIAL_ENTE_AUTH_NO_2FA).toContain("apps.apple.com");
-    expect(TUTORIAL_ENTE_AUTH_NO_2FA).toContain("ente.io/auth");
-    expect(TUTORIAL_ENTE_AUTH_HOW_TO_USE).toContain("6 dígitos");
+  it("contém instruções de privacidade e acesso nos tutoriais", () => {
+    expect(TUTORIAL_ENTE_AUTH_NO_2FA).toContain("Trancar Conversa");
+    expect(TUTORIAL_ENTE_AUTH_NO_2FA).toContain("menu");
+    expect(TUTORIAL_ENTE_AUTH_NO_2FA).toContain("entrar");
+    expect(TUTORIAL_ENTE_AUTH_HOW_TO_USE).toContain("Comandos do WhatsApp Bot");
     expect(TUTORIAL_ACCOUNT_NOT_FOUND).toContain("Configurações Pessoais");
   });
 

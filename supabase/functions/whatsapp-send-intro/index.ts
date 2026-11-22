@@ -70,19 +70,11 @@ Deno.serve(async (req: Request) => {
       `Por aqui você poderá:\n` +
       `• Consultar e gerenciar sua agenda e próximos pacientes\n` +
       `• Realizar pré-cadastro rápido de novos pacientes\n` +
-      `• Emitir termos de consentimento e consultar prontuários\n` +
-      `• Acessar o financeiro da sua clínica e suporte direto\n\n`;
-
-    if (has2fa) {
-      introMessage +=
-        `🔒 *Sua conta já possui a verificação em 2 fatores (2FA) configurada!*\n` +
-        `Para começar agora, basta responder com *login* ou *entrar* e digitar o código gerado no seu aplicativo *Ente Auth*.`;
-    } else {
-      introMessage +=
-        `⚙️ *Para sua segurança, o acesso aos comandos exige a ativação do 2FA:*\n` +
-        `Acesse *Configurações* > *Segurança Pessoal* na plataforma web e ative a Autenticação em Dois Fatores com o app *Ente Auth*.\n\n` +
-        `Assim que ativar, basta responder aqui com *login*!`;
-    }
+      `• Emitir termos de consentimento e acessar links seguros de prontuários\n` +
+      `• Acessar o financeiro da sua clínica e suporte direto\n\n` +
+      `🚀 *Acesso Prático e Imediato:*\n` +
+      `Seu número de celular já foi reconhecido pelo sistema! Basta responder com *menu* ou *entrar* para começar a usar.\n\n` +
+      `🔒 *Dica de Privacidade:* Recomendamos ativar a opção *Trancar Conversa* (com biometria/FaceID) nas configurações deste contato no WhatsApp.`;
 
     const sendRes = await whatsAppClient.sendTextMessage(cleanPhone, introMessage);
 

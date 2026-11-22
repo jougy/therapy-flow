@@ -52,7 +52,12 @@ export type AccessCapability =
   | "system.print"
   | "marketing.affiliates.view"
   | "marketing.affiliates.manage"
-  | "marketing.affiliates.withdraw";
+  | "marketing.affiliates.withdraw"
+  | "marketing.zap.view"
+  | "marketing.zap.manage"
+  | "marketing.studio.view"
+  | "marketing.studio.manage"
+  | "marketing.flows.manage";
 
 export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "clinic_profile.read",
@@ -95,6 +100,11 @@ export const ACCESS_CAPABILITIES: AccessCapability[] = [
   "marketing.affiliates.view",
   "marketing.affiliates.manage",
   "marketing.affiliates.withdraw",
+  "marketing.zap.view",
+  "marketing.zap.manage",
+  "marketing.studio.view",
+  "marketing.studio.manage",
+  "marketing.flows.manage",
 ];
 
 export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: string; label: string }> = {
@@ -137,6 +147,26 @@ export const ACCESS_CAPABILITY_LABELS: Record<AccessCapability, { description: s
   "marketing.affiliates.withdraw": {
     description: "Pode configurar dados bancários, PIX e solicitar transferências de comissões.",
     label: "Saque e split de afiliados",
+  },
+  "marketing.zap.view": {
+    description: "Pode visualizar conexões, instâncias e status do WhatsApp.",
+    label: "Visualizar WhatsApp",
+  },
+  "marketing.zap.manage": {
+    description: "Pode gerenciar instâncias, QR code, chip router e filas do WhatsApp.",
+    label: "Gerenciar WhatsApp",
+  },
+  "marketing.studio.view": {
+    description: "Pode visualizar modelos, áudios PTT e mídias do estúdio.",
+    label: "Visualizar estúdio",
+  },
+  "marketing.studio.manage": {
+    description: "Pode gerar mídias, configurar TTS/áudios e disparar campanhas do estúdio.",
+    label: "Gerenciar estúdio",
+  },
+  "marketing.flows.manage": {
+    description: "Pode criar, editar e monitorar fluxos de automação e Typebot.",
+    label: "Gerenciar fluxos de automação",
   },
   "patients.delete": {
     description: "Pode remover e excluir cadastros de pacientes da clínica.",
@@ -314,6 +344,11 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "patients.delete":
     case "marketing.affiliates.view":
     case "marketing.affiliates.manage":
+    case "marketing.zap.view":
+    case "marketing.zap.manage":
+    case "marketing.studio.view":
+    case "marketing.studio.manage":
+    case "marketing.flows.manage":
       return hasOperationalRole(context, ["owner", "admin"]);
 
     case "marketing.affiliates.withdraw":

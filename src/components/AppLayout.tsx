@@ -42,6 +42,7 @@ import { TrialReadOnlyBanner } from "@/components/TrialReadOnlyBanner";
 import { AgendaAlarmDialog } from "@/components/agenda/AgendaAlarmDialog";
 import { useAgendaReminderPoller } from "@/hooks/useAgendaReminderPoller";
 import { useActiveBrand } from "@/hooks/useActiveBrand";
+import { checkPlatformFlagFromAuth, getFirstAllowedPlatformPath } from "@/lib/platform-feature-flags";
 
 
 interface AppLayoutProps {
@@ -50,7 +51,12 @@ interface AppLayoutProps {
 
 const AppLayout = ({ children }: AppLayoutProps) => {
   const brand = useActiveBrand();
-  const { clinic, endPlatformClinicAccess, leaveClinic, platformAccess, profile, setPlatformSupportRole, setPlatformSimulatedPlan, signOut, subscriptionPlan, simulatedRoleCapabilityOverrides = {} } = useAuth();
+  const auth = useAuth();
+  const { clinic, endPlatformClinicAccess, isPlatformMarketing, isPlatformOwner, leaveClinic, platformAccess, profile, setPlatformSupportRole, setPlatformSimulatedPlan, signOut, subscriptionPlan, simulatedRoleCapabilityOverrides = {} } = auth;
+  const isRestrictedMarketing = Boolean(isPlatformMarketing && !isPlatformOwner);
+  const platformHomePath = getFirstAllowedPlatformPath(auth);
+  const canUseDebug = Boolean(platformAccess && checkPlatformFlagFromAuth(auth, "debug"));
+  const canUseSimulation = checkPlatformFlagFromAuth(auth, "simulation");
   const { flagOverrides, simulationAudienceMode, setSimulationAudienceMode } = useFeatureFlags();
   const location = useLocation();
   const navigate = useNavigate();
@@ -96,6 +102,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
 
   // Atalho global Cmd+Ctrl+D (Mac) ou Ctrl+Alt+D (Windows/Linux) para abrir painel de debug do backoffice
   useEffect(() => {
+    if (!canUseDebug) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const isKeyD = e.key === "D" || e.key === "d";
       const isMacCmdCtrl = e.metaKey && e.ctrlKey && isKeyD;
@@ -108,7 +115,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [canUseDebug]);
 
   const iframeSrc = useMemo(() => {
     const url = new URL(window.location.href);
@@ -204,6 +211,9 @@ const AppLayout = ({ children }: AppLayoutProps) => {
       {isPlatformSupportMode && !isPreviewIframe && (
         <SimulationTopDock
           clinicBrandName={clinicBrandName}
+          isPlatformMarketing={isRestrictedMarketing}
+          canUseDebug={canUseDebug}
+          canUseSimulation={canUseSimulation}
           isSimulationMode={isSimulationMode}
           simulatedRole={platformAccess?.simulatedRole ?? "owner"}
           onRoleChange={(role) => {
@@ -225,7 +235,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           onExitSimulation={() => {
-            void endPlatformClinicAccess?.().finally(() => navigate("/platform"));
+            void endPlatformClinicAccess?.().finally(() => navigate(platformHomePath));
           }}
         />
       )}
@@ -368,7 +378,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                           const exitAccess = isPlatformSupportMode && endPlatformClinicAccess
                             ? endPlatformClinicAccess
                             : leaveClinic;
-                          void exitAccess().finally(() => navigate(isPlatformSupportMode ? "/platform" : "/espacopessoal"));
+                          void exitAccess().finally(() => navigate(isPlatformSupportMode ? platformHomePath : "/espacopessoal"));
                         }}
                       >
                         {isPlatformSupportMode ? "Voltar ao painel global" : "Voltar e liberar acesso"}
@@ -412,10 +422,12 @@ const AppLayout = ({ children }: AppLayoutProps) => {
         clinicId={clinic?.id}
       />
 
-      <SimulationDebugPanel
-        open={debugModalOpen}
-        onOpenChange={setDebugModalOpen}
-      />
+      {canUseDebug && (
+        <SimulationDebugPanel
+          open={debugModalOpen}
+          onOpenChange={setDebugModalOpen}
+        />
+      )}
 
       {!isPreviewIframe && (
         <>

@@ -13,6 +13,7 @@ export interface PersonalDashboardTabProps {
   attendanceRange: AttendanceRange;
   setAttendanceRange: (range: AttendanceRange) => void;
   isPlatformOwner: boolean;
+  isPlatformMarketing?: boolean;
   onNavigateToPlatform: () => void;
 }
 
@@ -22,6 +23,7 @@ export function PersonalDashboardTab({
   attendanceRange,
   setAttendanceRange,
   isPlatformOwner,
+  isPlatformMarketing = false,
   onNavigateToPlatform,
 }: PersonalDashboardTabProps) {
   return (
@@ -185,7 +187,7 @@ export function PersonalDashboardTab({
         </Card>
       </div>
 
-      {isPlatformOwner && (
+      {(isPlatformOwner || isPlatformMarketing) && (
         <button
           type="button"
           className="flex w-full items-center justify-between gap-3 rounded-lg border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/50 hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
@@ -196,11 +198,17 @@ export function PersonalDashboardTab({
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="font-medium text-foreground">Painel administrativo global</p>
-              <p className="truncate text-sm text-muted-foreground">Ferramentas internas da plataforma</p>
+              <p className="font-medium text-foreground">
+                {isPlatformOwner ? "Painel administrativo global" : "Central de Marketing & Agenda"}
+              </p>
+              <p className="truncate text-sm text-muted-foreground">
+                {isPlatformOwner
+                  ? "Ferramentas internas da plataforma"
+                  : "Auto-Lead, Afiliados, Agenda de Reuniões e Simulação"}
+              </p>
             </div>
           </div>
-          <Badge variant="secondary">platform_owner</Badge>
+          <Badge variant="secondary">{isPlatformOwner ? "platform_owner" : "platform_marketing"}</Badge>
         </button>
       )}
     </div>

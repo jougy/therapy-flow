@@ -595,6 +595,11 @@ export async function sendRecordsMenu(
       title: 'Ações Rápidas',
       rows: [
         {
+          id: 'records_portal_link',
+          title: '🔐 Ver Prontuários no App',
+          description: 'Acessar fichas e histórico com segurança',
+        },
+        {
           id: 'records_terms',
           title: '📄 Termos de Consentimento',
           description: 'Modelos TCLE Adulto e Pediátrico da clínica',
