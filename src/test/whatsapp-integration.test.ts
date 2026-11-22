@@ -1132,6 +1132,7 @@ describe("WhatsApp Client & Meta Cloud API Integration", () => {
         expect(body).toContain("Dr. Jouberth");
         expect(body).toContain("Prontuário & Pacientes");
         expect(sections[0].rows.map((r) => r.id)).toEqual([
+          "records_portal_link",
           "records_terms",
           "records_quick_patient",
         ]);

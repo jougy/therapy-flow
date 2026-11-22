@@ -319,9 +319,8 @@ describe("PlatformPersonDetailPage - Gestão de Relação Multi-Clínica", () =>
 
     await waitFor(() => {
       expect(callRpc).toHaveBeenCalledWith("upsert_platform_admin_access", {
-        _user_id: "user-123",
-        _is_active: true,
-        _role: "platform_marketing",
+        _target_user_id: "user-123",
+        _has_access: true,
         _feature_flags: expect.objectContaining({
           marketing: true,
           billing: true,
