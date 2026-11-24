@@ -18,13 +18,23 @@ describe("analytics-tracker", () => {
     delete (window as unknown as { clarity?: unknown }).clarity;
   });
 
-  it("initializes analytics with correct GA4 and Meta Pixel IDs for plurifisio", () => {
+  it("initializes analytics with correct GA4 and Meta Pixel IDs for plurifisio on landing domain", () => {
+    vi.stubGlobal("location", { ...window.location, hostname: "plurifisio.com.br" });
     const config = initGlobalAnalytics(SUBPRODUCTS_CATALOG.plurifisio);
     expect(config.key).toBe("plurifisio");
     expect(config.gaMeasurementId).toBe("G-HM85XTZRHT");
     expect(config.metaPixelId).toBe("1073846021935349");
     expect(typeof window.gtag).toBe("function");
     expect(typeof window.fbq).toBe("function");
+    vi.unstubAllGlobals();
+  });
+
+  it("skips GA4 and Clarity initialization on SaaS app.* domain", () => {
+    vi.stubGlobal("location", { ...window.location, hostname: "app.plurifisio.com.br" });
+    initGlobalAnalytics(SUBPRODUCTS_CATALOG.plurifisio);
+    expect(window.gtag).toBeUndefined();
+    expect(window.clarity).toBeUndefined();
+    vi.unstubAllGlobals();
   });
 
   it("dispatches trackPageView to fbq and gtag", () => {
