@@ -34,17 +34,17 @@ export const SessionShareRecipientsDialog: React.FC<SessionShareRecipientsDialog
             Acesso compartilhado
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0 max-w-full">
           <p className="text-sm text-muted-foreground">
             {session
               ? `Atendimento de ${new Date(session.session_date).toLocaleDateString("pt-BR")}`
               : "Atendimento selecionado"}
           </p>
           {(shareRecipientsSummary?.recipients ?? []).length > 0 ? (
-            <div className="divide-y rounded-lg border">
+            <div className="divide-y rounded-lg border min-w-0 max-w-full">
               {shareRecipientsSummary?.recipients.map((recipient) => (
-                <div key={recipient.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <div className="min-w-0">
+                <div key={recipient.id} className="flex items-center justify-between gap-3 px-4 py-3 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{getShareRecipientLabel(recipient)}</p>
                     <p className="truncate text-xs text-muted-foreground">{recipient.email || "Sem email"}</p>
                   </div>
@@ -62,9 +62,11 @@ export const SessionShareRecipientsDialog: React.FC<SessionShareRecipientsDialog
             </p>
           )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="pb-safe">
           <DialogClose asChild>
-            <Button variant="outline">Fechar</Button>
+            <Button variant="outline" className="w-full sm:w-auto min-h-[44px]">
+              Fechar
+            </Button>
           </DialogClose>
         </DialogFooter>
       </DialogContent>

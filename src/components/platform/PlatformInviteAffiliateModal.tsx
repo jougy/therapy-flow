@@ -150,7 +150,7 @@ export const PlatformInviteAffiliateModal: React.FC<PlatformInviteAffiliateModal
             ? `Você foi convidado com comissões personalizadas (${customFirstMonthNum}% / ${customRecurringNum}%) para o Programa de Afiliados.`
             : `Você foi convidado com piso inicial ${floorTier.toUpperCase()} para o Programa de Afiliados.`;
 
-          await supabase.rpc("create_user_notification", {
+          await supabase.rpc("platform_send_user_notification", {
             _user_id: user.id,
             _clinic_id: user.clinicId || null,
             _actor_user_id: null,

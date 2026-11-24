@@ -1,5 +1,11 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  getLocalCacheItem,
+  getSyncMemoryCacheItem,
+  setLocalCacheItem,
+} from "@/lib/indexed-db-persister";
+import { isOfflineOrNetworkError } from "@/lib/local-first/networkError";
 import defaultAdultTermsMarkdown from "@/assets/adult-terms-of-consent.md?raw";
 import defaultMinorTermsMarkdown from "@/assets/minor-terms-of-responsibility.md?raw";
 import defaultPrintTermsMarkdown from "@/assets/print-terms-of-responsibility.md?raw";
@@ -11,122 +17,178 @@ interface UseDocumentTemplatesParams {
   initialTemplateId?: string;
 }
 
+interface CachedClinicDocTemplates {
+  clinicCnpj: string;
+  standardAdultContent: string;
+  standardMinorContent: string;
+  customTemplates: DocumentTemplateItem[];
+}
+
+export const CLINIC_DOC_TEMPLATES_CACHE_KEY = (clinicId: string) =>
+  `clinic_doc_templates_${clinicId}`;
+
 export function useDocumentTemplates({
   open,
   clinicId,
   initialTemplateId,
 }: UseDocumentTemplatesParams) {
+  const cacheKey = clinicId ? CLINIC_DOC_TEMPLATES_CACHE_KEY(clinicId) : null;
+  const syncCached = cacheKey ? getSyncMemoryCacheItem<CachedClinicDocTemplates>(cacheKey) : null;
+
   const [loading, setLoading] = useState(false);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("std-adult");
-  const [standardAdultContent, setStandardAdultContent] = useState<string>(defaultAdultTermsMarkdown);
-  const [standardMinorContent, setStandardMinorContent] = useState<string>(defaultMinorTermsMarkdown);
-  const [customTemplates, setCustomTemplates] = useState<DocumentTemplateItem[]>([]);
-  const [clinicCnpj, setClinicCnpj] = useState<string>("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(initialTemplateId || "std-adult");
+  const [standardAdultContent, setStandardAdultContent] = useState<string>(
+    syncCached?.standardAdultContent || defaultAdultTermsMarkdown
+  );
+  const [standardMinorContent, setStandardMinorContent] = useState<string>(
+    syncCached?.standardMinorContent || defaultMinorTermsMarkdown
+  );
+  const [customTemplates, setCustomTemplates] = useState<DocumentTemplateItem[]>(
+    syncCached?.customTemplates ?? []
+  );
+  const [clinicCnpj, setClinicCnpj] = useState<string>(syncCached?.clinicCnpj || "");
+
+  const applyCachedTemplates = useCallback((cached: CachedClinicDocTemplates) => {
+    setStandardAdultContent(cached.standardAdultContent || defaultAdultTermsMarkdown);
+    setStandardMinorContent(cached.standardMinorContent || defaultMinorTermsMarkdown);
+    setClinicCnpj(cached.clinicCnpj || "");
+    setCustomTemplates(Array.isArray(cached.customTemplates) ? cached.customTemplates : []);
+  }, []);
 
   const loadTemplatesAndSettings = useCallback(async () => {
     if (!open) return;
     setLoading(true);
 
     try {
+      if (initialTemplateId) {
+        setSelectedTemplateId(initialTemplateId);
+      }
+
+      if (!clinicId || !cacheKey) {
+        setStandardAdultContent(defaultAdultTermsMarkdown);
+        setStandardMinorContent(defaultMinorTermsMarkdown);
+        setClinicCnpj("");
+        setCustomTemplates([]);
+        return;
+      }
+
+      const cached = await getLocalCacheItem<CachedClinicDocTemplates>(cacheKey);
+      if (cached) {
+        applyCachedTemplates(cached);
+      }
+
+      // Fallback imediato offline: usa cache da clínica se existir ou os .md?raw do bundle
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return;
+      }
+
       let resolvedAdultContent = defaultAdultTermsMarkdown;
       let resolvedMinorContent = defaultMinorTermsMarkdown;
       let resolvedCnpj = "";
       const loadedCustoms: DocumentTemplateItem[] = [];
 
-      if (clinicId) {
-        // Carrega dados e configurações da clínica
-        const { data: clinicData } = await supabase
-          .from("clinics")
-          .select("id, name, cnpj, custom_fields")
-          .eq("id", clinicId)
-          .maybeSingle();
+      const { data: clinicData, error: clinicError } = await supabase
+        .from("clinics")
+        .select("id, name, cnpj, custom_fields")
+        .eq("id", clinicId)
+        .maybeSingle();
 
-        if (clinicData) {
-          resolvedCnpj = clinicData.cnpj || "";
-          const custom = (clinicData.custom_fields || {}) as Record<string, unknown>;
-          const clinicTerms = (custom.clinic_terms || {}) as {
-            adult_terms?: { content?: string };
-            minor_terms?: { content?: string };
-          };
+      if (clinicError) {
+        if (isOfflineOrNetworkError(clinicError) || cached) {
+          return;
+        }
+      }
 
-          if (clinicTerms.adult_terms?.content) {
-            resolvedAdultContent = clinicTerms.adult_terms.content;
-          }
-          if (clinicTerms.minor_terms?.content) {
-            resolvedMinorContent = clinicTerms.minor_terms.content;
-          }
+      if (clinicData) {
+        resolvedCnpj = clinicData.cnpj || "";
+        const custom = (clinicData.custom_fields || {}) as Record<string, unknown>;
+        const clinicTerms = (custom.clinic_terms || {}) as {
+          adult_terms?: { content?: string };
+          minor_terms?: { content?: string };
+        };
 
-          // Templates customizados legados em custom_fields
-          if (Array.isArray(custom.clinic_document_templates)) {
-            for (const item of custom.clinic_document_templates as Array<Record<string, unknown>>) {
-              if (item?.id && item?.title && (item.content || item.content_markdown || item.content_md)) {
-                loadedCustoms.push({
-                  id: String(item.id),
-                  title: String(item.title),
-                  description: item.description ? String(item.description) : undefined,
-                  category: String(item.category || "custom"),
-                  content: String(item.content_md || item.content_markdown || item.content || ""),
-                  isCustom: true,
-                });
-              }
+        if (clinicTerms.adult_terms?.content) {
+          resolvedAdultContent = clinicTerms.adult_terms.content;
+        }
+        if (clinicTerms.minor_terms?.content) {
+          resolvedMinorContent = clinicTerms.minor_terms.content;
+        }
+
+        if (Array.isArray(custom.clinic_document_templates)) {
+          for (const item of custom.clinic_document_templates as Array<Record<string, unknown>>) {
+            if (item?.id && item?.title && (item.content || item.content_markdown || item.content_md)) {
+              loadedCustoms.push({
+                id: String(item.id),
+                title: String(item.title),
+                description: item.description ? String(item.description) : undefined,
+                category: String(item.category || "custom"),
+                content: String(item.content_md || item.content_markdown || item.content || ""),
+                isCustom: true,
+              });
             }
           }
         }
+      }
 
-        // Carrega modelos customizados da tabela clinic_document_templates
-        try {
-          const { data: dbRows, error: dbError } = await (supabase.from(
-            "clinic_document_templates" as unknown as "clinics"
-          ) as unknown as {
-            select: (cols: string) => {
-              eq: (col: string, val: string) => {
-                eq: (col2: string, val2: boolean) => {
-                  is: (col3: string, val3: null) => Promise<{ data: unknown[] | null; error: unknown }>;
-                };
+      try {
+        const { data: dbRows, error: dbError } = await (supabase.from(
+          "clinic_document_templates" as unknown as "clinics"
+        ) as unknown as {
+          select: (cols: string) => {
+            eq: (col: string, val: string) => {
+              eq: (col2: string, val2: boolean) => {
+                is: (col3: string, val3: null) => Promise<{ data: unknown[] | null; error: unknown }>;
               };
             };
-          })
-            .select("*")
-            .eq("clinic_id", clinicId)
-            .eq("is_active", true)
-            .is("deleted_at", null);
+          };
+        })
+          .select("*")
+          .eq("clinic_id", clinicId)
+          .eq("is_active", true)
+          .is("deleted_at", null);
 
-          if (!dbError && Array.isArray(dbRows)) {
-            for (const row of dbRows as Array<Record<string, unknown>>) {
-              const rowId = String(row.id);
-              const alreadyExists = loadedCustoms.some((c) => c.id === rowId);
-              if (!alreadyExists) {
-                loadedCustoms.push({
-                  id: rowId,
-                  title: String(row.title || "Modelo Customizado"),
-                  description: row.description ? String(row.description) : undefined,
-                  category: String(row.category || "custom"),
-                  content: String(row.content_md || row.content_markdown || row.content || ""),
-                  isCustom: true,
-                  isFromTable: true,
-                });
-              }
+        if (!dbError && Array.isArray(dbRows)) {
+          for (const row of dbRows as Array<Record<string, unknown>>) {
+            const rowId = String(row.id);
+            const alreadyExists = loadedCustoms.some((c) => c.id === rowId);
+            if (!alreadyExists) {
+              loadedCustoms.push({
+                id: rowId,
+                title: String(row.title || "Modelo Customizado"),
+                description: row.description ? String(row.description) : undefined,
+                category: String(row.category || "custom"),
+                content: String(row.content_md || row.content_markdown || row.content || ""),
+                isCustom: true,
+                isFromTable: true,
+              });
             }
           }
-        } catch {
-          // Mantém modelos carregados de custom_fields
         }
+      } catch {
+        // Mantém modelos carregados de custom_fields
       }
 
-      setStandardAdultContent(resolvedAdultContent);
-      setStandardMinorContent(resolvedMinorContent);
-      setClinicCnpj(resolvedCnpj);
-      setCustomTemplates(loadedCustoms);
+      if (!clinicError) {
+        setStandardAdultContent(resolvedAdultContent);
+        setStandardMinorContent(resolvedMinorContent);
+        setClinicCnpj(resolvedCnpj);
+        setCustomTemplates(loadedCustoms);
 
-      if (initialTemplateId) {
-        setSelectedTemplateId(initialTemplateId);
+        void setLocalCacheItem(cacheKey, {
+          clinicCnpj: resolvedCnpj,
+          standardAdultContent: resolvedAdultContent,
+          standardMinorContent: resolvedMinorContent,
+          customTemplates: loadedCustoms,
+        });
       }
     } catch (err) {
-      console.warn("Falha ao carregar modelos para geração de documento:", err);
+      if (!isOfflineOrNetworkError(err)) {
+        console.warn("Falha ao carregar modelos para geração de documento:", err);
+      }
     } finally {
       setLoading(false);
     }
-  }, [open, clinicId, initialTemplateId]);
+  }, [open, clinicId, cacheKey, initialTemplateId, applyCachedTemplates]);
 
   useEffect(() => {
     void loadTemplatesAndSettings();

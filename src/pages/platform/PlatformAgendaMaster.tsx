@@ -87,50 +87,15 @@ export const PlatformAgendaMaster: React.FC = () => {
     void loadMeetings();
   }, [loadMeetings]);
 
-  // Supabase Realtime: Refletir instantaneamente inserções, confirmações, cancelamentos e reagendamentos
+  // Atualização periódica leve (substitui postgres_changes para poupar WAL/CPU no Nano)
   useEffect(() => {
-    if (!supabase || typeof supabase.channel !== "function") return;
-
-    const channelId = `platform-onboarding-meetings-${Math.random().toString(36).substring(2, 9)}`;
-
-    const channel = supabase
-      .channel(channelId)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "platform_onboarding_meetings",
-        },
-        (payload: { eventType: string; new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
-          if (payload.eventType === "INSERT" && payload.new) {
-            const newMeeting = payload.new as unknown as OnboardingMeeting;
-            setMeetings((prev) => {
-              const exists = prev.some((m) => m.id === newMeeting.id);
-              if (exists) return prev;
-              return [newMeeting, ...prev];
-            });
-          } else if (payload.eventType === "UPDATE" && payload.new) {
-            const updatedMeeting = payload.new as unknown as OnboardingMeeting;
-            setMeetings((prev) =>
-              prev.map((m) => (m.id === updatedMeeting.id ? { ...m, ...updatedMeeting } : m))
-            );
-          } else if (payload.eventType === "DELETE" && payload.old) {
-            const oldId = (payload.old as { id?: string }).id;
-            if (oldId) {
-              setMeetings((prev) => prev.filter((m) => m.id !== oldId));
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      if (typeof supabase.removeChannel === "function") {
-        void supabase.removeChannel(channel);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadMeetings();
       }
-    };
-  }, []);
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, [loadMeetings]);
 
   // Handle Status Update
   const handleStatusChange = useCallback(async (meetingId: string, newStatus: MeetingStatus) => {

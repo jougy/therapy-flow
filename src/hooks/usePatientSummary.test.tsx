@@ -2,7 +2,8 @@ import React from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { usePatientSummary } from "@/hooks/usePatientSummary";
+import { usePatientSummary, PATIENT_SUMMARY_CACHE_KEY } from "@/hooks/usePatientSummary";
+import { clearLocalCache, setLocalCacheItem } from "@/lib/indexed-db-persister";
 import * as patientRouting from "@/lib/patient-routing";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -66,8 +67,9 @@ function createWrapper() {
 }
 
 describe("usePatientSummary Hook", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    await clearLocalCache();
   });
 
   it("fetches patient, snapshots and queries profiles ONLY for unique authors", async () => {
@@ -162,5 +164,43 @@ describe("usePatientSummary Hook", () => {
 
     expect(profilesSpy).not.toHaveBeenCalled();
     expect(result.current.data?.profiles).toHaveLength(0);
+  });
+
+  it("provides placeholderData from L1 cache and serves offline fallback when navigator.onLine is false", async () => {
+    const cacheKey = PATIENT_SUMMARY_CACHE_KEY("clinic-1", "PAC-123");
+    await setLocalCacheItem(cacheKey, {
+      patient: mockPatient,
+      clinicalSnapshots: mockSnapshots,
+      profiles: mockProfiles,
+      profileNameById: { "author-uuid-1": "Dra. Ana Paula" },
+    });
+
+    const originalOnLine = navigator.onLine;
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    const fetchSpy = vi.spyOn(patientRouting, "fetchPatientByRef");
+
+    try {
+      const { result } = renderHook(
+        () =>
+          usePatientSummary({
+            patientRef: "PAC-123",
+            clinicId: "clinic-1",
+          }),
+        { wrapper: createWrapper() }
+      );
+
+      expect(result.current.data?.patient.name).toBe("Paciente Teste");
+      expect(result.current.data?.profileNameById.get?.("author-uuid-1")).toBe("Dra. Ana Paula");
+
+      await waitFor(() => {
+        expect(result.current.isPlaceholderData).toBe(false);
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(result.current.data?.clinicalSnapshots).toHaveLength(3);
+    } finally {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: originalOnLine });
+    }
   });
 });

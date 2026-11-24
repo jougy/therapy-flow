@@ -83,7 +83,7 @@ export async function renderSlideAsset(
 </svg>`;
 
   const sha256 = createHash('sha256').update(svg).digest('hex');
-  let buffer = Buffer.from(svg, 'utf-8');
+  let buffer: Buffer = Buffer.from(svg, 'utf-8');
   let contentType: 'image/png' | 'image/svg+xml' = 'image/svg+xml';
 
   try {

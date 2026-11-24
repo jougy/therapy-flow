@@ -92,10 +92,10 @@ export interface CompactContextResult {
 }
 
 export const CURATED_OPENCODE_FREE_MODELS = [
+  'mimo-v2.6-flash-free',
   'deepseek-v4.1-flash-free',
-  'mimo-v2.5-free',
-  'qwen3.6-plus-free',
-  'nemotron-3-ultra-free',
+  'nemotron-3.5-lightning-free',
+  'hy4-flash-free',
   'big-pickle',
 ] as const;
 
@@ -265,7 +265,14 @@ async function callOpenAiCompatible(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+  let endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+  if (
+    target.providerType === 'local_ollama' &&
+    !baseUrl.endsWith('/v1') &&
+    !baseUrl.includes('/v1/')
+  ) {
+    endpoint = `${baseUrl.replace(/\/chat\/completions$/, '')}/v1/chat/completions`;
+  }
   const tryReasoningNone =
     target.disableThinking &&
     (target.providerType === 'opencode_free' || target.providerType === 'local_ollama');
@@ -278,6 +285,7 @@ async function callOpenAiCompatible(
       max_tokens: maxTokens,
     };
     if (includeReasoning) {
+      body.reasoning_effort = 'none';
       body.reasoning = { effort: 'none' };
     }
 

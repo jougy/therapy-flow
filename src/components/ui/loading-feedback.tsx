@@ -73,7 +73,7 @@ export function LoadingFeedback({
       };
     }
 
-    if (elapsedSeconds < 7) {
+    if (elapsedSeconds < 8) {
       return {
         tone: "normal" as const,
         icon: <Loader2 className="h-6 w-6 animate-spin text-primary" />,
@@ -82,12 +82,12 @@ export function LoadingFeedback({
       };
     }
 
-    if (elapsedSeconds < 13) {
+    if (elapsedSeconds <= 15) {
       return {
-        tone: "slow" as const,
-        icon: <Wifi className="h-6 w-6 text-amber-500 animate-pulse" />,
-        title: "A conexão parece um pouco lenta",
-        subtitle: "Estamos finalizando a sincronização com o servidor. Obrigado pela paciência!",
+        tone: "normal" as const,
+        icon: <Loader2 className="h-6 w-6 animate-spin text-primary" />,
+        title: "Finalizando carregamento dos dados...",
+        subtitle: "Organizando os últimos registros com segurança.",
       };
     }
 
@@ -126,7 +126,7 @@ export function LoadingFeedback({
             "p-3.5 rounded-full transition-colors duration-300",
             tone === "offline"
               ? "bg-destructive/10 border border-destructive/20"
-              : tone === "slow" || tone === "delayed"
+              : tone === "delayed"
               ? "bg-amber-500/10 border border-amber-500/20"
               : "bg-primary/10 border border-primary/20"
           )}
@@ -145,7 +145,7 @@ export function LoadingFeedback({
               variant="outline"
               size="sm"
               onClick={handleReload}
-              className="gap-2 text-xs font-normal shadow-sm"
+              className="gap-2 text-xs font-normal shadow-sm min-h-[44px]"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Tentar novamente

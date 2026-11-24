@@ -1,5 +1,8 @@
 // Pluri-Health Service Worker
 const CACHE_NAME = 'plurihealth-shell-v1';
+const ASSETS_CACHE_NAME = 'plurihealth-assets-v1';
+const ASSETS_CACHE_MAX_ENTRIES = 80;
+
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -8,6 +11,15 @@ const PRECACHE_ASSETS = [
   '/brand/plurihealth.png',
   '/favicon.ico'
 ];
+
+async function trimCache(cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  if (keys.length > maxEntries) {
+    const excess = keys.slice(0, keys.length - maxEntries);
+    await Promise.all(excess.map((req) => cache.delete(req)));
+  }
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -20,11 +32,12 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
+  const allowedCaches = new Set([CACHE_NAME, ASSETS_CACHE_NAME]);
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          if (!allowedCaches.has(key)) {
             return caches.delete(key);
           }
         })
@@ -49,8 +62,33 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
-        return caches.match('/index.html') || caches.match('/');
+        return caches.match('/index.html').then((res) => res || caches.match('/'));
       })
+    );
+    return;
+  }
+
+  // Cache First para assets versionados (/assets/*.js, *.css, *.woff2) com cap de 80 entradas
+  const isStaticAsset =
+    url.pathname.startsWith('/assets/') &&
+    (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.woff2'));
+
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.open(ASSETS_CACHE_NAME).then((cache) =>
+        cache.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
+          return fetch(event.request).then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              const responseClone = networkResponse.clone();
+              cache.put(event.request, responseClone).then(() => {
+                void trimCache(ASSETS_CACHE_NAME, ASSETS_CACHE_MAX_ENTRIES);
+              });
+            }
+            return networkResponse;
+          });
+        })
+      )
     );
     return;
   }

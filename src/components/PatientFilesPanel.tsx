@@ -345,6 +345,7 @@ export const PatientFilesPanel = ({
                 </div>
               </div>
               <Progress value={item.progress} className="mt-2 h-2" />
+              {item.offlineMessage ? <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{item.offlineMessage}</p> : null}
               {item.error ? <p className="mt-2 text-xs text-destructive">{item.error}</p> : null}
             </div>
           ))}

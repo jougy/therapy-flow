@@ -1,10 +1,12 @@
-const TRANSIENT_STATUS_CODES = new Set([429, 502, 503, 504]);
+const TRANSIENT_STATUS_CODES = new Set([429, 502, 503, 504, 522, 524]);
 
 const TRANSIENT_MESSAGE_PATTERNS = [
   "service unavailable",
   "503",
   "502",
   "504",
+  "522",
+  "524",
   "bad gateway",
   "gateway timeout",
   "too many requests",
@@ -15,6 +17,16 @@ const TRANSIENT_MESSAGE_PATTERNS = [
   "econnreset",
   "etimedout",
 ];
+
+// Circuit Breaker leve em memória para evitar tempestade de retries quando o banco está degradado
+let consecutiveTransientFailures = 0;
+let circuitOpenUntil = 0;
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_OPEN_MS = 20_000;
+
+export function isSupabaseCircuitOpen(): boolean {
+  return Date.now() < circuitOpenUntil;
+}
 
 /**
  * Identifica erros transientes de infraestrutura/rede (ex.: 503 Service Unavailable,
@@ -63,13 +75,35 @@ export async function withTransientRetry<T extends { error?: unknown }>(
 
   let attempt = 0;
   while (true) {
+    if (isSupabaseCircuitOpen()) {
+      return await operation();
+    }
+
     try {
       const result = await operation();
-      if (!result?.error || !isTransientSupabaseError(result.error) || attempt >= maxRetries) {
+      if (!result?.error) {
+        consecutiveTransientFailures = 0;
+        return result;
+      }
+      if (!isTransientSupabaseError(result.error)) {
+        return result;
+      }
+      consecutiveTransientFailures += 1;
+      if (consecutiveTransientFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+        circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
+      }
+      if (attempt >= maxRetries || isSupabaseCircuitOpen()) {
         return result;
       }
     } catch (err) {
-      if (!isTransientSupabaseError(err) || attempt >= maxRetries) {
+      if (!isTransientSupabaseError(err)) {
+        throw err;
+      }
+      consecutiveTransientFailures += 1;
+      if (consecutiveTransientFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+        circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
+      }
+      if (attempt >= maxRetries || isSupabaseCircuitOpen()) {
         throw err;
       }
     }

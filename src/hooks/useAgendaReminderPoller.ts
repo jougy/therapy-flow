@@ -146,6 +146,8 @@ export function useAgendaReminderPoller(
   const [isAlarmOpen, setIsAlarmOpen] = useState(false);
 
   const firedKeysRef = useRef<Set<string>>(new Set());
+  const cachedEventsRef = useRef<AgendaAlarmEvent[]>([]);
+  const lastRemoteFetchAtRef = useRef<number>(0);
   const isAlarmOpenRef = useRef(isAlarmOpen);
   isAlarmOpenRef.current = isAlarmOpen;
 
@@ -264,10 +266,22 @@ export function useAgendaReminderPoller(
     [clinic, enabled, onReminderTriggered, overrideEvents, toleranceMinutes],
   );
 
-  // Busca remota periódica quando eventos locais não são passados
-  const fetchAndCheckRemotes = useCallback(async () => {
+  // Busca remota espaçada (15 min) com cache em memória; check de alarmes roda em memória a cada 60s
+  const fetchAndCheckRemotes = useCallback(async (force = false) => {
     if (!enabled || overrideEvents) return;
     if (!user?.id) return;
+
+    const nowMs = Date.now();
+    const minIntervalMs = force ? 3 * 60 * 1000 : 15 * 60 * 1000;
+    if (!force && lastRemoteFetchAtRef.current > 0 && nowMs - lastRemoteFetchAtRef.current < minIntervalMs) {
+      if (cachedEventsRef.current.length > 0) {
+        checkDueReminders(cachedEventsRef.current);
+      }
+      return;
+    }
+    if (force && lastRemoteFetchAtRef.current > 0 && nowMs - lastRemoteFetchAtRef.current < 3 * 60 * 1000) {
+      return;
+    }
 
     try {
       const now = new Date();
@@ -293,6 +307,8 @@ export function useAgendaReminderPoller(
       const { data, error } = await query;
       if (error || !data) return;
 
+      lastRemoteFetchAtRef.current = Date.now();
+
       const remoteAlarmEvents: AgendaAlarmEvent[] = data.map((ev) => ({
         id: ev.id,
         title: ev.title,
@@ -305,24 +321,24 @@ export function useAgendaReminderPoller(
         reminderConfigs: ev.reminder_configs,
       }));
 
+      cachedEventsRef.current = remoteAlarmEvents;
       checkDueReminders(remoteAlarmEvents);
     } catch {
       // Ignorar erros transitórios de rede na checagem de fundo
     }
   }, [checkDueReminders, effectiveClinicId, enabled, overrideEvents, user?.id]);
 
-  // Poller de intervalo protegido com document.visibilityState e backoff
+  // Poller de intervalo protegido com document.visibilityState e avaliação em memória
   useEffect(() => {
     if (!enabled) return;
 
     if (overrideEvents) {
       checkDueReminders(overrideEvents);
     } else if (typeof document === "undefined" || !document.hidden) {
-      void fetchAndCheckRemotes();
+      void fetchAndCheckRemotes(true);
     }
 
     const intervalTimer = setInterval(() => {
-      // Se o usuário estiver com a aba em segundo plano ou tela travada, não pollar o banco
       if (typeof document !== "undefined" && document.hidden) {
         return;
       }
@@ -330,13 +346,13 @@ export function useAgendaReminderPoller(
       if (overrideEvents) {
         checkDueReminders(overrideEvents);
       } else {
-        void fetchAndCheckRemotes();
+        void fetchAndCheckRemotes(false);
       }
     }, pollIntervalMs);
 
     const handleVisibilityChange = () => {
       if (!document.hidden && !overrideEvents) {
-        void fetchAndCheckRemotes();
+        void fetchAndCheckRemotes(true);
       }
     };
 
@@ -358,7 +374,7 @@ export function useAgendaReminderPoller(
       if (overrideEvents) {
         checkDueReminders(overrideEvents);
       } else {
-        void fetchAndCheckRemotes();
+        void fetchAndCheckRemotes(true);
       }
     };
 

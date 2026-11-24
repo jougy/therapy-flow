@@ -3,6 +3,7 @@
  * Suporte a Upstash Redis (Serverless Key-Value) e Axiom Cloud Ingestion com fallback para Supabase.
  */
 
+import { supabase } from "@/integrations/supabase/client";
 import type { PageDwellMatrix } from "./canonical-matrix";
 
 export type MetricsDriverType = "local_buffer" | "supabase_optimized" | "upstash_redis";
@@ -103,7 +104,7 @@ export function setObservabilityMulticloudConfig(
 }
 
 /**
- * Despacha incremento de métricas e permanência para Upstash Redis via REST pipeline.
+ * Despacha incremento de métricas e permanência para Upstash Redis via Edge Function segura `platform-observability`.
  */
 export async function dispatchMatrixToUpstash(
   userId: string,
@@ -111,6 +112,29 @@ export async function dispatchMatrixToUpstash(
   matrix: PageDwellMatrix,
   counters: Record<string, number>
 ): Promise<boolean> {
+  const hasMatrix = Object.values(matrix).some((v) => typeof v === "number" && v > 0);
+  const hasCounters = Object.values(counters).some((v) => typeof v === "number" && v > 0);
+  if (!hasMatrix && !hasCounters) {
+    return true;
+  }
+
+  // 1. Rota Segura via Edge Function (Pulumi ESC secrets no servidor, zero tokens no browser)
+  try {
+    const { data, error } = await supabase.functions.invoke("platform-observability", {
+      body: {
+        action: "ingest_telemetry",
+        clinicId,
+        matrix,
+        counters,
+      },
+    });
+    if (!error && data?.ok) {
+      return true;
+    }
+  } catch {
+    // Segue para fallback direto apenas se configurado explicitamente em ambiente local
+  }
+
   const config = getObservabilityMulticloudConfig();
   const url = config.upstashRestUrl;
   const token = config.upstashRestToken;
@@ -137,10 +161,6 @@ export async function dispatchMatrixToUpstash(
     }
   }
 
-  if (commands.length === 0) {
-    return true;
-  }
-
   try {
     const pipelineUrl = url.endsWith("/") ? `${url}pipeline` : `${url}/pipeline`;
     const res = await fetch(pipelineUrl, {
@@ -161,9 +181,23 @@ export async function dispatchMatrixToUpstash(
 }
 
 /**
- * Despacha log de erro estruturado para Axiom via ingest API.
+ * Despacha log de erro estruturado para Axiom via Edge Function segura `platform-observability`.
  */
 export async function dispatchErrorToAxiom(payload: Record<string, unknown>): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.functions.invoke("platform-observability", {
+      body: {
+        action: "ingest_error",
+        ...payload,
+      },
+    });
+    if (!error && data?.ok) {
+      return true;
+    }
+  } catch {
+    // Fallback direto apenas se configurado em ambiente local
+  }
+
   const config = getObservabilityMulticloudConfig();
   const dataset = config.axiomDataset;
   const token = config.axiomToken;

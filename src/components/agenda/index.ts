@@ -14,3 +14,4 @@ export * from "./PatientInlineAgendaView";
 export * from "./AgendaAlarmDialog";
 export * from "./AgendaReminderSettingsBlock";
 export * from "./AgendaEventQuickDialog";
+export * from "./AgendaNewEventDialog";

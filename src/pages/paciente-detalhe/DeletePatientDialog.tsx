@@ -28,16 +28,16 @@ export function DeletePatientDialog({
         <DialogHeader>
           <DialogTitle>Mover paciente para a lixeira?</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground min-w-0 max-w-full break-words">
           O paciente e seus atendimentos serão movidos para a lixeira da clínica e podem ser restaurados até o próximo domingo às 23:59. Após essa data, o expurgo definitivo é executado automaticamente.
         </p>
-        <DialogFooter>
+        <DialogFooter className="gap-2 pb-safe">
           <DialogClose asChild>
-            <Button variant="outline" disabled={deletingPatient}>
+            <Button variant="outline" className="w-full sm:w-auto min-h-[44px]" disabled={deletingPatient}>
               Cancelar
             </Button>
           </DialogClose>
-          <Button variant="destructive" onClick={() => void onConfirmDelete()} disabled={deletingPatient}>
+          <Button variant="destructive" className="w-full sm:w-auto min-h-[44px]" onClick={() => void onConfirmDelete()} disabled={deletingPatient}>
             {deletingPatient ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
             Excluir
           </Button>

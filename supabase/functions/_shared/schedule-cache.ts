@@ -59,6 +59,7 @@ export async function executeUpstashCommand(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(command),
+      signal: AbortSignal.timeout(3000),
     });
 
     if (!res.ok) {

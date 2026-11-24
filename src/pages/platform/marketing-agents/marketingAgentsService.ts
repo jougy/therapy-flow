@@ -14,12 +14,9 @@ import {
   type MarketingZapConversation,
 } from "./types";
 import {
-  computeTypingDurationMs,
-  formatPhoneBr,
-  getWarmupDailyLimit,
-  isOptOutMessage,
-  normalizePhoneToE164,
+  computeTypingDurationMs, formatPhoneBr, getWarmupDailyLimit, isOptOutMessage, normalizePhoneToE164,
 } from "./antiBanEngine";
+import { tryLocalBrowserOllamaReply } from "./llmHarnessStorage";
 
 export const marketingDb = supabase as unknown as SupabaseClient;
 
@@ -344,50 +341,57 @@ export async function runAgentSimulationTurn(
   trimmedMessage: string,
   override?: { providerSlug?: string; modelId?: string } | null,
 ): Promise<AgentSimulationTurn> {
+  const optOut = isOptOutMessage(trimmedMessage);
+  const handoff = agent.handoff_keywords.some((kw) => trimmedMessage.toLowerCase().includes(kw.toLowerCase()));
+  const sysPrompt = `${agent.system_prompt}\n\nBase de conhecimento:\n${agent.knowledge_base}\n\nResponda em português do Brasil em até ${agent.max_chars_per_reply} caracteres.`;
+  const preferredModel = override?.modelId || agent.llm_model_id || undefined;
+  const wantsLocalOllama =
+    override?.providerSlug === "ollama-local" || agent.llm_provider_id === "ollama-local" || agent.model_tier === "gemma-4-local";
+
+  if (wantsLocalOllama && !optOut && !handoff) {
+    const localHit = await tryLocalBrowserOllamaReply(sysPrompt, trimmedMessage, agent.max_chars_per_reply, preferredModel);
+    if (localHit) {
+      return {
+        id: `turn-agent-${Date.now()}`, role: "agent", text: localHit.reply, intent: "product_question",
+        modelUsed: localHit.modelUsed, typingMs: computeTypingDurationMs(localHit.reply),
+        isOptOut: false, triggeredHandoff: false, createdAt: new Date().toISOString(),
+      };
+    }
+  }
+
   try {
     const { data, error } = await invokeZapGateway("simulate_agent_reply", {
-      message: trimmedMessage,
-      model_tier: agent.model_tier,
-      provider_slug: override?.providerSlug,
-      model_id: override?.modelId || agent.llm_model_id || undefined,
-      disable_thinking: agent.disable_thinking ?? true,
-      fallback_chain: agent.fallback_chain || [],
-      instance_id: agent.instance_id,
-      system_prompt: agent.system_prompt,
-      knowledge_base: agent.knowledge_base,
-      handoff_keywords: agent.handoff_keywords,
-      max_chars_per_reply: agent.max_chars_per_reply,
+      message: trimmedMessage, model_tier: agent.model_tier, provider_slug: override?.providerSlug,
+      model_id: preferredModel, disable_thinking: agent.disable_thinking ?? true,
+      fallback_chain: agent.fallback_chain || [], instance_id: agent.instance_id,
+      system_prompt: agent.system_prompt, knowledge_base: agent.knowledge_base,
+      handoff_keywords: agent.handoff_keywords, max_chars_per_reply: agent.max_chars_per_reply,
     });
 
     if (!error && data && (data as { reply?: string }).reply) {
       const resp = data as {
-        reply: string;
-        intent?: string;
-        modelUsed?: string;
-        typingMs?: number;
-        isOptOut?: boolean;
-        triggeredHandoff?: boolean;
+        reply: string; intent?: string; modelUsed?: string; typingMs?: number; isOptOut?: boolean; triggeredHandoff?: boolean;
       };
       return {
-        id: `turn-agent-${Date.now()}`,
-        role: "agent",
-        text: resp.reply,
-        intent: resp.intent,
-        modelUsed: resp.modelUsed,
-        typingMs: resp.typingMs,
-        isOptOut: resp.isOptOut,
-        triggeredHandoff: resp.triggeredHandoff,
-        createdAt: new Date().toISOString(),
+        id: `turn-agent-${Date.now()}`, role: "agent", text: resp.reply, intent: resp.intent,
+        modelUsed: resp.modelUsed, typingMs: resp.typingMs, isOptOut: resp.isOptOut,
+        triggeredHandoff: resp.triggeredHandoff, createdAt: new Date().toISOString(),
       };
     }
   } catch {
-    // Fallback determinístico local
+    // Fallback para Ollama local antes do texto estático
   }
 
-  const optOut = isOptOutMessage(trimmedMessage);
-  const handoff = agent.handoff_keywords.some((kw) =>
-    trimmedMessage.toLowerCase().includes(kw.toLowerCase()),
-  );
+  if (!optOut && !handoff && !wantsLocalOllama) {
+    const localFallback = await tryLocalBrowserOllamaReply(sysPrompt, trimmedMessage, agent.max_chars_per_reply, preferredModel);
+    if (localFallback) {
+      return {
+        id: `turn-agent-${Date.now()}`, role: "agent", text: localFallback.reply, intent: "product_question",
+        modelUsed: `${localFallback.modelUsed} (fallback local)`, typingMs: computeTypingDurationMs(localFallback.reply),
+        isOptOut: false, triggeredHandoff: false, createdAt: new Date().toISOString(),
+      };
+    }
+  }
   const fallbackText = optOut
     ? "Entendido! Removemos seu número da lista de envios imediatamente (LGPD Opt-Out)."
     : handoff

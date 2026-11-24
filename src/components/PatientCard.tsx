@@ -1,4 +1,5 @@
-import { ChevronRight, Clock3, MessageCircle, Phone, User } from "lucide-react";
+import { ChevronRight, Clock3, MessageCircle, Phone } from "lucide-react";
+import { PatientAvatar } from "@/components/patients/PatientAvatar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -16,6 +17,7 @@ export interface PatientCardData {
   id: string;
   patient_code?: string | null;
   name: string;
+  avatar_url?: string | null;
   gender: string | null;
   pronoun: string | null;
   phone?: string | null;
@@ -61,12 +63,6 @@ const formatPhone = (phone: string) => {
     return digits.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
   }
   return phone;
-};
-
-const GenderIcon = ({ gender }: { gender: string | null }) => {
-  if (gender === "feminino") return <span className="text-sm shrink-0" title="Feminino">♀</span>;
-  if (gender === "masculino") return <span className="text-sm shrink-0" title="Masculino">♂</span>;
-  return <User className="h-4 w-4 text-muted-foreground shrink-0" />;
 };
 
 const paymentToneClassNames: Record<NonNullable<PatientCardData["paymentSummary"]>["tone"], string> = {
@@ -152,7 +148,15 @@ const PatientCard = ({
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
-            <GenderIcon gender={patient.gender} />
+            <PatientAvatar
+              patientId={patient.id}
+              patientCode={patient.patient_code}
+              patientName={patient.name}
+              avatarUrl={patient.avatar_url}
+              gender={patient.gender}
+              size="sm"
+              showViewPatientAction
+            />
             <h3 className="font-semibold text-sm">{patient.name}</h3>
             {patient.pronoun && (
               <span className="text-xs text-muted-foreground">({patient.pronoun})</span>

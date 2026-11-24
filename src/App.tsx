@@ -58,8 +58,13 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const NovoPaciente = lazy(() => import("./pages/NovoPaciente"));
 const OnboardingClinica = lazy(() => import("./pages/OnboardingClinica"));
 const PagamentoClinica = lazy(() => import("./pages/PagamentoClinica"));
-const PacienteAnamnesisDashboard = lazy(() => import("./pages/PacienteAnamnesisDashboard"));
-const PacienteDetalhe = lazy(() => import("./pages/PacienteDetalhe"));
+const PatientLayout = lazy(() => import("./pages/paciente-detalhe/PatientLayout"));
+const PatientOverviewPage = lazy(() => import("./pages/paciente-detalhe/pages/PatientOverviewPage"));
+const PatientSessionsPage = lazy(() => import("./pages/paciente-detalhe/pages/PatientSessionsPage"));
+const PatientAgendaPage = lazy(() => import("./pages/paciente-detalhe/pages/PatientAgendaPage"));
+const PatientPaymentsPage = lazy(() => import("./pages/paciente-detalhe/pages/PatientPaymentsPage"));
+const PatientFilesPage = lazy(() => import("./pages/paciente-detalhe/pages/PatientFilesPage"));
+const PatientStatsPage = lazy(() => import("./pages/paciente-detalhe/pages/PatientStatsPage"));
 const PacienteResumo = lazy(() => import("./pages/PacienteResumo"));
 const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
 const SelecionarClinica = lazy(() => import("./pages/SelecionarClinica"));
@@ -429,8 +434,15 @@ const App = () => (
                                 <Route path="configuracoes/formularios/biblioteca" element={<BibliotecaFormularios />} />
                                 <Route path="configuracoes/formularios/:templateId" element={<FormularioEditor />} />
                                 <Route path="pacientes/novo" element={<NovoPaciente />} />
-                                <Route path="pacientes/:id" element={<PacienteDetalhe />} />
-                                <Route path="pacientes/:id/dashboard" element={<PacienteAnamnesisDashboard />} />
+                                <Route path="pacientes/:id" element={<PatientLayout />}>
+                                  <Route index element={<PatientOverviewPage />} />
+                                  <Route path="atendimentos" element={<PatientSessionsPage />} />
+                                  <Route path="agenda" element={<PatientAgendaPage />} />
+                                  <Route path="pagamentos" element={<PatientPaymentsPage />} />
+                                  <Route path="arquivos" element={<PatientFilesPage />} />
+                                  <Route path="estatisticas" element={<PatientStatsPage />} />
+                                  <Route path="dashboard" element={<Navigate to="../estatisticas" replace />} />
+                                </Route>
                                 <Route path="pacientes/:id/resumo" element={<PacienteResumo />} />
                                 <Route path="pacientes/:id/cadastro" element={<CadastroCompleto />} />
                                 <Route path="pacientes/:id/sessao/:sessionId" element={<SessaoDetalhe />} />

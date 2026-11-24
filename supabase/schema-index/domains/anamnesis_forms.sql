@@ -1863,20 +1863,13 @@ BEGIN
 END;
 $$;
 
--- [TABLE] clinic_document_templates (schema.sql L15572-L15585)
-CREATE TABLE IF NOT EXISTS "public"."clinic_document_templates" (
+-- [TABLE] clinic_custom_words (schema.sql L15492-L15498)
+CREATE TABLE IF NOT EXISTS "public"."clinic_custom_words" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "clinic_id" "uuid" NOT NULL,
-    "title" "text" NOT NULL,
-    "description" "text",
-    "category" "text" DEFAULT 'custom'::"text" NOT NULL,
-    "content_md" "text" NOT NULL,
-    "variables" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
-    "is_active" boolean DEFAULT true NOT NULL,
+    "word" "text" NOT NULL,
     "created_by" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "deleted_at" timestamp with time zone
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
 
 -- [TABLE] community_form_template_comments (schema.sql L15929-L15940)
@@ -1979,56 +1972,6 @@ CREATE TABLE IF NOT EXISTS "public"."platform_feedbacks" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     CONSTRAINT "platform_feedbacks_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'reviewed'::"text", 'archived'::"text"])))
-);
-
--- [TABLE] platform_auto_lead_routines (schema.sql L16416-L16441)
-CREATE TABLE IF NOT EXISTS "public"."platform_auto_lead_routines" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "name" "text" NOT NULL,
-    "description" "text",
-    "subagent_role" "text" DEFAULT 'fb_group_intent_hunter'::"text" NOT NULL,
-    "apify_actor_id" "text" DEFAULT 'apify/facebook-groups-scraper'::"text" NOT NULL,
-    "target_groups" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
-    "search_keywords" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
-    "enable_cross_enrichment" boolean DEFAULT true NOT NULL,
-    "enable_lindy_qualification" boolean DEFAULT true NOT NULL,
-    "schedule_cron" "text" DEFAULT '0 8 * * *'::"text" NOT NULL,
-    "frequency_label" "text" DEFAULT 'Diário às 08:00'::"text" NOT NULL,
-    "min_score_auto_assign" integer DEFAULT 75 NOT NULL,
-    "auto_assign_affiliate_id" "uuid",
-    "is_active" boolean DEFAULT true NOT NULL,
-    "last_run_at" timestamp with time zone,
-    "last_run_status" "text" DEFAULT 'idle'::"text" NOT NULL,
-    "total_leads_captured" integer DEFAULT 0 NOT NULL,
-    "created_by" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "deleted_at" timestamp with time zone,
-    CONSTRAINT "platform_auto_lead_routines_last_run_status_check" CHECK (("last_run_status" = ANY (ARRAY['idle'::"text", 'running_apify'::"text", 'enriching_lindy'::"text", 'succeeded'::"text", 'failed'::"text"]))),
-    CONSTRAINT "platform_auto_lead_routines_min_score_auto_assign_check" CHECK ((("min_score_auto_assign" >= 0) AND ("min_score_auto_assign" <= 100))),
-    CONSTRAINT "platform_auto_lead_routines_subagent_role_check" CHECK (("subagent_role" = ANY (ARRAY['fb_group_intent_hunter'::"text", 'cross_channel_enricher'::"text", 'lindy_sdr_qualifier'::"text", 'full_pipeline'::"text"])))
-);
-
--- [TABLE] platform_auto_lead_runs (schema.sql L16447-L16466)
-CREATE TABLE IF NOT EXISTS "public"."platform_auto_lead_runs" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "routine_id" "uuid",
-    "run_type" "text" DEFAULT 'subagent_routine'::"text" NOT NULL,
-    "subagent_stage" "text" DEFAULT 'completed'::"text" NOT NULL,
-    "status" "text" DEFAULT 'running'::"text" NOT NULL,
-    "target_groups" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
-    "keywords" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
-    "external_run_id" "text",
-    "leads_found_count" integer DEFAULT 0 NOT NULL,
-    "leads_inserted_count" integer DEFAULT 0 NOT NULL,
-    "leads_updated_count" integer DEFAULT 0 NOT NULL,
-    "error_message" "text",
-    "triggered_by" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "completed_at" timestamp with time zone,
-    CONSTRAINT "platform_auto_lead_runs_run_type_check" CHECK (("run_type" = ANY (ARRAY['subagent_routine'::"text", 'apify_scrape'::"text", 'lindy_webhook'::"text", 'csv_import'::"text"]))),
-    CONSTRAINT "platform_auto_lead_runs_status_check" CHECK (("status" = ANY (ARRAY['running'::"text", 'succeeded'::"text", 'failed'::"text", 'partial'::"text"]))),
-    CONSTRAINT "platform_auto_lead_runs_subagent_stage_check" CHECK (("subagent_stage" = ANY (ARRAY['extracting_apify'::"text", 'cross_enriching'::"text", 'qualifying_lindy'::"text", 'completed'::"text", 'failed'::"text"])))
 );
 
 -- [TABLE] platform_auto_leads (schema.sql L16472-L16524)
@@ -2138,6 +2081,11 @@ CREATE TABLE IF NOT EXISTS "public"."platform_releases" (
     CONSTRAINT "platform_releases_version_order_positive" CHECK (("version_order" > 0))
 );
 
+-- [POLICY] Administradores da clinica podem excluir palavras do corretor ON clinic_custom_words (schema.sql L19552-L19554)
+CREATE POLICY "Administradores da clinica podem excluir palavras do corretor" ON "public"."clinic_custom_words" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type") AND ("cm"."operational_role" = ANY (ARRAY['admin'::"public"."operational_role_type", 'owner'::"public"."operational_role_type"]))))));
+
 -- [POLICY] Anon can insert error logs ON platform_error_logs (schema.sql L19582-L19582)
 CREATE POLICY "Anon can insert error logs" ON "public"."platform_error_logs" FOR INSERT TO "anon" WITH CHECK (("user_id" IS NULL));
 
@@ -2182,6 +2130,16 @@ CREATE POLICY "Authors, super admins and platform owners can delete community " 
 -- [POLICY] Authors, super admins and platform owners can update community  ON community_form_templates (schema.sql L19658-L19658)
 CREATE POLICY "Authors, super admins and platform owners can update community " ON "public"."community_form_templates" FOR UPDATE TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"()))) WITH CHECK ((("user_id" = "auth"."uid"()) OR "public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."is_platform_owner"("auth"."uid"())));
 
+-- [POLICY] Membros da clinica podem adicionar palavras ao corretor ON clinic_custom_words (schema.sql L19704-L19706)
+CREATE POLICY "Membros da clinica podem adicionar palavras ao corretor" ON "public"."clinic_custom_words" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type")))));
+
+-- [POLICY] Membros da clinica podem visualizar palavras do corretor ON clinic_custom_words (schema.sql L19710-L19712)
+CREATE POLICY "Membros da clinica podem visualizar palavras do corretor" ON "public"."clinic_custom_words" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."clinic_memberships" "cm"
+  WHERE (("cm"."clinic_id" = "clinic_custom_words"."clinic_id") AND ("cm"."user_id" = "auth"."uid"()) AND ("cm"."is_active" = true) AND ("cm"."membership_status" = 'active'::"public"."membership_status_type")))));
+
 -- [POLICY] Platform admins can view platform error logs ON platform_error_logs (schema.sql L19726-L19726)
 CREATE POLICY "Platform admins can view platform error logs" ON "public"."platform_error_logs" FOR SELECT TO "authenticated" USING (("public"."is_platform_admin"("auth"."uid"()) OR "public"."is_platform_owner"("auth"."uid"())));
 
@@ -2196,12 +2154,6 @@ CREATE POLICY "Affiliates update assigned platform_auto_leads" ON "public"."plat
   WHERE (("a"."user_id" = "auth"."uid"()) AND ("a"."deleted_at" IS NULL)))))) WITH CHECK (("assigned_affiliate_id" IN ( SELECT "a"."id"
    FROM "public"."affiliates" "a"
   WHERE (("a"."user_id" = "auth"."uid"()) AND ("a"."deleted_at" IS NULL)))));
-
--- [POLICY] Platform admins manage platform_auto_lead_routines ON platform_auto_lead_routines (schema.sql L19760-L19760)
-CREATE POLICY "Platform admins manage platform_auto_lead_routines" ON "public"."platform_auto_lead_routines" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
-
--- [POLICY] Platform admins manage platform_auto_lead_runs ON platform_auto_lead_runs (schema.sql L19764-L19764)
-CREATE POLICY "Platform admins manage platform_auto_lead_runs" ON "public"."platform_auto_lead_runs" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
 
 -- [POLICY] Platform admins manage platform_auto_leads ON platform_auto_leads (schema.sql L19768-L19768)
 CREATE POLICY "Platform admins manage platform_auto_leads" ON "public"."platform_auto_leads" TO "authenticated" USING ("public"."is_platform_admin"("auth"."uid"())) WITH CHECK ("public"."is_platform_admin"("auth"."uid"()));
@@ -2228,12 +2180,6 @@ CREATE POLICY "Platform owners read platform admins" ON "public"."platform_admin
 -- [POLICY] Platform owners read platform audit ON platform_audit_events (schema.sql L19868-L19868)
 CREATE POLICY "Platform owners read platform audit" ON "public"."platform_audit_events" FOR SELECT TO "authenticated" USING ("public"."is_platform_owner_mfa_verified"("auth"."uid"()));
 
--- [POLICY] Service role full access platform_auto_lead_routines ON platform_auto_lead_routines (schema.sql L19900-L19900)
-CREATE POLICY "Service role full access platform_auto_lead_routines" ON "public"."platform_auto_lead_routines" TO "service_role" USING (true) WITH CHECK (true);
-
--- [POLICY] Service role full access platform_auto_lead_runs ON platform_auto_lead_runs (schema.sql L19904-L19904)
-CREATE POLICY "Service role full access platform_auto_lead_runs" ON "public"."platform_auto_lead_runs" TO "service_role" USING (true) WITH CHECK (true);
-
 -- [POLICY] Service role full access platform_auto_leads ON platform_auto_leads (schema.sql L19908-L19908)
 CREATE POLICY "Service role full access platform_auto_leads" ON "public"."platform_auto_leads" TO "service_role" USING (true) WITH CHECK (true);
 
@@ -2249,26 +2195,14 @@ CREATE POLICY "Users and admins can delete own comments" ON "public"."community_
 -- [POLICY] Users delete clinic anamnesis forms ON anamnesis_form_templates (schema.sql L20012-L20012)
 CREATE POLICY "Users delete clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
 
--- [POLICY] Users delete clinic document templates ON clinic_document_templates (schema.sql L20020-L20020)
-CREATE POLICY "Users delete clinic document templates" ON "public"."clinic_document_templates" FOR DELETE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
-
--- [POLICY] Users insert clinic document templates ON clinic_document_templates (schema.sql L20054-L20054)
-CREATE POLICY "Users insert clinic document templates" ON "public"."clinic_document_templates" FOR INSERT TO "authenticated" WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
-
 -- [POLICY] Users read clinic anamnesis forms ON anamnesis_form_templates (schema.sql L20096-L20096)
 CREATE POLICY "Users read clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR SELECT TO "authenticated" USING ((("deleted_at" IS NULL) AND ("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('forms.read'::"text", "clinic_id") OR "public"."current_user_can"('anamnesis_forms.read'::"text", "clinic_id"))));
-
--- [POLICY] Users read clinic document templates ON clinic_document_templates (schema.sql L20108-L20108)
-CREATE POLICY "Users read clinic document templates" ON "public"."clinic_document_templates" FOR SELECT TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND (("deleted_at" IS NULL) OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
 -- [POLICY] Users read own feedback ON platform_feedbacks (schema.sql L20175-L20175)
 CREATE POLICY "Users read own feedback" ON "public"."platform_feedbacks" FOR SELECT TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "user_id") OR "public"."is_platform_owner"(( SELECT "auth"."uid"() AS "uid"))));
 
 -- [POLICY] Users update clinic anamnesis forms ON anamnesis_form_templates (schema.sql L20203-L20203)
 CREATE POLICY "Users update clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id"))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));
-
--- [POLICY] Users update clinic document templates ON clinic_document_templates (schema.sql L20211-L20211)
-CREATE POLICY "Users update clinic document templates" ON "public"."clinic_document_templates" FOR UPDATE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id")))) WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
 -- [POLICY] Users write clinic anamnesis forms ON anamnesis_form_templates (schema.sql L20247-L20247)
 CREATE POLICY "Users write clinic anamnesis forms" ON "public"."anamnesis_form_templates" FOR INSERT TO "authenticated" WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('forms.manage'::"text", "clinic_id")));

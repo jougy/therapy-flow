@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { LeadDossierSection } from "./LeadDossierSection";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -435,6 +436,9 @@ export const AutoLeadDetailSheet: React.FC<AutoLeadDetailSheetProps> = ({
               <Input id="detail-email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="contato@clinica.com.br" />
             </div>
           </div>
+
+          {/* Dossiê de Perfil, Personalidade e Sequência de Mensagens */}
+          <LeadDossierSection lead={lead} />
 
           {/* Icebreaker Lindy AI */}
           <div className="space-y-2">

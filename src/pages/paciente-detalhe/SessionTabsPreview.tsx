@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { usePatientFilesContext } from "@/contexts/PatientFilesContext";
+import { useOptionalPatientFilesContext, type PatientFileUploadRow } from "@/contexts/PatientFilesContext";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { useAuth } from "@/hooks/useAuth";
 import { FileThumbnailCard } from "@/components/FileThumbnailCard";
@@ -21,6 +21,8 @@ import type { PatientPaymentPlanRow } from "@/lib/payment-plans";
 import type { AnamnesisTemplateSchema } from "@/lib/anamnesis-forms";
 import type { Session } from "./pacienteDetalheTypes";
 
+const EMPTY_FILES: PatientFileUploadRow[] = [];
+
 export interface SessionTabsPreviewProps {
   baseSchema: AnamnesisTemplateSchema;
   session: Session;
@@ -35,7 +37,8 @@ export const SessionTabsPreview = ({
   canViewFinancialData,
 }: SessionTabsPreviewProps) => {
   const preview = getSessionPreviewContent(session, baseSchema);
-  const { files } = usePatientFilesContext();
+  const filesContext = useOptionalPatientFilesContext();
+  const files = filesContext?.files ?? EMPTY_FILES;
   const sessionFiles = useMemo(() => files.filter((f) => f.session_id === session.id), [files, session.id]);
   const { isFeatureEnabled } = useFeatureFlags();
   const { can } = useAuth();
@@ -94,24 +97,24 @@ export const SessionTabsPreview = ({
   return (
     <Tabs
       defaultValue="anamnese"
-      className="mt-3"
+      className="mt-3 min-w-0 max-w-full"
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <TabsList
-        className="grid h-auto w-full"
+        className="flex h-auto w-full max-w-full justify-start gap-1 overflow-x-auto touch-pan-x sm:grid"
         style={{
           gridTemplateColumns: `repeat(${tabColumnsCount}, minmax(0, 1fr))`,
         }}
       >
-        <TabsTrigger value="anamnese" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+        <TabsTrigger value="anamnese" className="min-h-[44px] shrink-0 whitespace-nowrap px-3 py-2 text-xs leading-tight sm:min-h-0 sm:whitespace-normal sm:px-2 sm:text-sm">
           Anamnese
         </TabsTrigger>
-        <TabsTrigger value="tratamento" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+        <TabsTrigger value="tratamento" className="min-h-[44px] shrink-0 whitespace-nowrap px-3 py-2 text-xs leading-tight sm:min-h-0 sm:whitespace-normal sm:px-2 sm:text-sm">
           Tratamento
         </TabsTrigger>
         {showFiles && (
-          <TabsTrigger value="arquivos" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+          <TabsTrigger value="arquivos" className="min-h-[44px] shrink-0 whitespace-nowrap px-3 py-2 text-xs leading-tight sm:min-h-0 sm:whitespace-normal sm:px-2 sm:text-sm">
             Arquivos
             {sessionFiles.length > 0 && (
               <Badge variant="secondary" className="ml-1 h-5 px-1">
@@ -121,27 +124,31 @@ export const SessionTabsPreview = ({
           </TabsTrigger>
         )}
         {hasFinancePermission && (
-          <TabsTrigger value="pagamento" className="whitespace-normal px-2 py-2 text-xs leading-tight sm:text-sm">
+          <TabsTrigger value="pagamento" className="min-h-[44px] shrink-0 whitespace-nowrap px-3 py-2 text-xs leading-tight sm:min-h-0 sm:whitespace-normal sm:px-2 sm:text-sm">
             Pagamento
           </TabsTrigger>
         )}
       </TabsList>
 
-      <TabsContent value="anamnese" className="rounded-md border bg-muted/20 p-3">
-        <p className="text-sm text-muted-foreground whitespace-pre-line">
+      <TabsContent value="anamnese" className="min-w-0 max-w-full rounded-md border bg-muted/20 p-3">
+        <p className="break-words text-sm text-muted-foreground whitespace-pre-line">
           {preview.complaint || "Nenhum dado de anamnese registrado."}
         </p>
       </TabsContent>
 
-      <TabsContent value="tratamento" className="rounded-md border bg-muted/20 p-3">
-        <p className="text-sm text-muted-foreground whitespace-pre-line">
+      <TabsContent value="tratamento" className="min-w-0 max-w-full rounded-md border bg-muted/20 p-3">
+        <p className="break-words text-sm text-muted-foreground whitespace-pre-line">
           {preview.treatment || "Nenhum tratamento registrado."}
         </p>
       </TabsContent>
 
       {showFiles && (
-        <TabsContent value="arquivos" className="rounded-md border bg-muted/20 p-3">
-          {sessionFiles.length > 0 ? (
+        <TabsContent value="arquivos" className="min-w-0 max-w-full rounded-md border bg-muted/20 p-3">
+          {!filesContext ? (
+            <p className="break-words text-sm text-muted-foreground">
+              Consulte os arquivos anexados na aba Arquivos do paciente.
+            </p>
+          ) : sessionFiles.length > 0 ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
               {sessionFiles.map((file) => (
                 <FileThumbnailCard key={file.id} file={file} />
@@ -154,7 +161,7 @@ export const SessionTabsPreview = ({
       )}
 
       {hasFinancePermission && (
-        <TabsContent value="pagamento" className="rounded-md border bg-muted/20 p-3 space-y-3">
+        <TabsContent value="pagamento" className="min-w-0 max-w-full rounded-md border bg-muted/20 p-3 space-y-3">
           {/* Informações de Pagamento da Sessão */}
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">

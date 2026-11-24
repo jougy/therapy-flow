@@ -164,41 +164,49 @@ describe("PagamentoClinica", () => {
     });
   });
 
-  it("subscribes to Realtime and confirms payment reactively on database event", async () => {
-    setupDefaultMocks([]);
+  it("polls invoice status periodically and confirms payment without Realtime postgres_changes", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      setupDefaultMocks([]);
 
-    render(
-      <MemoryRouter initialEntries={["/pagamento/clinic-123?plan=solo&cycle=annual"]}>
-        <Routes>
-          <Route path="/pagamento/:clinicId" element={<PagamentoClinica />} />
-        </Routes>
-      </MemoryRouter>
-    );
+      render(
+        <MemoryRouter initialEntries={["/pagamento/clinic-123?plan=solo&cycle=annual"]}>
+          <Routes>
+            <Route path="/pagamento/:clinicId" element={<PagamentoClinica />} />
+          </Routes>
+        </MemoryRouter>
+      );
 
-    await waitFor(() => {
-      expect(screen.getByText(/Checkout Oficial da Assinatura/i)).toBeInTheDocument();
-    });
+      await waitFor(() => {
+        expect(screen.getByText(/Checkout Oficial da Assinatura/i)).toBeInTheDocument();
+      });
 
-    // Check Realtime channel subscribed
-    expect(supabaseMocks.channel).toHaveBeenCalledWith("invoice-status-clinic-123");
-    expect(realtimeCallback).not.toBeNull();
+      // Ensure no postgres_changes Realtime channel is opened (Nano optimization)
+      expect(supabaseMocks.channel).not.toHaveBeenCalledWith("invoice-status-clinic-123");
 
-    // Simulate incoming Realtime event with CONFIRMED invoice
-    act(() => {
-      realtimeCallback?.({
-        new: {
+      // Next poll returns CONFIRMED invoice
+      setupDefaultMocks([
+        {
           id: "inv-confirmed",
           clinic_id: "clinic-123",
           status: "CONFIRMED",
           asaas_payment_id: "pay_confirmed_999",
+          billing_type: "PIX",
+          value: 478.8,
         },
-      });
-    });
+      ]);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Assinatura Ativa com Sucesso!/i)).toBeInTheDocument();
-      expect(screen.getByText(/Acessar Meu Espaço Agora/i)).toBeInTheDocument();
-    });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Assinatura Ativa com Sucesso!/i)).toBeInTheDocument();
+        expect(screen.getByText(/Acessar Meu Espaço Agora/i)).toBeInTheDocument();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("switches to Credit Card tab and processes card payment without client-side DB updates", async () => {

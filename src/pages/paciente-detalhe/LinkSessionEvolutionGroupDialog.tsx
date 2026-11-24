@@ -42,39 +42,39 @@ export const LinkSessionEvolutionGroupDialog: React.FC<LinkSessionEvolutionGroup
             Selecione o ciclo de evolução para o atendimento de {session ? new Date(session.session_date).toLocaleDateString("pt-BR") : ""}.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2.5 py-2">
+        <div className="space-y-2.5 py-2 min-w-0 max-w-full">
           <Button
             type="button"
             variant="outline"
-            className="w-full justify-start text-left h-auto py-2.5 px-3 rounded-xl border-dashed hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30 transition-colors"
+            className="w-full min-w-0 min-h-[44px] whitespace-normal justify-start text-left h-auto py-3 px-3.5 rounded-xl border-dashed hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30 transition-colors"
             onClick={() => {
               if (session) onLinkGroup(session, "none");
             }}
           >
-            <div>
-              <p className="font-semibold text-xs">Tornar Atendimento Avulso</p>
-              <p className="text-[11px] text-muted-foreground">Desvincula este atendimento de qualquer grupo de evolução.</p>
+            <div className="min-w-0 w-full">
+              <p className="font-semibold text-xs break-words whitespace-normal leading-snug">Tornar Atendimento Avulso</p>
+              <p className="text-[11px] text-muted-foreground break-words whitespace-normal leading-snug">Desvincula este atendimento de qualquer grupo de evolução.</p>
             </div>
           </Button>
 
           <Button
             type="button"
             variant="outline"
-            className="w-full justify-start text-left h-auto py-2.5 px-3 rounded-xl border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors"
+            className="w-full min-w-0 min-h-[44px] whitespace-normal justify-start text-left h-auto py-3 px-3.5 rounded-xl border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors"
             onClick={() => {
               if (session) onLinkGroup(session, "__new__");
             }}
           >
-            <div>
-              <p className="font-semibold text-xs text-primary">+ Criar Novo Grupo de Evolução</p>
-              <p className="text-[11px] text-muted-foreground">Inicia um novo ciclo de evolução a partir deste atendimento.</p>
+            <div className="min-w-0 w-full">
+              <p className="font-semibold text-xs text-primary break-words whitespace-normal leading-snug">+ Criar Novo Grupo de Evolução</p>
+              <p className="text-[11px] text-muted-foreground break-words whitespace-normal leading-snug">Inicia um novo ciclo de evolução a partir deste atendimento.</p>
             </div>
           </Button>
 
           {evolutionGroupsMetadata.length > 0 && (
-            <div className="space-y-2 pt-2 border-t">
+            <div className="space-y-2 pt-2 border-t min-w-0 max-w-full">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Grupos Existentes</p>
-              <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+              <div className="max-h-60 overflow-y-auto overscroll-contain space-y-1.5 pr-1 min-w-0">
                 {evolutionGroupsMetadata.map((group) => {
                   const matchedGroupView = evolutionGroupsView?.find((g) => g.id === group.id);
                   const label = group.custom_name || (matchedGroupView?.tagGroups.map((g) => g.name).join(" · ")) || `Ciclo (${String(group?.id || "").slice(0, 6)})`;
@@ -86,12 +86,12 @@ export const LinkSessionEvolutionGroupDialog: React.FC<LinkSessionEvolutionGroup
                       key={group.id}
                       type="button"
                       variant={isCurrent ? "secondary" : "outline"}
-                      className={`w-full justify-between text-left h-auto py-2.5 px-3 rounded-xl ${isCurrent ? "ring-1 ring-primary/40" : ""}`}
+                      className={`w-full min-w-0 min-h-[44px] whitespace-normal justify-between text-left h-auto py-2.5 px-3 rounded-xl ${isCurrent ? "ring-1 ring-primary/40" : ""}`}
                       onClick={() => {
                         if (session) onLinkGroup(session, group.id);
                       }}
                     >
-                      <div className="min-w-0 pr-2">
+                      <div className="min-w-0 pr-2 flex-1">
                         <p className="font-medium text-xs truncate">{label}</p>
                         <p className="text-[10px] text-muted-foreground">{count} {count === 1 ? "atendimento" : "atendimentos"}</p>
                       </div>
@@ -103,8 +103,8 @@ export const LinkSessionEvolutionGroupDialog: React.FC<LinkSessionEvolutionGroup
             </div>
           )}
         </div>
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="pb-safe">
+          <Button variant="ghost" size="sm" className="w-full sm:w-auto min-h-[44px]" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
         </DialogFooter>

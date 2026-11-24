@@ -127,6 +127,13 @@
     @apply border-border;
   }
 
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -160,6 +167,15 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .cv-auto-session {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 180px;
+  }
+
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 }
 

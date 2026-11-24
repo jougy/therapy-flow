@@ -12,7 +12,13 @@ import {
   renderElectronicSignatureStamp,
 } from "@/lib/termVariables";
 import { SignaturePadCanvas } from "./SignaturePadCanvas";
-import { createDocumentSignatureRecord } from "./signatureService";
+import { createDocumentSignatureRecord, type CreateDocumentSignatureInput } from "./signatureService";
+import { isOfflineOrNetworkError } from "@/lib/local-first/networkError";
+import { enqueueOfflineMutation } from "@/lib/local-first/offlineMutationQueue";
+import {
+  cacheOfflineDocumentSignature,
+  computeSha256Hex,
+} from "@/lib/local-first/offlineSignatureHelpers";
 import {
   generateDocumentSignToken,
   type DocumentPatientData,
@@ -104,56 +110,110 @@ export const DocumentInPersonSignatureView: React.FC<DocumentInPersonSignatureVi
     }
 
     setSubmitting(true);
-    try {
-      const now = new Date();
-      const signedAtIso = now.toISOString();
-      const signToken = generateDocumentSignToken();
-      const formattedCpf = cpfDigits.length === 11 ? formatPatientCpf(cpfDigits) : null;
 
-      const stampData = {
-        fullName: signerName.trim(),
-        cpf: formattedCpf,
-        date: formatDateShortBr(now),
-        time: formatCurrentTimeHHMM(now),
-        location: clinicDisplayName,
-        globalUserId: patient.patient_code || patient.id,
-        signatureWebpUrl: signatureDataUrl,
+    const now = new Date();
+    const signedAtIso = now.toISOString();
+    const signToken = generateDocumentSignToken();
+    const formattedCpf = cpfDigits.length === 11 ? formatPatientCpf(cpfDigits) : null;
+
+    const stampData = {
+      fullName: signerName.trim(),
+      cpf: formattedCpf,
+      date: formatDateShortBr(now),
+      time: formatCurrentTimeHHMM(now),
+      location: clinicDisplayName,
+      globalUserId: patient.patient_code || patient.id,
+      signatureWebpUrl: signatureDataUrl,
+    };
+
+    const hasTag =
+      rawInterpolatedMarkdown.includes("<assinatura_paciente>") ||
+      rawInterpolatedMarkdown.includes("<assinatura_responsavel>");
+
+    const renderedWithStamp = hasTag
+      ? interpolateTermVariables(rawInterpolatedMarkdown, {}, {
+          now,
+          signatures: { [signerRole]: stampData },
+        })
+      : `${rawInterpolatedMarkdown}\n\n---\n\n${renderElectronicSignatureStamp(stampData, "markdown")}`;
+
+    const signatureInput: CreateDocumentSignatureInput = {
+      clinicId,
+      patientId: patient.id,
+      sessionId: sessionId || null,
+      templateId: persistedTemplateId,
+      templateTitle: selectedTemplate.title,
+      renderedMarkdown: renderedWithStamp,
+      signToken,
+      status: "signed_in_person",
+      signerName: signerName.trim(),
+      signerCpf: cpfDigits || null,
+      signerRole,
+      signatureImageUrl: signatureDataUrl,
+      signedAt: signedAtIso,
+      signatureMetadata: {
+        channel: "in_person",
+        signed_method: "in_person",
+        date: stampData.date,
+        time: stampData.time,
+        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      },
+      createdBy: userId || null,
+    };
+
+    const handleOfflineSignature = async () => {
+      const sha256Hash = await computeSha256Hex(
+        JSON.stringify({
+          clinicId,
+          patientId: patient.id,
+          signToken,
+          signedAt: signedAtIso,
+          signerName: signatureInput.signerName,
+          signerCpf: signatureInput.signerCpf,
+          renderedMarkdown: renderedWithStamp,
+          signatureImageUrl: signatureDataUrl,
+        })
+      );
+      const offlineId = crypto.randomUUID();
+      const offlineInput: CreateDocumentSignatureInput = {
+        ...signatureInput,
+        signatureMetadata: {
+          ...signatureInput.signatureMetadata,
+          sha256_hash: sha256Hash,
+          offline_recorded: true,
+        },
       };
 
-      const hasTag =
-        rawInterpolatedMarkdown.includes("<assinatura_paciente>") ||
-        rawInterpolatedMarkdown.includes("<assinatura_responsavel>");
+      await cacheOfflineDocumentSignature(patient.id, signToken, {
+        ...offlineInput,
+        id: offlineId,
+      });
+      await enqueueOfflineMutation("create_document_signature", offlineInput);
 
-      const renderedWithStamp = hasTag
-        ? interpolateTermVariables(rawInterpolatedMarkdown, {}, {
-            now,
-            signatures: { [signerRole]: stampData },
-          })
-        : `${rawInterpolatedMarkdown}\n\n---\n\n${renderElectronicSignatureStamp(stampData, "markdown")}`;
-
-      const created = await createDocumentSignatureRecord({
-        clinicId,
-        patientId: patient.id,
-        sessionId: sessionId || null,
-        templateId: persistedTemplateId,
-        templateTitle: selectedTemplate.title,
-        renderedMarkdown: renderedWithStamp,
+      onSigned({
+        id: offlineId,
         signToken,
-        status: "signed_in_person",
         signerName: signerName.trim(),
         signerCpf: cpfDigits || null,
         signerRole,
         signatureImageUrl: signatureDataUrl,
         signedAt: signedAtIso,
-        signatureMetadata: {
-          channel: "in_person",
-          signed_method: "in_person",
-          date: stampData.date,
-          time: stampData.time,
-          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
-        },
-        createdBy: userId || null,
+        location: clinicDisplayName,
       });
+
+      toast({
+        title: "Assinatura registrada offline!",
+        description: "Hash SHA-256 gerado e carimbo salvo localmente — será sincronizada ao reconectar.",
+      });
+    };
+
+    try {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await handleOfflineSignature();
+        return;
+      }
+
+      const created = await createDocumentSignatureRecord(signatureInput);
 
       onSigned({
         id: created.id,
@@ -171,6 +231,10 @@ export const DocumentInPersonSignatureView: React.FC<DocumentInPersonSignatureVi
         description: "O carimbo eletrônico foi injetado no documento.",
       });
     } catch (err) {
+      if (isOfflineOrNetworkError(err)) {
+        await handleOfflineSignature();
+        return;
+      }
       toast({
         title: "Erro ao salvar assinatura presencial",
         description: err instanceof Error ? err.message : "Tente novamente.",

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Index from "@/pages/Index";
 import { useAuth } from "@/hooks/useAuth";
+import { clearLocalCache } from "@/lib/indexed-db-persister";
 
 const renderWithClient = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({
@@ -160,11 +161,14 @@ vi.mock("@/integrations/supabase/client", () => {
 
     const builder = {
       eq: () => builder,
+      gt: () => builder,
       gte: () => builder,
+      is: () => builder,
       limit: () => builder,
       neq: () => builder,
       order: () => builder,
       select: () => builder,
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
       then: (
         resolve: (value: { data: unknown; error: null }) => unknown,
         reject?: (reason: unknown) => unknown,
@@ -213,8 +217,10 @@ vi.mock("@/integrations/supabase/client", () => {
 });
 
 describe("Index", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    await clearLocalCache();
+    window.sessionStorage.clear();
 
     vi.mocked(useAuth).mockReturnValue({
       accountRole: null,

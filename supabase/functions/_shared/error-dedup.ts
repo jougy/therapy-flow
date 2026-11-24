@@ -53,6 +53,7 @@ async function upstashPipeline(commands: Array<Array<string | number>>): Promise
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(commands),
+      signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
     return (await res.json()) as Array<{ result: unknown }>;
@@ -138,4 +139,18 @@ export async function flushPendingErrors(): Promise<number> {
   }
   await upstashPipeline(cleanupCmds);
   return events.length;
+}
+
+/**
+ * Executa flush oportunista no máximo uma vez a cada `minIntervalSec` segundos
+ * usando lock atômico no Upstash (SET NX EX), evitando sobrecarga de comandos.
+ */
+export async function flushPendingErrorsIfDue(minIntervalSec = 60): Promise<number> {
+  const lockRes = await upstashPipeline([
+    ['SET', 'err:flush_lock', '1', 'NX', 'EX', minIntervalSec],
+  ]);
+  if (lockRes?.[0]?.result !== 'OK') {
+    return 0;
+  }
+  return flushPendingErrors();
 }

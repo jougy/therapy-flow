@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   format,
-  isSameDay,
   parseISO,
   startOfWeek,
   endOfWeek,
@@ -33,20 +32,16 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAgendaPeriodClipboard } from "@/hooks/useAgendaPeriodClipboard";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
-import { getLocalCacheItem, setLocalCacheItem } from "@/lib/indexed-db-persister";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  AGENDA_EVENTS_UPDATED_EVENT,
   AGENDA_PAST_EVENT_ERROR_MESSAGE,
   assertAgendaEventDateTimeIsFuture,
   buildAgendaEventPayload,
   formatSupabaseErrorMessage,
   getAgendaEventDateTime,
   normalizeAgendaStatus,
-  notifyAgendaEventsUpdated,
   type AgendaEventStatus,
   type AgendaEventType,
-  type AgendaPatientOption,
 } from "@/lib/agenda-events";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { resolveCurrentGeoLocation } from "@/lib/geo-timezone";
@@ -68,13 +63,13 @@ import {
 
 export type { AgendaEventItem };
 
+import { type AgendaEventQueryResult } from "@/lib/agenda-cache";
 import {
-  AGENDA_EVENTS_CACHE_KEY,
-  AGENDA_PATIENTS_CACHE_KEY,
-  inMemoryAgendaCache,
-  mapRawEventToItem,
-  type AgendaEventQueryResult,
-} from "@/lib/agenda-cache";
+  isNetworkOrOfflineError,
+  toRawAgendaEvent,
+  useClinicAgendaPatients,
+  useUnifiedClinicAgenda,
+} from "@/services/clinicAgendaService";
 
 function getDefaultNewEventPreset(referenceDate = new Date()) {
   const current = new Date();
@@ -115,13 +110,8 @@ export default function ClinicAgendaPage() {
     : undefined;
   const effectiveClinicId = clinicId || clinic?.id || routeClinicId || null;
 
-  const initialCache = effectiveClinicId ? inMemoryAgendaCache.get(effectiveClinicId) : null;
-
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<AgendaViewMode>("day");
-  const [events, setEvents] = useState<AgendaEventItem[]>(() => initialCache?.events ?? []);
-  const [patients, setPatients] = useState<AgendaPatientOption[]>(() => initialCache?.patients ?? []);
-  const [loading, setLoading] = useState(() => !initialCache);
 
   // Filtros
   const [filterType, setFilterType] = useState<string>("all");
@@ -136,35 +126,31 @@ export default function ClinicAgendaPage() {
   const [modalPresetTime, setModalPresetTime] = useState<string>(() => getDefaultNewEventPreset().presetTime);
   const [selectedEventForModal, setSelectedEventForModal] = useState<AgendaEventItem | null>(null);
 
-  // Hidratação rápida via IndexedDB para o primeiro carregamento da aba
-  useEffect(() => {
-    if (!effectiveClinicId || inMemoryAgendaCache.has(effectiveClinicId)) return;
+  const currentUserId = user?.id;
+  const isAgendaQueryEnabled = Boolean(currentUserId) && !authLoading && !(clinicKey && !effectiveClinicId);
 
-    let isMounted = true;
-    void Promise.all([
-      getLocalCacheItem<AgendaEventQueryResult[]>(AGENDA_EVENTS_CACHE_KEY(effectiveClinicId)),
-      getLocalCacheItem<AgendaPatientOption[]>(AGENDA_PATIENTS_CACHE_KEY(effectiveClinicId)),
-    ]).then(([cachedEvents, cachedPatients]) => {
-      if (!isMounted) return;
-      let hasData = false;
-      if (Array.isArray(cachedEvents) && cachedEvents.length > 0) {
-        const mapped = cachedEvents.map(mapRawEventToItem);
-        setEvents(mapped);
-        hasData = true;
-      }
-      if (Array.isArray(cachedPatients) && cachedPatients.length > 0) {
-        setPatients(cachedPatients);
-        hasData = true;
-      }
-      if (hasData) {
-        setLoading(false);
-      }
-    });
+  const {
+    events,
+    index: agendaIndex,
+    isLoading: loadingEvents,
+    optimisticUpsertEvent,
+    optimisticUpsertEvents,
+    optimisticDeleteEvent,
+  } = useUnifiedClinicAgenda(effectiveClinicId, isAgendaQueryEnabled);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [effectiveClinicId]);
+  const { patients, isLoading: loadingPatients } = useClinicAgendaPatients(effectiveClinicId, isAgendaQueryEnabled);
+  const loading = (loadingEvents || loadingPatients) && events.length === 0;
+
+  const setEventsForClipboard = useCallback<React.Dispatch<React.SetStateAction<AgendaEventItem[]>>>(
+    (updater) => {
+      const next = typeof updater === "function" ? updater(events) : updater;
+      const added = next.filter((ev) => !agendaIndex.byId.has(ev.id));
+      if (added.length > 0) {
+        void optimisticUpsertEvents(added);
+      }
+    },
+    [agendaIndex.byId, events, optimisticUpsertEvents]
+  );
 
   // Hook modular de Copiar & Colar Flexível de Período (Dia, Semana, Mês)
   const {
@@ -179,7 +165,7 @@ export default function ClinicAgendaPage() {
     viewMode,
     selectedDate,
     events,
-    setEvents,
+    setEvents: setEventsForClipboard,
     can,
   });
 
@@ -214,134 +200,6 @@ export default function ClinicAgendaPage() {
     }
   }, [rawAgendaConfig.defaultView]);
 
-  const currentUserId = user?.id;
-
-  const fetchAgendaData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
-    if (authLoading) return;
-    if (!currentUserId) {
-      setLoading(false);
-      return;
-    }
-
-    // Se estivermos em uma rota de clínica específica (:clinicKey) mas o effectiveClinicId ainda não foi resolvido,
-    // aguardamos antes de disparar para evitar varredura global sem índice no Supabase
-    if (clinicKey && !effectiveClinicId) {
-      return;
-    }
-
-    if (showLoading) {
-      setLoading(true);
-    }
-
-    try {
-      const eventsRequest = effectiveClinicId
-        ? supabase
-            .from("agenda_events")
-            .select("id, event_type, patient_id, status, title, scheduled_for, duration_minutes, origin_timezone, origin_lat, origin_lng, origin_city")
-            .eq("clinic_id", effectiveClinicId)
-            .order("scheduled_for", { ascending: true })
-        : supabase
-            .from("agenda_events")
-            .select("id, event_type, patient_id, status, title, scheduled_for, duration_minutes, origin_timezone, origin_lat, origin_lng, origin_city")
-            .order("scheduled_for", { ascending: true });
-
-      const patientsRequest = effectiveClinicId
-        ? supabase
-            .from("patients")
-            .select("id, name")
-            .eq("clinic_id", effectiveClinicId)
-            .order("name", { ascending: true })
-        : supabase
-            .from("patients")
-            .select("id, name")
-            .order("name", { ascending: true });
-
-      // Dispara ambas as requisições em paralelo (Promise.all) cortando a latência pela metade
-      const [initialEventsRes, patientsRes] = await Promise.all([eventsRequest, patientsRequest]);
-      let eventsRes = initialEventsRes;
-
-      // Fallback Expand and Contract: se o banco ainda não tiver colunas novas, tenta sem elas
-      if (
-        eventsRes.error &&
-        (eventsRes.error.code === "42703" ||
-          eventsRes.error.message.includes("duration_minutes") ||
-          eventsRes.error.message.includes("origin_timezone"))
-      ) {
-        eventsRes = effectiveClinicId
-          ? await supabase
-              .from("agenda_events")
-              .select("id, event_type, patient_id, status, title, scheduled_for")
-              .eq("clinic_id", effectiveClinicId)
-              .order("scheduled_for", { ascending: true })
-          : await supabase
-              .from("agenda_events")
-              .select("id, event_type, patient_id, status, title, scheduled_for")
-              .order("scheduled_for", { ascending: true });
-      }
-
-      let nextEvents: AgendaEventItem[] = [];
-      if (eventsRes.error) {
-        toast({
-          title: "Erro ao carregar agenda",
-          description: eventsRes.error.message,
-          variant: "destructive",
-        });
-      } else {
-        const rawEvents = (eventsRes.data ?? []) as unknown as AgendaEventQueryResult[];
-        nextEvents = rawEvents.map(mapRawEventToItem);
-        setEvents(nextEvents);
-
-        if (effectiveClinicId) {
-          void setLocalCacheItem(AGENDA_EVENTS_CACHE_KEY(effectiveClinicId), rawEvents);
-        }
-      }
-
-      let nextPatients: AgendaPatientOption[] = [];
-      if (patientsRes.error) {
-        toast({
-          title: "Erro ao carregar pacientes",
-          description: patientsRes.error.message,
-          variant: "destructive",
-        });
-      } else {
-        nextPatients = Array.isArray(patientsRes.data) ? (patientsRes.data as AgendaPatientOption[]) : [];
-        setPatients(nextPatients);
-
-        if (effectiveClinicId) {
-          void setLocalCacheItem(AGENDA_PATIENTS_CACHE_KEY(effectiveClinicId), nextPatients);
-        }
-      }
-
-      // Atualiza o cache em memória imediato para transições entre rotas sem delay
-      if (effectiveClinicId) {
-        inMemoryAgendaCache.set(effectiveClinicId, {
-          events: nextEvents.length > 0 ? nextEvents : (inMemoryAgendaCache.get(effectiveClinicId)?.events ?? []),
-          patients: nextPatients.length > 0 ? nextPatients : (inMemoryAgendaCache.get(effectiveClinicId)?.patients ?? []),
-          timestamp: Date.now(),
-        });
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [authLoading, clinicKey, effectiveClinicId, currentUserId]);
-
-  useEffect(() => {
-    const hasInitialCache = Boolean(effectiveClinicId && inMemoryAgendaCache.has(effectiveClinicId));
-    void fetchAgendaData({ showLoading: !hasInitialCache });
-  }, [fetchAgendaData, effectiveClinicId]);
-
-  useEffect(() => {
-    const handleEventsUpdated = () => {
-      // Atualizações de eventos não devem resetar o layout com spinner de tela cheia
-      void fetchAgendaData({ showLoading: false });
-    };
-
-    window.addEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleEventsUpdated);
-    return () => {
-      window.removeEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleEventsUpdated);
-    };
-  }, [fetchAgendaData]);
-
   const patientNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of patients) {
@@ -372,8 +230,18 @@ export default function ClinicAgendaPage() {
     });
   }, [events, filterType, filterStatus, filterShifts, searchQuery, patientNameById]);
 
-  // Eventos do dia selecionado em O(N) com comparação direta de data
+  // Eventos do dia selecionado em O(1) via índice por dia quando sem filtros ativos
   const dayEvents = useMemo(() => {
+    const hasFilters =
+      filterType !== "all" ||
+      filterStatus !== "all" ||
+      (filterShifts.length > 0 && filterShifts.length < 4) ||
+      Boolean(searchQuery.trim());
+
+    if (!hasFilters) {
+      return agendaIndex.byDayKey.get(format(selectedDate, "yyyy-MM-dd")) ?? [];
+    }
+
     const targetYear = selectedDate.getFullYear();
     const targetMonth = selectedDate.getMonth();
     const targetDay = selectedDate.getDate();
@@ -388,7 +256,7 @@ export default function ClinicAgendaPage() {
         );
       })
       .sort((a, b) => a.time.localeCompare(b.time));
-  }, [filteredEvents, selectedDate]);
+  }, [agendaIndex.byDayKey, filterShifts.length, filterStatus, filterType, filteredEvents, searchQuery, selectedDate]);
 
   // Dias da semana corrente
   const weekDays = useMemo(() => {
@@ -467,6 +335,8 @@ export default function ClinicAgendaPage() {
     time: string;
     durationMinutes: number;
     reminderSettings?: any;
+    notifyPatient?: boolean;
+    notifyTeam?: boolean;
   }) => {
     if (!user) return;
     if (!can("schedule.write")) {
@@ -494,10 +364,32 @@ export default function ClinicAgendaPage() {
       ? patients.find((p) => p.id === data.patientId) || null
       : null;
 
+    let payload: ReturnType<typeof buildAgendaEventPayload> | null = null;
+    const tempId = `offline-agenda-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const saveOffline = async (insertPayload: ReturnType<typeof buildAgendaEventPayload>) => {
+      const offlineRaw: AgendaEventQueryResult = {
+        id: tempId,
+        event_type: insertPayload.event_type,
+        patient_id: insertPayload.patient_id ?? null,
+        scheduled_for: insertPayload.scheduled_for,
+        status: insertPayload.status ?? "aguardando_confirmacao",
+        title: insertPayload.title,
+        duration_minutes: insertPayload.duration_minutes ?? data.durationMinutes,
+        origin_timezone: insertPayload.origin_timezone ?? null,
+        origin_lat: insertPayload.origin_lat ?? null,
+        origin_lng: insertPayload.origin_lng ?? null,
+        origin_city: insertPayload.origin_city ?? null,
+      };
+      await optimisticUpsertEvent(offlineRaw, { tempId, offlineRecord: insertPayload, enqueueOffline: true });
+      setModalOpen(false);
+      toast({ title: "Agendamento salvo offline", description: "Será sincronizado ao reconectar." });
+    };
+
     try {
       const geo = await resolveCurrentGeoLocation();
 
-      const payload = buildAgendaEventPayload({
+      payload = buildAgendaEventPayload({
         clinicId: effectiveClinicId,
         durationMinutes: data.durationMinutes,
         eventType: data.eventType,
@@ -517,6 +409,11 @@ export default function ClinicAgendaPage() {
         userId: user.id,
       });
 
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await saveOffline(payload);
+        return;
+      }
+
       let insertedResult = await supabase
         .from("agenda_events")
         .insert(payload)
@@ -534,15 +431,15 @@ export default function ClinicAgendaPage() {
           insertedResult.error.message.includes("schema cache"))
       ) {
         const fallbackPayload = { ...payload };
-        delete (fallbackPayload as any).duration_minutes;
-        delete (fallbackPayload as any).reminder_configs;
-        delete (fallbackPayload as any).notify_team;
-        delete (fallbackPayload as any).notify_patient;
-        delete (fallbackPayload as any).notified_colleague_ids;
-        delete (fallbackPayload as any).origin_timezone;
-        delete (fallbackPayload as any).origin_lat;
-        delete (fallbackPayload as any).origin_lng;
-        delete (fallbackPayload as any).origin_city;
+        delete (fallbackPayload as Record<string, unknown>).duration_minutes;
+        delete (fallbackPayload as Record<string, unknown>).reminder_configs;
+        delete (fallbackPayload as Record<string, unknown>).notify_team;
+        delete (fallbackPayload as Record<string, unknown>).notify_patient;
+        delete (fallbackPayload as Record<string, unknown>).notified_colleague_ids;
+        delete (fallbackPayload as Record<string, unknown>).origin_timezone;
+        delete (fallbackPayload as Record<string, unknown>).origin_lat;
+        delete (fallbackPayload as Record<string, unknown>).origin_lng;
+        delete (fallbackPayload as Record<string, unknown>).origin_city;
         insertedResult = await supabase
           .from("agenda_events")
           .insert(fallbackPayload)
@@ -554,13 +451,10 @@ export default function ClinicAgendaPage() {
       const inserted = insertedResult.data;
 
       if (inserted) {
-        // Dispara lembretes / notificações automáticas via WhatsApp se configurado
         if (inserted.id && (data.notifyPatient || data.notifyTeam)) {
           void supabase.functions.invoke("agenda-whatsapp-reminders", {
             body: { action: "notify_new_booking", eventId: inserted.id },
-          }).catch((err) => {
-            console.warn("[ClinicAgendaPage] Falha ao disparar notificação de WhatsApp:", err);
-          });
+          }).catch(() => {});
         }
 
         const newEvent: AgendaEventItem = {
@@ -572,37 +466,29 @@ export default function ClinicAgendaPage() {
           title: inserted.title,
           date: parseISO(inserted.scheduled_for),
           time: format(parseISO(inserted.scheduled_for), "HH:mm"),
-          durationMinutes: (inserted as any).duration_minutes ?? data.durationMinutes,
-          originTimezone: (inserted as any).origin_timezone ?? geo.timezone,
-          originLat: (inserted as any).origin_lat ?? geo.lat,
-          originLng: (inserted as any).origin_lng ?? geo.lng,
-          originCity: (inserted as any).origin_city ?? geo.city,
+          durationMinutes: (inserted as { duration_minutes?: number | null }).duration_minutes ?? data.durationMinutes,
+          originTimezone: (inserted as { origin_timezone?: string | null }).origin_timezone ?? geo.timezone,
+          originLat: (inserted as { origin_lat?: number | null }).origin_lat ?? geo.lat,
+          originLng: (inserted as { origin_lng?: number | null }).origin_lng ?? geo.lng,
+          originCity: (inserted as { origin_city?: string | null }).origin_city ?? geo.city,
         };
-        setEvents((prev) => {
-          const next = [...prev, newEvent];
-          if (effectiveClinicId) {
-            const entry = inMemoryAgendaCache.get(effectiveClinicId);
-            inMemoryAgendaCache.set(effectiveClinicId, {
-              events: next,
-              patients: entry?.patients ?? patients,
-              timestamp: Date.now(),
-            });
-          }
-          return next;
-        });
+        await optimisticUpsertEvent(newEvent);
       }
 
-      notifyAgendaEventsUpdated();
       setModalOpen(false);
       toast({ title: "Agendamento criado com sucesso" });
     } catch (err) {
+      if (payload && isNetworkOrOfflineError(err)) {
+        await saveOffline(payload);
+        return;
+      }
       toast({
         title: "Erro ao criar agendamento",
         description: formatSupabaseErrorMessage(err, "Não foi possível criar o agendamento. Verifique os dados e tente novamente."),
         variant: "destructive",
       });
     }
-  }, [can, user, patients, effectiveClinicId]);
+  }, [can, user, patients, effectiveClinicId, optimisticUpsertEvent]);
 
   // Salvar Edição de Agendamento
   const handleSaveEdit = useCallback(async (data: {
@@ -622,8 +508,38 @@ export default function ClinicAgendaPage() {
       return;
     }
 
+    const existingEvent = agendaIndex.byId.get(data.id);
+    const newDateTime = getAgendaEventDateTime(data.date, data.time);
+
+    const saveEditOffline = async () => {
+      if (!existingEvent) return;
+      const updatedItem: AgendaEventItem = {
+        ...existingEvent,
+        status: data.status,
+        scheduledFor: newDateTime.toISOString(),
+        date: newDateTime,
+        time: data.time,
+        durationMinutes: data.durationMinutes ?? existingEvent.durationMinutes,
+      };
+      await optimisticUpsertEvent(updatedItem, {
+        enqueueOffline: true,
+        offlineRecord: {
+          id: existingEvent.id,
+          clinic_id: effectiveClinicId,
+          user_id: user.id,
+          event_type: existingEvent.eventType,
+          patient_id: existingEvent.patientId,
+          scheduled_for: newDateTime.toISOString(),
+          status: data.status,
+          title: existingEvent.title,
+          duration_minutes: updatedItem.durationMinutes ?? 60,
+        },
+      });
+      setModalOpen(false);
+      toast({ title: "Agendamento salvo offline", description: "Será sincronizado ao reconectar." });
+    };
+
     try {
-      const newDateTime = getAgendaEventDateTime(data.date, data.time);
       const updatePayload: {
         status: AgendaEventStatus;
         scheduled_for: string;
@@ -635,6 +551,11 @@ export default function ClinicAgendaPage() {
 
       if (typeof data.durationMinutes === "number" && data.durationMinutes > 0 && data.durationMinutes <= 1440) {
         updatePayload.duration_minutes = Math.round(data.durationMinutes);
+      }
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await saveEditOffline();
+        return;
       }
 
       const updateQuery = supabase
@@ -658,41 +579,30 @@ export default function ClinicAgendaPage() {
 
       if (updateResult.error) throw updateResult.error;
 
-      setEvents((prev) => {
-        const next = prev.map((e) =>
-          e.id === data.id
-            ? {
-                ...e,
-                status: data.status,
-                scheduledFor: newDateTime.toISOString(),
-                date: newDateTime,
-                time: data.time,
-                durationMinutes: data.durationMinutes ?? e.durationMinutes,
-              }
-            : e
-        );
-        if (effectiveClinicId) {
-          const entry = inMemoryAgendaCache.get(effectiveClinicId);
-          inMemoryAgendaCache.set(effectiveClinicId, {
-            events: next,
-            patients: entry?.patients ?? patients,
-            timestamp: Date.now(),
-          });
-        }
-        return next;
-      });
+      if (existingEvent) {
+        const updatedRaw: AgendaEventQueryResult = {
+          ...toRawAgendaEvent(existingEvent),
+          status: data.status,
+          scheduled_for: newDateTime.toISOString(),
+          duration_minutes: data.durationMinutes ?? existingEvent.durationMinutes ?? null,
+        };
+        await optimisticUpsertEvent(updatedRaw);
+      }
 
-      notifyAgendaEventsUpdated();
       setModalOpen(false);
       toast({ title: "Agendamento atualizado" });
     } catch (err) {
+      if (existingEvent && isNetworkOrOfflineError(err)) {
+        await saveEditOffline();
+        return;
+      }
       toast({
         title: "Erro ao atualizar",
         description: formatSupabaseErrorMessage(err, "Não foi possível atualizar o agendamento."),
         variant: "destructive",
       });
     }
-  }, [can, user, effectiveClinicId, patients]);
+  }, [agendaIndex.byId, can, user, effectiveClinicId, optimisticUpsertEvent]);
 
   // Excluir Agendamento
   const handleDeleteEvent = useCallback(async (id: string) => {
@@ -706,34 +616,35 @@ export default function ClinicAgendaPage() {
     }
 
     try {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await optimisticDeleteEvent(id, { enqueueOffline: true });
+        setModalOpen(false);
+        toast({ title: "Agendamento excluído offline" });
+        return;
+      }
+
       const deleteQuery = supabase.from("agenda_events").delete().eq("id", id);
       const { error } = effectiveClinicId ? await deleteQuery.eq("clinic_id", effectiveClinicId) : await deleteQuery;
 
       if (error) throw error;
 
-      setEvents((prev) => {
-        const next = prev.filter((e) => e.id !== id);
-        if (effectiveClinicId) {
-          const entry = inMemoryAgendaCache.get(effectiveClinicId);
-          inMemoryAgendaCache.set(effectiveClinicId, {
-            events: next,
-            patients: entry?.patients ?? patients,
-            timestamp: Date.now(),
-          });
-        }
-        return next;
-      });
-      notifyAgendaEventsUpdated();
+      await optimisticDeleteEvent(id);
       setModalOpen(false);
       toast({ title: "Agendamento excluído" });
     } catch (err) {
+      if (isNetworkOrOfflineError(err)) {
+        await optimisticDeleteEvent(id, { enqueueOffline: true });
+        setModalOpen(false);
+        toast({ title: "Agendamento excluído offline" });
+        return;
+      }
       toast({
         title: "Erro ao excluir",
         description: formatSupabaseErrorMessage(err, "Não foi possível excluir o agendamento."),
         variant: "destructive",
       });
     }
-  }, [can, effectiveClinicId]);
+  }, [can, effectiveClinicId, optimisticDeleteEvent]);
 
   if (!isAgendaEnabled) {
     return (

@@ -62,6 +62,8 @@ export const PlatformDirectoryPage = () => {
   const [tags, setTags] = useState<PlatformTagItem[]>([]);
   
   const [hasSearched, setHasSearched] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
   const [directory, setDirectory] = useState<PlatformDirectoryItem[]>([]);
   const [auditEvents, setAuditEvents] = useState<PlatformAuditEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -246,7 +248,36 @@ export const PlatformDirectoryPage = () => {
             />
           </div>
 
-          {/* Menu 1: Categoria / Tipo */}
+          {/* Botões de Filtro e Busca */}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant={showFilters ? "secondary" : "outline"}
+              className="h-10 gap-1.5"
+              onClick={() => setShowFilters((prev) => !prev)}
+            >
+              <Filter className="h-4 w-4" />
+              Filtros
+              {[kind, clinicCategory, statusFilter, selectedTagId].filter((v) => v !== "all").length > 0 && (
+                <span className="ml-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                  {[kind, clinicCategory, statusFilter, selectedTagId].filter((v) => v !== "all").length}
+                </span>
+              )}
+            </Button>
+            <Button type="submit" disabled={loading} className="h-10 gap-1.5 shadow-sm">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              Buscar
+            </Button>
+            {hasSearched && (
+              <Button type="button" variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground" onClick={handleClearFilters} title="Limpar busca">
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </form>
+
+        {showFilters && (
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 pt-1">
           <div className="w-full sm:w-auto min-w-[180px]">
             <Select value={kind} onValueChange={(value) => setKind(value as DirectoryKind)}>
               <SelectTrigger className="h-10">
@@ -318,31 +349,20 @@ export const PlatformDirectoryPage = () => {
             </Select>
           </div>
 
-          {/* Botões de Ação Principal */}
-          <div className="flex items-center gap-2">
-            <Button type="submit" disabled={loading} className="h-10 gap-1.5 shadow-sm">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Filter className="h-4 w-4" />}
-              Filtrar / Carregar
-            </Button>
-            {hasSearched && (
-              <Button type="button" variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground" onClick={handleClearFilters} title="Limpar busca">
-                <X className="h-4 w-4" />
-              </Button>
-            )}
           </div>
-        </form>
+        )}
 
         {/* Linha de Ações Auxiliares: Botões de Criação e Segmentação Comercial */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="font-medium mr-1">Segmentos & Atalhos:</span>
+            <span className="font-medium mr-1">Atalhos:</span>
             <Button
               size="sm"
               variant="outline"
               className="h-7 text-xs border-sky-500/30 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950/40"
               onClick={() => handleQuickList("clinic", "solo")}
             >
-              Listar Clínicas Solo
+              Solo
             </Button>
             <Button
               size="sm"
@@ -350,7 +370,7 @@ export const PlatformDirectoryPage = () => {
               className="h-7 text-xs border-purple-500/30 text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-950/40"
               onClick={() => handleQuickList("clinic", "team")}
             >
-              Listar Clínicas Equipe
+              Equipe
             </Button>
             <Button
               size="sm"
@@ -358,7 +378,7 @@ export const PlatformDirectoryPage = () => {
               className="h-7 text-xs border-amber-500/40 text-amber-800 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
               onClick={() => handleQuickList("clinic", "enterprise")}
             >
-              Listar Enterprise
+              Enterprise
             </Button>
             <Button
               size="sm"
@@ -366,7 +386,7 @@ export const PlatformDirectoryPage = () => {
               className="h-7 text-xs border-neutral-400/40 text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-900/60"
               onClick={() => handleQuickList("clinic", "inactive")}
             >
-              Listar Inativas
+              Inativas
             </Button>
             <Button
               size="sm"
@@ -374,7 +394,7 @@ export const PlatformDirectoryPage = () => {
               className="h-7 text-xs border-indigo-500/30 text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
               onClick={() => handleQuickList("account")}
             >
-              Listar Usuários
+              Usuários
             </Button>
             <Button
               size="sm"
@@ -382,7 +402,7 @@ export const PlatformDirectoryPage = () => {
               className="h-7 text-xs border-emerald-500/30 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
               onClick={() => handleQuickList("patient")}
             >
-              Listar Pacientes
+              Pacientes
             </Button>
             <Button
               size="sm"
@@ -390,11 +410,20 @@ export const PlatformDirectoryPage = () => {
               className="h-7 text-xs border-amber-500/30 text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
               onClick={() => handleQuickList("pending_account")}
             >
-              Listar Pendências
+              Pendências
             </Button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant={showAudit ? "secondary" : "outline"}
+              className="h-8 gap-1"
+              onClick={() => setShowAudit((prev) => !prev)}
+            >
+              <Clock3 className="h-3.5 w-3.5" />
+              Auditoria ({auditEvents.length})
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -402,7 +431,7 @@ export const PlatformDirectoryPage = () => {
               onClick={() => setResetDialogOpen(true)}
             >
               <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
-              Resetar cadastro
+              Resetar
             </Button>
             <Button
               size="sm"
@@ -411,7 +440,7 @@ export const PlatformDirectoryPage = () => {
               onClick={() => setAffiliateManagementOpen(true)}
             >
               <Award className="h-3.5 w-3.5 text-amber-500" />
-              Gestão de Afiliados
+              Afiliados
             </Button>
             <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => setCreateClinicOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
@@ -439,44 +468,14 @@ export const PlatformDirectoryPage = () => {
       {/* Painel do Diretório ou Boas-vindas Sob Demanda */}
       {!hasSearched ? (
         <Card className="border-dashed bg-card/60">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-3">
-              <Sparkles className="h-6 w-6" />
+          <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary mb-2.5">
+              <Sparkles className="h-5 w-5" />
             </div>
-            <h3 className="text-base font-semibold">Busca do Diretório Sob Demanda</h3>
-            <DismissibleInfoTip
-              id="platform-directory-demand-tip"
-              variant="subtle"
-              className="mt-3 max-w-lg text-left"
-            >
-              Para otimizar o consumo de dados e o tempo de carregamento, escolha os filtros acima ou utilize um dos atalhos rápidos para listar registros específicos.
-            </DismissibleInfoTip>
-            <div className="mt-5 flex flex-wrap justify-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "solo")}>
-                Listar Clínicas Solo
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "team")}>
-                Listar Clínicas Equipe
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "enterprise")}>
-                Listar Enterprise
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic", "inactive")}>
-                Listar Inativas
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("clinic")}>
-                Todas Clínicas
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("account")}>
-                Listar Usuários
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleQuickList("patient")}>
-                Listar Pacientes
-              </Button>
-              <Button variant="default" size="sm" onClick={() => handleQuickList("all")}>
-                Listar Todos
-              </Button>
-            </div>
+            <p className="text-sm font-medium text-muted-foreground">Selecione um filtro ou atalho acima</p>
+            <Button variant="default" size="sm" className="mt-3" onClick={() => handleQuickList("all")}>
+              Listar Todos
+            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -511,7 +510,7 @@ export const PlatformDirectoryPage = () => {
       )}
 
       {/* Eventos de Auditoria */}
-      {auditEvents.length > 0 && (
+      {showAudit && auditEvents.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle>Últimos eventos de auditoria global</CardTitle>

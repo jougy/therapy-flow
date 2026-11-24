@@ -84,9 +84,9 @@ describe("ClientTelemetryManager & Triggers", () => {
     expect(store.unsyncedActionsCount).toBe(8);
   });
 
-  it("triggers automatic sync when reaching 15 actions threshold (threshold_batch)", async () => {
-    // Record 14 actions (below threshold)
-    for (let i = 0; i < 14; i++) {
+  it("triggers automatic sync when reaching 40 actions threshold (threshold_batch)", async () => {
+    // Record 39 actions (below threshold)
+    for (let i = 0; i < 39; i++) {
       localTelemetryManager.recordAction("page_view", `/app/page-${i}`);
     }
     expect(supabase.rpc).not.toHaveBeenCalled();

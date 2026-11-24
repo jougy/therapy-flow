@@ -25,14 +25,20 @@ export function DeleteCareLineDialog({
         <DialogHeader>
           <DialogTitle>Excluir Linha de Cuidado?</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground min-w-0 max-w-full break-words">
           Os atendimentos desta linha de cuidado serão mantidos como atendimentos gerais.
         </p>
-        <DialogFooter>
+        <DialogFooter className="gap-2 pb-safe">
           <DialogClose asChild>
-            <Button variant="outline">Cancelar</Button>
+            <Button variant="outline" className="w-full sm:w-auto min-h-[44px]">
+              Cancelar
+            </Button>
           </DialogClose>
-          <Button variant="destructive" onClick={() => deleteConfirmId && onConfirmDelete(deleteConfirmId)}>
+          <Button
+            variant="destructive"
+            className="w-full sm:w-auto min-h-[44px]"
+            onClick={() => deleteConfirmId && onConfirmDelete(deleteConfirmId)}
+          >
             Excluir
           </Button>
         </DialogFooter>

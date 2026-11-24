@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { format, isSameDay, parseISO } from "date-fns";
+import { useMemo, useState } from "react";
+import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Eye, EyeOff, Loader2, Maximize2, MessageCircle, Plus, Trash2, X, Play } from "lucide-react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -29,42 +29,38 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { AgendaNewEventDialog } from "@/components/agenda/AgendaNewEventDialog";
 import {
   AgendaReminderSettingsBlock,
   DEFAULT_REMINDER_SETTINGS,
   type AgendaReminderSettingsValues,
 } from "@/components/agenda/AgendaReminderSettingsBlock";
 import {
-  AGENDA_EVENTS_UPDATED_EVENT,
   AGENDA_PAST_EVENT_ERROR_MESSAGE,
   assertAgendaEventDateTimeIsFuture,
   buildAgendaEventPayload,
   getAgendaEventDateTime,
   isAgendaEventDateTimeInPast,
-  notifyAgendaEventsUpdated,
   formatSupabaseErrorMessage,
-  normalizeAgendaStatus,
   resolvePatientSelection,
+  type AgendaEventItem,
   type AgendaEventStatus,
   type AgendaEventType,
   type AgendaPatientOption,
 } from "@/lib/agenda-events";
+import { mapRawEventToItem, type AgendaEventQueryResult } from "@/lib/agenda-cache";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
-import { getPatientSessionPath } from "@/lib/patient-routing";
+import { getClinicPatientPath } from "@/lib/patient-routing";
+import {
+  isNetworkOrOfflineError,
+  toRawAgendaEvent,
+  useClinicAgendaPatients,
+  useUnifiedClinicAgenda,
+} from "@/services/clinicAgendaService";
 import type { Database } from "@/integrations/supabase/types";
 
 type Session = Database["public"]["Tables"]["sessions"]["Row"];
-
-interface AgendaEvent {
-  eventType: AgendaEventType;
-  id: string;
-  patientId: string | null;
-  scheduledFor: string;
-  status: AgendaEventStatus;
-  title: string;
-  date: Date;
-  time: string;
-}
+type AgendaEvent = AgendaEventItem;
 
 const eventTypeLabels: Record<AgendaEventType, string> = {
   atendimento: "Atendimento",
@@ -136,9 +132,19 @@ const AgendaWidget = ({
   const navigate = useNavigate();
   const location = useLocation();
   const { clinicKey } = useParams<{ clinicKey?: string }>();
-  const { can, clinic, clinicId, user } = useAuth();
+  const { accessibleClinics, can, clinic, clinicId, user } = useAuth();
   const isDesignLab = location.pathname.startsWith("/designlab");
-  const effectiveClinicKey = clinicKey || clinic?.route_key;
+  const routeClinic = clinicKey
+    ? accessibleClinics?.find((opt) => opt.clinic?.route_key === clinicKey)?.clinic
+    : undefined;
+  const effectiveClinicId = clinicId || clinic?.id || routeClinic?.id || null;
+  const effectiveClinicKey =
+    clinicKey ||
+    clinic?.route_key ||
+    routeClinic?.route_key ||
+    (effectiveClinicId
+      ? accessibleClinics?.find((opt) => opt.clinic?.id === effectiveClinicId)?.clinic?.route_key
+      : undefined);
   const fixedPatientId = fixedPatient?.id ?? null;
   const fixedPatientName = fixedPatient?.name ?? null;
   const canExpand = showExpandButton ?? true;
@@ -151,8 +157,6 @@ const AgendaWidget = ({
       : "/espacopessoal";
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [newEventDate, setNewEventDate] = useState<Date | null>(() => (autoOpenAdd ? null : new Date()));
-  const [events, setEvents] = useState<AgendaEvent[]>([]);
-  const [patients, setPatients] = useState<AgendaPatientOption[]>([]);
   const [showAdd, setShowAdd] = useState(autoOpenAdd);
   const [eventType, setEventType] = useState<AgendaEventType>("atendimento");
   const [patientQuery, setPatientQuery] = useState("");
@@ -161,7 +165,6 @@ const AgendaWidget = ({
   const [newTitle, setNewTitle] = useState("");
   const [newTime, setNewTime] = useState(() => (autoOpenAdd ? "" : getDefaultNewEventTime()));
   const [reminderSettings, setReminderSettings] = useState<AgendaReminderSettingsValues>(DEFAULT_REMINDER_SETTINGS);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<AgendaEvent | null>(null);
   const [selectedStatusAction, setSelectedStatusAction] = useState<AgendaStatusAction>("aguardando_confirmacao");
@@ -171,81 +174,29 @@ const AgendaWidget = ({
   const [viewMode, setViewMode] = useState<AgendaViewMode>("day");
   const [showOtherPatients, setShowOtherPatients] = useState(false);
 
-  const fetchAgendaData = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
-    if (!user) return;
-
-    if (showLoading) {
-      setLoading(true);
-    }
-
-    const eventsBase = supabase
-      .from("agenda_events")
-      .select("id, event_type, patient_id, status, title, scheduled_for");
-    const eventsRequest = clinicId
-      ? eventsBase.eq("clinic_id", clinicId).order("scheduled_for", { ascending: true })
-      : eventsBase.order("scheduled_for", { ascending: true });
-
-    const patientsBase = supabase
-      .from("patients")
-      .select("id, name, phone");
-    const patientsRequest = clinicId
-      ? patientsBase.eq("clinic_id", clinicId).order("name", { ascending: true })
-      : patientsBase.order("name", { ascending: true });
-
-    const [eventsRes, patientsRes] = await Promise.all([eventsRequest, patientsRequest]);
-
-    if (eventsRes.error) {
-      toast({ title: "Erro ao carregar agenda", description: eventsRes.error.message, variant: "destructive" });
-    }
-
-    if (patientsRes.error) {
-      toast({ title: "Erro ao carregar pacientes", description: patientsRes.error.message, variant: "destructive" });
-    }
-
-    setEvents(
-      (eventsRes.data ?? []).map((event) => ({
-        id: event.id,
-        eventType: event.event_type as AgendaEventType,
-        patientId: event.patient_id,
-        scheduledFor: event.scheduled_for,
-        status: normalizeAgendaStatus(event.status),
-        title: event.title,
-        date: parseISO(event.scheduled_for),
-        time: format(parseISO(event.scheduled_for), "HH:mm"),
-      }))
-    );
-    setPatients(Array.isArray(patientsRes.data) ? patientsRes.data : []);
-    setLoading(false);
-  }, [clinicId, user]);
-
-  useEffect(() => {
-    void fetchAgendaData();
-  }, [fetchAgendaData]);
-
-  useEffect(() => {
-    const handleAgendaEventsUpdated = () => {
-      void fetchAgendaData({ showLoading: false });
-    };
-
-    window.addEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleAgendaEventsUpdated);
-
-    return () => {
-      window.removeEventListener(AGENDA_EVENTS_UPDATED_EVENT, handleAgendaEventsUpdated);
-    };
-  }, [fetchAgendaData]);
+  const {
+    events,
+    index: agendaIndex,
+    isLoading: loadingEvents,
+    optimisticUpsertEvent,
+    optimisticDeleteEvent,
+  } = useUnifiedClinicAgenda(effectiveClinicId, Boolean(user));
+  const { patients, isLoading: loadingPatients } = useClinicAgendaPatients(effectiveClinicId, Boolean(user));
+  const loading = (loadingEvents || loadingPatients) && events.length === 0;
 
   const scopedEvents = useMemo(
-    () => (fixedPatientId && !showOtherPatients ? events.filter((event) => event.patientId === fixedPatientId) : events),
-    [events, fixedPatientId, showOtherPatients]
+    () => (fixedPatientId && !showOtherPatients ? (agendaIndex.byPatientId.get(fixedPatientId) ?? []) : events),
+    [agendaIndex.byPatientId, events, fixedPatientId, showOtherPatients]
   );
 
-  const dayEvents = useMemo(
-    () =>
-      scopedEvents
-        .filter((event) => isSameDay(event.date, selectedDate))
-        .sort((first, second) => first.time.localeCompare(second.time)),
-    [scopedEvents, selectedDate]
-  );
+  const dayEvents = useMemo(() => {
+    const dayKey = format(selectedDate, "yyyy-MM-dd");
+    const dayBucket = agendaIndex.byDayKey.get(dayKey) ?? [];
+    if (fixedPatientId && !showOtherPatients) {
+      return dayBucket.filter((event) => event.patientId === fixedPatientId);
+    }
+    return dayBucket;
+  }, [agendaIndex.byDayKey, fixedPatientId, selectedDate, showOtherPatients]);
 
   const todayDay = useMemo(() => getLocalDay(), []);
   const selectedDayTimestamp = useMemo(() => getLocalDayTimestamp(selectedDate), [selectedDate]);
@@ -361,10 +312,30 @@ const AgendaWidget = ({
     setPatientComboboxOpen(false);
   };
 
-  const effectiveClinicId = clinicId || clinic?.id || null;
-
   const handleAdd = async () => {
     if (!user || !newEventDate) return;
+
+    let payload: Database["public"]["Tables"]["agenda_events"]["Insert"] | null = null;
+    const tempId = `offline-agenda-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const saveOffline = async (insertPayload: Database["public"]["Tables"]["agenda_events"]["Insert"]) => {
+      const offlineRaw: AgendaEventQueryResult = {
+        id: tempId,
+        event_type: insertPayload.event_type,
+        patient_id: insertPayload.patient_id ?? null,
+        scheduled_for: insertPayload.scheduled_for,
+        status: insertPayload.status ?? "aguardando_confirmacao",
+        title: insertPayload.title,
+        duration_minutes: insertPayload.duration_minutes ?? 60,
+        origin_timezone: insertPayload.origin_timezone ?? null,
+        origin_lat: insertPayload.origin_lat ?? null,
+        origin_lng: insertPayload.origin_lng ?? null,
+        origin_city: insertPayload.origin_city ?? null,
+      };
+      await optimisticUpsertEvent(offlineRaw, { tempId, offlineRecord: insertPayload, enqueueOffline: true });
+      toast({ title: "Agendamento salvo offline", description: "Será sincronizado ao reconectar." });
+      resetDialog();
+    };
 
     try {
       assertAgendaEventDateTimeIsFuture(getAgendaEventDateTime(newEventDate, newTime), undefined, 15);
@@ -374,7 +345,7 @@ const AgendaWidget = ({
         ...reminderSettings.additionalReminders.map((mins) => ({ minutesBefore: mins })),
       ];
 
-      const payload = buildAgendaEventPayload({
+      payload = buildAgendaEventPayload({
         clinicId: effectiveClinicId,
         eventType,
         graceMinutes: 15,
@@ -389,6 +360,11 @@ const AgendaWidget = ({
         userId: user.id,
       });
 
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await saveOffline(payload);
+        return;
+      }
+
       let insertedResult = await supabase
         .from("agenda_events")
         .insert(payload)
@@ -397,11 +373,11 @@ const AgendaWidget = ({
 
       if (insertedResult.error && (insertedResult.error.code === "42703" || insertedResult.error.message.includes("duration_minutes") || insertedResult.error.message.includes("reminder_configs"))) {
         const fallbackPayload = { ...payload };
-        delete (fallbackPayload as any).duration_minutes;
-        delete (fallbackPayload as any).reminder_configs;
-        delete (fallbackPayload as any).notify_team;
-        delete (fallbackPayload as any).notify_patient;
-        delete (fallbackPayload as any).notified_colleague_ids;
+        delete (fallbackPayload as Record<string, unknown>).duration_minutes;
+        delete (fallbackPayload as Record<string, unknown>).reminder_configs;
+        delete (fallbackPayload as Record<string, unknown>).notify_team;
+        delete (fallbackPayload as Record<string, unknown>).notify_patient;
+        delete (fallbackPayload as Record<string, unknown>).notified_colleague_ids;
         insertedResult = await supabase
           .from("agenda_events")
           .insert(fallbackPayload)
@@ -412,30 +388,21 @@ const AgendaWidget = ({
       if (insertedResult.error) throw insertedResult.error;
       const data = insertedResult.data;
       if (data) {
-        if (data.id && (formData.notifyPatient || formData.notifyTeam)) {
+        if (data.id && (reminderSettings.notifyPatient || reminderSettings.notifyTeam)) {
           void supabase.functions.invoke("agenda-whatsapp-reminders", {
             body: { action: "notify_new_booking", eventId: data.id },
           }).catch(() => {});
         }
-        setEvents((previous) => [
-          ...previous,
-          {
-            id: data.id,
-            eventType: data.event_type as AgendaEventType,
-            patientId: data.patient_id,
-            scheduledFor: data.scheduled_for,
-            status: normalizeAgendaStatus(data.status),
-            title: data.title,
-            date: parseISO(data.scheduled_for),
-            time: format(parseISO(data.scheduled_for), "HH:mm"),
-          },
-        ]);
+        await optimisticUpsertEvent(data as AgendaEventQueryResult);
       }
 
-      notifyAgendaEventsUpdated();
       toast({ title: "Agendamento confirmado" });
       resetDialog();
     } catch (error) {
+      if (payload && isNetworkOrOfflineError(error)) {
+        await saveOffline(payload);
+        return;
+      }
       const message = formatSupabaseErrorMessage(error, "Não foi possível salvar o agendamento.");
       toast({ title: "Erro ao salvar agendamento", description: message, variant: "destructive" });
     } finally {
@@ -468,21 +435,60 @@ const AgendaWidget = ({
           return;
         }
 
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          await optimisticDeleteEvent(selectedEvent.id, { enqueueOffline: true });
+          setSelectedEvent(null);
+          toast({ title: "Agendamento excluído offline" });
+          return;
+        }
+
         const deleteQuery = supabase.from("agenda_events").delete().eq("id", selectedEvent.id);
         const { error } = effectiveClinicId ? await deleteQuery.eq("clinic_id", effectiveClinicId) : await deleteQuery;
 
         if (error) {
+          if (isNetworkOrOfflineError(error)) {
+            await optimisticDeleteEvent(selectedEvent.id, { enqueueOffline: true });
+            setSelectedEvent(null);
+            toast({ title: "Agendamento excluído offline" });
+            return;
+          }
           throw error;
         }
 
-        setEvents((previous) => previous.filter((event) => event.id !== selectedEvent.id));
+        await optimisticDeleteEvent(selectedEvent.id);
         setSelectedEvent(null);
-        notifyAgendaEventsUpdated();
         toast({ title: "Agendamento excluído" });
         return;
       }
 
       const previousStatus = selectedEvent.status;
+      const offlineStatusUpdate = async () => {
+        const nextRaw: AgendaEventQueryResult = {
+          ...toRawAgendaEvent(selectedEvent),
+          status: selectedStatusAction,
+        };
+        await optimisticUpsertEvent(nextRaw, {
+          enqueueOffline: true,
+          offlineRecord: {
+            id: selectedEvent.id,
+            clinic_id: effectiveClinicId,
+            user_id: user.id,
+            event_type: selectedEvent.eventType,
+            patient_id: selectedEvent.patientId,
+            scheduled_for: selectedEvent.scheduledFor,
+            status: selectedStatusAction,
+            title: selectedEvent.title,
+          },
+        });
+        setSelectedEvent(mapRawEventToItem(nextRaw));
+        toast({ title: "Status salvo offline", description: "Será sincronizado ao reconectar." });
+      };
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await offlineStatusUpdate();
+        return;
+      }
+
       const updateQuery = supabase
         .from("agenda_events")
         .update({ status: selectedStatusAction })
@@ -493,25 +499,17 @@ const AgendaWidget = ({
         : await updateQuery.select("id, event_type, patient_id, status, title, scheduled_for").single();
 
       if (error) {
+        if (isNetworkOrOfflineError(error)) {
+          await offlineStatusUpdate();
+          return;
+        }
         throw error;
       }
 
-      const updatedEvent: AgendaEvent = {
-        id: data.id,
-        eventType: data.event_type as AgendaEventType,
-        patientId: data.patient_id,
-        scheduledFor: data.scheduled_for,
-        status: normalizeAgendaStatus(data.status),
-        title: data.title,
-        date: parseISO(data.scheduled_for),
-        time: format(parseISO(data.scheduled_for), "HH:mm"),
-      };
+      const rawUpdated = data as AgendaEventQueryResult;
+      const updatedEvent = mapRawEventToItem(rawUpdated);
 
-      setEvents((previous) =>
-        previous
-          .map((event) => (event.id === updatedEvent.id ? updatedEvent : event))
-          .sort((first, second) => first.scheduledFor.localeCompare(second.scheduledFor))
-      );
+      await optimisticUpsertEvent(rawUpdated);
       setSelectedEvent(updatedEvent);
 
       if (selectedStatusAction === "cancelado" && previousStatus !== "cancelado" && selectedEvent.patientId) {
@@ -540,7 +538,6 @@ const AgendaWidget = ({
         }
       }
 
-      notifyAgendaEventsUpdated();
       toast({ title: "Status do agendamento atualizado" });
     } catch (error) {
       const message = formatSupabaseErrorMessage(error, "Não foi possível atualizar o agendamento.");
@@ -551,7 +548,7 @@ const AgendaWidget = ({
   };
 
   const handleUpdateSelectedDateTime = async () => {
-    if (!selectedEvent) {
+    if (!selectedEvent || !user) {
       return;
     }
 
@@ -559,9 +556,38 @@ const AgendaWidget = ({
       setSavingSelectedEvent(true);
       const nextDate = getAgendaEventDateTime(selectedEventDate, selectedEventTime || "00:00");
       assertAgendaEventDateTimeIsFuture(nextDate, undefined, 15);
+      const nextScheduledFor = nextDate.toISOString();
+
+      const offlineDateTimeUpdate = async () => {
+        const nextRaw: AgendaEventQueryResult = {
+          ...toRawAgendaEvent(selectedEvent),
+          scheduled_for: nextScheduledFor,
+        };
+        await optimisticUpsertEvent(nextRaw, {
+          enqueueOffline: true,
+          offlineRecord: {
+            id: selectedEvent.id,
+            clinic_id: effectiveClinicId,
+            user_id: user.id,
+            event_type: selectedEvent.eventType,
+            patient_id: selectedEvent.patientId,
+            scheduled_for: nextScheduledFor,
+            status: selectedEvent.status,
+            title: selectedEvent.title,
+          },
+        });
+        setSelectedEvent(mapRawEventToItem(nextRaw));
+        toast({ title: "Data e horário salvos offline", description: "Será sincronizado ao reconectar." });
+      };
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await offlineDateTimeUpdate();
+        return;
+      }
+
       const updateQuery = supabase
         .from("agenda_events")
-        .update({ scheduled_for: nextDate.toISOString() })
+        .update({ scheduled_for: nextScheduledFor })
         .eq("id", selectedEvent.id);
 
       const { data, error } = effectiveClinicId
@@ -569,27 +595,18 @@ const AgendaWidget = ({
         : await updateQuery.select("id, event_type, patient_id, status, title, scheduled_for").single();
 
       if (error) {
+        if (isNetworkOrOfflineError(error)) {
+          await offlineDateTimeUpdate();
+          return;
+        }
         throw error;
       }
 
-      const updatedEvent: AgendaEvent = {
-        id: data.id,
-        eventType: data.event_type as AgendaEventType,
-        patientId: data.patient_id,
-        scheduledFor: data.scheduled_for,
-        status: normalizeAgendaStatus(data.status),
-        title: data.title,
-        date: parseISO(data.scheduled_for),
-        time: format(parseISO(data.scheduled_for), "HH:mm"),
-      };
+      const rawUpdated = data as AgendaEventQueryResult;
+      const updatedEvent = mapRawEventToItem(rawUpdated);
 
-      setEvents((previous) =>
-        previous
-          .map((event) => (event.id === updatedEvent.id ? updatedEvent : event))
-          .sort((first, second) => first.scheduledFor.localeCompare(second.scheduledFor))
-      );
+      await optimisticUpsertEvent(rawUpdated);
       setSelectedEvent(updatedEvent);
-      notifyAgendaEventsUpdated();
       toast({ title: "Data e horário atualizados" });
     } catch (error) {
       const message = formatSupabaseErrorMessage(error, "Não foi possível trocar data/horário.");
@@ -599,12 +616,17 @@ const AgendaWidget = ({
     }
   };
 
+  const buildPatientSessionRoute = (patientId: string) => {
+    const basePath = getClinicPatientPath(effectiveClinicKey, patientId, "sessao/novo");
+    return isDesignLab ? `/designlab${basePath}` : basePath;
+  };
+
   const handleStartAttendanceFromEvent = () => {
     if (!selectedEvent?.patientId) {
       return;
     }
 
-    navigate(getPatientSessionPath(selectedEvent.patientId, "novo"), {
+    navigate(buildPatientSessionRoute(selectedEvent.patientId), {
       state: {
         agendaEventId: selectedEvent.id,
         scheduledFor: selectedEvent.scheduledFor,
@@ -617,7 +639,7 @@ const AgendaWidget = ({
       return;
     }
 
-    navigate(getPatientSessionPath(fixedPatientId, "novo"));
+    navigate(buildPatientSessionRoute(fixedPatientId));
   };
 
   const handleRemove = async (id: string) => {
@@ -630,16 +652,26 @@ const AgendaWidget = ({
       return;
     }
 
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      await optimisticDeleteEvent(id, { enqueueOffline: true });
+      toast({ title: "Agendamento excluído offline" });
+      return;
+    }
+
     const deleteQuery = supabase.from("agenda_events").delete().eq("id", id);
-    const { error } = clinicId ? await deleteQuery.eq("clinic_id", clinicId) : await deleteQuery;
+    const { error } = effectiveClinicId ? await deleteQuery.eq("clinic_id", effectiveClinicId) : await deleteQuery;
 
     if (error) {
+      if (isNetworkOrOfflineError(error)) {
+        await optimisticDeleteEvent(id, { enqueueOffline: true });
+        toast({ title: "Agendamento excluído offline" });
+        return;
+      }
       toast({ title: "Erro ao remover evento", description: error.message, variant: "destructive" });
       return;
     }
 
-    setEvents((previous) => previous.filter((event) => event.id !== id));
-    notifyAgendaEventsUpdated();
+    await optimisticDeleteEvent(id);
   };
 
   const isModal = variant === "modal";
@@ -1030,189 +1062,39 @@ const AgendaWidget = ({
     <>
       {containerContent}
 
-        <Dialog
+        <AgendaNewEventDialog
           open={showAdd}
           onOpenChange={(open) => {
             setShowAdd(open);
             onOpenAddChange?.(open);
-            if (!open) {
-              resetDialog();
-            }
           }}
-        >
-          <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto p-4 sm:max-w-md sm:p-6">
-            <DialogHeader className="space-y-1 text-left">
-              <DialogTitle className="text-base font-semibold">Novo agendamento</DialogTitle>
-              <DialogDescription className="sr-only">
-                Formulário para criação de agendamento na agenda da clínica.
-              </DialogDescription>
-              <DismissibleInfoTip id="agenda-new-event-helper" className="mt-1">
-                Crie um novo agendamento usando a mesma agenda compartilhada da clínica.
-              </DismissibleInfoTip>
-            </DialogHeader>
-            <div className="space-y-3.5 pt-1">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Tipo</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(Object.entries(eventTypeLabels) as Array<[AgendaEventType, string]>).map(([value, label]) => (
-                    <Button
-                      key={value}
-                      type="button"
-                      size="sm"
-                      variant={eventType === value ? "default" : "outline"}
-                      onClick={() => handleEventTypeChange(value)}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {eventType === "atendimento" && fixedPatientName ? (
-                <div className="space-y-2">
-                  <Label>Paciente</Label>
-                  <div className="rounded-lg border bg-muted/20 px-3 py-2 text-sm font-medium">{fixedPatientName}</div>
-                </div>
-              ) : eventType === "atendimento" ? (
-                <div className="space-y-2">
-                  <Label>Paciente</Label>
-                  <Popover open={patientComboboxOpen} onOpenChange={setPatientComboboxOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={patientComboboxOpen}
-                        className="h-10 w-full justify-between px-3 text-left font-normal"
-                      >
-                        <span className={selectedPatient ? "truncate" : "truncate text-muted-foreground"}>
-                          {selectedPatient?.name || "Busque e selecione um paciente"}
-                        </span>
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
-                      <Command shouldFilter={false}>
-                        <CommandInput
-                          value={patientQuery}
-                          onValueChange={handlePatientQueryChange}
-                          placeholder="Buscar paciente..."
-                          aria-label="Buscar paciente para agendamento"
-                        />
-                        <CommandList>
-                          <CommandEmpty>Nenhum paciente encontrado.</CommandEmpty>
-                          <CommandGroup>
-                            {filteredPatients.map((patient) => {
-                              const selected = selectedPatient?.id === patient.id;
-
-                              return (
-                                <CommandItem
-                                  key={patient.id}
-                                  value={patient.name}
-                                  onSelect={() => handleSelectPatient(patient)}
-                                >
-                                  <Check className={cn("mr-2 h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
-                                  <span className="truncate">{patient.name}</span>
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  {patientQuery && !selectedPatient && (
-                    <p className="text-xs text-muted-foreground">
-                      Selecione um paciente existente da lista para confirmar o atendimento.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Label>Título</Label>
-                  <Input
-                    value={newTitle}
-                    onChange={(event) => handleTitleChange(event.target.value)}
-                    placeholder="Digite o título do evento"
-                    maxLength={INPUT_LIMITS.agendaTitle}
-                  />
-                </div>
-              )}
-
-              {/* Linha com Data e Horário no mesmo estilo da Agenda da Clínica */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Data */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Data</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className={cn(
-                          "h-10 w-full justify-start text-xs rounded-xl font-normal",
-                          !newEventDate && "text-muted-foreground"
-                        )}
-                        title="Selecione a data do agendamento"
-                      >
-                        <CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />
-                        {newEventDate ? format(newEventDate, "dd/MM/yyyy") : "Selecione uma data"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={newEventDate ?? undefined}
-                        onSelect={(date) => {
-                          if (date && getLocalDayTimestamp(date) >= todayDay.getTime()) {
-                            setNewEventDate(date);
-                          }
-                        }}
-                        disabled={(date) => getLocalDayTimestamp(date) < todayDay.getTime()}
-                        className={cn("p-3 pointer-events-auto")}
-                        modifiers={{ hasEvent: datesWithEvents }}
-                        modifiersClassNames={{ hasEvent: "bg-primary/20 font-bold" }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                {/* Horário */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="agenda-new-time" className="text-xs font-semibold">Horário</Label>
-                  <Input
-                    id="agenda-new-time"
-                    type="time"
-                    value={newTime}
-                    onChange={(event) => setNewTime(event.target.value)}
-                    className="h-10 rounded-xl text-xs"
-                    required
-                  />
-                </div>
-              </div>
-
-              {isNewEventDateTimePast ? (
-                <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                  {AGENDA_PAST_EVENT_ERROR_MESSAGE}
-                </div>
-              ) : null}
-
-              <AgendaReminderSettingsBlock
-                values={reminderSettings}
-                onChange={setReminderSettings}
-                patientName={selectedPatient?.name || fixedPatientName || undefined}
-              />
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" size="sm" onClick={resetDialog}>Cancelar</Button>
-              </DialogClose>
-              <Button size="sm" onClick={handleAdd} disabled={!canSave}>
-                {saving ? "Salvando..." : "Confirmar agendamento"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          onReset={resetDialog}
+          eventType={eventType}
+          eventTypeLabels={eventTypeLabels}
+          onEventTypeChange={handleEventTypeChange}
+          fixedPatientName={fixedPatientName}
+          patientComboboxOpen={patientComboboxOpen}
+          onPatientComboboxOpenChange={setPatientComboboxOpen}
+          selectedPatient={selectedPatient}
+          patientQuery={patientQuery}
+          onPatientQueryChange={handlePatientQueryChange}
+          filteredPatients={filteredPatients}
+          onSelectPatient={handleSelectPatient}
+          newTitle={newTitle}
+          onTitleChange={handleTitleChange}
+          newEventDate={newEventDate}
+          onNewEventDateChange={setNewEventDate}
+          todayDay={todayDay}
+          datesWithEvents={datesWithEvents}
+          newTime={newTime}
+          onNewTimeChange={setNewTime}
+          isNewEventDateTimePast={isNewEventDateTimePast}
+          reminderSettings={reminderSettings}
+          onReminderSettingsChange={setReminderSettings}
+          saving={saving}
+          canSave={canSave}
+          onSave={handleAdd}
+        />
 
         <AgendaEventQuickDialog
           selectedEvent={selectedEvent}

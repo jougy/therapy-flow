@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * Supabase Schema Indexer & Domain Splitter
+ * Supabase Schema Indexer & Granular Domain Splitter
  *
- * Lê o monolito `supabase/schema.sql` (~15.900 linhas) e gera um diretório indexado
- * `supabase/schema-index/` dividido por domínios lógicos + um catálogo `00-INDEX.md`
- * ultra-compacto com números de linha exatos, colunas `_cents`, `deleted_at` e RLS.
+ * Lê `supabase/schema.sql` e gera:
+ *   1. `supabase/schema-index/00-INDEX.md` (catálogo compacto com linhas exatas)
+ *   2. `supabase/schema-index/domains/*.sql` (10 domínios balanceados)
+ *   3. `.cache/schema-symbols.json` (índice estruturado O(1) para `npm run ai:schema`)
  *
  * Nunca altera o `supabase/schema.sql` original (SSOT do Supabase CLI).
  */
@@ -16,16 +17,70 @@ const ROOT = process.cwd();
 const SCHEMA_PATH = path.join(ROOT, 'supabase/schema.sql');
 const OUT_DIR = path.join(ROOT, 'supabase/schema-index');
 const DOMAINS_DIR = path.join(OUT_DIR, 'domains');
+const CACHE_DIR = path.join(ROOT, '.cache');
 
+// Ordem importa: regras mais específicas primeiro para evitar que `clinics_rbac` ou `core_misc` engulam tudo
 const DOMAIN_RULES = [
-  { key: 'patients', label: 'Pacientes, Prontuário Base & LGPD Menor', regex: /patient|minor_consent|guardian|prontuario/i },
-  { key: 'sessions', label: 'Sessões, Atendimentos, Agenda & Evolução', regex: /session|appointment|schedule|attendance|evolution|absence/i },
-  { key: 'anamnesis_forms', label: 'Formulários, Anamnese, Templates & Biblioteca', regex: /anamnesis|form_|template|library|annotation/i },
-  { key: 'clinics_rbac', label: 'Clínicas, Colaboradores, Convites & RBAC', regex: /clinic|member|invite|role|capability|permission|profile|user|auth/i },
-  { key: 'finance_billing', label: 'Financeiro (_cents), Planos, Assinaturas & Asaas', regex: /billing|payment|subscription|plan|invoice|asaas|charge|cents|package|coupon|discount/i },
-  { key: 'whatsapp_notifications', label: 'WhatsApp Bot, 2FA, Lembretes & Notificações', regex: /whatsapp|notification|reminder|totp|mfa|bot_|message|webhook/i },
-  { key: 'storage_files', label: 'Uploads, Backblaze B2 & Quotas de Arquivos', regex: /upload|storage|b2_|file|attachment|bucket|quota/i },
-  { key: 'platform_admin', label: 'Platform Master, Feature Flags, Auditoria & Feedbacks', regex: /platform|flag|feedback|release_note|audit|governance|telemetry|tag/i },
+  {
+    key: 'marketing_affiliates',
+    label: 'Marketing Growth OS, Zap Engine, CrabStudio, Fluxos & Afiliados',
+    regex: /affiliate|marketing|zap_|crab|lead_|campaign|flow_|studio_|outreach|referral/i,
+  },
+  {
+    key: 'agenda_schedule',
+    label: 'Agenda, Eventos, Slots Atômicos, Fuso Horário & Recorrência',
+    regex: /agenda|schedule|slot|booking|holiday|working_hour|calendar/i,
+  },
+  {
+    key: 'patients',
+    label: 'Pacientes, Prontuário Base, Termos & LGPD Menor',
+    regex: /patient|minor_consent|guardian|prontuario|document_signature|document_template/i,
+  },
+  {
+    key: 'sessions',
+    label: 'Sessões, Atendimentos, Evolução SOAP & Condutas',
+    regex: /session|appointment|attendance|evolution|absence|treatment|conduct/i,
+  },
+  {
+    key: 'anamnesis_forms',
+    label: 'Formulários, Anamnese, Templates, Biblioteca & Corretor Clínico',
+    regex: /anamnesis|form_|template|library|annotation|spellcheck|dictionary|custom_word/i,
+  },
+  {
+    key: 'finance_billing',
+    label: 'Financeiro (_cents), Planos, Assinaturas, Cupons & Asaas',
+    regex: /billing|payment|subscription|plan|invoice|asaas|charge|cents|package|coupon|discount|daily_metric/i,
+  },
+  {
+    key: 'whatsapp_notifications',
+    label: 'WhatsApp Bot, 2FA/TOTP, Lembretes & Notificações',
+    regex: /whatsapp|notification|reminder|totp|mfa|bot_|message|webhook|telegram/i,
+  },
+  {
+    key: 'storage_files',
+    label: 'Uploads, Backblaze B2 & Quotas de Arquivos',
+    regex: /upload|storage|b2_|file|attachment|bucket|quota/i,
+  },
+  {
+    key: 'platform_admin',
+    label: 'Platform Master, Feature Flags, Auditoria, Telemetria & Feedbacks',
+    regex: /platform|flag|feedback|release_note|audit|governance|telemetry|tag|security_event|error_log|master/i,
+  },
+  {
+    key: 'rbac_capabilities',
+    label: 'RBAC, Papéis Operacionais & Capabilities',
+    regex: /role|capability|permission|rbac|current_user_can/i,
+  },
+  {
+    key: 'auth_profiles_invitations',
+    label: 'Autenticação, Perfis, Usuários & Convites',
+    regex: /invite|profile|user|auth|signup|session_security|password/i,
+  },
+  {
+    key: 'clinics_core',
+    label: 'Clínicas, Membros & Configurações da Clínica',
+    regex: /clinic|member/i,
+  },
 ];
 
 function classifyDomain(name) {
@@ -45,23 +100,14 @@ function main() {
   const lines = content.split('\n');
 
   fs.mkdirSync(DOMAINS_DIR, { recursive: true });
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
 
   const tables = [];
   const functions = [];
   const policies = [];
   const views = [];
 
-  const domainChunks = {
-    patients: [],
-    sessions: [],
-    anamnesis_forms: [],
-    clinics_rbac: [],
-    finance_billing: [],
-    whatsapp_notifications: [],
-    storage_files: [],
-    platform_admin: [],
-    core_misc: [],
-  };
+  const domainChunks = Object.fromEntries([...DOMAIN_RULES.map((r) => [r.key, []]), ['core_misc', []]]);
 
   let i = 0;
   while (i < lines.length) {
@@ -143,10 +189,7 @@ function main() {
       const blockLines = [line];
       i++;
       while (i < lines.length) {
-        if (
-          /^(CREATE|ALTER|GRANT|REVOKE|COMMENT|SET|SELECT)\s+/i.test(lines[i]) &&
-          blockLines.length > 2
-        ) {
+        if (/^(CREATE|ALTER|GRANT|REVOKE|COMMENT|SET|SELECT)\s+/i.test(lines[i]) && blockLines.length > 2) {
           i--;
           break;
         }
@@ -158,7 +201,16 @@ function main() {
       }
       const endLine = i + 1;
       const domain = classifyDomain(fnName);
-      functions.push({ name: fnName, args: argsPreview, domain, startLine, endLine });
+      const fnText = blockLines.join(' ');
+      const capMatches = [...fnText.matchAll(/'([a-z_]+\.[a-z_]+)'/g)].map((m) => m[1]);
+      functions.push({
+        name: fnName,
+        args: argsPreview,
+        domain,
+        startLine,
+        endLine,
+        capabilities: [...new Set(capMatches)],
+      });
       domainChunks[domain].push(
         `-- [RPC/FUNCTION] ${fnName} (schema.sql L${startLine}-L${endLine})\n` + blockLines.join('\n') + '\n'
       );
@@ -202,12 +254,24 @@ function main() {
   // Write domain files
   for (const [domainKey, chunks] of Object.entries(domainChunks)) {
     const outFile = path.join(DOMAINS_DIR, `${domainKey}.sql`);
-    const header = `-- ==========================================================================\n` +
+    const header =
+      `-- ==========================================================================\n` +
       `-- DOMÍNIO: ${domainKey.toUpperCase()} (Gerado automaticamente por npm run schema:index)\n` +
       `-- Fonte SSOT: supabase/schema.sql\n` +
       `-- ==========================================================================\n\n`;
     fs.writeFileSync(outFile, header + chunks.join('\n'), 'utf8');
   }
+
+  // Write fast symbol lookup cache (.cache/schema-symbols.json)
+  const symbolPayload = {
+    generatedAt: new Date().toISOString(),
+    schemaLines: lines.length,
+    tables,
+    views,
+    functions,
+    policies,
+  };
+  fs.writeFileSync(path.join(CACHE_DIR, 'schema-symbols.json'), JSON.stringify(symbolPayload, null, 2), 'utf8');
 
   // Check duplicate RPC names (PGRST203 warning)
   const fnCounts = {};
@@ -221,15 +285,15 @@ function main() {
     `# 🗄️ Índice Modular do Schema Supabase (SSOT Index)`,
     ``,
     `> **Gerado automaticamente** a partir de \`supabase/schema.sql\` (${lines.length} linhas).`,
-    `> **Regra de Economia de Tokens:** Nunca leia \`supabase/schema.sql\` inteiro. Consulte este índice ou abra diretamente \`supabase/schema-index/domains/<dominio>.sql\` ou use \`view_file\` com \`StartLine\`/\`EndLine\` exatos abaixo.`,
+    `> **Regra de Economia de Tokens:** Nunca leia \`supabase/schema.sql\` inteiro. Use \`npm run ai:schema -- <tabela_ou_rpc> [--exact]\` ou \`view_file\` com \`StartLine\`/\`EndLine\` exatos abaixo.`,
     ``,
     `## 📊 Resumo Estrutural`,
     `- **Tabelas:** ${tables.length} | **Views:** ${views.length} | **RPCs/Funções:** ${functions.length} | **Políticas RLS:** ${policies.length}`,
     `- **Overloads detectados (Risco PGRST203):** ${overloadedFns.length === 0 ? 'Nenhum ✅' : overloadedFns.map(([n, c]) => `${n} (${c}x)`).join(', ')}`,
     ``,
     `## 📁 Arquivos de Domínio (\`supabase/schema-index/domains/\`)`,
-    ...DOMAIN_RULES.map((r) => `- \`domains/${r.key}.sql\` — ${r.label}`),
-    `- \`domains/core_misc.sql\` — Outras estruturas e utilitários`,
+    ...DOMAIN_RULES.map((r) => `- \`domains/${r.key}.sql\` — ${r.label} (${domainChunks[r.key].length} blocos)`),
+    `- \`domains/core_misc.sql\` — Outras estruturas e utilitários (${domainChunks.core_misc.length} blocos)`,
     ``,
     `## 📋 Catálogo de Tabelas (com linhas exatas em \`supabase/schema.sql\`)`,
     `| Tabela | Domínio | Linhas (\`schema.sql\`) | Colunas \`_cents\` | Soft Delete (\`deleted_at\`) | Qtd Colunas |`,
@@ -267,7 +331,7 @@ function main() {
 
   fs.writeFileSync(path.join(OUT_DIR, '00-INDEX.md'), indexLines.join('\n'), 'utf8');
   console.log(
-    `✅ Schema indexado em supabase/schema-index/00-INDEX.md (${tables.length} tabelas, ${views.length} views, ${functions.length} funções, ${policies.length} policies).`
+    `✅ Schema indexado em supabase/schema-index/00-INDEX.md e .cache/schema-symbols.json (${tables.length} tabelas, ${views.length} views, ${functions.length} funções, ${policies.length} policies).`
   );
 }
 

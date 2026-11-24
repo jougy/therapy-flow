@@ -19,7 +19,7 @@ import {
 const STORAGE_KEY = "therapy-flow.clientTelemetryStore";
 const SPAM_BLOCK_DURATION_MS = 15 * 60 * 1000;
 const MAX_ACTIONS_PER_5_MINUTES = 80;
-const ACTION_SYNC_THRESHOLD = 15;
+const ACTION_SYNC_THRESHOLD = 40;
 
 const METRIC_KEYS = [
   "pageViews", "printsDetected", "docsPrinted", "pdfExported", "jsonExported",
@@ -334,10 +334,15 @@ class ClientTelemetryManager {
             clinicalRecordsSaved: delta.clinicalRecordsSaved, formsCompleted: delta.formsCompleted,
             dwellTimeSeconds: delta.dwellTimeSeconds,
           };
-          await dispatchMatrixToUpstash(userId, activeClinicId || null, delta.pageDwellMatrix, counters);
+          const ok = await dispatchMatrixToUpstash(userId, activeClinicId || null, delta.pageDwellMatrix, counters);
+          if (!ok) {
+            this.rollbackDelta(delta);
+          }
           return;
         } catch (err) {
-          console.warn("[LocalTelemetry] Falha no driver Upstash, fallback para RPC:", err);
+          console.warn("[LocalTelemetry] Falha no driver Upstash:", err);
+          this.rollbackDelta(delta);
+          return;
         }
       }
 

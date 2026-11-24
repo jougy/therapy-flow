@@ -30,8 +30,8 @@ export interface LlmWorkerResponse {
 }
 
 const DEFAULT_MODELS: Record<WorkerLlmProviderType, string> = {
-  local_ollama: 'gemma4:e4b',
-  opencode_free: 'deepseek-v4.1-flash-free',
+  local_ollama: 'mimo-v2.6:latest',
+  opencode_free: 'mimo-v2.6-flash-free',
   gemini: 'gemini-2.5-flash-lite',
   gemma_cloud: 'gemma4:cloud',
   groq: 'llama-3.1-8b-instant',
@@ -43,7 +43,12 @@ const DEFAULT_MODELS: Record<WorkerLlmProviderType, string> = {
 
 function resolveBaseUrl(provider: WorkerLlmProviderType, override?: string): string {
   const cleaned = (override || '').trim().replace(/\/+$/, '');
-  if (cleaned) return cleaned;
+  if (cleaned) {
+    if (provider === 'local_ollama' && !cleaned.endsWith('/v1')) {
+      return `${cleaned}/v1`;
+    }
+    return cleaned;
+  }
   switch (provider) {
     case 'local_ollama':
       return (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434/v1').trim().replace(/\/+$/, '');
@@ -180,18 +185,23 @@ async function callOpenAiCompatible(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
+  const bodyPayload: Record<string, unknown> = {
+    model,
+    temperature: req.temperature ?? 0.65,
+    max_tokens: req.maxTokens ?? 220,
+    messages: [
+      { role: 'system', content: req.systemPrompt },
+      { role: 'user', content: req.userPrompt },
+    ],
+  };
+  if (req.provider === 'local_ollama' || req.provider === 'opencode_free') {
+    bodyPayload.reasoning_effort = 'none';
+  }
+
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model,
-      temperature: req.temperature ?? 0.65,
-      max_tokens: req.maxTokens ?? 220,
-      messages: [
-        { role: 'system', content: req.systemPrompt },
-        { role: 'user', content: req.userPrompt },
-      ],
-    }),
+    body: JSON.stringify(bodyPayload),
     signal: AbortSignal.timeout(req.timeoutMs ?? 20_000),
   });
 

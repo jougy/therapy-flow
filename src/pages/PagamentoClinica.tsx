@@ -309,73 +309,20 @@ export default function PagamentoClinica() {
     fetchPaymentDetails(true);
   }, [fetchPaymentDetails]);
 
-  // Supabase Realtime: Escutar atualizações e inserções na tabela subscription_invoices
+  // Polling leve enquanto aguarda confirmação do pagamento (substitui postgres_changes para poupar WAL/CPU no Nano)
   useEffect(() => {
-    if (!clinicId) return;
+    if (!clinicId || paymentConfirmed || paymentRefused) return;
 
-    const channel = supabase
-      .channel(`invoice-status-${clinicId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "subscription_invoices",
-          filter: `clinic_id=eq.${clinicId}`,
-        },
-        (payload: any) => {
-          const newRecord = payload.new;
-          if (!newRecord) return;
-
-          setInvoice((prev) => ({
-            id: newRecord.id || prev?.id || "temp",
-            asaas_payment_id: newRecord.asaas_payment_id || prev?.asaas_payment_id || "",
-            status: newRecord.status || prev?.status || "PENDING",
-            value: newRecord.value || prev?.value || 0,
-            due_date: newRecord.due_date || prev?.due_date || "",
-            billing_type: newRecord.billing_type || prev?.billing_type || "PIX",
-            invoice_url: newRecord.invoice_url ?? prev?.invoice_url ?? null,
-            bank_slip_url: newRecord.bank_slip_url ?? prev?.bank_slip_url ?? null,
-            pix_qr_code: newRecord.pix_qr_code ?? prev?.pix_qr_code ?? null,
-            pix_copy_paste: newRecord.pix_copy_paste ?? prev?.pix_copy_paste ?? null,
-            identification_field: newRecord.identification_field ?? prev?.identification_field ?? null,
-            bar_code: newRecord.bar_code ?? prev?.bar_code ?? null,
-          }));
-
-          if (
-            newRecord.status === "CONFIRMED" ||
-            newRecord.status === "RECEIVED" ||
-            newRecord.status === "RECEIVED_IN_CASH"
-          ) {
-            setPaymentConfirmed(true);
-            setPaymentRefused(false);
-            void trackPurchaseEvent({
-              planKey: planParam,
-              category: isClinicFamily ? "Equipe" : "Solo",
-              value: Number(newRecord.value || pricing.pixDiscountTotal || pricing.periodTotal),
-              transactionId: newRecord.asaas_payment_id || newRecord.id,
-              paymentMethod: newRecord.billing_type || "PIX",
-              couponCode: couponParam || appliedCoupon?.code,
-              userData: {
-                email: clinicData?.email || user?.email || undefined,
-                phone: clinicData?.phone || profile?.phone || undefined,
-                name: clinicData?.name || undefined,
-              },
-            });
-            toast.success("Pagamento confirmado com sucesso! Sua clínica está ativa.");
-          } else if (newRecord.status === "REFUSED" || newRecord.status === "OVERDUE") {
-
-            setPaymentRefused(true);
-            setRefusalMessage("A cobrança foi recusada pela instituição financeira ou expirou.");
-          }
-        }
-      )
-      .subscribe();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void fetchPaymentDetails(false);
+      }
+    }, 15_000);
 
     return () => {
-      supabase.removeChannel(channel);
+      window.clearInterval(interval);
     };
-  }, [clinicId]);
+  }, [clinicId, paymentConfirmed, paymentRefused, fetchPaymentDetails]);
 
   // Helper de validação do CPF ou CNPJ de cobrança
   const validateBillingDocument = () => {

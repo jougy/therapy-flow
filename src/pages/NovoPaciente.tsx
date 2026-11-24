@@ -1,24 +1,18 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { QueryClientContext } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowLeft,
   Baby,
-  Calendar,
   Check,
   ChevronRight,
   ClipboardEdit,
   FileText,
-  Globe,
-  IdCard,
   List,
   Loader2,
-  Mail,
-  Phone,
   Share2,
-  Sparkles,
-  UserCheck,
   UserRound,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -76,79 +70,23 @@ import {
 } from "@/components/patients/PostRegistrationMinorModal";
 import { PrintGuardianConsentModal } from "@/components/patients/PrintGuardianConsentModal";
 import { InPersonSignatureModal } from "@/components/patients/InPersonSignatureModal";
+import { appQueryClient } from "@/lib/query-client";
+import { isOfflineOrNetworkError } from "@/lib/local-first/networkError";
+import { persistOfflineCreatedPatient } from "@/lib/local-first/offlinePatientHelpers";
 
 import { ComponentHelpButton } from "@/components/tutorial/ComponentHelpButton";
-
-type EnsurePatientResponse = {
-  id: string;
-  patient_code?: string | null;
-  matched_by: "cpf" | "name_birth" | "created";
-  status: "existing" | "created";
-};
-
-type ExistingPatientMatch = {
-  id: string;
-  matchedBy: "cpf" | "name_birth";
-  name: string;
-  status: string | null;
-};
-
-const isEnsurePatientResponse = (value: unknown): value is EnsurePatientResponse => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-
-  const data = value as Record<string, unknown>;
-  return (
-    typeof data.id === "string" &&
-    (data.status === "existing" || data.status === "created") &&
-    (data.matched_by === "cpf" || data.matched_by === "name_birth" || data.matched_by === "created")
-  );
-};
-
-const getRegistrationErrorMessage = (message: string | undefined) => {
-  if (!message) {
-    return "Não foi possível cadastrar agora. Revise os dados e tente novamente.";
-  }
-
-  if (message.includes("Could not find the function") && message.includes("ensure_clinic_patient")) {
-    return "O banco de dados ainda não está com a atualização do cadastro aplicada. Atualize as migrations e tente novamente.";
-  }
-
-  if (message.includes("CPF inválido")) return "Informe um CPF válido.";
-  if (message.includes("Telefone inválido")) return "Informe um telefone com DDD ou deixe o campo em branco.";
-  if (message.includes("E-mail inválido")) return "Informe um e-mail válido ou deixe o campo em branco.";
-  if (message.includes("Data de nascimento inválida")) return "Informe uma data de nascimento válida.";
-  if (message.includes("Sem permissão")) return "Você não tem permissão para cadastrar pacientes nesta clínica.";
-
-  return "Não foi possível cadastrar o paciente agora. Tente novamente em instantes.";
-};
-
-const DOCUMENT_TYPE_OPTIONS: Array<{ value: PatientDocumentType; label: string; placeholder: string }> = [
-  { value: "cpf", label: "CPF do paciente (Padrão)", placeholder: "000.000.000-00" },
-  { value: "responsible_cpf", label: "CPF do responsável (Menor/Dependente)", placeholder: "000.000.000-00" },
-  { value: "passport", label: "Passaporte / ID Estrangeiro", placeholder: "Ex: AB123456" },
-  { value: "rg", label: "RG / Documento Nacional", placeholder: "Ex: 00.000.000-0" },
-  { value: "none", label: "Não possui documento no momento", placeholder: "Identificação por Nome e Nascimento" },
-];
-
-const GENDER_OPTIONS = [
-  { value: "feminino", label: "Feminino" },
-  { value: "masculino", label: "Masculino" },
-  { value: "nao-binario", label: "Não-binário" },
-  { value: "outro", label: "Outro" },
-  { value: "nao-informar", label: "Prefiro não informar" },
-];
-
-const PRONOUN_OPTIONS = [
-  { value: "ela/dela", label: "Ela / Dela" },
-  { value: "ele/dele", label: "Ele / Dele" },
-  { value: "elu/delu", label: "Elu / Delu" },
-  { value: "outro", label: "Outro" },
-];
+import {
+  DOCUMENT_TYPE_OPTIONS,
+  GENDER_OPTIONS,
+  PRONOUN_OPTIONS,
+  getRegistrationErrorMessage,
+  isEnsurePatientResponse,
+  type ExistingPatientMatch,
+} from "./novo-paciente/registrationConfig";
 
 const NovoPaciente = () => {
   const navigate = useNavigate();
+  const queryClient = useContext(QueryClientContext) ?? appQueryClient;
   const { clinic, clinicId, user, can } = useAuth();
   const quota = useClinicPlanQuota(clinicId);
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
@@ -234,7 +172,7 @@ const NovoPaciente = () => {
       !validation.errors.dateOfBirth &&
       !validation.errors.cpf;
 
-    if (!hasValidIdentity) {
+    if (!hasValidIdentity || (typeof navigator !== "undefined" && !navigator.onLine)) {
       setExistingPatient(null);
       setCheckingExistingPatient(false);
       return;
@@ -373,12 +311,44 @@ const NovoPaciente = () => {
 
     setSubmitting(true);
 
+    const isCpfBased = documentType === "cpf" || documentType === "responsible_cpf";
+    const finalCpf = isCpfBased ? validation.values.cpf : null;
+    const finalRg = !isCpfBased && documentType !== "none" ? validation.values.documentNumber || null : null;
+    const finalResponsibleName = isMinor ? nomeResponsavel.trim() : null;
+    const finalResponsibleRel = isMinor ? parentescoResponsavel.trim() : null;
+
+    const handleOfflineCreate = async () => {
+      const tempPatient = await persistOfflineCreatedPatient(queryClient, {
+        clinicId,
+        userId: user.id,
+        name: validation.values.name,
+        dateOfBirth: validation.values.dateOfBirth,
+        age: ageDetails?.years ?? null,
+        cpf: finalCpf,
+        rg: finalRg,
+        phone: validation.values.phone,
+        email: validation.values.email,
+        gender: genero || null,
+        pronoun: pronome || null,
+        usesResponsibleCpf,
+        responsibleCpf: usesResponsibleCpf ? finalCpf : null,
+        responsibleName: finalResponsibleName,
+        responsibleRelationship: finalResponsibleRel,
+        isExclusive: can("patients.manage_exclusive") ? isExclusive : false,
+        exclusiveUserIds: can("patients.manage_exclusive") ? exclusiveUserIds : [],
+      });
+      toast({
+        title: "Paciente criado offline — será sincronizado ao reconectar",
+        description: `${tempPatient.name} (${tempPatient.patient_code}) foi salvo localmente.`,
+      });
+      navigate(getClinicPatientPath(clinic?.route_key, tempPatient));
+    };
+
     try {
-      const isCpfBased = documentType === "cpf" || documentType === "responsible_cpf";
-      const finalCpf = isCpfBased ? validation.values.cpf : null;
-      const finalRg = !isCpfBased && documentType !== "none" ? validation.values.documentNumber || null : null;
-      const finalResponsibleName = isMinor ? nomeResponsavel.trim() : null;
-      const finalResponsibleRel = isMinor ? parentescoResponsavel.trim() : null;
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await handleOfflineCreate();
+        return;
+      }
 
       const { data, error } = await supabase.rpc("ensure_clinic_patient", {
         _clinic_id: clinicId,
@@ -396,13 +366,17 @@ const NovoPaciente = () => {
         _responsible_relationship: finalResponsibleRel,
       });
 
+      if (error && isOfflineOrNetworkError(error)) {
+        await handleOfflineCreate();
+        return;
+      }
+
       if (error || !isEnsurePatientResponse(data)) {
         toast({
           title: "Erro ao cadastrar",
           description: getRegistrationErrorMessage(error?.message),
           variant: "destructive",
         });
-        setSubmitting(false);
         return;
       }
 
@@ -414,7 +388,6 @@ const NovoPaciente = () => {
           description: `Abrindo o cadastro encontrado por ${data.matched_by === "cpf" ? "CPF" : "nome e data de nascimento"}.`,
         });
         navigate(patientPagePath(data.patient_code || data.id));
-        setSubmitting(false);
         return;
       }
 
@@ -455,6 +428,10 @@ const NovoPaciente = () => {
         setAskShareModalOpen(true);
       }
     } catch (err: unknown) {
+      if (isOfflineOrNetworkError(err)) {
+        await handleOfflineCreate();
+        return;
+      }
       const msg = err instanceof Error ? err.message : "Erro inesperado";
       if (
         msg.toLowerCase().includes("read_only") ||
@@ -1127,6 +1104,7 @@ const NovoPaciente = () => {
       {/* Minor In-Person Touch/Mouse Signature Modal */}
       <InPersonSignatureModal
         open={inPersonSignatureModalOpen}
+        clinicId={clinicId}
         onOpenChange={(open) => {
           setInPersonSignatureModalOpen(open);
           if (!open && createdPatient) {

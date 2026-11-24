@@ -424,5 +424,27 @@ describe("AgendaWidget", () => {
 
     expect(screen.queryByText("Crie um novo agendamento usando a mesma agenda compartilhada da clínica.")).not.toBeInTheDocument();
   });
+
+  it("filters by fixedPatient in O(1) and toggles showOtherPatients in memory without extra network requests", async () => {
+    const { supabase } = await import("@/integrations/supabase/client");
+
+    render(
+      <MemoryRouter>
+        <AgendaWidget fixedPatient={{ id: "other-patient", name: "Outro Paciente" }} />
+      </MemoryRouter>
+    );
+
+    // Inicialmente oculta agendamentos de outros pacientes (Maria Silva pertence a patient-1)
+    expect(await screen.findByRole("button", { name: /outros agendamentos: ocultos/i })).toBeInTheDocument();
+    expect(screen.queryByText("Maria Silva")).not.toBeInTheDocument();
+
+    const callsBeforeToggle = vi.mocked(supabase.from).mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: /outros agendamentos: ocultos/i }));
+
+    expect(await screen.findByText("Maria Silva")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /outros agendamentos: visíveis/i })).toBeInTheDocument();
+    expect(vi.mocked(supabase.from).mock.calls.length).toBe(callsBeforeToggle);
+  });
 });
 

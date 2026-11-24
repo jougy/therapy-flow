@@ -1,4 +1,10 @@
 import "@testing-library/jest-dom";
+import { afterEach } from "vitest";
+import { clearLocalCache } from "@/lib/indexed-db-persister";
+
+afterEach(() => {
+  void clearLocalCache();
+});
 
 Object.defineProperty(window, "matchMedia", {
   writable: true,

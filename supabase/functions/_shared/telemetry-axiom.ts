@@ -26,7 +26,7 @@ export async function ingestToAxiom(events: AxiomEvent[]): Promise<boolean> {
   if (events.length === 0) return true;
 
   const token = getEnv('AXIOM_TOKEN');
-  const dataset = getEnv('AXIOM_DATASET') ?? 'pluri-health-prod';
+  const dataset = getEnv('AXIOM_DATASET') ?? 'pluri-health-logs';
   if (!token) return false;
 
   const now = new Date().toISOString();
@@ -44,6 +44,7 @@ export async function ingestToAxiom(events: AxiomEvent[]): Promise<boolean> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(3000),
     });
     return res.ok;
   } catch {

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PacienteDetalhe from "@/pages/PacienteDetalhe";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { clearLocalCache } from "@/lib/indexed-db-persister";
 
 const navigateMock = vi.fn();
 
@@ -404,7 +405,8 @@ describe("PacienteDetalhe", () => {
     return visible ?? buttons[0];
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await clearLocalCache();
     if (!HTMLElement.prototype.hasPointerCapture) {
       HTMLElement.prototype.hasPointerCapture = () => false;
     }
@@ -843,7 +845,7 @@ describe("PacienteDetalhe", () => {
 
     // Test Navigation to full registration
     fireEvent.click(viewFullRegistrationOption);
-    expect(navigateMock).toHaveBeenCalledWith("/pacientes/patient-1/resumo");
+    expect(navigateMock).toHaveBeenCalledWith("/clinica/clinic-route-1/pacientes/patient-1/resumo");
 
     // Test Export JSON
     fireEvent.click(exportOption);

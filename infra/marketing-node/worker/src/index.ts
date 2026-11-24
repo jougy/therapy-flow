@@ -17,7 +17,7 @@ const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').
 const WORKER_SHARED_SECRET = (process.env.WORKER_SHARED_SECRET || '').trim();
 const POLL_INTERVAL_MS = 15_000;
 
-const QUEUE_NAMES = ['zap:dispatch', 'zap:filter', 'zap:groups', 'zap:warmup', 'zap:flows'] as const;
+const QUEUE_NAMES = ['zap-dispatch', 'zap-filter', 'zap-groups', 'zap-warmup', 'zap-flows'] as const;
 type QueueName = (typeof QUEUE_NAMES)[number];
 
 function emitLog(level: 'info' | 'warn' | 'error', event: string, meta?: Record<string, unknown>): void {
@@ -372,11 +372,11 @@ async function handleFlowJob(job: Job<Record<string, unknown>>): Promise<void> {
 }
 
 const workers = [
-  new Worker('zap:dispatch', handleDispatchJob, { connection: redisConnection, concurrency: 2 }),
-  new Worker('zap:filter', handleFilterJob, { connection: redisConnection, concurrency: 2 }),
-  new Worker('zap:groups', handleGroupJob, { connection: redisConnection, concurrency: 1 }),
-  new Worker('zap:warmup', handleWarmupJob, { connection: redisConnection, concurrency: 2 }),
-  new Worker('zap:flows', handleFlowJob, { connection: redisConnection, concurrency: 3 }),
+  new Worker('zap-dispatch', handleDispatchJob, { connection: redisConnection, concurrency: 2 }),
+  new Worker('zap-filter', handleFilterJob, { connection: redisConnection, concurrency: 2 }),
+  new Worker('zap-groups', handleGroupJob, { connection: redisConnection, concurrency: 1 }),
+  new Worker('zap-warmup', handleWarmupJob, { connection: redisConnection, concurrency: 2 }),
+  new Worker('zap-flows', handleFlowJob, { connection: redisConnection, concurrency: 3 }),
 ];
 for (const w of workers) {
   w.on('failed', (job, err) => emitLog('error', 'worker_job_failed', { queue: w.name, jobId: job?.id, error: err.message }));
@@ -394,9 +394,9 @@ async function pollDueRows(): Promise<void> {
       supabase.from('marketing_warmup_sessions').select('id').eq('status', 'queued').lte('scheduled_for', nowIso).order('scheduled_for', { ascending: true }).limit(10),
     ]);
 
-    const dispatchQ = queues.get('zap:dispatch');
-    const groupQ = queues.get('zap:groups');
-    const warmupQ = queues.get('zap:warmup');
+    const dispatchQ = queues.get('zap-dispatch');
+    const groupQ = queues.get('zap-groups');
+    const warmupQ = queues.get('zap-warmup');
 
     await Promise.all([
       ...(dispatches || []).map((row) => dispatchQ?.add('dispatch', { dispatchId: row.id }, { jobId: `dispatch-${row.id}` })),
