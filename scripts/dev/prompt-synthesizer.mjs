@@ -13,11 +13,11 @@ import http from 'http';
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || '127.0.0.1';
 const OLLAMA_PORT = process.env.OLLAMA_PORT || 11434;
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4:cloud';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'mimo-v2.6:latest';
+const OLLAMA_FALLBACK_MODEL = 'gemma4:12b';
 
-const OPENCODE_HOST = process.env.OPENCODE_HOST || '127.0.0.1';
-const OPENCODE_PORT = process.env.OPENCODE_PORT || 3000;
-const OPENCODE_MODEL = process.env.OPENCODE_MODEL || 'mimo';
+const OPENCODE_CLI = process.env.OPENCODE_CLI || `${process.env.HOME || ''}/.opencode/bin/opencode`;
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL || 'opencode/mimo-v2.6-flash-free';
 
 /**
  * Faz requisição HTTP rápida com timeout estrito
@@ -65,41 +65,49 @@ function postJson(host, port, path, payload, timeoutMs = 4000) {
 }
 
 /**
- * Tenta sintetizar via Ollama (gemma4)
+ * Tenta sintetizar via Ollama (mimo-v2.6:latest -> gemma4:12b) com think: false
  */
 async function tryOllama(prompt) {
-  const payload = {
-    model: OLLAMA_MODEL,
-    prompt: prompt,
-    stream: false,
-    options: {
-      temperature: 0.1,
-      num_predict: 120, // Resposta curta para economizar processamento
-    },
-  };
-  const res = await postJson(OLLAMA_HOST, OLLAMA_PORT, '/api/generate', payload);
-  return res.response?.trim();
+  for (const model of [OLLAMA_MODEL, OLLAMA_FALLBACK_MODEL]) {
+    try {
+      const payload = {
+        model,
+        prompt,
+        stream: false,
+        think: false,
+        keep_alive: '5m',
+        options: {
+          temperature: 0.1,
+          num_predict: 140,
+        },
+      };
+      const res = await postJson(OLLAMA_HOST, OLLAMA_PORT, '/api/generate', payload, 20000);
+      const text = res.response?.trim();
+      if (text) return text;
+    } catch {
+      // try next local model
+    }
+  }
+  return null;
 }
 
 /**
- * Tenta sintetizar via OpenCode / endpoint OpenAI compatível (mimo)
+ * Tenta sintetizar via OpenCode Free CLI
  */
 async function tryOpenCode(prompt) {
-  const payload = {
-    model: OPENCODE_MODEL,
-    messages: [
-      {
-        role: 'system',
-        content:
-          'Você é um gerador de instruções técnicas ultra-conciso. Analise o erro fornecido e gere exatamente 1 a 2 frases instruindo um desenvolvedor sobre: (1) O arquivo e linha exatos; (2) A causa do erro; (3) O código correto a aplicar. Seja direto e sem saudações.',
-      },
-      { role: 'user', content: prompt },
-    ],
-    max_tokens: 120,
-    temperature: 0.1,
-  };
-  const res = await postJson(OPENCODE_HOST, OPENCODE_PORT, '/v1/chat/completions', payload);
-  return res.choices?.[0]?.message?.content?.trim();
+  const { execFile } = await import('child_process');
+  const { promisify } = await import('util');
+  const execFileAsync = promisify(execFile);
+  try {
+    const { stdout } = await execFileAsync(
+      OPENCODE_CLI,
+      ['run', '-m', OPENCODE_MODEL, prompt],
+      { timeout: 25000, maxBuffer: 1024 * 1024 }
+    );
+    return stdout?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 /**

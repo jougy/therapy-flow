@@ -97,8 +97,23 @@ export function usePlatformAutoLeads() {
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
+      const fetchLeadsFromSource = async () => {
+        if (import.meta.env.DEV) {
+          try {
+            const proxyRes = await fetch("/__dev/auto-leads-proxy");
+            if (proxyRes.ok) {
+              const data = await proxyRes.json();
+              if (Array.isArray(data)) return { data };
+            }
+          } catch {
+            // Fallback to local Supabase client
+          }
+        }
+        return db.from("platform_auto_leads").select("*").is("deleted_at", null).order("created_at", { ascending: false });
+      };
+
       const [leadsRes, meetingsRes, sessionsRes, affRes] = await Promise.all([
-        db.from("platform_auto_leads").select("*").is("deleted_at", null).order("created_at", { ascending: false }),
+        fetchLeadsFromSource(),
         db.from("platform_onboarding_meetings").select("*").order("scheduled_at", { ascending: false }),
         db.from("whatsapp_chat_sessions").select("*").order("last_message_at", { ascending: false }).limit(200),
         db.from("affiliates").select("id, coupon_code, referral_slug, tier, profile:profiles!user_id(full_name)").is("deleted_at", null),

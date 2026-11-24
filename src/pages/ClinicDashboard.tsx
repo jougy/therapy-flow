@@ -1427,7 +1427,7 @@ const ClinicDashboard = () => {
         className="designlab-settings-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/94 backdrop-blur supports-[backdrop-filter]:bg-background/88 md:hidden"
         data-dock-state="compact"
       >
-        <div className="designlab-settings-mobile-dock flex justify-center gap-1 pb-1">
+        <div className="designlab-settings-mobile-dock mx-auto flex w-full justify-center gap-1 pb-1">
           {dashboardSections.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.value;

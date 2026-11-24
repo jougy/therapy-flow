@@ -8,15 +8,22 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Check, Eraser, PenTool, ShieldCheck, Loader2 } from "lucide-react";
+import { Check, Eraser, PenTool, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import type { SharePatientData } from "@/components/patients/SharePatientRegistrationModal";
+import { isOfflineOrNetworkError } from "@/lib/local-first/networkError";
+import { enqueueOfflineMutation } from "@/lib/local-first/offlineMutationQueue";
+import {
+  cacheOfflineGuardianConsent,
+  computeSha256Hex,
+} from "@/lib/local-first/offlineSignatureHelpers";
 
 interface InPersonSignatureModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   patient: SharePatientData | null;
+  clinicId?: string | null;
   onSigned?: () => void;
 }
 
@@ -24,6 +31,7 @@ export const InPersonSignatureModal: React.FC<InPersonSignatureModalProps> = ({
   open,
   onOpenChange,
   patient,
+  clinicId,
   onSigned,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -118,27 +126,65 @@ export const InPersonSignatureModal: React.FC<InPersonSignatureModalProps> = ({
     if (!canvasRef.current || !hasSignature || !patient?.id) return;
     setSubmitting(true);
 
-    try {
-      const dataUrl = canvasRef.current.toDataURL("image/png");
-      const guardianCpf = patient.responsible_cpf || (patient.cpf && patient.responsible_name ? patient.cpf : null);
+    const dataUrl = canvasRef.current.toDataURL("image/png");
+    const guardianCpf = patient.responsible_cpf || (patient.cpf && patient.responsible_name ? patient.cpf : null);
+    const signedAtIso = new Date().toISOString();
 
-      const consentPayload = {
-        status: "signed",
-        method: "in_person",
-        signed_at: new Date().toISOString(),
-        responsible_name: patient.responsible_name || null,
-        responsible_relationship: patient.responsible_relationship || null,
-        responsible_cpf: guardianCpf,
-        signature_image_url: dataUrl,
-        legal_declaration: true,
+    const baseConsentPayload = {
+      status: "signed",
+      method: "in_person",
+      signed_at: signedAtIso,
+      responsible_name: patient.responsible_name || null,
+      responsible_relationship: patient.responsible_relationship || null,
+      responsible_cpf: guardianCpf,
+      signature_image_url: dataUrl,
+      legal_declaration: true,
+    };
+
+    const handleOfflineConsent = async () => {
+      const signatureHash = await computeSha256Hex(
+        JSON.stringify({
+          patientId: patient.id,
+          signedAt: signedAtIso,
+          responsibleName: baseConsentPayload.responsible_name,
+          responsibleCpf: guardianCpf,
+          signatureImageUrl: dataUrl,
+        })
+      );
+      const offlineConsentPayload = {
+        ...baseConsentPayload,
+        signature_hash_sha256: signatureHash,
+        offline_recorded: true,
       };
+      await cacheOfflineGuardianConsent(patient.id, clinicId, offlineConsentPayload);
+      await enqueueOfflineMutation("sign_guardian_consent", {
+        patientId: patient.id,
+        consentPayload: offlineConsentPayload,
+      });
+      toast({
+        title: "Consentimento registrado offline!",
+        description: "Assinatura salva localmente com hash SHA-256 — será sincronizada ao reconectar.",
+      });
+      onOpenChange(false);
+      onSigned?.();
+    };
+
+    try {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await handleOfflineConsent();
+        return;
+      }
 
       const { error } = await supabase.rpc("update_patient_guardian_consent", {
         _patient_id: patient.id,
-        _consent_payload: consentPayload,
+        _consent_payload: baseConsentPayload,
       });
 
       if (error) {
+        if (isOfflineOrNetworkError(error)) {
+          await handleOfflineConsent();
+          return;
+        }
         throw new Error(error.message);
       }
 
@@ -150,6 +196,10 @@ export const InPersonSignatureModal: React.FC<InPersonSignatureModalProps> = ({
       onOpenChange(false);
       onSigned?.();
     } catch (err) {
+      if (isOfflineOrNetworkError(err)) {
+        await handleOfflineConsent();
+        return;
+      }
       toast({
         title: "Erro ao registrar assinatura",
         description: err instanceof Error ? err.message : "Tente novamente.",

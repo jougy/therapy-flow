@@ -35,11 +35,12 @@ export function EditEvolutionGroupDialog({
             Defina um nome personalizado para este ciclo de atendimento e evolução contínua.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
+        <div className="space-y-4 py-2 min-w-0 max-w-full">
+          <div className="space-y-2 min-w-0">
             <Label htmlFor="evolution-group-name">Nome do ciclo</Label>
             <Input
               id="evolution-group-name"
+              className="w-full min-w-0"
               value={editingEvolutionGroup?.name || ""}
               onChange={(e) => onChangeName(e.target.value)}
               placeholder="Ex: Pós-operatório Joelho Direito"
@@ -47,10 +48,11 @@ export function EditEvolutionGroupDialog({
             />
           </div>
         </div>
-        <DialogFooter className="flex justify-end gap-2">
+        <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pb-safe">
           <Button
             type="button"
             variant="outline"
+            className="w-full sm:w-auto min-h-[44px]"
             onClick={onClose}
             disabled={savingEvolutionGroupName}
           >
@@ -58,6 +60,7 @@ export function EditEvolutionGroupDialog({
           </Button>
           <Button
             type="button"
+            className="w-full sm:w-auto min-h-[44px]"
             onClick={onSave}
             disabled={savingEvolutionGroupName || !editingEvolutionGroup?.name.trim()}
           >

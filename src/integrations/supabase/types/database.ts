@@ -1714,6 +1714,7 @@ export type Database = {
           address_number: string | null
           age: number | null
           allergies: string | null
+          avatar_url: string | null
           blood_type: string | null
           cep: string | null
           chronic_conditions: string | null
@@ -1770,6 +1771,7 @@ export type Database = {
           address_number?: string | null
           age?: number | null
           allergies?: string | null
+          avatar_url?: string | null
           blood_type?: string | null
           cep?: string | null
           chronic_conditions?: string | null
@@ -1826,6 +1828,7 @@ export type Database = {
           address_number?: string | null
           age?: number | null
           allergies?: string | null
+          avatar_url?: string | null
           blood_type?: string | null
           cep?: string | null
           chronic_conditions?: string | null

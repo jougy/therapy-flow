@@ -46,7 +46,17 @@ import { TrialReadOnlyModal } from "@/components/TrialReadOnlyModal";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { toast } from "@/hooks/use-toast";
 import { notifySessionCompletedFeedback } from "@/hooks/useFeedbackTrigger";
-import { fetchPatientByRef, getPatientPath, getPatientSessionPath, isUuid, resolveSessionReference, type PatientRow } from "@/lib/patient-routing";
+import {
+  getClinicPatientPath,
+  getClinicPatientSessionPath,
+  isUuid,
+  type SessionRow,
+} from "@/lib/patient-routing";
+import {
+  useInvalidatePatientData,
+  useOptimisticPatientDetailUpdates,
+} from "@/hooks/queries/usePatientDataQueries";
+import { enqueueOfflineMutation } from "@/lib/local-first/offlineMutationQueue";
 import { ToastAction } from "@/components/ui/toast";
 import { createTrashToastAction } from "@/lib/trashUtils";
 import { readBusinessHours } from "@/lib/clinic-settings";
@@ -88,19 +98,12 @@ import { formatTreatmentSummary, readTreatmentState, type TreatmentBlock } from 
 import { getSessionPreviewIndicators, getSessionSummaryContent } from "@/lib/session-preview";
 import { shouldAutoCompleteInternDraft } from "@/lib/patient-sessions-view";
 import { notifyAgendaEventsUpdated } from "@/lib/agenda-events";
-import {
-  fetchClinicShareCollaborators,
-  fetchSessionShareRecipients,
-  type SessionShareCollaborator,
-  type SessionShareRecipient,
-} from "@/lib/session-sharing";
 import { FieldLabelWithHelp } from "@/components/anamnesis/FieldLabelWithHelp";
 import {
   buildTemplateLayout,
   getVisibleTemplateFields,
   type AnamnesisField,
   type AnamnesisFormResponse,
-  type AnamnesisTemplateSchema,
 } from "@/lib/anamnesis-forms";
 import {
   formatAddressLine,
@@ -123,30 +126,34 @@ import {
   SessionReadOnlyOverview,
   SessionTreatmentFields,
   SessionFloatingActionPills,
-  type ClinicColorSlotRow,
-  type ClinicDocumentSummary,
-  type CollaboratorProfile,
   type ErrorDetails,
-  type GroupSuggestion,
   type PatientGroup,
-  type PatientPaymentSession,
-  type SessionEditHistoryRow,
 } from "@/components/sessions";
 import { GenerateDocumentModal } from "@/components/patients/GenerateDocumentModal";
 import { useScrollDirection } from "@/hooks/useScrollDirection";
+import {
+  SessaoDetalheSkeleton,
+  SessionBaseSliderSection,
+  SessionComplementaryFormsBlock,
+  SessionConductNotes,
+  SessionErrorDialog,
+  SessionLeaveConfirmDialog,
+  SessionPresenceCard,
+  useSessionDetailData,
+} from "@/pages/sessao-detalhe";
 
 const SessaoDetalhe = () => {
-  const { id: patientId, sessionId } = useParams();
+  const { id: patientId, sessionId, clinicKey } = useParams<{ id: string; sessionId: string; clinicKey?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const { accountRole, can, user, clinic, clinicId, operationalRole, profile } = useAuth();
   const isAccountOwner = accountRole === "account_owner" || clinic?.account_owner_user_id === user?.id;
   const quota = useClinicPlanQuota(clinicId);
-  const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
+  const targetClinicKey = clinic?.route_key || clinicKey;
+  const clinicHomePath = targetClinicKey ? `/clinica/${targetClinicKey}` : "/espacopessoal";
   const isNew = sessionId === "novo";
   const newSessionState = location.state as { agendaEventId?: string; scheduledFor?: string; autoArrival?: boolean } | null;
 
-  const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [startingFromThis, setStartingFromThis] = useState(false);
   const [isEditing, setIsEditing] = useState(
@@ -156,25 +163,15 @@ const SessaoDetalhe = () => {
   );
   const [evolutionGroupId, setEvolutionGroupId] = useState<string | null>(null);
   const [parentSessionId, setParentSessionId] = useState<string | null>(null);
-  const [patientName, setPatientName] = useState("");
-  const [patientRow, setPatientRow] = useState<PatientRow | null>(null);
-  const [resolvedPatientId, setResolvedPatientId] = useState<string | null>(null);
+  const [resolvedPatientIdOverride, setResolvedPatientIdOverride] = useState<string | null>(null);
   const [resolvedSessionId, setResolvedSessionId] = useState<string | null>(null);
-  const [groups, setGroups] = useState<PatientGroup[]>([]);
-  const [patientPaymentSessions, setPatientPaymentSessions] = useState<PatientPaymentSession[]>([]);
-  const [collaboratorProfiles, setCollaboratorProfiles] = useState<CollaboratorProfile[]>([]);
-  const [shareCollaborators, setShareCollaborators] = useState<SessionShareCollaborator[]>([]);
-  const [shareRecipients, setShareRecipients] = useState<SessionShareRecipient[]>([]);
+  const [localCreatedGroups, setLocalCreatedGroups] = useState<PatientGroup[]>([]);
   const [sessionShareDialogOpen, setSessionShareDialogOpen] = useState(false);
   const [isReadOnlyModalOpen, setIsReadOnlyModalOpen] = useState(false);
   const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
-  const [anamnesisTemplates, setAnamnesisTemplates] = useState<DatabaseAnamnesisTemplate[]>([]);
-  const [baseTemplateSchema, setBaseTemplateSchema] = useState<AnamnesisTemplateSchema>([]);
-  const [clinicDocumentInfo, setClinicDocumentInfo] = useState<ClinicDocumentSummary | null>(null);
   const [locked, setLocked] = useState(false);
   const [createdByUserId, setCreatedByUserId] = useState<string | null>(user?.id ?? null);
   const [sessionCreatedAt, setSessionCreatedAt] = useState<string | null>(null);
-  const [editHistory, setEditHistory] = useState<SessionEditHistoryRow[]>([]);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [presenceDialogOpen, setPresenceDialogOpen] = useState(false);
   const [savingPresence, setSavingPresence] = useState(false);
@@ -186,6 +183,52 @@ const SessaoDetalhe = () => {
   const [isGenerateDocumentOpen, setIsGenerateDocumentOpen] = useState(false);
   const [pendingPrintKind, setPendingPrintKind] = useState<SessionDocumentKind | null>(null);
   const [clinicalSummaryDialogOpen, setClinicalSummaryDialogOpen] = useState(false);
+
+  const {
+    activeSession,
+    anamnesisTemplates,
+    baseTemplateSchema,
+    cachedSessions,
+    clinicColorSlots,
+    clinicDocumentInfo,
+    collaboratorProfiles,
+    editHistory,
+    groupSuggestions,
+    groups: cachedGroups,
+    lastUsedGroupId,
+    loading,
+    patientPaymentSessions,
+    patientRow,
+    recipientsLoaded,
+    refreshSecondarySessionData,
+    resolvedPatientId: resolvedPatientIdFromData,
+    resolvedSessionIndex,
+    sessionsFetched,
+    shareCollaborators,
+    shareRecipients,
+  } = useSessionDetailData({
+    patientId,
+    sessionId,
+    clinicId,
+    clinicRouteKey: targetClinicKey,
+    isNew,
+    sessionShareDialogOpen,
+  });
+
+  const resolvedPatientId = resolvedPatientIdOverride || resolvedPatientIdFromData;
+  const patientName = patientRow?.name ?? "";
+  const groups = useMemo(() => {
+    if (localCreatedGroups.length === 0) return cachedGroups;
+    const seen = new Set(cachedGroups.map((g) => g.id));
+    return [...cachedGroups, ...localCreatedGroups.filter((g) => !seen.has(g.id))];
+  }, [cachedGroups, localCreatedGroups]);
+
+  const { optimisticUpsertSession, optimisticAddOrUpdateGroup } = useOptimisticPatientDetailUpdates(
+    resolvedPatientId || patientId,
+    clinicId,
+    patientId
+  );
+  const invalidatePatientData = useInvalidatePatientData();
 
   // Hook de direção de rolagem para botões flutuantes inteligentes nos cantos inferiores
   const { scrollDirection, isNearTop } = useScrollDirection({ threshold: 14, topOffset: 110 });
@@ -224,297 +267,236 @@ const SessaoDetalhe = () => {
   const horizontalScrollRaf = useRef<number | null>(null);
   const horizontalDragRef = useRef<{ key: string | null; pointerId: number | null; trackLeft: number; trackWidth: number } | null>(null);
 
-  const [clinicColorSlots, setClinicColorSlots] = useState<ClinicColorSlotRow[]>([]);
-  const [groupSuggestions, setGroupSuggestions] = useState<GroupSuggestion[]>([]);
+  const defaultsAppliedRef = useRef<{ key: string; template: boolean; group: boolean }>({
+    key: "",
+    template: false,
+    group: false,
+  });
 
-  const loadSessionPage = useCallback(async (force = false) => {
-    if (!patientId || !clinicId) {
-      return;
+  // Prefetch da tela de paciente em idle para retorno instantâneo
+  useEffect(() => {
+    const prefetch = () => {
+      void import("@/pages/paciente-detalhe/PatientLayout");
+      void import("@/pages/paciente-detalhe/pages/PatientOverviewPage");
+    };
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(prefetch);
+      return () => window.cancelIdleCallback(idleId);
     }
+    const timer = window.setTimeout(prefetch, 200);
+    return () => window.clearTimeout(timer);
+  }, []);
 
-    const currentKey = `${clinicId}:${patientId}:${sessionId}`;
-    if (!force && loadedSessionKeyRef.current === currentKey) {
-      return;
+  const hydrateFormFromSession = useCallback(
+    (sessionData: SessionRow): SessionFormValues => {
+      const anamnesis = isJsonObject(sessionData.anamnesis) ? sessionData.anamnesis : {};
+      const treatment = isJsonObject(sessionData.treatment) ? sessionData.treatment : {};
+      const treatmentState = readTreatmentState(treatment);
+
+      const initialQueixa = readJsonString(anamnesis.queixa);
+      const initialSintomas = readJsonString(anamnesis.sintomas);
+      const initialObservacoes = readJsonString(anamnesis.observacoes);
+      const initialPainScore = [sessionData.pain_score || 0];
+      const initialComplexityScore = [sessionData.complexity_score || 0];
+      const initialNotes = sessionData.notes || "";
+      const rawCareLineIds = anamnesis.care_line_ids;
+      const initialCareLineIds = Array.isArray(rawCareLineIds)
+        ? (rawCareLineIds as string[])
+        : sessionData.group_id
+        ? [sessionData.group_id]
+        : [];
+      const initialGroupId = initialCareLineIds.length > 0 ? initialCareLineIds[0] : null;
+      const initialSessionDate = formatDateTimeForInput(sessionData.session_date);
+      const initialScheduledStartAt = formatDateTimeForInput(sessionData.scheduled_start_at);
+      const initialPatientArrivedAt = formatDateTimeForInput(sessionData.patient_arrived_at);
+      const initialPaymentStatus = (sessionData.payment_status as SessionPaymentStatus | null) ?? "nao_cobrado";
+      const initialAmountCharged = centsToCurrencyInput(sessionData.amount_charged_cents);
+      const initialAmountOriginal = centsToCurrencyInput(getSessionOriginalAmountCents(sessionData));
+      const initialAmountPaid = centsToCurrencyInput(sessionData.amount_paid_cents);
+      const initialPaymentAdjustmentReason = sessionData.payment_adjustment_reason ?? "";
+      const initialPaymentInstallments = normalizePaymentInstallments(sessionData.payment_installments);
+      const initialPaymentMethod = normalizePaymentMethod(sessionData.payment_method);
+      const initialPaymentStatusDate = sessionData.payment_status_date ?? "";
+      const initialAnamnesisTemplateId = sessionData.anamnesis_template_id;
+      const initialAnamnesisFormResponse = readJsonRecord(sessionData.anamnesis_form_response);
+
+      setResolvedSessionId(sessionData.id);
+      setQueixa(initialQueixa);
+      setSintomas(initialSintomas);
+      setObservacoes(initialObservacoes);
+      setPainScore(initialPainScore);
+      setComplexityScore(initialComplexityScore);
+      setTreatmentBlocks(treatmentState.blocks);
+      setTreatmentGeneralGuidance(treatmentState.generalGuidance);
+      setStatus(sessionData.status);
+      setNotes(initialNotes);
+      setCareLineIds(initialCareLineIds);
+      setGroupId(initialGroupId);
+      setSessionDate(initialSessionDate);
+      setScheduledStartAt(initialScheduledStartAt);
+      setPatientArrivedAt(initialPatientArrivedAt);
+      setPaymentStatus(initialPaymentStatus);
+      setAmountCharged(initialAmountCharged);
+      setAmountOriginal(initialAmountOriginal);
+      setAmountPaid(initialAmountPaid);
+      setCreditAppliedCents(0);
+      setPaymentAdjustmentReason(initialPaymentAdjustmentReason);
+      setPaymentInstallments(initialPaymentInstallments);
+      setPaymentMethod(initialPaymentMethod);
+      setPaymentStatusDate(initialPaymentStatusDate);
+      setAnamnesisTemplateId(initialAnamnesisTemplateId);
+      setAnamnesisFormResponse(initialAnamnesisFormResponse);
+      setLocked(isSessionImmutable(false, sessionData.status));
+      setCreatedByUserId(sessionData.user_id);
+      setSessionCreatedAt(sessionData.created_at);
+      setEvolutionGroupId(sessionData.evolution_group_id ?? null);
+      setParentSessionId(sessionData.parent_session_id ?? null);
+
+      const shouldStartInEditMode =
+        (location.state as { startInEditMode?: boolean } | null)?.startInEditMode === true ||
+        new URLSearchParams(location.search).get("edit") === "true";
+      setIsEditing(shouldStartInEditMode && !isSessionImmutable(false, sessionData.status));
+
+      return {
+        amountCharged: initialAmountCharged,
+        amountOriginal: initialAmountOriginal,
+        amountPaid: initialAmountPaid,
+        anamnesisFormResponse: initialAnamnesisFormResponse,
+        anamnesisTemplateId: initialAnamnesisTemplateId,
+        careLineIds: initialCareLineIds,
+        complexityScore: initialComplexityScore[0],
+        groupId: initialGroupId,
+        notes: initialNotes,
+        observacoes: initialObservacoes,
+        painScore: initialPainScore[0],
+        patientArrivedAt: initialPatientArrivedAt,
+        paymentAdjustmentReason: initialPaymentAdjustmentReason,
+        paymentInstallments: initialPaymentInstallments,
+        paymentMethod: initialPaymentMethod,
+        paymentStatusDate: initialPaymentStatusDate,
+        paymentStatus: initialPaymentStatus,
+        queixa: initialQueixa,
+        scheduledStartAt: initialScheduledStartAt,
+        sintomas: initialSintomas,
+        status: sessionData.status,
+        treatmentBlocks: treatmentState.blocks,
+        treatmentGeneralGuidance: treatmentState.generalGuidance,
+      };
+    },
+    [location.search, location.state]
+  );
+
+  // Barreira de acesso (usando capabilities RBAC sem hardcode de papéis)
+  useEffect(() => {
+    if (isNew || !activeSession || !patientId || !user?.id) return;
+
+    const hasDirectAccess =
+      activeSession.user_id === user.id ||
+      activeSession.provider_id === user.id ||
+      can("sessions.read_all") ||
+      can("sessions.manage");
+    const isSharedWithMe = shareRecipients.some((r) => r.id === user.id);
+
+    if (!hasDirectAccess && recipientsLoaded && !isSharedWithMe) {
+      toast({
+        title: "Acesso restrito",
+        description: "Você não possui permissão para visualizar atendimentos de outros colaboradores.",
+        variant: "destructive",
+      });
+      navigate(getClinicPatientPath(targetClinicKey, patientRow || patientId));
     }
+  }, [
+    activeSession,
+    can,
+    isNew,
+    navigate,
+    patientId,
+    patientRow,
+    recipientsLoaded,
+    shareRecipients,
+    targetClinicKey,
+    user?.id,
+  ]);
 
-    setLoading(true);
+  // Redirecionamento canônico com escopo da clínica (zero bounces) e hidratação instantânea
+  useEffect(() => {
+    if (loading || !clinicId || !patientId) return;
 
-    const patientRes = await fetchPatientByRef(patientId, clinicId);
-    const realPatientId = patientRes.data?.id || patientId;
-    setResolvedPatientId(realPatientId);
+    if (!isNew && activeSession) {
+      const canonicalPatientKey = patientRow?.patient_code || resolvedPatientId || patientId;
+      const canonicalSessionKey = resolvedSessionIndex ? `ATD-${resolvedSessionIndex}` : activeSession.id;
+      const canonicalPath = getClinicPatientSessionPath(targetClinicKey, canonicalPatientKey, canonicalSessionKey);
 
-    const [groupsRes, lastUsedGroupRes, paymentSessionsRes, templatesRes, clinicRes, profilesRes, colorSlotsRes, groupTemplatesRes] = await Promise.all([
-      supabase.from("patient_groups").select("*").eq("patient_id", realPatientId),
-      supabase
-        .from("sessions")
-        .select("group_id")
-        .eq("patient_id", realPatientId)
-        .not("group_id", "is", null)
-        .order("session_date", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("sessions")
-        .select("id, amount_charged_cents, amount_paid_cents, payment_status")
-        .eq("patient_id", realPatientId),
-      supabase
-        .from("anamnesis_form_templates")
-        .select("*")
-        .eq("clinic_id", clinicId)
-        .eq("is_active", true)
-        .eq("is_system_default", false)
-        .order("updated_at", { ascending: false }),
-      supabase
-        .from("clinics")
-        .select("address, anamnesis_base_schema, business_hours, cnpj, email, legal_name, logo_url, name, phone")
-        .eq("id", clinicId)
-        .single(),
-      supabase
-        .from("profiles")
-        .select("id, full_name, email, phone, specialty, job_title, professional_license")
-        .eq("clinic_id", clinicId),
-      supabase
-        .from("clinic_group_color_slots")
-        .select("*")
-        .eq("clinic_id", clinicId)
-        .order("slot_index", { ascending: true }),
-      supabase
-        .from("patient_group_templates")
-        .select("clinic_color_slot_id, color, name, normalized_name, status")
-        .eq("clinic_id", clinicId)
-        .order("name", { ascending: true }),
-    ]);
-
-    if (colorSlotsRes?.data) {
-      setClinicColorSlots(colorSlotsRes.data as ClinicColorSlotRow[]);
-    }
-    if (groupTemplatesRes?.data) {
-      setGroupSuggestions(groupTemplatesRes.data as GroupSuggestion[]);
-    }
-
-    if (patientRes.data) {
-      setPatientName(patientRes.data.name);
-      setPatientRow(patientRes.data as PatientRow);
-    }
-
-    if (templatesRes.data) {
-      setAnamnesisTemplates(templatesRes.data);
-
-      if (isNew && templatesRes.data.length > 0) {
-        setAnamnesisTemplateId((current) => current ?? templatesRes.data[0].id);
+      if (location.pathname !== canonicalPath && !location.pathname.endsWith("/sessao/novo")) {
+        loadedSessionKeyRef.current = `${clinicId}:${canonicalPatientKey}:${canonicalSessionKey}:${activeSession.id}`;
+        const currentState =
+          location.state && typeof location.state === "object"
+            ? (location.state as Record<string, unknown>)
+            : {};
+        navigate(`${canonicalPath}${location.search}`, {
+          replace: true,
+          state: { ...currentState, preloadedSession: activeSession },
+        });
       }
     }
 
-    if (clinicRes.data) {
-      setClinicDocumentInfo(clinicRes.data);
-      setBaseTemplateSchema(readTemplateSchema(clinicRes.data.anamnesis_base_schema));
-    }
+    const currentKey = isNew
+      ? `${clinicId}:${patientId}:novo`
+      : activeSession
+      ? `${clinicId}:${patientId}:${sessionId}:${activeSession.id}`
+      : null;
 
-    if (profilesRes.data) {
-      setCollaboratorProfiles(profilesRes.data as CollaboratorProfile[]);
-    }
-
-    setPatientPaymentSessions((paymentSessionsRes.data ?? []) as PatientPaymentSession[]);
-
-    try {
-      const collaborators = await fetchClinicShareCollaborators(clinicId);
-      setShareCollaborators(collaborators);
-    } catch {
-      setShareCollaborators([]);
-    }
-
-    if (groupsRes.data) {
-      setGroups(groupsRes.data);
-
-      if (isNew) {
-        setGroupId(getPreferredPatientGroupId(groupsRes.data, lastUsedGroupRes.data?.group_id ?? null));
-      }
-    }
+    if (!currentKey || loadedSessionKeyRef.current === currentKey) return;
 
     let loadedFormValues: SessionFormValues | null = null;
+    const realPatientId = resolvedPatientId || patientId;
 
-    if (!isNew && sessionId) {
-      const sessionResolution = await resolveSessionReference(sessionId, patientId, clinicId, clinic?.route_key);
-      let sessionData = sessionResolution.data;
+    if (!isNew && activeSession) {
+      loadedFormValues = hydrateFormFromSession(activeSession);
 
-      const historyDataRes = sessionData
-        ? await supabase.from("session_edit_history").select("*").eq("session_id", sessionData.id).order("edited_at", { ascending: false })
-        : { data: [] };
-      const historyData = historyDataRes.data;
-
-      if (sessionData) {
-        setResolvedSessionId(sessionData.id);
-        const canonicalPatientKey = patientRes.data?.patient_code || realPatientId;
-        const canonicalSessionKey = sessionResolution.sessionIndex ? `ATD-${sessionResolution.sessionIndex}` : sessionData.id;
-        const isClinicScoped = location.pathname.startsWith("/clinica/");
-        const canonicalPath = isClinicScoped && clinic?.route_key
-          ? `/clinica/${clinic.route_key}/pacientes/${canonicalPatientKey}/sessao/${canonicalSessionKey}`
-          : `/pacientes/${canonicalPatientKey}/sessao/${canonicalSessionKey}`;
-
-        if (location.pathname !== canonicalPath && !location.pathname.endsWith("/sessao/novo")) {
-          loadedSessionKeyRef.current = `${clinicId}:${canonicalPatientKey}:${canonicalSessionKey}`;
-          navigate(`${canonicalPath}${location.search}`, { replace: true, state: location.state });
-        }
-
-        let recipients: SessionShareRecipient[] = [];
-        try {
-          recipients = await fetchSessionShareRecipients(sessionData.id);
-          setShareRecipients(recipients);
-        } catch {
-          setShareRecipients([]);
-        }
-
-        const isSharedWithMe = user?.id ? recipients.some((r) => r.id === user.id) : false;
-
-        if (
-          sessionData.user_id !== user?.id &&
-          sessionData.provider_id !== user?.id &&
-          !can("sessions.read_all") &&
-          operationalRole !== "owner" &&
-          operationalRole !== "admin" &&
-          !isSharedWithMe
-        ) {
-          toast({
-            title: "Acesso restrito",
-            description: "Você não possui permissão para visualizar atendimentos de outros colaboradores.",
-            variant: "destructive",
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.onLine !== false &&
+        shouldAutoCompleteInternDraft({
+          createdAt: activeSession.created_at,
+          currentUserId: user?.id,
+          operationalRole,
+          sessionStatus: activeSession.status,
+          userId: activeSession.user_id,
+        })
+      ) {
+        void supabase
+          .from("sessions")
+          .update({ status: "concluído" })
+          .eq("id", activeSession.id)
+          .select("*")
+          .maybeSingle()
+          .then(({ data: updatedSessionData }) => {
+            if (updatedSessionData) {
+              const nextValues = hydrateFormFromSession(updatedSessionData as SessionRow);
+              initialFormValuesRef.current = JSON.stringify(nextValues);
+              optimisticUpsertSession(updatedSessionData as SessionRow);
+            }
           });
-          navigate(getPatientPath(patientRow || patientId));
-          setLoading(false);
-          return;
-        }
-
-        if (
-          shouldAutoCompleteInternDraft({
-            createdAt: sessionData.created_at,
-            currentUserId: user?.id,
-            operationalRole,
-            sessionStatus: sessionData.status,
-            userId: sessionData.user_id,
-          })
-        ) {
-          const { data: updatedSessionData } = await supabase
-            .from("sessions")
-            .update({ status: "concluído" })
-            .eq("id", sessionData.id)
-            .select("*")
-            .maybeSingle();
-
-          if (updatedSessionData) {
-            sessionData = updatedSessionData;
-          }
-        }
-
-        const anamnesis = isJsonObject(sessionData.anamnesis) ? sessionData.anamnesis : {};
-        const treatment = isJsonObject(sessionData.treatment) ? sessionData.treatment : {};
-        const treatmentState = readTreatmentState(treatment);
-
-        const initialQueixa = readJsonString(anamnesis.queixa);
-        const initialSintomas = readJsonString(anamnesis.sintomas);
-        const initialObservacoes = readJsonString(anamnesis.observacoes);
-        const initialPainScore = [sessionData.pain_score || 0];
-        const initialComplexityScore = [sessionData.complexity_score || 0];
-        const initialNotes = sessionData.notes || "";
-        const rawCareLineIds = anamnesis.care_line_ids;
-        const initialCareLineIds = Array.isArray(rawCareLineIds)
-          ? (rawCareLineIds as string[])
-          : sessionData.group_id
-          ? [sessionData.group_id]
-          : [];
-        const initialGroupId = Array.isArray(rawCareLineIds)
-          ? (initialCareLineIds[0] ?? null)
-          : (sessionData.group_id ?? null);
-        const initialSessionDate = formatDateTimeForInput(sessionData.session_date);
-        const initialScheduledStartAt = formatDateTimeForInput(sessionData.scheduled_start_at);
-        const initialPatientArrivedAt = formatDateTimeForInput(sessionData.patient_arrived_at);
-        const initialPaymentStatus = (sessionData.payment_status as SessionPaymentStatus | null) ?? "nao_cobrado";
-        const initialAmountCharged = centsToCurrencyInput(sessionData.amount_charged_cents);
-        const initialAmountOriginal = centsToCurrencyInput(getSessionOriginalAmountCents(sessionData));
-        const initialAmountPaid = centsToCurrencyInput(sessionData.amount_paid_cents);
-        const initialPaymentAdjustmentReason = sessionData.payment_adjustment_reason ?? "";
-        const initialPaymentInstallments = normalizePaymentInstallments(sessionData.payment_installments);
-        const initialPaymentMethod = normalizePaymentMethod(sessionData.payment_method);
-        const initialPaymentStatusDate = sessionData.payment_status_date ?? "";
-        const initialAnamnesisTemplateId = sessionData.anamnesis_template_id;
-        const initialAnamnesisFormResponse = readJsonRecord(sessionData.anamnesis_form_response);
-
-        setQueixa(initialQueixa);
-        setSintomas(initialSintomas);
-        setObservacoes(initialObservacoes);
-        setPainScore(initialPainScore);
-        setComplexityScore(initialComplexityScore);
-        setTreatmentBlocks(treatmentState.blocks);
-        setTreatmentGeneralGuidance(treatmentState.generalGuidance);
-        setStatus(sessionData.status);
-        setNotes(initialNotes);
-        setCareLineIds(initialCareLineIds);
-        setGroupId(initialGroupId);
-        setSessionDate(initialSessionDate);
-        setScheduledStartAt(initialScheduledStartAt);
-        setPatientArrivedAt(initialPatientArrivedAt);
-        setPaymentStatus(initialPaymentStatus);
-        setAmountCharged(initialAmountCharged);
-        setAmountOriginal(initialAmountOriginal);
-        setAmountPaid(initialAmountPaid);
-        setCreditAppliedCents(0);
-        setPaymentAdjustmentReason(initialPaymentAdjustmentReason);
-        setPaymentInstallments(initialPaymentInstallments);
-        setPaymentMethod(initialPaymentMethod);
-        setPaymentStatusDate(initialPaymentStatusDate);
-        setAnamnesisTemplateId(initialAnamnesisTemplateId);
-        setAnamnesisFormResponse(initialAnamnesisFormResponse);
-        setLocked(isSessionImmutable(false, sessionData.status));
-        setCreatedByUserId(sessionData.user_id);
-        setSessionCreatedAt(sessionData.created_at);
-        setEditHistory(historyData ?? []);
-        setEvolutionGroupId(sessionData.evolution_group_id ?? null);
-        setParentSessionId(sessionData.parent_session_id ?? null);
-
-        const shouldStartInEditMode =
-          (location.state as any)?.startInEditMode === true ||
-          new URLSearchParams(location.search).get("edit") === "true";
-        setIsEditing(shouldStartInEditMode && !isSessionImmutable(false, sessionData.status));
-
-        loadedFormValues = {
-          amountCharged: initialAmountCharged,
-          amountOriginal: initialAmountOriginal,
-          amountPaid: initialAmountPaid,
-          anamnesisFormResponse: initialAnamnesisFormResponse,
-          anamnesisTemplateId: initialAnamnesisTemplateId,
-          careLineIds: initialCareLineIds,
-          complexityScore: initialComplexityScore[0],
-          groupId: initialGroupId,
-          notes: initialNotes,
-          observacoes: initialObservacoes,
-          painScore: initialPainScore[0],
-          patientArrivedAt: initialPatientArrivedAt,
-          paymentAdjustmentReason: initialPaymentAdjustmentReason,
-          paymentInstallments: initialPaymentInstallments,
-          paymentMethod: initialPaymentMethod,
-          paymentStatusDate: initialPaymentStatusDate,
-          paymentStatus: initialPaymentStatus,
-          queixa: initialQueixa,
-          scheduledStartAt: initialScheduledStartAt,
-          sessionDate: initialSessionDate,
-          sintomas: initialSintomas,
-          status: sessionData.status,
-          treatmentBlocks: treatmentState.blocks,
-          treatmentGeneralGuidance: treatmentState.generalGuidance,
-        };
       }
-    } else {
+    } else if (isNew) {
       setResolvedSessionId(null);
       setLocked(false);
       setIsEditing(true);
       setCreatedByUserId(user?.id ?? null);
       setCareLineIds([]);
-      setGroupId(null);
+      const preferredGroupId = groups.length > 0 ? getPreferredPatientGroupId(groups, lastUsedGroupId) : null;
+      setGroupId(preferredGroupId);
+      const defaultTemplateId = anamnesisTemplates[0]?.id ?? null;
+      setAnamnesisTemplateId(defaultTemplateId);
       const scheduledFor = newSessionState?.scheduledFor ?? "";
       const initialDate = scheduledFor ? formatDateTimeForInput(scheduledFor) : getCurrentDateTimeInputValue();
       const initialScheduled = scheduledFor ? formatDateTimeForInput(scheduledFor) : "";
+      const initialArrived =
+        newSessionState?.autoArrival || newSessionState?.agendaEventId ? getCurrentDateTimeInputValue() : "";
       setSessionDate(initialDate);
       setScheduledStartAt(initialScheduled);
-      setPatientArrivedAt(newSessionState?.autoArrival || newSessionState?.agendaEventId ? getCurrentDateTimeInputValue() : "");
+      setPatientArrivedAt(initialArrived);
       setPaymentStatus("nao_cobrado");
       setAmountCharged("");
       setAmountOriginal("");
@@ -525,22 +507,25 @@ const SessaoDetalhe = () => {
       setPaymentMethod("nao_informado");
       setPaymentStatusDate("");
       setSessionCreatedAt(null);
-      setEditHistory([]);
-      setShareRecipients([]);
+      defaultsAppliedRef.current = {
+        key: currentKey,
+        template: defaultTemplateId !== null,
+        group: preferredGroupId !== null,
+      };
 
       loadedFormValues = {
         amountCharged: "",
         amountOriginal: "",
         amountPaid: "",
         anamnesisFormResponse: {},
-        anamnesisTemplateId: templatesRes.data?.[0]?.id ?? null,
+        anamnesisTemplateId: defaultTemplateId,
         careLineIds: [],
         complexityScore: 0,
         groupId: null,
         notes: "",
         observacoes: "",
         painScore: 0,
-        patientArrivedAt: "",
+        patientArrivedAt: initialArrived,
         paymentAdjustmentReason: "",
         paymentInstallments: 1,
         paymentMethod: "nao_informado",
@@ -548,7 +533,6 @@ const SessaoDetalhe = () => {
         paymentStatus: "nao_cobrado",
         queixa: "",
         scheduledStartAt: initialScheduled,
-        sessionDate: initialDate,
         sintomas: "",
         status: "rascunho",
         treatmentBlocks: [],
@@ -559,15 +543,16 @@ const SessaoDetalhe = () => {
     if (loadedFormValues) {
       initialFormValuesRef.current = JSON.stringify(loadedFormValues);
 
-      // Verificação Local-First: Restaura rascunho persistido localmente no dispositivo (se houver)
       const localDraft = getSessionDraft(clinicId, realPatientId, sessionId);
-      if (localDraft && localDraft.values) {
+      if (localDraft?.values) {
         const d = localDraft.values;
         if (d.queixa !== undefined) setQueixa(d.queixa);
         if (d.sintomas !== undefined) setSintomas(d.sintomas);
         if (d.observacoes !== undefined) setObservacoes(d.observacoes);
         if (d.painScore !== undefined) setPainScore(Array.isArray(d.painScore) ? d.painScore : [d.painScore || 0]);
-        if (d.complexityScore !== undefined) setComplexityScore(Array.isArray(d.complexityScore) ? d.complexityScore : [d.complexityScore || 0]);
+        if (d.complexityScore !== undefined) {
+          setComplexityScore(Array.isArray(d.complexityScore) ? d.complexityScore : [d.complexityScore || 0]);
+        }
         if (d.treatmentBlocks !== undefined) setTreatmentBlocks(d.treatmentBlocks);
         if (d.treatmentGeneralGuidance !== undefined) setTreatmentGeneralGuidance(d.treatmentGeneralGuidance);
         if (d.notes !== undefined) setNotes(d.notes);
@@ -592,26 +577,62 @@ const SessaoDetalhe = () => {
     }
 
     loadedSessionKeyRef.current = currentKey;
-    setLoading(false);
-  }, [clinicId, isNew, navigate, newSessionState?.scheduledFor, operationalRole, patientId, sessionId, user?.id, can, location.search, location.state]);
+  }, [
+    activeSession,
+    anamnesisTemplates,
+    clinicId,
+    groups,
+    hydrateFormFromSession,
+    isNew,
+    lastUsedGroupId,
+    loading,
+    location.pathname,
+    location.search,
+    location.state,
+    navigate,
+    newSessionState?.agendaEventId,
+    newSessionState?.autoArrival,
+    newSessionState?.scheduledFor,
+    operationalRole,
+    optimisticUpsertSession,
+    patientId,
+    patientRow,
+    resolvedPatientId,
+    resolvedSessionIndex,
+    sessionId,
+    targetClinicKey,
+    user?.id,
+  ]);
 
+  // Aplica defaults assíncronos em nova sessão sem sujar o formulário
   useEffect(() => {
-    void loadSessionPage();
-  }, [clinicId, patientId, sessionId, loadSessionPage]);
+    if (!isNew || !clinicId || !patientId) return;
+    const currentKey = `${clinicId}:${patientId}:novo`;
+    if (loadedSessionKeyRef.current !== currentKey || hasRestoredDraft) return;
 
-  useEffect(() => {
-    if (!patientId) return;
-    let isMounted = true;
-    void fetchPatientByRef(patientId, clinicId).then((res) => {
-      if (isMounted && res.data) {
-        setPatientName(res.data.name);
-        setPatientRow(res.data as PatientRow);
+    if (!defaultsAppliedRef.current.template && anamnesisTemplates.length > 0 && anamnesisTemplateId === null) {
+      const nextTemplateId = anamnesisTemplates[0].id;
+      defaultsAppliedRef.current.template = true;
+      setAnamnesisTemplateId(nextTemplateId);
+      if (initialFormValuesRef.current) {
+        try {
+          const parsed = JSON.parse(initialFormValuesRef.current) as SessionFormValues;
+          parsed.anamnesisTemplateId = nextTemplateId;
+          initialFormValuesRef.current = JSON.stringify(parsed);
+        } catch {
+          // noop
+        }
       }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [patientId, clinicId]);
+    }
+
+    if (!defaultsAppliedRef.current.group && groups.length > 0 && groupId === null) {
+      const preferred = getPreferredPatientGroupId(groups, lastUsedGroupId);
+      defaultsAppliedRef.current.group = true;
+      if (preferred) {
+        setGroupId(preferred);
+      }
+    }
+  }, [anamnesisTemplateId, anamnesisTemplates, clinicId, groupId, groups, hasRestoredDraft, isNew, lastUsedGroupId, patientId]);
 
   useEffect(() => {
     const updateHorizontalScrollState = () => {
@@ -934,7 +955,10 @@ const SessaoDetalhe = () => {
   }, [isDirty]);
 
   const handleBackNavigation = () => {
-    const targetPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : getPatientPath(patientRow || patientId);
+    const targetPath =
+      (location.state as { from?: string } | null)?.from === "/espacopessoal"
+        ? "/espacopessoal"
+        : getClinicPatientPath(targetClinicKey, patientRow || patientId || "");
     if (isDirty) {
       setPendingNavigationPath(targetPath);
       setLeaveConfirmModalOpen(true);
@@ -1089,7 +1113,8 @@ const SessaoDetalhe = () => {
         if (error) {
           toast({ title: "Erro ao criar linha de cuidado", description: error.message, variant: "destructive" });
         } else if (data) {
-          setGroups((prev) => [...prev, data]);
+          setLocalCreatedGroups((prev) => [...prev, data]);
+          optimisticAddOrUpdateGroup(data);
           setCareLineIds((prev) => {
             const next = [...prev, data.id];
             setGroupId(next[0] ?? null);
@@ -1106,6 +1131,65 @@ const SessaoDetalhe = () => {
     }
   };
 
+  const buildOptimisticSessionRow = (
+    id: string,
+    payload: ReturnType<typeof buildCurrentSessionPayload>,
+    base?: SessionRow | null
+  ): SessionRow => {
+    const now = new Date().toISOString();
+    return {
+      amount_charged_cents: payload.amount_charged_cents ?? base?.amount_charged_cents ?? 0,
+      amount_original_cents: payload.amount_original_cents ?? base?.amount_original_cents ?? 0,
+      amount_paid_cents: payload.amount_paid_cents ?? base?.amount_paid_cents ?? 0,
+      anamnesis: (payload.anamnesis ?? base?.anamnesis ?? null) as Json | null,
+      anamnesis_form_response: (payload.anamnesis_form_response ?? base?.anamnesis_form_response ?? null) as Json | null,
+      anamnesis_template_id: payload.anamnesis_template_id ?? base?.anamnesis_template_id ?? null,
+      clinic_id: payload.clinic_id ?? base?.clinic_id ?? null,
+      complexity_score: payload.complexity_score ?? base?.complexity_score ?? null,
+      created_at: base?.created_at ?? now,
+      deleted_at: base?.deleted_at ?? null,
+      deleted_by_user_id: base?.deleted_by_user_id ?? null,
+      evolution_group_id: payload.evolution_group_id ?? base?.evolution_group_id ?? null,
+      group_id: payload.group_id ?? base?.group_id ?? null,
+      id,
+      notes: payload.notes ?? base?.notes ?? null,
+      pain_score: payload.pain_score ?? base?.pain_score ?? null,
+      parent_session_id: payload.parent_session_id ?? base?.parent_session_id ?? null,
+      patient_arrived_at: payload.patient_arrived_at ?? base?.patient_arrived_at ?? null,
+      patient_id: payload.patient_id,
+      payment_adjustment_reason: payload.payment_adjustment_reason ?? base?.payment_adjustment_reason ?? null,
+      payment_installments: payload.payment_installments ?? base?.payment_installments ?? 1,
+      payment_method: payload.payment_method ?? base?.payment_method ?? "nao_informado",
+      payment_plan_id: (payload as { payment_plan_id?: string | null }).payment_plan_id ?? base?.payment_plan_id ?? null,
+      payment_plan_session_index:
+        (payload as { payment_plan_session_index?: number | null }).payment_plan_session_index ??
+        base?.payment_plan_session_index ??
+        null,
+      payment_status: payload.payment_status ?? base?.payment_status ?? "nao_cobrado",
+      payment_status_date: payload.payment_status_date ?? base?.payment_status_date ?? null,
+      provider_id: base?.provider_id ?? payload.user_id ?? null,
+      scheduled_start_at: payload.scheduled_start_at ?? base?.scheduled_start_at ?? null,
+      session_date: payload.session_date,
+      status: payload.status ?? base?.status ?? "rascunho",
+      treatment: (payload.treatment ?? base?.treatment ?? null) as Json | null,
+      updated_at: now,
+      user_id: payload.user_id,
+      version: (base?.version ?? 0) + 1,
+    };
+  };
+
+  const computeNextSessionKey = (targetSession: SessionRow) => {
+    const chronological = [
+      ...cachedSessions.filter((s) => !s.deleted_at && s.id !== targetSession.id),
+      targetSession,
+    ].sort((a, b) => {
+      const diff = new Date(a.session_date).getTime() - new Date(b.session_date).getTime();
+      return diff !== 0 ? diff : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+    const idx = chronological.findIndex((s) => s.id === targetSession.id);
+    return (sessionsFetched || cachedSessions.length > 0) && idx >= 0 ? `ATD-${idx + 1}` : targetSession.id;
+  };
+
   const handleSave = async (explicitStatus?: "concluído" | "rascunho") => {
     if (!patientId || !user || locked || (!isNew && !isEditing)) return;
     setSaving(true);
@@ -1115,17 +1199,17 @@ const SessaoDetalhe = () => {
       setStatus(explicitStatus);
     }
 
-    let targetPatientId = resolvedPatientId;
-    if (!targetPatientId || !isUuid(targetPatientId)) {
-      const patientRes = await fetchPatientByRef(patientId, clinicId);
-      targetPatientId = patientRes.data?.id || patientId;
-      if (targetPatientId) {
-        setResolvedPatientId(targetPatientId);
-      }
+    const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const targetPatientId = resolvedPatientId || patientId;
+    if (targetPatientId && targetPatientId !== resolvedPatientId) {
+      setResolvedPatientIdOverride(targetPatientId);
     }
 
-    const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
-    const targetClinicId = clinicRes.data ?? clinicId;
+    let targetClinicId = clinicId;
+    if (!targetClinicId && !isOffline) {
+      const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
+      targetClinicId = clinicRes.data ?? clinicId;
+    }
 
     // Sincronização de campos modulares com includeInGlobalDashboard ou systemKey "sintomas" para Linhas de Cuidado / Grupos
     const combinedSchema = [...baseTemplateSchema, ...activeTemplateSchema];
@@ -1144,6 +1228,7 @@ const SessaoDetalhe = () => {
 
     const newlyCreatedGroups: typeof groups = [];
     const isTenantValid = Boolean(
+      !isOffline &&
       targetClinicId &&
       isUuid(targetClinicId) &&
       user?.id &&
@@ -1159,7 +1244,6 @@ const SessaoDetalhe = () => {
       let matchingGroup = groupsByNormalizedName.get(normalizedItem);
 
       if (!matchingGroup && isTenantValid) {
-        // Cria automaticamente a linha de cuidado correspondente
         const availableSlots = resolvedClinicColorSlots.length > 0
           ? resolvedClinicColorSlots
           : DEFAULT_GROUP_COLOR_SLOT_SEEDS.map((s) => ({ id: `seed-${s.slotIndex}`, color_hex: s.colorHex, slot_index: s.slotIndex, alpha: s.alpha }));
@@ -1203,7 +1287,8 @@ const SessaoDetalhe = () => {
     }
 
     if (newlyCreatedGroups.length > 0) {
-      setGroups((prev) => [...prev, ...newlyCreatedGroups]);
+      setLocalCreatedGroups((prev) => [...prev, ...newlyCreatedGroups]);
+      newlyCreatedGroups.forEach((g) => optimisticAddOrUpdateGroup(g));
     }
 
     const updatedCareLineIds = Array.from(updatedCareLineIdsSet);
@@ -1226,6 +1311,58 @@ const SessaoDetalhe = () => {
     }
 
     const sessionData = buildCurrentSessionPayload(targetClinicId, targetPatientId, targetStatus);
+
+    if (isOffline) {
+      if (isNew) {
+        const tempId = `offline-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const offlineSession = buildOptimisticSessionRow(tempId, sessionData);
+        optimisticUpsertSession(offlineSession);
+        await enqueueOfflineMutation("upsert_session", { tempId, record: sessionData });
+
+        clearSessionDraft(targetClinicId, targetPatientId, "novo");
+        clearSessionDraft(targetClinicId, targetPatientId, tempId);
+        initialFormValuesRef.current = JSON.stringify({ ...formValues, status: targetStatus });
+        setHasRestoredDraft(false);
+        setIsEditing(false);
+
+        toast({
+          title: targetStatus === "concluído" ? "Atendimento concluído (offline)" : "Rascunho salvo (offline)",
+          description: "Salvo no dispositivo e será sincronizado automaticamente ao reconectar.",
+        });
+        const nextSessionKey = computeNextSessionKey(offlineSession);
+        navigate(getClinicPatientSessionPath(targetClinicKey, patientRow || patientId, nextSessionKey), {
+          replace: true,
+          state: { preloadedSession: offlineSession },
+        });
+      } else {
+        const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+        if (!targetSessionId) {
+          showErrorToast("Erro ao salvar atendimento", new Error("Identificador do atendimento não encontrado."), "Atualização dos dados do atendimento");
+          setSaving(false);
+          return;
+        }
+        const offlineUpdated = buildOptimisticSessionRow(targetSessionId, sessionData, activeSession);
+        optimisticUpsertSession(offlineUpdated);
+        await enqueueOfflineMutation("upsert_session", {
+          record: { ...sessionData, id: targetSessionId },
+        });
+
+        clearSessionDraft(targetClinicId, targetPatientId, sessionId);
+        if (targetSessionId !== sessionId) clearSessionDraft(targetClinicId, targetPatientId, targetSessionId);
+        initialFormValuesRef.current = JSON.stringify({ ...formValues, status: targetStatus });
+        setHasRestoredDraft(false);
+        setLocked(isSessionImmutable(false, targetStatus));
+        if (targetStatus === "concluído") {
+          setIsEditing(false);
+        }
+        toast({
+          title: targetStatus === "concluído" ? "Atendimento concluído (offline)" : "Rascunho salvo (offline)",
+          description: "Alterações salvas localmente e serão sincronizadas ao reconectar.",
+        });
+      }
+      setSaving(false);
+      return;
+    }
 
     if (paymentPlanForm.createPlan && targetClinicId && targetPatientId) {
       const totalAmountCents = parseCurrencyToCents(paymentPlanForm.totalAmount);
@@ -1283,15 +1420,16 @@ const SessaoDetalhe = () => {
     }
 
     if (isNew) {
-      const { data, error } = await supabase
+      const { data: inserted, error } = await supabase
         .from("sessions")
         .insert(sessionData)
-        .select("id")
+        .select("*")
         .single();
 
-      if (error) {
+      if (error || !inserted) {
         showErrorToast("Erro ao criar atendimento", error, "Criação de atendimento");
       } else {
+        const insertedSession = inserted as SessionRow;
         if (newSessionState?.agendaEventId) {
           const { error: agendaDeleteError } = await supabase.from("agenda_events").delete().eq("id", newSessionState.agendaEventId);
 
@@ -1303,9 +1441,13 @@ const SessaoDetalhe = () => {
         }
 
         clearSessionDraft(targetClinicId, targetPatientId, "novo");
-        clearSessionDraft(targetClinicId, targetPatientId, data.id);
+        clearSessionDraft(targetClinicId, targetPatientId, insertedSession.id);
         initialFormValuesRef.current = JSON.stringify(formValues);
         setHasRestoredDraft(false);
+        setIsEditing(false);
+
+        optimisticUpsertSession(insertedSession);
+        void invalidatePatientData(targetPatientId, targetClinicId, ["sessions"]);
 
         if (targetStatus === "concluído") {
           toast({
@@ -1319,14 +1461,12 @@ const SessaoDetalhe = () => {
             description: "Você pode continuar preenchendo mais tarde.",
           });
         }
-        setIsEditing(false);
-        const { count: sessionCount } = await supabase
-          .from("sessions")
-          .select("id", { count: "exact", head: true })
-          .eq("patient_id", targetPatientId)
-          .eq("clinic_id", targetClinicId);
-        const nextSessionKey = sessionCount ? `ATD-${sessionCount}` : data.id;
-        navigate(getPatientSessionPath(patientRow || patientId, nextSessionKey), { replace: true });
+
+        const nextSessionKey = computeNextSessionKey(insertedSession);
+        navigate(getClinicPatientSessionPath(targetClinicKey, patientRow || patientId, nextSessionKey), {
+          replace: true,
+          state: { preloadedSession: insertedSession },
+        });
       }
     } else {
       const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
@@ -1335,22 +1475,33 @@ const SessaoDetalhe = () => {
         setSaving(false);
         return;
       }
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from("sessions")
         .update(sessionData)
-        .eq("id", targetSessionId);
+        .eq("id", targetSessionId)
+        .select("*")
+        .single();
 
       if (error) {
         showErrorToast("Erro ao salvar atendimento", error, "Atualização dos dados do atendimento");
       } else {
         clearSessionDraft(targetClinicId, targetPatientId, sessionId);
         if (targetSessionId !== sessionId) clearSessionDraft(targetClinicId, targetPatientId, targetSessionId);
-        initialFormValuesRef.current = JSON.stringify(formValues);
+
+        if (updated) {
+          const updatedSession = updated as SessionRow;
+          const nextFormValues = hydrateFormFromSession(updatedSession);
+          initialFormValuesRef.current = JSON.stringify(nextFormValues);
+          optimisticUpsertSession(updatedSession);
+        } else {
+          initialFormValuesRef.current = JSON.stringify(formValues);
+        }
         setHasRestoredDraft(false);
+        void invalidatePatientData(targetPatientId, targetClinicId, ["sessions"]);
 
         if (targetStatus === "concluído") {
           setIsEditing(false);
-          await loadSessionPage(true);
+          setLocked(true);
           toast({
             title: "Atendimento concluído e registrado no prontuário!",
             description: "Este atendimento foi bloqueado para edição. Use a duplicação para iniciar o próximo.",
@@ -1390,17 +1541,12 @@ const SessaoDetalhe = () => {
     setEvolveModalOpen(false);
 
     try {
-      let targetPatientId = resolvedPatientId;
-      if (!targetPatientId || !isUuid(targetPatientId)) {
-        const patientRes = await fetchPatientByRef(patientId, clinicId);
-        targetPatientId = patientRes.data?.id || patientId;
-        if (targetPatientId) {
-          setResolvedPatientId(targetPatientId);
-        }
+      const targetPatientId = resolvedPatientId || patientId;
+      let targetClinicId = clinicId;
+      if (!targetClinicId) {
+        const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
+        targetClinicId = clinicRes.data ?? clinicId;
       }
-
-      const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
-      const targetClinicId = clinicRes.data ?? clinicId;
 
       let targetEvolutionGroupId = evolutionGroupId;
       if (!targetEvolutionGroupId && targetClinicId && targetPatientId) {
@@ -1465,27 +1611,25 @@ const SessaoDetalhe = () => {
         evolutionGroupId: targetEvolutionGroupId,
       });
 
-      const { data, error } = await supabase
+      const { data: inserted, error } = await supabase
         .from("sessions")
         .insert(sessionData)
-        .select("id")
+        .select("*")
         .single();
 
-      if (error) {
+      if (error || !inserted) {
         showErrorToast("Erro ao iniciar novo atendimento", error, "Início de atendimento de evolução");
       } else {
+        const insertedSession = inserted as SessionRow;
+        optimisticUpsertSession(insertedSession);
+        void invalidatePatientData(targetPatientId, targetClinicId, ["sessions"]);
         toast({
           title: isBlank ? "Novo atendimento em branco iniciado" : "Novo atendimento de evolução iniciado",
           description: isBlank ? "Uma nova ficha vinculada a este ciclo está pronta para preenchimento." : "Os dados foram copiados e o atendimento está pronto para preenchimento.",
         });
-        const { count: sessionCount } = await supabase
-          .from("sessions")
-          .select("id", { count: "exact", head: true })
-          .eq("patient_id", targetPatientId)
-          .eq("clinic_id", targetClinicId);
-        const nextSessionKey = sessionCount ? `ATD-${sessionCount}` : data.id;
-        navigate(getPatientSessionPath(patientRow || patientId, nextSessionKey, "?edit=true"), {
-          state: { startInEditMode: true },
+        const nextSessionKey = computeNextSessionKey(insertedSession);
+        navigate(getClinicPatientSessionPath(targetClinicKey, patientRow || patientId, nextSessionKey, "?edit=true"), {
+          state: { startInEditMode: true, preloadedSession: insertedSession },
         });
       }
     } catch (err: any) {
@@ -1549,16 +1693,23 @@ const SessaoDetalhe = () => {
       setSavingPresence(false);
       return;
     }
-    const { error } = await supabase
+    const { data: updatedPresence, error } = await supabase
       .from("sessions")
       .update(nextPresence)
-      .eq("id", targetSessionId);
+      .eq("id", targetSessionId)
+      .select("*")
+      .maybeSingle();
 
     if (error) {
       showErrorToast("Erro ao salvar presença", error, "Atualização rápida dos horários do atendimento");
       setSavingPresence(false);
       return;
     }
+
+    if (updatedPresence) {
+      optimisticUpsertSession(updatedPresence as SessionRow);
+    }
+    void invalidatePatientData(resolvedPatientId || patientId, clinicId, ["sessions"]);
 
     setScheduledStartAt(formatDateTimeForInput(nextPresence.scheduled_start_at));
     setPatientArrivedAt(formatDateTimeForInput(nextPresence.patient_arrived_at));
@@ -1610,10 +1761,12 @@ const SessaoDetalhe = () => {
       setSavingPayment(false);
       return;
     }
-    const { error } = await supabase
+    const { data: updatedPayment, error } = await supabase
       .from("sessions")
       .update(nextPayment)
-      .eq("id", targetSessionId);
+      .eq("id", targetSessionId)
+      .select("*")
+      .maybeSingle();
 
     if (error) {
       showErrorToast("Erro ao salvar pagamento", error, "Atualização rápida do pagamento do atendimento");
@@ -1630,18 +1783,10 @@ const SessaoDetalhe = () => {
     setPaymentInstallments(normalizePaymentInstallments(nextPayment.payment_installments));
     setPaymentMethod(normalizePaymentMethod(nextPayment.payment_method));
     setPaymentStatusDate(nextPayment.payment_status_date ?? "");
-    setPatientPaymentSessions((current) =>
-      current.map((session) =>
-        session.id === targetSessionId || session.id === sessionId
-          ? {
-              ...session,
-              amount_charged_cents: nextPayment.amount_charged_cents,
-              amount_paid_cents: nextPayment.amount_paid_cents,
-              payment_status: nextPayment.payment_status,
-            }
-          : session,
-      ),
-    );
+    if (updatedPayment) {
+      optimisticUpsertSession(updatedPayment as SessionRow);
+    }
+    void invalidatePatientData(resolvedPatientId || patientId, clinicId, ["sessions"]);
     setPaymentDialogOpen(false);
     setSavingPayment(false);
     toast({ title: "Pagamento atualizado" });
@@ -1710,7 +1855,7 @@ const SessaoDetalhe = () => {
     if ((location.state as any)?.from === "/espacopessoal") {
       navigate("/espacopessoal");
     } else {
-      navigate(getPatientPath(patientRow || patientId));
+      navigate(getClinicPatientPath(targetClinicKey, patientRow || patientId || ""));
     }
   };
 
@@ -1803,51 +1948,18 @@ const SessaoDetalhe = () => {
     }
   };
 
-  const renderBaseSliderSection = (mode: "edit" | "view") => {
-    if (visibleBaseSliderFields.length === 0) {
-      return null;
-    }
-
-    return (
-      <Card data-tutorial="session-pain-scale">
-        <CardContent className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
-          {visibleBaseSliderFields.map((field) => {
-            const value = readBaseSliderValue(field);
-
-            return (
-              <div key={field.id} className="rounded-xl border bg-muted/20 p-4 space-y-3">
-                <div>
-                  <FieldLabelWithHelp label={field.label} helpText={field.helpText} />
-                </div>
-                {mode === "view" ? (
-                  <ScaleIndicator score={value} min={field.min ?? 0} max={field.max ?? 10} />
-                ) : (
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-muted-foreground">{value}/{field.max ?? 10}</div>
-                    <Slider
-                      value={[value]}
-                      onValueChange={([next]) => updateBaseSliderValue(field, next)}
-                      min={field.min ?? 0}
-                      max={field.max ?? 10}
-                      step={1}
-                      disabled={locked}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-    );
-  };
+  const renderBaseSliderSection = (mode: "edit" | "view") => (
+    <SessionBaseSliderSection
+      mode={mode}
+      visibleBaseSliderFields={visibleBaseSliderFields}
+      readBaseSliderValue={readBaseSliderValue}
+      updateBaseSliderValue={updateBaseSliderValue}
+      locked={locked}
+    />
+  );
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
-    );
+    return <SessaoDetalheSkeleton />;
   }
 
   return (
@@ -1929,111 +2041,25 @@ const SessaoDetalhe = () => {
       ) : (
         <>
           {/* Presença / Timer */}
-          <div data-tutorial="session-timer">
-            <Card>
-              <CardContent className="space-y-4 p-4 sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">Presença</h2>
-                    <p className="text-sm text-muted-foreground">Registre o horário combinado e a chegada do paciente.</p>
-                  </div>
-                  <ComponentHelpButton helpId="session-timer" size="xs" />
-                </div>
-                <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(260px,1.2fr)_minmax(280px,1.2fr)]">
-                  <div className="space-y-1.5 min-w-0">
-                    <Label htmlFor="scheduled-start">Horário agendado</Label>
-                    <Input
-                      id="scheduled-start"
-                      className="w-full min-w-0"
-                      max="2100-12-31T23:59"
-                      min="2000-01-01T00:00"
-                      type="datetime-local"
-                      value={scheduledStartAt}
-                      onChange={(event) => setScheduledStartAt(event.target.value)}
-                      disabled={locked}
-                    />
-                  </div>
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <Label htmlFor="patient-arrived">Horário de chegada</Label>
-                      <div className="flex items-center gap-1.5">
-                        {arrivalDeltaLabel ? (
-                          <span className={`text-xs font-semibold ${arrivalDelayMinutes && arrivalDelayMinutes > 0 ? "text-destructive" : "text-success"}`}>
-                            {arrivalDeltaLabel}
-                          </span>
-                        ) : null}
-                        {!locked && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="xs"
-                            className="h-6 px-2 text-[11px] font-medium"
-                            onClick={() => setPatientArrivedAt(getCurrentDateTimeInputValue())}
-                          >
-                            Agora
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <Input
-                      id="patient-arrived"
-                      className="w-full min-w-0"
-                      max="2100-12-31T23:59"
-                      min="2000-01-01T00:00"
-                      type="datetime-local"
-                      value={patientArrivedAt}
-                      onChange={(event) => setPatientArrivedAt(event.target.value)}
-                      disabled={locked}
-                    />
-                  </div>
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <Label htmlFor="session-date">Data e hora do início do atendimento</Label>
-                      {!locked && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="xs"
-                          className="h-6 px-2 text-[11px] font-medium"
-                          onClick={() => setSessionDate(getCurrentDateTimeInputValue())}
-                        >
-                          Agora
-                        </Button>
-                      )}
-                    </div>
-                    <Input
-                      id="session-date"
-                      className="w-full min-w-0"
-                      max="2100-12-31T23:59"
-                      min="2000-01-01T00:00"
-                      type="datetime-local"
-                      value={sessionDate}
-                      onChange={(event) => setSessionDate(event.target.value)}
-                      disabled={locked}
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <SessionPresenceCard
+            scheduledStartAt={scheduledStartAt}
+            patientArrivedAt={patientArrivedAt}
+            sessionDate={sessionDate}
+            arrivalDeltaLabel={arrivalDeltaLabel}
+            arrivalDelayMinutes={arrivalDelayMinutes}
+            locked={locked}
+            onScheduledStartAtChange={setScheduledStartAt}
+            onPatientArrivedAtChange={setPatientArrivedAt}
+            onSessionDateChange={setSessionDate}
+          />
 
           {/* Notes / Conduta */}
-          <div data-tutorial="session-conduct-notes">
-            <div className="flex items-center justify-between mb-1.5">
-              <Label htmlFor="notes" className="text-sm font-medium">Anotações rápidas e conduta</Label>
-              <ComponentHelpButton helpId="session-conduct-notes" size="xs" />
-            </div>
-            <ClinicalSpellcheckTextarea
-              id="notes"
-              value={notes}
-              onChangeValue={(val) => setNotes(val)}
-              clinicId={clinicId}
-              placeholder="Observações gerais sobre o atendimento..."
-              className="mt-1"
-              rows={2}
-              disabled={locked}
-            />
-          </div>
+          <SessionConductNotes
+            notes={notes}
+            locked={locked}
+            onNotesChange={setNotes}
+            clinicId={clinicId ?? undefined}
+          />
 
           {/* Tabs */}
           <Tabs defaultValue="anamnese" className="w-full">
@@ -2085,171 +2111,45 @@ const SessaoDetalhe = () => {
               </Card>
 
               {/* 3. Bloco Chamativo Neon de Fichas Complementares */}
-              {anamnesisTemplates.length > 0 && (
-                <div data-tutorial="session-custom-forms-box" className="relative overflow-hidden rounded-2xl border-2 border-primary/40 bg-gradient-to-br from-primary/10 via-primary/5 to-accent/15 p-5 sm:p-6 shadow-lg backdrop-blur-sm transition-all duration-300 hover:border-primary/60">
-                  <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-primary/20 blur-2xl" />
-                  <div className="pointer-events-none absolute -left-8 -bottom-8 h-36 w-36 rounded-full bg-accent/25 blur-2xl" />
-
-                  <div className="relative z-10 space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-md shadow-primary/30 animate-pulse">
-                            <FileText className="h-4 w-4" />
-                          </div>
-                          <h3 className="font-bold text-base text-foreground tracking-tight flex items-center gap-2">
-                            Ficha Complementar de Avaliação
-                            <Badge className="bg-primary/20 text-primary border-primary/30 text-[10px] font-semibold uppercase tracking-wider">
-                              Especializada
-                            </Badge>
-                          </h3>
-                          <ComponentHelpButton helpId="session-custom-forms" size="xs" />
-                        </div>
-                        <p className="text-xs text-muted-foreground max-w-xl">
-                          Deseja aprofundar a avaliação deste atendimento com um formulário clínico estruturado da clínica? Escolha uma ficha abaixo:
-                        </p>
-                      </div>
-
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs bg-background/80 hover:bg-background border-primary/30 text-primary hover:text-primary gap-1 self-start sm:self-auto shrink-0 shadow-sm"
-                        onClick={() => navigate(`${clinicHomePath}/configuracoes?secao=forms`)}
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        Gerenciar fichas da clínica
-                      </Button>
-                    </div>
-
-                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 pt-1">
-                      {anamnesisTemplates.map((template) => {
-                        const isSelected = anamnesisTemplateId === template.id;
-                        return (
-                          <button
-                            key={template.id}
-                            type="button"
-                            onClick={() => {
-                              if (locked) return;
-                              if (isSelected) {
-                                setAnamnesisTemplateId(null);
-                                setAnamnesisFormResponse({});
-                              } else {
-                                setAnamnesisTemplateId(template.id);
-                                setAnamnesisFormResponse({});
-                              }
-                            }}
-                            className={`group relative flex flex-col justify-between rounded-xl border p-3.5 text-left transition-all duration-200 ${
-                              isSelected
-                                ? "border-primary bg-primary/15 shadow-md shadow-primary/10 ring-2 ring-primary/40"
-                                : "border-border/80 bg-background/90 hover:border-primary/50 hover:bg-accent/40 hover:shadow-sm"
-                            }`}
-                            disabled={locked}
-                          >
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <FileText className={`h-4 w-4 ${isSelected ? "text-primary" : "text-muted-foreground group-hover:text-primary"}`} />
-                                  <span className="font-semibold text-xs text-foreground line-clamp-1">{template.name}</span>
-                                </div>
-                                {isSelected ? (
-                                  <Badge className="h-5 px-1.5 text-[10px] bg-primary text-primary-foreground gap-1">
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    Ativa
-                                  </Badge>
-                                ) : (
-                                  <span className="text-[10px] font-medium text-muted-foreground group-hover:text-primary">
-                                    + Usar
-                                  </span>
-                                )}
-                              </div>
-                              {template.description && (
-                                <p className="text-[11px] text-muted-foreground line-clamp-2">{template.description}</p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1 border-t border-border/40">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="text-xs text-muted-foreground hover:text-foreground h-8 px-2"
-                        onClick={() => {
-                          setAnamnesisTemplateId(null);
-                          setAnamnesisFormResponse({});
-                        }}
-                        disabled={locked}
-                      >
-                        {anamnesisTemplateId ? "✕ Remover Ficha Complementar (Usar apenas evolução livre)" : "✓ Utilizando apenas evolução livre"}
-                      </Button>
-                    </div>
-
-                    {activeTemplate && (
-                      <div className="mt-4 rounded-xl border border-primary/30 bg-background/95 p-5 space-y-4 shadow-sm animate-in fade-in">
-                        <div className="flex items-center justify-between gap-3 border-b pb-3">
-                          <div>
-                            <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-                              <Layers className="h-4 w-4 text-primary" />
-                              {activeTemplate.name}
-                            </h4>
-                            {activeTemplate.description && (
-                              <p className="text-xs text-muted-foreground mt-0.5">{activeTemplate.description}</p>
-                            )}
-                          </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-xs text-destructive hover:bg-destructive/10"
-                            onClick={() => {
-                              setAnamnesisTemplateId(null);
-                              setAnamnesisFormResponse({});
-                            }}
-                            disabled={locked}
-                          >
-                            Desvincular
-                          </Button>
-                        </div>
-                        <SessionAnamnesisRuntime
-                          anamnesisFormResponse={anamnesisFormResponse}
-                          complexityScore={complexityScore}
-                          horizontalScrollRefs={horizontalScrollRefs}
-                          horizontalScrollState={horizontalScrollState}
-                          layout={extraLayout}
-                          locked={locked}
-                          observacoes={observacoes}
-                          painScore={painScore}
-                          queixa={queixa}
-                          sintomas={sintomas}
-                          suggestedCareLine={suggestedCareLine}
-                          clinicColorSlots={resolvedClinicColorSlots}
-                          groupSuggestions={groupSuggestions}
-                          clinicId={clinicId}
-                          patientId={patientId}
-                          sessionId={sessionId}
-                          onAnamnesisFormResponseChange={setAnamnesisFormResponse}
-                          onComplexityScoreChange={setComplexityScore}
-                          onObservacoesChange={setObservacoes}
-                          onPainScoreChange={setPainScore}
-                          onQueixaChange={setQueixa}
-                          onSintomasChange={setSintomas}
-                          onSelectCareLinePreset={handleSelectCareLinePreset}
-                          scrollHorizontalSectionToRatio={scrollHorizontalSectionToRatio}
-                          scrollHorizontalSectionToSibling={scrollHorizontalSectionToSibling}
-                          beginHorizontalDrag={beginHorizontalDrag}
-                          updateHorizontalDrag={updateHorizontalDrag}
-                          endHorizontalDrag={endHorizontalDrag}
-                          scheduleHorizontalScrollSync={scheduleHorizontalScrollSync}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+              <SessionComplementaryFormsBlock
+                anamnesisTemplates={anamnesisTemplates}
+                anamnesisTemplateId={anamnesisTemplateId}
+                activeTemplate={activeTemplate}
+                extraLayout={extraLayout}
+                locked={locked}
+                anamnesisFormResponse={anamnesisFormResponse}
+                complexityScore={complexityScore}
+                horizontalScrollRefs={horizontalScrollRefs}
+                horizontalScrollState={horizontalScrollState}
+                observacoes={observacoes}
+                painScore={painScore}
+                queixa={queixa}
+                sintomas={sintomas}
+                suggestedCareLine={suggestedCareLine}
+                clinicColorSlots={resolvedClinicColorSlots}
+                groupSuggestions={groupSuggestions}
+                clinicId={clinicId}
+                patientId={patientId}
+                sessionId={sessionId}
+                onAnamnesisTemplateSelect={(nextId) => {
+                  setAnamnesisTemplateId(nextId);
+                  setAnamnesisFormResponse({});
+                }}
+                onAnamnesisFormResponseChange={setAnamnesisFormResponse}
+                onComplexityScoreChange={setComplexityScore}
+                onObservacoesChange={setObservacoes}
+                onPainScoreChange={setPainScore}
+                onQueixaChange={setQueixa}
+                onSintomasChange={setSintomas}
+                onSelectCareLinePreset={handleSelectCareLinePreset}
+                scrollHorizontalSectionToRatio={scrollHorizontalSectionToRatio}
+                scrollHorizontalSectionToSibling={scrollHorizontalSectionToSibling}
+                beginHorizontalDrag={beginHorizontalDrag}
+                updateHorizontalDrag={updateHorizontalDrag}
+                endHorizontalDrag={endHorizontalDrag}
+                scheduleHorizontalScrollSync={scheduleHorizontalScrollSync}
+                onNavigateToTemplates={() => navigate(`${clinicHomePath}/configuracoes?secao=forms`)}
+              />
             </TabsContent>
 
             <TabsContent value="arquivos" className="mt-4 space-y-4">
@@ -2317,7 +2217,7 @@ const SessaoDetalhe = () => {
         existingRecipients={shareRecipients}
         onOpenChange={setSessionShareDialogOpen}
         onShared={() => {
-          void loadSessionPage();
+          void refreshSecondarySessionData();
         }}
         open={sessionShareDialogOpen}
         sessionCount={1}
@@ -2371,40 +2271,7 @@ const SessaoDetalhe = () => {
         onSavePaymentSummary={handleSavePaymentSummary}
       />
 
-      <Dialog open={Boolean(errorDetails)} onOpenChange={(open) => !open && setErrorDetails(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{errorDetails?.title ?? "Detalhes do erro"}</DialogTitle>
-            <DialogDescription>{errorDetails?.context}</DialogDescription>
-          </DialogHeader>
-          {errorDetails ? (
-            <div className="space-y-4">
-              <div className="rounded-lg border bg-muted/40 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mensagem técnica</p>
-                <p className="mt-2 break-words text-sm">{errorDetails.message}</p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Código</p>
-                  <p className="mt-1 break-words text-sm">{errorDetails.code ?? "Não informado"}</p>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sugestão do banco</p>
-                  <p className="mt-1 break-words text-sm">{errorDetails.hint ?? "Não informado"}</p>
-                </div>
-              </div>
-              {errorDetails.details ? (
-                <div className="rounded-lg border p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Detalhes</p>
-                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">
-                    {errorDetails.details}
-                  </pre>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <SessionErrorDialog errorDetails={errorDetails} onClose={() => setErrorDetails(null)} />
 
       <SessionPrintDocumentsModal
         isOpen={isPrintTermsOpen}
@@ -2422,56 +2289,30 @@ const SessaoDetalhe = () => {
       />
 
       {/* Modal de Confirmação de Saída com Alterações Não Salvas */}
-      <AlertDialog open={leaveConfirmModalOpen} onOpenChange={setLeaveConfirmModalOpen}>
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Atendimento em andamento</AlertDialogTitle>
-            <AlertDialogDescription>
-              Você possui alterações que ainda não foram salvas no prontuário. O que deseja fazer antes de sair?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex flex-col gap-2 sm:flex-col sm:space-x-0">
-            <Button
-              type="button"
-              variant="default"
-              className="w-full justify-center"
-              onClick={async () => {
-                await handleSave("rascunho");
-                setLeaveConfirmModalOpen(false);
-                const fallbackPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : getPatientPath(patientRow || patientId);
-                navigate(pendingNavigationPath || fallbackPath);
-              }}
-              disabled={saving}
-            >
-              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Sair e salvar como rascunho
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              className="w-full justify-center"
-              onClick={() => {
-                clearSessionDraft(clinicId, resolvedPatientId || patientId, sessionId);
-                setLeaveConfirmModalOpen(false);
-                const fallbackPath = (location.state as any)?.from === "/espacopessoal" ? "/espacopessoal" : getPatientPath(patientRow || patientId);
-                navigate(pendingNavigationPath || fallbackPath);
-              }}
-              disabled={saving}
-            >
-              Sair sem salvar
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full justify-center"
-              onClick={() => setLeaveConfirmModalOpen(false)}
-              disabled={saving}
-            >
-              Continuar atendimento
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <SessionLeaveConfirmDialog
+        open={leaveConfirmModalOpen}
+        saving={saving}
+        onOpenChange={setLeaveConfirmModalOpen}
+        onSaveAsDraftAndLeave={async () => {
+          await handleSave("rascunho");
+          setLeaveConfirmModalOpen(false);
+          const fallbackPath =
+            (location.state as { from?: string } | null)?.from === "/espacopessoal"
+              ? "/espacopessoal"
+              : getClinicPatientPath(targetClinicKey, patientRow || patientId || "");
+          navigate(pendingNavigationPath || fallbackPath);
+        }}
+        onLeaveWithoutSaving={() => {
+          clearSessionDraft(clinicId, resolvedPatientId || patientId, sessionId);
+          setLeaveConfirmModalOpen(false);
+          const fallbackPath =
+            (location.state as { from?: string } | null)?.from === "/espacopessoal"
+              ? "/espacopessoal"
+              : getClinicPatientPath(targetClinicKey, patientRow || patientId || "");
+          navigate(pendingNavigationPath || fallbackPath);
+        }}
+        onContinueSession={() => setLeaveConfirmModalOpen(false)}
+      />
 
       <EvolveSessionModal
         isOpen={evolveModalOpen}

@@ -90,39 +90,6 @@ export function useAffiliateCampaignConfig() {
 
   useEffect(() => {
     void loadConfig();
-
-    if (typeof supabase?.channel !== "function") {
-      return;
-    }
-
-    // Identificador único por instância do hook para evitar colisão no realtime client
-    // caso múltiplos componentes ou modais montem o hook simultaneamente
-    const channelId = `governance-affiliate-campaign-${Math.random().toString(36).substring(2, 9)}`;
-
-    // Inscrição em tempo real para propagar alterações instantaneamente
-    const channel = supabase
-      .channel(channelId)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "governance_rules",
-          filter: `key=eq.${AFFILIATE_CAMPAIGN_RULE_KEY}`,
-        },
-        (payload: { new?: { value?: unknown } }) => {
-          if (payload.new && payload.new.value) {
-            setConfig(parseAffiliateCampaignConfig(payload.new.value));
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      if (typeof supabase?.removeChannel === "function") {
-        void supabase.removeChannel(channel);
-      }
-    };
   }, [loadConfig]);
 
   const saveConfig = useCallback(

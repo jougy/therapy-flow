@@ -390,7 +390,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               .eq("is_active", true)
               .maybeSingle() as unknown as Promise<{ data: { role?: string; is_active?: boolean; feature_flags?: unknown } | null; error: unknown }>
           );
-          if (error) {
+          if (error && typeof error === "object" && (error as { code?: string }).code === "42703") {
             const fallbackRes = await withTransientRetry(() =>
               supabase
                 .from("platform_admins")
@@ -554,6 +554,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
+    const bootTimeout = window.setTimeout(() => {
+      if (!initialized) {
+        setLoading(false);
+      }
+    }, 12000);
+
     supabase.auth.getSession().then(({ data: { session: nextSession } }) => {
       if (!initialized) {
         setSession(nextSession);
@@ -565,9 +571,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setLoading(false);
         }
       }
+    }).catch(() => {
+      if (!initialized) {
+        setLoading(false);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      window.clearTimeout(bootTimeout);
+      subscription.unsubscribe();
+    };
   }, [fetchAuthState]);
 
   const lastHeartbeatAtRef = useRef<number>(0);
@@ -588,10 +601,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
 
       const now = Date.now();
-      if (isVisibilityTrigger && now - lastHeartbeatAtRef.current < 2 * 60 * 1000) return;
+      if (isVisibilityTrigger && now - lastHeartbeatAtRef.current < 5 * 60 * 1000) return;
       lastHeartbeatAtRef.current = now;
 
-      void supabase.from("profiles").update({ last_seen_at: new Date().toISOString() }).eq("id", currentSession.user.id);
       void registerSecuritySession(currentSession).catch((error) => {
         logRuntimeError("auth.register_current_security_session.heartbeat", error, { userId: currentSession.user.id });
         if (isForcedSignOutError(error)) {
@@ -605,7 +617,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (document.visibilityState === "visible") heartbeat(true);
     };
 
-    const interval = window.setInterval(() => heartbeat(false), 5 * 60 * 1000);
+    const interval = window.setInterval(() => heartbeat(false), 10 * 60 * 1000);
     heartbeat(false);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -613,7 +625,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [clinic?.id, session?.user?.id, session?.access_token, registerSecuritySession]);
+  }, [clinic?.id, session?.user?.id, registerSecuritySession]);
 
   useEffect(() => {
     if (!session?.user?.id || !clinic?.id || typeof supabase.channel !== "function") {
@@ -629,12 +641,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       void appQueryClient.invalidateQueries();
     };
 
-    // Debounce leve de 500ms para evitar criação e destruição precipitada de canais WebSocket em renders intermediários
+    // Usa Broadcast em vez de postgres_changes para evitar decodificação contínua de WAL no Realtime
     const timer = window.setTimeout(() => {
       channel = supabase
-        .channel(`clinic-role-capabilities:${clinicId}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "clinic_operational_role_capabilities", filter: `clinic_id=eq.${clinicId}` }, refreshRoleCapabilityOverrides)
-        .on("postgres_changes", { event: "*", schema: "public", table: "clinic_operational_roles", filter: `clinic_id=eq.${clinicId}` }, () => {
+        .channel(`clinic-rbac-sync:${clinicId}`)
+        .on("broadcast", { event: "rbac_updated" }, () => {
           refreshRoleCapabilityOverrides();
           if (userId) void fetchAuthStateRef.current(userId, activeSessionRef.current);
         })

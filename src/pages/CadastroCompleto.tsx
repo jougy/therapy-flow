@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useContext } from "react";
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
+import { QueryClientContext } from "@tanstack/react-query";
 import { ArrowLeft, Check, FileText, HeartPulse, Loader2, MapPin, Phone, Search, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +38,10 @@ import {
   putPatientRegistration,
   validatePatientCpf,
 } from "@/lib/patient-registration";
-import { fetchPatientByRef, getPatientPath, getClinicPatientPath } from "@/lib/patient-routing";
+import { getClinicPatientPath } from "@/lib/patient-routing";
+import { appQueryClient } from "@/lib/query-client";
+import { isOfflineOrNetworkError } from "@/lib/local-first/networkError";
+import { loadPatientWithOfflineFallback, persistOfflineUpdatedPatient } from "@/lib/local-first/offlinePatientHelpers";
 import { INPUT_LIMITS, sanitizeSingleLineInput } from "@/lib/input-security";
 import { SubstanceUseClinicalSection } from "@/components/patients/SubstanceUseClinicalSection";
 import { PatientRiskFlagsChecklist } from "@/components/patients/PatientRiskFlagsChecklist";
@@ -58,18 +62,10 @@ import {
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 type Patient = Database["public"]["Tables"]["patients"]["Row"];
 
-interface AddressData {
-  cep: string;
-  erro?: boolean;
-  logradouro: string;
-  bairro: string;
-  localidade: string;
-  uf: string;
-}
-
 const CadastroCompleto = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useContext(QueryClientContext) ?? appQueryClient;
   const { clinic, clinicId, session, user, can } = useAuth();
   const clinicHomePath = clinic?.route_key ? `/clinica/${clinic.route_key}` : "/espacopessoal";
   const [loading, setLoading] = useState(true);
@@ -124,9 +120,9 @@ const CadastroCompleto = () => {
   const fetchPatient = useCallback(async () => {
     if (!id) return;
     try {
-      const { data, error } = await fetchPatientByRef(id, clinicId);
+      const data = await loadPatientWithOfflineFallback(id, clinicId);
 
-      if (error || !data) {
+      if (!data) {
         toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
         navigate(clinicHomePath);
         return;
@@ -257,7 +253,8 @@ const CadastroCompleto = () => {
   const handleSubmit = async () => {
     if (!user || !id || !patientRecord) return;
 
-    if (!session?.access_token) {
+    const isOnline = typeof navigator === "undefined" || navigator.onLine;
+    if (isOnline && !session?.access_token) {
       toast({ title: "Sessão inválida", description: "Faça login novamente para salvar o cadastro.", variant: "destructive" });
       return;
     }
@@ -294,50 +291,35 @@ const CadastroCompleto = () => {
 
     setSubmitting(true);
 
+    const payload = buildPatientRegistrationPutPayload(patientRecord, {
+      addressComplement, addressNumber, allergies, bloodType, cep, clinicalProfile, cpf,
+      chronicConditions, city, clinicalNotes, continuousMedications, country, dateOfBirth,
+      email, emergencyContact, gender, name: normalizedName, neighborhood,
+      originInsuranceMemberId, originInsurancePlan, originInsuranceProvider,
+      originOtherDescription, originOtherName, originReferrerName, originType,
+      phone, profession, pronoun, rg, state, street, surgeries,
+      isExclusive: can("patients.manage_exclusive") ? isExclusive : (patientRecord?.is_exclusive ?? false),
+      exclusiveUserIds: can("patients.manage_exclusive") ? exclusiveUserIds : (patientRecord?.exclusive_user_ids ?? []),
+    });
+
+    const handleOfflineSave = async () => {
+      await persistOfflineUpdatedPatient(queryClient, payload, id, clinicId, clinic?.route_key);
+      toast({ title: "Cadastro salvo offline", description: "Alterações salvas localmente — serão sincronizadas ao reconectar." });
+      navigate(getClinicPatientPath(clinic?.route_key, patientRecord || id));
+    };
+
     try {
-      const payload = buildPatientRegistrationPutPayload(patientRecord, {
-        addressComplement,
-        addressNumber,
-        allergies,
-        bloodType,
-        cep,
-        clinicalProfile,
-        cpf,
-        chronicConditions,
-        city,
-        clinicalNotes,
-        continuousMedications,
-        country,
-        dateOfBirth,
-        email,
-        emergencyContact,
-        gender,
-        name: normalizedName,
-        neighborhood,
-        originInsuranceMemberId,
-        originInsurancePlan,
-        originInsuranceProvider,
-        originOtherDescription,
-        originOtherName,
-        originReferrerName,
-        originType,
-        phone,
-        profession,
-        pronoun,
-        rg,
-        state,
-        street,
-        surgeries,
-        isExclusive: can("patients.manage_exclusive") ? isExclusive : (patientRecord?.is_exclusive ?? false),
-        exclusiveUserIds: can("patients.manage_exclusive") ? exclusiveUserIds : (patientRecord?.exclusive_user_ids ?? []),
-      });
+      if (!isOnline) {
+        await handleOfflineSave();
+        return;
+      }
 
       const previousClinicalState = buildPatientClinicalSnapshotState(patientRecord);
       const nextClinicalState = buildPatientClinicalSnapshotState(payload);
       const clinicalChanges = diffPatientClinicalSnapshotStates(previousClinicalState, nextClinicalState);
 
       await putPatientRegistration({
-        accessToken: session.access_token,
+        accessToken: session!.access_token,
         apiKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
         patient: payload,
         supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
@@ -379,14 +361,18 @@ const CadastroCompleto = () => {
       toast({ title: "Cadastro atualizado", description: "Informações salvas com sucesso." });
       navigate(getClinicPatientPath(clinic?.route_key, patientRecord || id));
     } catch (error) {
+      if (isOfflineOrNetworkError(error)) {
+        await handleOfflineSave();
+        return;
+      }
       toast({
         title: "Erro ao salvar",
         description: error instanceof Error ? error.message : "Não foi possível atualizar o cadastro.",
         variant: "destructive",
       });
+    } finally {
+      setSubmitting(false);
     }
-
-    setSubmitting(false);
   };
 
   if (loading) {

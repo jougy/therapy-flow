@@ -74,7 +74,7 @@ describe("hasCapability", () => {
     expect(hasCapability(adminContext, "schedule.read_all")).toBe(true);
     expect(hasCapability(adminContext, "sessions.read_all")).toBe(true);
     expect(hasCapability(adminContext, "sessions.write_others")).toBe(true);
-    expect(hasCapability(adminContext, "marketing.affiliates.view")).toBe(true);
+    expect(hasCapability(adminContext, "marketing.affiliates.view")).toBe(false);
     expect(hasCapability(adminContext, "marketing.affiliates.manage")).toBe(true);
     expect(hasCapability(adminContext, "marketing.affiliates.withdraw")).toBe(false);
   });
@@ -142,7 +142,7 @@ describe("hasCapability", () => {
     expect(hasCapability(ownerContext, "marketing.affiliates.withdraw")).toBe(true);
 
     // Admin can view and manage, but CANNOT withdraw
-    expect(hasCapability(adminContext, "marketing.affiliates.view")).toBe(true);
+    expect(hasCapability(adminContext, "marketing.affiliates.view")).toBe(false);
     expect(hasCapability(adminContext, "marketing.affiliates.manage")).toBe(true);
     expect(hasCapability(adminContext, "marketing.affiliates.withdraw")).toBe(false);
 

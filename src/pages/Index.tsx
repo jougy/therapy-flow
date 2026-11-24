@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -203,7 +204,24 @@ const Index = () => {
   const clinicSessionsListConfig = flags["clinic_sessions_list"] || {};
   const canUseBulkSelection = hasClinicSessionsList && clinicSessionsListConfig.bulk_selection !== false;
   const canViewFinancialData = can("treasury.manage");
-  const canViewAffiliates = Boolean(isFeatureEnabled("marketing_affiliates_module") && typeof can === "function" && can("marketing.affiliates.view"));
+  const hasAffiliatesModule = isFeatureEnabled("marketing_affiliates_module");
+  const { data: isActiveAffiliate = false } = useQuery({
+    queryKey: ["is-active-affiliate", user?.id],
+    enabled: Boolean(user?.id && hasAffiliatesModule),
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("affiliates")
+        .select("id")
+        .eq("user_id", user!.id)
+        .is("deleted_at", null)
+        .maybeSingle();
+      return Boolean(data?.id);
+    },
+  });
+  const canViewAffiliates = Boolean(
+    hasAffiliatesModule && (isActiveAffiliate || (typeof can === "function" && can("marketing.affiliates.view")))
+  );
   const affiliateAdapter = useB2bAffiliateCrm({ enabled: canViewAffiliates && listMode === "affiliates" });
 
   useEffect(() => {

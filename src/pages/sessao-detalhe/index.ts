@@ -7,3 +7,5 @@ export * from "./SessionComplementaryFormsBlock";
 export * from "./SessionErrorDialog";
 export * from "./SessionLeaveConfirmDialog";
 export * from "./useSessionPaymentPlan";
+export * from "./useSessionDetailData";
+export * from "./SessaoDetalheSkeleton";

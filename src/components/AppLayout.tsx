@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { Suspense, useState, useMemo, useEffect } from "react";
 import { LogOut, ShieldCheck, Settings, FlaskConical, SlidersHorizontal, Smartphone, Monitor, UserCog, UserPlus, Star, Zap, ArrowLeft, User } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { PatientAvatar } from "@/components/patients/PatientAvatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import {
@@ -127,6 +128,13 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     (location.pathname.startsWith("/configuracoes") && !location.pathname.startsWith("/clinica")) ||
     new URLSearchParams(location.search).get("origem") === "pessoal";
 
+  const [patientTopBarMeta, setPatientTopBarMeta] = useState<{
+    id?: string;
+    patientKey?: string;
+    avatarUrl?: string | null;
+    gender?: string | null;
+  } | null>(null);
+
   const [patientTopBarTitle, setPatientTopBarTitle] = useState<string | null>(() => {
     try {
       const isPatientRoute = window.location.pathname.includes("/pacientes/") || /\/PAC-[A-Z0-9_-]+/i.test(window.location.pathname);
@@ -143,6 +151,16 @@ const AppLayout = ({ children }: AppLayoutProps) => {
     const handleSetPatientTitle = (event: any) => {
       const title = event.detail?.title ?? null;
       setPatientTopBarTitle(title);
+      setPatientTopBarMeta(
+        title
+          ? {
+              id: event.detail?.id,
+              patientKey: event.detail?.patientKey,
+              avatarUrl: event.detail?.avatarUrl ?? null,
+              gender: event.detail?.gender ?? null,
+            }
+          : null,
+      );
       try {
         if (title) {
           window.sessionStorage.setItem("pluri:last_patient_topbar_title", title);
@@ -206,7 +224,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
   const activeRoleOverridesCount = Object.keys(simulatedRoleCapabilityOverrides).length;
 
   return (
-    <div className="min-h-screen flex flex-col w-full bg-background">
+    <div className="min-h-[100dvh] flex flex-col w-full max-w-full min-w-0 overflow-x-clip bg-background">
       {/* 1. Simulation Top Dock - Posicionada no topo absoluto */}
       {isPlatformSupportMode && !isPreviewIframe && (
         <SimulationTopDock
@@ -257,14 +275,26 @@ const AppLayout = ({ children }: AppLayoutProps) => {
                   size="icon"
                   onClick={() => navigate(clinicHomePath)}
                   aria-label="Voltar para a página inicial"
-                  className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 rounded-full hover:bg-muted"
+                  className="h-11 w-11 sm:h-9 sm:w-9 shrink-0 rounded-full hover:bg-muted"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary border border-primary/20">
-                    <User className="h-4 w-4" />
-                  </div>
+                  {patientTopBarMeta?.id ? (
+                    <PatientAvatar
+                      patientId={patientTopBarMeta.id}
+                      patientCode={patientTopBarMeta.patientKey}
+                      patientName={patientTopBarTitle}
+                      avatarUrl={patientTopBarMeta.avatarUrl}
+                      gender={patientTopBarMeta.gender}
+                      size="sm"
+                      showViewPatientAction={false}
+                    />
+                  ) : (
+                    <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary border border-primary/20">
+                      <User className="h-4 w-4" />
+                    </div>
+                  )}
                   <h1 className="text-base sm:text-lg font-bold text-foreground tracking-tight truncate max-w-[170px] xs:max-w-[220px] sm:max-w-[340px] md:max-w-none">
                     {patientTopBarTitle}
                   </h1>
@@ -401,8 +431,17 @@ const AppLayout = ({ children }: AppLayoutProps) => {
       {viewMode === "mobile" && isPlatformSupportMode && !isPreviewIframe ? (
         <MobileTouchSimulator iframeSrc={iframeSrc} />
       ) : (
-        <main className="min-w-0 flex-1 px-2 py-4 sm:p-6 lg:px-8">
-          {children}
+        <main className="w-full max-w-full min-w-0 flex-1 px-2.5 py-3 sm:p-6 lg:px-8">
+          <Suspense
+            fallback={
+              <div className="mx-auto max-w-5xl space-y-4 py-4">
+                <div className="h-24 rounded-2xl bg-muted/50 animate-pulse" />
+                <div className="h-64 rounded-2xl bg-muted/40 animate-pulse" />
+              </div>
+            }
+          >
+            {children}
+          </Suspense>
         </main>
       )}
 

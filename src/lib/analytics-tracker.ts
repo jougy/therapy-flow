@@ -63,6 +63,13 @@ export function initGlobalAnalytics(subproductOverride?: SubproductConfig): Subp
   }
   isAnalyticsInitialized = true;
 
+  // GA4 e Microsoft Clarity são exclusivos das landing pages (não injetar no SaaS/app.*)
+  const hostname = window.location.hostname.toLowerCase();
+  const isAppHost = hostname.startsWith("app.") || hostname === "localhost" || hostname === "127.0.0.1";
+  if (isAppHost) {
+    return subproduct;
+  }
+
   // Adiar injeção de scripts pesados de terceiros até que o usuário interaja ou após tempo limite estendido (não impacta PageSpeed de primeira carga)
   const scheduleThirdPartyScript = (injector: () => void) => {
     if (typeof window === "undefined") return;

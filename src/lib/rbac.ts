@@ -342,7 +342,6 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
     case "sessions.write_others":
     case "sessions.delete":
     case "patients.delete":
-    case "marketing.affiliates.view":
     case "marketing.affiliates.manage":
     case "marketing.zap.view":
     case "marketing.zap.manage":
@@ -353,6 +352,10 @@ export const hasDefaultCapability = (context: MembershipContext, capability: Acc
 
     case "marketing.affiliates.withdraw":
       return isAccountOwner(context);
+
+    case "marketing.affiliates.view":
+      // Exclusivo para usuários marcados como afiliados (ou override explícito / platform_owner)
+      return false;
 
     case "forms.read":
       return hasOperationalRole(context, ["owner", "admin", "professional"]);

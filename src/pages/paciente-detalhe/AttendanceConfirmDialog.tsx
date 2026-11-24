@@ -31,7 +31,7 @@ export function AttendanceConfirmDialog({
 }: AttendanceConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Atendimento Agendado Encontrado</DialogTitle>
           <DialogDescription>
@@ -49,15 +49,19 @@ export function AttendanceConfirmDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-2.5 py-2">
+        <div className="flex flex-col gap-2.5 py-2 min-w-0 max-w-full">
           <Button
             type="button"
-            className="w-full justify-start text-left h-auto py-2.5 px-3"
+            className="w-full min-w-0 min-h-[44px] whitespace-normal justify-start text-left h-auto py-3 px-3.5"
             onClick={onConfirmAttendanceWithPendingEvent}
           >
-            <div className="flex flex-col items-start gap-0.5">
-              <span className="font-semibold text-xs sm:text-sm">Confirmar presença e iniciar</span>
-              <span className="text-[11px] opacity-85 font-normal">Aproveita o horário agendado e inicia o atendimento agora.</span>
+            <div className="flex flex-col items-start gap-0.5 min-w-0 w-full">
+              <span className="font-semibold text-xs sm:text-sm break-words whitespace-normal leading-snug">
+                Confirmar presença e iniciar
+              </span>
+              <span className="text-[11px] opacity-85 font-normal break-words whitespace-normal leading-snug">
+                Aproveita o horário agendado e inicia o atendimento agora.
+              </span>
             </div>
           </Button>
 
@@ -65,12 +69,16 @@ export function AttendanceConfirmDialog({
             <Button
               type="button"
               variant="secondary"
-              className="w-full justify-start text-left h-auto py-2.5 px-3 border border-border/60 hover:bg-muted"
+              className="w-full min-w-0 min-h-[44px] whitespace-normal justify-start text-left h-auto py-3 px-3.5 border border-border/60 hover:bg-muted"
               onClick={onStartUnscheduledAttendance}
             >
-              <div className="flex flex-col items-start gap-0.5">
-                <span className="font-semibold text-xs sm:text-sm">Iniciar como atendimento avulso</span>
-                <span className="text-[11px] text-muted-foreground font-normal">Inicia um novo atendimento agora sem alterar a vaga futura na agenda.</span>
+              <div className="flex flex-col items-start gap-0.5 min-w-0 w-full">
+                <span className="font-semibold text-xs sm:text-sm break-words whitespace-normal leading-snug">
+                  Iniciar como atendimento avulso
+                </span>
+                <span className="text-[11px] text-muted-foreground font-normal break-words whitespace-normal leading-snug">
+                  Inicia um novo atendimento agora sem alterar a vaga futura na agenda.
+                </span>
               </div>
             </Button>
           )}
@@ -78,18 +86,22 @@ export function AttendanceConfirmDialog({
           <Button
             type="button"
             variant="ghost"
-            className="w-full justify-start text-left h-auto py-2.5 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="w-full min-w-0 min-h-[44px] whitespace-normal justify-start text-left h-auto py-3 px-3.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => void onCancelPendingAgendaEvent()}
           >
-            <div className="flex flex-col items-start gap-0.5">
-              <span className="font-semibold text-xs sm:text-sm">Cancelar agendamento / Paciente faltou</span>
-              <span className="text-[11px] opacity-80 font-normal">Cancela o agendamento e registra falta no prontuário.</span>
+            <div className="flex flex-col items-start gap-0.5 min-w-0 w-full">
+              <span className="font-semibold text-xs sm:text-sm break-words whitespace-normal leading-snug">
+                Cancelar agendamento / Paciente faltou
+              </span>
+              <span className="text-[11px] opacity-80 font-normal break-words whitespace-normal leading-snug">
+                Cancela o agendamento e registra falta no prontuário.
+              </span>
             </div>
           </Button>
         </div>
 
-        <DialogFooter className="sm:justify-end border-t pt-3">
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+        <DialogFooter className="sm:justify-end border-t pt-3 pb-safe">
+          <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto min-h-[44px]" onClick={onClose}>
             Voltar
           </Button>
         </DialogFooter>

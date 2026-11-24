@@ -2,6 +2,8 @@ export * from "./pacienteDetalheTypes";
 export * from "./pacienteDetalheHelpers";
 export * from "./SessionTabsPreview";
 export * from "./SessionCard";
+export * from "./SessionCardCompact";
+export * from "./SessionCardDetailed";
 export * from "./EditEvolutionGroupDialog";
 export * from "./CareLineGroupDialog";
 export * from "./DeleteCareLineDialog";

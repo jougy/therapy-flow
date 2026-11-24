@@ -1,6 +1,19 @@
 import { useSyncExternalStore } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { createAppDiagnosticError, type AppDiagnosticError, type AppDiagnosticStage } from "@/lib/app-diagnostics";
+import { createAppDiagnosticError, type AppDiagnosticError } from "@/lib/app-diagnostics";
+import { isOfflineOrNetworkError } from "@/lib/local-first/networkError";
+import {
+  clearOfflineFileBlob,
+  getPendingOfflineFileBlobIds,
+  loadOfflineFileBlob,
+  persistOfflineFileBlob,
+} from "@/lib/local-first/offlineFileBlobStore";
+import { resolveOfflineEntityId } from "@/lib/local-first/reconciliationMap";
+import {
+  createUploadDiagnosticException,
+  invokePatientFileEdgeFunction,
+  PatientFileUploadDiagnosticException,
+  uploadWithProgress,
+} from "@/lib/patient-file-upload-transport";
 import {
   getPatientUploadCategoryFromContentType,
   normalizePatientUploadContentType,
@@ -34,6 +47,7 @@ export type PatientFileUploadQueueItem = {
   error: string | null;
   fileName: string;
   id: string;
+  offlineMessage?: string | null;
   patientId: string;
   progress: number;
   sessionId: string | null;
@@ -52,16 +66,6 @@ const listeners = new Set<() => void>();
 let items: PatientFileUploadQueueItem[] = [];
 let worker: Worker | null = null;
 const pendingResolvers = new Map<string, { reject: (error: Error) => void; resolve: (file: PatientFileUploadProcessedFile) => void }>();
-
-class PatientFileUploadDiagnosticException extends Error {
-  diagnosticError: AppDiagnosticError;
-
-  constructor(diagnosticError: AppDiagnosticError) {
-    super(diagnosticError.originalMessage);
-    this.name = "PatientFileUploadDiagnosticException";
-    this.diagnosticError = diagnosticError;
-  }
-}
 
 const emit = () => {
   listeners.forEach((listener) => listener());
@@ -109,55 +113,6 @@ const processFile = (jobId: string, file: File) =>
     getWorker().postMessage({ file, jobId });
   });
 
-const uploadWithProgress = ({
-  blob,
-  context,
-  headers,
-  jobId,
-  uploadUrl,
-}: {
-  blob: Blob;
-  context: Record<string, string | number | null>;
-  headers: Record<string, string>;
-  jobId: string;
-  uploadUrl: string;
-}) =>
-  new Promise<void>((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open("PUT", uploadUrl);
-    Object.entries(headers).forEach(([key, value]) => request.setRequestHeader(key, value));
-    request.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        patchItem(jobId, { progress: Math.min(92, 40 + Math.round((event.loaded / event.total) * 50)) });
-      }
-    };
-    request.onerror = () => reject(new PatientFileUploadDiagnosticException(createAppDiagnosticError({
-      category: "network",
-      context,
-      error: new Error("Falha de rede durante o upload."),
-      probableCause: "A conexão pode ter caído, o navegador bloqueou a requisição ou o storage não respondeu.",
-      stage: "Enviar para storage",
-      title: "Falha de rede no envio ao Backblaze",
-    })));
-    request.onload = () => {
-      if (request.status >= 200 && request.status < 300) {
-        resolve();
-        return;
-      }
-      reject(new PatientFileUploadDiagnosticException(createAppDiagnosticError({
-        category: "storage",
-        context,
-        error: new Error(`Backblaze recusou o upload (${request.status}).`),
-        probableCause: "A assinatura da URL, o CORS, o content-type ou a permissão do bucket podem estar divergentes.",
-        stage: "Enviar para storage",
-        status: request.status,
-        technicalDetails: request.responseText,
-        title: "Backblaze recusou o upload",
-      })));
-    };
-    request.send(blob);
-  });
-
 const getUploadContext = (input: EnqueuePatientFileUploadInput, file: File | PatientFileUploadProcessedFile) => ({
   clinicId: input.clinicId,
   contentType: "type" in file ? file.type : file.storedContentType,
@@ -167,105 +122,20 @@ const getUploadContext = (input: EnqueuePatientFileUploadInput, file: File | Pat
   sessionId: input.sessionId ?? null,
 });
 
-const createUploadDiagnosticException = ({
-  context,
-  error,
-  functionName,
-  stage,
-  status,
-  technicalDetails,
-}: {
-  context: Record<string, string | number | null>;
-  error: unknown;
-  functionName?: string;
-  stage: AppDiagnosticStage;
-  status?: number;
-  technicalDetails?: unknown;
-}) =>
-  new PatientFileUploadDiagnosticException(createAppDiagnosticError({
-    category: functionName ? "edge_function" : stage === "Processar arquivo" ? "processing" : "unknown",
-    context,
-    error,
-    functionName,
-    stage,
-    status,
-    technicalDetails,
-  }));
-
-const invokePatientFileEdgeFunction = async <TData>(
-  functionName: "b2-confirm-upload" | "b2-delete-upload" | "b2-upload-url",
-  body: Record<string, unknown>,
-  context: Record<string, string | number | null>,
-  stage: AppDiagnosticStage,
+const uploadProcessedFile = async (
+  input: { clinicId: string; patientId: string; sessionId?: string | null },
+  jobId: string,
+  processed: PatientFileUploadProcessedFile,
 ) => {
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body,
-  });
-
-  if (error) {
-    let status = 400;
-    let message = error.message;
-    let technicalDetails: unknown = error;
-
-    // Se o erro tiver contexto de resposta (FunctionsHttpError)
-    if ("context" in error && error.context && typeof error.context === "object") {
-      const resp = error.context as Response;
-      if (resp.status) status = resp.status;
-      try {
-        const cloned = resp.clone();
-        const jsonBody = await cloned.json();
-        if (jsonBody && typeof jsonBody === "object") {
-          technicalDetails = jsonBody;
-          if (typeof jsonBody.error === "string") {
-            message = jsonBody.error;
-          }
-        }
-      } catch {
-        // Fallback para response texto simples caso não seja JSON
-        try {
-          const text = await resp.clone().text();
-          if (text) message = text;
-        } catch {
-          // ignora
-        }
-      }
-    }
-
-    throw createUploadDiagnosticException({
-      context,
-      error: new Error(message),
-      functionName,
-      stage,
-      status,
-      technicalDetails,
-    });
-  }
-
-  return data as TData;
-};
-
-const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) => {
-  const validation = validatePatientFileUploadCandidate(input.file);
-  if (!validation.isValid) {
-    throw new Error(validation.errors.join(" "));
-  }
-
-  const initialContext = getUploadContext(input, input.file);
-
-  patchItem(jobId, { progress: 5, status: "processing" });
-  let processed: PatientFileUploadProcessedFile;
-  try {
-    processed = await processFile(jobId, input.file);
-  } catch (error) {
-    throw createUploadDiagnosticException({
-      context: initialContext,
-      error,
-      stage: "Processar arquivo",
-    });
-  }
-
-  patchItem(jobId, { fileName: processed.filename, progress: 35, status: "uploading" });
-  const processedContext = getUploadContext(input, processed);
+  patchItem(jobId, { fileName: processed.filename, offlineMessage: null, progress: 35, status: "uploading" });
+  const processedContext = {
+    clinicId: input.clinicId,
+    contentType: processed.storedContentType,
+    fileName: processed.filename,
+    fileSize: processed.storedByteSize,
+    patientId: input.patientId,
+    sessionId: input.sessionId ?? null,
+  };
 
   const uploadData = await invokePatientFileEdgeFunction<{
     deduplicatedFrom?: string;
@@ -305,9 +175,6 @@ const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) 
 
   patchItem(jobId, { progress: 42, uploadId });
 
-  // Caminho de deduplicação: o servidor reconheceu o arquivo pelo SHA-256 e
-  // apontou para uma entrada existente. Não há necessidade de enviar o binário ao B2
-  // nem de confirmar — o status já foi registrado como "uploaded" pelo servidor.
   if (uploadData?.deduplicatedFrom) {
     patchItem(jobId, { progress: 100, status: "uploaded" });
     window.dispatchEvent(new CustomEvent("patient-file-uploads-updated", {
@@ -333,7 +200,13 @@ const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) 
     });
   }
 
-  await uploadWithProgress({ blob: processed.blob, context: { ...processedContext, uploadId }, headers, jobId, uploadUrl });
+  await uploadWithProgress({
+    blob: processed.blob,
+    context: { ...processedContext, uploadId },
+    headers,
+    onProgress: (progress) => patchItem(jobId, { progress }),
+    uploadUrl,
+  });
 
   patchItem(jobId, { progress: 95, status: "confirming" });
   await invokePatientFileEdgeFunction("b2-confirm-upload", { uploadId }, { ...processedContext, uploadId }, "Confirmar upload");
@@ -346,6 +219,65 @@ const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) 
       uploadId,
     },
   }));
+};
+
+const queueOfflineProcessedFile = async (
+  input: { clinicId: string; patientId: string; sessionId?: string | null },
+  jobId: string,
+  processed: PatientFileUploadProcessedFile,
+) => {
+  await persistOfflineFileBlob({
+    clinicId: input.clinicId,
+    createdAt: Date.now(),
+    jobId,
+    patientId: input.patientId,
+    processed,
+    sessionId: input.sessionId ?? null,
+  });
+  patchItem(jobId, {
+    diagnosticError: null,
+    error: null,
+    fileName: processed.filename,
+    offlineMessage: "Salvo offline — envio automático ao reconectar.",
+    progress: 35,
+    status: "queued",
+  });
+};
+
+const startUpload = async (input: EnqueuePatientFileUploadInput, jobId: string) => {
+  const validation = validatePatientFileUploadCandidate(input.file);
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join(" "));
+  }
+
+  const initialContext = getUploadContext(input, input.file);
+
+  patchItem(jobId, { progress: 5, status: "processing" });
+  let processed: PatientFileUploadProcessedFile;
+  try {
+    processed = await processFile(jobId, input.file);
+  } catch (error) {
+    throw createUploadDiagnosticException({
+      context: initialContext,
+      error,
+      stage: "Processar arquivo",
+    });
+  }
+
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    await queueOfflineProcessedFile(input, jobId, processed);
+    return;
+  }
+
+  try {
+    await uploadProcessedFile(input, jobId, processed);
+  } catch (error) {
+    if (isOfflineOrNetworkError(error)) {
+      await queueOfflineProcessedFile(input, jobId, processed);
+      return;
+    }
+    throw error;
+  }
 };
 
 export const enqueuePatientFileUpload = (input: EnqueuePatientFileUploadInput) => {
@@ -404,7 +336,103 @@ export const clearFinishedPatientFileUploads = () => {
 export const removePatientFileUploadQueueItem = (id: string) => {
   items = items.filter((item) => item.id !== id);
   emit();
+  void clearOfflineFileBlob(id);
 };
+
+let activeOfflineFlushPromise: Promise<{ uploaded: number; failed: number }> | null = null;
+
+export const flushOfflineFileUploads = async (): Promise<{ uploaded: number; failed: number }> => {
+  if (activeOfflineFlushPromise) return activeOfflineFlushPromise;
+
+  activeOfflineFlushPromise = (async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      return { uploaded: 0, failed: 0 };
+    }
+
+    const indexedIds = await getPendingOfflineFileBlobIds();
+    const memoryQueuedIds = items.filter((item) => item.status === "queued").map((item) => item.id);
+    const pendingIds = Array.from(new Set([...indexedIds, ...memoryQueuedIds]));
+    let uploaded = 0;
+    let failed = 0;
+
+    for (const jobId of pendingIds) {
+      const record = await loadOfflineFileBlob(jobId);
+      if (!record?.processed?.blob) {
+        await clearOfflineFileBlob(jobId);
+        continue;
+      }
+
+      if (!items.some((item) => item.id === jobId)) {
+        items = [{
+          clinicId: record.clinicId,
+          diagnosticError: null,
+          error: null,
+          fileName: record.processed.filename,
+          id: jobId,
+          offlineMessage: null,
+          patientId: record.patientId,
+          progress: 35,
+          sessionId: record.sessionId,
+          status: "uploading",
+          uploadId: null,
+        }, ...items].slice(0, 30);
+        emit();
+      }
+
+      const resolvedPatientId = resolveOfflineEntityId(record.patientId);
+      const resolvedSessionId = record.sessionId ? resolveOfflineEntityId(record.sessionId) : null;
+
+      try {
+        await uploadProcessedFile(
+          { clinicId: record.clinicId, patientId: resolvedPatientId, sessionId: resolvedSessionId },
+          jobId,
+          record.processed,
+        );
+        await clearOfflineFileBlob(jobId);
+        uploaded += 1;
+      } catch (error) {
+        if (isOfflineOrNetworkError(error)) {
+          patchItem(jobId, {
+            offlineMessage: "Salvo offline — envio automático ao reconectar.",
+            progress: 35,
+            status: "queued",
+          });
+          break;
+        }
+        const diagnosticError = error instanceof PatientFileUploadDiagnosticException
+          ? error.diagnosticError
+          : createAppDiagnosticError({
+              context: {
+                clinicId: record.clinicId,
+                fileName: record.processed.filename,
+                fileSize: record.processed.storedByteSize,
+                patientId: resolvedPatientId,
+                sessionId: resolvedSessionId,
+              },
+              error,
+              stage: "Erro técnico",
+            });
+        patchItem(jobId, { diagnosticError, error: diagnosticError.humanSummary, offlineMessage: null, status: "failed" });
+        await clearOfflineFileBlob(jobId);
+        failed += 1;
+      }
+    }
+
+    return { uploaded, failed };
+  })().finally(() => {
+    activeOfflineFlushPromise = null;
+  });
+
+  return activeOfflineFlushPromise;
+};
+
+let offlineUploadListenersRegistered = false;
+if (typeof window !== "undefined" && !offlineUploadListenersRegistered) {
+  offlineUploadListenersRegistered = true;
+  window.addEventListener("online", () => {
+    void flushOfflineFileUploads();
+  });
+}
 
 export const deleteUploadedPatientFile = async ({
   clinicId,

@@ -9,8 +9,21 @@ services:
     volumes:
       - evolution_redis_data:/data:z
 
+  evolution-postgres:
+    image: postgres:16-alpine
+    container_name: pluri-marketing-postgres
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: "0.25"
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data:z
+
   evolution-api:
-    image: atendai/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api:latest
     container_name: pluri-marketing-evolution
     restart: unless-stopped
     mem_limit: 384m
@@ -19,9 +32,19 @@ services:
       - "127.0.0.1:8085:8080"
     depends_on:
       - evolution-redis
+      - evolution-postgres
     environment:
       SERVER_PORT: 8080
       SERVER_URL: ${EVOLUTION_PUBLIC_URL:-http://localhost:8085}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@evolution-postgres:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_exchange
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?Defina EVOLUTION_API_KEY via Pulumi ESC ou .env}
       AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
       CACHE_REDIS_ENABLED: "true"
@@ -32,7 +55,7 @@ services:
       WEBHOOK_GLOBAL_URL: ${SUPABASE_WEBHOOK_URL:?Defina SUPABASE_WEBHOOK_URL apontando para marketing-zap-gateway}
       WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS: "false"
       DEL_INSTANCE: "false"
-      CONFIG_SESSION_PHONE_CLIENT: PluriGrowthOS
+      CONFIG_SESSION_PHONE_CLIENT: Chrome
       CONFIG_SESSION_PHONE_NAME: Chrome
     volumes:
       - evolution_instances_data:/evolution/instances:z
@@ -156,6 +179,7 @@ services:
 
 volumes:
   evolution_redis_data:
+  evolution_postgres_data:
   evolution_instances_data:
   ollama_models_data:
   caddy_data:

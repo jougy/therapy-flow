@@ -138,20 +138,74 @@ interface OllamaTagsResponse {
   models?: Array<{ name?: string; model?: string; details?: { parameter_size?: string } }>;
 }
 
+export function normalizeOllamaRootUrl(baseUrl = "http://127.0.0.1:11434"): string {
+  return (baseUrl || "http://127.0.0.1:11434")
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/v1$/i, "");
+}
+
+export function normalizeOllamaOpenAiUrl(baseUrl = "http://127.0.0.1:11434"): string {
+  return `${normalizeOllamaRootUrl(baseUrl)}/v1`;
+}
+
+export async function tryLocalBrowserOllamaReply(
+  systemPrompt: string,
+  userMessage: string,
+  maxChars = 420,
+  preferredModel?: string,
+  baseUrl = "http://127.0.0.1:11434",
+): Promise<{ reply: string; modelUsed: string } | null> {
+  const endpoint = `${normalizeOllamaOpenAiUrl(baseUrl)}/chat/completions`;
+  const modelsToTry = [preferredModel, "mimo-v2.6:latest", "gemma4:12b"].filter(
+    (m, i, arr): m is string => Boolean(m) && arr.indexOf(m) === i,
+  );
+  for (const model of modelsToTry) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          temperature: 0.45,
+          max_tokens: 220,
+          reasoning_effort: "none",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage },
+          ],
+        }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const payload = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      const text = (payload.choices?.[0]?.message?.content || "").trim();
+      if (text) return { reply: text.slice(0, maxChars), modelUsed: `ollama-local/${model}` };
+    } catch {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
 export async function discoverLocalOllamaModels(
   baseUrl = "http://127.0.0.1:11434",
 ): Promise<LlmModelCatalogItem[]> {
-  const cleanBase = (baseUrl || "http://127.0.0.1:11434").trim().replace(/\/+$/, "");
-  const payload = await fetchJsonWithTimeout<OllamaTagsResponse>(`${cleanBase}/api/tags`, 2500);
+  const cleanRoot = normalizeOllamaRootUrl(baseUrl);
+  const payload = await fetchJsonWithTimeout<OllamaTagsResponse>(`${cleanRoot}/api/tags`, 3500);
   if (!payload?.models || !Array.isArray(payload.models)) return [];
 
   return payload.models
     .map((entry): LlmModelCatalogItem | null => {
       const id = (entry.name || entry.model || "").trim();
-      if (!id) return null;
+      if (!id || id.includes("embed")) return null;
       const lower = id.toLowerCase();
       const paramHint = entry.details?.parameter_size ? ` (${entry.details.parameter_size})` : "";
-      const supportsThinking = lower.includes("gemma4") || lower.includes("deepseek") || lower.includes("qwen3");
+      const supportsThinking =
+        lower.includes("gemma4") || lower.includes("mimo") || lower.includes("deepseek") || lower.includes("qwen3");
       return {
         id,
         name: `${id}${paramHint}`,
@@ -163,8 +217,8 @@ export async function discoverLocalOllamaModels(
         isPulumiDefault: false,
         supportsThinking,
         disableThinkingRecommended: supportsThinking,
-        contextWindow: 32768,
-        speedTier: lower.includes("3b") || lower.includes("1b") ? "ultra_fast" : "fast",
+        contextWindow: 262144,
+        speedTier: lower.includes("mimo") || lower.includes("3b") || lower.includes("1b") ? "ultra_fast" : "fast",
         notes: "Detectado automaticamente no Ollama deste dispositivo.",
       };
     })

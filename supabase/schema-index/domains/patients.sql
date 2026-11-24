@@ -430,6 +430,65 @@ begin
 end;
 $$;
 
+-- [RPC/FUNCTION] get_document_signature_by_token (schema.sql L5833-L5889)
+CREATE OR REPLACE FUNCTION "public"."get_document_signature_by_token"("p_token" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions', 'pg_temp'
+    AS $$
+DECLARE
+  _token_clean text := trim(coalesce(p_token, ''));
+  _doc public.clinic_document_signatures%ROWTYPE;
+  _clinic_name text;
+  _clinic_logo_url text;
+  _patient_name text;
+BEGIN
+  IF _token_clean = '' THEN
+    RAISE EXCEPTION 'Token de assinatura inválido.';
+  END IF;
+
+  SELECT *
+  INTO _doc
+  FROM public.clinic_document_signatures
+  WHERE sign_token = _token_clean
+    AND deleted_at IS NULL
+  LIMIT 1;
+
+  IF _doc.id IS NULL THEN
+    RAISE EXCEPTION 'Documento para assinatura não encontrado ou removido.';
+  END IF;
+
+  SELECT c.name, c.logo_url
+  INTO _clinic_name, _clinic_logo_url
+  FROM public.clinics c
+  WHERE c.id = _doc.clinic_id;
+
+  SELECT p.name
+  INTO _patient_name
+  FROM public.patients p
+  WHERE p.id = _doc.patient_id
+    AND p.deleted_at IS NULL;
+
+  RETURN jsonb_build_object(
+    'id', _doc.id,
+    'clinic_id', _doc.clinic_id,
+    'clinic_name', COALESCE(NULLIF(trim(_clinic_name), ''), 'Clínica'),
+    'clinic_logo_url', _clinic_logo_url,
+    'patient_id', _doc.patient_id,
+    'patient_name', _patient_name,
+    'session_id', _doc.session_id,
+    'template_id', _doc.template_id,
+    'template_title', _doc.template_title,
+    'rendered_markdown', _doc.rendered_markdown,
+    'status', _doc.status,
+    'signer_name', _doc.signer_name,
+    'signer_role', _doc.signer_role,
+    'signed_at', _doc.signed_at,
+    'already_signed', (_doc.status IN ('signed_in_person', 'signed_remote')),
+    'created_at', _doc.created_at
+  );
+END;
+$$;
+
 -- [RPC/FUNCTION] get_patient_registration_form (schema.sql L5895-L5975)
 CREATE OR REPLACE FUNCTION "public"."get_patient_registration_form"("_token" "text", "_password" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -576,60 +635,87 @@ BEGIN
 END;
 $$;
 
--- [RPC/FUNCTION] schedule_patient_appointment (schema.sql L12197-L12251)
-CREATE OR REPLACE FUNCTION "public"."schedule_patient_appointment"("_clinic_id" "uuid", "_patient_id" "uuid", "_title" "text", "_scheduled_for" timestamp with time zone, "_duration_minutes" integer DEFAULT 50, "_event_type" "text" DEFAULT 'atendimento'::"text", "_status" "text" DEFAULT 'confirmado'::"text") RETURNS TABLE("id" "uuid", "clinic_id" "uuid", "patient_id" "uuid", "title" "text", "scheduled_for" timestamp with time zone, "duration_minutes" integer, "status" "text", "event_type" "text")
+-- [RPC/FUNCTION] submit_document_signature_by_token (schema.sql L12559-L12640)
+CREATE OR REPLACE FUNCTION "public"."submit_document_signature_by_token"("p_token" "text", "p_signer_name" "text", "p_signer_cpf" "text", "p_signature_image_url" "text", "p_metadata" "jsonb" DEFAULT '{}'::"jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    SET "search_path" TO 'public', 'auth'
+    SET "search_path" TO 'public', 'extensions', 'pg_temp'
     AS $$
 DECLARE
-  v_event_id uuid;
+  _token_clean text := trim(coalesce(p_token, ''));
+  _signer_name text := left(trim(coalesce(p_signer_name, '')), 200);
+  _signer_cpf text := nullif(regexp_replace(coalesce(p_signer_cpf, ''), '\D', '', 'g'), '');
+  _signature_url text := nullif(trim(coalesce(p_signature_image_url, '')), '');
+  _metadata jsonb := COALESCE(p_metadata, '{}'::jsonb);
+  _doc public.clinic_document_signatures%ROWTYPE;
+  _updated public.clinic_document_signatures%ROWTYPE;
+  _merged_metadata jsonb;
 BEGIN
-  -- Validação de autenticação e contexto
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'Usuario nao autenticado.';
+  IF _token_clean = '' THEN
+    RAISE EXCEPTION 'Token de assinatura inválido.';
   END IF;
 
-  IF NOT public.current_user_can('agenda.write', _clinic_id) THEN
-    RAISE EXCEPTION 'Sem permissao para criar agendamentos nesta clinica.';
+  IF length(_signer_name) < 2 THEN
+    RAISE EXCEPTION 'Informe o nome completo do assinante.';
   END IF;
 
-  -- Inserção atômica utilizando generate_uuidv7
-  v_event_id := public.generate_uuidv7();
+  IF _signer_cpf IS NOT NULL AND length(_signer_cpf) <> 11 THEN
+    RAISE EXCEPTION 'CPF inválido. Informe os 11 dígitos.';
+  END IF;
 
-  INSERT INTO public.agenda_events (
-    id,
-    clinic_id,
-    patient_id,
-    user_id,
-    title,
-    scheduled_for,
-    duration_minutes,
-    status,
-    event_type
-  ) VALUES (
-    v_event_id,
-    _clinic_id,
-    _patient_id,
-    auth.uid(),
-    trim(_title),
-    _scheduled_for,
-    COALESCE(_duration_minutes, 50),
-    COALESCE(_status, 'confirmado'),
-    COALESCE(_event_type, 'atendimento')
+  IF _signature_url IS NULL THEN
+    RAISE EXCEPTION 'A assinatura visual é obrigatória.';
+  END IF;
+
+  SELECT *
+  INTO _doc
+  FROM public.clinic_document_signatures
+  WHERE sign_token = _token_clean
+    AND deleted_at IS NULL
+  FOR UPDATE;
+
+  IF _doc.id IS NULL THEN
+    RAISE EXCEPTION 'Documento para assinatura não encontrado ou removido.';
+  END IF;
+
+  IF _doc.status IN ('signed_in_person', 'signed_remote') THEN
+    RAISE EXCEPTION 'Este documento já foi assinado anteriormente.';
+  END IF;
+
+  _merged_metadata := COALESCE(_doc.signature_metadata, '{}'::jsonb)
+    || _metadata
+    || jsonb_build_object(
+      'server_signed_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+      'signed_method', 'remote_link'
+    );
+
+  UPDATE public.clinic_document_signatures
+  SET
+    status = 'signed_remote',
+    signer_name = _signer_name,
+    signer_cpf = COALESCE(_signer_cpf, signer_cpf),
+    signer_role = COALESCE(
+      signer_role,
+      CASE
+        WHEN (_metadata ->> 'signer_role') IN ('paciente', 'responsavel', 'colaborador', 'owner')
+          THEN (_metadata ->> 'signer_role')
+        ELSE NULL
+      END
+    ),
+    signature_image_url = _signature_url,
+    signature_metadata = _merged_metadata,
+    signed_at = now(),
+    updated_at = now()
+  WHERE id = _doc.id
+  RETURNING * INTO _updated;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'id', _updated.id,
+    'status', _updated.status,
+    'signer_name', _updated.signer_name,
+    'signed_at', _updated.signed_at,
+    'template_title', _updated.template_title
   );
-
-  RETURN QUERY
-  SELECT 
-    ae.id,
-    ae.clinic_id,
-    ae.patient_id,
-    ae.title,
-    ae.scheduled_for,
-    ae.duration_minutes,
-    ae.status,
-    ae.event_type
-  FROM public.agenda_events ae
-  WHERE ae.id = v_event_id;
 END;
 $$;
 
@@ -923,6 +1009,47 @@ BEGIN
 END;
 $$;
 
+-- [TABLE] clinic_document_signatures (schema.sql L15520-L15542)
+CREATE TABLE IF NOT EXISTS "public"."clinic_document_signatures" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "patient_id" "uuid" NOT NULL,
+    "session_id" "uuid",
+    "template_id" "uuid",
+    "template_title" "text" NOT NULL,
+    "rendered_markdown" "text" NOT NULL,
+    "sign_token" "text" DEFAULT "replace"(("gen_random_uuid"())::"text", '-'::"text", ''::"text") NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "signer_name" "text",
+    "signer_cpf" "text",
+    "signer_role" "text",
+    "signature_image_url" "text",
+    "signature_metadata" "jsonb" DEFAULT '{}'::"jsonb",
+    "signed_at" timestamp with time zone,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone,
+    CONSTRAINT "clinic_document_signatures_signer_role_check" CHECK ((("signer_role" IS NULL) OR ("signer_role" = ANY (ARRAY['paciente'::"text", 'responsavel'::"text", 'colaborador'::"text", 'owner'::"text"])))),
+    CONSTRAINT "clinic_document_signatures_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'signed_in_person'::"text", 'signed_remote'::"text", 'pending_physical'::"text"])))
+);
+
+-- [TABLE] clinic_document_templates (schema.sql L15572-L15585)
+CREATE TABLE IF NOT EXISTS "public"."clinic_document_templates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "clinic_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "description" "text",
+    "category" "text" DEFAULT 'custom'::"text" NOT NULL,
+    "content_md" "text" NOT NULL,
+    "variables" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "is_active" boolean DEFAULT true NOT NULL,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "deleted_at" timestamp with time zone
+);
+
 -- [TABLE] patient_clinical_snapshots (schema.sql L16066-L16076)
 CREATE TABLE IF NOT EXISTS "public"."patient_clinical_snapshots" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -1157,6 +1284,9 @@ CREATE POLICY "Authenticated users can update their own registration links" ON "
 -- [POLICY] Authenticated users can view their own registration links ON patient_registration_links (schema.sql L19636-L19636)
 CREATE POLICY "Authenticated users can view their own registration links" ON "public"."patient_registration_links" FOR SELECT TO "authenticated" USING (("created_by" = "auth"."uid"()));
 
+-- [POLICY] Super admins manage all clinic document signatures ON clinic_document_signatures (schema.sql L19928-L19928)
+CREATE POLICY "Super admins manage all clinic document signatures" ON "public"."clinic_document_signatures" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
+
 -- [POLICY] Super admins manage all evolution groups ON patient_evolution_groups (schema.sql L19936-L19936)
 CREATE POLICY "Super admins manage all evolution groups" ON "public"."patient_evolution_groups" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
@@ -1169,17 +1299,35 @@ CREATE POLICY "Super admins manage all patients" ON "public"."patients" TO "auth
 -- [POLICY] Super admins manage all payment plans ON patient_payment_plans (schema.sql L19948-L19948)
 CREATE POLICY "Super admins manage all payment plans" ON "public"."patient_payment_plans" TO "authenticated" USING ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role")) WITH CHECK ("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role"));
 
+-- [POLICY] Users delete clinic document signatures ON clinic_document_signatures (schema.sql L20016-L20016)
+CREATE POLICY "Users delete clinic document signatures" ON "public"."clinic_document_signatures" FOR DELETE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('patients.delete'::"text", "clinic_id"))));
+
+-- [POLICY] Users delete clinic document templates ON clinic_document_templates (schema.sql L20020-L20020)
+CREATE POLICY "Users delete clinic document templates" ON "public"."clinic_document_templates" FOR DELETE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
+
 -- [POLICY] Users delete clinic patients ON patients (schema.sql L20030-L20030)
 CREATE POLICY "Users delete clinic patients" ON "public"."patients" FOR DELETE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.delete'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids")))));
 
 -- [POLICY] Users delete patient file uploads ON patient_file_uploads (schema.sql L20042-L20042)
 CREATE POLICY "Users delete patient file uploads" ON "public"."patient_file_uploads" FOR DELETE TO "authenticated" USING ((("clinic_id" IS NOT NULL) AND ("public"."current_user_can"('patients.delete'::"text", "clinic_id") OR "public"."current_user_can"('patients.write'::"text", "clinic_id"))));
 
+-- [POLICY] Users insert clinic document signatures ON clinic_document_signatures (schema.sql L20050-L20050)
+CREATE POLICY "Users insert clinic document signatures" ON "public"."clinic_document_signatures" FOR INSERT TO "authenticated" WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
+
+-- [POLICY] Users insert clinic document templates ON clinic_document_templates (schema.sql L20054-L20054)
+CREATE POLICY "Users insert clinic document templates" ON "public"."clinic_document_templates" FOR INSERT TO "authenticated" WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
+
 -- [POLICY] Users insert patient file uploads ON patient_file_uploads (schema.sql L20072-L20072)
 CREATE POLICY "Users insert patient file uploads" ON "public"."patient_file_uploads" FOR INSERT TO "authenticated" WITH CHECK ((("uploaded_by_user_id" = "auth"."uid"()) AND ("clinic_id" IS NOT NULL) AND "public"."current_user_can"('patients.write'::"text", "clinic_id")));
 
 -- [POLICY] Users manage clinic payment plans ON patient_payment_plans (schema.sql L20076-L20076)
 CREATE POLICY "Users manage clinic payment plans" ON "public"."patient_payment_plans" TO "authenticated" USING (("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"()))) WITH CHECK (("clinic_id" = "public"."get_user_clinic_id"("auth"."uid"())));
+
+-- [POLICY] Users read clinic document signatures ON clinic_document_signatures (schema.sql L20104-L20104)
+CREATE POLICY "Users read clinic document signatures" ON "public"."clinic_document_signatures" FOR SELECT TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND ("public"."current_user_can"('patients.read'::"text", "clinic_id") OR "public"."current_user_can"('sessions.read'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")) AND (("deleted_at" IS NULL) OR "public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
+
+-- [POLICY] Users read clinic document templates ON clinic_document_templates (schema.sql L20108-L20108)
+CREATE POLICY "Users read clinic document templates" ON "public"."clinic_document_templates" FOR SELECT TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND (("deleted_at" IS NULL) OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_trash.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
 -- [POLICY] Users read clinic evolution groups ON patient_evolution_groups (schema.sql L20112-L20112)
 CREATE POLICY "Users read clinic evolution groups" ON "public"."patient_evolution_groups" FOR SELECT TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND "public"."can_read_clinic_data"("clinic_id") AND "public"."current_user_can"('sessions.read'::"text", "clinic_id")));
@@ -1198,6 +1346,12 @@ CREATE POLICY "Users read patient file uploads" ON "public"."patient_file_upload
 
 -- [POLICY] Users read patient_clinical_snapshots ON patient_clinical_snapshots (schema.sql L20191-L20191)
 CREATE POLICY "Users read patient_clinical_snapshots" ON "public"."patient_clinical_snapshots" FOR SELECT USING ((("auth"."uid"() IS NOT NULL) AND "public"."current_user_can"('patients.read'::"text", "clinic_id")));
+
+-- [POLICY] Users update clinic document signatures ON clinic_document_signatures (schema.sql L20207-L20207)
+CREATE POLICY "Users update clinic document signatures" ON "public"."clinic_document_signatures" FOR UPDATE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id")))) WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('patients.write'::"text", "clinic_id") OR "public"."current_user_can"('sessions.write'::"text", "clinic_id") OR "public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id"))));
+
+-- [POLICY] Users update clinic document templates ON clinic_document_templates (schema.sql L20211-L20211)
+CREATE POLICY "Users update clinic document templates" ON "public"."clinic_document_templates" FOR UPDATE TO "authenticated" USING (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id")))) WITH CHECK (((("clinic_id" = COALESCE((NULLIF(("auth"."jwt"() ->> 'active_clinic_id'::"text"), ''::"text"))::"uuid", "public"."get_user_clinic_id"("auth"."uid"()))) OR "public"."user_has_active_clinic_membership"("auth"."uid"(), "clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND ("public"."current_user_can"('clinic_terms.manage'::"text", "clinic_id") OR "public"."current_user_can"('clinic_profile.manage'::"text", "clinic_id"))));
 
 -- [POLICY] Users update clinic patients ON patients (schema.sql L20215-L20215)
 CREATE POLICY "Users update clinic patients" ON "public"."patients" FOR UPDATE TO "authenticated" USING ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids"))))) WITH CHECK ((("clinic_id" = ( SELECT "public"."get_user_clinic_id"(( SELECT "auth"."uid"() AS "uid")) AS "get_user_clinic_id")) AND (NOT "public"."is_clinic_read_only"("clinic_id")) AND "public"."current_user_can"('patients.write'::"text", "clinic_id") AND ((NOT "is_exclusive") OR "public"."is_clinic_owner"("clinic_id", "auth"."uid"()) OR ("auth"."uid"() = ANY ("exclusive_user_ids")))));

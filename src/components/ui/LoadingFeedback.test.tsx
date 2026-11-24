@@ -26,15 +26,16 @@ describe("LoadingFeedback Component", () => {
     });
     expect(screen.getByText("Buscando dados e histórico...")).toBeInTheDocument();
 
-    // Pass 8 seconds total -> stage 3 (slow network notice)
+    // Pass 8 seconds total -> stage 3 (finalizing data loading, no slow network blame)
     act(() => {
       vi.advanceTimersByTime(4000);
     });
-    expect(screen.getByText("A conexão parece um pouco lenta")).toBeInTheDocument();
+    expect(screen.getByText("Finalizando carregamento dos dados...")).toBeInTheDocument();
+    expect(screen.queryByText("A conexão parece um pouco lenta")).not.toBeInTheDocument();
 
-    // Pass 14 seconds total -> stage 4 (delayed notice with retry button)
+    // Pass 16 seconds total -> stage 4 (delayed notice with retry button)
     act(() => {
-      vi.advanceTimersByTime(6000);
+      vi.advanceTimersByTime(8000);
     });
     expect(screen.getByText("O carregamento está demorando mais do que o esperado")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /tentar novamente/i })).toBeInTheDocument();
@@ -45,7 +46,7 @@ describe("LoadingFeedback Component", () => {
     render(<LoadingFeedback onRetry={onRetry} />);
 
     act(() => {
-      vi.advanceTimersByTime(14000);
+      vi.advanceTimersByTime(16000);
     });
 
     const button = screen.getByRole("button", { name: /tentar novamente/i });
@@ -53,5 +54,16 @@ describe("LoadingFeedback Component", () => {
       button.click();
     });
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows offline notice only when navigator is offline", () => {
+    const originalOnLine = navigator.onLine;
+    Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
+    try {
+      render(<LoadingFeedback />);
+      expect(screen.getByText("Sem conexão com a internet")).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(navigator, "onLine", { value: originalOnLine, configurable: true });
+    }
   });
 });

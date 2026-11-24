@@ -391,12 +391,12 @@ const requirePlatformOwner = async (authorization: string | null) => {
     }
   }
 
-  // Camada 3: admin.from("platform_admins").select("id, role, is_active").eq("user_id", user.id).eq("role", "platform_owner").eq("is_active", true).maybeSingle()
+  // Camada 3: admin.from("platform_admins").select("user_id, role, is_active").eq("user_id", user.id).eq("role", "platform_owner").eq("is_active", true).maybeSingle()
   if (!isOwner) {
     try {
       const { data: platformAdmin, error: adminErr } = await admin
         .from("platform_admins")
-        .select("id, role, is_active")
+        .select("user_id, role, is_active")
         .eq("user_id", user.id)
         .eq("role", "platform_owner")
         .eq("is_active", true)
@@ -412,12 +412,12 @@ const requirePlatformOwner = async (authorization: string | null) => {
     }
   }
 
-  // Camada 4: userClient.from("platform_admins").select("id, role, is_active").eq("user_id", user.id).eq("role", "platform_owner").eq("is_active", true).maybeSingle()
+  // Camada 4: userClient.from("platform_admins").select("user_id, role, is_active").eq("user_id", user.id).eq("role", "platform_owner").eq("is_active", true).maybeSingle()
   if (!isOwner) {
     try {
       const { data: userPlatformAdmin, error: userAdminErr } = await userClient
         .from("platform_admins")
-        .select("id, role, is_active")
+        .select("user_id, role, is_active")
         .eq("user_id", user.id)
         .eq("role", "platform_owner")
         .eq("is_active", true)

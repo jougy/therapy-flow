@@ -266,7 +266,7 @@ describe("PlatformInviteAffiliateModal & buildAffiliateWhatsAppUrl", () => {
 
       await waitFor(() => {
         expect(rpcMock).toHaveBeenCalledWith(
-          "create_user_notification",
+          "platform_send_user_notification",
           expect.objectContaining({
             _body: expect.stringContaining("comissões personalizadas (45.5% / 15%)"),
             _payload: expect.objectContaining({

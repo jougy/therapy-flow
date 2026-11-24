@@ -148,7 +148,26 @@ export async function curateRawLead(raw) {
   if (!raw || raw.error || raw.permanentlyClosed) return null;
 
   const isGoogleMaps = Boolean(raw.placeId || raw.categoryName || raw.searchString);
-  const text = String(raw.source_post_excerpt || raw.postText || raw.text || raw.description || '').trim();
+  const commentsText = Array.isArray(raw.comments)
+    ? raw.comments.map((c) => (typeof c === 'string' ? c : c?.text || '')).join(' ')
+    : '';
+  const reviewsText = Array.isArray(raw.reviews)
+    ? raw.reviews.map((r) => (typeof r === 'string' ? r : r?.text || '')).join(' ')
+    : '';
+  const text = [
+    raw.source_post_excerpt,
+    raw.postText,
+    raw.text,
+    raw.biography,
+    raw.bio,
+    raw.headline,
+    raw.description,
+    commentsText,
+    reviewsText,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
   const fullName = String(
     raw.full_name || raw.authorName || raw.user?.name || raw.name || raw.title || 'Profissional de Saúde'
   ).trim();
@@ -171,8 +190,8 @@ export async function curateRawLead(raw) {
 
   const combinedText = `${fullName} ${raw.categoryName || ''} ${text}`.toLowerCase();
 
-  // Exclui quem já postou sobre ou divulga outros softwares de gestão clínica parecidos
-  if (/clinicorp|feegow|zenfisio|fisioonline|gest[aã]oclick|shosp|amplimed|doctoralia|simples\s*dental|ninsaude|iclinic|vedius|mobifisio|prontu[aá]rio\s*verde|amigo\s*tech/i.test(combinedText)) {
+  // Exclui quem já usa/divulga softwares de gestão clínica, SaaS ou serviços alheios à fisioterapia
+  if (/clinicorp|feegow|zenfisio|fisioonline|gest[aã]oclick|shosp|amplimed|doctoralia|simples\s*dental|ninsaude|iclinic|vedius|mobifisio|prontu[aá]rio\s*verde|amigo\s*tech|vendemos\s*software|erp\s*para\s*cl[ií]nicas|ag[eê]ncia\s*de\s*marketing|tr[aá]fego\s*pago\s*para/i.test(combinedText)) {
     return null;
   }
 

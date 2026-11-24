@@ -2,7 +2,17 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { AgendaEventStatus } from "@/lib/agenda-events";
-import type { PatientGroupStatus, AgendaEvent } from "./pacienteDetalheTypes";
+import {
+  formatMoneyCents,
+  getArrivalDelayMinutes,
+  getPaymentAdjustmentCents,
+  getPaymentAdjustmentPercent,
+  getPaymentStatusLabel,
+  getSessionBalanceCents,
+  getSessionOriginalAmountCents,
+  hasPaymentAdjustment,
+} from "@/lib/session-operations";
+import type { AgendaEvent, PatientGroupStatus, Session } from "./pacienteDetalheTypes";
 
 export const dashboardColors = {
   amber: "#f59e0b",
@@ -317,4 +327,60 @@ export const isLockedSystemGroup = (group: { group_kind?: string | null; is_defa
   getPatientGroupKind(group) !== "custom";
 
 export const EMPTY_ARRAY: never[] = [];
+
+export const SessionOperationalChips = ({
+  session,
+  canViewFinancialData,
+  className = "",
+}: {
+  session: Session;
+  canViewFinancialData: boolean;
+  className?: string;
+}) => {
+  const delayMinutes = getArrivalDelayMinutes(session);
+  const balanceCents = getSessionBalanceCents(session);
+  const originalAmountCents = getSessionOriginalAmountCents(session);
+  const adjustmentCents = getPaymentAdjustmentCents(session);
+  const adjustmentPercent = getPaymentAdjustmentPercent(session);
+  const sessionHasPaymentAdjustment = hasPaymentAdjustment(session);
+  const hasPaymentInfo =
+    session.payment_status !== "nao_cobrado" || Boolean(session.amount_charged_cents || session.amount_paid_cents);
+  const hasScheduleInfo = Boolean(session.scheduled_start_at || session.patient_arrived_at);
+
+  if (!hasScheduleInfo && !(canViewFinancialData && hasPaymentInfo)) {
+    return null;
+  }
+
+  return (
+    <div className={`flex min-w-0 max-w-full flex-wrap gap-2 text-xs text-muted-foreground ${className}`}>
+      {hasScheduleInfo ? (
+        <span
+          className="max-w-full break-words rounded-full bg-muted px-2.5 py-1"
+          title={session.payment_adjustment_reason ?? undefined}
+        >
+          Agendado {formatOperationalTime(session.scheduled_start_at)} · Chegou {formatOperationalTime(session.patient_arrived_at)}
+          {delayMinutes && delayMinutes > 0 ? ` · atraso ${delayMinutes}min` : ""}
+        </span>
+      ) : null}
+      {canViewFinancialData && hasPaymentInfo ? (
+        <span className="max-w-full break-words rounded-full bg-muted px-2.5 py-1">
+          {getPaymentStatusLabel(session.payment_status)} · {formatMoneyCents(session.amount_paid_cents)} de{" "}
+          {sessionHasPaymentAdjustment ? (
+            <>
+              <span className="line-through">{formatMoneyCents(originalAmountCents)}</span>{" "}
+              {formatMoneyCents(session.amount_charged_cents)}
+              <span className={adjustmentCents > 0 ? "ml-1 font-semibold text-success" : "ml-1 font-semibold text-destructive"}>
+                {adjustmentCents > 0 ? "+" : ""}
+                {adjustmentPercent}%
+              </span>
+            </>
+          ) : (
+            formatMoneyCents(session.amount_charged_cents)
+          )}
+          {balanceCents > 0 ? ` · aberto ${formatMoneyCents(balanceCents)}` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+};
 

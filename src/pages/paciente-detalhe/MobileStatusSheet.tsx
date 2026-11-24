@@ -26,17 +26,17 @@ export const MobileStatusSheet: React.FC<MobileStatusSheetProps> = ({
 }) => {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="rounded-t-2xl pb-safe">
+      <SheetContent side="bottom" className="rounded-t-2xl max-w-full min-w-0 pb-safe">
         <SheetHeader className="text-left">
           <SheetTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4 text-primary" />
+            <Activity className="h-4 w-4 text-primary shrink-0" />
             <span>Status do Paciente</span>
           </SheetTitle>
           <SheetDescription className="text-xs">
             Selecione o estado operacional de {patient.name}.
           </SheetDescription>
         </SheetHeader>
-        <div className="space-y-2 py-4">
+        <div className="space-y-2 py-4 min-w-0 max-w-full">
           {EDITABLE_PATIENT_STATUS_OPTIONS.map((statusOption) => {
             const isCurrent = patient.status === statusOption.value;
             return (
@@ -48,13 +48,13 @@ export const MobileStatusSheet: React.FC<MobileStatusSheetProps> = ({
                   onOpenChange(false);
                 }}
                 className={cn(
-                  "w-full flex items-center justify-between p-3 rounded-xl border text-sm font-medium transition-colors",
+                  "w-full min-w-0 min-h-[44px] flex items-center justify-between gap-2 p-3 rounded-xl border text-sm font-medium text-left transition-colors",
                   isCurrent
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border/70 bg-card hover:bg-muted/50 text-foreground"
                 )}
               >
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <span
                     className={cn(
                       "h-2.5 w-2.5 rounded-full shrink-0",
@@ -67,7 +67,7 @@ export const MobileStatusSheet: React.FC<MobileStatusSheetProps> = ({
                         "bg-warning"
                     )}
                   />
-                  <span>{statusOption.label}</span>
+                  <span className="break-words">{statusOption.label}</span>
                 </div>
                 {isCurrent && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
               </button>

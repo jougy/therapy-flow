@@ -1,30 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "@/hooks/use-toast";
 import {
-  DEFAULT_MARKETING_CHIP_DISPLAY,
-  DEFAULT_MARKETING_INSTANCE_KEY,
-  FALLBACK_DEFAULT_AGENTS,
-  FALLBACK_PRIMARY_INSTANCE,
-  type AgentSimulationTurn,
-  type AntiBanConfig,
-  type ConversationFunnelStage,
-  type MarketingAiAgent,
-  type MarketingOptOut,
-  type MarketingWhatsAppInstance,
-  type MarketingZapCampaign,
-  type MarketingZapConversation,
+  DEFAULT_MARKETING_CHIP_DISPLAY, DEFAULT_MARKETING_INSTANCE_KEY, FALLBACK_DEFAULT_AGENTS, FALLBACK_PRIMARY_INSTANCE,
+  type AgentSimulationTurn, type AntiBanConfig, type ConversationFunnelStage, type MarketingAiAgent,
+  type MarketingOptOut, type MarketingWhatsAppInstance, type MarketingZapCampaign, type MarketingZapConversation,
 } from "./types";
 import { formatPhoneBr, normalizePhoneToE164 } from "./antiBanEngine";
+import { checkLocalEvolutionStatus, fetchLocalEvolutionQr, isLocalhostRuntime } from "./localEvolutionFallback";
 import {
-  createPoolInstanceRecord,
-  fetchMarketingAgentsState,
-  invokeZapGateway,
-  marketingDb,
-  runAgentSimulationTurn,
-  saveAgentRecord,
-  updateInstanceAntiBanRecord,
-  type AgentDraftInput,
-  type CampaignDraftInput,
+  createPoolInstanceRecord, fetchMarketingAgentsState, invokeZapGateway, marketingDb,
+  runAgentSimulationTurn, saveAgentRecord, updateInstanceAntiBanRecord,
+  type AgentDraftInput, type CampaignDraftInput,
 } from "./marketingAgentsService";
 
 export type { AgentDraftInput, CampaignDraftInput };
@@ -105,6 +91,29 @@ export function useMarketingAgents() {
         });
       }
     } catch (err) {
+      if (isLocalhostRuntime()) {
+        try {
+          const localQr = await fetchLocalEvolutionQr(instanceKey);
+          if (localQr) {
+            setQrCodeBase64(localQr);
+            setInstances((prev) =>
+              prev.map((item) => (item.instance_key === instanceKey ? { ...item, status: "qr_ready" } : item)),
+            );
+            toast({
+              title: "QR Code gerado (Evolution Local)!",
+              description: `Escaneie com o WhatsApp do chip ${DEFAULT_MARKETING_CHIP_DISPLAY}.`,
+            });
+            return;
+          }
+        } catch (localErr) {
+          toast({
+            title: "Falha ao solicitar QR Code local",
+            description: localErr instanceof Error ? localErr.message : "Verifique a Evolution API em :8085.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
       toast({
         title: "Falha ao solicitar QR Code",
         description: err instanceof Error ? err.message : "Verifique a Evolution API.",
@@ -450,35 +459,11 @@ export function useMarketingAgents() {
   );
 
   return {
-    instances,
-    primaryInstance,
-    agents,
-    campaigns,
-    conversations,
-    optOuts,
-    eligibleLeadsCount,
-    loading,
-    previewFallback,
-    qrCodeBase64,
-    evolutionSetupHint,
-    connectingInstanceKey,
-    simulationTurns,
-    simulating,
-    reload: loadAll,
-    connectInstanceQr,
-    checkInstanceStatus,
-    toggleCircuitBreaker,
-    addExtraInstance,
-    saveAgent,
-    toggleAgentActive,
-    simulateAgentMessage,
-    clearSimulation: () => setSimulationTurns([]),
-    createAndEnqueueCampaign,
-    toggleCampaignStatus,
-    updateAntiBanConfig,
-    addManualOptOut,
-    removeOptOut,
-    toggleConversationHumanMode,
-    updateConversationStage,
+    instances, primaryInstance, agents, campaigns, conversations, optOuts, eligibleLeadsCount,
+    loading, previewFallback, qrCodeBase64, evolutionSetupHint, connectingInstanceKey, simulationTurns, simulating,
+    reload: loadAll, connectInstanceQr, checkInstanceStatus, toggleCircuitBreaker, addExtraInstance,
+    saveAgent, toggleAgentActive, simulateAgentMessage, clearSimulation: () => setSimulationTurns([]),
+    createAndEnqueueCampaign, toggleCampaignStatus, updateAntiBanConfig, addManualOptOut, removeOptOut,
+    toggleConversationHumanMode, updateConversationStage,
   };
 }
