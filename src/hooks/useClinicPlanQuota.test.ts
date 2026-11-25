@@ -1,6 +1,15 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import React from "react";
+import { renderHook as rtlRenderHook, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useClinicPlanQuota } from "./useClinicPlanQuota";
+
+const renderHook: typeof rtlRenderHook = (callback, options) => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const Wrapper = ({ children }: { children: React.ReactNode }) =>
+    React.createElement(QueryClientProvider, { client: queryClient }, children);
+  return rtlRenderHook(callback, { wrapper: Wrapper, ...options });
+};
 
 const supabaseMocks = vi.hoisted(() => ({
   from: vi.fn(),

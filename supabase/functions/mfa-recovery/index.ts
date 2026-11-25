@@ -3,6 +3,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { corsHeaders } from "../_shared/cors.ts";
 import { WhatsAppClient, sanitizeWhatsAppNumber } from "../_shared/whatsapp-client.ts";
 import { ResendClient } from "../_shared/resend-client.ts";
+import {
+  checkRateLimit,
+  checkRateLimits,
+  extractClientIp,
+  rateLimitExceededResponse,
+} from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -96,6 +103,21 @@ Deno.serve(async (req) => {
       const channel = body?.channel;
       if (channel !== "whatsapp" && channel !== "email") {
         return json({ success: false, error: "Canal inválido. Escolha 'whatsapp' ou 'email'." }, 400);
+      }
+
+      const clientIp = extractClientIp(req);
+      const rl = await checkRateLimits([
+        { preset: "mfa_request_ip", identifier: clientIp, service: "mfa-recovery", route: "request_code" },
+        { preset: "mfa_request_user_min", identifier: user.id, service: "mfa-recovery", route: "request_code" },
+        { preset: "mfa_request_user_hour", identifier: user.id, service: "mfa-recovery", route: "request_code" },
+      ]);
+      if (!rl.allowed) {
+        return rateLimitExceededResponse(
+          rl,
+          corsHeaders,
+          `Aguarde ${rl.retryAfterSec}s antes de solicitar um novo código de recuperação.`,
+          { success: false }
+        );
       }
 
       const { data: profile } = await adminSupabase
@@ -207,6 +229,21 @@ Deno.serve(async (req) => {
 
     // 3. Validar código recebido e purgar fator TOTP antigo
     if (action === "verify_code") {
+      const rlVerify = await checkRateLimit({
+        preset: "mfa_verify_user",
+        identifier: user.id,
+        service: "mfa-recovery",
+        route: "verify_code",
+      });
+      if (!rlVerify.allowed) {
+        return rateLimitExceededResponse(
+          rlVerify,
+          corsHeaders,
+          `Muitas tentativas de verificação de código. Aguarde ${rlVerify.retryAfterSec}s.`,
+          { success: false }
+        );
+      }
+
       const code = String(body?.code || "").trim();
       if (!/^\d{6}$/.test(code)) {
         return json({ success: false, error: "Código deve conter exatamente 6 dígitos numéricos." }, 400);
@@ -295,6 +332,14 @@ Deno.serve(async (req) => {
   } catch (error: unknown) {
     console.error("[mfa-recovery] Erro não tratado:", error);
     const msg = error instanceof Error ? error.message : "Erro interno no servidor";
+    await reportError({
+      service: "mfa-recovery",
+      level: "critical",
+      code: "edge_unhandled_500",
+      route: "mfa-recovery",
+      message: msg,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return json({ success: false, error: msg }, 500);
   }
 });

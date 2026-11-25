@@ -2,6 +2,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { corsHeaders } from "../_shared/cors.ts";
 import { WhatsAppClient, sanitizeWhatsAppNumber } from "../_shared/whatsapp-client.ts";
+import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -36,6 +38,16 @@ Deno.serve(async (req: Request) => {
 
     if (userError || !user) {
       return json({ success: false, error: "Usuário não autenticado" }, 401);
+    }
+
+    const rl = await checkRateLimit({
+      preset: "whatsapp_intro_user",
+      identifier: user.id,
+      service: "whatsapp-send-intro",
+      route: "whatsapp-send-intro",
+    });
+    if (!rl.allowed) {
+      return rateLimitExceededResponse(rl, corsHeaders, undefined, { success: false });
     }
 
     // Busca perfil com service role
@@ -108,6 +120,14 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("[whatsapp-send-intro] Erro ao enviar mensagem:", error);
+    await reportError({
+      service: "whatsapp-send-intro",
+      level: "critical",
+      code: "edge_unhandled_500",
+      route: "whatsapp-send-intro",
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return json({
       success: false,
       error: error instanceof Error ? error.message : "Erro desconhecido ao enviar mensagem",

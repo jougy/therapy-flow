@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
+import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 
 // Headers CORS para suportar requisições web
 const corsHeaders: Record<string, string> = {
@@ -239,6 +241,14 @@ Deno.serve(async (req: Request) => {
       if (userError || !userData?.user) {
         return jsonResponse({ error: "Sessão inválida ou expirada." }, 401);
       }
+
+      const rl = await checkRateLimit({
+        preset: "pluriform_codec_user",
+        identifier: userData.user.id,
+        service: "pluriform-codec",
+        route: "pluriform-codec",
+      });
+      if (!rl.allowed) return rateLimitExceededResponse(rl, corsHeaders);
     }
 
     const url = new URL(req.url);
@@ -313,6 +323,16 @@ Deno.serve(async (req: Request) => {
       rawMessage.includes("Decompression Bomb");
 
     const message = isClientFacingSafe ? rawMessage : "Erro interno no processamento do arquivo de formulário.";
+    if (!isClientFacingSafe) {
+      await reportError({
+        service: "pluriform-codec",
+        level: "error",
+        code: "edge_unhandled_500",
+        route: "pluriform-codec",
+        message: rawMessage || "Erro desconhecido no pluriform-codec",
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
     return jsonResponse({ error: message }, 500);
   }
 });

@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render as rtlRender, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const render = (ui: React.ReactElement) =>
+  rtlRender(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      {ui}
+    </QueryClientProvider>
+  );
 import { MemoryRouter } from "react-router-dom";
 import { BibliotecaFormularios } from "./BibliotecaFormularios";
 

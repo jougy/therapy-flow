@@ -16,6 +16,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.99.2';
 import { corsHeaders } from '../_shared/cors.ts';
 import { ingestToAxiom } from '../_shared/telemetry-axiom.ts';
+import { checkRateLimit, extractClientIp, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 
 const extendedCorsHeaders = {
   ...corsHeaders,
@@ -168,32 +170,6 @@ function scoreAndQualifyLead(raw: RawLeadInput, runId?: string) {
   };
 }
 
-async function checkUpstashRateLimit(key: string, maxRequests = 60, windowSec = 60): Promise<boolean> {
-  const url = Deno.env.get('UPSTASH_REDIS_REST_URL');
-  const token = Deno.env.get('UPSTASH_REDIS_REST_TOKEN');
-  if (!url || !token) return true;
-
-  try {
-    const res = await fetch(`${url.replace(/\/$/, '')}/pipeline`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify([
-        ['INCR', key],
-        ['EXPIRE', key, windowSec],
-      ]),
-    });
-    if (!res.ok) return true;
-    const data = (await res.json()) as Array<{ result?: number }>;
-    const count = Number(data?.[0]?.result ?? 1);
-    return count <= maxRequests;
-  } catch {
-    return true;
-  }
-}
-
 async function verifyPlatformAdmin(
   adminClient: ReturnType<typeof createClient>,
   req: Request
@@ -245,14 +221,20 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const action = String(url.searchParams.get('action') || body.action || 'webhook');
 
-  // ----------------------------------------------------------------------------
-  // AÇÃO 1: WEBHOOK (Lindy AI ou Apify ACTOR.RUN.SUCCEEDED)
-  // ----------------------------------------------------------------------------
-  if (action === 'webhook') {
-    const allowed = await checkUpstashRateLimit('rl:auto-lead-webhook', 120, 60);
-    if (!allowed) {
-      return json({ error: 'Rate limit excedido no webhook.' }, 429);
-    }
+  try {
+    // ----------------------------------------------------------------------------
+    // AÇÃO 1: WEBHOOK (Lindy AI ou Apify ACTOR.RUN.SUCCEEDED)
+    // ----------------------------------------------------------------------------
+    if (action === 'webhook') {
+      const rlWebhook = await checkRateLimit({
+        preset: 'auto_lead_webhook',
+        identifier: extractClientIp(req),
+        service: 'auto-lead-orchestrator',
+        route: 'webhook',
+      });
+      if (!rlWebhook.allowed) {
+        return rateLimitExceededResponse(rlWebhook, extendedCorsHeaders, 'Rate limit excedido no webhook.');
+      }
 
     const expectedSecret = (Deno.env.get('LINDY_WEBHOOK_SECRET') || '').trim();
     if (expectedSecret) {
@@ -334,8 +316,18 @@ Deno.serve(async (req: Request) => {
 
   // Demais ações exigem JWT de platform_admin
   const authCheck = await verifyPlatformAdmin(admin, req);
-  if (!authCheck.ok) {
+  if (!authCheck.ok || !authCheck.userId) {
     return json({ error: authCheck.error }, 403);
+  }
+
+  const rlAdmin = await checkRateLimit({
+    preset: 'auto_lead_admin',
+    identifier: authCheck.userId,
+    service: 'auto-lead-orchestrator',
+    route: action,
+  });
+  if (!rlAdmin.allowed) {
+    return rateLimitExceededResponse(rlAdmin, extendedCorsHeaders);
   }
 
   // ----------------------------------------------------------------------------
@@ -582,4 +574,17 @@ Deno.serve(async (req: Request) => {
   }
 
   return json({ error: `Ação desconhecida: ${action}` }, 400);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('[auto-lead-orchestrator] Erro inesperado:', errorMsg);
+    await reportError({
+      service: 'auto-lead-orchestrator',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'auto-lead-orchestrator',
+      message: errorMsg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    return json({ error: errorMsg }, 500);
+  }
 });

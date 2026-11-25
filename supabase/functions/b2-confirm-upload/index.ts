@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
 import { createPresignedS3Url } from "../_shared/b2-s3.ts";
+import { checkRateLimits, rateLimitExceededResponse, type RateLimitOptions } from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -67,6 +69,34 @@ Deno.serve(async (req) => {
     if (uploadError) throw new Error(uploadError.message);
     if (!upload) return json({ error: "Registro de upload não encontrado." }, 404);
 
+    const rlChecks: RateLimitOptions[] = [
+      {
+        preset: "b2_write_user",
+        identifier: userData.user.id,
+        service: "b2-confirm-upload",
+        route: "b2-confirm-upload",
+        vipOverride: {
+          userId: userData.user.id,
+          lookupOverride: async () => {
+            const [{ data: ov }, { data: gr }] = await Promise.all([
+              admin.from("user_governance_overrides").select("max_actions, time_window_minutes").eq("user_id", userData.user!.id).maybeSingle(),
+              admin.from("governance_rules").select("value").eq("key", "rate_limit_config").maybeSingle(),
+            ]);
+            if (!ov?.max_actions) return null;
+            const cfg = (gr?.value as { max_actions?: number; time_window_minutes?: number } | null) || {};
+            const baseRate = Math.max(1, Number(cfg.max_actions || 80)) / Math.max(1, Number(cfg.time_window_minutes || 5));
+            const vipRate = Number(ov.max_actions) / Math.max(1, Number(ov.time_window_minutes || 5));
+            return vipRate > baseRate ? vipRate / baseRate : null;
+          },
+        },
+      },
+    ];
+    if (upload.clinic_id) {
+      rlChecks.push({ preset: "b2_write_clinic", identifier: String(upload.clinic_id), service: "b2-confirm-upload", route: "b2-confirm-upload" });
+    }
+    const rl = await checkRateLimits(rlChecks);
+    if (!rl.allowed) return rateLimitExceededResponse(rl, corsHeaders);
+
     const { data: canWrite, error: permissionError } = await userClient.rpc("current_user_can", {
       _capability: "patients.write",
       _clinic_id: upload.clinic_id,
@@ -118,6 +148,13 @@ Deno.serve(async (req) => {
     return json({ confirmed: true, upload: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao confirmar upload.";
+    await reportError({
+      service: "b2-confirm-upload",
+      code: "b2_confirm_upload_error",
+      route: "b2-confirm-upload",
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return json({ error: message }, 400);
   }
 });

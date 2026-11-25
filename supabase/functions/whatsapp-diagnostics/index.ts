@@ -2,6 +2,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 import { corsHeaders } from "../_shared/cors.ts";
 import { WhatsAppClient, sanitizeWhatsAppNumber } from "../_shared/whatsapp-client.ts";
+import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 const json = (body, status = 200)=>new Response(JSON.stringify(body), {
     headers: {
       ...corsHeaders,
@@ -45,6 +47,16 @@ Deno.serve(async (req)=>{
         success: false,
         error: "Usuário não autenticado"
       }, 401);
+    }
+
+    const rl = await checkRateLimit({
+      preset: "whatsapp_diagnostics_user",
+      identifier: user.id,
+      service: "whatsapp-diagnostics",
+      route: "whatsapp-diagnostics",
+    });
+    if (!rl.allowed) {
+      return rateLimitExceededResponse(rl, corsHeaders, undefined, { success: false });
     }
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey);
     // 1. Dados do perfil do usuário e credencial MFA isolada
@@ -161,6 +173,14 @@ Deno.serve(async (req)=>{
     });
   } catch (error) {
     console.error("[whatsapp-diagnostics] Erro ao executar diagnóstico:", error);
+    await reportError({
+      service: "whatsapp-diagnostics",
+      level: "critical",
+      code: "edge_unhandled_500",
+      route: "whatsapp-diagnostics",
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return json({
       success: false,
       error: error instanceof Error ? error.message : "Erro desconhecido ao executar diagnóstico"

@@ -27,6 +27,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient, AsaasSplitItem } from '../_shared/asaas-client.ts';
 import { resolveAffiliateForCheckout, recordAffiliateConversion } from '../_shared/affiliate-split.ts';
+import {
+  checkRateLimit,
+  checkRateLimits,
+  rateLimitExceededResponse,
+  type RateLimitOptions,
+} from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 
 const PLAN_PRICING_CONFIG = {
   // --- Novos Planos: Profissional Individual ---
@@ -352,6 +359,43 @@ Deno.serve(async (req) => {
       allow_duplicate_cnpj,
       subproduct_key,
     } = body;
+
+    if (action === 'GET_PIX_QR_CODE' || action === 'CHECK_PAYMENT_STATUS') {
+      const rlRead = await checkRateLimit({
+        preset: 'asaas_read_user',
+        identifier: user.id,
+        service: 'asaas-subscription',
+        route: String(action),
+      });
+      if (!rlRead.allowed) {
+        return rateLimitExceededResponse(rlRead, corsHeaders);
+      }
+    } else {
+      const mutationChecks: RateLimitOptions[] = [
+        {
+          preset: 'asaas_mutation_user',
+          identifier: user.id,
+          service: 'asaas-subscription',
+          route: String(action || 'mutation'),
+        },
+      ];
+      if (clinic_id) {
+        mutationChecks.push({
+          preset: 'asaas_mutation_clinic',
+          identifier: String(clinic_id),
+          service: 'asaas-subscription',
+          route: String(action || 'mutation'),
+        });
+      }
+      const rlMutation = await checkRateLimits(mutationChecks);
+      if (!rlMutation.allowed) {
+        return rateLimitExceededResponse(
+          rlMutation,
+          corsHeaders,
+          `Muitas operações financeiras em curto intervalo. Aguarde ${rlMutation.retryAfterSec}s e tente novamente.`
+        );
+      }
+    }
 
     const validSubproducts = ['plurifisio', 'pluripsy', 'plurinutri', 'plurinatu', 'plurihealth'];
     const effectiveSubproductKey = typeof subproduct_key === 'string' && validSubproducts.includes(subproduct_key)
@@ -1891,6 +1935,14 @@ Deno.serve(async (req) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[asaas-subscription] Exceção:', err);
+    await reportError({
+      service: 'asaas-subscription',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'asaas-subscription',
+      message: message || 'Erro interno no gateway Asaas',
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return new Response(JSON.stringify({
       success: false,
       error: message || 'Erro interno do servidor ao processar Asaas.',

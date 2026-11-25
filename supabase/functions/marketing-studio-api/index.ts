@@ -12,6 +12,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.99.2';
 import { corsHeaders } from '../_shared/cors.ts';
 import { converseMarketingAgent } from '../_shared/gemini-router.ts';
 import { selectWritableProvider } from '../_shared/s3-router.ts';
+import { checkRateLimit, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -51,8 +53,24 @@ Deno.serve(async (req) => {
     return json({ error: 'Acesso restrito ao Marketing/Plataforma.' }, 403);
   }
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const action = String(body.action || 'generate_copy');
+  try {
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const action = String(body.action || 'generate_copy');
+
+    const studioPreset =
+      action === 'generate_copy'
+        ? 'marketing_studio_copy'
+        : action === 'enqueue_render_job'
+        ? 'marketing_studio_render'
+        : 'marketing_studio_upload';
+
+    const rl = await checkRateLimit({
+      preset: studioPreset,
+      identifier: userId,
+      service: 'marketing-studio-api',
+      route: action,
+    });
+    if (!rl.allowed) return rateLimitExceededResponse(rl, corsHeaders);
 
   if (action === 'generate_copy') {
     const topic = String(body.topic || 'Prontuário SOAP rápido para fisioterapeutas').trim();
@@ -161,4 +179,17 @@ Deno.serve(async (req) => {
   }
 
   return json({ error: `Ação desconhecida: ${action}` }, 400);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    await reportError({
+      service: 'marketing-studio-api',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'marketing-studio-api',
+      message,
+      stack: err instanceof Error ? err.stack : undefined,
+      metadata: { user_id: userId },
+    });
+    return json({ error: message || 'Erro interno no Marketing Studio API.' }, 500);
+  }
 });

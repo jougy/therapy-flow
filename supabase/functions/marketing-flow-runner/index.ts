@@ -9,6 +9,8 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.99.2';
 import { corsHeaders } from '../_shared/cors.ts';
 import { invokeUniversalLlm } from '../_shared/llm-gateway.ts';
+import { checkRateLimit, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 import {
   DEFAULT_FALLBACK_CHAIN,
   DEFAULT_PROVIDER_CONFIG,
@@ -353,7 +355,16 @@ Deno.serve(async (req) => {
     return json({ error: 'Acesso restrito ao Marketing/Plataforma.' }, 403);
   }
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  try {
+    const rl = await checkRateLimit({
+      preset: 'marketing_flow_run',
+      identifier: userId,
+      service: 'marketing-flow-runner',
+      route: 'run_flow',
+    });
+    if (!rl.allowed) return rateLimitExceededResponse(rl, corsHeaders);
+
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const runId = String(body.run_id || '').trim();
   let flowId = String(body.flow_id || '').trim();
   let existingRun: Record<string, unknown> | null = null;
@@ -485,4 +496,17 @@ Deno.serve(async (req) => {
     : await admin.from('marketing_flow_runs').insert(runPayload).select('*').single();
 
   return json({ success: true, run: runRow });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    await reportError({
+      service: 'marketing-flow-runner',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'marketing-flow-runner',
+      message,
+      stack: err instanceof Error ? err.stack : undefined,
+      metadata: { user_id: userId },
+    });
+    return json({ error: message || 'Erro interno no runner de fluxos.' }, 500);
+  }
 });

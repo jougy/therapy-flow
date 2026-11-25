@@ -1,6 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient } from '../_shared/asaas-client.ts';
+import { checkRateLimits, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -42,6 +44,24 @@ Deno.serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    const rl = await checkRateLimits([
+      {
+        preset: 'asaas_mutation_user',
+        identifier: user.id,
+        service: 'asaas-one-time-charge',
+        route: 'create_charge',
+      },
+      {
+        preset: 'asaas_mutation_clinic',
+        identifier: String(clinic_id),
+        service: 'asaas-one-time-charge',
+        route: 'create_charge',
+      },
+    ]);
+    if (!rl.allowed) {
+      return rateLimitExceededResponse(rl, corsHeaders);
     }
 
     // Verificar se a clínica existe e o usuário tem acesso
@@ -168,6 +188,14 @@ Deno.serve(async (req) => {
 
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    await reportError({
+      service: 'asaas-one-time-charge',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'asaas-one-time-charge',
+      message: message || 'Erro interno ao processar cobrança avulsa Asaas',
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return new Response(JSON.stringify({ error: message || 'Erro interno do servidor.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

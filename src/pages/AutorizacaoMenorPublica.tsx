@@ -170,6 +170,7 @@ export const AutorizacaoMenorPublica: React.FC = () => {
         try {
           await supabase.functions.invoke("send-guardian-consent-proof", {
             body: {
+              token,
               to: guardianEmail.trim().toLowerCase(),
               patientName: patient.name,
               guardianName: guardianName.trim(),
