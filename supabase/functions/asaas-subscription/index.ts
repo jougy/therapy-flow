@@ -34,6 +34,7 @@ import {
   type RateLimitOptions,
 } from '../_shared/rate-limit.ts';
 import { reportError } from '../_shared/error-dedup.ts';
+import { ingestToAxiom } from '../_shared/telemetry-axiom.ts';
 
 const PLAN_PRICING_CONFIG = {
   // --- Novos Planos: Profissional Individual ---
@@ -915,7 +916,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. Verificar permissão de Owner / Admin
+    // 2. Verificar permissão de Owner / Admin / Platform Owner (Modo Suporte)
     let isOwner = clinic.account_owner_user_id === user.id;
     if (!isOwner) {
       const { data: membership } = await supabase
@@ -923,7 +924,7 @@ Deno.serve(async (req) => {
         .select('account_role, is_active, membership_status')
         .eq('clinic_id', clinic_id)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       isOwner = (membership?.account_role === 'account_owner' || membership?.account_role === 'owner') &&
                 membership?.is_active === true &&
@@ -931,11 +932,35 @@ Deno.serve(async (req) => {
     }
 
     if (!isOwner) {
+      const [{ data: isPlatOwner }, { data: isPlatAdmin }] = await Promise.all([
+        supabase.rpc('is_platform_owner', { _user_id: user.id }),
+        supabase.rpc('is_platform_admin', { _user_id: user.id }),
+      ]);
+      isOwner = isPlatOwner === true || isPlatAdmin === true;
+    }
+
+    if (!isOwner) {
+      void ingestToAxiom([{
+        level: 'warn',
+        service: 'asaas-subscription',
+        route: String(action || 'CREATE_SUBSCRIPTION'),
+        error_code: 'forbidden_not_owner',
+        message: 'Tentativa de gerenciar assinatura sem permissão de Owner',
+        metadata: { clinic_id, user_id: user.id, env: asaas.getEnvironment() },
+      }]);
       return new Response(JSON.stringify({ error: 'Apenas o responsável (Owner) da clínica pode gerenciar assinaturas.' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    void ingestToAxiom([{
+      level: 'info',
+      service: 'asaas-subscription',
+      route: String(action || 'CREATE_SUBSCRIPTION'),
+      message: `Asaas subscription action started (${asaas.getEnvironment()})`,
+      metadata: { clinic_id, user_id: user.id, plan_type, billing_cycle, billing_type, env: asaas.getEnvironment() },
+    }]);
 
     // Buscar assinatura atual da clínica
     const { data: subscription } = await supabase

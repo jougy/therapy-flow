@@ -243,12 +243,16 @@ const LegacyClinicPatientRedirect = () => {
 
 const AuthRoute = ({ children }: { children: ReactNode }) => {
   const auth = useAuth();
+  const location = useLocation();
   const { isPlatformOwner, isPlatformMarketing, platformRole, isPasswordRecovery, loading, platformMfaVerified, session } = auth;
   if (loading && (import.meta.env.MODE === "test" || hasPotentialAuthContext())) {
     return <LoadingScreen />;
   }
   if (isPasswordRecovery || isRecoveryUrl()) {
     return <Navigate to="/auth/redefinir-senha" replace />;
+  }
+  if (session && location.search.includes("plan=")) {
+    return <Navigate to={`/planos${location.search}`} replace />;
   }
   if (session && isPlatformOwner && !platformMfaVerified) return <Navigate to="/platform/mfa" replace />;
   if (session && isPlatformOwner && platformMfaVerified) return <Navigate to="/platform" replace />;

@@ -77,20 +77,22 @@ describe("PagamentoClinica", () => {
       }),
     });
 
+    const subResult = vi.fn().mockResolvedValue({
+      data: {
+        id: "sub-123",
+        clinic_id: "clinic-123",
+        plan_type: "solo",
+        billing_cycle: "ANNUAL",
+        status: "TRIAL",
+        total_recurring_monthly_price: 40.0,
+        payment_method: "TRIAL",
+      },
+      error: null,
+    });
     const mockSelectSub = vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
-        single: vi.fn().mockResolvedValue({
-          data: {
-            id: "sub-123",
-            clinic_id: "clinic-123",
-            plan_type: "solo",
-            billing_cycle: "ANNUAL",
-            status: "TRIAL",
-            total_recurring_monthly_price: 40.0,
-            payment_method: "TRIAL",
-          },
-          error: null,
-        }),
+        single: subResult,
+        maybeSingle: subResult,
       }),
     });
 

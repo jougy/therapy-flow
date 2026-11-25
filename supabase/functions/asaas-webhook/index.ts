@@ -7,6 +7,7 @@ import { getGlobalFeatureFlag } from '../_shared/feature-flags-client.ts';
 import { handleAffiliatePaymentReceived, handleAffiliatePaymentRefunded } from '../_shared/affiliate-split.ts';
 import { checkRateLimit, extractClientIp, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
 import { reportError } from '../_shared/error-dedup.ts';
+import { ingestToAxiom } from '../_shared/telemetry-axiom.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -88,11 +89,26 @@ Deno.serve(async (req) => {
 
     if (!recordErr && recordRes?.already_processed) {
       console.log(`[asaas-webhook] Evento ${eventId} já processado anteriormente.`);
+      void ingestToAxiom([{
+        level: 'info',
+        service: 'asaas-webhook',
+        route: eventType,
+        message: 'Webhook Asaas deduplicado (idempotência)',
+        metadata: { event_id: eventId, event_type: eventType, deduplicated: true },
+      }]);
       return new Response(JSON.stringify({ message: 'Evento já processado anteriormente.', event_id: eventId }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    void ingestToAxiom([{
+      level: 'info',
+      service: 'asaas-webhook',
+      route: eventType,
+      message: 'Webhook Asaas recebido',
+      metadata: { event_id: eventId, event_type: eventType },
+    }]);
 
     // 2. Identificar a Clínica Alvo
     let targetClinicId: string | null = null;

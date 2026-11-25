@@ -210,7 +210,7 @@ export default function PagamentoClinica() {
       setClinicData(clinic);
 
       const initialDoc = clinic.cnpj || profile?.cpf || "";
-      setBillingCpfCnpj(formatOwnerDocument(initialDoc));
+      setBillingCpfCnpj((prev) => prev || formatOwnerDocument(initialDoc));
 
       // Pré-preencher dados do cartão se vazios
       setCardForm((prev) => ({
@@ -226,7 +226,7 @@ export default function PagamentoClinica() {
         .from("clinic_subscriptions")
         .select("*")
         .eq("clinic_id", clinicId)
-        .single();
+        .maybeSingle();
 
       if (sub) {
         setSubscription(sub as unknown as SubscriptionDetails);
