@@ -1,4 +1,12 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const render = (ui: React.ReactElement) =>
+  rtlRender(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      {ui}
+    </QueryClientProvider>
+  );
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import NovoPaciente from "@/pages/NovoPaciente";
 import { useAuth } from "@/hooks/useAuth";
