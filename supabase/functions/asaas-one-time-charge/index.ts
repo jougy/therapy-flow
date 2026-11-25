@@ -3,6 +3,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient } from '../_shared/asaas-client.ts';
 import { checkRateLimits, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
 import { reportError } from '../_shared/error-dedup.ts';
+import { ingestToAxiom } from '../_shared/telemetry-axiom.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -174,6 +175,14 @@ Deno.serve(async (req) => {
     if (invErr) {
       throw new Error(`Erro ao salvar fatura no banco: ${invErr.message}`);
     }
+
+    void ingestToAxiom([{
+      level: 'info',
+      service: 'asaas-one-time-charge',
+      route: 'create_charge',
+      message: 'Cobrança avulsa Asaas criada',
+      metadata: { clinic_id, user_id: user.id, spacesCount, totalAmount, billing_type },
+    }]);
 
     return new Response(JSON.stringify({
       success: true,
