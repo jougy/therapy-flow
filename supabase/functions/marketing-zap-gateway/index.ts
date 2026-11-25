@@ -12,6 +12,14 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { executeUpstashCommand } from '../_shared/schedule-cache.ts';
 import { ingestToAxiom } from '../_shared/telemetry-axiom.ts';
 import { TelegramClient } from '../_shared/telegram-client.ts';
+import {
+  checkRateLimit,
+  checkRateLimits,
+  extractClientIp,
+  rateLimitExceededResponse,
+  type RateLimitPreset,
+} from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 import { classifyIntentDeterministic, classifyMarketingIntent } from '../_shared/gemini-router.ts';
 import { invokeUniversalLlm } from '../_shared/llm-gateway.ts';
 import {
@@ -137,6 +145,12 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
   const remoteJid = String(keyObj.remoteJid || '');
   const senderPhone = normalizePhoneBr(remoteJid.split('@')[0]);
   if (!senderPhone || remoteJid.includes('@g.us')) return respond({ success: true, ignored: 'group_or_empty' });
+
+  const rlEvo = await checkRateLimits([
+    { preset: 'marketing_zap_webhook_phone', identifier: senderPhone, service: 'marketing-zap-gateway', route: 'webhook_evolution' },
+    { preset: 'marketing_zap_webhook_instance', identifier: instanceKey, service: 'marketing-zap-gateway', route: 'webhook_evolution' },
+  ]);
+  if (!rlEvo.allowed) return rateLimitExceededResponse(rlEvo, extendedCorsHeaders);
 
   const msgContent = (payloadData.message || {}) as Record<string, unknown>;
   const extText = (msgContent.extendedTextMessage || {}) as Record<string, unknown>;
@@ -298,36 +312,62 @@ Deno.serve(async (req) => {
   const serviceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim();
   if (!supabaseUrl || !serviceKey) return json({ error: 'Configuração Supabase incompleta.' }, 500);
 
-  const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  let body: Record<string, unknown> = {};
-  try { body = (await req.json()) as Record<string, unknown>; } catch { return json({ error: 'Payload JSON inválido.' }, 400); }
+  try {
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    let body: Record<string, unknown> = {};
+    try { body = (await req.json()) as Record<string, unknown>; } catch { return json({ error: 'Payload JSON inválido.' }, 400); }
 
-  const url = new URL(req.url);
-  const action = String(url.searchParams.get('action') || body.action || 'webhook_evolution');
-  const ctx: ZapHandlerContext = { admin, body, req, callEvolution, getEvolutionConfig, json };
+    const url = new URL(req.url);
+    const action = String(url.searchParams.get('action') || body.action || 'webhook_evolution');
+    const ctx: ZapHandlerContext = { admin, body, req, callEvolution, getEvolutionConfig, json };
 
-  if (action === 'webhook_android_bridge') return handleWebhookAndroidBridge(ctx);
-  if (action === 'webhook_evolution') return handleWebhookEvolution(ctx);
+    if (action === 'webhook_android_bridge') {
+      const bridgeKey = `${extractClientIp(req)}:${String(body.instance_key || body.instance || 'bridge')}`;
+      const rlBridge = await checkRateLimit({
+        preset: 'marketing_zap_webhook_instance',
+        identifier: bridgeKey,
+        service: 'marketing-zap-gateway',
+        route: 'webhook_android_bridge',
+      });
+      if (!rlBridge.allowed) return rateLimitExceededResponse(rlBridge, extendedCorsHeaders);
+      return await handleWebhookAndroidBridge(ctx);
+    }
+    if (action === 'webhook_evolution') return await handleWebhookEvolution(ctx);
 
-  const authCheck = await authorizePlatformMarketingUser(req, admin);
-  if (!authCheck.authorized) return json({ error: authCheck.error || 'Não autorizado.' }, 403);
+    const authCheck = await authorizePlatformMarketingUser(req, admin);
+    if (!authCheck.authorized || !authCheck.userId) return json({ error: authCheck.error || 'Não autorizado.' }, 403);
 
-  const delegated: Record<string, (c: ZapHandlerContext) => Promise<Response>> = {
-    sync_llm_models: handleSyncLlmModels,
-    test_llm_provider: handleTestLlmProvider,
-    request_pairing_code: handleRequestPairingCode,
-    run_zap_defender_audit: handleRunZapDefenderAudit,
-    compact_conversation_memory: handleCompactConversationMemory,
-    validate_numbers_batch: handleValidateNumbersBatch,
-    send_push_alert: handleSendPushAlert,
-    sync_whatsapp_groups: handleSyncWhatsappGroups,
-    extract_group_members: handleExtractGroupMembers,
-    enqueue_group_action: handleEnqueueGroupAction,
-    sync_whatsapp_contacts: handleSyncWhatsappContacts,
-    send_human_reply: handleSendHumanReply,
-    sync_typebot_binding: handleSyncTypebotBinding,
-  };
-  if (delegated[action]) return delegated[action](ctx);
+    const actionPreset: RateLimitPreset =
+      action === 'connect_qr' || action === 'request_pairing_code'
+        ? 'marketing_zap_qr'
+        : action === 'simulate_agent_reply' || action === 'enqueue_campaign'
+        ? 'marketing_zap_ai'
+        : 'obs_admin_query';
+
+    const rlAction = await checkRateLimit({
+      preset: actionPreset,
+      identifier: authCheck.userId,
+      service: 'marketing-zap-gateway',
+      route: action,
+    });
+    if (!rlAction.allowed) return rateLimitExceededResponse(rlAction, extendedCorsHeaders);
+
+    const delegated: Record<string, (c: ZapHandlerContext) => Promise<Response>> = {
+      sync_llm_models: handleSyncLlmModels,
+      test_llm_provider: handleTestLlmProvider,
+      request_pairing_code: handleRequestPairingCode,
+      run_zap_defender_audit: handleRunZapDefenderAudit,
+      compact_conversation_memory: handleCompactConversationMemory,
+      validate_numbers_batch: handleValidateNumbersBatch,
+      send_push_alert: handleSendPushAlert,
+      sync_whatsapp_groups: handleSyncWhatsappGroups,
+      extract_group_members: handleExtractGroupMembers,
+      enqueue_group_action: handleEnqueueGroupAction,
+      sync_whatsapp_contacts: handleSyncWhatsappContacts,
+      send_human_reply: handleSendHumanReply,
+      sync_typebot_binding: handleSyncTypebotBinding,
+    };
+    if (delegated[action]) return await delegated[action](ctx);
 
   if (action === 'connect_qr') {
     const instanceKey = String(body.instance_key || 'pluri-mkt-5511965120431').trim();
@@ -459,5 +499,18 @@ Deno.serve(async (req) => {
     return json({ success: true, status: nextStatus });
   }
 
-  return json({ error: `Ação desconhecida: ${action}` }, 400);
+    return json({ error: `Ação desconhecida: ${action}` }, 400);
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('[marketing-zap-gateway] Erro inesperado:', errorMsg);
+    await reportError({
+      service: 'marketing-zap-gateway',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'marketing-zap-gateway',
+      message: errorMsg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    return json({ error: errorMsg }, 500);
+  }
 });

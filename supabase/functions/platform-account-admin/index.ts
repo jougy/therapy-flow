@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
+import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -1780,6 +1782,14 @@ Deno.serve(async (request) => {
 
   try {
     const { userClient, user } = await requirePlatformOwner(request.headers.get("Authorization"));
+    const rl = await checkRateLimit({
+      preset: "platform_admin_user",
+      identifier: user.id,
+      service: "platform-account-admin",
+      route: "platform-account-admin",
+    });
+    if (!rl.allowed) return rateLimitExceededResponse(rl, corsHeaders);
+
     const body = await request.json();
     const action = String(body?.action ?? "") as Action;
     const payload = (body?.payload ?? {}) as Record<string, unknown>;
@@ -1804,6 +1814,21 @@ Deno.serve(async (request) => {
     return json({ data: result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Operação indisponível.";
+    const isClientInput =
+      message.includes("Ação administrativa inválida") ||
+      message.includes("Informe um motivo") ||
+      message.includes("Sessão expirada") ||
+      message.includes("Token");
+    if (!isClientInput) {
+      await reportError({
+        service: "platform-account-admin",
+        level: "error",
+        code: "platform_admin_error",
+        route: "platform-account-admin",
+        message,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
     return json({ error: message }, 400);
   }
 });

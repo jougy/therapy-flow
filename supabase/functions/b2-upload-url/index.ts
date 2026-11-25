@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
 import { createPresignedS3Url } from "../_shared/b2-s3.ts";
 import { getPlanStorageQuota } from "../_shared/b2-limits.ts";
+import { checkRateLimits, rateLimitExceededResponse } from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -138,6 +140,26 @@ Deno.serve(async (req) => {
 
     const { data: userData, error: userError } = await userClient.auth.getUser(token);
     if (userError || !userData.user) return json({ error: "Usuário não autenticado." }, 401);
+
+    const b2VipOverride = {
+      userId: userData.user.id,
+      lookupOverride: async () => {
+        const [{ data: ov }, { data: gr }] = await Promise.all([
+          admin.from("user_governance_overrides").select("max_actions, time_window_minutes").eq("user_id", userData.user!.id).maybeSingle(),
+          admin.from("governance_rules").select("value").eq("key", "rate_limit_config").maybeSingle(),
+        ]);
+        if (!ov?.max_actions) return null;
+        const cfg = (gr?.value as { max_actions?: number; time_window_minutes?: number } | null) || {};
+        const baseRate = Math.max(1, Number(cfg.max_actions || 80)) / Math.max(1, Number(cfg.time_window_minutes || 5));
+        const vipRate = Number(ov.max_actions) / Math.max(1, Number(ov.time_window_minutes || 5));
+        return vipRate > baseRate ? vipRate / baseRate : null;
+      },
+    };
+    const rl = await checkRateLimits([
+      { preset: "b2_write_user", identifier: userData.user.id, service: "b2-upload-url", route: category, vipOverride: b2VipOverride },
+      { preset: "b2_write_clinic", identifier: clinicId, service: "b2-upload-url", route: category },
+    ]);
+    if (!rl.allowed) return rateLimitExceededResponse(rl, corsHeaders);
 
     if (isBranding) {
       const { data: canManageProfile } = await userClient.rpc("current_user_can", {
@@ -459,6 +481,13 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao preparar upload.";
+    await reportError({
+      service: "b2-upload-url",
+      code: "b2_upload_url_error",
+      route: "b2-upload-url",
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return json({ error: message }, 400);
   }
 });

@@ -5,6 +5,8 @@ import { TelegramClient } from '../_shared/telegram-client.ts';
 import { WhatsAppClient } from '../_shared/whatsapp-client.ts';
 import { getGlobalFeatureFlag } from '../_shared/feature-flags-client.ts';
 import { handleAffiliatePaymentReceived, handleAffiliatePaymentRefunded } from '../_shared/affiliate-split.ts';
+import { checkRateLimit, extractClientIp, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -40,6 +42,15 @@ Deno.serve(async (req) => {
 
   if (!isValidToken) {
     console.warn('[asaas-webhook] Rejeição de webhook: Token de autenticação não coincide.');
+    const rlInvalid = await checkRateLimit({
+      preset: 'asaas_webhook_invalid_ip',
+      identifier: extractClientIp(req),
+      service: 'asaas-webhook',
+      route: 'invalid_token',
+    });
+    if (!rlInvalid.allowed) {
+      return rateLimitExceededResponse(rlInvalid, corsHeaders, 'Muitas tentativas inválidas de webhook.');
+    }
     return new Response(JSON.stringify({ error: 'Token de webhook inválido.' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -525,6 +536,16 @@ Deno.serve(async (req) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[asaas-webhook] Erro ao processar:', err);
+
+    await reportError({
+      service: 'asaas-webhook',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'asaas-webhook',
+      message: message || 'Erro interno no webhook Asaas',
+      stack: err instanceof Error ? err.stack : undefined,
+      metadata: { eventId, eventType },
+    });
 
     if (eventId) {
       const supabase = createClient(supabaseUrl, supabaseServiceKey);

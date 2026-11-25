@@ -1,3 +1,11 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
+import {
+  buildRateLimitHeaders,
+  checkRateLimit,
+  extractClientIp,
+  rateLimitExceededResponse,
+} from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 import { ResendClient } from "../_shared/resend-client.ts";
 
 const corsHeaders = {
@@ -6,11 +14,19 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
 };
 
-const json = (body: unknown, status = 200) =>
+const json = (body: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, ...extraHeaders, "Content-Type": "application/json" },
     status,
   });
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -22,12 +38,70 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const clientIp = extractClientIp(req);
+    const ipLimit = await checkRateLimit({
+      preset: "guardian_consent_ip",
+      identifier: clientIp,
+      service: "send-guardian-consent-proof",
+      route: "send-guardian-consent-proof",
+    });
+    if (!ipLimit.allowed) {
+      return rateLimitExceededResponse(ipLimit, corsHeaders);
+    }
+
+    const rlHeaders = buildRateLimitHeaders(ipLimit);
     const body = await req.json().catch(() => ({}));
-    const { to, patientName, guardianName, signedAt, clinicName = "Pluri-Health" } = body;
+    const rawToken = typeof body?.token === "string" ? body.token.trim() : "";
+    const to = typeof body?.to === "string" ? body.to.trim().toLowerCase() : "";
+    const patientName = typeof body?.patientName === "string" ? body.patientName.trim().slice(0, 140) : "";
+    const guardianName = typeof body?.guardianName === "string" ? body.guardianName.trim().slice(0, 140) : "";
+    const signedAt = body?.signedAt;
+    const clinicName =
+      typeof body?.clinicName === "string" && body.clinicName.trim()
+        ? body.clinicName.trim().slice(0, 140)
+        : "Pluri-Health";
+
+    if (!rawToken || !/^[a-zA-Z0-9_-]{12,128}$/.test(rawToken)) {
+      return json({ error: "Token de consentimento ausente ou inválido." }, 403, rlHeaders);
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json({ error: "Configuração do servidor incompleta." }, 500, rlHeaders);
+    }
+
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: linkRow, error: linkErr } = await admin
+      .from("patient_registration_links")
+      .select("id, clinic_id")
+      .eq("token", rawToken)
+      .maybeSingle();
+
+    if (linkErr || !linkRow) {
+      return json({ error: "Link de consentimento não encontrado ou expirado." }, 403, rlHeaders);
+    }
 
     if (!to || !patientName) {
-      return json({ error: "Destinatário ou paciente ausente." }, 400);
+      return json({ error: "Destinatário ou paciente ausente." }, 400, rlHeaders);
     }
+
+    const emailLimit = await checkRateLimit({
+      preset: "guardian_consent_email",
+      identifier: to,
+      service: "send-guardian-consent-proof",
+      route: "send-guardian-consent-proof",
+    });
+    if (!emailLimit.allowed) {
+      return rateLimitExceededResponse(emailLimit, corsHeaders);
+    }
+
+    const safePatientName = escapeHtml(patientName);
+    const safeGuardianName = escapeHtml(guardianName || "Responsável Legal");
+    const safeClinicName = escapeHtml(clinicName);
 
     const formattedDate = signedAt
       ? new Date(signedAt).toLocaleString("pt-BR")
@@ -62,21 +136,21 @@ Deno.serve(async (req) => {
       <p>Termo de Consentimento Livre e Esclarecido • Art. 14 da LGPD (Lei 13.709/2018)</p>
     </div>
 
-    <p>Olá, <strong>${guardianName || "Responsável Legal"}</strong>,</p>
-    <p>Confirmamos o registro da sua autorização formal para o atendimento e tratamento de dados de saúde do(a) menor <strong>${patientName}</strong> na plataforma <strong>${clinicName}</strong>.</p>
+    <p>Olá, <strong>${safeGuardianName}</strong>,</p>
+    <p>Confirmamos o registro da sua autorização formal para o atendimento e tratamento de dados de saúde do(a) menor <strong>${safePatientName}</strong> na plataforma <strong>${safeClinicName}</strong>.</p>
 
     <div class="info-box">
       <div class="info-row">
         <span class="label">Paciente:</span>
-        <span class="value">${patientName}</span>
+        <span class="value">${safePatientName}</span>
       </div>
       <div class="info-row">
         <span class="label">Responsável Legal:</span>
-        <span class="value">${guardianName || "Declarado no ato"}</span>
+        <span class="value">${guardianName ? safeGuardianName : "Declarado no ato"}</span>
       </div>
       <div class="info-row">
         <span class="label">Data e Hora do Aceite:</span>
-        <span class="value">${formattedDate}</span>
+        <span class="value">${escapeHtml(formattedDate)}</span>
       </div>
       <div class="info-row">
         <span class="label">Canal:</span>
@@ -87,7 +161,7 @@ Deno.serve(async (req) => {
     <p>Este comprovante foi emitido para seus arquivos pessoais. Você tem o direito de solicitar esclarecimentos, cópias de prontuário e retificações a qualquer momento junto à clínica.</p>
 
     <div class="footer">
-      ${clinicName} • Gestão Clínica em conformidade com a LGPD e Ética Profissional.
+      ${safeClinicName} • Gestão Clínica em conformidade com a LGPD e Ética Profissional.
     </div>
   </div>
 </body>
@@ -99,18 +173,33 @@ Deno.serve(async (req) => {
       to,
       subject: `[${clinicName}] Comprovante de Autorização de Menor (LGPD) - ${patientName}`,
       html: htmlContent,
-      text: `Olá, ${guardianName}! Confirmamos o registro do seu consentimento formal como responsável legal pelo(a) menor ${patientName} em ${formattedDate}. Plataforma: ${clinicName}.`,
+      text: `Olá, ${guardianName || "Responsável Legal"}! Confirmamos o registro do seu consentimento formal como responsável legal pelo(a) menor ${patientName} em ${formattedDate}. Plataforma: ${clinicName}.`,
     });
 
     if (result.error) {
       console.error("[send-guardian-consent-proof] Erro ao enviar:", result.error);
-      return json({ error: result.error.message }, 500);
+      await reportError({
+        service: "send-guardian-consent-proof",
+        code: "resend_send_failed",
+        route: "send-guardian-consent-proof",
+        message: result.error.message || "Falha ao enviar comprovante via Resend",
+        metadata: { clinic_id: linkRow.clinic_id },
+      });
+      return json({ error: result.error.message }, 500, rlHeaders);
     }
 
-    return json({ success: true, id: result.id });
+    return json({ success: true, id: result.id }, 200, rlHeaders);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Erro inesperado";
     console.error("[send-guardian-consent-proof] Exceção:", msg);
+    await reportError({
+      service: "send-guardian-consent-proof",
+      level: "critical",
+      code: "edge_unhandled_500",
+      route: "send-guardian-consent-proof",
+      message: msg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return json({ error: msg }, 500);
   }
 });

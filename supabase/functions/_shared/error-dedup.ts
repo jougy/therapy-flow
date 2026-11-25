@@ -5,6 +5,7 @@
  */
 
 import { ingestToAxiom, type AxiomEvent } from './telemetry-axiom.ts';
+import { dispatchAdminErrorAlert, sanitizeAlertText } from './error-alert.ts';
 
 export interface ErrorReportInput {
   code: string | number;
@@ -12,6 +13,10 @@ export interface ErrorReportInput {
   message: string;
   windowSec?: number;
   metadata?: Record<string, unknown>;
+  level?: 'error' | 'warn' | 'critical';
+  service?: string;
+  notifyAdmin?: boolean;
+  stack?: string;
 }
 
 const DEFAULT_WINDOW_SEC = 60;
@@ -64,31 +69,76 @@ async function upstashPipeline(commands: Array<Array<string | number>>): Promise
 
 export async function reportError(input: ErrorReportInput): Promise<{ deduplicated: boolean; count: number }> {
   const windowSec = input.windowSec ?? DEFAULT_WINDOW_SEC;
+  const level = input.level ?? 'error';
+  const service = input.service ?? 'pluri-health-edge';
+  const shouldNotifyAdmin = input.notifyAdmin ?? level !== 'warn';
   const fp = normalizeErrorFingerprint(input.code, input.route, input.message);
   const countKey = `err:count:${fp}`;
   const metaKey = `err:meta:${fp}`;
+  const dateKey = new Date().toISOString().slice(0, 10);
+  const cleanMessage = sanitizeAlertText(input.message, 500);
+  const rawStack = input.stack || (typeof input.metadata?.stack === 'string' ? input.metadata.stack : undefined);
+  const cleanStack = rawStack ? sanitizeAlertText(rawStack, 1000) : undefined;
+  const safeMeta = input.metadata
+    ? {
+        ...input.metadata,
+        ...(cleanStack ? { stack: cleanStack } : {}),
+        severity: level,
+        fingerprint: fp,
+      }
+    : { severity: level, fingerprint: fp };
 
   const pipelineRes = await upstashPipeline([
     ['INCR', countKey],
     ['EXPIRE', countKey, windowSec],
-    ['SET', metaKey, JSON.stringify({ code: input.code, route: input.route, message: input.message, windowSec }), 'EX', windowSec, 'NX'],
+    [
+      'SET',
+      metaKey,
+      JSON.stringify({ code: input.code, route: input.route, message: cleanMessage, windowSec, service, level }),
+      'EX',
+      windowSec,
+      'NX',
+    ],
     ['SADD', PENDING_SET_KEY, fp],
+    ['HINCRBY', `metrics:errors:${dateKey}`, `${service}:${input.code}`, 1],
+    ['EXPIRE', `metrics:errors:${dateKey}`, 604800],
   ]);
 
   const count = Number(pipelineRes?.[0]?.result ?? 1);
 
   if (count === 1 || !pipelineRes) {
-    await ingestToAxiom([
-      {
-        level: 'error',
-        error_code: input.code,
-        route: input.route,
-        message: input.message,
-        occurrences: 1,
-        window_sec: windowSec,
-        metadata: input.metadata,
-      },
-    ]);
+    const dispatches: Array<Promise<unknown>> = [
+      ingestToAxiom([
+        {
+          level: level === 'critical' ? 'error' : level,
+          service,
+          error_code: input.code,
+          route: input.route,
+          message: cleanMessage,
+          occurrences: 1,
+          window_sec: windowSec,
+          metadata: safeMeta,
+        },
+      ]),
+    ];
+
+    if (shouldNotifyAdmin) {
+      dispatches.push(
+        dispatchAdminErrorAlert({
+          fingerprint: fp,
+          level,
+          service,
+          route: input.route,
+          code: input.code,
+          message: cleanMessage,
+          occurrences: count,
+          stack: cleanStack,
+          metadata: safeMeta,
+        })
+      );
+    }
+
+    await Promise.allSettled(dispatches);
     return { deduplicated: false, count };
   }
 

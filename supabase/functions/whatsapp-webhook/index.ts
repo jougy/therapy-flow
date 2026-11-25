@@ -2,6 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { WhatsAppClient, sanitizeWhatsAppNumber, sanitizeMessageInput } from '../_shared/whatsapp-client.ts';
 import { TelegramClient, escapeHtml } from '../_shared/telegram-client.ts';
+import { checkRateLimit, extractClientIp, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 import {
   getNextBusinessDays,
   getAvailableWindowsForDay,
@@ -173,38 +175,6 @@ interface ProfileLookupRecord {
   totp_enabled?: boolean | null;
 }
 
-// Map de rate limiting em memória por chave (IP ou Telefone): máximo 15 requisições por minuto
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const MAX_RATE_LIMIT_MAP_SIZE = 2000;
-
-function checkRateLimit(key: string, limit = 15, windowMs = 60_000): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(key);
-
-  if (rateLimitMap.size > 500) {
-    for (const [k, v] of rateLimitMap.entries()) {
-      if (now > v.resetAt) rateLimitMap.delete(k);
-    }
-    // Se ainda exceder o limite de proteção de memória
-    if (rateLimitMap.size > MAX_RATE_LIMIT_MAP_SIZE) {
-      const firstKeys = Array.from(rateLimitMap.keys()).slice(0, 500);
-      for (const k of firstKeys) rateLimitMap.delete(k);
-    }
-  }
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-
-  if (entry.count >= limit) {
-    return false;
-  }
-
-  entry.count += 1;
-  return true;
-}
-
 // Comparação em tempo constante com hashing SHA-256 para mitigar timing attacks e vazamento de comprimento
 async function timingSafeEqualString(a: string, b: string): Promise<boolean> {
   if (!a || !b) {
@@ -290,17 +260,6 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
     return new Response('ok', { headers: corsHeaders });
   }
 
-  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown-ip';
-
-  // Rate limit no IP do webhook
-  if (!checkRateLimit(`ip:${clientIp}`, 60, 60_000)) {
-    console.warn(`[whatsapp-webhook] Rate limit de IP excedido: ${clientIp}`);
-    return new Response(JSON.stringify({ error: 'Muitas requisições. Tente novamente mais tarde.' }), {
-      status: 429,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
@@ -333,6 +292,19 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+  }
+
+  // Rate limit distribuído por IP do webhook (após validação de secret)
+  const clientIp = extractClientIp(req);
+  const ipLimit = await checkRateLimit({
+    preset: 'whatsapp_webhook_ip',
+    identifier: clientIp,
+    service: 'whatsapp-webhook',
+    route: 'webhook',
+  });
+  if (!ipLimit.allowed) {
+    console.warn('[whatsapp-webhook] Rate limit distribuído de IP excedido.');
+    return rateLimitExceededResponse(ipLimit, corsHeaders, 'Muitas requisições. Tente novamente mais tarde.');
   }
 
   try {
@@ -513,13 +485,16 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
       }
     }
 
-    // Rate limiting por número de telefone de origem (máx 15 mensagens/minuto)
-    if (!checkRateLimit(`phone:${phone}`, 15, 60_000)) {
+    // Rate limiting distribuído por número de telefone de origem (máx 15 mensagens/minuto)
+    const phoneLimit = await checkRateLimit({
+      preset: 'whatsapp_webhook_phone',
+      identifier: phone,
+      service: 'whatsapp-webhook',
+      route: 'inbound',
+    });
+    if (!phoneLimit.allowed) {
       console.warn(`[whatsapp-webhook] Rate limit excedido para o telefone ${maskPhoneLgpd(phone)}`);
-      return new Response(JSON.stringify({ success: false, error: 'Rate limit excedido para este número.' }), {
-        status: 429,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return rateLimitExceededResponse(phoneLimit, corsHeaders, 'Rate limit excedido para este número.');
     }
 
     const cleanSelectedButtonId = sanitizeInput(selectedButtonId, 60);
@@ -2840,6 +2815,14 @@ export async function handleWhatsAppWebhookHandler(req: Request): Promise<Respon
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error('[whatsapp-webhook] Erro inesperado no processamento:', errorMsg);
+    await reportError({
+      service: 'whatsapp-webhook',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'whatsapp-webhook',
+      message: errorMsg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return new Response(JSON.stringify({ error: errorMsg }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

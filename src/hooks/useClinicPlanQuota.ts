@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { calculateTrialRemainingTime } from "@/lib/trial";
 import { getPlanStorageQuota } from "@/utils/subscriptionPricing";
@@ -71,48 +72,42 @@ interface ClinicSubscriptionRecord {
   [key: string]: unknown;
 }
 
-export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
-  const [loading, setLoading] = useState(true);
-  const [usage, setUsage] = useState<Omit<ClinicPlanUsage, "loading" | "refresh">>({
-    isFreeTrial: false,
-    isTrialExpired: false,
-    isExpired: false,
-    subscriptionStatus: "",
-    planType: null,
-    billingCycle: null,
-    trialEndsAt: null,
-    daysRemaining: null,
-    hoursRemaining: null,
-    attendances: { current: 0, max: 20, remaining: 20, isLimitReached: false },
-    patients: { current: 0, max: 5, remaining: 5, isLimitReached: false },
-    forms: { current: 0, max: 1, remaining: 1, isLimitReached: false },
-    storage: {
-      usedBytes: 0,
-      maxBytes: 2147483648,
-      usedMb: 0,
-      maxMb: 2048,
-      percentage: 0,
-      maxFileSizeMb: 10,
-      totalFiles: 0,
-      isLimitReached: false,
-    },
-  });
+const DEFAULT_CLINIC_PLAN_USAGE: Omit<ClinicPlanUsage, "loading" | "refresh"> = {
+  isFreeTrial: false,
+  isTrialExpired: false,
+  isExpired: false,
+  subscriptionStatus: "",
+  planType: null,
+  billingCycle: null,
+  trialEndsAt: null,
+  daysRemaining: null,
+  hoursRemaining: null,
+  attendances: { current: 0, max: 20, remaining: 20, isLimitReached: false },
+  patients: { current: 0, max: 5, remaining: 5, isLimitReached: false },
+  forms: { current: 0, max: 1, remaining: 1, isLimitReached: false },
+  storage: {
+    usedBytes: 0,
+    maxBytes: 2147483648,
+    usedMb: 0,
+    maxMb: 2048,
+    percentage: 0,
+    maxFileSizeMb: 10,
+    totalFiles: 0,
+    isLimitReached: false,
+  },
+};
 
-  const fetchQuotas = useCallback(async () => {
-    if (!clinicId) {
-      setLoading(false);
-      return;
-    }
+async function fetchClinicPlanQuota(
+  clinicId: string
+): Promise<Omit<ClinicPlanUsage, "loading" | "refresh">> {
+  // 1. Buscar assinatura da clínica
+  const { data: subData } = await supabase
+    .from("clinic_subscriptions")
+    .select("*")
+    .eq("clinic_id", clinicId)
+    .maybeSingle();
 
-    try {
-      // 1. Buscar assinatura da clínica
-      const { data: subData } = await supabase
-        .from("clinic_subscriptions")
-        .select("*")
-        .eq("clinic_id", clinicId)
-        .maybeSingle();
-
-      const sub = subData as ClinicSubscriptionRecord | null;
+  const sub = subData as ClinicSubscriptionRecord | null;
       const rawStatus = (sub?.status || "").toUpperCase();
       const isCourtesy = sub?.is_courtesy === true || rawStatus === "COURTESY";
       const isTrial = !sub ? false : !isCourtesy && (rawStatus === "TRIAL" || sub.is_free_trial === true);
@@ -189,59 +184,67 @@ export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
       const percentage = maxMb > 0 ? Math.min(100, Math.round((usedMb / maxMb) * 100)) : 0;
       const isStorageLimitReached = usedBytes >= quota.totalStorageBytes;
 
-      setUsage({
-        isFreeTrial: isTrial,
-        isTrialExpired: isTrialExpiredCalculated,
-        isExpired: isSubscriptionExpired,
-        subscriptionStatus: rawStatus,
-        planType: sub?.plan_type || null,
-        billingCycle: sub?.billing_cycle || null,
-        trialEndsAt: trialEndsAtDate,
-        daysRemaining: calculatedDaysRemaining,
-        hoursRemaining: calculatedHoursRemaining,
-        attendances: {
-          current: currentAtt,
-          max: maxAtt,
-          remaining: maxAtt === -1 ? 999999 : Math.max(0, maxAtt - currentAtt),
-          isLimitReached: isAttLimitReached,
-        },
-        patients: {
-          current: currentPat,
-          max: maxPat,
-          remaining: maxPat === -1 ? 999999 : Math.max(0, maxPat - currentPat),
-          isLimitReached: isPatLimitReached,
-        },
-        forms: {
-          current: currentFrm,
-          max: maxFrm,
-          remaining: maxFrm === -1 ? 999999 : Math.max(0, maxFrm - currentFrm),
-          isLimitReached: maxFrm !== -1 && currentFrm >= maxFrm,
-        },
-        storage: {
-          usedBytes,
-          maxBytes: quota.totalStorageBytes,
-          usedMb,
-          maxMb,
-          percentage,
-          maxFileSizeMb: quota.maxFileSizeMb,
-          totalFiles,
-          isLimitReached: isStorageLimitReached,
-        },
-      });
-    } catch (err) {
-      console.error("Erro ao carregar cotas da clínica:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [clinicId]);
+  return {
+    isFreeTrial: isTrial,
+    isTrialExpired: isTrialExpiredCalculated,
+    isExpired: isSubscriptionExpired,
+    subscriptionStatus: rawStatus,
+    planType: sub?.plan_type || null,
+    billingCycle: sub?.billing_cycle || null,
+    trialEndsAt: trialEndsAtDate,
+    daysRemaining: calculatedDaysRemaining,
+    hoursRemaining: calculatedHoursRemaining,
+    attendances: {
+      current: currentAtt,
+      max: maxAtt,
+      remaining: maxAtt === -1 ? 999999 : Math.max(0, maxAtt - currentAtt),
+      isLimitReached: isAttLimitReached,
+    },
+    patients: {
+      current: currentPat,
+      max: maxPat,
+      remaining: maxPat === -1 ? 999999 : Math.max(0, maxPat - currentPat),
+      isLimitReached: isPatLimitReached,
+    },
+    forms: {
+      current: currentFrm,
+      max: maxFrm,
+      remaining: maxFrm === -1 ? 999999 : Math.max(0, maxFrm - currentFrm),
+      isLimitReached: maxFrm !== -1 && currentFrm >= maxFrm,
+    },
+    storage: {
+      usedBytes,
+      maxBytes: quota.totalStorageBytes,
+      usedMb,
+      maxMb,
+      percentage,
+      maxFileSizeMb: quota.maxFileSizeMb,
+      totalFiles,
+      isLimitReached: isStorageLimitReached,
+    },
+  };
+}
 
-  useEffect(() => {
-    fetchQuotas();
-  }, [fetchQuotas]);
+export function useClinicPlanQuota(clinicId?: string | null): ClinicPlanUsage {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["clinic-plan-quota", clinicId ?? null],
+    queryFn: () => fetchClinicPlanQuota(clinicId!),
+    enabled: Boolean(clinicId),
+    staleTime: 5 * 60_000,
+    gcTime: 15 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const refresh = useCallback(async () => {
+    if (!clinicId) return;
+    await queryClient.invalidateQueries({ queryKey: ["clinic-plan-quota", clinicId] });
+  }, [clinicId, queryClient]);
 
   return {
-    ...usage,
-    loading,
-    refresh: fetchQuotas,
+    ...(data ?? DEFAULT_CLINIC_PLAN_USAGE),
+    loading: Boolean(clinicId) && isLoading,
+    refresh,
   };
 }

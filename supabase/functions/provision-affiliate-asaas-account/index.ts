@@ -15,6 +15,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.8';
 import { corsHeaders } from '../_shared/cors.ts';
 import { AsaasClient, type AsaasSubAccountData } from '../_shared/asaas-client.ts';
+import { checkRateLimit, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -60,6 +62,16 @@ Deno.serve(async (req: Request) => {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    const rl = await checkRateLimit({
+      preset: 'affiliate_provision_user',
+      identifier: user.id,
+      service: 'provision-affiliate-asaas-account',
+      route: 'provision',
+    });
+    if (!rl.allowed) {
+      return rateLimitExceededResponse(rl, corsHeaders);
     }
 
     let body: Record<string, unknown>;
@@ -247,6 +259,14 @@ Deno.serve(async (req: Request) => {
     );
   } catch (err: any) {
     console.error('[provision-affiliate-asaas-account] Erro inesperado:', err?.message || err);
+    await reportError({
+      service: 'provision-affiliate-asaas-account',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'provision-affiliate-asaas-account',
+      message: err?.message || 'Erro interno no provisionamento de afiliado Asaas',
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return new Response(
       JSON.stringify({ error: err?.message || 'Erro interno no processamento do provisionamento.' }),
       {

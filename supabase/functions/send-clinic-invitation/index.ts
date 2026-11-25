@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
 import { ResendClient } from "../_shared/resend-client.ts";
+import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-dispatch-secret",
@@ -111,6 +113,16 @@ Deno.serve(async (req) => {
       authUserMetaName = String(
         authData.user.user_metadata?.full_name || authData.user.user_metadata?.name || ""
       );
+
+      const rlUser = await checkRateLimit({
+        preset: "clinic_invite_user",
+        identifier: authUserId,
+        service: "send-clinic-invitation",
+        route: "send-clinic-invitation",
+      });
+      if (!rlUser.allowed) {
+        return rateLimitExceededResponse(rlUser, corsHeaders);
+      }
     }
 
     const { data: invitation, error: invitationError } = await admin.rpc(
@@ -133,6 +145,18 @@ Deno.serve(async (req) => {
 
     if (!clinicId || !email || status !== "pending") {
       return json({ error: "Convite não está mais pendente." }, 400);
+    }
+
+    if (!isInternalServiceCall) {
+      const rlClinic = await checkRateLimit({
+        preset: "clinic_invite_clinic",
+        identifier: clinicId,
+        service: "send-clinic-invitation",
+        route: "send-clinic-invitation",
+      });
+      if (!rlClinic.allowed) {
+        return rateLimitExceededResponse(rlClinic, corsHeaders);
+      }
     }
 
     if (!isInternalServiceCall) {
@@ -393,6 +417,14 @@ Deno.serve(async (req) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao enviar convite.";
     console.error("[send-clinic-invitation] Error processing invitation:", message, error);
+    await reportError({
+      service: "send-clinic-invitation",
+      code: "invite_email_error",
+      route: "send-clinic-invitation",
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+      metadata: { invitationId },
+    });
     
     try {
       if (invitationId) {

@@ -1,6 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { ResendClient } from "../_shared/resend-client.ts";
+import {
+  checkRateLimit,
+  checkRateLimits,
+  extractClientIp,
+  rateLimitExceededResponse,
+} from "../_shared/rate-limit.ts";
+import { reportError } from "../_shared/error-dedup.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -100,48 +107,6 @@ const sanitizeEmail = (value: unknown): string | null => {
   return normalized;
 };
 
-// Rate limiting in-memory por IP e por e-mail para prevenir spam e exaustão de quota
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-const emailLimiter = new Map<string, RateLimitEntry>();
-const ipLimiter = new Map<string, RateLimitEntry>();
-
-const checkRateLimit = (
-  map: Map<string, RateLimitEntry>,
-  key: string,
-  maxRequests: number,
-  windowMs: number
-): { allowed: boolean; retryAfter?: number } => {
-  const now = Date.now();
-  const entry = map.get(key);
-
-  // Limpeza de entradas expiradas periodicamente se o mapa crescer muito
-  if (map.size > 2000) {
-    for (const [k, v] of map.entries()) {
-      if (now > v.resetTime) {
-        map.delete(k);
-      }
-    }
-  }
-
-  if (!entry || now > entry.resetTime) {
-    map.set(key, { count: 1, resetTime: now + windowMs });
-    return { allowed: true };
-  }
-
-  if (entry.count >= maxRequests) {
-    const retryAfter = Math.ceil((entry.resetTime - now) / 1000);
-    return { allowed: false, retryAfter };
-  }
-
-  entry.count += 1;
-  return { allowed: true };
-};
-
-
 const EMBEDDED_CONFIRMATION_HTML = `<!doctype html>
 <html lang="pt-BR">
   <head>
@@ -234,21 +199,19 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // 1. Extração de IP e verificação de Rate Limit por IP
-    const clientIp =
-      req.headers.get("cf-connecting-ip") ||
-      req.headers.get("x-real-ip") ||
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      "unknown-ip";
-
-    const ipLimit = checkRateLimit(ipLimiter, clientIp, 15, 60_000); // 15 reqs/min por IP
+    // 1. Extração de IP e verificação de Rate Limit distribuído por IP
+    const clientIp = extractClientIp(req);
+    const ipLimit = await checkRateLimit({
+      preset: "auth_confirmation_ip",
+      identifier: clientIp,
+      service: "send-auth-confirmation",
+      route: "send-auth-confirmation",
+    });
     if (!ipLimit.allowed) {
-      return json(
-        {
-          error: "Limite de solicitações atingido para este IP. Por favor, aguarde alguns instantes.",
-          retryAfter: ipLimit.retryAfter,
-        },
-        429
+      return rateLimitExceededResponse(
+        ipLimit,
+        corsHeaders,
+        "Limite de solicitações atingido para este IP. Por favor, aguarde alguns instantes."
       );
     }
 
@@ -259,15 +222,26 @@ Deno.serve(async (req) => {
       return json({ error: "Endereço de e-mail inválido ou ausente." }, 400);
     }
 
-    // 2. Verificação de Rate Limit por e-mail (max 3 disparos por minuto por endereço)
-    const emailLimit = checkRateLimit(emailLimiter, email, 3, 60_000);
+    // 2. Verificação de Rate Limit distribuído por e-mail (minuto + dia)
+    const emailLimit = await checkRateLimits([
+      {
+        preset: "auth_confirmation_email_min",
+        identifier: email,
+        service: "send-auth-confirmation",
+        route: "send-auth-confirmation",
+      },
+      {
+        preset: "auth_confirmation_email_day",
+        identifier: email,
+        service: "send-auth-confirmation",
+        route: "send-auth-confirmation",
+      },
+    ]);
     if (!emailLimit.allowed) {
-      return json(
-        {
-          error: `Muitas tentativas de envio para este e-mail. Aguarde ${emailLimit.retryAfter} segundos.`,
-          retryAfter: emailLimit.retryAfter,
-        },
-        429
+      return rateLimitExceededResponse(
+        emailLimit,
+        corsHeaders,
+        `Muitas tentativas de envio para este e-mail. Aguarde ${emailLimit.retryAfterSec} segundos.`
       );
     }
 
@@ -368,6 +342,13 @@ Deno.serve(async (req) => {
 
     if (sendResult.error) {
       console.error("[send-auth-confirmation] Erro no envio via Resend:", sendResult.error);
+      await reportError({
+        service: "send-auth-confirmation",
+        code: "resend_send_failed",
+        route: "send-auth-confirmation",
+        message: sendResult.error.message || "Falha no envio via Resend",
+        metadata: { statusCode: sendResult.error.statusCode },
+      });
       return json(
         { error: "Falha temporária no provedor de e-mail. Tente novamente em instantes." },
         500
@@ -382,6 +363,14 @@ Deno.serve(async (req) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro inesperado ao processar confirmação.";
     console.error("[send-auth-confirmation] Erro interno:", message);
+    await reportError({
+      service: "send-auth-confirmation",
+      level: "critical",
+      code: "edge_unhandled_500",
+      route: "send-auth-confirmation",
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return json({ error: "Erro interno ao processar a confirmação de e-mail." }, 500);
   }
 });

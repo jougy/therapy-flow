@@ -65,4 +65,8 @@ verify_jwt = false
 [functions.auto-lead-orchestrator]
 verify_jwt = false
 
+[functions.marketing-zap-gateway]
+verify_jwt = false
+
+
 

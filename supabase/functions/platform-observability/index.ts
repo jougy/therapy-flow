@@ -1,6 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.99.2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { flushPendingErrors, flushPendingErrorsIfDue, reportError } from "../_shared/error-dedup.ts";
+import { dispatchAdminErrorAlert, runBackgroundSafe } from "../_shared/error-alert.ts";
+import { ingestToAxiom } from "../_shared/telemetry-axiom.ts";
+import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limit.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -65,6 +68,30 @@ async function isPlatformAdminUser(userId: string): Promise<boolean> {
   return Boolean(adminRecord);
 }
 
+async function verifyServiceRoleJwt(token: string): Promise<boolean> {
+  if (Boolean(serviceRoleKey) && token === serviceRoleKey) {
+    return true;
+  }
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  try {
+    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(padded)) as { role?: unknown };
+    if (payload?.role !== "service_role") return false;
+    const res = await fetch(`${supabaseUrl}/auth/v1/admin/users?per_page=1`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: token,
+      },
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders, status: 204 });
@@ -78,19 +105,25 @@ Deno.serve(async (req) => {
     return json({ error: "Missing Authorization header" }, 401);
   }
 
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  const userClient = createClient(supabaseUrl, anonKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const isServiceRoleCall = await verifyServiceRoleJwt(token);
 
-  const {
-    data: { user },
-    error: authError,
-  } = await userClient.auth.getUser();
+  let user: { id: string } | null = null;
+  if (!isServiceRoleCall) {
+    const userClient = createClient(supabaseUrl, anonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
 
-  if (authError || !user) {
-    return json({ error: "Unauthorized" }, 401);
+    const {
+      data: { user: fetchedUser },
+      error: authError,
+    } = await userClient.auth.getUser();
+
+    if (authError || !fetchedUser) {
+      return json({ error: "Unauthorized" }, 401);
+    }
+    user = fetchedUser;
   }
 
   try {
@@ -101,6 +134,15 @@ Deno.serve(async (req) => {
     // CAMADA 1: Ações autenticadas (Telemetria, Erros, Presença, Slots Cache)
     // =========================================================================
     if (action === "ingest_telemetry") {
+      if (!user) return json({ error: "Unauthorized" }, 401);
+      const rlTel = await checkRateLimit({
+        preset: "obs_telemetry_user",
+        identifier: user.id,
+        service: "platform-observability",
+        route: "ingest_telemetry",
+      });
+      if (!rlTel.allowed) return rateLimitExceededResponse(rlTel, corsHeaders);
+
       if (!upstashUrl || !upstashToken) {
         return json({ ok: false, reason: "upstash_not_configured" }, 200);
       }
@@ -130,28 +172,52 @@ Deno.serve(async (req) => {
     }
 
     if (action === "ingest_error") {
+      if (!user) return json({ error: "Unauthorized" }, 401);
+      const rlErr = await checkRateLimit({
+        preset: "obs_error_user",
+        identifier: user.id,
+        service: "platform-observability",
+        route: "ingest_error",
+      });
+      if (!rlErr.allowed) return rateLimitExceededResponse(rlErr, corsHeaders);
+
       const scope = typeof body.scope === "string" ? body.scope.slice(0, 80) : "runtime";
       const route = typeof body.route === "string" ? body.route.slice(0, 160) : "/";
       const message = typeof body.message === "string" ? body.message.slice(0, 500) : "Unknown error";
       const clinicId = typeof body.clinic_id === "string" && UUID_RE.test(body.clinic_id) ? body.clinic_id : null;
+      const stack = typeof body.stack === "string" ? body.stack.slice(0, 1000) : undefined;
+      const level = body.level === "warn" ? "warn" : body.level === "critical" ? "critical" : "error";
+      const service = typeof body.service === "string" ? body.service.slice(0, 60) : "pluri-health-client";
 
       const result = await reportError({
+        service,
+        level,
         code: scope,
         route,
         message,
+        stack,
         windowSec: 60,
         metadata: {
           clinic_id: clinicId,
           user_id: user.id,
-          stack: typeof body.stack === "string" ? body.stack.slice(0, 1000) : undefined,
+          stack,
           context: typeof body.context === "object" && body.context !== null ? body.context : undefined,
         },
       });
-      void flushPendingErrorsIfDue(60);
+      await runBackgroundSafe(flushPendingErrorsIfDue(60), 1000);
       return json({ ok: true, ...result });
     }
 
     if (action === "heartbeat_presence") {
+      if (!user) return json({ error: "Unauthorized" }, 401);
+      const rlHb = await checkRateLimit({
+        preset: "obs_telemetry_user",
+        identifier: user.id,
+        service: "platform-observability",
+        route: "heartbeat_presence",
+      });
+      if (!rlHb.allowed) return rateLimitExceededResponse(rlHb, corsHeaders);
+
       if (!upstashUrl || !upstashToken) {
         return json({ ok: false, reason: "upstash_not_configured" }, 200);
       }
@@ -166,6 +232,15 @@ Deno.serve(async (req) => {
     }
 
     if (action === "query_slots_cache" || action === "invalidate_slots_cache") {
+      if (!user) return json({ error: "Unauthorized" }, 401);
+      const rlSlots = await checkRateLimit({
+        preset: "obs_slots_user",
+        identifier: user.id,
+        service: "platform-observability",
+        route: action,
+      });
+      if (!rlSlots.allowed) return rateLimitExceededResponse(rlSlots, corsHeaders);
+
       if (!upstashUrl || !upstashToken) {
         return json({ ok: false, result: null }, 200);
       }
@@ -194,11 +269,50 @@ Deno.serve(async (req) => {
     }
 
     // =========================================================================
-    // CAMADA 2: Ações administrativas (Platform Admin / Owner)
+    // CAMADA 2: Ações administrativas (Platform Admin / Owner / service_role)
     // =========================================================================
-    const isAllowed = await isPlatformAdminUser(user.id);
+    const isAllowed = isServiceRoleCall ? true : user ? await isPlatformAdminUser(user.id) : false;
     if (!isAllowed) {
       return json({ error: "Forbidden: Access restricted to Platform Admins" }, 403);
+    }
+
+    if (!isServiceRoleCall && user) {
+      const rlAdmin = await checkRateLimit({
+        preset: "obs_admin_query",
+        identifier: user.id,
+        service: "platform-observability",
+        route: action || "admin",
+      });
+      if (!rlAdmin.allowed) return rateLimitExceededResponse(rlAdmin, corsHeaders);
+    }
+
+    if (action === "test_error_alert") {
+      const alertRes = await dispatchAdminErrorAlert({
+        fingerprint: `healthcheck-${Date.now()}`,
+        force: true,
+        level: "warn",
+        service: "platform-observability",
+        route: "test_error_alert",
+        code: "HEALTHCHECK_ALERT",
+        message: "Teste automático de alerta Pluri-Health (Telegram + E-mail + Axiom)",
+        metadata: {
+          triggered_by: isServiceRoleCall ? "service_role" : user?.id || "admin",
+        },
+      });
+      await ingestToAxiom([
+        {
+          level: "info",
+          service: "platform-observability",
+          route: "test_error_alert",
+          message: "Healthcheck alert triggered",
+          metadata: {
+            event_type: "healthcheck_alert",
+            telegramSent: alertRes.telegramSent,
+            emailSent: alertRes.emailSent,
+          },
+        },
+      ]);
+      return json({ ok: true, ...alertRes });
     }
 
     if (action === "flush_pending_errors") {
@@ -316,6 +430,14 @@ Deno.serve(async (req) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[platform-observability] Unexpected error:", message);
+    await reportError({
+      service: "platform-observability",
+      level: "critical",
+      code: "edge_unhandled_500",
+      route: "platform-observability",
+      message,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return json({ error: message }, 500);
   }
 });

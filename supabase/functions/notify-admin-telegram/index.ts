@@ -3,33 +3,8 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { TelegramClient, escapeHtml } from '../_shared/telegram-client.ts';
 import { WhatsAppClient, sanitizeWhatsAppNumber } from '../_shared/whatsapp-client.ts';
 import { getGlobalFeatureFlag } from '../_shared/feature-flags-client.ts';
-
-// Map de rate limiting em memória por chave (IP ou e-mail): máximo 5 disparos por minuto
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(key: string, limit = 5, windowMs = 60_000): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(key);
-
-  // Limpeza de entradas expiradas esporadicamente para poupar memória
-  if (rateLimitMap.size > 1000) {
-    for (const [k, v] of rateLimitMap.entries()) {
-      if (now > v.resetAt) rateLimitMap.delete(k);
-    }
-  }
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-
-  if (entry.count >= limit) {
-    return false;
-  }
-
-  entry.count += 1;
-  return true;
-}
+import { checkRateLimit, extractClientIp, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
+import { reportError } from '../_shared/error-dedup.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -103,7 +78,7 @@ Deno.serve(async (req) => {
 
     const payload: NotifyAdminTelegramPayload = await req.json();
     const action = payload.action || payload.event || '';
-    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown-ip';
+    const clientIp = extractClientIp(req);
 
     console.log(`[notify-admin-telegram] Requisição recebida. Ação: "${action}" | User Auth: ${authenticatedUser?.id || 'anon'}`);
 
@@ -121,12 +96,20 @@ Deno.serve(async (req) => {
     // AÇÃO 1: TEST_TELEGRAM_NOTIFICATION / SEND_TEST_NOTIFICATION
     // ==========================================
     if (action === 'SEND_TEST_NOTIFICATION' || action === 'TEST_TELEGRAM_NOTIFICATION') {
-      const rateKey = `test_tg:${authenticatedUser?.id || clientIp}`;
-      if (!checkRateLimit(rateKey, 5, 60_000)) {
-        return new Response(JSON.stringify({ error: 'Muitos testes de notificação em curto intervalo. Aguarde um minuto.' }), {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      if (authenticatedUser?.id !== 'service_role') {
+        const rl = await checkRateLimit({
+          preset: 'notify_admin_test',
+          identifier: `tg:${authenticatedUser?.id || clientIp}`,
+          service: 'notify-admin-telegram',
+          route: action,
         });
+        if (!rl.allowed) {
+          return rateLimitExceededResponse(
+            rl,
+            corsHeaders,
+            'Muitos testes de notificação em curto intervalo. Aguarde um minuto.'
+          );
+        }
       }
 
       let isPlatformAdmin = false;
@@ -266,12 +249,20 @@ Deno.serve(async (req) => {
     // AÇÃO 2: SEND_TEST_WHATSAPP / TEST_WHATSAPP_MESSAGE
     // ==========================================
     if (action === 'SEND_TEST_WHATSAPP' || action === 'TEST_WHATSAPP_MESSAGE') {
-      const rateKey = `test_wa:${authenticatedUser?.id || clientIp}`;
-      if (!checkRateLimit(rateKey, 5, 60_000)) {
-        return new Response(JSON.stringify({ error: 'Muitos testes de WhatsApp em curto intervalo. Aguarde um minuto.' }), {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      if (authenticatedUser?.id !== 'service_role') {
+        const rl = await checkRateLimit({
+          preset: 'notify_admin_test',
+          identifier: `wa:${authenticatedUser?.id || clientIp}`,
+          service: 'notify-admin-telegram',
+          route: action,
         });
+        if (!rl.allowed) {
+          return rateLimitExceededResponse(
+            rl,
+            corsHeaders,
+            'Muitos testes de WhatsApp em curto intervalo. Aguarde um minuto.'
+          );
+        }
       }
 
       let isPlatformAdmin = false;
@@ -362,18 +353,22 @@ Deno.serve(async (req) => {
     // AÇÃO 2: NOTIFY_NEW_SIGNUP / SIGNUP_COMPLETED
     // ==========================================
     if (action === 'NOTIFY_NEW_SIGNUP' || action === 'SIGNUP_COMPLETED') {
-      const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown-ip';
       const targetUserId = payload.userId || payload.user_id || authenticatedUser?.id;
       const targetEmail = (payload.email || authenticatedUser?.email || '').trim().toLowerCase().slice(0, 150);
 
-      // 1. Rate Limiting por IP e por E-mail para mitigar flood / spam no Telegram
-      const rateKey = `${clientIp}:${targetEmail || targetUserId || 'anon'}`;
-      if (!checkRateLimit(rateKey, 5, 60_000)) {
-        console.warn(`[notify-admin-telegram] Rate limit excedido para a chave ${rateKey}. Requisição bloqueada.`);
-        return new Response(JSON.stringify({ error: 'Muitas requisições. Tente novamente mais tarde.' }), {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      // 1. Rate Limiting distribuído por IP e e-mail (bypass service_role)
+      if (authenticatedUser?.id !== 'service_role') {
+        const rateKey = `${clientIp}:${targetEmail || targetUserId || 'anon'}`;
+        const rl = await checkRateLimit({
+          preset: 'notify_admin_public',
+          identifier: rateKey,
+          service: 'notify-admin-telegram',
+          route: action,
         });
+        if (!rl.allowed) {
+          console.warn('[notify-admin-telegram] Rate limit distribuído excedido. Requisição bloqueada.');
+          return rateLimitExceededResponse(rl, corsHeaders, 'Muitas requisições. Tente novamente mais tarde.');
+        }
       }
 
       if (!targetUserId && !targetEmail) {
@@ -808,6 +803,14 @@ Deno.serve(async (req) => {
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error('[notify-admin-telegram] Erro inesperado:', errorMsg);
+    await reportError({
+      service: 'notify-admin-telegram',
+      level: 'critical',
+      code: 'edge_unhandled_500',
+      route: 'notify-admin-telegram',
+      message: errorMsg,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return new Response(JSON.stringify({ error: errorMsg }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
