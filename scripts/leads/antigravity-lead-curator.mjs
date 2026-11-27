@@ -15,12 +15,27 @@
 
 import fs from 'fs';
 import path from 'path';
-import http from 'http';
 import { createClient } from '@supabase/supabase-js';
+import { callLocalLlmJson } from './lib/local-llm-cascade.mjs';
+import { openBrainDb, TONE_DIRECTIVE } from './brain/schema.mjs';
+import { selectStrategyForLead } from './brain/ranker.mjs';
+import { composeContextualOpening, profileLeadContext } from './brain/personalityProfiler.mjs';
 
-const OLLAMA_HOST = process.env.OLLAMA_HOST || '127.0.0.1';
-const OLLAMA_PORT = Number(process.env.OLLAMA_PORT || 11434);
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4:cloud';
+let cachedBrainDb = null;
+function getBrainAssignmentSafe({ icpTier, painCategory, originType, personalityArchetype }) {
+  try {
+    if (!cachedBrainDb) cachedBrainDb = openBrainDb();
+    return selectStrategyForLead(cachedBrainDb, {
+      icpTier,
+      painCategory,
+      originType,
+      personalityArchetype,
+      hasExplicitPainSignal: originType === 'post_comment_pain',
+    });
+  } catch {
+    return null;
+  }
+}
 
 function parseArg(prefix) {
   const found = process.argv.find((a) => a.startsWith(prefix));
@@ -85,63 +100,40 @@ function normalizeStateAbbr(stateRaw) {
   return map[s.toLowerCase()] || s.slice(0, 2).toUpperCase();
 }
 
-async function tryLocalOllamaCurator(rawText, fallbackResult) {
+async function tryLocalOllamaCurator(rawText, fallbackResult, assignment) {
   const text = String(rawText || '').trim();
   if (!text) return fallbackResult;
 
-  const prompt =
-    `Você é um SDR especialista em fisioterapia e clínicas para a Pluri Fisio.\n` +
-    `Foco de ICP: leigos com tecnologia, profissionais solo iniciando carreira, recém-formados com CREFITO novo, clínicas começando e fisioterapeutas experientes que ainda usam papel/planilha. Nunca qualifique quem já usa outro software de gestão.\n` +
-    `Analise este contato/post e responda APENAS JSON válido com as chaves:\n` +
-    `{"ai_score": number(0..100), "icp_tier": "clinic_owner"|"studio_pilates"|"solo_physio"|"student"|"other", "ai_qualification_summary": string, "ai_icebreaker_message": string}\n` +
-    `Nome: ${fallbackResult.full_name}\nOrigem: ${fallbackResult.facebook_group_name || fallbackResult.source_platform}\nTexto: ${text.slice(0, 500)}`;
+  const topPointsStr = (assignment?.topTalkingPoints || []).map((p) => p.label).join('; ');
+  const avoidStr = (assignment?.avoidPoints || []).map((p) => p.label).join('; ');
 
-  return new Promise((resolve) => {
-    const payload = JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false });
-    const req = http.request(
-      {
-        hostname: OLLAMA_HOST,
-        port: OLLAMA_PORT,
-        path: '/api/generate',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload),
-        },
-        timeout: 3000,
-      },
-      (res) => {
-        let body = '';
-        res.on('data', (c) => (body += c));
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(body);
-            const jsonMatch = String(parsed.response || '').match(/\{[\s\S]*\}/);
-            if (!jsonMatch) return resolve(fallbackResult);
-            const ai = JSON.parse(jsonMatch[0]);
-            resolve({
-              ...fallbackResult,
-              ai_score: typeof ai.ai_score === 'number' ? Math.max(0, Math.min(100, Math.round(ai.ai_score))) : fallbackResult.ai_score,
-              icp_tier: ['clinic_owner', 'studio_pilates', 'solo_physio', 'student', 'other'].includes(ai.icp_tier)
-                ? ai.icp_tier
-                : fallbackResult.icp_tier,
-              ai_qualification_summary: ai.ai_qualification_summary || fallbackResult.ai_qualification_summary,
-              ai_icebreaker_message: ai.ai_icebreaker_message || fallbackResult.ai_icebreaker_message,
-            });
-          } catch {
-            resolve(fallbackResult);
-          }
-        });
-      }
-    );
-    req.on('error', () => resolve(fallbackResult));
-    req.on('timeout', () => {
-      req.destroy();
-      resolve(fallbackResult);
-    });
-    req.write(payload);
-    req.end();
-  });
+  const systemPrompt = [
+    'Você é um SDR especialista em fisioterapia e clínicas para a Pluri Fisio.',
+    `Diretriz obrigatória de tom: ${TONE_DIRECTIVE}`,
+    'Foco de ICP: leigos com tecnologia, profissionais solo iniciando carreira, recém-formados com CREFITO novo, clínicas começando e fisioterapeutas experientes que ainda usam papel/planilha. Nunca qualifique quem já usa outro software de gestão.',
+    assignment?.strategy ? `Estratégia escolhida (${assignment.strategy.shortLabel}): ${assignment.strategy.openingGuideline}` : '',
+    topPointsStr ? `Pontos fortes priorizados: ${topPointsStr}` : '',
+    avoidStr ? `Evitar: ${avoidStr}` : '',
+    'Responda APENAS JSON válido com: {"ai_score": number(0..100), "icp_tier": "clinic_owner"|"studio_pilates"|"solo_physio"|"student"|"other", "ai_qualification_summary": string, "ai_icebreaker_message": string}',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const userPrompt = `Nome: ${fallbackResult.full_name}\nOrigem: ${fallbackResult.facebook_group_name || fallbackResult.source_platform}\nTexto: ${text.slice(0, 500)}`;
+
+  const res = await callLocalLlmJson({ systemPrompt, userPrompt, temperature: 0.25, timeoutMs: 12000 });
+  if (!res.ok || !res.parsed) return fallbackResult;
+
+  const ai = res.parsed;
+  return {
+    ...fallbackResult,
+    ai_score: typeof ai.ai_score === 'number' ? Math.max(0, Math.min(100, Math.round(ai.ai_score))) : fallbackResult.ai_score,
+    icp_tier: ['clinic_owner', 'studio_pilates', 'solo_physio', 'student', 'other'].includes(ai.icp_tier)
+      ? ai.icp_tier
+      : fallbackResult.icp_tier,
+    ai_qualification_summary: ai.ai_qualification_summary || fallbackResult.ai_qualification_summary,
+    ai_icebreaker_message: ai.ai_icebreaker_message || fallbackResult.ai_icebreaker_message,
+  };
 }
 
 export async function curateRawLead(raw) {
@@ -234,11 +226,44 @@ export async function curateRawLead(raw) {
     ? `${raw.categoryName || 'Fisioterapia'} • ${raw.address || `${city || ''} - ${state || ''}`}${raw.reviewsCount ? ` (${raw.reviewsCount} avaliações, nota ${raw.totalScore})` : ''}`
     : text.slice(0, 600);
 
+  const painCat = /prontu[áa]rio|crefito/i.test(combinedText)
+    ? 'prontuario'
+    : /papel|planilha|caderno/i.test(combinedText)
+      ? 'papel_planilha'
+      : /falta|desmarc|lembrete/i.test(combinedText)
+        ? 'faltas'
+        : 'organizacao_geral';
+
+  const sourcePlatform = raw.source_platform || (isGoogleMaps ? 'google_maps' : 'facebook_group');
+  const ctx = profileLeadContext(
+    {
+      ...raw,
+      full_name: fullName,
+      clinic_name: clinicName,
+      city,
+      source_platform: sourcePlatform,
+      source_post_excerpt: sourceExcerpt,
+    },
+    { painCategory: painCat, icpTier }
+  );
+
+  const assignment = getBrainAssignmentSafe({
+    icpTier,
+    painCategory: painCat,
+    originType: ctx.originType,
+    personalityArchetype: ctx.personality.id,
+  });
+
   const icebreaker =
     raw.ai_icebreaker_message ||
-    (isGoogleMaps
-      ? `Oi, ${firstName}, tudo bem? Vi o contato de vocês no Google Maps${city ? ` (${city})` : ''} e queria te fazer uma pergunta rápida.\n\nHoje você atua na área de fisioterapia?\n\n[RESPOSTA]\n\nAh, legal. E atualmente, como você organiza agenda, prontuário e financeiro dos pacientes? Planilha, papel, algum sistema...?\n\n[RESPOSTA]\n\nPergunto porque fazemos a Pluri Fisio, um sistema feito só para fisioterapeutas autônomos e clínicas pequenas. Se fizer sentido, te mostro em 10 minutos. Se não, sem problema.`
-      : `Oi, ${firstName}, tudo bem? Vi você no grupo ${groupName} e queria te fazer uma pergunta rápida.\n\nHoje você atua na área de fisioterapia?\n\n[RESPOSTA]\n\nAh, legal. E atualmente, como você organiza agenda, prontuário e financeiro dos pacientes? Planilha, papel, algum sistema...?\n\n[RESPOSTA]\n\nPergunto porque fazemos a Pluri Fisio, um sistema feito só para fisioterapeutas autônomos e clínicas pequenas. Se fizer sentido, te mostro em 10 minutos. Se não, sem problema.`);
+    composeContextualOpening({
+      greeting: firstName,
+      originType: ctx.originType,
+      contentHook: ctx.contentHook,
+      strategyId: assignment?.strategy?.id || (isGoogleMaps ? 'S2_QUICK_DIAGNOSTIC' : 'S1_PAIN_MIRROR'),
+      city: city || '',
+      groupName,
+    });
 
   const baseCurated = {
     full_name: fullName,
@@ -254,23 +279,51 @@ export async function curateRawLead(raw) {
     clinic_name: clinicName,
     specialty: raw.specialty || (icpTier === 'studio_pilates' ? 'Pilates Clínico' : 'Fisioterapia'),
     icp_tier: icpTier,
-    source_platform: raw.source_platform || (isGoogleMaps ? 'google_maps' : 'facebook_group'),
+    source_platform: sourcePlatform,
     source_post_url: raw.source_post_url || raw.postUrl || raw.url || null,
     source_post_excerpt: sourceExcerpt || null,
     ai_score: score,
     ai_qualification_summary:
       raw.ai_qualification_summary ||
-      `Perfil: ${profileDetail} (${icpTier}) • Origem: ${isGoogleMaps ? 'Google Maps' : 'Grupo Facebook'}${phone ? ' • WhatsApp/telefone verificado' : ''}.`,
+      `${ctx.discoveryLabel} • Perfil: ${ctx.personality.label} (${icpTier})${phone ? ' • WhatsApp verificado' : ''}${assignment?.strategy ? ` • Estratégia: ${assignment.strategy.shortLabel}` : ''}.`,
     ai_icebreaker_message: icebreaker,
     subagent_captured_by: 'antigravity_lead_curator',
     raw_metadata: {
       source: isGoogleMaps ? 'apify_google_maps' : 'apify_facebook_groups',
       placeId: raw.placeId || null,
       url: raw.url || null,
+      origin_context: {
+        originType: ctx.originType,
+        discoveryLabel: ctx.discoveryLabel,
+        canUseContentHook: ctx.canUseContentHook,
+        contentHook: ctx.contentHook,
+      },
+      personality_profile: {
+        id: ctx.personality.id,
+        label: ctx.personality.label,
+        communicationStyle: ctx.personality.communicationStyle,
+        pacing: ctx.personality.pacing,
+        avoidForThisPerson: ctx.personality.avoidForThisPerson,
+      },
+      ...(assignment?.strategy
+        ? {
+            strategy_assignment: {
+              strategyId: assignment.strategy.id,
+              strategyName: assignment.strategy.name,
+              shortLabel: assignment.strategy.shortLabel,
+              estimatedSuccessPct: assignment.estimatedSuccessPct,
+              mode: assignment.mode,
+              contextKey: assignment.contextKey,
+              alternatives: assignment.alternatives,
+              topTalkingPoints: assignment.topTalkingPoints.map((p) => p.label),
+              avoidPoints: assignment.avoidPoints.map((p) => p.label),
+            },
+          }
+        : {}),
     },
   };
 
-  return tryLocalOllamaCurator(sourceExcerpt, baseCurated);
+  return tryLocalOllamaCurator(sourceExcerpt, baseCurated, assignment);
 }
 
 async function fetchApifyDataset(id, token) {
@@ -404,8 +457,16 @@ async function main() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => {
-    console.error('❌ [LEAD_CURATOR]', err?.message || err);
-    process.exit(1);
-  });
+  main()
+    .catch((err) => {
+      console.error('❌ [LEAD_CURATOR]', err?.message || err);
+      process.exitCode = 1;
+    })
+    .finally(() => {
+      try {
+        cachedBrainDb?.close();
+      } catch {
+        // ignore
+      }
+    });
 }

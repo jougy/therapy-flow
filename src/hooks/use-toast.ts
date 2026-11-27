@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
+import { classifyDestructiveToast, type ToastTelemetryMode } from "@/lib/toast-telemetry";
 
 const TOAST_LIMIT = 1;
 const TOAST_REMOVE_DELAY = 1000000;
@@ -10,6 +11,9 @@ type ToasterToast = ToastProps & {
   title?: React.ReactNode;
   description?: React.ReactNode;
   action?: ToastActionElement;
+  telemetry?: ToastTelemetryMode;
+  telemetryScope?: string;
+  telemetryContext?: Record<string, unknown>;
 };
 
 const actionTypes = {
@@ -134,7 +138,7 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
-function toast({ ...props }: Toast) {
+function toast({ telemetry, telemetryScope, telemetryContext, ...props }: Toast) {
   const id = genId();
 
   if (props.variant === "destructive") {
@@ -147,14 +151,25 @@ function toast({ ...props }: Toast) {
           : titleStr
         : descStr || "Toast destrutivo (erro na interface)";
 
-      localTelemetryManager.recordError({
-        scope: "ui.toast.destructive",
-        message,
-        context: {
-          title: typeof props.title === "string" ? props.title : undefined,
-          description: typeof props.description === "string" ? props.description : undefined,
-        },
+      const classification = classifyDestructiveToast({
+        title: titleStr,
+        description: descStr,
+        telemetry,
       });
+
+      if (classification === "validation") {
+        localTelemetryManager.recordAction("form_validation_error");
+      } else if (classification === "error") {
+        localTelemetryManager.recordError({
+          scope: telemetryScope || "ui.toast.destructive",
+          message,
+          context: {
+            title: titleStr || undefined,
+            description: descStr || undefined,
+            ...(telemetryContext ?? {}),
+          },
+        });
+      }
     } catch {
       // Safe fallback
     }

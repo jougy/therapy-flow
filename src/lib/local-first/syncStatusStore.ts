@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 export interface SyncStatusState {
   isOnline: boolean;
   pendingCount: number;
+  failedCount: number;
   isSyncing: boolean;
   lastSyncedAt: number | null;
   hydrationProgress: number;
@@ -13,6 +14,7 @@ export interface SyncStatusState {
 let currentState: SyncStatusState = {
   isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
   pendingCount: 0,
+  failedCount: 0,
   isSyncing: false,
   lastSyncedAt: null,
   hydrationProgress: 0,
@@ -48,6 +50,7 @@ export function setSyncStatus(
   const hasChanged =
     next.isOnline !== currentState.isOnline ||
     next.pendingCount !== currentState.pendingCount ||
+    next.failedCount !== currentState.failedCount ||
     next.isSyncing !== currentState.isSyncing ||
     next.lastSyncedAt !== currentState.lastSyncedAt ||
     next.hydrationProgress !== currentState.hydrationProgress ||

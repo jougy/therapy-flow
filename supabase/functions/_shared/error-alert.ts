@@ -6,6 +6,8 @@
  * and hourly caps (40 Telegram/hour, 15 Emails/hour), with fail-open in-memory fallback.
  */
 
+import { enqueueToQStash } from './qstash.ts';
+
 export interface AdminErrorAlertInput {
   fingerprint: string;
   level: 'critical' | 'error' | 'warn';
@@ -17,6 +19,7 @@ export interface AdminErrorAlertInput {
   stack?: string;
   metadata?: Record<string, unknown>;
   force?: boolean;
+  isQStashRetry?: boolean;
 }
 
 export interface AdminErrorAlertResult {
@@ -409,6 +412,21 @@ export async function dispatchAdminErrorAlert(input: AdminErrorAlertInput): Prom
         }
       }
     }
+    if ((telegramError || emailError) && !input.isQStashRetry) {
+      const supabaseUrl = getEnv('SUPABASE_URL')?.replace(/\/+$/, '');
+      if (supabaseUrl) {
+        void enqueueToQStash('notifications-reliable', {
+          targetUrl: `${supabaseUrl}/functions/v1/platform-observability`,
+          body: {
+            action: 'retry_admin_alert',
+            alertInput: { ...input, isQStashRetry: true, force: true },
+          },
+          retries: 4,
+          deduplicationId: `alert-retry:${input.fingerprint}:${Math.floor(Date.now() / 60000)}`,
+        });
+      }
+    }
+
     return {
       telegramSent,
       emailSent,

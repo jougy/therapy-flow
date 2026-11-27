@@ -75,18 +75,32 @@ describe('error-dedup (Upstash -> Axiom)', () => {
         code: 504,
         route: '/functions/v1/sync',
         message: 'Upstream gateway timeout',
+        metadata: {
+          clinic_id: '8a36d1ba-55ad-46fc-8a47-870b14c66fff',
+          user_id: '917dc0ee-84f0-4adc-acec-9aeb6db359ab',
+        },
       });
       if (i === 0) expect(res).toEqual({ deduplicated: false, count: 1 });
       else expect(res).toEqual({ deduplicated: true, count: i + 1 });
     }
 
     expect(axiomPayloads).toHaveLength(1);
-    expect((axiomPayloads[0][0] as { occurrences: number }).occurrences).toBe(1);
+    expect(axiomPayloads[0][0]).toMatchObject({
+      occurrences: 1,
+      scope: '504',
+      event_type: 'runtime',
+      clinic_id: '8a36d1ba-55ad-46fc-8a47-870b14c66fff',
+      user_id: '917dc0ee-84f0-4adc-acec-9aeb6db359ab',
+    });
 
     const flushed = await flushPendingErrors();
     expect(flushed).toBe(1);
     expect(axiomPayloads).toHaveLength(2);
-    expect((axiomPayloads[1][0] as { occurrences: number }).occurrences).toBe(99);
+    expect(axiomPayloads[1][0]).toMatchObject({
+      occurrences: 99,
+      scope: '504',
+      event_type: 'runtime',
+    });
 
     vi.unstubAllGlobals();
   });

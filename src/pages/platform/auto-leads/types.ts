@@ -12,7 +12,8 @@ export type AutoLeadSourcePlatform =
   | "lindy_agent"
   | "apify_direct"
   | "csv_import"
-  | "whatsapp_inbound";
+  | "whatsapp_inbound"
+  | "web_signal";
 
 export type AutoLeadStage =
   | "new"
@@ -85,6 +86,7 @@ export interface PlatformAutoLead {
   external_lead_key: string;
   apify_run_id?: string | null;
   lindy_task_id?: string | null;
+  raw_metadata?: Record<string, unknown> | null;
   notes?: string | null;
   last_contacted_at?: string | null;
   created_at: string;

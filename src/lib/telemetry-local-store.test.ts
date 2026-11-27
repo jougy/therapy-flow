@@ -345,4 +345,27 @@ describe("ClientTelemetryManager & Triggers", () => {
     expect(mockFrom).toHaveBeenCalledWith("platform_error_logs");
     expect(mockInsert).toHaveBeenCalledTimes(1);
   });
+
+  it("sanitizes PAC codes in window.location.pathname before persisting or forwarding errors (Zero-PHI)", async () => {
+    setObservabilityMulticloudConfig({ errorLogsDriver: "supabase_optimized" });
+    const originalPath = window.location.pathname;
+    window.history.replaceState({}, "", "/clinica/ins-guardian-of-the-amazon/pacientes/PAC-016/sessao/ATD-66");
+
+    try {
+      localTelemetryManager.recordError({
+        scope: "session.save_error",
+        message: "Erro ao salvar atendimento",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(mockInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          route: "/clinica/ins-guardian-of-the-amazon/pacientes/PAC-[REDACTED]/sessao/ATD-66",
+        })
+      );
+    } finally {
+      window.history.replaceState({}, "", originalPath || "/");
+    }
+  });
 });

@@ -51,7 +51,7 @@ import {
 } from "@/lib/runtime-debug";
 import { localTelemetryManager } from "@/lib/telemetry-local-store";
 import { supabase } from "@/integrations/supabase/client";
-import { queryAxiomLogs, type AxiomLogRecord } from "@/lib/telemetry/axiom-client";
+import { queryAxiomLogs, resolveAxiomErrors, type AxiomLogRecord } from "@/lib/telemetry/axiom-client";
 
 // Modular subcomponents
 import type { GroupedIssue, WhatsAppBugContext } from "./errors-logs/types";
@@ -362,6 +362,18 @@ export const PlatformErrorsLogsPage: React.FC = () => {
     toast({
       title: "Logs limpos",
       description: "Todos os eventos de diagnóstico em memória foram limpos.",
+    });
+  };
+
+  // Mark an error as resolved and remove from the Backoffice list
+  const handleResolveError = async (id: string) => {
+    setDbEvents((prev) => prev.filter((ev) => ev.id !== id));
+    const ok = await resolveAxiomErrors([id]);
+    toast({
+      title: ok ? "Erro resolvido" : "Erro ocultado localmente",
+      description: ok
+        ? "O erro foi marcado como resolvido e removido da lista."
+        : "O erro foi removido da visualização atual.",
     });
   };
 
@@ -756,6 +768,7 @@ export const PlatformErrorsLogsPage: React.FC = () => {
                     expandedId={expandedEventId}
                     onToggleExpand={(id) => setExpandedEventId(expandedEventId === id ? null : id)}
                     onCopy={copyToClipboard}
+                    onResolve={handleResolveError}
                   />
                 );
               })}

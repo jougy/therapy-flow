@@ -4,6 +4,8 @@ import { flushPendingErrors, flushPendingErrorsIfDue, reportError } from "../_sh
 import { dispatchAdminErrorAlert, runBackgroundSafe } from "../_shared/error-alert.ts";
 import { ingestToAxiom } from "../_shared/telemetry-axiom.ts";
 import { checkRateLimit, rateLimitExceededResponse } from "../_shared/rate-limit.ts";
+import { verifyQStashSignature } from "../_shared/qstash.ts";
+import { ResendClient } from "../_shared/resend-client.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -100,13 +102,19 @@ Deno.serve(async (req) => {
     return json({ error: "Method not allowed" }, 405);
   }
 
+  const rawBody = await req.text();
+  const qstashSig = req.headers.get("Upstash-Signature") || req.headers.get("upstash-signature");
+  const isQStashCall = qstashSig
+    ? (await verifyQStashSignature(req, rawBody, `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/platform-observability`)).valid
+    : false;
+
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
+  if (!authHeader && !isQStashCall) {
     return json({ error: "Missing Authorization header" }, 401);
   }
 
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  const isServiceRoleCall = await verifyServiceRoleJwt(token);
+  const token = (authHeader || "").replace(/^Bearer\s+/i, "").trim();
+  const isServiceRoleCall = isQStashCall || (token ? await verifyServiceRoleJwt(token) : false);
 
   let user: { id: string } | null = null;
   if (!isServiceRoleCall) {
@@ -127,8 +135,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const action = typeof body.action === "string" ? body.action : "";
+    const body = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {};
+    const action = typeof body.action === "string" ? body.action : (new URL(req.url).searchParams.get("action") || "");
 
     // =========================================================================
     // CAMADA 1: Ações autenticadas (Telemetria, Erros, Presença, Slots Cache)
@@ -152,19 +160,29 @@ Deno.serve(async (req) => {
       const counters = body.counters && typeof body.counters === "object" ? (body.counters as Record<string, unknown>) : {};
 
       const commands: Array<Array<string | number>> = [];
+      const TELEMETRY_TTL_SEC = 90 * 24 * 60 * 60;
+      let touchedUserMatrix = false;
+      let touchedClinicMatrix = false;
+      let touchedUserCounters = false;
       for (const [col, seconds] of Object.entries(matrix)) {
         if (SAFE_IDENT_RE.test(col) && typeof seconds === "number" && seconds > 0 && seconds < 86400) {
           commands.push(["HINCRBY", `telemetry:user:${user.id}`, col, Math.round(seconds)]);
+          touchedUserMatrix = true;
           if (clinicId) {
             commands.push(["HINCRBY", `telemetry:clinic:${clinicId}`, col, Math.round(seconds)]);
+            touchedClinicMatrix = true;
           }
         }
       }
       for (const [key, val] of Object.entries(counters)) {
         if (SAFE_IDENT_RE.test(key) && typeof val === "number" && val > 0 && val < 10000) {
           commands.push(["HINCRBY", `telemetry:user:${user.id}:counters`, key, Math.round(val)]);
+          touchedUserCounters = true;
         }
       }
+      if (touchedUserMatrix) commands.push(["EXPIRE", `telemetry:user:${user.id}`, TELEMETRY_TTL_SEC]);
+      if (touchedClinicMatrix && clinicId) commands.push(["EXPIRE", `telemetry:clinic:${clinicId}`, TELEMETRY_TTL_SEC]);
+      if (touchedUserCounters) commands.push(["EXPIRE", `telemetry:user:${user.id}:counters`, TELEMETRY_TTL_SEC]);
 
       if (commands.length === 0) return json({ ok: true, commands: 0 });
       const res = await runUpstashPipeline(commands);
@@ -188,15 +206,18 @@ Deno.serve(async (req) => {
       const stack = typeof body.stack === "string" ? body.stack.slice(0, 1000) : undefined;
       const level = body.level === "warn" ? "warn" : body.level === "critical" ? "critical" : "error";
       const service = typeof body.service === "string" ? body.service.slice(0, 60) : "pluri-health-client";
+      const isTransientHeartbeatNoise =
+        scope.includes("heartbeat") && /Failed to fetch|Load failed|NetworkError/i.test(message);
 
       const result = await reportError({
         service,
-        level,
+        level: isTransientHeartbeatNoise ? "warn" : level,
         code: scope,
         route,
         message,
         stack,
         windowSec: 60,
+        notifyAdmin: isTransientHeartbeatNoise ? false : undefined,
         metadata: {
           clinic_id: clinicId,
           user_id: user.id,
@@ -320,6 +341,69 @@ Deno.serve(async (req) => {
       return json({ ok: true, flushed });
     }
 
+    if (action === "qstash_failure_callback") {
+      const dlqStatus = body.status ?? "unknown";
+      const dlqUrl = typeof body.url === "string" ? body.url : "unknown";
+      const dlqMsgId = typeof body.sourceMessageId === "string" ? body.sourceMessageId : "unknown";
+      const dlqBody = typeof body.sourceBody === "string" ? body.sourceBody.slice(0, 300) : "";
+      const dateKey = new Date().toISOString().slice(0, 10);
+
+      await Promise.allSettled([
+        runUpstashPipeline([
+          ["INCR", `metrics:qstash:dlq:${dateKey}`],
+          ["EXPIRE", `metrics:qstash:dlq:${dateKey}`, 604800],
+        ]),
+        ingestToAxiom([
+          {
+            level: "error",
+            service: "qstash-dlq",
+            scope: "qstash.dlq",
+            event_type: "runtime",
+            error_code: `DLQ_${dlqStatus}`,
+            route: dlqUrl,
+            message: `QStash DLQ: mensagem ${dlqMsgId} esgotou retries (status ${dlqStatus})`,
+            metadata: { sourceMessageId: dlqMsgId, url: dlqUrl, status: dlqStatus, sourceBody: dlqBody },
+          },
+        ]),
+        dispatchAdminErrorAlert({
+          fingerprint: `qstash-dlq:${dlqUrl}:${dlqStatus}`,
+          level: "critical",
+          service: "qstash-dlq",
+          route: dlqUrl,
+          code: `DLQ_${dlqStatus}`,
+          message: `QStash DLQ: job ${dlqMsgId} falhou após todos os retries (HTTP ${dlqStatus}).`,
+          metadata: { sourceMessageId: dlqMsgId, url: dlqUrl, sourceBody: dlqBody },
+        }),
+      ]);
+      return json({ ok: true, dlqLogged: true });
+    }
+
+    if (action === "retry_admin_alert") {
+      const alertInput = body.alertInput as Parameters<typeof dispatchAdminErrorAlert>[0] | undefined;
+      if (!alertInput || !alertInput.fingerprint) return json({ error: "alertInput required" }, 400);
+      const res = await dispatchAdminErrorAlert({ ...alertInput, isQStashRetry: true, force: true });
+      return json({ ok: res.telegramSent || res.emailSent, ...res });
+    }
+
+    if (action === "retry_transactional_email") {
+      const emailPayload = body.emailPayload as { to?: string | string[]; subject?: string; html?: string; text?: string; from?: string } | undefined;
+      if (!emailPayload?.to || !emailPayload?.subject || !emailPayload?.html) {
+        return json({ error: "emailPayload (to, subject, html) required" }, 400);
+      }
+      const resend = new ResendClient();
+      const sendRes = await resend.sendEmail({
+        from: emailPayload.from,
+        to: emailPayload.to,
+        subject: emailPayload.subject,
+        html: emailPayload.html,
+        text: emailPayload.text,
+      });
+      if (sendRes.error) {
+        return json({ ok: false, error: sendRes.error.message }, 502);
+      }
+      return json({ ok: true, id: sendRes.id });
+    }
+
     if (action === "query_axiom_logs") {
       if (!axiomToken) {
         return json({ error: "Axiom token not configured in secrets", records: [] }, 200);
@@ -383,23 +467,104 @@ Deno.serve(async (req) => {
         fields.forEach((fieldName, colIdx) => {
           item[fieldName] = columns[colIdx]?.[r];
         });
+        const metaObj = typeof item.metadata === "object" && item.metadata !== null
+          ? (item.metadata as Record<string, unknown>)
+          : undefined;
+        const resolvedScope = (item.scope as string)
+          || (item.error_code !== undefined && item.error_code !== null && item.error_code !== "" ? String(item.error_code) : undefined);
+        const resolvedClinicId = (item.clinic_id as string)
+          || (item["metadata.clinic_id"] as string)
+          || (typeof metaObj?.clinic_id === "string" ? metaObj.clinic_id : undefined);
+        const resolvedUserId = (item.user_id as string)
+          || (item["metadata.user_id"] as string)
+          || (typeof metaObj?.user_id === "string" ? metaObj.user_id : undefined);
+        const resolvedStack = (item.stack as string)
+          || (item["metadata.stack"] as string)
+          || (typeof metaObj?.stack === "string" ? metaObj.stack : undefined);
+        const resolvedContext = (typeof item.context === "object" && item.context !== null ? item.context : undefined)
+          || (typeof item["metadata.context"] === "object" && item["metadata.context"] !== null ? (item["metadata.context"] as Record<string, unknown>) : undefined)
+          || (typeof metaObj?.context === "object" && metaObj.context !== null ? (metaObj.context as Record<string, unknown>) : undefined)
+          || metaObj;
+        const resolvedEventType = (item.event_type as string)
+          || (item.level === "warn" ? "warning" : "runtime");
+
         records.push({
           id: (item.id as string) || (item._sysTime as string) || (item._time as string) || `${Date.now()}-${r}`,
           _time: (item._time as string) || new Date().toISOString(),
           _sysTime: item._sysTime as string,
           environment: item.environment as string,
           service: item.service as string,
-          event_type: item.event_type as string,
-          scope: item.scope as string,
+          event_type: resolvedEventType,
+          scope: resolvedScope,
           message: item.message as string,
-          stack: item.stack as string,
-          context: typeof item.context === "object" && item.context !== null ? item.context : undefined,
+          stack: resolvedStack,
+          context: resolvedContext,
           route: item.route as string,
-          clinic_id: item.clinic_id as string,
-          user_id: item.user_id as string,
+          clinic_id: resolvedClinicId,
+          user_id: resolvedUserId,
         });
       }
-      return json({ records });
+
+      let filteredRecords = records;
+      if (upstashUrl && upstashToken && records.length > 0) {
+        try {
+          const redisRes = await fetch(`${upstashUrl}/smembers/observability:resolved_errors`, {
+            headers: { Authorization: `Bearer ${upstashToken}` },
+          });
+          if (redisRes.ok) {
+            const redisData = await redisRes.json();
+            const resolvedSet = new Set<string>(
+              Array.isArray(redisData?.result) ? redisData.result.map(String) : []
+            );
+            if (resolvedSet.size > 0) {
+              filteredRecords = records.filter((rec) => !resolvedSet.has(String(rec.id)));
+            }
+          }
+        } catch {
+          // Non-fatal: return all records if Upstash is temporarily unreachable
+        }
+      }
+
+      return json({ records: filteredRecords });
+    }
+
+    if (action === "resolve_axiom_error") {
+      const idsToResolve: string[] = [];
+      if (typeof body.id === "string" && body.id.trim()) {
+        idsToResolve.push(body.id.trim());
+      }
+      if (Array.isArray(body.ids)) {
+        for (const rawId of body.ids) {
+          if (typeof rawId === "string" && rawId.trim()) {
+            idsToResolve.push(rawId.trim());
+          }
+        }
+      }
+
+      if (idsToResolve.length === 0) {
+        return json({ error: "Missing error id(s)" }, 400);
+      }
+
+      if (upstashUrl && upstashToken) {
+        const pipeline: Array<[string, ...string[]]> = [
+          ["SADD", "observability:resolved_errors", ...idsToResolve],
+          ["EXPIRE", "observability:resolved_errors", "2592000"],
+        ];
+        const redisRes = await fetch(`${upstashUrl}/pipeline`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${upstashToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(pipeline),
+        });
+        if (!redisRes.ok) {
+          const text = await redisRes.text();
+          return json({ error: "Upstash error", status: redisRes.status, details: text }, 502);
+        }
+      }
+
+      return json({ ok: true, resolvedCount: idsToResolve.length });
     }
 
     if (action === "query_upstash_telemetry") {

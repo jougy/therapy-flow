@@ -63,6 +63,21 @@ export interface OfflineOutboxItem<T extends OfflineMutationType = OfflineMutati
   createdAt: number;
   attempts: number;
   lastError?: string | null;
+  status?: "pending" | "failed_permanent";
+}
+
+function isPermanentOutboxError(message: string, attempts: number): boolean {
+  if (/Failed to fetch|NetworkError|Load failed|timeout|502|503|504/i.test(message)) {
+    return false;
+  }
+  if (
+    /42501|23503|23505|22P02|PGRST116|row-level security|violates|invalid input syntax|permission denied|not found/i.test(
+      message
+    )
+  ) {
+    return true;
+  }
+  return attempts >= 5;
 }
 
 export interface FlushOutboxResult {
@@ -94,8 +109,10 @@ function applyReconciledRecordId<T extends { id?: string }>(record: T, tempId?: 
 
 export async function refreshOfflineOutboxCount(): Promise<number> {
   const items = await getAllOutboxItems<OfflineOutboxItem>();
-  setSyncStatus({ pendingCount: items.length });
-  return items.length;
+  const failedCount = items.filter((i) => i.status === "failed_permanent").length;
+  const pendingCount = items.length - failedCount;
+  setSyncStatus({ pendingCount, failedCount });
+  return pendingCount;
 }
 
 export async function enqueueOfflineMutation<T extends OfflineMutationType>(
@@ -221,6 +238,107 @@ async function executeOutboxItem(item: OfflineOutboxItem): Promise<void> {
   }
 }
 
+export function compactOfflineOutbox(items: OfflineOutboxItem[]): {
+  compacted: OfflineOutboxItem[];
+  droppedIds: string[];
+} {
+  const sorted = [...items].sort((a, b) => a.id.localeCompare(b.id));
+  const droppedIds: string[] = [];
+  const result: OfflineOutboxItem[] = [];
+
+  const patientCreateIdx = new Map<string, number>();
+  const patientUpdateIdx = new Map<string, number>();
+  const sessionUpsertIdx = new Map<string, number>();
+  const agendaUpsertIdx = new Map<string, number>();
+
+  for (const item of sorted) {
+    if (item.type === "create_patient") {
+      const p = item.payload as OfflineMutationPayloadMap["create_patient"];
+      patientCreateIdx.set(p.tempId, result.length);
+      result.push(item);
+      continue;
+    }
+
+    if (item.type === "update_patient") {
+      const p = item.payload as OfflineMutationPayloadMap["update_patient"];
+      const createIdx = patientCreateIdx.get(p.patientId);
+      if (createIdx !== undefined) {
+        const prev = result[createIdx];
+        const prevPayload = prev.payload as OfflineMutationPayloadMap["create_patient"];
+        result[createIdx] = {
+          ...prev,
+          payload: { ...prevPayload, record: { ...prevPayload.record, ...p.patch } },
+        };
+        droppedIds.push(item.id);
+        continue;
+      }
+      const prevUpdIdx = patientUpdateIdx.get(p.patientId);
+      if (prevUpdIdx !== undefined) {
+        const prev = result[prevUpdIdx];
+        const prevPayload = prev.payload as OfflineMutationPayloadMap["update_patient"];
+        droppedIds.push(prev.id);
+        result[prevUpdIdx] = {
+          ...item,
+          payload: { patientId: p.patientId, patch: { ...prevPayload.patch, ...p.patch } },
+        };
+        continue;
+      }
+      patientUpdateIdx.set(p.patientId, result.length);
+      result.push(item);
+      continue;
+    }
+
+    if (item.type === "upsert_session") {
+      const p = item.payload as OfflineMutationPayloadMap["upsert_session"];
+      const key = p.tempId || p.record.id;
+      if (key) {
+        const prevIdx = sessionUpsertIdx.get(key);
+        if (prevIdx !== undefined) {
+          droppedIds.push(result[prevIdx].id);
+          result[prevIdx] = item;
+          continue;
+        }
+        sessionUpsertIdx.set(key, result.length);
+      }
+      result.push(item);
+      continue;
+    }
+
+    if (item.type === "upsert_agenda_event") {
+      const p = item.payload as OfflineMutationPayloadMap["upsert_agenda_event"];
+      const key = p.tempId || p.record.id;
+      if (key) {
+        const prevIdx = agendaUpsertIdx.get(key);
+        if (prevIdx !== undefined) {
+          droppedIds.push(result[prevIdx].id);
+          result[prevIdx] = item;
+          continue;
+        }
+        agendaUpsertIdx.set(key, result.length);
+      }
+      result.push(item);
+      continue;
+    }
+
+    if (item.type === "delete_agenda_event") {
+      const p = item.payload as OfflineMutationPayloadMap["delete_agenda_event"];
+      const prevIdx = agendaUpsertIdx.get(p.eventId);
+      if (prevIdx !== undefined && !isUuid(p.eventId)) {
+        droppedIds.push(result[prevIdx].id, item.id);
+        result.splice(prevIdx, 1);
+        agendaUpsertIdx.delete(p.eventId);
+        continue;
+      }
+      result.push(item);
+      continue;
+    }
+
+    result.push(item);
+  }
+
+  return { compacted: result, droppedIds };
+}
+
 export async function flushOfflineOutbox(): Promise<FlushOutboxResult> {
   if (activeFlushPromise) return activeFlushPromise;
 
@@ -231,11 +349,16 @@ export async function flushOfflineOutbox(): Promise<FlushOutboxResult> {
     }
 
     await ensureReconciliationLoaded();
-    const items = await getAllOutboxItems<OfflineOutboxItem>();
-    items.sort((a, b) => a.id.localeCompare(b.id));
+    const rawItems = await getAllOutboxItems<OfflineOutboxItem>();
+    const syncableRaw = rawItems.filter((i) => i.status !== "failed_permanent");
+    const { compacted: items, droppedIds } = compactOfflineOutbox(syncableRaw);
+    for (const droppedId of droppedIds) {
+      await deleteOutboxItem(droppedId);
+    }
 
     if (items.length === 0) {
-      setSyncStatus({ pendingCount: 0, isSyncing: false });
+      await refreshOfflineOutboxCount();
+      setSyncStatus({ isSyncing: false });
       return { processed: 0, failed: 0, remaining: 0 };
     }
 
@@ -253,9 +376,19 @@ export async function flushOfflineOutbox(): Promise<FlushOutboxResult> {
           setSyncStatus({ pendingCount: items.length - idx - 1, lastSyncedAt: Date.now() });
         } catch (err) {
           failed++;
+          const nextAttempts = item.attempts + 1;
           const message = err instanceof Error ? err.message : "Erro ao sincronizar fila offline.";
-          await putOutboxItem(item.id, { ...item, attempts: item.attempts + 1, lastError: message });
+          const permanent = isPermanentOutboxError(message, nextAttempts);
+          await putOutboxItem(item.id, {
+            ...item,
+            attempts: nextAttempts,
+            lastError: message,
+            status: permanent ? "failed_permanent" : "pending",
+          });
           setSyncStatus({ lastError: message });
+          if (permanent) {
+            continue;
+          }
           break;
         }
       }
@@ -273,13 +406,42 @@ export async function flushOfflineOutbox(): Promise<FlushOutboxResult> {
   return activeFlushPromise;
 }
 
+export async function retryFailedOfflineMutations(): Promise<FlushOutboxResult> {
+  const items = await getAllOutboxItems<OfflineOutboxItem>();
+  for (const item of items) {
+    if (item.status === "failed_permanent") {
+      await putOutboxItem(item.id, { ...item, status: "pending", attempts: 0, lastError: null });
+    }
+  }
+  await refreshOfflineOutboxCount();
+  return flushOfflineOutbox();
+}
+
+export async function discardFailedOfflineMutations(): Promise<number> {
+  const items = await getAllOutboxItems<OfflineOutboxItem>();
+  let removed = 0;
+  for (const item of items) {
+    if (item.status === "failed_permanent") {
+      await deleteOutboxItem(item.id);
+      removed++;
+    }
+  }
+  await refreshOfflineOutboxCount();
+  setSyncStatus({ lastError: null });
+  return removed;
+}
+
 let outboxListenersRegistered = false;
 
 export function initOfflineOutboxListeners(): void {
   if (outboxListenersRegistered || typeof window === "undefined") return;
   outboxListenersRegistered = true;
 
-  void refreshOfflineOutboxCount();
+  void refreshOfflineOutboxCount().then((pending) => {
+    if (pending > 0 && (typeof navigator === "undefined" || navigator.onLine)) {
+      void flushOfflineOutbox();
+    }
+  });
   window.addEventListener("online", () => {
     void flushOfflineOutbox();
   });

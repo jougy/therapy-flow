@@ -7,6 +7,7 @@ import {
 } from "@/lib/telemetry/canonical-matrix";
 import {
   sanitizeErrorEntryForCloud,
+  scrubSensitiveHealthData,
   shouldSkipDuplicateError,
   resetErrorDeduplicator,
 } from "@/lib/telemetry/lgpd-scrubber";
@@ -218,7 +219,8 @@ class ClientTelemetryManager {
   }
 
   public recordError(errorInfo: RecordErrorInfo) {
-    const route = typeof window !== "undefined" ? window.location.pathname : "/";
+    const rawRoute = typeof window !== "undefined" ? window.location.pathname : "/";
+    const route = scrubSensitiveHealthData(rawRoute);
     const sanitized = sanitizeErrorEntryForCloud({
       scope: errorInfo.scope || "runtime", message: errorInfo.message,
       stack: errorInfo.stack, context: errorInfo.context,
@@ -241,6 +243,18 @@ class ClientTelemetryManager {
     this.save();
 
     if (shouldSkipDuplicateError(errorItem.scope, errorItem.message, route)) return;
+
+    // Nunca poluir o Axiom/Backoffice de produção com erros de desenvolvimento local (exceto em testes unitários)
+    const isTestEnv =
+      (typeof process !== "undefined" && process.env?.NODE_ENV === "test") ||
+      (typeof import.meta !== "undefined" && import.meta.env?.MODE === "test");
+    if (
+      !isTestEnv &&
+      typeof window !== "undefined" &&
+      /^(localhost|127\.0\.0\.1|0\.0\.0\.0|.*\.local)$/i.test(window.location.hostname)
+    ) {
+      return;
+    }
 
     const config = getObservabilityMulticloudConfig();
     const driver = config.errorLogsDriver;

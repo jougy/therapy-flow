@@ -7,6 +7,7 @@ import { sendAudioPtt } from './lib/audioPtt.js';
 import { verifyPayloadHmac } from './lib/hmac.js';
 import { MultiChipRouter, type RouterInstanceRecord } from './lib/multiChipRouter.js';
 import { executeWarmupJob, planWarmupSessionsForPool } from './lib/warmupScheduler.js';
+import { renderWhatsappCard, type WhatsappCardType } from './studio/whatsappCardTemplates.js';
 
 const PORT = Number(process.env.WORKER_PORT || 8086);
 const REDIS_URL = (process.env.REDIS_URL || 'redis://127.0.0.1:6379/0').trim();
@@ -15,7 +16,7 @@ const EVOLUTION_API_KEY = (process.env.EVOLUTION_API_KEY || '').trim();
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
 const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const WORKER_SHARED_SECRET = (process.env.WORKER_SHARED_SECRET || '').trim();
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 5_000;
 
 const QUEUE_NAMES = ['zap-dispatch', 'zap-filter', 'zap-groups', 'zap-warmup', 'zap-flows'] as const;
 type QueueName = (typeof QUEUE_NAMES)[number];
@@ -58,9 +59,14 @@ async function evoRequest(
 }
 
 function isWithinBusinessWindow(antiBan: Record<string, unknown> | null | undefined): boolean {
-  const startStr = String(antiBan?.business_start || '08:30');
-  const endStr = String(antiBan?.business_end || '19:30');
-  const allowedDays = Array.isArray(antiBan?.business_days) ? (antiBan.business_days as number[]) : [1, 2, 3, 4, 5, 6];
+  const startStr = String(antiBan?.business_start || antiBan?.start || '08:30');
+  const endStr = String(antiBan?.business_end || antiBan?.end || '19:30');
+  const rawDays = Array.isArray(antiBan?.business_days)
+    ? antiBan.business_days
+    : Array.isArray(antiBan?.days)
+      ? antiBan.days
+      : null;
+  const allowedDays = rawDays ? (rawDays as number[]) : [1, 2, 3, 4, 5, 6];
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Sao_Paulo',
     weekday: 'short',
@@ -102,7 +108,7 @@ async function handleDispatchJob(job: Job<Record<string, unknown>>): Promise<voi
 
   const { data: dispatch } = await supabase
     .from('marketing_zap_dispatches')
-    .select('id, campaign_id, instance_id, phone_e164, status, rendered_body')
+    .select('id, campaign_id, instance_id, lead_id, phone_e164, status, rendered_body')
     .eq('id', dispatchId)
     .maybeSingle();
 
@@ -110,7 +116,7 @@ async function handleDispatchJob(job: Job<Record<string, unknown>>): Promise<voi
 
   const { data: campaign } = await supabase
     .from('marketing_zap_campaigns')
-    .select('id, instance_id, instance_pool_ids, media_payload, active_hours_window, sent_count, failed_count, status')
+    .select('id, instance_id, instance_pool_ids, audience_filter, media_payload, active_hours_window, sent_count, failed_count, status')
     .eq('id', dispatch.campaign_id)
     .maybeSingle();
 
@@ -128,19 +134,32 @@ async function handleDispatchJob(job: Job<Record<string, unknown>>): Promise<voi
     return;
   }
 
+  const rawBody = String(dispatch.rendered_body || '');
+  const audienceFilter = (campaign.audience_filter || {}) as Record<string, unknown>;
+  const mediaPayload = ((job.data.mediaPayload || campaign.media_payload || {}) as Record<string, unknown>);
+  const mediaType = String(mediaPayload.type || '');
+  const isCardPack = mediaType === 'whatsapp_card_pack' || rawBody.startsWith('[[PLURI_CARD_PACK]]');
+  const isReactiveSystem = Boolean(audienceFilter.system_visual_pack || audienceFilter.system_reactive_reply || isCardPack);
+
   const poolIds = Array.isArray(campaign.instance_pool_ids) && campaign.instance_pool_ids.length > 0
     ? (campaign.instance_pool_ids as string[])
     : [String(dispatch.instance_id || campaign.instance_id || '')].filter(Boolean);
 
   const pool = await router.loadPoolInstances(supabase, poolIds);
-  const chosen: RouterInstanceRecord | null = router.pickInstanceForLead(pool, `${campaign.id}:${dispatch.phone_e164}`);
+  let chosen: RouterInstanceRecord | null = router.pickInstanceForLead(pool, `${campaign.id}:${dispatch.phone_e164}`);
+  if (!chosen && isReactiveSystem) {
+    chosen = pool.find((inst) => inst.status !== 'banned' && Boolean(inst.instance_key)) || null;
+  }
   if (!chosen) {
     await supabase.from('marketing_zap_dispatches').update({ status: 'failed', error_message: 'Nenhum chip conectado ou com cota disponível.' }).eq('id', dispatch.id);
     return;
   }
 
   const antiBan = (chosen.anti_ban_config || campaign.active_hours_window || {}) as Record<string, unknown>;
-  if (!isWithinBusinessWindow(antiBan) && job.data.ignoreBusinessHours !== true) {
+  const effectiveWindow = isReactiveSystem
+    ? ((campaign.active_hours_window || { business_start: '00:00', business_end: '23:59', business_days: [0, 1, 2, 3, 4, 5, 6] }) as Record<string, unknown>)
+    : antiBan;
+  if (!isReactiveSystem && !isWithinBusinessWindow(effectiveWindow) && job.data.ignoreBusinessHours !== true) {
     const retryAt = new Date(Date.now() + 15 * 60_000).toISOString();
     await supabase.from('marketing_zap_dispatches').update({ scheduled_for: retryAt }).eq('id', dispatch.id);
     return;
@@ -148,12 +167,49 @@ async function handleDispatchJob(job: Job<Record<string, unknown>>): Promise<voi
 
   await supabase.from('marketing_zap_dispatches').update({ status: 'sending', instance_id: chosen.id }).eq('id', dispatch.id);
 
-  const mediaPayload = ((job.data.mediaPayload || campaign.media_payload || {}) as Record<string, unknown>);
-  const mediaType = String(mediaPayload.type || '');
   let sendOk = false;
   let sendErr: string | undefined;
 
-  if (mediaType === 'audio_ptt' && (mediaPayload.url || mediaPayload.base64)) {
+  if (isCardPack) {
+    let packSpec: Record<string, unknown> = {};
+    if (rawBody.startsWith('[[PLURI_CARD_PACK]]')) {
+      try {
+        packSpec = JSON.parse(rawBody.slice('[[PLURI_CARD_PACK]]'.length)) as Record<string, unknown>;
+      } catch {
+        packSpec = {};
+      }
+    }
+    const cards = Array.isArray(packSpec.cards) && packSpec.cards.length > 0
+      ? (packSpec.cards as WhatsappCardType[])
+      : (['card_todos_planos_recursos', 'card_todos_planos_precos'] as WhatsappCardType[]);
+    const cardCaptions: Record<string, string> = {
+      card_todos_planos_recursos: '1/2 • Todos os planos Pluri Fisio e o que cada um oferece',
+      card_todos_planos_precos: '2/2 • Investimento oficial + Teste Gratuito 7 dias + Oferta de Lançamento (1º mês grátis no anual)',
+    };
+    sendOk = true;
+    for (let idx = 0; idx < cards.length; idx++) {
+      const cType = cards[idx];
+      const rendered = await renderWhatsappCard(cType, {
+        recommendedPlanId: packSpec.recommendedPlanId ? String(packSpec.recommendedPlanId) : undefined,
+        leadName: packSpec.leadName ? String(packSpec.leadName) : undefined,
+        launchCouponCode: packSpec.launchCouponCode ? String(packSpec.launchCouponCode) : undefined,
+      });
+      const res = await evoRequest(`/message/sendMedia/${encodeURIComponent(chosen.instance_key)}`, 'POST', {
+        number: dispatch.phone_e164,
+        mediatype: 'image',
+        mimetype: rendered.contentType,
+        media: rendered.buffer.toString('base64'),
+        fileName: `pluri-fisio-${cType}.${rendered.contentType === 'image/png' ? 'png' : 'svg'}`,
+        caption: cardCaptions[cType] || 'Pluri Fisio — Planos Oficiais',
+      });
+      if (!res.ok) {
+        sendOk = false;
+        sendErr = String(res.data.message || `HTTP ${res.status}`);
+        break;
+      }
+      if (idx + 1 < cards.length) await sleep(2200);
+    }
+  } else if (mediaType === 'audio_ptt' && (mediaPayload.url || mediaPayload.base64)) {
     const ptt = await sendAudioPtt({
       evolutionBaseUrl: EVOLUTION_API_URL,
       evolutionApiKey: EVOLUTION_API_KEY,
@@ -198,6 +254,14 @@ async function handleDispatchJob(job: Job<Record<string, unknown>>): Promise<voi
     sent_at: sendOk ? new Date().toISOString() : null,
     error_message: sendOk ? null : (sendErr || 'Dispatch failed').slice(0, 500),
   }).eq('id', dispatch.id);
+
+  if (sendOk && dispatch.lead_id) {
+    await supabase
+      .from('platform_auto_leads')
+      .update({ stage: 'contacted', last_contacted_at: new Date().toISOString() })
+      .eq('id', dispatch.lead_id)
+      .in('stage', ['new', 'qualified', 'enriched']);
+  }
 
   await supabase.from('marketing_zap_campaigns').update({
     sent_count: sendOk ? Number(campaign.sent_count || 0) + 1 : Number(campaign.sent_count || 0),
@@ -421,6 +485,30 @@ async function readRawBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8').trim();
 }
 
+function isAuthorizedWorkerRequest(req: IncomingMessage, rawBody: string): boolean {
+  const headerSecret =
+    String(req.headers['x-worker-secret'] || '').trim() ||
+    String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  const isSecretValid = Boolean(WORKER_SHARED_SECRET && safeSecretEquals(headerSecret, WORKER_SHARED_SECRET));
+  const isHmacValid = Boolean(
+    WORKER_SHARED_SECRET &&
+      verifyPayloadHmac(
+        rawBody,
+        String(req.headers['x-pluri-signature'] || ''),
+        String(req.headers['x-pluri-timestamp'] || ''),
+        WORKER_SHARED_SECRET,
+      ),
+  );
+  return Boolean(WORKER_SHARED_SECRET && (isSecretValid || isHmacValid));
+}
+
+const VALID_CARD_TYPES = new Set<WhatsappCardType>([
+  'card_todos_planos_recursos',
+  'card_todos_planos_precos',
+  'card_plano_recomendado',
+  'card_garantia_etica',
+]);
+
 const server = http.createServer(async (req, res) => {
   const reqUrl = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
   if (req.method === 'GET' && reqUrl.pathname === '/health') {
@@ -434,8 +522,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  if (req.method === 'POST' && reqUrl.pathname === '/enqueue') {
-    const headerSecret = String(req.headers['x-worker-secret'] || '').trim() || String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (req.method === 'POST' && (reqUrl.pathname === '/enqueue' || reqUrl.pathname === '/studio/render-whatsapp-card')) {
     let rawBody = '';
     try {
       rawBody = await readRawBody(req);
@@ -443,23 +530,31 @@ const server = http.createServer(async (req, res) => {
       return writeJson(res, 400, { error: 'Failed to read request body' });
     }
 
-    const isSecretValid = Boolean(WORKER_SHARED_SECRET && safeSecretEquals(headerSecret, WORKER_SHARED_SECRET));
-    const isHmacValid = Boolean(
-      WORKER_SHARED_SECRET &&
-      verifyPayloadHmac(
-        rawBody,
-        String(req.headers['x-pluri-signature'] || ''),
-        String(req.headers['x-pluri-timestamp'] || ''),
-        WORKER_SHARED_SECRET
-      )
-    );
-
-    if (!WORKER_SHARED_SECRET || (!isSecretValid && !isHmacValid)) {
+    if (!isAuthorizedWorkerRequest(req, rawBody)) {
       return writeJson(res, 401, { error: 'Unauthorized worker secret or signature' });
     }
 
     try {
       const body = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {};
+      if (reqUrl.pathname === '/studio/render-whatsapp-card') {
+        const cardType = String(body.cardType || 'card_todos_planos_recursos') as WhatsappCardType;
+        if (!VALID_CARD_TYPES.has(cardType)) {
+          return writeJson(res, 400, { error: `Unknown cardType: ${cardType}` });
+        }
+        const rendered = await renderWhatsappCard(cardType, {
+          recommendedPlanId: body.recommendedPlanId ? String(body.recommendedPlanId) : undefined,
+          leadName: body.leadName ? String(body.leadName) : undefined,
+          launchCouponCode: body.launchCouponCode ? String(body.launchCouponCode) : undefined,
+        });
+        return writeJson(res, 200, {
+          ok: true,
+          cardType,
+          contentType: rendered.contentType,
+          sha256: rendered.sha256,
+          base64: rendered.buffer.toString('base64'),
+        });
+      }
+
       const queueName = String(body.queue || '') as QueueName;
       const queue = queues.get(queueName);
       if (!queue) return writeJson(res, 400, { error: `Unknown queue: ${queueName}` });

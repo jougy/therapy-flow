@@ -118,7 +118,7 @@ export async function dispatchMatrixToUpstash(
     return true;
   }
 
-  // 1. Rota Segura via Edge Function (Pulumi ESC secrets no servidor, zero tokens no browser)
+  // Rota exclusiva via Edge Function segura (Pulumi ESC secrets no servidor, zero tokens no browser)
   try {
     const { data, error } = await supabase.functions.invoke("platform-observability", {
       body: {
@@ -128,54 +128,8 @@ export async function dispatchMatrixToUpstash(
         counters,
       },
     });
-    if (!error && data?.ok) {
-      return true;
-    }
+    return Boolean(!error && data?.ok);
   } catch {
-    // Segue para fallback direto apenas se configurado explicitamente em ambiente local
-  }
-
-  const config = getObservabilityMulticloudConfig();
-  const url = config.upstashRestUrl;
-  const token = config.upstashRestToken;
-
-  if (!url || !token) {
-    return false;
-  }
-
-  const commands: Array<[string, ...Array<string | number>]> = [];
-  const safeUserId = userId || "anonymous";
-
-  for (const [col, seconds] of Object.entries(matrix)) {
-    if (typeof seconds === "number" && seconds > 0) {
-      commands.push(["HINCRBY", `telemetry:user:${safeUserId}`, col, Math.round(seconds)]);
-      if (clinicId) {
-        commands.push(["HINCRBY", `telemetry:clinic:${clinicId}`, col, Math.round(seconds)]);
-      }
-    }
-  }
-
-  for (const [key, val] of Object.entries(counters)) {
-    if (typeof val === "number" && val > 0) {
-      commands.push(["HINCRBY", `telemetry:user:${safeUserId}:counters`, key, Math.round(val)]);
-    }
-  }
-
-  try {
-    const pipelineUrl = url.endsWith("/") ? `${url}pipeline` : `${url}/pipeline`;
-    const res = await fetch(pipelineUrl, {
-      method: "POST",
-      keepalive: true,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(commands),
-    });
-
-    return res.ok;
-  } catch (err) {
-    console.warn("[MulticloudDrivers] Falha ao despachar métricas para Upstash:", err);
     return false;
   }
 }
@@ -191,35 +145,8 @@ export async function dispatchErrorToAxiom(payload: Record<string, unknown>): Pr
         ...payload,
       },
     });
-    if (!error && data?.ok) {
-      return true;
-    }
+    return Boolean(!error && data?.ok);
   } catch {
-    // Fallback direto apenas se configurado em ambiente local
-  }
-
-  const config = getObservabilityMulticloudConfig();
-  const dataset = config.axiomDataset;
-  const token = config.axiomToken;
-
-  if (!dataset || !token) {
-    return false;
-  }
-
-  try {
-    const res = await fetch(`https://api.axiom.co/v1/datasets/${dataset}/ingest`, {
-      method: "POST",
-      keepalive: true,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([payload]),
-    });
-
-    return res.ok;
-  } catch (err) {
-    console.warn("[MulticloudDrivers] Falha ao despachar erro para Axiom:", err);
     return false;
   }
 }

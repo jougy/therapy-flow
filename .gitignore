@@ -28,6 +28,7 @@ opencode.json
 
 # Local operational artifacts
 .cache/
+.local-data/
 graphify-out/
 .control
 .local-tools

@@ -67,6 +67,28 @@ function checkCascadeOnSessions(schemaContent) {
   return cascadeIssues;
 }
 
+function checkPgCatalogCurrentUser() {
+  const issues = [];
+  if (fs.existsSync(SCHEMA_FILE)) {
+    const schemaContent = fs.readFileSync(SCHEMA_FILE, 'utf8');
+    if (/pg_catalog\.(?:current_user|session_user)\s*(?:<>|!=|=)/i.test(schemaContent)) {
+      issues.push('Uso inválido de pg_catalog.current_user/session_user em supabase/schema.sql (causa erro 42P01 em runtime; use current_user sem prefixo).');
+    }
+  }
+  if (fs.existsSync(MIGRATIONS_DIR)) {
+    for (const file of fs.readdirSync(MIGRATIONS_DIR)) {
+      if (!file.endsWith('.sql')) continue;
+      // Ignora migrations históricas já superadas antes da correção P0
+      if (file < '20261127120000') continue;
+      const content = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+      if (/pg_catalog\.(?:current_user|session_user)\s*(?:<>|!=|=)/i.test(content)) {
+        issues.push(`Migration ${file} contém pg_catalog.current_user/session_user (causa erro 42P01).`);
+      }
+    }
+  }
+  return issues;
+}
+
 async function main() {
   if (!fs.existsSync(SCHEMA_FILE)) {
     console.log('⚠️ [audit-supabase] supabase/schema.sql não encontrado para auditoria estática.');
@@ -78,6 +100,7 @@ async function main() {
   const overloaded = checkOverloadedFunctions(schemaContent);
   const monetaryIssues = checkMonetaryFields(schemaContent);
   const cascadeIssues = checkCascadeOnSessions(schemaContent);
+  const currentUserIssues = checkPgCatalogCurrentUser();
 
   const errors = [];
 
@@ -91,6 +114,10 @@ async function main() {
 
   if (cascadeIssues.length > 0) {
     errors.push(...cascadeIssues);
+  }
+
+  if (currentUserIssues.length > 0) {
+    errors.push(...currentUserIssues);
   }
 
   if (errors.length === 0) {
