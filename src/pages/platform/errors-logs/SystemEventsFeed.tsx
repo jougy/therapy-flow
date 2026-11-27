@@ -1,5 +1,5 @@
 import React from "react";
-import { Copy } from "lucide-react";
+import { CheckCircle2, Copy } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,20 @@ interface SystemEventsFeedProps {
   expandedId: string | null;
   onToggleExpand: (id: string) => void;
   onCopy: (text: string, label: string) => void;
+  onResolve?: (id: string) => void;
+}
+
+function formatFullDateTime(timestamp?: number, fallback?: string): string {
+  if (!timestamp || Number.isNaN(timestamp)) return fallback || "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return fallback || "";
+  const day = date.getDate().toString().padStart(2, "0");
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const year = date.getFullYear();
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const seconds = date.getSeconds().toString().padStart(2, "0");
+  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
 export const SystemEventsFeed: React.FC<SystemEventsFeedProps> = ({
@@ -17,6 +31,7 @@ export const SystemEventsFeed: React.FC<SystemEventsFeedProps> = ({
   expandedId,
   onToggleExpand,
   onCopy,
+  onResolve,
 }) => {
   const getBadgeVariant = (type: DebugEventType) => {
     switch (type) {
@@ -61,11 +76,22 @@ export const SystemEventsFeed: React.FC<SystemEventsFeedProps> = ({
                     {ev.scope}
                   </code>
                   <span className="text-xs text-muted-foreground font-mono">
-                    {ev.timeString}
+                    {formatFullDateTime(ev.timestamp, ev.timeString)}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {onResolve && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                      onClick={() => onResolve(ev.id)}
+                      title="Marcar como resolvido e remover da lista"
+                    >
+                      <CheckCircle2 className="w-3 h-3 mr-1" /> Resolver
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"

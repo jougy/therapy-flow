@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import { useIsFetching } from "@tanstack/react-query";
-import { CloudDownload, CheckCircle2, RefreshCw, WifiOff } from "lucide-react";
+import { AlertTriangle, CloudDownload, CheckCircle2, RefreshCw, WifiOff } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  discardFailedOfflineMutations,
+  flushOfflineOutbox,
+  retryFailedOfflineMutations,
+} from "@/lib/local-first/offlineMutationQueue";
 
 export interface SyncStatusSnapshot {
   isOnline?: boolean;
   online?: boolean;
   pendingCount?: number;
+  failedCount?: number;
   pendingMutations?: number;
   pending?: number;
   queueSize?: number;
@@ -88,6 +94,7 @@ export function SyncProgressBanner() {
         0,
     ) || 0,
   );
+  const failedCount = Math.max(0, Number(rawStatus?.failedCount ?? 0) || 0);
 
   const isSyncingPending = Boolean(rawStatus?.isSyncing ?? rawStatus?.syncing ?? rawStatus?.isFlushing);
   const externalInitialSync =
@@ -138,10 +145,11 @@ export function SyncProgressBanner() {
   }
 
   const showOfflineBanner = !isOnline;
+  const showFailedBanner = isOnline && !isSyncingPending && pendingCount === 0 && failedCount > 0;
   const showPendingSyncBanner = isOnline && (isSyncingPending || pendingCount > 0);
-  const showInitialBanner = isOnline && !showPendingSyncBanner && initialVisible;
+  const showInitialBanner = isOnline && !showPendingSyncBanner && !showFailedBanner && initialVisible;
 
-  if (!showOfflineBanner && !showPendingSyncBanner && !showInitialBanner) {
+  if (!showOfflineBanner && !showPendingSyncBanner && !showFailedBanner && !showInitialBanner) {
     return null;
   }
 
@@ -158,8 +166,10 @@ export function SyncProgressBanner() {
         <div className="flex items-center gap-2 min-w-0">
           {showOfflineBanner ? (
             <WifiOff className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+          ) : showFailedBanner ? (
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
           ) : showPendingSyncBanner ? (
-            <RefreshCw className="h-3.5 w-3.5 text-sky-400 shrink-0 animate-spin" />
+            <RefreshCw className={`h-3.5 w-3.5 text-sky-400 shrink-0 ${isSyncingPending ? "animate-spin" : ""}`} />
           ) : isDone ? (
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 animate-in zoom-in-75 duration-200" />
           ) : (
@@ -171,13 +181,17 @@ export function SyncProgressBanner() {
               ? pendingCount > 0
                 ? `Modo offline · ${pendingCount} ${pendingCount === 1 ? "pendência" : "pendências"} para sincronizar`
                 : "Modo offline · Alterações salvas localmente"
-              : showPendingSyncBanner
-                ? pendingCount > 0
-                  ? `Sincronizando ${pendingCount} ${pendingCount === 1 ? "pendência" : "pendências"}...`
-                  : "Sincronizando alterações pendentes..."
-                : isDone
-                  ? "Dados sincronizados com sucesso no seu dispositivo."
-                  : "Sincronizando dados da clínica em segundo plano..."}
+              : showFailedBanner
+                ? `${failedCount} ${failedCount === 1 ? "alteração não pôde ser sincronizada" : "alterações não puderam ser sincronizadas"}`
+                : showPendingSyncBanner
+                  ? isSyncingPending
+                    ? pendingCount > 0
+                      ? `Sincronizando ${pendingCount} ${pendingCount === 1 ? "pendência" : "pendências"}...`
+                      : "Sincronizando alterações pendentes..."
+                    : `${pendingCount} ${pendingCount === 1 ? "pendência" : "pendências"} aguardando envio`
+                  : isDone
+                    ? "Dados sincronizados com sucesso no seu dispositivo."
+                    : "Sincronizando dados da clínica em segundo plano..."}
           </span>
         </div>
 
@@ -187,12 +201,39 @@ export function SyncProgressBanner() {
               {pendingCount} {pendingCount === 1 ? "pendente" : "pendentes"}
             </span>
           ) : null
+        ) : showFailedBanner ? (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => void retryFailedOfflineMutations()}
+              className="rounded px-2 py-0.5 text-[10px] font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/30 transition-colors"
+            >
+              Tentar novamente
+            </button>
+            <button
+              type="button"
+              onClick={() => void discardFailedOfflineMutations()}
+              className="rounded px-2 py-0.5 text-[10px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+            >
+              Descartar
+            </button>
+          </div>
         ) : showPendingSyncBanner ? (
-          pendingCount > 0 ? (
-            <span className="shrink-0 text-[10px] tabular-nums text-sky-300">
-              {pendingCount} {pendingCount === 1 ? "restante" : "restantes"}
-            </span>
-          ) : null
+          isSyncingPending ? (
+            pendingCount > 0 ? (
+              <span className="shrink-0 text-[10px] tabular-nums text-sky-300">
+                {pendingCount} {pendingCount === 1 ? "restante" : "restantes"}
+              </span>
+            ) : null
+          ) : (
+            <button
+              type="button"
+              onClick={() => void flushOfflineOutbox()}
+              className="shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-400/30 transition-colors"
+            >
+              Tentar agora
+            </button>
+          )
         ) : (
           <div className="flex items-center gap-2 shrink-0">
             <div className="w-16 sm:w-36 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/60">

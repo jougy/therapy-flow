@@ -112,7 +112,7 @@ export function PatientWorkspaceProvider({ children }: { children: ReactNode }) 
 
   const {
     optimisticUpdatePatientStatus, optimisticUpdatePatient, optimisticUpdateSessionStatus,
-    optimisticMoveSessions, optimisticMoveSessionsToEvolutionGroup, optimisticDeleteSessions,
+    optimisticUpsertSession, optimisticMoveSessions, optimisticMoveSessionsToEvolutionGroup, optimisticDeleteSessions,
     optimisticAddOrUpdateGroup, optimisticDeleteGroup,
   } = useOptimisticPatientDetailUpdates(realPatientId, clinicId, id);
   const invalidatePatientData = useInvalidatePatientData();
@@ -221,11 +221,11 @@ export function PatientWorkspaceProvider({ children }: { children: ReactNode }) 
   });
 
   const sessionActions = usePatientSessionActions({
-    id, patient, realPatientId, clinicId, targetClinicKey, user, groups, sessions, upcomingAgendaEvent,
+    id, patient, realPatientId, clinicId, targetClinicKey, user, groups, sessions, allSessions, upcomingAgendaEvent,
     anamnesisTemplates, canBulkManageSessions, canManageAllSessions,
     canDeleteAllSessions: can("sessions.delete") || isAccountOwner,
     canDeleteDraftSession: can("session.delete_draft"),
-    navigate, queryClient, invalidatePatientData, optimisticUpdateSessionStatus, optimisticMoveSessions,
+    navigate, queryClient, invalidatePatientData, optimisticUpdateSessionStatus, optimisticUpsertSession, optimisticMoveSessions,
     optimisticMoveSessionsToEvolutionGroup, optimisticDeleteSessions, optimisticUpsertAgendaEvent,
   });
 

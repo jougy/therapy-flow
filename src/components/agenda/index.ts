@@ -7,6 +7,7 @@ export * from "./AgendaMonthView";
 export * from "./AgendaDayView";
 export * from "./AgendaWeekView";
 export * from "./AgendaEventModal";
+export * from "./AgendaEventDurationAndWarnings";
 export * from "./AgendaCloneWeekModal";
 export * from "./AgendaFiltersToolbar";
 export * from "./AgendaPeriodClipboardActions";

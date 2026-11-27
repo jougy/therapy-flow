@@ -1,8 +1,68 @@
 import { useState } from "react";
-import { Check, Copy, Sparkles, UserCheck } from "lucide-react";
+import { Check, Copy, ExternalLink, Flame, ShieldCheck, Sparkles, Target, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { PlatformAutoLead } from "./types";
+
+interface PainSignalMeta {
+  sourceUrl?: string | null;
+  painExcerpt?: string | null;
+  painSummary?: string | null;
+  painCategory?: string | null;
+  intentScore5?: number | null;
+  counterEvidencePassed?: boolean;
+}
+
+interface StrategyAlternativeMeta {
+  id: string;
+  shortLabel: string;
+  estimatedSuccessPct: number;
+}
+
+interface OriginContextMeta {
+  originType?: string | null;
+  discoveryLabel?: string | null;
+  canUseContentHook?: boolean;
+  contentHook?: string | null;
+}
+
+interface PersonalityProfileMeta {
+  id?: string | null;
+  label?: string | null;
+  communicationStyle?: string | null;
+  pacing?: string | null;
+}
+
+interface StrategyAssignmentMeta {
+  strategyId?: string | null;
+  strategyName?: string | null;
+  shortLabel?: string | null;
+  estimatedSuccessPct?: number | null;
+  mode?: string | null;
+  alternatives?: StrategyAlternativeMeta[];
+  topTalkingPoints?: string[];
+}
+
+interface WhatsappProfileMeta {
+  uses_auto_reply?: boolean;
+  detected_at?: string | null;
+  sample?: string | null;
+}
+
+interface RecommendedPlanMeta {
+  planId?: string | null;
+  planName?: string | null;
+  annualMonthlyPrice?: number | null;
+  reason?: string | null;
+}
+
+const MATURITY_LABELS: Record<string, string> = {
+  iniciante_solo: "Solo / Iniciando",
+  clinica_recem_inaugurada: "Clínica Recém-Inaugurada",
+  pequena_crescendo: "Consultório / Estúdio Enxuto",
+  avancada_estabelecida: "Clínica Avançada",
+};
 
 interface MessageBlock {
   id: string;
@@ -41,7 +101,9 @@ function buildLeadDossier(lead: PlatformAutoLead): LeadDossier {
         ? "Instagram"
         : lead.source_platform === "facebook_group"
           ? "Facebook"
-          : lead.source_platform || "prospecção";
+          : lead.source_platform === "web_signal"
+            ? "Sinal Web (Dor Ativa)"
+            : lead.source_platform || "prospecção";
 
   const cityPart = lead.city ? ` em ${lead.city}` : "";
   const igMention = igTag && igTag !== "@" ? ` e seu Instagram (${igTag})` : "";
@@ -56,7 +118,7 @@ function buildLeadDossier(lead: PlatformAutoLead): LeadDossier {
       : `Fisioterapeuta autônomo(a)${cityPart} com atendimento direto e marca pessoal.`;
 
   const toneOfVoice =
-    "Pessoal, direto e próximo (1-a-1). Provavelmente a própria profissional responde no WhatsApp — evitar linguagem corporativa ou textão de telemarketing.";
+    "Natural, humano e simpático, sem perder o profissionalismo e a formalidade. Tratar por Dr(a)./primeiro nome com cordialidade — evitar gírias e textão de telemarketing.";
 
   const likelyPains = [
     "Falta de tempo entre atendimentos para evoluir prontuário (CREFITO/CFM)",
@@ -66,16 +128,15 @@ function buildLeadDossier(lead: PlatformAutoLead): LeadDossier {
 
   const approachTrigger = `Validar primeiro como organiza a rotina hoje (${originLabel}${igMention}), sem empurrar sistema logo na primeira frase.`;
 
-  const customDossier = (lead.raw_metadata as Record<string, unknown> | null)?.dossier as
-    | Partial<LeadDossier>
-    | undefined;
+  const rawMeta = (lead.raw_metadata as Record<string, unknown> | null) || null;
+  const customDossier = rawMeta?.dossier as Partial<LeadDossier> | undefined;
 
   const defaultMessages: MessageBlock[] = [
     {
       id: "msg-1",
       label: "1. Abertura",
       timing: "Seg–Sex · 12h–14h ou 17h–20h",
-      text: `Oi, ${firstName}! Tudo bem? Vi seu perfil no ${originLabel}${igMention} e queria te fazer uma pergunta rápida. Hoje você organiza a agenda, os prontuários e o financeiro dos seus pacientes por planilha, papel ou já usa algum sistema?`,
+      text: `Olá, ${firstName}, tudo bem? Vi seu perfil no ${originLabel}${igMention} e gostaria de fazer uma pergunta breve: hoje você organiza a agenda, os prontuários e o financeiro dos pacientes por planilha, papel ou já utiliza algum sistema?`,
     },
     {
       id: "msg-2",
@@ -116,6 +177,27 @@ export function LeadDossierSection({ lead }: { lead: PlatformAutoLead }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const dossier = buildLeadDossier(lead);
 
+  const rawMeta = (lead.raw_metadata as Record<string, unknown> | null) || null;
+  const painSignal = (rawMeta?.pain_signal as PainSignalMeta | undefined) || undefined;
+  const originContext =
+    (rawMeta?.origin_context as OriginContextMeta | undefined) || undefined;
+  const personalityProfile =
+    (rawMeta?.personality_profile as PersonalityProfileMeta | undefined) || undefined;
+  const strategyMeta =
+    (rawMeta?.strategy_assignment as StrategyAssignmentMeta | undefined) || undefined;
+  const whatsappProfile =
+    (rawMeta?.whatsapp_profile as WhatsappProfileMeta | undefined) || undefined;
+  const recommendedPlan =
+    (rawMeta?.recommended_plan as RecommendedPlanMeta | undefined) || undefined;
+  const maturityStage =
+    typeof rawMeta?.maturity_stage === "string" ? rawMeta.maturity_stage : null;
+  const signalUrl = painSignal?.sourceUrl || lead.source_post_url;
+  const signalExcerpt = painSignal?.painExcerpt || painSignal?.painSummary;
+  const contentHook = originContext?.contentHook;
+  const hasBrainContext = Boolean(
+    painSignal || originContext || personalityProfile || strategyMeta || whatsappProfile || recommendedPlan || maturityStage
+  );
+
   const handleCopy = async (id: string, text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -136,7 +218,120 @@ export function LeadDossierSection({ lead }: { lead: PlatformAutoLead }) {
   ].join("\n\n");
 
   return (
-    <div className="space-y-3">
+    <div className="w-full max-w-full min-w-0 space-y-3 overflow-x-hidden">
+      {hasBrainContext && (
+        <div className="w-full min-w-0 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 space-y-2 break-words">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold min-w-0">
+              <Flame className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+              <span className="truncate">Sinal de Dor Ativa & Super-Conversor</span>
+            </div>
+            {signalUrl && (
+              <a
+                href={signalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline min-h-[36px] px-1 shrink-0"
+              >
+                <span>Abrir origem</span>
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {originContext?.discoveryLabel && (
+              <Badge variant="outline" className="text-[11px] font-medium">
+                {originContext.discoveryLabel}
+              </Badge>
+            )}
+            {personalityProfile?.label && (
+              <Badge variant="secondary" className="text-[11px] font-medium max-w-full">
+                <span className="truncate">Perfil: {personalityProfile.label}</span>
+              </Badge>
+            )}
+            {typeof painSignal?.intentScore5 === "number" && (
+              <Badge variant="secondary" className="text-[11px] font-medium">
+                Intenção: {painSignal.intentScore5.toFixed(1)}/5
+              </Badge>
+            )}
+            {painSignal?.counterEvidencePassed && (
+              <Badge variant="outline" className="text-[11px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300 gap-1">
+                <ShieldCheck className="h-3 w-3 shrink-0" />
+                Contra-evidência OK
+              </Badge>
+            )}
+            {strategyMeta?.shortLabel && (
+              <Badge variant="outline" className="text-[11px] border-primary/40 text-primary gap-1 max-w-full">
+                <Target className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {strategyMeta.shortLabel}
+                  {typeof strategyMeta.estimatedSuccessPct === "number"
+                    ? ` · ~${strategyMeta.estimatedSuccessPct}% est.`
+                    : ""}
+                </span>
+              </Badge>
+            )}
+            {strategyMeta?.mode && (
+              <Badge variant="outline" className="text-[11px]">
+                {strategyMeta.mode === "explore" ? "20% Teste" : "80% Principal"}
+              </Badge>
+            )}
+            {whatsappProfile?.uses_auto_reply && (
+              <Badge variant="outline" className="text-[11px] border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-200">
+                Auto-Resposta WhatsApp
+              </Badge>
+            )}
+            {maturityStage && (
+              <Badge variant="outline" className="text-[11px]">
+                Estágio: {MATURITY_LABELS[maturityStage] || maturityStage}
+              </Badge>
+            )}
+            {recommendedPlan?.planName && (
+              <Badge variant="outline" className="text-[11px] border-sky-500/40 text-sky-700 dark:text-sky-300 max-w-full">
+                <span className="truncate">
+                  Plano Ideal: {recommendedPlan.planName}
+                  {typeof recommendedPlan.annualMonthlyPrice === "number"
+                    ? ` (R$ ${recommendedPlan.annualMonthlyPrice}/mês anual)`
+                    : ""}
+                </span>
+              </Badge>
+            )}
+          </div>
+
+          {contentHook && (
+            <p className="text-[11px] text-muted-foreground leading-relaxed break-words">
+              <span className="font-medium text-foreground">Gancho sugerido: </span>
+              {contentHook}
+            </p>
+          )}
+
+          {signalExcerpt && (
+            <p className="text-xs text-muted-foreground italic leading-relaxed break-words">
+              “{signalExcerpt}”
+            </p>
+          )}
+
+          {Array.isArray(strategyMeta?.alternatives) && strategyMeta.alternatives.length > 0 && (
+            <p className="text-[11px] text-muted-foreground leading-relaxed break-words">
+              <span className="font-medium text-foreground">Linhas ranqueadas p/ este lead: </span>
+              {strategyMeta.alternatives
+                .slice(0, 3)
+                .map((alt) => `${alt.shortLabel} (${alt.estimatedSuccessPct}%)`)
+                .join(" › ")}
+            </p>
+          )}
+
+          {Array.isArray(strategyMeta?.topTalkingPoints) &&
+            strategyMeta.topTalkingPoints.length > 0 && (
+              <p className="text-[11px] text-muted-foreground leading-relaxed break-words">
+                <span className="font-medium text-foreground">Pontos priorizados: </span>
+                {strategyMeta.topTalkingPoints.slice(0, 3).join(" • ")}
+              </p>
+            )}
+        </div>
+      )}
+
       {/* Perfil & Personalidade */}
       <div className="rounded-lg border p-3 space-y-2 bg-muted/20">
         <div className="flex items-center justify-between gap-2">

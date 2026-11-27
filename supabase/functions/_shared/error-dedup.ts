@@ -6,6 +6,7 @@
 
 import { ingestToAxiom, type AxiomEvent } from './telemetry-axiom.ts';
 import { dispatchAdminErrorAlert, sanitizeAlertText } from './error-alert.ts';
+import { publishToQStash } from './qstash.ts';
 
 export interface ErrorReportInput {
   code: string | number;
@@ -107,14 +108,23 @@ export async function reportError(input: ErrorReportInput): Promise<{ deduplicat
   const count = Number(pipelineRes?.[0]?.result ?? 1);
 
   if (count === 1 || !pipelineRes) {
+    const clinicId = typeof input.metadata?.clinic_id === 'string' ? input.metadata.clinic_id : null;
+    const userId = typeof input.metadata?.user_id === 'string' ? input.metadata.user_id : null;
     const dispatches: Array<Promise<unknown>> = [
       ingestToAxiom([
         {
           level: level === 'critical' ? 'error' : level,
           service,
+          scope: String(input.code),
+          event_type: level === 'warn' ? 'warning' : 'runtime',
           error_code: input.code,
           route: input.route,
+          clinic_id: clinicId,
+          user_id: userId,
           message: cleanMessage,
+          stack: cleanStack,
+          context: input.metadata?.context,
+          fingerprint: fp,
           occurrences: 1,
           window_sec: windowSec,
           metadata: safeMeta,
@@ -140,6 +150,22 @@ export async function reportError(input: ErrorReportInput): Promise<{ deduplicat
 
     await Promise.allSettled(dispatches);
     return { deduplicated: false, count };
+  }
+
+  if (count === 2) {
+    const supabaseUrl = getEnv('SUPABASE_URL')?.replace(/\/+$/, '');
+    if (supabaseUrl) {
+      const lockRes = await upstashPipeline([['SET', 'err:flush_scheduled', '1', 'NX', 'EX', 55]]);
+      if (lockRes?.[0]?.result === 'OK') {
+        void publishToQStash({
+          targetUrl: `${supabaseUrl}/functions/v1/platform-observability`,
+          body: { action: 'flush_pending_errors' },
+          delay: '55s',
+          retries: 2,
+          deduplicationId: `err-flush:${Math.floor(Date.now() / 55000)}`,
+        });
+      }
+    }
   }
 
   return { deduplicated: true, count };
@@ -172,12 +198,24 @@ export async function flushPendingErrors(): Promise<number> {
     // First occurrence was already sent immediately; flush only the remaining aggregated count.
     const extraOccurrences = totalCount - 1;
     if (extraOccurrences > 0 && metaRaw) {
-      const meta = JSON.parse(metaRaw) as { code: string | number; route: string; message: string; windowSec: number };
+      const meta = JSON.parse(metaRaw) as {
+        code: string | number;
+        route: string;
+        message: string;
+        windowSec: number;
+        service?: string;
+        level?: 'error' | 'warn' | 'critical';
+      };
+      const metaLevel = meta.level === 'warn' ? 'warn' : 'error';
       events.push({
-        level: 'error',
+        level: metaLevel,
+        service: meta.service ?? 'pluri-health-edge',
+        scope: String(meta.code),
+        event_type: metaLevel === 'warn' ? 'warning' : 'runtime',
         error_code: meta.code,
         route: meta.route,
         message: meta.message,
+        fingerprint: fp,
         occurrences: extraOccurrences,
         window_sec: meta.windowSec,
       });

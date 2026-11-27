@@ -9,3 +9,4 @@ export * from "./SessionLeaveConfirmDialog";
 export * from "./useSessionPaymentPlan";
 export * from "./useSessionDetailData";
 export * from "./SessaoDetalheSkeleton";
+export * from "./sessionSaveResilience";

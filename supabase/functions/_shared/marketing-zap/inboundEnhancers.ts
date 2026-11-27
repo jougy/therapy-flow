@@ -169,7 +169,7 @@ export async function reconcileAutoLeadAndTripleAgenda(
   intent: string,
   contactName: string,
 ): Promise<void> {
-  if (!['schedule_demo', 'pricing', 'qualified'].includes(intent)) return;
+  if (!intent || intent === 'opt_out') return;
 
   try {
     const last8 = senderPhone.slice(-8);
@@ -177,18 +177,29 @@ export async function reconcileAutoLeadAndTripleAgenda(
 
     const { data: lead } = await admin
       .from('platform_auto_leads')
-      .select('id, pipeline_stage')
+      .select('id, stage')
       .ilike('phone', `%${last8}`)
       .is('deleted_at', null)
       .limit(1)
       .maybeSingle();
 
     if (lead?.id) {
-      const newStage = intent === 'schedule_demo' ? 'meeting_scheduled' : 'qualified';
-      await admin
-        .from('platform_auto_leads')
-        .update({ pipeline_stage: newStage, updated_at: new Date().toISOString() })
-        .eq('id', lead.id);
+      const currentStage = String(lead.stage || 'new');
+      let nextStage: string | null = null;
+      if (intent === 'schedule_demo' && currentStage !== 'converted_trial') {
+        nextStage = 'meeting_scheduled';
+      } else if ((intent === 'pricing' || intent === 'qualified') && currentStage === 'new') {
+        nextStage = 'qualified';
+      } else if (['new', 'qualified', 'assigned', 'contacted'].includes(currentStage)) {
+        nextStage = 'replied';
+      }
+
+      if (nextStage && nextStage !== currentStage) {
+        await admin
+          .from('platform_auto_leads')
+          .update({ stage: nextStage, updated_at: new Date().toISOString() })
+          .eq('id', lead.id);
+      }
     }
 
     void ingestToAxiom([

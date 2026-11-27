@@ -395,4 +395,33 @@ describe("ClinicAgendaPage", () => {
       expect(callCount).toBe(2);
     }, { interval: 5 });
   });
+
+  it("displays inline past-time warning and disables submit in AgendaEventModal when scheduling in the past", async () => {
+    vi.useFakeTimers({ now: new Date(2026, 10, 25, 14, 0, 0), shouldAdvanceTime: true });
+    try {
+      const { container } = render(
+        <MemoryRouter initialEntries={["/clinica/testesteseqsadqwdas/agenda"]}>
+          <Routes>
+            <Route path="/clinica/:clinicKey/agenda" element={<ClinicAgendaPage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(await screen.findByText(/Agenda da Clínica/i, {}, { interval: 5 })).toBeInTheDocument();
+
+      const header = container.querySelector("header")!;
+      fireEvent.click(within(header).getByRole("button", { name: /novo agendamento/i }));
+
+      const dialog = await screen.findByRole("dialog", {}, { interval: 5 });
+      const startTimeInput = within(dialog).getByLabelText(/horário de início/i);
+      fireEvent.change(startTimeInput, { target: { value: "10:00" } });
+
+      expect(
+        await within(dialog).findByText(/Para registrar um atendimento que já aconteceu/i)
+      ).toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: /^agendar$/i })).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

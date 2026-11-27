@@ -20,6 +20,7 @@ import {
   type RateLimitPreset,
 } from '../_shared/rate-limit.ts';
 import { reportError } from '../_shared/error-dedup.ts';
+import { enqueueToQStash } from '../_shared/qstash.ts';
 import { classifyIntentDeterministic, classifyMarketingIntent } from '../_shared/gemini-router.ts';
 import { invokeUniversalLlm } from '../_shared/llm-gateway.ts';
 import {
@@ -52,6 +53,21 @@ import {
   transcribeInboundAudio,
   reconcileAutoLeadAndTripleAgenda,
 } from '../_shared/marketing-zap/inboundEnhancers.ts';
+import {
+  hydrateLeadContextForConversation,
+  renderPersonalizedCampaignMessage,
+} from '../_shared/marketing-zap/leadContextHydrator.ts';
+import {
+  detectWhatsappAutoReply,
+  sanitizeOutboundSalesReply,
+} from '../_shared/marketing-zap/salesGuardrail.ts';
+import {
+  buildCommercialTurnGuidance,
+  enqueueOfficialPlansVisualPack,
+  enqueueReactiveOutboundText,
+  recordWhatsappAutoReplyDetected,
+} from '../_shared/marketing-zap/visualCardQueue.ts';
+import { WHATSAPP_AGENT_CONSTITUTION_PROMPT } from '../_shared/marketing-zap/pluriProductTruthPack.ts';
 
 const extendedCorsHeaders = {
   ...corsHeaders,
@@ -117,6 +133,44 @@ async function callEvolution(path: string, method: 'GET' | 'POST' | 'DELETE', bo
   return { ok: res.ok, status: res.status, data };
 }
 
+async function deliverOrQueueOutboundText(params: {
+  admin: SupabaseClient;
+  evoConfig: { configured: boolean };
+  evoCall: ZapHandlerContext['callEvolution'];
+  instanceKey: string;
+  instanceId: string | null;
+  tenantScope: string;
+  clinicId: string | null;
+  conversationId: string | null;
+  leadId: string | null;
+  senderPhone: string;
+  msgId: string;
+  text: string;
+  simulateTyping?: boolean;
+}): Promise<{ deliveredDirect: boolean; queuedForWorker: boolean }> {
+  const { admin, evoConfig, evoCall, instanceKey, instanceId, tenantScope, clinicId, conversationId, leadId, senderPhone, msgId, text, simulateTyping } = params;
+  if (!text.trim()) return { deliveredDirect: false, queuedForWorker: false };
+  if (evoConfig.configured) {
+    try {
+      if (simulateTyping) {
+        await evoCall(`/chat/sendPresence/${encodeURIComponent(instanceKey)}`, 'POST', {
+          number: senderPhone,
+          delay: Math.max(1200, Math.min(8000, text.length * 40)),
+          presence: 'composing',
+        });
+      }
+      const res = await evoCall(`/message/sendText/${encodeURIComponent(instanceKey)}`, 'POST', { number: senderPhone, text });
+      if (res.ok) return { deliveredDirect: true, queuedForWorker: false };
+    } catch {
+      // Fallback para fila reativa entregue pelo pluri-marketing-worker local
+    }
+  }
+  const q = await enqueueReactiveOutboundText({
+    admin, tenantScope, clinicId, instanceId, conversationId, leadId, phoneE164: senderPhone, messageId: msgId, text,
+  });
+  return { deliveredDirect: false, queuedForWorker: q.queued };
+}
+
 async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall, getEvolutionConfig: getEvo, json: respond }: ZapHandlerContext): Promise<Response> {
   const expectedSecret = (Deno.env.get('EVOLUTION_WEBHOOK_SECRET') || Deno.env.get('EVOLUTION_API_KEY') || '').trim();
   if (expectedSecret) {
@@ -124,7 +178,7 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
     if (provided !== expectedSecret) return respond({ error: 'Assinatura Evolution inválida.' }, 401);
   }
 
-  const eventName = String(body.event || '').toUpperCase();
+  const eventName = String(body.event || '').toUpperCase().replace(/\./g, '_');
   const instanceKey = String(body.instance || body.instanceName || 'pluri-mkt-5511965120431');
   const payloadData = (body.data || {}) as Record<string, unknown>;
 
@@ -133,6 +187,9 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
     const mapped = state === 'open' ? 'connected' : state === 'connecting' ? 'connecting' : 'disconnected';
     await admin.from('marketing_whatsapp_instances').update({ status: mapped, ...(mapped === 'connected' ? { last_connected_at: new Date().toISOString() } : {}) }).eq('instance_key', instanceKey);
     return respond({ success: true, event: 'CONNECTION_UPDATE', status: mapped });
+  }
+  if (eventName && eventName !== 'MESSAGES_UPSERT') {
+    return respond({ success: true, ignored: `event_${eventName.toLowerCase()}` });
   }
 
   const keyObj = (payloadData.key || {}) as Record<string, unknown>;
@@ -176,16 +233,25 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
   if (!burstRes.proceed) return respond({ success: true, coalesced: true });
   const effectiveText = burstRes.combinedText;
 
+  const leadCtx = await hydrateLeadContextForConversation(
+    admin,
+    senderPhone,
+    (existingConv?.structured_facts as Record<string, unknown> | null) || null,
+    existingConv?.lead_id ? String(existingConv.lead_id) : null,
+  );
+
   const { data: conv } = await admin.from('marketing_zap_conversations').upsert({
     id: existingConv?.id, tenant_scope: tenantScope, clinic_id: clinicId, instance_id: instanceRow?.id || null,
-    agent_id: agentRow?.id || existingConv?.agent_id || null, phone_e164: senderPhone,
+    agent_id: agentRow?.id || existingConv?.agent_id || null, lead_id: leadCtx.leadId,
+    structured_facts: leadCtx.updatedFacts,
+    phone_e164: senderPhone,
     contact_name: String(payloadData.pushName || existingConv?.contact_name || 'Lead WhatsApp'),
     last_message_preview: effectiveText.slice(0, 240), last_message_direction: 'inbound', last_inbound_at: new Date().toISOString(),
   }).select('*').single();
 
   if (conv?.id) {
     await admin.from('marketing_zap_messages').insert({
-      conversation_id: conv.id, direction: 'inbound', sender_role: 'lead', message_type: msgContent.audioMessage ? 'audio' : 'text', body_text: effectiveText, provider_message_id: msgId,
+      conversation_id: conv.id, direction: 'inbound', sender_role: 'lead', message_type: msgContent.audioMessage ? 'audio_ptt' : 'text', body_text: effectiveText, provider_message_id: msgId,
     });
   }
 
@@ -204,19 +270,44 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
     return respond({ success: true, opt_out: true, phone: senderPhone });
   }
 
+  const autoReplyCheck = detectWhatsappAutoReply(effectiveText);
+  if (autoReplyCheck.isAutoReply) {
+    await recordWhatsappAutoReplyDetected({
+      admin,
+      conversationId: conv?.id ? String(conv.id) : null,
+      existingFacts: ((conv?.structured_facts as Record<string, unknown> | undefined) || leadCtx.updatedFacts),
+      leadId: conv?.lead_id ? String(conv.lead_id) : leadCtx.leadId,
+      effectiveText,
+      autoReplyCheck,
+    });
+    return respond({ success: true, auto_reply_detected: true, matchedRule: autoReplyCheck.matchedRule, skipped_ai: true, zeroTokens: true });
+  }
+
   if (conv?.agent_mode === 'human' || conv?.agent_mode === 'paused') {
     await admin.from('marketing_zap_conversations').update({ unread_count: Number(conv.unread_count || 0) + 1 }).eq('id', conv.id);
     return respond({ success: true, mode: conv.agent_mode, skipped_ai: true });
   }
 
   const evoConfig = getEvo();
+  const baseDeliveryArgs = {
+    admin,
+    evoConfig,
+    evoCall,
+    instanceKey,
+    instanceId: instanceRow?.id ? String(instanceRow.id) : null,
+    tenantScope,
+    clinicId,
+    conversationId: conv?.id ? String(conv.id) : null,
+    leadId: conv?.lead_id ? String(conv.lead_id) : leadCtx.leadId,
+    senderPhone,
+    msgId,
+  };
+
   const trigger = await matchActiveKeywordTrigger(admin, effectiveText, tenantScope, instanceRow?.id ? String(instanceRow.id) : null);
   if (trigger) {
     await admin.from('marketing_keyword_triggers').update({ hit_count: trigger.hit_count + 1 }).eq('id', trigger.id);
-    const replyText = String(trigger.action_payload.text || trigger.action_payload.reply_text || '');
-    if (replyText && evoConfig.configured) {
-      await evoCall(`/message/sendText/${encodeURIComponent(instanceKey)}`, 'POST', { number: senderPhone, text: replyText });
-    }
+    const replyText = sanitizeOutboundSalesReply(String(trigger.action_payload.text || trigger.action_payload.reply_text || '')).cleanText;
+    const sendOutcome = await deliverOrQueueOutboundText({ ...baseDeliveryArgs, text: replyText });
     if (conv?.id) {
       if (replyText) await admin.from('marketing_zap_messages').insert({ conversation_id: conv.id, direction: 'outbound', sender_role: 'system', message_type: 'text', body_text: replyText });
       await admin.from('marketing_zap_conversations').update({
@@ -225,27 +316,27 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
         ...(replyText ? { last_message_preview: replyText.slice(0, 240), last_message_direction: 'outbound' } : {}),
       }).eq('id', conv.id);
     }
-    return respond({ success: true, triggerHit: trigger.name, zeroTokens: true, replySent: Boolean(replyText && evoConfig.configured) });
+    return respond({ success: true, triggerHit: trigger.name, zeroTokens: true, replySent: sendOutcome.deliveredDirect, queuedForWorker: sendOutcome.queuedForWorker });
   }
 
   if (agentRow?.enable_semantic_cache !== false) {
     const semHit = await lookupSemanticCache(String(agentRow?.id || 'default'), effectiveText);
     if (semHit) {
-      if (evoConfig.configured) {
-        if (agentRow?.simulate_typing !== false) {
-          await evoCall(`/chat/sendPresence/${encodeURIComponent(instanceKey)}`, 'POST', { number: senderPhone, delay: Math.max(1200, Math.min(5000, semHit.reply.length * 35)), presence: 'composing' });
-        }
-        await evoCall(`/message/sendText/${encodeURIComponent(instanceKey)}`, 'POST', { number: senderPhone, text: semHit.reply });
-      }
+      const safeSemReply = sanitizeOutboundSalesReply(semHit.reply).cleanText;
+      const sendOutcome = await deliverOrQueueOutboundText({
+        ...baseDeliveryArgs,
+        text: safeSemReply,
+        simulateTyping: agentRow?.simulate_typing !== false,
+      });
       if (conv?.id) {
-        await admin.from('marketing_zap_messages').insert({ conversation_id: conv.id, direction: 'outbound', sender_role: 'ai', message_type: 'text', body_text: semHit.reply, model_used: `semantic-cache-${semHit.matchType}` });
+        await admin.from('marketing_zap_messages').insert({ conversation_id: conv.id, direction: 'outbound', sender_role: 'ai', message_type: 'text', body_text: safeSemReply, model_used: `semantic-cache-${semHit.matchType}` });
         await admin.from('marketing_zap_conversations').update({
-          last_message_preview: semHit.reply.slice(0, 240),
+          last_message_preview: safeSemReply.slice(0, 240),
           last_message_direction: 'outbound',
           ai_turns_count: Number(conv.ai_turns_count || 0) + 1,
         }).eq('id', conv.id);
       }
-      return respond({ success: true, zeroTokens: true, cacheHit: semHit.matchType, replySent: evoConfig.configured });
+      return respond({ success: true, zeroTokens: true, cacheHit: semHit.matchType, replySent: sendOutcome.deliveredDirect, queuedForWorker: sendOutcome.queuedForWorker });
     }
   }
 
@@ -254,14 +345,26 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
     ? await admin.from('marketing_zap_messages').select('direction, sender_role, body_text').eq('conversation_id', conv.id).eq('is_compacted', false).order('created_at', { ascending: true })
     : { data: [] };
 
-  const maxChars = Number(agentRow?.max_chars_per_reply || 450);
-  const factsStr = conv?.structured_facts && Object.keys(conv.structured_facts as Record<string, unknown>).length > 0 ? `Fatos do lead: ${JSON.stringify(conv.structured_facts)}` : '';
+  const currentFacts = ((conv?.structured_facts as Record<string, unknown> | undefined) || leadCtx.updatedFacts || {}) as Record<string, unknown>;
+  const launchCouponCode = (Deno.env.get('PLURI_LAUNCH_COUPON_CODE') || '').trim() || undefined;
+  const { isCommercialPresentation, maxChars, recommendation: finalRecommendation, truthPromptBlock } = buildCommercialTurnGuidance({
+    intent: intentRes.intent,
+    effectiveText,
+    baseMaxChars: Number(agentRow?.max_chars_per_reply || 450),
+    currentFacts,
+    launchCouponCode,
+  });
+
+  const factsStr = Object.keys(currentFacts).length > 0 ? `Fatos do lead: ${JSON.stringify(currentFacts)}` : '';
   const sysPrompt = [
+    WHATSAPP_AGENT_CONSTITUTION_PROMPT,
     String(agentRow?.system_prompt || 'Você é o consultor SDR do Pluri Fisio no WhatsApp. Seja cordial e objetivo.'),
+    truthPromptBlock,
     agentRow?.knowledge_base ? `Base de conhecimento:\n${String(agentRow.knowledge_base)}` : '',
+    leadCtx.painContextPrompt ? `Contexto de Dor & Estratégia do Lead:\n${leadCtx.painContextPrompt}` : '',
     conv?.rolling_summary ? `Resumo da conversa:\n${String(conv.rolling_summary)}` : '',
     factsStr,
-    `Responda em PT-BR natural para WhatsApp em até ${maxChars} caracteres.`,
+    `Responda em PT-BR natural, humano, simpático e profissionalmente formal para WhatsApp em até ${maxChars} caracteres.`,
   ].filter(Boolean).join('\n\n');
 
   const history = ((uncompacted || []) as Array<Record<string, unknown>>).map((m) => ({
@@ -272,16 +375,34 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
   const aiResult = await invokeUniversalLlm({
     provider: llmSetup.provider, modelId: llmSetup.modelId, systemPrompt: sysPrompt,
     messages: history.length > 0 ? history : [{ role: 'user', content: effectiveText }],
-    temperature: Number(agentRow?.temperature ?? 0.55), maxTokens: Math.min(600, Math.ceil(maxChars / 2) + 120),
+    temperature: Number(agentRow?.temperature ?? 0.55), maxTokens: Math.min(700, Math.ceil(maxChars / 2) + 140),
     disableThinking: llmSetup.disableThinking, fallbackChain: llmSetup.fallbackChain, tenantScope, route: 'webhook-evolution',
   });
 
-  const cleanReply = aiResult.text.slice(0, maxChars);
-  if (evoConfig.configured) {
-    if (agentRow?.simulate_typing !== false) {
-      await evoCall(`/chat/sendPresence/${encodeURIComponent(instanceKey)}`, 'POST', { number: senderPhone, delay: Math.max(1800, Math.min(9000, cleanReply.length * 45)), presence: 'composing' });
+  const cleanReply = sanitizeOutboundSalesReply(aiResult.text.slice(0, maxChars)).cleanText;
+  const sendOutcome = await deliverOrQueueOutboundText({
+    ...baseDeliveryArgs,
+    text: cleanReply,
+    simulateTyping: agentRow?.simulate_typing !== false,
+  });
+
+  let nextFacts = currentFacts;
+  if (isCommercialPresentation && conv?.id && currentFacts.plans_cards_sent !== true) {
+    const packRes = await enqueueOfficialPlansVisualPack({
+      admin,
+      tenantScope,
+      clinicId,
+      instanceId: instanceRow?.id ? String(instanceRow.id) : null,
+      conversationId: String(conv.id),
+      leadId: conv.lead_id ? String(conv.lead_id) : leadCtx.leadId,
+      phoneE164: senderPhone,
+      leadName: String(payloadData.pushName || conv.contact_name || 'Profissional'),
+      recommendation: finalRecommendation,
+      launchCouponCode,
+    });
+    if (packRes.queued) {
+      nextFacts = { ...currentFacts, plans_cards_sent: true, recommended_plan_id: finalRecommendation.planId };
     }
-    await evoCall(`/message/sendText/${encodeURIComponent(instanceKey)}`, 'POST', { number: senderPhone, text: cleanReply });
   }
 
   if (conv?.id) {
@@ -290,6 +411,7 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
       agent_mode: intentRes.intent === 'handoff_human' ? 'human' : 'ai',
       funnel_stage: intentRes.intent === 'schedule_demo' ? 'scheduled' : 'qualified',
       intent_classification: intentRes.intent,
+      structured_facts: nextFacts,
       last_message_preview: cleanReply.slice(0, 240), last_message_direction: 'outbound', ai_turns_count: Number(conv.ai_turns_count || 0) + 1,
     }).eq('id', conv.id);
 
@@ -302,7 +424,14 @@ async function handleWebhookEvolution({ admin, body, req, callEvolution: evoCall
       await runCompactionForConversation(admin, conv as Record<string, unknown>, 4, llmSetup.provider);
     }
   }
-  return respond({ success: true, intent: intentRes.intent, modelUsed: aiResult.modelUsed, usedFallback: aiResult.usedFallback, replySent: evoConfig.configured });
+  return respond({
+    success: true,
+    intent: intentRes.intent,
+    modelUsed: aiResult.modelUsed,
+    usedFallback: aiResult.usedFallback,
+    replySent: sendOutcome.deliveredDirect,
+    queuedForWorker: sendOutcome.queuedForWorker,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -420,20 +549,29 @@ Deno.serve(async (req) => {
       fallback_chain: body.fallback_chain,
     });
 
-    const maxChars = Number(body.max_chars_per_reply || 450);
+    const simGuidance = buildCommercialTurnGuidance({
+      intent: det.intent,
+      effectiveText: message,
+      baseMaxChars: Number(body.max_chars_per_reply || 450),
+      currentFacts: {},
+      launchCouponCode: (Deno.env.get('PLURI_LAUNCH_COUPON_CODE') || '').trim() || undefined,
+    });
+    const maxChars = simGuidance.maxChars;
     const aiResult = await invokeUniversalLlm({
       provider: llmSetup.provider, modelId: llmSetup.modelId,
       systemPrompt: [
+        WHATSAPP_AGENT_CONSTITUTION_PROMPT,
         String(body.system_prompt || 'Você é o consultor SDR oficial do Pluri Fisio no WhatsApp.'),
+        simGuidance.truthPromptBlock,
         body.knowledge_base ? `Base:\n${String(body.knowledge_base)}` : '',
-        `Responda em PT-BR natural para WhatsApp em até ${maxChars} caracteres.`,
+        `Responda em PT-BR natural, humano, simpático e profissionalmente formal para WhatsApp em até ${maxChars} caracteres.`,
       ].filter(Boolean).join('\n\n'),
       messages: [{ role: 'user', content: message }],
-      maxTokens: Math.min(600, Math.ceil(maxChars / 2) + 120),
+      maxTokens: Math.min(700, Math.ceil(maxChars / 2) + 120),
       disableThinking: llmSetup.disableThinking, fallbackChain: llmSetup.fallbackChain, route: 'simulate-agent-reply',
     });
 
-    const reply = aiResult.text.slice(0, maxChars);
+    const reply = sanitizeOutboundSalesReply(aiResult.text.slice(0, maxChars)).cleanText;
     return json({
       success: true, reply, interactionId: (body.previous_interaction_id as string | null) || null,
       modelUsed: aiResult.modelUsed, providerSlug: aiResult.providerSlug, usedFallback: aiResult.usedFallback, latencyMs: aiResult.latencyMs,
@@ -454,7 +592,7 @@ Deno.serve(async (req) => {
     const minScore = Number(((campaign.audience_filter || {}) as Record<string, unknown>).min_score ?? 70);
     const maxToQueue = Math.min(Math.max(0, Number(instance?.daily_limit ?? 15) - Number(instance?.daily_sent_count ?? 0)) || 15, 100);
     const [{ data: leads }, { data: optOuts }] = await Promise.all([
-      admin.from('platform_auto_leads').select('id, full_name, phone, clinic_name, city, ai_score').is('deleted_at', null).not('phone', 'is', null).gte('ai_score', minScore).order('ai_score', { ascending: false }).limit(maxToQueue),
+      admin.from('platform_auto_leads').select('id, full_name, phone, clinic_name, city, ai_score, source_post_excerpt, ai_icebreaker_message, raw_metadata').is('deleted_at', null).not('phone', 'is', null).gte('ai_score', minScore).order('ai_score', { ascending: false }).limit(maxToQueue),
       admin.from('marketing_opt_outs').select('phone_e164'),
     ]);
 
@@ -469,18 +607,31 @@ Deno.serve(async (req) => {
       if (!phone || optOutSet.has(phone)) continue;
       cursorMs += computeGaussianDelaySec(Number(antiBan.jitter_mean_sec ?? 42), Number(antiBan.jitter_stddev_sec ?? 14)) * 1000;
       if (i > 0 && i % Math.max(5, Number(antiBan.block_size ?? 15)) === 0) cursorMs += (3 + Math.random() * 5) * 60 * 1000;
-      const firstName = String(lead.full_name || 'Dr(a).').trim().split(/\s+/)[0] || 'Dr(a).';
-      const interpolated = String(campaign.message_template || '')
-        .replace(/\{\{\s*primeiro_nome\s*\}\}/gi, firstName)
-        .replace(/\{\{\s*clinica\s*\}\}/gi, String(lead.clinic_name || 'sua clínica'))
-        .replace(/\{\{\s*cidade\s*\}\}/gi, String(lead.city || 'sua região'));
+      const interpolated = renderPersonalizedCampaignMessage(String(campaign.message_template || ''), lead as Record<string, unknown>);
       rowsToInsert.push({
         campaign_id: campaign.id, instance_id: instance?.id || null, lead_id: lead.id, phone_e164: phone,
         step_index: 0, status: 'queued', rendered_body: campaign.enable_ai_spintax ? resolveSpintax(interpolated) : interpolated,
         idempotency_key: `${campaign.id}:${phone}:0`, scheduled_for: new Date(cursorMs).toISOString(),
       });
     }
-    if (rowsToInsert.length > 0) await admin.from('marketing_zap_dispatches').upsert(rowsToInsert, { onConflict: 'idempotency_key', ignoreDuplicates: true });
+    if (rowsToInsert.length > 0) {
+      await admin.from('marketing_zap_dispatches').upsert(rowsToInsert, { onConflict: 'idempotency_key', ignoreDuplicates: true });
+      const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').replace(/\/+$/, '');
+      if (supabaseUrl) {
+        await Promise.allSettled(
+          rowsToInsert.map((row) =>
+            enqueueToQStash('zap-outbound-platform', {
+              targetUrl: `${supabaseUrl}/functions/v1/qstash-zap-worker`,
+              body: { action: 'dispatch_campaign_message', idempotency_key: row.idempotency_key },
+              notBeforeSec: Math.floor(Date.parse(String(row.scheduled_for)) / 1000),
+              retries: 2,
+              deduplicationId: String(row.idempotency_key),
+              flowControl: { key: `chip:${String(row.instance_id || 'default')}`, parallelism: 1 },
+            })
+          )
+        );
+      }
+    }
     await admin.from('marketing_zap_campaigns').update({ status: rowsToInsert.length > 0 ? 'scheduled' : 'draft', total_targets: rowsToInsert.length }).eq('id', campaign.id);
     return json({ success: true, queued_count: rowsToInsert.length, skipped_optout_or_empty: (leads || []).length - rowsToInsert.length, estimated_finish_at: rowsToInsert.length > 0 ? new Date(cursorMs).toISOString() : null });
   }

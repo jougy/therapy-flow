@@ -2,6 +2,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.99.2
 import { classifyIntentDeterministic } from '../gemini-router.ts';
 import { invokeUniversalLlm } from '../llm-gateway.ts';
 import { executeUpstashCommand } from '../schedule-cache.ts';
+import { enqueueToQStash } from '../qstash.ts';
 import {
   matchActiveKeywordTrigger,
   normalizePhoneBr,
@@ -267,6 +268,17 @@ export async function handleEnqueueGroupAction({ admin, body, json }: ZapHandler
   }).select('*').single();
 
   if (error) return json({ error: error.message }, 400);
+  const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').replace(/\/+$/, '');
+  if (supabaseUrl && job?.id) {
+    void enqueueToQStash('zap-outbound-platform', {
+      targetUrl: `${supabaseUrl}/functions/v1/qstash-zap-worker`,
+      body: { action: 'execute_group_job', job_id: job.id },
+      notBeforeSec: Math.floor(Date.parse(scheduledFor) / 1000),
+      retries: 2,
+      deduplicationId: `group-job:${job.id}`,
+      flowControl: { key: `chip:${String(instanceRow.id)}`, parallelism: 1 },
+    });
+  }
   return json({ success: true, job });
 }
 

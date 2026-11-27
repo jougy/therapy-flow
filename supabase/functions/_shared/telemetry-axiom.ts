@@ -7,9 +7,16 @@ export interface AxiomEvent {
   _time?: string;
   level: 'info' | 'warn' | 'error';
   service?: string;
+  scope?: string;
+  event_type?: string;
   error_code?: string | number;
   route?: string;
+  clinic_id?: string | null;
+  user_id?: string | null;
   message: string;
+  stack?: string;
+  context?: unknown;
+  fingerprint?: string;
   occurrences?: number;
   window_sec?: number;
   metadata?: Record<string, unknown>;

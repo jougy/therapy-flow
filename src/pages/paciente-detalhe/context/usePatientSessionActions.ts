@@ -26,6 +26,7 @@ interface Params {
   user: User | null;
   groups: PatientGroup[];
   sessions: Session[];
+  allSessions?: Session[];
   upcomingAgendaEvent: AgendaEvent | null;
   anamnesisTemplates: Array<{ id: string; name: string; schema: AnamnesisTemplateSchema }>;
   canBulkManageSessions: boolean;
@@ -36,6 +37,7 @@ interface Params {
   queryClient: QueryClient;
   invalidatePatientData: (patientId: string, clinicId?: string | null, keys?: string[]) => Promise<void>;
   optimisticUpdateSessionStatus: (ids: string[], status: string) => void;
+  optimisticUpsertSession?: (session: Session) => void;
   optimisticMoveSessions: (ids: string[], groupId: string | null) => void;
   optimisticMoveSessionsToEvolutionGroup: (ids: string[], evolutionGroupId: string | null) => void;
   optimisticDeleteSessions: (ids: string[]) => void;
@@ -44,10 +46,10 @@ interface Params {
 
 export function usePatientSessionActions(params: Params) {
   const {
-    id, patient, realPatientId, clinicId, targetClinicKey, user, groups, sessions,
+    id, patient, realPatientId, clinicId, targetClinicKey, user, groups, sessions, allSessions,
     upcomingAgendaEvent, anamnesisTemplates, canBulkManageSessions, canManageAllSessions,
     canDeleteAllSessions, canDeleteDraftSession, navigate, queryClient, invalidatePatientData,
-    optimisticUpdateSessionStatus, optimisticMoveSessions, optimisticMoveSessionsToEvolutionGroup,
+    optimisticUpdateSessionStatus, optimisticUpsertSession, optimisticMoveSessions, optimisticMoveSessionsToEvolutionGroup,
     optimisticDeleteSessions, optimisticUpsertAgendaEvent,
   } = params;
 
@@ -179,11 +181,23 @@ export function usePatientSessionActions(params: Params) {
       const values = isBlank
         ? { amountCharged: "", amountOriginal: "", amountPaid: "", anamnesisFormResponse: {}, anamnesisTemplateId: chosenTpl, careLineIds, complexityScore: 0, groupId: session.group_id, notes: "", observacoes: "", painScore: 0, patientArrivedAt, paymentAdjustmentReason: "", paymentInstallments: 1, paymentMethod: "nao_informado" as const, paymentStatus: "nao_cobrado" as const, paymentStatusDate: "", queixa: "", scheduledStartAt, sintomas: "", status: "rascunho" as const, treatmentBlocks: [], treatmentGeneralGuidance: "" }
         : { amountCharged: session.amount_charged_cents ? (session.amount_charged_cents / 100).toFixed(2).replace(".", ",") : "", amountOriginal: session.amount_original_cents ? (session.amount_original_cents / 100).toFixed(2).replace(".", ",") : "", amountPaid: session.amount_paid_cents ? (session.amount_paid_cents / 100).toFixed(2).replace(".", ",") : "", anamnesisFormResponse: (session.anamnesis_form_response as Record<string, unknown>) || {}, anamnesisTemplateId: chosenTpl, careLineIds, complexityScore: session.complexity_score ?? 0, groupId: session.group_id, notes: session.notes ?? "", observacoes: String(anamnesis.observacoes ?? ""), painScore: session.pain_score ?? 0, patientArrivedAt, paymentAdjustmentReason: session.payment_adjustment_reason ?? "", paymentInstallments: session.payment_installments ?? 1, paymentMethod: (session.payment_method as "nao_informado") ?? "nao_informado", paymentStatus: (session.payment_status as "nao_cobrado") ?? "nao_cobrado", paymentStatusDate: session.payment_status_date ?? "", queixa: String(anamnesis.queixa ?? ""), scheduledStartAt, sintomas: String(anamnesis.sintomas ?? ""), status: "rascunho" as const, treatmentBlocks: Array.isArray(treatment.blocks) ? (treatment.blocks as never[]) : [], treatmentGeneralGuidance: String(treatment.generalGuidance ?? "") };
-      const { data, error } = await supabase.from("sessions").insert(buildSessionPayload({ clinicId: activeCid, creatorUserId: user.id, patientId: targetPatientId, sessionDate: getCurrentDateTimeInputValue(), statusOverride: "rascunho", parentSessionId: session.id, evolutionGroupId: evoGroupId, values })).select("id").single();
-      if (error) { toast({ title: "Erro ao evoluir atendimento", description: error.message, variant: "destructive" }); return; }
-      clearSessionDraft(activeCid, targetPatientId, "novo"); clearSessionDraft(activeCid, targetPatientId, data.id);
+      const { data, error } = await supabase.from("sessions").insert(buildSessionPayload({ clinicId: activeCid, creatorUserId: user.id, patientId: targetPatientId, sessionDate: getCurrentDateTimeInputValue(), statusOverride: "rascunho", parentSessionId: session.id, evolutionGroupId: evoGroupId, values })).select("*").single();
+      if (error || !data) { toast({ title: "Erro ao evoluir atendimento", description: error?.message || "Resposta vazia ao iniciar evolução.", variant: "destructive" }); return; }
+      const insertedSession = data as Session;
+      optimisticUpsertSession?.(insertedSession);
+      void invalidatePatientData(targetPatientId, activeCid, ["sessions"]);
+      clearSessionDraft(activeCid, targetPatientId, "novo"); clearSessionDraft(activeCid, targetPatientId, insertedSession.id);
       toast({ title: isBlank ? "Novo atendimento em branco iniciado" : "Novo atendimento de evolução iniciado", description: isBlank ? "Uma nova ficha vinculada a este ciclo está pronta para preenchimento." : "Os dados foram copiados e o atendimento está pronto para preenchimento." });
-      navigate(getClinicPatientSessionPath(targetClinicKey, patient || id, `ATD-${sessions.length + 1}`, "?edit=true"), { state: { startInEditMode: true, agendaEventId: options?.agendaEvent?.id, scheduledFor: options?.agendaEvent?.scheduled_for } });
+      const chronological = [
+        ...(allSessions ?? sessions).filter((s) => !s.deleted_at && s.id !== insertedSession.id),
+        insertedSession,
+      ].sort((a, b) => {
+        const diff = new Date(a.session_date).getTime() - new Date(b.session_date).getTime();
+        return diff !== 0 ? diff : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+      const nextIdx = chronological.findIndex((s) => s.id === insertedSession.id);
+      const nextSessionKey = nextIdx >= 0 ? `ATD-${nextIdx + 1}` : insertedSession.id;
+      navigate(getClinicPatientSessionPath(targetClinicKey, patient || id, nextSessionKey, "?edit=true"), { state: { startInEditMode: true, preloadedSession: insertedSession, agendaEventId: options?.agendaEvent?.id, scheduledFor: options?.agendaEvent?.scheduled_for } });
     } catch (err) {
       toast({ title: "Erro ao evoluir atendimento", description: err instanceof Error ? err.message : "Ocorreu um erro inesperado", variant: "destructive" });
     } finally { setEvolvingSessionId(null); }

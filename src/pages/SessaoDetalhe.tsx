@@ -132,6 +132,10 @@ import {
 import { GenerateDocumentModal } from "@/components/patients/GenerateDocumentModal";
 import { useScrollDirection } from "@/hooks/useScrollDirection";
 import {
+  executeSessionMutationWithRetry,
+  formatSessionErrorToastDescription,
+  reportSessionActionError,
+  resolveTargetSessionIdForSave,
   SessaoDetalheSkeleton,
   SessionBaseSliderSection,
   SessionComplementaryFormsBlock,
@@ -216,6 +220,7 @@ const SessaoDetalhe = () => {
   });
 
   const resolvedPatientId = resolvedPatientIdOverride || resolvedPatientIdFromData;
+  const effectiveSessionId = resolvedSessionId || activeSession?.id || (sessionId && isUuid(sessionId) ? sessionId : null);
   const patientName = patientRow?.name ?? "";
   const groups = useMemo(() => {
     if (localCreatedGroups.length === 0) return cachedGroups;
@@ -402,6 +407,7 @@ const SessaoDetalhe = () => {
         title: "Acesso restrito",
         description: "Você não possui permissão para visualizar atendimentos de outros colaboradores.",
         variant: "destructive",
+        telemetry: "validation",
       });
       navigate(getClinicPatientPath(targetClinicKey, patientRow || patientId));
     }
@@ -1050,11 +1056,17 @@ const SessaoDetalhe = () => {
 
   const showErrorToast = (title: string, error: unknown, context: string) => {
     const details = getErrorDetails(error, title, context);
+    reportSessionActionError(title, details, {
+      sessionId: effectiveSessionId,
+      isNew,
+      targetStatus: status,
+    });
 
     toast({
       title,
-      description: "Clique em i para ver o erro completo.",
+      description: formatSessionErrorToastDescription(details),
       variant: "destructive",
+      telemetry: false,
       action: (
         <ToastAction
           altText="Ver detalhes do erro"
@@ -1194,22 +1206,23 @@ const SessaoDetalhe = () => {
     if (!patientId || !user || locked || (!isNew && !isEditing)) return;
     setSaving(true);
 
-    const targetStatus = explicitStatus || (status as "concluído" | "rascunho") || "rascunho";
-    if (explicitStatus) {
-      setStatus(explicitStatus);
-    }
+    try {
+      const targetStatus = explicitStatus || (status as "concluído" | "rascunho") || "rascunho";
+      if (explicitStatus) {
+        setStatus(explicitStatus);
+      }
 
-    const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
-    const targetPatientId = resolvedPatientId || patientId;
-    if (targetPatientId && targetPatientId !== resolvedPatientId) {
-      setResolvedPatientIdOverride(targetPatientId);
-    }
+      const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+      const targetPatientId = resolvedPatientId || patientId;
+      if (targetPatientId && targetPatientId !== resolvedPatientId) {
+        setResolvedPatientIdOverride(targetPatientId);
+      }
 
-    let targetClinicId = clinicId;
-    if (!targetClinicId && !isOffline) {
-      const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
-      targetClinicId = clinicRes.data ?? clinicId;
-    }
+      let targetClinicId = clinicId;
+      if (!targetClinicId && !isOffline) {
+        const clinicRes = await supabase.rpc("get_user_clinic_id", { _user_id: user.id });
+        targetClinicId = clinicRes.data ?? clinicId;
+      }
 
     // Sincronização de campos modulares com includeInGlobalDashboard ou systemKey "sintomas" para Linhas de Cuidado / Grupos
     const combinedSchema = [...baseTemplateSchema, ...activeTemplateSchema];
@@ -1299,21 +1312,20 @@ const SessaoDetalhe = () => {
       formValues.groupId = updatedCareLineIds[0] ?? null;
     }
 
-    if ((isNew && targetStatus !== "rascunho" && (quota.isTrialExpired || quota.isExpired || (quota.isFreeTrial && quota.attendances.isLimitReached))) || (quota.isTrialExpired || quota.isExpired)) {
-      setIsReadOnlyModalOpen(true);
-      toast({
-        title: "Limite de Atendimentos Atingido",
-        description: `Seu plano atingiu o limite de atendimentos ou está no modo somente leitura. Faça o upgrade para continuar evoluindo e registrando novos atendimentos.`,
-        variant: "destructive",
-      });
-      setSaving(false);
-      return;
-    }
+      if ((isNew && targetStatus !== "rascunho" && (quota.isTrialExpired || quota.isExpired || (quota.isFreeTrial && quota.attendances.isLimitReached))) || (quota.isTrialExpired || quota.isExpired)) {
+        setIsReadOnlyModalOpen(true);
+        toast({
+          title: "Limite de Atendimentos Atingido",
+          description: `Seu plano atingiu o limite de atendimentos ou está no modo somente leitura. Faça o upgrade para continuar evoluindo e registrando novos atendimentos.`,
+          variant: "destructive",
+          telemetry: "validation",
+        });
+        return;
+      }
 
-    const sessionData = buildCurrentSessionPayload(targetClinicId, targetPatientId, targetStatus);
+      const sessionData = buildCurrentSessionPayload(targetClinicId, targetPatientId, targetStatus);
 
-    if (isOffline) {
-      if (isNew) {
+      const saveSessionOfflineCreate = async () => {
         const tempId = `offline-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const offlineSession = buildOptimisticSessionRow(tempId, sessionData);
         optimisticUpsertSession(offlineSession);
@@ -1334,13 +1346,9 @@ const SessaoDetalhe = () => {
           replace: true,
           state: { preloadedSession: offlineSession },
         });
-      } else {
-        const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
-        if (!targetSessionId) {
-          showErrorToast("Erro ao salvar atendimento", new Error("Identificador do atendimento não encontrado."), "Atualização dos dados do atendimento");
-          setSaving(false);
-          return;
-        }
+      };
+
+      const saveSessionOfflineUpdate = async (targetSessionId: string) => {
         const offlineUpdated = buildOptimisticSessionRow(targetSessionId, sessionData, activeSession);
         optimisticUpsertSession(offlineUpdated);
         await enqueueOfflineMutation("upsert_session", {
@@ -1359,163 +1367,192 @@ const SessaoDetalhe = () => {
           title: targetStatus === "concluído" ? "Atendimento concluído (offline)" : "Rascunho salvo (offline)",
           description: "Alterações salvas localmente e serão sincronizadas ao reconectar.",
         });
+      };
+
+      if (isOffline) {
+        if (isNew) {
+          await saveSessionOfflineCreate();
+        } else {
+          const targetSessionId = effectiveSessionId;
+          if (!targetSessionId) {
+            showErrorToast("Erro ao salvar atendimento", new Error("Identificador do atendimento não encontrado."), "Atualização dos dados do atendimento");
+            return;
+          }
+          await saveSessionOfflineUpdate(targetSessionId);
+        }
+        return;
       }
-      setSaving(false);
-      return;
-    }
 
-    if (paymentPlanForm.createPlan && targetClinicId && targetPatientId) {
-      const totalAmountCents = parseCurrencyToCents(paymentPlanForm.totalAmount);
-      const unitAmountCents = calculateSessionUnitAmountCents(totalAmountCents, paymentPlanForm.totalSessions);
+      if (paymentPlanForm.createPlan && targetClinicId && targetPatientId) {
+        const totalAmountCents = parseCurrencyToCents(paymentPlanForm.totalAmount);
+        const unitAmountCents = calculateSessionUnitAmountCents(totalAmountCents, paymentPlanForm.totalSessions);
 
-      const { data: newPlan } = await supabase
-        .from("patient_payment_plans")
-        .insert({
-          clinic_id: targetClinicId,
-          patient_id: targetPatientId,
-          name: paymentPlanForm.name,
-          total_sessions: paymentPlanForm.totalSessions,
-          used_sessions: 1,
-          total_amount_cents: totalAmountCents,
-          session_unit_amount_cents: unitAmountCents,
-          payment_method: paymentPlanForm.paymentMethod,
-          payment_installments: paymentPlanForm.paymentInstallments,
-          payment_status: paymentPlanForm.paymentStatus,
-          payment_status_date: paymentPlanForm.paymentStatusDate || new Date().toISOString().split("T")[0],
-          start_date: paymentPlanForm.startDate || new Date().toISOString().split("T")[0],
-          created_by_user_id: user.id,
-        })
-        .select("*")
-        .single();
-
-      if (newPlan) {
-        (sessionData as any).payment_plan_id = newPlan.id;
-        (sessionData as any).payment_plan_session_index = 1;
-        sessionData.payment_status = "credito";
-
-        if (paymentPlanForm.autoPreScheduleAgenda && paymentPlanForm.totalSessions > 1) {
-          const scheduleDates = generatePlanScheduleDates({
-            count: paymentPlanForm.totalSessions - 1,
-            startDateStr: paymentPlanForm.startDate || new Date().toISOString().split("T")[0],
-            recurringWeekdays: paymentPlanForm.recurringWeekdays,
-            recurringTime: paymentPlanForm.recurringTime || "14:00",
-          });
-
-          const agendaEvents = scheduleDates.map((date, idx) => ({
+        const { data: newPlan } = await supabase
+          .from("patient_payment_plans")
+          .insert({
             clinic_id: targetClinicId,
             patient_id: targetPatientId,
-            user_id: user.id,
-            event_type: "atendimento" as const,
-            title: `${patientName || "Paciente"} (${paymentPlanForm.name} - ${idx + 2}/${paymentPlanForm.totalSessions})`,
-            scheduled_for: date.toISOString(),
-            status: "aguardando_confirmacao" as const,
-            payment_plan_id: newPlan.id,
-            payment_plan_session_index: idx + 2,
-          }));
+            name: paymentPlanForm.name,
+            total_sessions: paymentPlanForm.totalSessions,
+            used_sessions: 1,
+            total_amount_cents: totalAmountCents,
+            session_unit_amount_cents: unitAmountCents,
+            payment_method: paymentPlanForm.paymentMethod,
+            payment_installments: paymentPlanForm.paymentInstallments,
+            payment_status: paymentPlanForm.paymentStatus,
+            payment_status_date: paymentPlanForm.paymentStatusDate || new Date().toISOString().split("T")[0],
+            start_date: paymentPlanForm.startDate || new Date().toISOString().split("T")[0],
+            created_by_user_id: user.id,
+          })
+          .select("*")
+          .single();
 
-          await supabase.from("agenda_events").insert(agendaEvents);
-          notifyAgendaEventsUpdated();
-        }
-      }
-    }
+        if (newPlan) {
+          (sessionData as any).payment_plan_id = newPlan.id;
+          (sessionData as any).payment_plan_session_index = 1;
+          sessionData.payment_status = "credito";
 
-    if (isNew) {
-      const { data: inserted, error } = await supabase
-        .from("sessions")
-        .insert(sessionData)
-        .select("*")
-        .single();
+          if (paymentPlanForm.autoPreScheduleAgenda && paymentPlanForm.totalSessions > 1) {
+            const scheduleDates = generatePlanScheduleDates({
+              count: paymentPlanForm.totalSessions - 1,
+              startDateStr: paymentPlanForm.startDate || new Date().toISOString().split("T")[0],
+              recurringWeekdays: paymentPlanForm.recurringWeekdays,
+              recurringTime: paymentPlanForm.recurringTime || "14:00",
+            });
 
-      if (error || !inserted) {
-        showErrorToast("Erro ao criar atendimento", error, "Criação de atendimento");
-      } else {
-        const insertedSession = inserted as SessionRow;
-        if (newSessionState?.agendaEventId) {
-          const { error: agendaDeleteError } = await supabase.from("agenda_events").delete().eq("id", newSessionState.agendaEventId);
+            const agendaEvents = scheduleDates.map((date, idx) => ({
+              clinic_id: targetClinicId,
+              patient_id: targetPatientId,
+              user_id: user.id,
+              event_type: "atendimento" as const,
+              title: `${patientName || "Paciente"} (${paymentPlanForm.name} - ${idx + 2}/${paymentPlanForm.totalSessions})`,
+              scheduled_for: date.toISOString(),
+              status: "aguardando_confirmacao" as const,
+              payment_plan_id: newPlan.id,
+              payment_plan_session_index: idx + 2,
+            }));
 
-          if (agendaDeleteError) {
-            showErrorToast("Atendimento criado, mas o agendamento não foi removido", agendaDeleteError, "Remoção do agendamento de origem");
-          } else {
+            await supabase.from("agenda_events").insert(agendaEvents);
             notifyAgendaEventsUpdated();
           }
         }
-
-        clearSessionDraft(targetClinicId, targetPatientId, "novo");
-        clearSessionDraft(targetClinicId, targetPatientId, insertedSession.id);
-        initialFormValuesRef.current = JSON.stringify(formValues);
-        setHasRestoredDraft(false);
-        setIsEditing(false);
-
-        optimisticUpsertSession(insertedSession);
-        void invalidatePatientData(targetPatientId, targetClinicId, ["sessions"]);
-
-        if (targetStatus === "concluído") {
-          toast({
-            title: "Atendimento concluído e registrado no prontuário!",
-            description: "O atendimento foi finalizado com sucesso.",
-          });
-          notifySessionCompletedFeedback(1500);
-        } else {
-          toast({
-            title: "Rascunho salvo",
-            description: "Você pode continuar preenchendo mais tarde.",
-          });
-        }
-
-        const nextSessionKey = computeNextSessionKey(insertedSession);
-        navigate(getClinicPatientSessionPath(targetClinicKey, patientRow || patientId, nextSessionKey), {
-          replace: true,
-          state: { preloadedSession: insertedSession },
-        });
       }
-    } else {
-      const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
-      if (!targetSessionId) {
-        showErrorToast("Erro ao salvar atendimento", new Error("Identificador do atendimento não encontrado."), "Atualização dos dados do atendimento");
-        setSaving(false);
-        return;
-      }
-      const { data: updated, error } = await supabase
-        .from("sessions")
-        .update(sessionData)
-        .eq("id", targetSessionId)
-        .select("*")
-        .single();
 
-      if (error) {
-        showErrorToast("Erro ao salvar atendimento", error, "Atualização dos dados do atendimento");
-      } else {
-        clearSessionDraft(targetClinicId, targetPatientId, sessionId);
-        if (targetSessionId !== sessionId) clearSessionDraft(targetClinicId, targetPatientId, targetSessionId);
+      if (isNew) {
+        const { data: inserted, error, networkFailed } = await executeSessionMutationWithRetry(
+          async () => await supabase.from("sessions").insert(sessionData).select("*").single()
+        );
 
-        if (updated) {
-          const updatedSession = updated as SessionRow;
-          const nextFormValues = hydrateFormFromSession(updatedSession);
-          initialFormValuesRef.current = JSON.stringify(nextFormValues);
-          optimisticUpsertSession(updatedSession);
+        if (networkFailed) {
+          await saveSessionOfflineCreate();
+        } else if (error || !inserted) {
+          showErrorToast("Erro ao criar atendimento", error || new Error("Resposta vazia ao criar atendimento."), "Criação de atendimento");
         } else {
+          const insertedSession = inserted as SessionRow;
+          if (newSessionState?.agendaEventId) {
+            const { error: agendaDeleteError } = await supabase.from("agenda_events").delete().eq("id", newSessionState.agendaEventId);
+
+            if (agendaDeleteError) {
+              showErrorToast("Atendimento criado, mas o agendamento não foi removido", agendaDeleteError, "Remoção do agendamento de origem");
+            } else {
+              notifyAgendaEventsUpdated();
+            }
+          }
+
+          clearSessionDraft(targetClinicId, targetPatientId, "novo");
+          clearSessionDraft(targetClinicId, targetPatientId, insertedSession.id);
           initialFormValuesRef.current = JSON.stringify(formValues);
-        }
-        setHasRestoredDraft(false);
-        void invalidatePatientData(targetPatientId, targetClinicId, ["sessions"]);
-
-        if (targetStatus === "concluído") {
+          setHasRestoredDraft(false);
           setIsEditing(false);
-          setLocked(true);
-          toast({
-            title: "Atendimento concluído e registrado no prontuário!",
-            description: "Este atendimento foi bloqueado para edição. Use a duplicação para iniciar o próximo.",
+
+          optimisticUpsertSession(insertedSession);
+          void invalidatePatientData(targetPatientId, targetClinicId, ["sessions"]);
+
+          if (targetStatus === "concluído") {
+            toast({
+              title: "Atendimento concluído e registrado no prontuário!",
+              description: "O atendimento foi finalizado com sucesso.",
+            });
+            notifySessionCompletedFeedback(1500);
+          } else {
+            toast({
+              title: "Rascunho salvo",
+              description: "Você pode continuar preenchendo mais tarde.",
+            });
+          }
+
+          const nextSessionKey = computeNextSessionKey(insertedSession);
+          navigate(getClinicPatientSessionPath(targetClinicKey, patientRow || patientId, nextSessionKey), {
+            replace: true,
+            state: { preloadedSession: insertedSession },
           });
-          notifySessionCompletedFeedback(1500);
+        }
+      } else {
+        const targetSessionId = await resolveTargetSessionIdForSave({
+          resolvedSessionId,
+          activeSessionId: activeSession?.id,
+          sessionId,
+          patientId,
+          clinicId: targetClinicId,
+          clinicRouteKey: targetClinicKey,
+          knownPatient: patientRow,
+          knownSessions: cachedSessions,
+        });
+        if (targetSessionId && targetSessionId !== resolvedSessionId) {
+          setResolvedSessionId(targetSessionId);
+        }
+        if (!targetSessionId) {
+          showErrorToast("Erro ao salvar atendimento", new Error("Identificador do atendimento não encontrado."), "Atualização dos dados do atendimento");
+          return;
+        }
+        const { data: updated, error, networkFailed } = await executeSessionMutationWithRetry(
+          async () => await supabase.from("sessions").update(sessionData).eq("id", targetSessionId).select("*").single()
+        );
+
+        if (networkFailed) {
+          await saveSessionOfflineUpdate(targetSessionId);
+        } else if (error) {
+          showErrorToast("Erro ao salvar atendimento", error, "Atualização dos dados do atendimento");
         } else {
-          toast({
-            title: "Rascunho salvo",
-            description: "Alterações parciais salvas com sucesso.",
-          });
+          clearSessionDraft(targetClinicId, targetPatientId, sessionId);
+          if (targetSessionId !== sessionId) clearSessionDraft(targetClinicId, targetPatientId, targetSessionId);
+
+          if (updated) {
+            const updatedSession = updated as SessionRow;
+            const nextFormValues = hydrateFormFromSession(updatedSession);
+            initialFormValuesRef.current = JSON.stringify(nextFormValues);
+            optimisticUpsertSession(updatedSession);
+          } else {
+            initialFormValuesRef.current = JSON.stringify(formValues);
+          }
+          setHasRestoredDraft(false);
+          void invalidatePatientData(targetPatientId, targetClinicId, ["sessions"]);
+
+          if (targetStatus === "concluído") {
+            setIsEditing(false);
+            setLocked(true);
+            toast({
+              title: "Atendimento concluído e registrado no prontuário!",
+              description: "Este atendimento foi bloqueado para edição. Use a duplicação para iniciar o próximo.",
+            });
+            notifySessionCompletedFeedback(1500);
+          } else {
+            toast({
+              title: "Rascunho salvo",
+              description: "Alterações parciais salvas com sucesso.",
+            });
+          }
         }
       }
+    } catch (unexpectedErr) {
+      showErrorToast(
+        isNew ? "Erro ao criar atendimento" : "Erro ao salvar atendimento",
+        unexpectedErr,
+        "Falha inesperada ao salvar atendimento"
+      );
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handleStartFromThis = async (options?: { mode?: "copy" | "blank"; templateId?: string | null }) => {
@@ -1526,6 +1563,7 @@ const SessaoDetalhe = () => {
         title: "Limite de Atendimentos Atingido",
         description: `Seu plano atingiu o limite de atendimentos ou está no modo somente leitura. Faça o upgrade para continuar evoluindo novos atendimentos.`,
         variant: "destructive",
+        telemetry: "validation",
       });
       return;
     }
@@ -1534,6 +1572,7 @@ const SessaoDetalhe = () => {
         title: "Acesso de visualização apenas",
         description: "Este atendimento foi compartilhado com você com permissão apenas de visualização. Não é possível iniciar um novo atendimento a partir dele.",
         variant: "destructive",
+        telemetry: "validation",
       });
       return;
     }
@@ -1561,7 +1600,7 @@ const SessaoDetalhe = () => {
 
         if (newGroup) {
           targetEvolutionGroupId = newGroup.id;
-          const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+          const targetSessionId = effectiveSessionId;
           if (targetSessionId) {
             void supabase.from("sessions").update({ evolution_group_id: targetEvolutionGroupId }).eq("id", targetSessionId);
           }
@@ -1607,7 +1646,7 @@ const SessaoDetalhe = () => {
         sessionDate: getCurrentDateTimeInputValue(),
         statusOverride: "rascunho",
         values: targetValues,
-        parentSessionId: resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null),
+        parentSessionId: effectiveSessionId,
         evolutionGroupId: targetEvolutionGroupId,
       });
 
@@ -1688,7 +1727,7 @@ const SessaoDetalhe = () => {
       scheduled_start_at: parseOptionalDateTimeInputValue(draftScheduledStartAt),
       session_date: parseDateTimeInputValue(draftSessionDate),
     };
-    const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+    const targetSessionId = effectiveSessionId;
     if (!targetSessionId) {
       setSavingPresence(false);
       return;
@@ -1756,7 +1795,7 @@ const SessaoDetalhe = () => {
       payment_status_date: parseOptionalDateInputValue(draftPaymentStatusDate),
       payment_status: normalizedPaymentStatus,
     };
-    const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+    const targetSessionId = effectiveSessionId;
     if (!targetSessionId) {
       setSavingPayment(false);
       return;
@@ -1826,7 +1865,7 @@ const SessaoDetalhe = () => {
   );
 
   const handleDelete = async () => {
-    const targetSessionId = resolvedSessionId || (sessionId && isUuid(sessionId) ? sessionId : null);
+    const targetSessionId = effectiveSessionId;
     if (!targetSessionId || !canDeleteSession) {
       return;
     }
@@ -2221,7 +2260,7 @@ const SessaoDetalhe = () => {
         }}
         open={sessionShareDialogOpen}
         sessionCount={1}
-        sessionIds={resolvedSessionId ? [resolvedSessionId] : (sessionId && isUuid(sessionId) ? [sessionId] : [])}
+        sessionIds={effectiveSessionId ? [effectiveSessionId] : []}
       />
 
       <SessionQuickEditModals

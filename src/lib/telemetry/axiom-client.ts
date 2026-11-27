@@ -159,3 +159,31 @@ export async function queryAxiomLogs(params: AxiomQueryParams = {}): Promise<Axi
     return [];
   }
 }
+
+/**
+ * Marca erros do Axiom como resolvidos no Upstash Redis (via Edge Function)
+ * para que sejam ocultados da lista do Backoffice.
+ */
+export async function resolveAxiomErrors(ids: string[]): Promise<boolean> {
+  const cleanIds = ids.map((id) => id.trim()).filter(Boolean);
+  if (cleanIds.length === 0) return true;
+
+  try {
+    const { data, error } = await supabase.functions.invoke("platform-observability", {
+      body: {
+        action: "resolve_axiom_error",
+        ids: cleanIds,
+      },
+    });
+
+    if (error) {
+      console.warn("[AxiomClient] Falha ao resolver erro(s):", error.message);
+      return false;
+    }
+
+    return Boolean(data?.ok);
+  } catch (err) {
+    console.warn("[AxiomClient] Exceção ao resolver erro(s):", err);
+    return false;
+  }
+}

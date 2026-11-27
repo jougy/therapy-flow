@@ -73,19 +73,31 @@ import {
 
 function getDefaultNewEventPreset(referenceDate = new Date()) {
   const current = new Date();
+  const todayStart = new Date(current.getFullYear(), current.getMonth(), current.getDate());
+  const refStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+
   const nextSlot = new Date(current.getTime() + 60 * 60 * 1000);
   nextSlot.setMinutes(0, 0, 0);
 
-  // Se a próxima hora avançou para o dia seguinte (ex: 23:45 -> 00:00 do dia seguinte),
-  // ajustamos também a data padrão para manter o compromisso no futuro
-  const presetDate = new Date(referenceDate);
-  if (nextSlot.getDate() !== current.getDate()) {
+  // Se o dia visualizado na agenda estiver no passado, ancore no dia atual (ou amanhã se já virou 23h)
+  const presetDate = refStart.getTime() < todayStart.getTime() ? new Date(todayStart) : new Date(refStart);
+  const isTodayPreset = presetDate.getTime() === todayStart.getTime();
+  const nextSlotRolledOverDay =
+    nextSlot.getFullYear() !== current.getFullYear() ||
+    nextSlot.getMonth() !== current.getMonth() ||
+    nextSlot.getDate() !== current.getDate();
+
+  if (isTodayPreset && nextSlotRolledOverDay) {
     presetDate.setDate(presetDate.getDate() + 1);
+    return {
+      presetDate,
+      presetTime: format(nextSlot, "HH:mm"),
+    };
   }
 
   return {
     presetDate,
-    presetTime: format(nextSlot, "HH:mm"),
+    presetTime: isTodayPreset ? format(nextSlot, "HH:mm") : "09:00",
   };
 }
 
@@ -300,7 +312,7 @@ export default function ClinicAgendaPage() {
   // Abrir Modal de Novo Agendamento
   const handleOpenAddModal = useCallback((presetDate?: Date, presetTime?: string) => {
     const defaultPreset = getDefaultNewEventPreset(presetDate || selectedDate);
-    setModalPresetDate(presetDate || defaultPreset.presetDate);
+    setModalPresetDate(defaultPreset.presetDate);
     setModalPresetTime(presetTime || defaultPreset.presetTime);
     setSelectedEventForModal(null);
     setModalMode("create");
@@ -344,6 +356,7 @@ export default function ClinicAgendaPage() {
         title: "Permissão negada",
         description: "Você não tem permissão para criar agendamentos.",
         variant: "destructive",
+        telemetry: "validation",
       });
       return;
     }
@@ -356,6 +369,7 @@ export default function ClinicAgendaPage() {
         title: "Horário inválido",
         description: err instanceof Error ? err.message : AGENDA_PAST_EVENT_ERROR_MESSAGE,
         variant: "destructive",
+        telemetry: "validation",
       });
       return;
     }
@@ -504,6 +518,7 @@ export default function ClinicAgendaPage() {
         title: "Permissão negada",
         description: "Você não tem permissão para editar agendamentos.",
         variant: "destructive",
+        telemetry: "validation",
       });
       return;
     }
@@ -611,6 +626,7 @@ export default function ClinicAgendaPage() {
         title: "Permissão negada",
         description: "Você não tem permissão para excluir agendamentos.",
         variant: "destructive",
+        telemetry: "validation",
       });
       return;
     }

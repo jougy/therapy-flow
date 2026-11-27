@@ -22,6 +22,8 @@
     "marketing:orchestrator": "node scripts/marketing-ops/sequential-orchestrator.mjs --run",
     "marketing:status": "node scripts/marketing-ops/sequential-orchestrator.mjs --status",
     "marketing:cards": "node scripts/marketing-ops/media-engine.mjs --render-official-pack",
+    "marketing:doctor": "node scripts/marketing-ops/integration-doctor.mjs",
+    "marketing:profile-person": "node scripts/marketing-ops/cross-network-profiler.mjs",
     "mobile:stop": "bash scripts/dev/mobile-preview-stop.sh",
     "mobile:status": "bash scripts/dev/mobile-preview-status.sh",
     "audit:layout": "node scripts/dev/audit-layout.mjs",

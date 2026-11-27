@@ -63,10 +63,10 @@ export function initGlobalAnalytics(subproductOverride?: SubproductConfig): Subp
   }
   isAnalyticsInitialized = true;
 
-  // GA4 e Microsoft Clarity são exclusivos das landing pages (não injetar no SaaS/app.*)
+  // GA4, Microsoft Clarity e Meta Pixel são exclusivos da landing page plurifisio.com.br (nunca injetar no SaaS pluri.health)
   const hostname = window.location.hostname.toLowerCase();
-  const isAppHost = hostname.startsWith("app.") || hostname === "localhost" || hostname === "127.0.0.1";
-  if (isAppHost) {
+  const isPluriFisioLanding = hostname === "plurifisio.com.br" || hostname === "www.plurifisio.com.br";
+  if (!isPluriFisioLanding) {
     return subproduct;
   }
 

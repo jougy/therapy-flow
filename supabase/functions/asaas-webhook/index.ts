@@ -8,6 +8,7 @@ import { handleAffiliatePaymentReceived, handleAffiliatePaymentRefunded } from '
 import { checkRateLimit, extractClientIp, rateLimitExceededResponse } from '../_shared/rate-limit.ts';
 import { reportError } from '../_shared/error-dedup.ts';
 import { ingestToAxiom } from '../_shared/telemetry-axiom.ts';
+import { enqueueToQStash } from '../_shared/qstash.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -195,6 +196,23 @@ Deno.serve(async (req) => {
           .eq('asaas_payment_id', payment.id);
       }
 
+      // Tenta despachar side-effects (Split Afiliado + NFS-e + Telegram + WhatsApp + app_notifications)
+      // de forma coalescida (1 msg/pagamento) via QStash para responder ao Asaas em <300ms com retry durável.
+      const qstashRes = await enqueueToQStash('asaas-side-effects', {
+        targetUrl: `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/qstash-billing-worker`,
+        body: {
+          action: 'process_payment_post_actions',
+          eventType,
+          payment,
+          targetClinicId,
+          targetSubId,
+        },
+        retries: 5,
+        deduplicationId: `asaas:${eventId}:post_actions`,
+      });
+
+      if (!qstashRes.queued) {
+      // Fallback inline automático caso QSTASH_TOKEN não esteja configurado
       // Processar motor de Split de Afiliados (Fase 3)
       try {
         const asaasClientForSplit = new AsaasClient();
@@ -391,6 +409,7 @@ Deno.serve(async (req) => {
       } catch (telegramErr) {
         console.error('[asaas-webhook] Erro ao notificar Telegram / WhatsApp / app_notifications (fail-safe ativado):', telegramErr);
       }
+      } // fim fallback inline (!qstashRes.queued)
     } else if (eventType === 'PAYMENT_OVERDUE') {
       if (payment.id) {
         await supabase

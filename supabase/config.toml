@@ -68,5 +68,17 @@ verify_jwt = false
 [functions.marketing-zap-gateway]
 verify_jwt = false
 
+[functions.qstash-cron-dispatcher]
+verify_jwt = false
+
+[functions.qstash-billing-worker]
+verify_jwt = false
+
+[functions.qstash-zap-worker]
+verify_jwt = false
+
+[functions.platform-observability]
+verify_jwt = false
+
 
 

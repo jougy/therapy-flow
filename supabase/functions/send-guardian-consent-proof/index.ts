@@ -7,6 +7,7 @@ import {
 } from "../_shared/rate-limit.ts";
 import { reportError } from "../_shared/error-dedup.ts";
 import { ResendClient } from "../_shared/resend-client.ts";
+import { enqueueToQStash } from "../_shared/qstash.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -177,6 +178,26 @@ Deno.serve(async (req) => {
     });
 
     if (result.error) {
+      const emailPayload = {
+        to,
+        subject: `[${clinicName}] Comprovante de Autorização de Menor (LGPD) - ${patientName}`,
+        html: htmlContent,
+        text: `Olá, ${guardianName || "Responsável Legal"}! Confirmamos o registro do seu consentimento formal como responsável legal pelo(a) menor ${patientName} em ${formattedDate}. Plataforma: ${clinicName}.`,
+      };
+      const supabaseBase = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
+      const qRes = supabaseBase
+        ? await enqueueToQStash("notifications-reliable", {
+            targetUrl: `${supabaseBase}/functions/v1/platform-observability`,
+            body: { action: "retry_transactional_email", emailPayload },
+            retries: 5,
+            deduplicationId: `consent-proof:${linkRow.id}:${to}`,
+          })
+        : { queued: false };
+
+      if (qRes.queued) {
+        return json({ success: true, queued: true, messageId: qRes.messageId }, 202, rlHeaders);
+      }
+
       console.error("[send-guardian-consent-proof] Erro ao enviar:", result.error);
       await reportError({
         service: "send-guardian-consent-proof",
